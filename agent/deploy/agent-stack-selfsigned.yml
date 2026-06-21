@@ -1,0 +1,61 @@
+# swarmexec agent — self-signed + shared-secret mode (Portainer-style).
+#
+# No server cert/key to provision: the agent generates its own server
+# certificate at startup, with SANs taken from the Docker node info (hostname +
+# advertised address). Clients skip server-cert verification and authenticate
+# with the shared secret instead. Only ONE secret to manage.
+#
+# 1. Create the shared secret (any high-entropy string):
+#      openssl rand -base64 32 | docker secret create swarmexec_agent_secret -
+#
+# 2. Deploy:
+#      export SWARMEXEC_AGENT_IMAGE=registry.logle.io/internal-tools/swarm-remote-exec/agent:latest
+#      docker login registry.logle.io
+#      docker stack deploy --with-registry-auth -c deploy/agent-stack-selfsigned.yml swarmexec
+#
+# 3. Put the SAME secret in the client's ~/.config/swarmexec/config.yaml:
+#      agent_secret: <the value you created above>
+#      insecure: true        # self-signed agent — no CA to verify against
+#      addr_mode: ip
+#
+# Optional: to ALSO keep per-operator client-cert identity, additionally provide
+# a client CA as the swarmexec_ca secret and add -ca-cert=/run/secrets/swarmexec_ca
+# to the command; clients then present their operator cert as usual.
+
+services:
+  agent:
+    image: ${SWARMEXEC_AGENT_IMAGE:-registry.logle.io/internal-tools/swarm-remote-exec/agent:latest}
+    command:
+      - "-listen=:9443"
+      - "-self-signed"
+      - "-agent-secret-file=/run/secrets/swarmexec_agent_secret"
+      - "-docker-host=unix:///var/run/docker.sock"
+      - "-drain-timeout=5s"
+      - "-log-format=json"
+      - "-audit-dest=stdout"
+    deploy:
+      mode: global
+      restart_policy:
+        condition: any
+      update_config:
+        order: start-first
+    secrets:
+      - swarmexec_agent_secret
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - swarmexec
+    ports:
+      - target: 9443
+        published: 9443
+        protocol: tcp
+        mode: host
+
+networks:
+  swarmexec:
+    driver: overlay
+    attachable: false
+
+secrets:
+  swarmexec_agent_secret:
+    external: true

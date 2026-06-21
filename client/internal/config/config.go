@@ -7,8 +7,10 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,6 +43,20 @@ type Config struct {
 	// agent. Empty means use the dial host. Useful when dialing by IP but the
 	// agent certificate carries a hostname.
 	ServerName string `yaml:"server_name"`
+
+	// AgentSecret is the shared secret presented to a self-signed agent
+	// (Portainer-style auth). AgentSecretFile, if set, is read for the value.
+	AgentSecret     string `yaml:"agent_secret"`
+	AgentSecretFile string `yaml:"agent_secret_file"`
+
+	// Insecure skips verification of the agent's server certificate. Required
+	// when connecting to a self-signed agent (no CA to verify against); trust
+	// then rests on the shared secret and the network.
+	Insecure bool `yaml:"insecure"`
+
+	// Operator is the identity reported for audit when no client certificate is
+	// used. Defaults to the local OS username.
+	Operator string `yaml:"operator"`
 }
 
 // Default returns the built-in defaults.
@@ -83,6 +99,12 @@ func Load(path string) (Config, error) {
 		}
 	}
 	overlayEnv(&cfg)
+	// Default the audited operator identity to the local OS username.
+	if cfg.Operator == "" {
+		if u, err := user.Current(); err == nil {
+			cfg.Operator = u.Username
+		}
+	}
 	return cfg, nil
 }
 
@@ -122,6 +144,41 @@ func overlayEnv(cfg *Config) {
 	if v := os.Getenv("SWARMEXEC_SERVER_NAME"); v != "" {
 		cfg.ServerName = v
 	}
+	if v := os.Getenv("SWARMEXEC_AGENT_SECRET"); v != "" {
+		cfg.AgentSecret = v
+	}
+	if v := os.Getenv("SWARMEXEC_AGENT_SECRET_FILE"); v != "" {
+		cfg.AgentSecretFile = v
+	}
+	if v := os.Getenv("SWARMEXEC_OPERATOR"); v != "" {
+		cfg.Operator = v
+	}
+	if v := os.Getenv("SWARMEXEC_INSECURE"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			cfg.Insecure = true
+		case "0", "false", "no", "off":
+			cfg.Insecure = false
+		}
+	}
+}
+
+// AgentSecretValue resolves the shared secret: AgentSecretFile contents
+// (trimmed) if set, otherwise AgentSecret. Returns "" when none is configured.
+func (c Config) AgentSecretValue() (string, error) {
+	if c.AgentSecretFile != "" {
+		b, err := os.ReadFile(c.AgentSecretFile)
+		if err != nil {
+			return "", fmt.Errorf("read agent secret file %s: %w", c.AgentSecretFile, err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return c.AgentSecret, nil
+}
+
+// SecretMode reports whether shared-secret authentication is configured.
+func (c Config) SecretMode() bool {
+	return c.AgentSecret != "" || c.AgentSecretFile != ""
 }
 
 // Validate checks that the configuration is usable for dialing an agent.
@@ -134,15 +191,50 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("invalid addr-mode %q (want %q or %q)", c.AddrMode, AddrModeHostname, AddrModeIP)
 	}
-	// mTLS is mandatory: all three TLS paths must be present and readable.
+
+	// readable verifies a configured path exists.
+	readable := func(name, path string) error {
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("TLS material for %s not readable: %w", name, err)
+		}
+		return nil
+	}
+
+	if c.SecretMode() {
+		// Shared-secret auth (self-signed agent): client cert is optional, and a
+		// CA is optional (without one, the server cert can't be verified, so
+		// --insecure is required). Any provided paths must still be readable.
+		if c.CA == "" && !c.Insecure {
+			return fmt.Errorf("shared-secret mode needs either ca (to verify the agent) or insecure=true (skip verification)")
+		}
+		if c.CA != "" {
+			if err := readable("ca", c.CA); err != nil {
+				return err
+			}
+		}
+		if (c.Cert == "") != (c.Key == "") {
+			return fmt.Errorf("cert and key must be set together (or both empty)")
+		}
+		if c.Cert != "" {
+			if err := readable("cert", c.Cert); err != nil {
+				return err
+			}
+			if err := readable("key", c.Key); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Default: mTLS is mandatory — all three TLS paths present and readable.
 	for _, f := range []struct {
 		name, path string
-	}{{"--ca", c.CA}, {"--cert", c.Cert}, {"--key", c.Key}} {
+	}{{"ca", c.CA}, {"cert", c.Cert}, {"key", c.Key}} {
 		if f.path == "" {
-			return fmt.Errorf("missing TLS material: %s is required (mTLS is mandatory)", f.name)
+			return fmt.Errorf("missing TLS material: %s is required (mTLS is mandatory; or set agent_secret for a self-signed agent)", f.name)
 		}
-		if _, err := os.Stat(f.path); err != nil {
-			return fmt.Errorf("TLS material for %s not readable: %w", f.name, err)
+		if err := readable(f.name, f.path); err != nil {
+			return err
 		}
 	}
 	return nil

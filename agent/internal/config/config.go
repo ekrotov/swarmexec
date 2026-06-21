@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -14,9 +15,26 @@ import (
 type Config struct {
 	ListenAddr string // gRPC listen address, e.g. ":9443"
 
-	CACert     string // path to CA cert used to verify client certs
-	ServerCert string // path to server certificate
-	ServerKey  string // path to server private key
+	CACert     string // path to CA cert used to verify client certs (optional in self-signed mode)
+	ServerCert string // path to server certificate (unused in self-signed mode)
+	ServerKey  string // path to server private key (unused in self-signed mode)
+
+	// SelfSigned makes the agent generate its own server certificate at startup
+	// (SANs taken from the Docker node info), so no server cert/key need to be
+	// provisioned. Clients then skip server-cert verification and authenticate
+	// with the shared AgentSecret instead (Portainer-style).
+	SelfSigned bool
+	// CertSANs are extra comma-separated SANs to add to the self-signed cert,
+	// e.g. "DNS:swarmexec-agent,IP:10.0.0.5". The node hostname/IP and loopback
+	// are always included.
+	CertSANs string
+
+	// AgentSecret is the shared secret clients must present (gRPC metadata). When
+	// set, every RPC is authenticated against it. Empty disables the check.
+	AgentSecret string
+	// AgentSecretFile, if set, is read to obtain AgentSecret (e.g. a Docker
+	// secret at /run/secrets/swarmexec_agent_secret).
+	AgentSecretFile string
 
 	DockerHost string // docker daemon endpoint
 
@@ -51,6 +69,19 @@ func envDuration(key string, def time.Duration) time.Duration {
 	return def
 }
 
+// envBool parses a boolean env var (1/true/yes/on), falling back to def.
+func envBool(key string, def bool) bool {
+	if v, ok := os.LookupEnv(key); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	}
+	return def
+}
+
 // Parse builds a Config from the given args (excluding the program name).
 // Flags take precedence over environment variables, which take precedence over
 // built-in defaults. Output and errors are written to out for testability.
@@ -63,6 +94,10 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.StringVar(&c.CACert, "ca-cert", env("SWARMEXEC_CA_CERT", ""), "path to CA certificate for verifying client certs (env SWARMEXEC_CA_CERT)")
 	fs.StringVar(&c.ServerCert, "server-cert", env("SWARMEXEC_SERVER_CERT", ""), "path to server certificate (env SWARMEXEC_SERVER_CERT)")
 	fs.StringVar(&c.ServerKey, "server-key", env("SWARMEXEC_SERVER_KEY", ""), "path to server private key (env SWARMEXEC_SERVER_KEY)")
+	fs.BoolVar(&c.SelfSigned, "self-signed", envBool("SWARMEXEC_SELF_SIGNED", false), "generate a self-signed server cert at startup (no server cert/key needed) (env SWARMEXEC_SELF_SIGNED)")
+	fs.StringVar(&c.CertSANs, "cert-sans", env("SWARMEXEC_CERT_SANS", ""), "extra SANs for the self-signed cert, e.g. \"DNS:swarmexec-agent,IP:10.0.0.5\" (env SWARMEXEC_CERT_SANS)")
+	fs.StringVar(&c.AgentSecret, "agent-secret", env("SWARMEXEC_AGENT_SECRET", ""), "shared secret clients must present; empty disables (env SWARMEXEC_AGENT_SECRET)")
+	fs.StringVar(&c.AgentSecretFile, "agent-secret-file", env("SWARMEXEC_AGENT_SECRET_FILE", ""), "file to read the shared secret from, e.g. a Docker secret (env SWARMEXEC_AGENT_SECRET_FILE)")
 	fs.StringVar(&c.DockerHost, "docker-host", env("SWARMEXEC_DOCKER_HOST", "unix:///var/run/docker.sock"), "docker daemon endpoint (env SWARMEXEC_DOCKER_HOST)")
 	fs.DurationVar(&c.DrainTimeout, "drain-timeout", envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
 	fs.DurationVar(&c.IdleTimeout, "idle-timeout", envDuration("SWARMEXEC_IDLE_TIMEOUT", 0), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
@@ -82,6 +117,21 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 // Validate checks that required fields are present and consistent. It is not
 // called when only --version was requested.
 func (c *Config) Validate() error {
+	if c.SelfSigned {
+		// The server cert/key are generated at startup; ca-cert is optional
+		// (when set, client certificates are still verified for identity).
+		// Without a CA, the shared secret is the only authentication, so warn
+		// callers by requiring it.
+		secret, err := c.AgentSecretValue()
+		if err != nil {
+			return err
+		}
+		if c.CACert == "" && secret == "" {
+			return fmt.Errorf("self-signed mode needs either -ca-cert (verify client certs) or -agent-secret/-agent-secret-file (shared-secret auth); otherwise anyone reachable could exec")
+		}
+		return nil
+	}
+
 	var missing []string
 	if c.CACert == "" {
 		missing = append(missing, "ca-cert")
@@ -93,7 +143,20 @@ func (c *Config) Validate() error {
 		missing = append(missing, "server-key")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required TLS configuration: %v", missing)
+		return fmt.Errorf("missing required TLS configuration: %v (or use -self-signed)", missing)
 	}
 	return nil
+}
+
+// AgentSecretValue resolves the shared secret: the contents of AgentSecretFile
+// if set (trimmed), otherwise AgentSecret. Returns "" when no secret is configured.
+func (c *Config) AgentSecretValue() (string, error) {
+	if c.AgentSecretFile != "" {
+		b, err := os.ReadFile(c.AgentSecretFile)
+		if err != nil {
+			return "", fmt.Errorf("read agent secret file %q: %w", c.AgentSecretFile, err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return c.AgentSecret, nil
 }
