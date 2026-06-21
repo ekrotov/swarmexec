@@ -154,10 +154,12 @@ agent-image:
   services:
     - docker:27-dind
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: "1"
-    DOCKER_CERT_PATH: "/certs/client"
+    # Plain-TCP DinD (port 2375, no TLS). This runner does not share the dind
+    # service's /certs volume with the job container, so TLS on 2376 fails with
+    # "open /certs/client/ca.pem: no such file or directory". The daemon API is
+    # only reachable on the runner's internal network, not externally.
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
     DOCKER_BUILDKIT: "1"
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
