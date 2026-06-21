@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
@@ -73,9 +74,34 @@ func run(args []string) error {
 	}
 	defer dockerCli.Close()
 
-	tlsCfg, err := tlsconf.ServerConfig(cfg.CACert, cfg.ServerCert, cfg.ServerKey)
+	// Resolve the optional shared secret (file or value).
+	secret, err := cfg.AgentSecretValue()
 	if err != nil {
 		return err
+	}
+
+	// Build the TLS config: either a self-signed cert generated here (SANs from
+	// the Docker node info) or a provisioned server cert + client CA.
+	var tlsCfg *tls.Config
+	if cfg.SelfSigned {
+		ictx, icancel := context.WithTimeout(context.Background(), 5*time.Second)
+		sans := gatherSANs(ictx, dockerCli, cfg, log)
+		icancel()
+		var sanDesc []string
+		tlsCfg, sanDesc, err = tlsconf.SelfSignedServerConfig(sans, cfg.CACert, time.Now())
+		if err != nil {
+			return err
+		}
+		log.Info("using self-signed server certificate",
+			"sans", sanDesc,
+			"verify_client_certs", cfg.CACert != "",
+			"shared_secret", secret != "",
+		)
+	} else {
+		tlsCfg, err = tlsconf.ServerConfig(cfg.CACert, cfg.ServerCert, cfg.ServerKey)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Optional Prometheus metrics endpoint.
@@ -95,12 +121,25 @@ func run(args []string) error {
 		}()
 	}
 
+	// Lenient audit identity only when no client certificate is required
+	// (self-signed without a client CA); otherwise the cert CN is mandatory.
+	secretAuthIdentity := cfg.SelfSigned && cfg.CACert == ""
+
 	srv := server.New(dockerCli, auth.AllowAll{}, auditLog, log, sink, server.Options{
 		IdleTimeout:    cfg.IdleTimeout,
 		MaxSessionTime: cfg.MaxSessionTime,
+		SecretAuth:     secretAuthIdentity,
 	})
 
-	grpcSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsCfg)))
+	serverOpts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(tlsCfg))}
+	if secret != "" {
+		serverOpts = append(serverOpts,
+			grpc.ChainUnaryInterceptor(server.SecretUnaryInterceptor(secret)),
+			grpc.ChainStreamInterceptor(server.SecretStreamInterceptor(secret)),
+		)
+		log.Info("shared-secret authentication enabled")
+	}
+	grpcSrv := grpc.NewServer(serverOpts...)
 	pb.RegisterAgentServer(grpcSrv, srv)
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
@@ -166,6 +205,28 @@ func newLogger(cfg *config.Config) *slog.Logger {
 		h = slog.NewJSONHandler(os.Stderr, opts)
 	}
 	return slog.New(h)
+}
+
+// gatherSANs builds the SAN list for the self-signed server cert: a stable
+// "swarmexec-agent" name (so clients can pin it via --server-name), loopback,
+// this node's hostname and advertised Swarm address (from the Docker API), and
+// any operator-supplied extras.
+func gatherSANs(ctx context.Context, cli *client.Client, cfg *config.Config, log *slog.Logger) []string {
+	sans := []string{"DNS:swarmexec-agent", "DNS:localhost", "IP:127.0.0.1", "IP:::1"}
+	if info, err := cli.Info(ctx); err != nil {
+		log.Warn("could not read Docker info for cert SANs; using static SANs only", "err", err)
+	} else {
+		if info.Name != "" {
+			sans = append(sans, "DNS:"+info.Name)
+		}
+		if info.Swarm.NodeAddr != "" {
+			sans = append(sans, "IP:"+info.Swarm.NodeAddr)
+		}
+	}
+	if cfg.CertSANs != "" {
+		sans = append(sans, cfg.CertSANs)
+	}
+	return sans
 }
 
 // openAuditWriter resolves the audit destination to a writer and a closer.

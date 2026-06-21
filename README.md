@@ -183,6 +183,51 @@ docker service ps swarmexec_agent         # one Running task per node
 docker service logs swarmexec_agent       # JSON startup + audit lines
 ```
 
+### Alternative: self-signed + shared secret (less cert management)
+
+Provisioning per-node server certs (and getting the SANs right) is fiddly. The
+agent can instead **generate its own server certificate at startup** — SANs are
+taken from the Docker node info, so it is automatically valid for the node's
+hostname and address — and authenticate clients with a **shared secret**
+(Portainer-style). There is then only **one** secret to manage and no server
+cert/key or per-node SANs at all.
+
+```sh
+# 1. one shared secret for the whole fleet
+openssl rand -base64 32 | docker secret create swarmexec_agent_secret -
+
+# 2. deploy the self-signed stack (no server cert/key secrets needed)
+export SWARMEXEC_AGENT_IMAGE=registry.logle.io/internal-tools/swarm-remote-exec/agent:latest
+docker login registry.logle.io
+docker stack deploy --with-registry-auth -c agent/deploy/agent-stack-selfsigned.yml swarmexec
+```
+
+Client side — put the same secret in `~/.config/swarmexec/config.yaml`:
+
+```yaml
+agent_secret: <the value created above>
+insecure: true        # self-signed agent — no CA to verify against
+addr_mode: ip
+operator: eugen       # reported in the agent audit log (default: OS username)
+```
+
+Trade-off vs. full mTLS: the shared secret is one fleet-wide credential, and
+`insecure: true` skips server-cert verification (trust rests on the secret + a
+trusted overlay network). You lose per-operator certificate identity — though
+the client still reports an `operator` name for audit. To keep per-operator
+identity, additionally provide a client CA (`swarmexec_ca` secret +
+`-ca-cert=/run/secrets/swarmexec_ca`): the agent then self-signs its server cert
+**and** verifies operator client certs.
+
+The two modes use different agent flags:
+
+| | mTLS (default) | self-signed + secret |
+|---|---|---|
+| server cert | provisioned (`-server-cert`/`-server-key`) | generated at startup (`-self-signed`) |
+| client auth | client cert verified vs CA (`-ca-cert`) | shared secret (`-agent-secret-file`) |
+| operator identity | client cert CN | `operator` header (or client cert CN if CA also set) |
+| client config | `ca` + `cert` + `key` | `agent_secret` + `insecure` |
+
 ---
 
 ## 4. Connect with the client (operator side)
@@ -288,6 +333,10 @@ non-interactive, lists the candidates and exits).
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |
 | `-metrics-addr` | `SWARMEXEC_METRICS_ADDR` | *(off)* | Prometheus addr, e.g. `:9100` |
+| `-self-signed` | `SWARMEXEC_SELF_SIGNED` | `false` | generate a self-signed server cert at startup (no `-server-cert`/`-server-key` needed) |
+| `-cert-sans` | `SWARMEXEC_CERT_SANS` | — | extra SANs for the self-signed cert, e.g. `DNS:swarmexec-agent,IP:10.0.0.5` |
+| `-agent-secret` | `SWARMEXEC_AGENT_SECRET` | — | shared secret clients must present (value) |
+| `-agent-secret-file` | `SWARMEXEC_AGENT_SECRET_FILE` | — | read the shared secret from a file (e.g. a Docker secret) |
 | `--version` | — | — | print version and exit |
 
 ### Client: global flags + `exec` flags

@@ -22,13 +22,17 @@ type Version struct {
 
 // globalFlags hold settings shared by all subcommands.
 type globalFlags struct {
-	configPath string
-	ca         string
-	cert       string
-	key        string
-	port       int
-	addrMode   string
-	serverName string
+	configPath      string
+	ca              string
+	cert            string
+	key             string
+	port            int
+	addrMode        string
+	serverName      string
+	agentSecret     string
+	agentSecretFile string
+	insecure        bool
+	operator        string
 }
 
 // Execute builds and runs the root command, returning a process exit code.
@@ -51,6 +55,10 @@ func Execute(v Version) int {
 	pf.IntVar(&g.port, "port", 0, fmt.Sprintf("agent port (default %d)", config.DefaultPort))
 	pf.StringVar(&g.addrMode, "addr-mode", "", "node dial address: hostname|ip (default hostname)")
 	pf.StringVar(&g.serverName, "server-name", "", "override TLS server name for agent verification")
+	pf.StringVar(&g.agentSecret, "agent-secret", "", "shared secret for a self-signed agent (Portainer-style auth)")
+	pf.StringVar(&g.agentSecretFile, "agent-secret-file", "", "file to read the shared secret from")
+	pf.BoolVar(&g.insecure, "insecure", false, "skip agent server-certificate verification (self-signed agents)")
+	pf.StringVar(&g.operator, "operator", "", "operator identity reported for audit (default: OS username)")
 
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
@@ -96,6 +104,18 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command) (config.Config, error) {
 	}
 	if pf.Changed("server-name") {
 		cfg.ServerName = g.serverName
+	}
+	if pf.Changed("agent-secret") {
+		cfg.AgentSecret = g.agentSecret
+	}
+	if pf.Changed("agent-secret-file") {
+		cfg.AgentSecretFile = g.agentSecretFile
+	}
+	if pf.Changed("insecure") {
+		cfg.Insecure = g.insecure
+	}
+	if pf.Changed("operator") {
+		cfg.Operator = g.operator
 	}
 	return cfg, nil
 }

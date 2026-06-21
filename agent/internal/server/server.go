@@ -29,6 +29,11 @@ type Options struct {
 	IdleTimeout time.Duration
 	// MaxSessionTime aborts a session after this total duration. Zero disables.
 	MaxSessionTime time.Duration
+	// SecretAuth selects lenient identity resolution: when no client certificate
+	// is required (self-signed + shared-secret mode), the audit identity falls
+	// back to a client-supplied operator header or "anonymous" instead of
+	// failing. Leave false for CA-verified mTLS, where a cert CN is mandatory.
+	SecretAuth bool
 }
 
 // Server is the Agent gRPC service implementation.
@@ -67,7 +72,11 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 		metrics: metrics,
 		opts:    opts,
 	}
-	s.identityFn = identityFromPeer
+	if opts.SecretAuth {
+		s.identityFn = identityFromContextLenient
+	} else {
+		s.identityFn = identityFromPeer
+	}
 	return s
 }
 
