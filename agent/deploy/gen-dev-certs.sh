@@ -26,7 +26,7 @@ openssl x509 -req -in agent.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
 
 # Client cert (operator). The CN becomes the audited operator identity.
 openssl genrsa -out operator.key 4096
-openssl req -new -key operator.key -subj "/CN=operator@example.com" -out operator.csr
+openssl req -new -key operator.key -subj "/CN=eugen@cloud-surfers.de" -out operator.csr
 openssl x509 -req -in operator.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -days 825 -sha256 -extfile <(printf "extendedKeyUsage=clientAuth") \
   -out operator.crt

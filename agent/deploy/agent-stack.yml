@@ -1,13 +1,13 @@
 # swarmexec agent — global Swarm service.
 #
-# The image is pulled from the GitLab Container Registry (pushed by .gitlab-ci.yml
-# to $CI_REGISTRY_IMAGE/agent). Set SWARMEXEC_AGENT_IMAGE to that path, or edit
-# the default below. `docker stack deploy` interpolates ${...} from the shell env.
+# The image is built and pushed by .gitlab-ci.yml to the GitLab Container
+# Registry at <project>/agent. Tags: :<version> and :latest for releases,
+# :main and :<short-sha> for default-branch dev builds. The `image:` below
+# tracks the latest release; switch the tag to :main to follow dev builds.
 #
 # Deploy with (--with-registry-auth forwards your registry login to every node so
-# a global service can pull from a private registry):
-#   export SWARMEXEC_AGENT_IMAGE=registry.gitlab.example.com/your-group/swarmexec/agent:latest
-#   docker login registry.gitlab.example.com
+# a global service can pull from the private registry):
+#   docker login registry.logle.io
 #   docker stack deploy --with-registry-auth -c deploy/agent-stack.yml swarmexec
 #
 # Create the required secrets first (see deploy/secrets.sh or the README):
@@ -20,7 +20,7 @@
 # via that node's address on the published port using mTLS.
 services:
   agent:
-    image: registry.logle.io/internal-tools/swarm-remote-exec/main:latest
+    image: registry.logle.io/internal-tools/swarm-remote-exec/agent:latest
     command:
       - "-listen=:9443"
       - "-ca-cert=/run/secrets/swarmexec_ca"
