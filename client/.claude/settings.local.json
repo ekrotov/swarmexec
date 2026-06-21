@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//datapool/projects/docker-service-exec/**)",
+      "Bash(go env *)",
+      "Bash(timeout 30 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(timeout 120 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1)",
+      "Bash(echo \"grpc-plugin EXIT:$?\")",
+      "Bash(timeout 300 go install github.com/bufbuild/buf/cmd/buf@v1.45.0)",
+      "Bash(echo \"buf EXIT:$?\")",
+      "Bash(ls \"$\\(go env GOPATH\\)/bin\")",
+      "Bash(VERSION=v0.1.0 make build)",
+      "Bash(./bin/swarmexec --version)",
+      "Bash(ldd bin/swarmexec)"
+    ]
+  }
+}

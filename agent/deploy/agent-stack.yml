@@ -1,0 +1,66 @@
+# swarmexec agent — global Swarm service.
+#
+# Deploy with:
+#   docker stack deploy -c deploy/agent-stack.yml swarmexec
+#
+# Create the required secrets first (see deploy/secrets.sh or the README):
+#   docker secret create swarmexec_ca   ca.crt
+#   docker secret create swarmexec_cert agent.crt
+#   docker secret create swarmexec_key  agent.key
+#
+# The agent runs one task per node (mode: global), mounts the local Docker
+# socket, and listens on the overlay network. The CLI reaches a node's agent
+# via that node's address on the published port (routing mesh) using mTLS.
+
+version: "3.8"
+
+services:
+  agent:
+    image: swarmexec-agent:latest
+    command:
+      - "-listen=:9443"
+      - "-ca-cert=/run/secrets/swarmexec_ca"
+      - "-server-cert=/run/secrets/swarmexec_cert"
+      - "-server-key=/run/secrets/swarmexec_key"
+      - "-docker-host=unix:///var/run/docker.sock"
+      - "-drain-timeout=5s"
+      - "-log-format=json"
+      - "-audit-dest=stdout"
+    deploy:
+      mode: global
+      restart_policy:
+        condition: any
+      update_config:
+        order: start-first
+    secrets:
+      - swarmexec_ca
+      - swarmexec_cert
+      - swarmexec_key
+    volumes:
+      # Read-write: interactive exec needs to write to the socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - swarmexec
+    ports:
+      # mode: host publishes 9443 on each node's own interface (NOT the routing
+      # mesh). With a global service this means CLI -> nodeN:9443 always reaches
+      # the agent task ON nodeN, which is exactly the direct-routing model the
+      # CLI relies on. Restrict exposure at the firewall/host level; mTLS is the
+      # primary control.
+      - target: 9443
+        published: 9443
+        protocol: tcp
+        mode: host
+
+networks:
+  swarmexec:
+    driver: overlay
+    attachable: false
+
+secrets:
+  swarmexec_ca:
+    external: true
+  swarmexec_cert:
+    external: true
+  swarmexec_key:
+    external: true

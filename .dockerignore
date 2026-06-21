@@ -1,0 +1,9 @@
+bin/
+dist/
+.git/
+.gitignore
+**/.claude/
+**/last.session
+*.md
+**/*_test.go
+agent/deploy/

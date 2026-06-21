@@ -1,0 +1,61 @@
+// Authoritative wire protocol for swarmexec. Source of truth: CONTRACT.md §3.
+// Generated Go code lands in internal/pb and is shared by the cli and agent.
+syntax = "proto3";
+package swarmexec;
+option go_package = "swarmexec/internal/pb";
+
+service Agent {
+  // List containers on THIS node. Optional helper for discovery/validation.
+  rpc ListContainers(ListRequest) returns (ListResponse);
+
+  // Bidirectional interactive exec stream.
+  // The first ClientMessage on the stream MUST carry a StartExec payload.
+  rpc Exec(stream ClientMessage) returns (stream ServerMessage);
+}
+
+message ListRequest {
+  string service_filter = 1; // optional substring/label filter; empty = all
+}
+
+message ListResponse {
+  repeated ContainerInfo containers = 1;
+}
+
+message ContainerInfo {
+  string id = 1;       // full container ID
+  string name = 2;     // container name
+  string service = 3;  // swarm service name if known, else empty
+}
+
+message ClientMessage {
+  oneof payload {
+    StartExec start = 1;  // MUST be the first message
+    bytes stdin = 2;      // raw stdin bytes
+    Resize resize = 3;    // terminal resize event
+  }
+}
+
+message StartExec {
+  string container_id = 1;     // full container ID to exec into
+  repeated string cmd = 2;     // command + args, e.g. ["/bin/sh"]
+  bool tty = 3;                // allocate a TTY
+  uint32 width = 4;            // initial terminal width (columns)
+  uint32 height = 5;           // initial terminal height (rows)
+  repeated string env = 6;     // optional extra env, "KEY=VALUE"
+  string working_dir = 7;      // optional working directory
+  string user = 8;             // optional user, e.g. "1000:1000" or "root"
+}
+
+message Resize {
+  uint32 width = 1;
+  uint32 height = 2;
+}
+
+message ServerMessage {
+  oneof payload {
+    bytes stdout = 1;     // stdout bytes (also carries all output when tty=true)
+    bytes stderr = 2;     // stderr bytes (only when tty=false)
+    int32 exit_code = 3;  // sent once, as the final message before stream end
+    string error = 4;     // terminal error; stream ends after this
+  }
+}

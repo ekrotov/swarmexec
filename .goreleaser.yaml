@@ -1,0 +1,41 @@
+# GoReleaser config for the swarmexec CLI. Produces static, cross-compiled
+# binaries for the operator platforms (REQUIREMENTS §2, §9.3).
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: swarmexec
+    main: ./client/cmd/swarmexec
+    binary: swarmexec
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.protoVersion=swarmexec/v1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # darwin/amd64 is not a required operator platform; drop to keep the matrix lean.
+      - goos: darwin
+        goarch: amd64
+
+archives:
+  - id: swarmexec
+    formats: [tar.gz]
+    name_template: "swarmexec_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  draft: true
