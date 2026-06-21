@@ -63,7 +63,16 @@ func Run(ctx context.Context, stream Stream, opts Options) (int, error) {
 	if err := stream.Send(&pb.ClientMessage{
 		Payload: &pb.ClientMessage_Start{Start: opts.Start},
 	}); err != nil {
-		return TransportFailure, fmt.Errorf("send StartExec: %w", wrapStatus(err))
+		// A server-side rejection before the handler runs (e.g. the agent's
+		// shared-secret interceptor) closes the stream, so Send returns io.EOF;
+		// the real status (e.g. Unauthenticated) is delivered on Recv. Surface
+		// that instead of a bare "EOF".
+		if errors.Is(err, io.EOF) {
+			if _, rerr := stream.Recv(); rerr != nil {
+				err = rerr
+			}
+		}
+		return TransportFailure, fmt.Errorf("start exec: %w", wrapStatus(err))
 	}
 
 	snd := &sender{stream: stream}

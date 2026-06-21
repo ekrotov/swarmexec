@@ -44,7 +44,10 @@ type AllowAll struct{}
 
 // Authorize implements Authorizer.
 func (AllowAll) Authorize(_ context.Context, _ Request) Decision {
-	return Decision{Allow: true, Reason: "default policy: client certificate signed by trusted CA"}
+	// Authentication (mTLS client cert or shared secret) is enforced at the
+	// transport layer before this runs, so the default policy allows everyone
+	// who got this far, regardless of which auth mode is in effect.
+	return Decision{Allow: true, Reason: "default allow-all policy (transport authentication enforced)"}
 }
 
 // Ensure AllowAll satisfies the interface at compile time.
