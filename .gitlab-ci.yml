@@ -79,7 +79,12 @@ test:
   <<: *go-cache
   script:
     - go vet ./...
-    - test -z "$(gofmt -l agent client internal)" || { echo 'gofmt: files need formatting'; gofmt -l agent client internal; exit 1; }
+    - |
+      if [ -n "$(gofmt -l agent client internal)" ]; then
+        echo "gofmt: the following files need formatting:"
+        gofmt -l agent client internal
+        exit 1
+      fi
     - go test -race ./...
 
 # Code navigation (code-intelligence in the GitLab UI). Replaces GitLab's default
