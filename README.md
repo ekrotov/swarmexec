@@ -53,6 +53,32 @@ make tools           # installs buf + protoc-gen-go(-grpc) into $GOPATH/bin
 make generate        # buf generate -> internal/pb/
 ```
 
+### Releases (CI/CD)
+
+[`.gitlab-ci.yml`](.gitlab-ci.yml) builds and versions automatically:
+
+- **Branches / merge requests** — run tests and produce dev cli binaries
+  (stamped with the short commit SHA) as job artifacts.
+- **Default branch (`main`)** — additionally push a dev agent image
+  (`$CI_REGISTRY_IMAGE/agent:main` and `:<short-sha>`).
+- **Semantic-version tag on `main`** — cut a release. A release is built
+  **exactly when** the tag matches `vMAJOR.MINOR.PATCH` (e.g. `v1.2.3`,
+  optionally `-rc.1` / `+build`) **and** the tagged commit is on `main`
+  (enforced by the `verify-tag-on-main` gate). It produces:
+  - cli binaries for linux/macOS/windows stamped with the version,
+  - the agent image at `$CI_REGISTRY_IMAGE/agent:<version>` and `:latest`,
+  - a GitLab **Release** with the binaries attached.
+
+  A semver tag that is **not** on `main` fails the gate and builds nothing.
+
+Cut a release:
+
+```sh
+git checkout main && git pull
+git tag -a v1.2.3 -m "swarmexec v1.2.3"
+git push origin v1.2.3
+```
+
 ---
 
 ## 3. Set up the agent (server side)
@@ -84,32 +110,28 @@ For **testing only**, generate a throwaway CA + server + operator certs:
 ### Step 3.2 — Make the agent image available to every node
 
 A **global** service runs on all nodes, so every node must be able to pull the
-image.
+image from a registry they can all reach.
 
-**Single-node swarm:** just build it locally:
+**GitLab Container Registry (recommended).** The included
+[`.gitlab-ci.yml`](.gitlab-ci.yml) builds and pushes the agent image on every
+default-branch commit and tag to:
 
-```sh
-make agent-image VERSION=v1.0.0           # -> swarmexec-agent:v1.0.0
+```
+$CI_REGISTRY_IMAGE/agent:<version>      # e.g. registry.gitlab.example.com/your-group/swarmexec/agent:latest
 ```
 
-**Multi-node swarm:** push to a registry every node can reach. With your own
-registry:
+Nothing to build by hand — just note that image path for step 3.4.
+
+**Build/push manually** (any other registry):
 
 ```sh
 make agent-image VERSION=v1.0.0
-docker tag swarmexec-agent:v1.0.0 registry.example.com/swarmexec-agent:v1.0.0
-docker push registry.example.com/swarmexec-agent:v1.0.0
+docker tag swarmexec-agent:v1.0.0 registry.example.com/swarmexec/agent:v1.0.0
+docker push registry.example.com/swarmexec/agent:v1.0.0
 ```
 
-Then set that image name in the stack file (step 3.4). If you have no registry,
-a quick swarm-local one works:
-
-```sh
-docker service create --name registry --publish published=5000,target=5000 registry:2
-docker tag swarmexec-agent:v1.0.0 127.0.0.1:5000/swarmexec-agent:v1.0.0
-docker push 127.0.0.1:5000/swarmexec-agent:v1.0.0    # 127.0.0.0/8 is insecure-allowed
-# use image: 127.0.0.1:5000/swarmexec-agent:v1.0.0 in the stack file
-```
+**Single-node swarm** can skip the registry and just build locally
+(`make agent-image VERSION=v1.0.0` → `swarmexec-agent:v1.0.0`).
 
 ### Step 3.3 — Create the Docker secrets
 
@@ -127,12 +149,26 @@ manager, so this works even over an `ssh://` Docker context.)
 ### Step 3.4 — Deploy the stack
 
 The stack file is [`agent/deploy/agent-stack.yml`](agent/deploy/agent-stack.yml).
-Edit the `image:` line to match what you built/pushed in step 3.2, then deploy
-from a manager:
+Its `image:` defaults to `${SWARMEXEC_AGENT_IMAGE:-...}`, so point that variable
+at the image from step 3.2 (or edit the file). From a manager:
 
 ```sh
-docker stack deploy -c agent/deploy/agent-stack.yml swarmexec
+# 1. tell the stack which image to use
+export SWARMEXEC_AGENT_IMAGE=registry.gitlab.example.com/your-group/swarmexec/agent:latest
+
+# 2. log in to the registry so the manager can authenticate
+docker login registry.gitlab.example.com
+#    (in CI/headless, use a deploy token:
+#     docker login -u <token-name> -p <token> registry.gitlab.example.com)
+
+# 3. deploy — --with-registry-auth forwards the login to every node so the
+#    GLOBAL service can pull from the private registry on all of them
+docker stack deploy --with-registry-auth -c agent/deploy/agent-stack.yml swarmexec
 ```
+
+> **`--with-registry-auth` is required** for a private registry: without it the
+> manager pulls fine but the other nodes have no credentials and their agent
+> tasks fail with a pull/authentication error.
 
 This creates a `global` service `swarmexec_agent` (one task per node), mounts
 `/var/run/docker.sock` read-write, attaches the secrets, and publishes `9443`
@@ -273,7 +309,7 @@ and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),
 | `x509: certificate is valid for X, not Y` | Server cert SAN doesn't match the dialed host. Add the node hostname/IP to the server cert SAN, or set `--server-name` / `--addr-mode`. |
 | `cannot reach agent on node:9443` | Port not reachable from the operator (firewall), or the agent task isn't running on that node. Check `docker service ps swarmexec_agent`. |
 | `connect to Docker manager API` fails | `DOCKER_HOST` not set / not a manager / `ssh://` unsupported by the cli. See step 4.2. |
-| agent task stuck `Pending`/`Rejected` (image) | Node can't pull the image. Push to a registry all nodes can reach (step 3.2). |
+| agent task stuck `Pending`/`Rejected` (image) | Node can't pull the image. Push to a registry all nodes can reach (step 3.2) and deploy with `--with-registry-auth` (step 3.4). |
 | `first message must be StartExec` / `PERMISSION_DENIED` | Protocol/authorization errors surfaced by the agent — check `docker service logs swarmexec_agent`. |
 
 ---
