@@ -35,7 +35,10 @@ services:
       restart_policy:
         condition: any
       update_config:
-        order: start-first
+        # stop-first (not start-first): the published port uses mode: host, so
+        # only one task per node can bind 9443 at a time — the old task must
+        # stop before the new one starts.
+        order: stop-first
     secrets:
       - swarmexec_ca
       - swarmexec_cert

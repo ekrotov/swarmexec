@@ -9,6 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "swarmexec/internal/pb"
 )
 
@@ -18,6 +21,7 @@ type fakeStream struct {
 	script    []*pb.ServerMessage
 	idx       int
 	recvErr   error
+	sendErr   error
 	closeSent bool
 }
 
@@ -25,7 +29,7 @@ func (s *fakeStream) Send(m *pb.ClientMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sent = append(s.sent, m)
-	return nil
+	return s.sendErr
 }
 
 func (s *fakeStream) Recv() (*pb.ServerMessage, error) {
@@ -81,6 +85,24 @@ func TestRunPropagatesExitCode(t *testing.T) {
 	}
 	if out.String() != "hello" {
 		t.Errorf("stdout = %q, want hello", out.String())
+	}
+}
+
+func TestRunSurfacesStatusOnSendEOF(t *testing.T) {
+	// A server-side rejection (e.g. bad shared secret) makes Send return io.EOF
+	// while the real status arrives on Recv. Run should surface the status, not
+	// a bare "EOF".
+	fs := &fakeStream{
+		sendErr: io.EOF,
+		recvErr: status.Error(codes.Unauthenticated, "invalid or missing agent secret"),
+	}
+	var out, errb bytes.Buffer
+	code, err := Run(context.Background(), fs, baseOpts(&out, &errb))
+	if code != TransportFailure {
+		t.Errorf("code = %d, want %d", code, TransportFailure)
+	}
+	if err == nil || !strings.Contains(err.Error(), "Unauthenticated") {
+		t.Fatalf("error should surface the Unauthenticated status, got %v", err)
 	}
 }
 
