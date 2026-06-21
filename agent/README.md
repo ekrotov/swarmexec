@@ -115,20 +115,25 @@ Deployed as a **global** Swarm service. The TLS key is injected via a Docker
    ./deploy/secrets.sh certs/ca.crt certs/agent.crt certs/agent.key
    ```
 
-3. **Build/publish the image** so every node can pull it. Build from the repo
-   root (the Dockerfile's context is the whole shared module):
+3. **Publish the image** to a registry every node can reach. The included
+   `.gitlab-ci.yml` pushes it to the GitLab Container Registry at
+   `$CI_REGISTRY_IMAGE/agent` on default-branch commits and tags. To build/push
+   manually instead (context is the repo root — the whole shared module):
 
    ```sh
-   make agent-image                                   # or:
-   docker build -f agent/Dockerfile -t swarmexec-agent:latest .
+   make agent-image VERSION=v1.0.0
+   docker tag swarmexec-agent:v1.0.0 registry.gitlab.example.com/your-group/swarmexec/agent:v1.0.0
+   docker push registry.gitlab.example.com/your-group/swarmexec/agent:v1.0.0
    ```
 
-   Then push to a registry reachable by the swarm (or build on each node).
-
-4. **Deploy the stack:**
+4. **Deploy the stack.** Point `SWARMEXEC_AGENT_IMAGE` at that image, log in to
+   the registry, and deploy with `--with-registry-auth` so every node receives
+   the credentials a global service needs to pull from a private registry:
 
    ```sh
-   docker stack deploy -c deploy/agent-stack.yml swarmexec
+   export SWARMEXEC_AGENT_IMAGE=registry.gitlab.example.com/your-group/swarmexec/agent:latest
+   docker login registry.gitlab.example.com
+   docker stack deploy --with-registry-auth -c deploy/agent-stack.yml swarmexec
    ```
 
 ## Reachability model
