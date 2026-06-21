@@ -18,12 +18,9 @@
 # The agent runs one task per node (mode: global), mounts the local Docker
 # socket, and listens on the overlay network. The CLI reaches a node's agent
 # via that node's address on the published port using mTLS.
-
-version: "3.8"
-
 services:
   agent:
-    image: ${SWARMEXEC_AGENT_IMAGE:-registry.gitlab.example.com/your-group/swarmexec/agent:latest}
+    image: registry.logle.io/internal-tools/swarm-remote-exec/main:latest
     command:
       - "-listen=:9443"
       - "-ca-cert=/run/secrets/swarmexec_ca"
