@@ -52,7 +52,8 @@ type Candidate struct {
 	Slot        int
 	TaskID      string
 	NodeID      string
-	NodeName    string
+	NodeName    string // node hostname
+	NodeAddr    string // node advertised IP address
 	DialHost    string
 	ContainerID string
 	Uptime      time.Duration
@@ -138,6 +139,19 @@ func (r *Resolver) findService(ctx context.Context, name string) (*swarm.Service
 		}
 	}
 	return nil, nil
+}
+
+// serviceNames returns a map of service ID -> service name for all services.
+func (r *Resolver) serviceNames(ctx context.Context) (map[string]string, error) {
+	svcs, err := r.cli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]string, len(svcs))
+	for _, s := range svcs {
+		m[s.ID] = s.Spec.Name
+	}
+	return m, nil
 }
 
 func (r *Resolver) runningTasks(ctx context.Context, serviceID string) ([]swarm.Task, error) {
@@ -272,6 +286,12 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 	if err != nil {
 		return nil, err
 	}
+	// Map service IDs to names so each task shows its service (tasks only carry
+	// the service ID, not the name).
+	nameByID, err := r.serviceNames(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cands []Candidate
 	for _, t := range tasks {
 		if containerID(t) == "" {
@@ -281,6 +301,7 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 		if err != nil {
 			return nil, err
 		}
+		c.Service = nameByID[t.ServiceID]
 		cands = append(cands, *c)
 	}
 	sort.Slice(cands, func(i, j int) bool {
@@ -302,6 +323,7 @@ func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidat
 		TaskID:      t.ID,
 		NodeID:      t.NodeID,
 		NodeName:    node.Description.Hostname,
+		NodeAddr:    node.Status.Addr,
 		DialHost:    r.dialHost(node),
 		ContainerID: containerID(t),
 	}
