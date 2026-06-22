@@ -48,6 +48,29 @@ func (l *Logger) SessionEnd(identity, containerID string, exitCode int, dur time
 	)
 }
 
+// LogsStart records the beginning of a logs stream.
+func (l *Logger) LogsStart(identity, containerID, service string, follow bool, clientAddr string) {
+	l.log.Info("logs_start",
+		"event", "logs_start",
+		"identity", identity,
+		"container_id", containerID,
+		"service", service,
+		"follow", follow,
+		"client_addr", clientAddr,
+	)
+}
+
+// LogsEnd records the end of a logs stream, including duration and bytes sent.
+func (l *Logger) LogsEnd(identity, containerID string, dur time.Duration, bytesOut int64) {
+	l.log.Info("logs_end",
+		"event", "logs_end",
+		"identity", identity,
+		"container_id", containerID,
+		"duration_ms", dur.Milliseconds(),
+		"bytes_out", bytesOut,
+	)
+}
+
 // AuthDecision records an authorization allow/deny along with the reason.
 func (l *Logger) AuthDecision(identity, containerID, service string, allow bool, reason string) {
 	l.log.Info("auth_decision",

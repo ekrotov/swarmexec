@@ -141,11 +141,37 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		load() // task may have changed while we were away
 	}
 
-	info := func(msg string) {
-		m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
-			SetDoneFunc(func(int, string) { pages.RemovePage("info"); app.SetFocus(table) })
-		pages.AddPage("info", m, true, true)
-		app.SetFocus(m)
+	// showLogs opens a scrollable, live (follow) logs viewer for a container.
+	showLogs := func(c resolve.Candidate) {
+		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" logs %s on %s — ↑/↓ scroll, ESC/q close ", shortID(c.ContainerID), orDash(c.NodeName)))
+
+		lctx, lcancel := context.WithCancel(ctx)
+		closeLogs := func() {
+			lcancel()
+			pages.RemovePage("logs")
+			app.SetFocus(table)
+		}
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q') {
+				closeLogs()
+				return nil
+			}
+			return ev
+		})
+
+		go func() {
+			err := streamLogs(lctx, cfg, ep,
+				logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
+				tvLogWriter{app: app, tv: tv}, tvLogWriter{app: app, tv: tv, stderr: true})
+			if err != nil && lctx.Err() == nil {
+				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(err.Error())) })
+			}
+		}()
+
+		pages.AddPage("logs", tv, true, true)
+		app.SetFocus(tv)
 	}
 
 	menu := func(c resolve.Candidate) {
@@ -161,7 +187,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				case "Sh":
 					attach(c, []string{"sh"}, false)
 				case "Logs":
-					info("Container logs need a dedicated agent RPC and are coming in a\nseparate step. For now use Bash/Sh.")
+					showLogs(c)
 				}
 			})
 		pages.AddPage("menu", m, true, true)
@@ -195,4 +221,25 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
 	return nil
+}
+
+// tvLogWriter appends streamed log bytes to a TextView on the UI goroutine,
+// auto-scrolling to the end. stderr chunks are colored red.
+type tvLogWriter struct {
+	app    *tview.Application
+	tv     *tview.TextView
+	stderr bool
+}
+
+func (w tvLogWriter) Write(p []byte) (int, error) {
+	s := tview.Escape(string(p))
+	w.app.QueueUpdateDraw(func() {
+		if w.stderr {
+			fmt.Fprintf(w.tv, "[red]%s[-]", s)
+		} else {
+			fmt.Fprint(w.tv, s)
+		}
+		w.tv.ScrollToEnd()
+	})
+	return len(p), nil
 }

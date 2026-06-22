@@ -282,8 +282,16 @@ swarmexec ps                 # all running tasks across the swarm
 swarmexec ps <service>       # filter to one service
 ```
 
+Stream a container's logs:
+
+```sh
+swarmexec logs web                 # all logs
+swarmexec logs web -f --tail 100   # follow, starting from the last 100 lines
+swarmexec logs web -t --since 10m  # with timestamps, last 10 minutes
+```
+
 Or browse interactively — a navigable table where you pick a container and open
-**bash / sh** (logs coming later):
+its **logs / bash / sh**:
 
 ```sh
 swarmexec ui                 # ↑/↓ j/k h/l to move, Enter for the menu, q to quit
