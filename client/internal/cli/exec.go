@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -234,13 +233,11 @@ func pickCandidate(amb *resolve.AmbiguousError, interactive bool) (*resolve.Endp
 		fmt.Fprintf(os.Stderr, "  [%d] %s.%d  node=%s  container=%s  up=%s\n",
 			i+1, amb.Service, c.Slot, c.NodeName, shortID(c.ContainerID), uptime(c.Uptime))
 	}
-	fmt.Fprintf(os.Stderr, "select [1-%d]: ", len(amb.Candidates))
-
-	sc := bufio.NewScanner(os.Stdin)
-	if !sc.Scan() {
+	line, ok := promptLine(fmt.Sprintf("select [1-%d]: ", len(amb.Candidates)))
+	if !ok {
 		return nil, fmt.Errorf("no selection made")
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(sc.Text()))
+	n, err := strconv.Atoi(strings.TrimSpace(line))
 	if err != nil || n < 1 || n > len(amb.Candidates) {
 		return nil, fmt.Errorf("invalid selection")
 	}

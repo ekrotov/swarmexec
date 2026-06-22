@@ -36,8 +36,8 @@ type globalFlags struct {
 	dockerContext   string
 }
 
-// licensePlaceholder is shown by --info until a real license is chosen.
-const licensePlaceholder = "(placeholder — license TBD)"
+// licenseName is shown by --info. See the LICENSE file for the full text.
+const licensePlaceholder = "Proprietary — © 2026 Cloud Surfers (all rights reserved)"
 
 // contactEmail is the maintainer contact shown by --info.
 const contactEmail = "eugen.krotov@cloud-surfers.de"

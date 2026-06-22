@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -341,12 +340,11 @@ func confirm(prompt string) bool {
 	if !cterm.IsTerminal(os.Stdin.Fd()) {
 		return false // non-interactive: refuse without --yes
 	}
-	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
-	sc := bufio.NewScanner(os.Stdin)
-	if !sc.Scan() {
+	line, ok := promptLine(fmt.Sprintf("%s [y/N]: ", prompt))
+	if !ok {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(sc.Text())) {
+	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "y", "yes":
 		return true
 	}
