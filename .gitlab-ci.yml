@@ -87,11 +87,12 @@ test:
       fi
     - go test -race ./...
 
-# Code navigation (code-intelligence in the GitLab UI). Replaces GitLab's default
-# LSIF template, whose archived sourcegraph/lsif-go image bundles a Go too old to
-# parse this module's `go 1.25` directive. scip-go is the maintained Go indexer.
-# allow_failure keeps the pipeline green regardless of the GitLab version's SCIP
-# support — the build/test/image jobs are what gate the pipeline.
+# Code navigation index (SCIP) for this `go 1.25` module. scip-go is the
+# maintained Go indexer; the index is published as a downloadable artifact.
+# NOTE: this GitLab instance rejects the `reports: lsif` upload with a 500, so we
+# publish index.scip as a plain artifact instead of wiring it into the UI's code
+# intelligence — switch `paths` back to `reports: { lsif: index.scip }` if the
+# instance gains SCIP/LSIF support. allow_failure keeps it non-gating.
 code_navigation:
   stage: test
   image: $GO_IMAGE
@@ -101,8 +102,8 @@ code_navigation:
     - go install github.com/scip-code/scip-go/cmd/scip-go@latest
     - "$(go env GOPATH)/bin/scip-go index"
   artifacts:
-    reports:
-      lsif: index.scip
+    paths:
+      - index.scip
   rules:
     - *semver-tag
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

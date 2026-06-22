@@ -453,6 +453,17 @@ and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),
 
 ## 8. Tear down
 
+If you provisioned with `swarmexec init`, the inverse removes the global agent
+service and its shared secret (with a confirmation):
+
+```sh
+swarmexec down                 # remove the agent service + secret
+swarmexec down --keep-secret   # keep the secret (e.g. to re-init with it)
+swarmexec down -y              # no confirmation prompt
+```
+
+For a manually-deployed stack:
+
 ```sh
 docker stack rm swarmexec
 docker secret rm swarmexec_ca swarmexec_cert swarmexec_key

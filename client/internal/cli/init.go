@@ -85,7 +85,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		ctx = context.Background()
 	}
 	out := cmd.OutOrStdout()
-	tctx, cerr := resolveInitContext(out, g)
+	tctx, cerr := resolveContext(out, g)
 	if cerr != nil {
 		return cerr
 	}
@@ -198,10 +198,9 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	return nil
 }
 
-// resolveInitContext decides which Docker context to provision into, informing
-// the user and — when several exist and stdin is a terminal — prompting them to
-// choose.
-func resolveInitContext(out io.Writer, g *globalFlags) (dockerctx.Context, error) {
+// resolveContext decides which Docker context to act on, informing the user and
+// — when several exist and stdin is a terminal — prompting them to choose.
+func resolveContext(out io.Writer, g *globalFlags) (dockerctx.Context, error) {
 	// An explicit --context / $DOCKER_CONTEXT wins; no prompt.
 	if explicit := firstNonEmpty(g.dockerContext, os.Getenv("DOCKER_CONTEXT")); explicit != "" {
 		host, _ := dockerctx.ResolveHost(explicit)
@@ -237,7 +236,7 @@ func resolveInitContext(out io.Writer, g *globalFlags) (dockerctx.Context, error
 // one on an empty answer.
 func chooseContext(out io.Writer, contexts []dockerctx.Context, current string) (dockerctx.Context, error) {
 	def := 0
-	fmt.Fprintln(out, "Multiple Docker contexts found — choose where to deploy the agents:")
+	fmt.Fprintln(out, "Multiple Docker contexts found — choose which one to use:")
 	for i, c := range contexts {
 		marker := " "
 		if c.Name == current {
