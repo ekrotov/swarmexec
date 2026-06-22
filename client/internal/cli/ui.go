@@ -56,7 +56,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		service = args[0]
 	}
 
-	dcli, err := newDockerClient()
+	dcli, err := newDockerClient(g.dockerContext)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

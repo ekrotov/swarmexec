@@ -3,6 +3,7 @@ module swarmexec
 go 1.25.0
 
 require (
+	github.com/docker/cli v29.6.0+incompatible
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
@@ -41,6 +42,7 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect

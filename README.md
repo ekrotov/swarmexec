@@ -239,22 +239,21 @@ Put `./bin/swarmexec` on your `PATH`, and have your `ca.crt`,
 
 ### Step 4.2 — Point the cli at a Swarm manager
 
-The cli queries the **manager API** to resolve a target to a node. It uses the
-standard Docker SDK, which honours `DOCKER_HOST` (and `DOCKER_TLS_VERIFY` /
-`DOCKER_CERT_PATH`). Pick one:
+The cli queries the **manager API** to resolve a target to a node. It uses your
+**Docker CLI context** the same way `docker` does — including `ssh://` endpoints
+— so if `docker ps` already works against your swarm, so does swarmexec.
+Resolution order (highest first):
 
 ```sh
-# a) run the cli ON a manager node (uses the local socket automatically)
-# b) point at a manager's TLS-protected API
-export DOCKER_HOST=tcp://manager.example.com:2376
-export DOCKER_TLS_VERIFY=1
-export DOCKER_CERT_PATH=~/.docker/manager-certs
+swarmexec --context pk ps          # explicit context (a)
+export DOCKER_CONTEXT=pk           # or via env                       (b)
+export DOCKER_HOST=tcp://mgr:2376  # or a raw host (TLS via DOCKER_TLS_VERIFY/_CERT_PATH)  (c)
+swarmexec ps                       # else the active context from ~/.docker/config.json (d)
 ```
 
-> The cli reads `DOCKER_HOST`, **not** the `docker` CLI's named contexts, and the
-> bare SDK does not wire up `ssh://` transports. If you normally use an
-> `ssh://`-based context, run the cli on the manager itself or expose the
-> manager API over TLS.
+So with an `ssh://root@manager` context (e.g. `docker context use pk`),
+`swarmexec ps` simply works from your workstation — no need to run on a manager
+or expose the API over TLS.
 
 ### Step 4.3 — Provide the mTLS material
 
@@ -359,7 +358,8 @@ non-interactive, lists the candidates and exits).
 ### Client: global flags + `exec` flags
 
 Global: `--ca`, `--cert`, `--key`, `--port` (9443), `--addr-mode hostname|ip`,
-`--server-name`, `--config`.
+`--server-name`, `--config`, `--context` (Docker context for the manager API,
+also `$DOCKER_CONTEXT`), `--agent-secret`(`-file`), `--insecure`, `--operator`.
 
 `exec`: `-i/--stdin` (default on), `-t/--tty` (auto: on iff stdin is a terminal
 and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),
@@ -374,7 +374,7 @@ and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),
 | `tls: unknown certificate authority` | Client cert not signed by the agent's CA, **or** `--ca` doesn't match the agent's server CA. Use certs from the same CA. |
 | `x509: certificate is valid for X, not Y` | Server cert SAN doesn't match the dialed host. Add the node hostname/IP to the server cert SAN, or set `--server-name` / `--addr-mode`. |
 | `cannot reach agent on node:9443` | Port not reachable from the operator (firewall), or the agent task isn't running on that node. Check `docker service ps swarmexec_agent`. |
-| `connect to Docker manager API` fails | `DOCKER_HOST` not set / not a manager / `ssh://` unsupported by the cli. See step 4.2. |
+| `connect to Docker manager API` fails | No reachable manager: pick a context with `--context`/`$DOCKER_CONTEXT`, or check `docker ps` works for that context (ssh keys, host). See step 4.2. |
 | agent task stuck `Pending`/`Rejected` (image) | Node can't pull the image. Push to a registry all nodes can reach (step 3.2) and deploy with `--with-registry-auth` (step 3.4). |
 | `first message must be StartExec` / `PERMISSION_DENIED` | Protocol/authorization errors surfaced by the agent — check `docker service logs swarmexec_agent`. |
 

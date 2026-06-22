@@ -33,6 +33,7 @@ type globalFlags struct {
 	agentSecretFile string
 	insecure        bool
 	operator        string
+	dockerContext   string
 }
 
 // Execute builds and runs the root command, returning a process exit code.
@@ -59,6 +60,7 @@ func Execute(v Version) int {
 	pf.StringVar(&g.agentSecretFile, "agent-secret-file", "", "file to read the shared secret from")
 	pf.BoolVar(&g.insecure, "insecure", false, "skip agent server-certificate verification (self-signed agents)")
 	pf.StringVar(&g.operator, "operator", "", "operator identity reported for audit (default: OS username)")
+	pf.StringVar(&g.dockerContext, "context", "", "docker context for the manager API; supports ssh:// (also $DOCKER_CONTEXT)")
 
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
