@@ -98,10 +98,18 @@ cert, **or** a shared secret with `insecure: true` (self-signed agents).
 Configured via flags, `$SWARMEXEC_*` env vars, or
 `~/.config/swarmexec/config.yaml`.
 
+**Provisioning (`init`).** `swarmexec init` deploys the agent itself, entirely
+through the manager API: it creates a shared-secret Docker secret, creates the
+agent as a global Swarm service in self-signed mode (host port 9443 on every
+node), forwards local registry credentials so nodes can pull a private image,
+and writes the matching client config. Agent-needing commands that can't reach
+any agent report **“no swarmexec agent found … run `swarmexec init`.”**
+
 **Commands:**
 
 | Command | Description |
 |---------|-------------|
+| `init` | provision the agent on every node via the manager API (self-signed + shared secret), pass registry creds, and write the client config |
 | `ps [service]` | table of running tasks across the swarm (service, slot, container, node, ip, uptime) |
 | `exec <target> [-- cmd]` | interactive exec (auto-TTY for a bare shell; `-t` to force); raw-terminal bridge |
 | `logs <target> [-f] [--tail] [-t] [--since]` | stream a container's logs |

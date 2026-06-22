@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/status"
 
@@ -81,11 +82,14 @@ func newVolumeRmCmd(g *globalFlags) *cobra.Command {
 }
 
 func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []string) error {
-	cfg, ctx, nodes, err := volumeSetup(cmd, g)
+	cfg, ctx, dcli, nodes, err := volumeSetup(cmd, g)
 	if err != nil {
 		return err
 	}
 	vols, errs := indexVolumes(ctx, cfg, nodes, f.connectTimeout)
+	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
+		return e
+	}
 
 	filter := ""
 	if len(args) == 1 {
@@ -109,11 +113,14 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		return &cliError{code: usageExitCode, err: fmt.Errorf("specify --all or one/more --node")}
 	}
 	name := args[0]
-	cfg, ctx, nodes, err := volumeSetup(cmd, g)
+	cfg, ctx, dcli, nodes, err := volumeSetup(cmd, g)
 	if err != nil {
 		return err
 	}
 	vols, errs := indexVolumes(ctx, cfg, nodes, f.connectTimeout)
+	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
+		return e
+	}
 	reportNodeErrors(errs)
 
 	var target *swarmVolume
@@ -158,13 +165,13 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 }
 
 // volumeSetup resolves config + manager client + the swarm node list.
-func volumeSetup(cmd *cobra.Command, g *globalFlags) (config.Config, context.Context, []resolve.Node, error) {
+func volumeSetup(cmd *cobra.Command, g *globalFlags) (config.Config, context.Context, *client.Client, []resolve.Node, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
-		return cfg, nil, nil, &cliError{code: usageExitCode, err: err}
+		return cfg, nil, nil, nil, &cliError{code: usageExitCode, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return cfg, nil, nil, &cliError{code: usageExitCode, err: err}
+		return cfg, nil, nil, nil, &cliError{code: usageExitCode, err: err}
 	}
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -172,13 +179,22 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (config.Config, context.Con
 	}
 	dcli, err := newDockerClient(g.dockerContext)
 	if err != nil {
-		return cfg, ctx, nil, &cliError{code: session.TransportFailure, err: err}
+		return cfg, ctx, nil, nil, &cliError{code: session.TransportFailure, err: err}
 	}
 	nodes, err := resolve.New(dcli, addrModeOf(cfg)).Nodes(ctx)
 	if err != nil {
-		return cfg, ctx, nil, &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
+		return cfg, ctx, dcli, nil, &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
 	}
-	return cfg, ctx, nodes, nil
+	return cfg, ctx, dcli, nodes, nil
+}
+
+// noAgentIfAllDown returns the "run init" error when every node failed to answer
+// and no agent service is deployed (the most likely cause).
+func noAgentIfAllDown(ctx context.Context, dcli *client.Client, nodes []resolve.Node, errs map[string]error) error {
+	if len(nodes) > 0 && len(errs) == len(nodes) && !agentDeployed(ctx, dcli) {
+		return &cliError{code: session.TransportFailure, err: errNoAgent}
+	}
+	return nil
 }
 
 // indexVolumes queries every node's agent in parallel and aggregates volumes by

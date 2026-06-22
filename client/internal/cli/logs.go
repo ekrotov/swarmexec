@@ -84,7 +84,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		since:          f.since,
 		connectTimeout: f.connectTimeout,
 	}, os.Stdout, os.Stderr); err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: session.TransportFailure, err: enrichAgentError(ctx, dcli, err)}
 	}
 	return nil
 }

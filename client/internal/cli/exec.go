@@ -103,7 +103,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 		connectTimeout: f.connectTimeout,
 	})
 	if runErr != nil {
-		return &cliError{code: code, err: runErr}
+		return &cliError{code: code, err: enrichAgentError(ctx, dcli, runErr)}
 	}
 	if code != 0 {
 		// Remote command exited non-zero: propagate the exact code, no message.
