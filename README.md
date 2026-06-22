@@ -92,6 +92,7 @@ manager API — no certificate handling, no stack file:
 ```sh
 swarmexec init                 # deploys the agent on every node + writes your client config
 swarmexec init --image <reg>/agent:v1.0.7   # pin a specific image
+swarmexec init --port 8443     # use a custom port everywhere (default 9443)
 swarmexec init --force         # update an already-deployed agent
 ```
 
@@ -380,7 +381,8 @@ non-interactive, lists the candidates and exits).
 
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
-| `-listen` | `SWARMEXEC_LISTEN` | `:9443` | gRPC listen address |
+| `-port` | `SWARMEXEC_PORT` | `9443` | gRPC listen port |
+| `-listen` | `SWARMEXEC_LISTEN` | *(from `-port`)* | full listen address; overrides `-port` when set, e.g. `:9443` |
 | `-ca-cert` | `SWARMEXEC_CA_CERT` | *(required)* | CA to verify client certs |
 | `-server-cert` | `SWARMEXEC_SERVER_CERT` | *(required)* | server certificate |
 | `-server-key` | `SWARMEXEC_SERVER_KEY` | *(required)* | server private key |

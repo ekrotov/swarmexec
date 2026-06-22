@@ -38,6 +38,32 @@ func TestParse_FlagsOverride(t *testing.T) {
 	}
 }
 
+func TestParse_PortDerivesListen(t *testing.T) {
+	c, err := Parse([]string{"-port", "8443"}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Port != 8443 || c.ListenAddr != ":8443" {
+		t.Errorf("port=%d listen=%q, want 8443/:8443", c.Port, c.ListenAddr)
+	}
+}
+
+func TestParse_ListenOverridesPort(t *testing.T) {
+	c, err := Parse([]string{"-port", "8443", "-listen", ":7000"}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ListenAddr != ":7000" {
+		t.Errorf("-listen must win over -port, got %q", c.ListenAddr)
+	}
+}
+
+func TestParse_InvalidPort(t *testing.T) {
+	if _, err := Parse([]string{"-port", "70000"}, io.Discard); err == nil {
+		t.Fatal("expected error for out-of-range port")
+	}
+}
+
 func TestValidate_RequiresTLS(t *testing.T) {
 	c := &Config{}
 	if err := c.Validate(); err == nil {
