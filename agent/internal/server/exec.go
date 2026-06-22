@@ -56,6 +56,7 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 
 	// (4) Authorize before creating the exec (REQUIREMENTS §5).
 	decision := s.authz.Authorize(stream.Context(), auth.Request{
+		Action:      "exec",
 		Identity:    identity,
 		ContainerID: se.GetContainerId(),
 		Service:     service,

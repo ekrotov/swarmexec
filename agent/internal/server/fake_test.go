@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,6 +39,9 @@ type fakeDocker struct {
 	resizeErr error
 
 	execTty bool
+
+	logsReader io.ReadCloser
+	logsErr    error
 }
 
 func newFakeDocker() *fakeDocker {
@@ -90,6 +94,16 @@ func (f *fakeDocker) ContainerExecResize(_ context.Context, _ string, opts conta
 
 func (f *fakeDocker) ContainerExecInspect(_ context.Context, _ string) (container.ExecInspect, error) {
 	return container.ExecInspect{ExitCode: f.exitCode, Running: f.running}, nil
+}
+
+func (f *fakeDocker) ContainerLogs(_ context.Context, _ string, _ container.LogsOptions) (io.ReadCloser, error) {
+	if f.logsErr != nil {
+		return nil, f.logsErr
+	}
+	if f.logsReader != nil {
+		return f.logsReader, nil
+	}
+	return io.NopCloser(strings.NewReader("")), nil
 }
 
 func (f *fakeDocker) Resizes() []container.ResizeOptions {

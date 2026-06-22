@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Agent_ListContainers_FullMethodName = "/swarmexec.Agent/ListContainers"
 	Agent_Exec_FullMethodName           = "/swarmexec.Agent/Exec"
+	Agent_Logs_FullMethodName           = "/swarmexec.Agent/Logs"
 )
 
 // AgentClient is the client API for Agent service.
@@ -35,6 +36,10 @@ type AgentClient interface {
 	// Bidirectional interactive exec stream.
 	// The first ClientMessage on the stream MUST carry a StartExec payload.
 	Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error)
+	// Stream a container's logs. Server-streaming: the agent reads the container
+	// logs on its own node and forwards them as LogChunks until the request is
+	// satisfied (or, with follow=true, until the client cancels the stream).
+	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error)
 }
 
 type agentClient struct {
@@ -68,6 +73,25 @@ func (c *agentClient) Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.B
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_ExecClient = grpc.BidiStreamingClient[ClientMessage, ServerMessage]
 
+func (c *agentClient) Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[1], Agent_Logs_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[LogsRequest, LogChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_LogsClient = grpc.ServerStreamingClient[LogChunk]
+
 // AgentServer is the server API for Agent service.
 // All implementations must embed UnimplementedAgentServer
 // for forward compatibility.
@@ -77,6 +101,10 @@ type AgentServer interface {
 	// Bidirectional interactive exec stream.
 	// The first ClientMessage on the stream MUST carry a StartExec payload.
 	Exec(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error
+	// Stream a container's logs. Server-streaming: the agent reads the container
+	// logs on its own node and forwards them as LogChunks until the request is
+	// satisfied (or, with follow=true, until the client cancels the stream).
+	Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error
 	mustEmbedUnimplementedAgentServer()
 }
 
@@ -92,6 +120,9 @@ func (UnimplementedAgentServer) ListContainers(context.Context, *ListRequest) (*
 }
 func (UnimplementedAgentServer) Exec(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method Exec not implemented")
+}
+func (UnimplementedAgentServer) Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error {
+	return status.Errorf(codes.Unimplemented, "method Logs not implemented")
 }
 func (UnimplementedAgentServer) mustEmbedUnimplementedAgentServer() {}
 func (UnimplementedAgentServer) testEmbeddedByValue()               {}
@@ -139,6 +170,17 @@ func _Agent_Exec_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_ExecServer = grpc.BidiStreamingServer[ClientMessage, ServerMessage]
 
+func _Agent_Logs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(LogsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServer).Logs(m, &grpc.GenericServerStream[LogsRequest, LogChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_LogsServer = grpc.ServerStreamingServer[LogChunk]
+
 // Agent_ServiceDesc is the grpc.ServiceDesc for Agent service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -157,6 +199,11 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _Agent_Exec_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "Logs",
+			Handler:       _Agent_Logs_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "swarmexec.proto",

@@ -6,8 +6,10 @@ package auth
 
 import "context"
 
-// Request is everything the authorizer needs to decide on a single exec.
+// Request is everything the authorizer needs to decide on a single action.
 type Request struct {
+	// Action is the operation being authorized: "exec" or "logs".
+	Action string
 	// Identity is the client certificate Common Name (the operator identity).
 	Identity string
 	// ContainerID is the full target container ID.

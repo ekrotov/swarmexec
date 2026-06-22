@@ -56,6 +56,11 @@ service Agent {
   // Bidirectional interactive exec stream.
   // The first ClientMessage on the stream MUST carry a StartExec payload.
   rpc Exec(stream ClientMessage) returns (stream ServerMessage);
+
+  // Stream a container's logs (server-streaming). The agent reads logs from the
+  // container on its own node and forwards LogChunks until done, or—with
+  // follow=true—until the client cancels the stream.
+  rpc Logs(LogsRequest) returns (stream LogChunk);
 }
 
 message ListRequest {
@@ -104,7 +109,32 @@ message ServerMessage {
     string error = 4;     // terminal error; stream ends after this
   }
 }
+
+message LogsRequest {
+  string container_id = 1;   // full container ID to read logs from
+  bool follow = 2;           // keep streaming new log lines as they arrive
+  uint32 tail = 3;           // last N lines to start from; 0 = all
+  bool timestamps = 4;       // prefix each line with an RFC3339Nano timestamp
+  uint32 since_seconds = 5;  // only logs newer than N seconds ago; 0 = no limit
+}
+
+message LogChunk {
+  oneof payload {
+    bytes stdout = 1;  // stdout bytes (also carries all output for TTY containers)
+    bytes stderr = 2;  // stderr bytes (non-TTY containers only)
+    string error = 3;  // terminal error; stream ends after this
+  }
+}
 ```
+
+### 3.1 Logs framing (normative)
+
+Like Exec, the stdout/stderr split depends on the container's TTY setting: for a
+TTY container the Docker log stream is raw and the agent forwards everything as
+`stdout`; for a non-TTY container the stream is `stdcopy`-multiplexed and the
+agent demultiplexes it into `stdout`/`stderr`. The same buffer-safety rule (§6)
+applies. The agent authorizes a Logs request before streaming, exactly as for
+Exec.
 
 ## 4. Session Lifecycle (normative)
 
