@@ -84,6 +84,7 @@ func Execute(v Version) int {
 	pf.StringVar(&g.dockerContext, "context", "", "docker context for the manager API; supports ssh:// (also $DOCKER_CONTEXT)")
 
 	root.AddCommand(newInitCmd(g))
+	root.AddCommand(newDownCmd(g))
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
 	root.AddCommand(newLogsCmd(g))
