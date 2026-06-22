@@ -25,6 +25,8 @@ const (
 	Agent_ListContainers_FullMethodName = "/swarmexec.Agent/ListContainers"
 	Agent_Exec_FullMethodName           = "/swarmexec.Agent/Exec"
 	Agent_Logs_FullMethodName           = "/swarmexec.Agent/Logs"
+	Agent_ListVolumes_FullMethodName    = "/swarmexec.Agent/ListVolumes"
+	Agent_RemoveVolume_FullMethodName   = "/swarmexec.Agent/RemoveVolume"
 )
 
 // AgentClient is the client API for Agent service.
@@ -40,6 +42,12 @@ type AgentClient interface {
 	// logs on its own node and forwards them as LogChunks until the request is
 	// satisfied (or, with follow=true, until the client cancels the stream).
 	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error)
+	// List volumes on THIS node. Swarm volumes are node-local, so the cli queries
+	// every node and aggregates the results.
+	ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error)
+	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
+	// in use unless force is set.
+	RemoveVolume(ctx context.Context, in *RemoveVolumeRequest, opts ...grpc.CallOption) (*RemoveVolumeResponse, error)
 }
 
 type agentClient struct {
@@ -92,6 +100,26 @@ func (c *agentClient) Logs(ctx context.Context, in *LogsRequest, opts ...grpc.Ca
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_LogsClient = grpc.ServerStreamingClient[LogChunk]
 
+func (c *agentClient) ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVolumesResponse)
+	err := c.cc.Invoke(ctx, Agent_ListVolumes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentClient) RemoveVolume(ctx context.Context, in *RemoveVolumeRequest, opts ...grpc.CallOption) (*RemoveVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveVolumeResponse)
+	err := c.cc.Invoke(ctx, Agent_RemoveVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServer is the server API for Agent service.
 // All implementations must embed UnimplementedAgentServer
 // for forward compatibility.
@@ -105,6 +133,12 @@ type AgentServer interface {
 	// logs on its own node and forwards them as LogChunks until the request is
 	// satisfied (or, with follow=true, until the client cancels the stream).
 	Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error
+	// List volumes on THIS node. Swarm volumes are node-local, so the cli queries
+	// every node and aggregates the results.
+	ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error)
+	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
+	// in use unless force is set.
+	RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error)
 	mustEmbedUnimplementedAgentServer()
 }
 
@@ -123,6 +157,12 @@ func (UnimplementedAgentServer) Exec(grpc.BidiStreamingServer[ClientMessage, Ser
 }
 func (UnimplementedAgentServer) Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error {
 	return status.Errorf(codes.Unimplemented, "method Logs not implemented")
+}
+func (UnimplementedAgentServer) ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListVolumes not implemented")
+}
+func (UnimplementedAgentServer) RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveVolume not implemented")
 }
 func (UnimplementedAgentServer) mustEmbedUnimplementedAgentServer() {}
 func (UnimplementedAgentServer) testEmbeddedByValue()               {}
@@ -181,6 +221,42 @@ func _Agent_Logs_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_LogsServer = grpc.ServerStreamingServer[LogChunk]
 
+func _Agent_ListVolumes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVolumesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).ListVolumes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_ListVolumes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).ListVolumes(ctx, req.(*ListVolumesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Agent_RemoveVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).RemoveVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_RemoveVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).RemoveVolume(ctx, req.(*RemoveVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Agent_ServiceDesc is the grpc.ServiceDesc for Agent service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -191,6 +267,14 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListContainers",
 			Handler:    _Agent_ListContainers_Handler,
+		},
+		{
+			MethodName: "ListVolumes",
+			Handler:    _Agent_ListVolumes_Handler,
+		},
+		{
+			MethodName: "RemoveVolume",
+			Handler:    _Agent_RemoveVolume_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

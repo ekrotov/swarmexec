@@ -65,6 +65,7 @@ func Execute(v Version) int {
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
 	root.AddCommand(newLogsCmd(g))
+	root.AddCommand(newVolumeCmd(g))
 	root.AddCommand(newUICmd(g))
 
 	err := root.Execute()

@@ -6,6 +6,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/volume"
 )
 
 // DockerClient is the narrow subset of github.com/docker/docker/client.Client
@@ -19,6 +20,8 @@ type DockerClient interface {
 	ContainerExecResize(ctx context.Context, execID string, options container.ResizeOptions) error
 	ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	VolumeList(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
+	VolumeRemove(ctx context.Context, volumeID string, force bool) error
 }
 
 // swarmServiceLabel is the container label Docker sets on swarm task containers

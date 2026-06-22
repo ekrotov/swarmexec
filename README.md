@@ -289,14 +289,33 @@ swarmexec logs web -f --tail 100   # follow, starting from the last 100 lines
 swarmexec logs web -t --since 10m  # with timestamps, last 10 minutes
 ```
 
-Or browse interactively — a navigable table where you pick a container and open
-its **logs / bash / sh** in a modal pane (the shells run in an embedded terminal;
-press **Ctrl-]** to detach back to the table):
+### Volumes (swarm-wide)
+
+Swarm volumes are node-local, so deleting one means visiting every node.
+swarmexec aggregates them: it queries each node's agent and shows which nodes
+hold each volume, and can delete on all nodes at once or on selected ones.
 
 ```sh
-swarmexec ui                 # ↑/↓ j/k h/l to move, Enter for the menu, q to quit
-swarmexec ui <service>       # filter to one service
+swarmexec volume ls                    # VOLUME  DRIVER  NODES (which nodes hold it)
+swarmexec volume rm data --all         # remove on every node that has it
+swarmexec volume rm data --node docker1 --node docker2   # only these nodes
 ```
+
+### Interactive ui
+
+Browse interactively — a **two-tab** view (Containers / Volumes), switch with
+**Tab** or **1/2**:
+
+```sh
+swarmexec ui                 # ↑/↓ j/k h/l move, Tab switch, Enter, r refresh, q quit
+swarmexec ui <service>       # filter containers to one service
+```
+
+- **Containers** tab: Enter on a row opens **logs / bash / sh** in a modal pane
+  (the shells run in an embedded terminal; **Ctrl-]** detaches).
+- **Volumes** tab: Enter on a volume lists the nodes that hold it; **space** to
+  select nodes, **d** to delete the selected (or highlighted) ones, **a** to
+  delete on all — with a confirmation step.
 
 ### Step 4.5 — Exec
 

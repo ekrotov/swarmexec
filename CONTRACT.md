@@ -57,10 +57,18 @@ service Agent {
   // The first ClientMessage on the stream MUST carry a StartExec payload.
   rpc Exec(stream ClientMessage) returns (stream ServerMessage);
 
-  // Stream a container's logs (server-streaming). The agent reads logs from the
-  // container on its own node and forwards LogChunks until done, or—with
-  // follow=true—until the client cancels the stream.
+  // Stream a container's logs. Server-streaming: the agent reads the container
+  // logs on its own node and forwards them as LogChunks until the request is
+  // satisfied (or, with follow=true, until the client cancels the stream).
   rpc Logs(LogsRequest) returns (stream LogChunk);
+
+  // List volumes on THIS node. Swarm volumes are node-local, so the cli queries
+  // every node and aggregates the results.
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
+
+  // Remove a volume on THIS node (authorized + audited). Fails if the volume is
+  // in use unless force is set.
+  rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
 }
 
 message ListRequest {
@@ -125,6 +133,27 @@ message LogChunk {
     string error = 3;  // terminal error; stream ends after this
   }
 }
+
+message ListVolumesRequest {}
+
+message ListVolumesResponse {
+  repeated VolumeInfo volumes = 1;
+}
+
+message VolumeInfo {
+  string name = 1;
+  string driver = 2;
+  string mountpoint = 3;
+  string created_at = 4;  // RFC3339, if known
+  string scope = 5;       // "local" or "global"
+}
+
+message RemoveVolumeRequest {
+  string name = 1;
+  bool force = 2;  // remove even with the "force" flag (does not override in-use)
+}
+
+message RemoveVolumeResponse {}
 ```
 
 ### 3.1 Logs framing (normative)

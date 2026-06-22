@@ -57,6 +57,14 @@ func (f *fakeDocker) NodeInspectWithRaw(_ context.Context, id string) (swarm.Nod
 	return n, nil, nil
 }
 
+func (f *fakeDocker) NodeList(_ context.Context, _ types.NodeListOptions) ([]swarm.Node, error) {
+	var out []swarm.Node
+	for _, n := range f.nodes {
+		out = append(out, n)
+	}
+	return out, nil
+}
+
 func first(s []string) string {
 	if len(s) == 0 {
 		return ""
@@ -79,6 +87,7 @@ func node(id, host, addr string) swarm.Node {
 	n := swarm.Node{ID: id}
 	n.Description.Hostname = host
 	n.Status.Addr = addr
+	n.Status.State = swarm.NodeStateReady
 	return n
 }
 
