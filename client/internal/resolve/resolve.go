@@ -343,18 +343,34 @@ func (r *Resolver) endpointFromCandidate(c Candidate) *Endpoint {
 }
 
 func (r *Resolver) dialHost(node swarm.Node) string {
+	addr := node.Status.Addr
+	host := node.Description.Hostname
 	switch r.addrMode {
 	case AddrIP:
-		if node.Status.Addr != "" {
-			return node.Status.Addr
+		// Fall back to the hostname when the node has no usable advertised IP.
+		// A node that joined without a routable --advertise-addr reports
+		// "0.0.0.0", which dials the LOCAL host (not the target node) and yields
+		// confusing "No such container" errors.
+		if usableAddr(addr) {
+			return addr
 		}
-		return node.Description.Hostname
+		return host
 	default:
-		if node.Description.Hostname != "" {
-			return node.Description.Hostname
+		if host != "" {
+			return host
 		}
-		return node.Status.Addr
+		return addr
 	}
+}
+
+// usableAddr reports whether addr is a routable dial target. The Swarm
+// wildcard/empty advertise addresses route to the local host, not the node.
+func usableAddr(addr string) bool {
+	switch strings.TrimSpace(addr) {
+	case "", "0.0.0.0", "::", "[::]":
+		return false
+	}
+	return true
 }
 
 // containerID extracts the full container ID from a task, tolerating the nil

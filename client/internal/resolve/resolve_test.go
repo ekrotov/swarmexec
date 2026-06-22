@@ -135,6 +135,35 @@ func TestCandidatesPopulatesServiceAndNodeAddr(t *testing.T) {
 	}
 }
 
+func TestDialHost_IPModeFallsBackWhenAddrUnusable(t *testing.T) {
+	f := newFake()
+	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0") // joined without a routable advertise-addr
+	f.tasks = []swarm.Task{task("t1", "svc-db", "node-z", 1, "cZ")}
+	r := New(f, AddrIP)
+
+	ep, err := r.Resolve(context.Background(), Request{Target: "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.DialHost != "host-z" {
+		t.Errorf("dial host = %q, want host-z (fallback from 0.0.0.0)", ep.DialHost)
+	}
+}
+
+func TestDialHost_IPModeUsesRealAddr(t *testing.T) {
+	f := newFake()
+	f.tasks = []swarm.Task{task("t1", "svc-db", "node-a", 1, "cA")}
+	r := New(f, AddrIP)
+
+	ep, err := r.Resolve(context.Background(), Request{Target: "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.DialHost != "10.0.0.1" {
+		t.Errorf("dial host = %q, want 10.0.0.1", ep.DialHost)
+	}
+}
+
 func TestResolveSingleTask(t *testing.T) {
 	f := newFake()
 	f.tasks = []swarm.Task{task("t1", "svc-db", "node-a", 1, "containerDB")}
