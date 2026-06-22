@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -247,11 +246,11 @@ func chooseContext(out io.Writer, contexts []dockerctx.Context, current string) 
 	}
 	fmt.Fprintf(out, "select [1-%d] (default %d=%s): ", len(contexts), def+1, contexts[def].Name)
 
-	sc := bufio.NewScanner(os.Stdin)
-	if !sc.Scan() {
+	line, ok := promptLine("")
+	if !ok {
 		return contexts[def], nil
 	}
-	s := strings.TrimSpace(sc.Text())
+	s := strings.TrimSpace(line)
 	if s == "" {
 		return contexts[def], nil
 	}
@@ -418,7 +417,13 @@ func serviceByName(ctx context.Context, dcli *client.Client, name string) (*swar
 // agentDeployed reports whether a swarmexec agent service exists in the swarm —
 // either tagged with our role label or recognizable by its image. Used to turn
 // "can't reach an agent" into the actionable "run swarmexec init" hint.
-func agentDeployed(ctx context.Context, dcli *client.Client) bool {
+// serviceLister is the slice of the Docker manager API agentDeployed needs (so
+// it is unit-testable without a real client).
+type serviceLister interface {
+	ServiceList(context.Context, types.ServiceListOptions) ([]swarm.Service, error)
+}
+
+func agentDeployed(ctx context.Context, dcli serviceLister) bool {
 	if list, err := dcli.ServiceList(ctx, types.ServiceListOptions{
 		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
 	}); err == nil && len(list) > 0 {
