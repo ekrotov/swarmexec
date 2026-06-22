@@ -108,6 +108,33 @@ func newFake() *fakeDocker {
 	}
 }
 
+func TestCandidatesPopulatesServiceAndNodeAddr(t *testing.T) {
+	f := newFake()
+	f.tasks = []swarm.Task{
+		task("t1", "svc-web", "node-a", 1, "cWEB"),
+		task("t2", "svc-db", "node-b", 1, "cDB"),
+	}
+	r := New(f, AddrHostname)
+
+	cands, err := r.Candidates(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 2 {
+		t.Fatalf("want 2 candidates, got %d", len(cands))
+	}
+	by := map[string]Candidate{}
+	for _, c := range cands {
+		by[c.ContainerID] = c
+	}
+	if web := by["cWEB"]; web.Service != "web" || web.NodeName != "host-a" || web.NodeAddr != "10.0.0.1" {
+		t.Errorf("web candidate wrong: service=%q node=%q addr=%q", web.Service, web.NodeName, web.NodeAddr)
+	}
+	if db := by["cDB"]; db.Service != "db" || db.NodeAddr != "10.0.0.2" {
+		t.Errorf("db candidate wrong: service=%q addr=%q", db.Service, db.NodeAddr)
+	}
+}
+
 func TestResolveSingleTask(t *testing.T) {
 	f := newFake()
 	f.tasks = []swarm.Task{task("t1", "svc-db", "node-a", 1, "containerDB")}

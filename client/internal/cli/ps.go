@@ -58,14 +58,14 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "SERVICE\tSLOT\tNODE\tCONTAINER\tDIAL\tUPTIME")
+	fmt.Fprintln(w, "SERVICE\tSLOT\tCONTAINER\tNODE\tIP\tUPTIME")
 	for _, c := range cands {
 		slot := "-"
 		if c.Slot > 0 {
 			slot = fmt.Sprintf("%d", c.Slot)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			orDash(c.Service), slot, orDash(c.NodeName), shortID(c.ContainerID), orDash(c.DialHost), uptime(c.Uptime))
+			orDash(c.Service), slot, shortID(c.ContainerID), orDash(c.NodeName), orDash(c.NodeAddr), uptime(c.Uptime))
 	}
 	return w.Flush()
 }
