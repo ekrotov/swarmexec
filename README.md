@@ -282,6 +282,14 @@ swarmexec ps                 # all running tasks across the swarm
 swarmexec ps <service>       # filter to one service
 ```
 
+Or browse interactively — a navigable table where you pick a container and open
+**bash / sh** (logs coming later):
+
+```sh
+swarmexec ui                 # ↑/↓ j/k h/l to move, Enter for the menu, q to quit
+swarmexec ui <service>       # filter to one service
+```
+
 ### Step 4.5 — Exec
 
 ```sh

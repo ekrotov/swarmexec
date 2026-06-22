@@ -62,6 +62,7 @@ func Execute(v Version) int {
 
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
+	root.AddCommand(newUICmd(g))
 
 	err := root.Execute()
 	if err == nil {

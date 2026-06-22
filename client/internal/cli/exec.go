@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
@@ -92,86 +93,15 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 		}
 	}
 
-	// Initial terminal size only matters with a TTY on a real terminal.
-	var initW, initH uint32
-	if tty && stdinIsTerm {
-		initW, initH, _ = cterm.Size(os.Stdin.Fd())
-	}
-
-	start := &pb.StartExec{
-		ContainerId: ep.ContainerID,
-		Cmd:         command,
-		Tty:         tty,
-		Width:       initW,
-		Height:      initH,
-		Env:         f.env,
-		WorkingDir:  f.workdir,
-		User:        f.user,
-	}
-
-	// Connect (blocking, with timeout) so bad TLS/unreachable nodes fail fast.
-	dctx, dcancel := context.WithTimeout(ctx, f.connectTimeout)
-	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
-	dcancel()
-	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
-	}
-	defer conn.Close()
-
-	stream, err := pb.NewAgentClient(conn).Exec(ctx)
-	if err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("open exec stream: %w", err)}
-	}
-
-	// Raw-mode bridging only when interactive (TTY on a real terminal).
-	interactive := tty && stdinIsTerm
-	var restorer *cterm.Restorer
-	var resizeEvents <-chan os.Signal
-	var sizeFn func() (uint32, uint32, error)
-
-	if interactive {
-		restorer, err = cterm.MakeRaw(os.Stdin.Fd())
-		if err != nil {
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("set raw mode: %w", err)}
-		}
-		// Restore on every exit path: normal return, error, panic.
-		defer restorer.Restore()
-
-		// Restore on fatal signals (but NOT SIGINT — in raw mode Ctrl-C bytes
-		// go to the remote process; REQUIREMENTS §6).
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGHUP)
-		go func() {
-			<-sigCh
-			restorer.Restore()
-			os.Exit(session.TransportFailure)
-		}()
-
-		ev, stop := cterm.NotifyResize()
-		defer stop()
-		resizeEvents = ev
-		sizeFn = func() (uint32, uint32, error) { return cterm.Size(os.Stdin.Fd()) }
-	}
-
-	var stdinR = os.Stdin
-	opts := session.Options{
-		Start:        start,
-		Stdout:       os.Stdout,
-		Stderr:       os.Stderr,
-		ResizeEvents: resizeEvents,
-		SizeFn:       sizeFn,
-	}
-	if f.stdin {
-		opts.Stdin = stdinR
-	}
-
-	code, runErr := session.Run(ctx, stream, opts)
-
-	// Restore the terminal explicitly BEFORE returning so it is cooked again
-	// even though main calls os.Exit (which skips defers). The Restorer is
-	// idempotent, so the deferred call above is harmless.
-	restorer.Restore()
-
+	code, runErr := execInto(ctx, cfg, *ep, execParams{
+		command:        command,
+		tty:            tty,
+		env:            f.env,
+		workdir:        f.workdir,
+		user:           f.user,
+		keepStdin:      f.stdin,
+		connectTimeout: f.connectTimeout,
+	})
 	if runErr != nil {
 		return &cliError{code: code, err: runErr}
 	}
@@ -180,6 +110,106 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 		return &cliError{code: code, silent: true}
 	}
 	return nil
+}
+
+// execParams carries everything execInto needs beyond the dial endpoint.
+type execParams struct {
+	command        []string
+	tty            bool
+	env            []string
+	workdir        string
+	user           string
+	keepStdin      bool
+	connectTimeout time.Duration
+}
+
+// execInto dials the agent at ep, opens the Exec stream, bridges the terminal
+// (raw mode + resize when interactive), and returns the remote exit code. It is
+// shared by the `exec` command and the interactive `ui`.
+func execInto(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p execParams) (int, error) {
+	stdinIsTerm := cterm.IsTerminal(os.Stdin.Fd())
+
+	var initW, initH uint32
+	if p.tty && stdinIsTerm {
+		initW, initH, _ = cterm.Size(os.Stdin.Fd())
+	}
+	start := &pb.StartExec{
+		ContainerId: ep.ContainerID,
+		Cmd:         p.command,
+		Tty:         p.tty,
+		Width:       initW,
+		Height:      initH,
+		Env:         p.env,
+		WorkingDir:  p.workdir,
+		User:        p.user,
+	}
+
+	// Connect (blocking, with timeout) so bad TLS/unreachable nodes fail fast.
+	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
+	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+	dcancel()
+	if err != nil {
+		return session.TransportFailure, err
+	}
+	defer conn.Close()
+
+	stream, err := pb.NewAgentClient(conn).Exec(ctx)
+	if err != nil {
+		return session.TransportFailure, fmt.Errorf("open exec stream: %w", err)
+	}
+
+	// Raw-mode bridging only when interactive (TTY on a real terminal).
+	interactive := p.tty && stdinIsTerm
+	var restorer *cterm.Restorer
+	var resizeEvents <-chan os.Signal
+	var sizeFn func() (uint32, uint32, error)
+
+	if interactive {
+		restorer, err = cterm.MakeRaw(os.Stdin.Fd())
+		if err != nil {
+			return session.TransportFailure, fmt.Errorf("set raw mode: %w", err)
+		}
+		defer restorer.Restore()
+
+		// Restore on fatal signals (but NOT SIGINT — in raw mode Ctrl-C bytes go
+		// to the remote process; REQUIREMENTS §6). The goroutine exits when this
+		// call returns so repeated invocations (the ui) don't leak it.
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGHUP)
+		defer signal.Stop(sigCh)
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			select {
+			case <-sigCh:
+				restorer.Restore()
+				os.Exit(session.TransportFailure)
+			case <-done:
+			}
+		}()
+
+		ev, stop := cterm.NotifyResize()
+		defer stop()
+		resizeEvents = ev
+		sizeFn = func() (uint32, uint32, error) { return cterm.Size(os.Stdin.Fd()) }
+	}
+
+	opts := session.Options{
+		Start:        start,
+		Stdout:       os.Stdout,
+		Stderr:       os.Stderr,
+		ResizeEvents: resizeEvents,
+		SizeFn:       sizeFn,
+	}
+	if p.keepStdin {
+		opts.Stdin = os.Stdin
+	}
+
+	code, runErr := session.Run(ctx, stream, opts)
+	if restorer != nil {
+		restorer.Restore()
+	}
+	return code, runErr
 }
 
 // decideTTY implements the TTY-allocation rule (REQUIREMENTS §3): an explicit
