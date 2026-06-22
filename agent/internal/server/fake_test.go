@@ -11,6 +11,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
@@ -42,6 +43,10 @@ type fakeDocker struct {
 
 	logsReader io.ReadCloser
 	logsErr    error
+
+	volumes      []*volume.Volume
+	volumeRemErr error
+	removedVols  []string
 }
 
 func newFakeDocker() *fakeDocker {
@@ -104,6 +109,18 @@ func (f *fakeDocker) ContainerLogs(_ context.Context, _ string, _ container.Logs
 		return f.logsReader, nil
 	}
 	return io.NopCloser(strings.NewReader("")), nil
+}
+
+func (f *fakeDocker) VolumeList(_ context.Context, _ volume.ListOptions) (volume.ListResponse, error) {
+	return volume.ListResponse{Volumes: f.volumes}, nil
+}
+
+func (f *fakeDocker) VolumeRemove(_ context.Context, name string, _ bool) error {
+	if f.volumeRemErr != nil {
+		return f.volumeRemErr
+	}
+	f.removedVols = append(f.removedVols, name)
+	return nil
 }
 
 func (f *fakeDocker) Resizes() []container.ResizeOptions {

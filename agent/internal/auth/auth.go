@@ -8,8 +8,11 @@ import "context"
 
 // Request is everything the authorizer needs to decide on a single action.
 type Request struct {
-	// Action is the operation being authorized: "exec" or "logs".
+	// Action is the operation being authorized: "exec", "logs", "volume.list",
+	// or "volume.remove".
 	Action string
+	// Volume is the target volume name for volume.* actions.
+	Volume string
 	// Identity is the client certificate Common Name (the operator identity).
 	Identity string
 	// ContainerID is the full target container ID.

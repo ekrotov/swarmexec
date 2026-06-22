@@ -71,6 +71,17 @@ func (l *Logger) LogsEnd(identity, containerID string, dur time.Duration, bytesO
 	)
 }
 
+// VolumeRemove records a volume deletion attempt and its outcome.
+func (l *Logger) VolumeRemove(identity, name string, ok bool, errMsg string) {
+	l.log.Info("volume_remove",
+		"event", "volume_remove",
+		"identity", identity,
+		"volume", name,
+		"ok", ok,
+		"error", errMsg,
+	)
+}
+
 // AuthDecision records an authorization allow/deny along with the reason.
 func (l *Logger) AuthDecision(identity, containerID, service string, allow bool, reason string) {
 	l.log.Info("auth_decision",

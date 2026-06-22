@@ -25,6 +25,35 @@ type DockerClient interface {
 	ServiceList(ctx context.Context, options types.ServiceListOptions) ([]swarm.Service, error)
 	TaskList(ctx context.Context, options types.TaskListOptions) ([]swarm.Task, error)
 	NodeInspectWithRaw(ctx context.Context, nodeID string) (swarm.Node, []byte, error)
+	NodeList(ctx context.Context, options types.NodeListOptions) ([]swarm.Node, error)
+}
+
+// Node is a swarm node the cli can dial an agent on.
+type Node struct {
+	ID       string
+	Name     string // hostname
+	DialHost string // host/IP to reach the agent on
+}
+
+// Nodes lists the ready swarm nodes with the address to dial each agent on.
+func (r *Resolver) Nodes(ctx context.Context) ([]Node, error) {
+	nodes, err := r.cli.NodeList(ctx, types.NodeListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	var out []Node
+	for _, n := range nodes {
+		if n.Status.State != swarm.NodeStateReady {
+			continue // a down node's agent is unreachable anyway
+		}
+		out = append(out, Node{
+			ID:       n.ID,
+			Name:     n.Description.Hostname,
+			DialHost: r.dialHost(n),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 // AddrMode selects how a node's dial address is derived.
