@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -114,7 +113,7 @@ func (v *terminalView) Draw(screen tcell.Screen) {
 		v.cols, v.rows = w, h
 		v.vt.Resize(w, h)
 		select {
-		case v.resizeCh <- syscall.SIGWINCH:
+		case v.resizeCh <- resizeSignal{}:
 		default:
 		}
 	}
@@ -164,6 +163,14 @@ func (v *terminalView) InputHandler() func(event *tcell.EventKey, setFocus func(
 		}
 	})
 }
+
+// resizeSignal is a cross-platform os.Signal placeholder pushed onto the resize
+// channel (session.pumpResize ignores the value and just re-reads the size).
+// Avoids syscall.SIGWINCH, which does not exist on Windows.
+type resizeSignal struct{}
+
+func (resizeSignal) String() string { return "resize" }
+func (resizeSignal) Signal()        {}
 
 // vtSink feeds exec output into the emulator and requests a redraw.
 type vtSink struct{ v *terminalView }
