@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	cliconfig "github.com/docker/cli/cli/config"
 	"github.com/docker/docker/api/types"
@@ -34,13 +36,15 @@ const (
 var errNoAgent = errors.New("no swarmexec agent found in this swarm — run `swarmexec init` to provision it")
 
 type initFlags struct {
-	image        string
-	secret       string
-	serviceName  string
-	port         int
-	force        bool
-	saveConfig   bool
-	registryAuth bool
+	image          string
+	secret         string
+	serviceName    string
+	port           int
+	force          bool
+	saveConfig     bool
+	registryAuth   bool
+	wait           bool
+	rolloutTimeout time.Duration
 }
 
 func newInitCmd(g *globalFlags) *cobra.Command {
@@ -65,6 +69,8 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 	fl.BoolVar(&f.force, "force", false, "update the service if it already exists")
 	fl.BoolVar(&f.saveConfig, "save-config", true, "write the client config (~/.config/swarmexec/config.yaml)")
 	fl.BoolVar(&f.registryAuth, "registry-auth", true, "pass local registry credentials so nodes can pull a private image")
+	fl.BoolVar(&f.wait, "wait", true, "wait for the agents to come up and report progress")
+	fl.DurationVar(&f.rolloutTimeout, "rollout-timeout", 90*time.Second, "how long to wait for agents to start")
 	return cmd
 }
 
@@ -86,15 +92,23 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		return &cliError{code: usageExitCode, err: fmt.Errorf("the selected Docker endpoint is not a Swarm manager (point --context/$DOCKER_CONTEXT at a manager node)")}
 	}
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "swarm manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
 
-	// 1) shared secret -----------------------------------------------------------
+	steps := 3 // secret, service, rollout/config
+	step := func(n int, label string) {
+		fmt.Fprintf(out, "[%d/%d] %s … ", n, steps, label)
+	}
+
+	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
+
+	// [1/3] shared secret --------------------------------------------------------
+	step(1, "shared secret")
 	createWith := f.secret
 	if createWith == "" {
 		createWith = generateSecret()
 	}
 	secretID, created, err := ensureSecret(ctx, dcli, agentSecretName, createWith)
 	if err != nil {
+		fmt.Fprintln(out, "failed")
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 	// We know the value to write into the client config only if we just created
@@ -103,12 +117,13 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	knownSecret := created || f.secret != ""
 	secretVal := createWith
 	if created {
-		fmt.Fprintf(out, "secret %q: created\n", agentSecretName)
+		fmt.Fprintln(out, "created")
 	} else {
-		fmt.Fprintf(out, "secret %q: reusing existing\n", agentSecretName)
+		fmt.Fprintln(out, "reusing existing")
 	}
 
-	// 2) agent service -----------------------------------------------------------
+	// [2/3] agent service --------------------------------------------------------
+	step(2, fmt.Sprintf("agent service on port %d", f.port))
 	spec := agentServiceSpec(f, secretID)
 	var encodedAuth string
 	if f.registryAuth {
@@ -119,24 +134,39 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 
 	existing, err := serviceByName(ctx, dcli, f.serviceName)
 	if err != nil {
+		fmt.Fprintln(out, "failed")
 		return &cliError{code: session.TransportFailure, err: err}
 	}
+	var serviceID string
 	switch {
 	case existing == nil:
-		if _, err := dcli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{EncodedRegistryAuth: encodedAuth}); err != nil {
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("create agent service: %w", err)}
+		resp, cerr := dcli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{EncodedRegistryAuth: encodedAuth})
+		if cerr != nil {
+			fmt.Fprintln(out, "failed")
+			return &cliError{code: session.TransportFailure, err: fmt.Errorf("create agent service: %w", cerr)}
 		}
-		fmt.Fprintf(out, "service %q: created (global, host port %d)\n", f.serviceName, f.port)
+		serviceID = resp.ID
+		fmt.Fprintf(out, "created (%q, global)\n", f.serviceName)
 	case f.force:
-		if _, err := dcli.ServiceUpdate(ctx, existing.ID, existing.Version, spec, types.ServiceUpdateOptions{EncodedRegistryAuth: encodedAuth}); err != nil {
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("update agent service: %w", err)}
+		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, existing.Version, spec, types.ServiceUpdateOptions{EncodedRegistryAuth: encodedAuth}); uerr != nil {
+			fmt.Fprintln(out, "failed")
+			return &cliError{code: session.TransportFailure, err: fmt.Errorf("update agent service: %w", uerr)}
 		}
-		fmt.Fprintf(out, "service %q: updated\n", f.serviceName)
+		serviceID = existing.ID
+		fmt.Fprintf(out, "updated (%q)\n", f.serviceName)
 	default:
+		fmt.Fprintln(out, "already exists")
 		return &cliError{code: usageExitCode, err: fmt.Errorf("service %q already exists; re-run with --force to update it", f.serviceName)}
 	}
 
-	// 3) client config -----------------------------------------------------------
+	// [3/3] wait for rollout -----------------------------------------------------
+	if f.wait {
+		step(3, "starting agents")
+		fmt.Fprintln(out)
+		waitRollout(ctx, dcli, serviceID, out, f.rolloutTimeout)
+	}
+
+	// client config --------------------------------------------------------------
 	if f.saveConfig {
 		if !knownSecret {
 			fmt.Fprintln(out, "note: reused an existing secret whose value is unknown — set `agent_secret` in your config manually, or re-run with --secret")
@@ -149,13 +179,54 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 			if path, serr := cfg.Save(g.configPath); serr != nil {
 				fmt.Fprintf(out, "warning: could not write client config: %v\n", serr)
 			} else {
-				fmt.Fprintf(out, "client config written: %s\n", path)
+				fmt.Fprintf(out, "client config: %s\n", path)
 			}
 		}
 	}
 
-	fmt.Fprintf(out, "\nDone. The agent is rolling out on every node. Try:\n  swarmexec ps\n  swarmexec ui\n")
+	fmt.Fprintf(out, "\n✓ ready — try:\n  swarmexec ps\n  swarmexec ui\n")
 	return nil
+}
+
+// waitRollout polls the service's tasks until every desired task is running (or
+// the timeout elapses), printing the running/desired count as it changes.
+func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out io.Writer, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	last := ""
+	for {
+		tasks, err := dcli.TaskList(ctx, types.TaskListOptions{
+			Filters: filters.NewArgs(filters.Arg("service", serviceID)),
+		})
+		if err != nil {
+			fmt.Fprintf(out, "      (could not query tasks: %v)\n", err)
+			return
+		}
+		desired, running := 0, 0
+		for _, t := range tasks {
+			if t.DesiredState == swarm.TaskStateRunning {
+				desired++
+			}
+			if t.Status.State == swarm.TaskStateRunning {
+				running++
+			}
+		}
+		if msg := fmt.Sprintf("%d/%d running", running, desired); msg != last {
+			fmt.Fprintf(out, "      agents: %s\n", msg)
+			last = msg
+		}
+		if desired > 0 && running >= desired {
+			return
+		}
+		if time.Now().After(deadline) {
+			fmt.Fprintf(out, "      (timeout; check `docker service ps %s`)\n", serviceID)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(1500 * time.Millisecond):
+		}
+	}
 }
 
 // ensureSecret returns the id of the named secret, creating it with createWith
