@@ -83,6 +83,30 @@ git push origin v1.2.3
 
 ## 3. Set up the agent (server side)
 
+### Quick start — `swarmexec init` (recommended)
+
+If your Docker CLI already targets the swarm (e.g. `docker context use prod`,
+including an `ssh://` context), one command provisions everything via the
+manager API — no certificate handling, no stack file:
+
+```sh
+swarmexec init                 # deploys the agent on every node + writes your client config
+swarmexec init --image <reg>/agent:v1.0.7   # pin a specific image
+swarmexec init --force         # update an already-deployed agent
+```
+
+`init` creates a shared-secret Docker secret, deploys the agent as a **global**
+service in self-signed mode (host port 9443 on every node), passes your local
+registry credentials so nodes can pull a private image, and writes
+`~/.config/swarmexec/config.yaml` (secret + `insecure: true` + `addr_mode: ip`).
+After it finishes, `swarmexec ps` / `ui` / `exec` / `volume` just work.
+
+> If a command later reports **“no swarmexec agent found in this swarm — run
+> `swarmexec init`”**, the agent isn't deployed (or isn't reachable) — run
+> `init` to provision it.
+
+The manual paths below give you full control (mTLS, custom stack) if you prefer.
+
 ### Step 3.1 — Get certificates
 
 mTLS is mandatory. You need:

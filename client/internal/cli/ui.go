@@ -129,7 +129,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			})
 		}
 		tv.detach = closeTerm
-		tv.run(tctx, cfg, ep, command, tty, f.connectTimeout, func(int, error) { app.QueueUpdateDraw(closeTerm) })
+		tv.run(tctx, cfg, ep, command, tty, f.connectTimeout, func(_ int, rerr error) {
+			app.QueueUpdateDraw(func() {
+				closeTerm()
+				if rerr != nil && tctx.Err() == nil {
+					info(enrichAgentError(ctx, dcli, rerr).Error())
+				}
+			})
+		})
 		pages.AddPage("term", tv, true, true)
 		app.SetFocus(tv)
 	}
@@ -198,8 +205,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			nodes, nerr := r.Nodes(ctx)
 			var vs []swarmVolume
 			var errs map[string]error
+			noAgent := false
 			if nerr == nil {
 				vs, errs = indexVolumes(ctx, cfg, nodes, f.connectTimeout)
+				if len(nodes) > 0 && len(errs) == len(nodes) && !agentDeployed(ctx, dcli) {
+					noAgent = true
+				}
 			}
 			app.QueueUpdateDraw(func() {
 				vols = vs
@@ -209,6 +220,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				}
 				if nerr != nil {
 					vtable.SetCell(1, 0, tview.NewTableCell("error: "+nerr.Error()).SetTextColor(tcell.ColorRed))
+					return
+				}
+				if noAgent {
+					vtable.SetCell(1, 0, tview.NewTableCell(errNoAgent.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
 					return
 				}
 				for i, v := range vols {

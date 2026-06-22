@@ -10,14 +10,13 @@ import (
 	"github.com/docker/docker/client"
 
 	"swarmexec/client/internal/dockerctx"
-	"swarmexec/client/internal/resolve"
 )
 
 // newDockerClient builds a Docker SDK client for the manager API, honoring
 // Docker CLI contexts (--context / $DOCKER_CONTEXT / the config's current
 // context) including ssh:// endpoints — which the bare SDK's client.FromEnv
 // does not support (REQUIREMENTS §2).
-func newDockerClient(contextOverride string) (resolve.DockerClient, error) {
+func newDockerClient(contextOverride string) (*client.Client, error) {
 	host, err := dockerctx.ResolveHost(contextOverride)
 	if err != nil {
 		return nil, err

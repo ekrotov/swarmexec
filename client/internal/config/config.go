@@ -108,6 +108,28 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+// Save writes the config as YAML to path (DefaultFilePath if empty), creating
+// the directory. The file is 0600 because it may hold the agent secret.
+func (c Config) Save(path string) (string, error) {
+	if path == "" {
+		path = DefaultFilePath()
+	}
+	if path == "" {
+		return "", fmt.Errorf("cannot determine config file path")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 func overlayFile(cfg *Config, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
