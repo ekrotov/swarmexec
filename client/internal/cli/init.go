@@ -186,7 +186,7 @@ func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith str
 // agentServiceSpec mirrors deploy/agent-stack-selfsigned.yml.
 func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 	args := []string{
-		fmt.Sprintf("-listen=:%d", f.port),
+		fmt.Sprintf("-port=%d", f.port),
 		"-self-signed",
 		"-agent-secret-file=/run/secrets/" + agentSecretName,
 		"-docker-host=unix:///var/run/docker.sock",

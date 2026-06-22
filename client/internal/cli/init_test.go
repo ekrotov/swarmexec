@@ -47,7 +47,7 @@ func TestAgentServiceSpec(t *testing.T) {
 		t.Errorf("image = %q", cs.Image)
 	}
 	args := strings.Join(cs.Args, " ")
-	for _, want := range []string{"-listen=:9443", "-self-signed", "/run/secrets/" + agentSecretName} {
+	for _, want := range []string{"-port=9443", "-self-signed", "/run/secrets/" + agentSecretName} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args missing %q: %s", want, args)
 		}

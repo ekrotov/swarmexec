@@ -7,13 +7,18 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
+// DefaultPort is the agent's gRPC/TLS port (CONTRACT.md §2).
+const DefaultPort = 9443
+
 // Config holds all runtime configuration for the agent.
 type Config struct {
-	ListenAddr string // gRPC listen address, e.g. ":9443"
+	Port       int    // gRPC listen port (default 9443); used to derive ListenAddr
+	ListenAddr string // gRPC listen address, e.g. ":9443" (overrides Port when set)
 
 	CACert     string // path to CA cert used to verify client certs (optional in self-signed mode)
 	ServerCert string // path to server certificate (unused in self-signed mode)
@@ -69,6 +74,16 @@ func envDuration(key string, def time.Duration) time.Duration {
 	return def
 }
 
+// envInt parses an integer env var, falling back to def on unset/invalid.
+func envInt(key string, def int) int {
+	if v, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
 // envBool parses a boolean env var (1/true/yes/on), falling back to def.
 func envBool(key string, def bool) bool {
 	if v, ok := os.LookupEnv(key); ok {
@@ -90,7 +105,8 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.SetOutput(out)
 
 	c := &Config{}
-	fs.StringVar(&c.ListenAddr, "listen", env("SWARMEXEC_LISTEN", ":9443"), "gRPC listen address (env SWARMEXEC_LISTEN)")
+	fs.IntVar(&c.Port, "port", envInt("SWARMEXEC_PORT", DefaultPort), "gRPC listen port (env SWARMEXEC_PORT)")
+	fs.StringVar(&c.ListenAddr, "listen", env("SWARMEXEC_LISTEN", ""), "gRPC listen address; overrides -port when set, e.g. \":9443\" (env SWARMEXEC_LISTEN)")
 	fs.StringVar(&c.CACert, "ca-cert", env("SWARMEXEC_CA_CERT", ""), "path to CA certificate for verifying client certs (env SWARMEXEC_CA_CERT)")
 	fs.StringVar(&c.ServerCert, "server-cert", env("SWARMEXEC_SERVER_CERT", ""), "path to server certificate (env SWARMEXEC_SERVER_CERT)")
 	fs.StringVar(&c.ServerKey, "server-key", env("SWARMEXEC_SERVER_KEY", ""), "path to server private key (env SWARMEXEC_SERVER_KEY)")
@@ -110,6 +126,14 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
+	}
+	// -listen (or SWARMEXEC_LISTEN) takes precedence; otherwise derive the
+	// address from -port so the port is a first-class, simple knob.
+	if c.ListenAddr == "" {
+		if c.Port < 1 || c.Port > 65535 {
+			return nil, fmt.Errorf("invalid -port %d (must be 1-65535)", c.Port)
+		}
+		c.ListenAddr = fmt.Sprintf(":%d", c.Port)
 	}
 	return c, nil
 }
