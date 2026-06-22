@@ -291,7 +291,8 @@ swarmexec logs web -t --since 10m  # with timestamps, last 10 minutes
 ```
 
 Or browse interactively — a navigable table where you pick a container and open
-its **logs / bash / sh**:
+its **logs / bash / sh** in a modal pane (the shells run in an embedded terminal;
+press **Ctrl-]** to detach back to the table):
 
 ```sh
 swarmexec ui                 # ↑/↓ j/k h/l to move, Enter for the menu, q to quit

@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/gdamore/tcell/v2 v2.13.10
+	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rivo/tview v0.42.0
 	github.com/spf13/cobra v1.10.2
