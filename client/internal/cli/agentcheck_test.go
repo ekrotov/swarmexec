@@ -46,6 +46,38 @@ func imagedAgent(img string) swarm.Service {
 	return s
 }
 
+func svcPublishingHost(name string, port uint32) swarm.Service {
+	var s swarm.Service
+	s.Spec.Name = name
+	s.Spec.EndpointSpec = &swarm.EndpointSpec{Ports: []swarm.PortConfig{
+		{PublishMode: swarm.PortConfigPublishModeHost, PublishedPort: port},
+	}}
+	return s
+}
+
+func TestPortConflict(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name     string
+		services []swarm.Service
+		wantSvc  string
+		wantOk   bool
+	}{
+		{"conflict", []swarm.Service{svcPublishingHost("agent_agent", 9443)}, "agent_agent", true},
+		{"own-service-ignored", []swarm.Service{svcPublishingHost("swarmexec_agent", 9443)}, "", false},
+		{"different-port", []swarm.Service{svcPublishingHost("other", 8080)}, "", false},
+		{"none", nil, "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			gotSvc, gotOk := portConflict(ctx, fakeServiceLister{all: c.services}, 9443, "swarmexec_agent")
+			if gotSvc != c.wantSvc || gotOk != c.wantOk {
+				t.Errorf("portConflict = (%q, %v), want (%q, %v)", gotSvc, gotOk, c.wantSvc, c.wantOk)
+			}
+		})
+	}
+}
+
 func TestAgentDeployed(t *testing.T) {
 	cases := []struct {
 		name string

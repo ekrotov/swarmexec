@@ -114,6 +114,13 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 
 	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
 
+	// Pre-flight: fail fast on a host-port conflict before creating anything.
+	if other, ok := portConflict(ctx, dcli, f.port, f.serviceName); ok {
+		return &cliError{code: usageExitCode, err: fmt.Errorf(
+			"host port %d is already published by service %q — remove it (`docker service rm %s`, or `swarmexec down` if it's an old swarmexec agent) or pick another --port",
+			f.port, other, other)}
+	}
+
 	// [1/3] shared secret --------------------------------------------------------
 	step(1, "shared secret")
 	createWith := f.secret
@@ -294,15 +301,27 @@ func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out
 			return
 		}
 		desired, running := 0, 0
+		var taskErr string
 		for _, t := range tasks {
 			if t.DesiredState == swarm.TaskStateRunning {
 				desired++
 			}
-			if t.Status.State == swarm.TaskStateRunning {
+			switch t.Status.State {
+			case swarm.TaskStateRunning:
 				running++
+			case swarm.TaskStateRejected, swarm.TaskStateFailed:
+				if t.Status.Err != "" {
+					taskErr = t.Status.Err
+				} else if t.Status.Message != "" {
+					taskErr = t.Status.Message
+				}
 			}
 		}
-		if msg := fmt.Sprintf("%d/%d running", running, desired); msg != last {
+		msg := fmt.Sprintf("%d/%d running", running, desired)
+		if taskErr != "" && running < desired {
+			msg += " — " + taskErr // surface e.g. "port already in use" instead of a silent timeout
+		}
+		if msg != last {
 			fmt.Fprintf(out, "      agents: %s\n", msg)
 			last = msg
 		}
@@ -444,6 +463,26 @@ func agentDeployed(ctx context.Context, dcli serviceLister) bool {
 		}
 	}
 	return false
+}
+
+// portConflict reports whether a service other than ownName already publishes
+// the given host port, which would stop the global agent from binding it.
+func portConflict(ctx context.Context, dcli serviceLister, port int, ownName string) (string, bool) {
+	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return "", false // can't check — let the rollout surface any problem
+	}
+	for _, s := range list {
+		if s.Spec.Name == ownName || s.Spec.EndpointSpec == nil {
+			continue
+		}
+		for _, p := range s.Spec.EndpointSpec.Ports {
+			if p.PublishMode == swarm.PortConfigPublishModeHost && int(p.PublishedPort) == port {
+				return s.Spec.Name, true
+			}
+		}
+	}
+	return "", false
 }
 
 // enrichAgentError replaces a transport failure with the "run init" hint when no
