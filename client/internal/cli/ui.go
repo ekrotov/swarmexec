@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -120,25 +121,30 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return cands[idx], true
 	}
 
-	// attach suspends the TUI, runs the exec session on the real terminal, then
-	// resumes the TUI.
-	attach := func(c resolve.Candidate, command []string, tty bool) {
+	// openTerminal runs an interactive shell inside a modal terminal pane (a
+	// vt10x emulator bridged to the exec stream). Ctrl-] detaches.
+	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		app.Suspend(func() {
-			fmt.Printf("\n\033[2mswarmexec: %v in %s on %s — Ctrl-D / exit to return\033[0m\n",
-				command, shortID(c.ContainerID), orDash(c.NodeName))
-			if _, eerr := execInto(ctx, cfg, ep, execParams{
-				command:        command,
-				tty:            tty,
-				keepStdin:      true,
-				connectTimeout: f.connectTimeout,
-			}); eerr != nil {
-				fmt.Printf("\033[31mswarmexec: %v\033[0m\n", eerr)
-				fmt.Print("press Enter to return… ")
-				fmt.Scanln()
-			}
+		tctx, tcancel := context.WithCancel(ctx)
+		tv := newTerminalView(app)
+		tv.SetTitle(fmt.Sprintf(" %v in %s on %s — Ctrl-] detach ", command, shortID(c.ContainerID), orDash(c.NodeName)))
+
+		var once sync.Once
+		closeTerm := func() {
+			once.Do(func() {
+				tcancel()
+				pages.RemovePage("term")
+				app.SetFocus(table)
+				load() // the task may have changed while we were attached
+			})
+		}
+		tv.detach = closeTerm
+		tv.run(tctx, cfg, ep, command, tty, f.connectTimeout, func(int, error) {
+			app.QueueUpdateDraw(closeTerm)
 		})
-		load() // task may have changed while we were away
+
+		pages.AddPage("term", tv, true, true)
+		app.SetFocus(tv)
 	}
 
 	// showLogs opens a scrollable, live (follow) logs viewer for a container.
@@ -183,9 +189,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				app.SetFocus(table)
 				switch label {
 				case "Bash":
-					attach(c, []string{"bash"}, true)
+					openTerminal(c, []string{"bash"}, true)
 				case "Sh":
-					attach(c, []string{"sh"}, false)
+					openTerminal(c, []string{"sh"}, false)
 				case "Logs":
 					showLogs(c)
 				}
