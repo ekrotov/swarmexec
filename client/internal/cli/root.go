@@ -34,6 +34,7 @@ type globalFlags struct {
 	insecure        bool
 	operator        string
 	dockerContext   string
+	version         Version // build info, for `doctor` skew checks
 }
 
 // licenseName is shown by --info. See the LICENSE file for the full text.
@@ -50,7 +51,7 @@ func infoText(v Version) string {
 
 // Execute builds and runs the root command, returning a process exit code.
 func Execute(v Version) int {
-	g := &globalFlags{}
+	g := &globalFlags{version: v}
 	var showInfo bool
 	root := &cobra.Command{
 		Use:           "swarmexec",
@@ -85,6 +86,7 @@ func Execute(v Version) int {
 
 	root.AddCommand(newInitCmd(g))
 	root.AddCommand(newDownCmd(g))
+	root.AddCommand(newDoctorCmd(g))
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
 	root.AddCommand(newLogsCmd(g))

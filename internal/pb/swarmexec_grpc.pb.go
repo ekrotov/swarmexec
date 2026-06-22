@@ -27,6 +27,7 @@ const (
 	Agent_Logs_FullMethodName           = "/swarmexec.Agent/Logs"
 	Agent_ListVolumes_FullMethodName    = "/swarmexec.Agent/ListVolumes"
 	Agent_RemoveVolume_FullMethodName   = "/swarmexec.Agent/RemoveVolume"
+	Agent_Version_FullMethodName        = "/swarmexec.Agent/Version"
 )
 
 // AgentClient is the client API for Agent service.
@@ -48,6 +49,11 @@ type AgentClient interface {
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
 	// in use unless force is set.
 	RemoveVolume(ctx context.Context, in *RemoveVolumeRequest, opts ...grpc.CallOption) (*RemoveVolumeResponse, error)
+	// Report the agent's build and protocol version. Cheap, low-privilege probe
+	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
+	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
+	// turns into an "agent too old — run init --force" hint.
+	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error)
 }
 
 type agentClient struct {
@@ -120,6 +126,16 @@ func (c *agentClient) RemoveVolume(ctx context.Context, in *RemoveVolumeRequest,
 	return out, nil
 }
 
+func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VersionResponse)
+	err := c.cc.Invoke(ctx, Agent_Version_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServer is the server API for Agent service.
 // All implementations must embed UnimplementedAgentServer
 // for forward compatibility.
@@ -139,6 +155,11 @@ type AgentServer interface {
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
 	// in use unless force is set.
 	RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error)
+	// Report the agent's build and protocol version. Cheap, low-privilege probe
+	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
+	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
+	// turns into an "agent too old — run init --force" hint.
+	Version(context.Context, *VersionRequest) (*VersionResponse, error)
 	mustEmbedUnimplementedAgentServer()
 }
 
@@ -163,6 +184,9 @@ func (UnimplementedAgentServer) ListVolumes(context.Context, *ListVolumesRequest
 }
 func (UnimplementedAgentServer) RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveVolume not implemented")
+}
+func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
 }
 func (UnimplementedAgentServer) mustEmbedUnimplementedAgentServer() {}
 func (UnimplementedAgentServer) testEmbeddedByValue()               {}
@@ -257,6 +281,24 @@ func _Agent_RemoveVolume_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).Version(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_Version_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).Version(ctx, req.(*VersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Agent_ServiceDesc is the grpc.ServiceDesc for Agent service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -275,6 +317,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveVolume",
 			Handler:    _Agent_RemoveVolume_Handler,
+		},
+		{
+			MethodName: "Version",
+			Handler:    _Agent_Version_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

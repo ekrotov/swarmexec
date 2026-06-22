@@ -294,6 +294,9 @@ func wrapGRPC(err error) error {
 	if err == nil {
 		return nil
 	}
+	if agentTooOld(err) {
+		return errAgentTooOld
+	}
 	if st, ok := status.FromError(err); ok {
 		return fmt.Errorf("%s: %s", st.Code(), st.Message())
 	}
