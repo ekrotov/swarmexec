@@ -96,11 +96,16 @@ swarmexec init --port 8443     # use a custom port everywhere (default 9443)
 swarmexec init --force         # update an already-deployed agent
 ```
 
-`init` creates a shared-secret Docker secret, deploys the agent as a **global**
-service in self-signed mode (host port 9443 on every node), passes your local
-registry credentials so nodes can pull a private image, and writes
-`~/.config/swarmexec/config.yaml` (secret + `insecure: true` + `addr_mode: ip`).
-After it finishes, `swarmexec ps` / `ui` / `exec` / `volume` just work.
+`init` first shows **which Docker context** it will deploy into. If you have
+several contexts it lets you pick one (the active one is the default); with a
+single context it just tells you. `--context <name>` (or `$DOCKER_CONTEXT`)
+selects non-interactively. It then creates a shared-secret Docker secret,
+deploys the agent as a **global** service in self-signed mode (host port 9443 on
+every node), passes your local registry credentials so nodes can pull a private
+image, waits for the agents to come up (showing `agents: X/Y running`), and
+writes `~/.config/swarmexec/config.yaml` (secret + `insecure: true` +
+`addr_mode: ip`). After it finishes, `swarmexec ps` / `ui` / `exec` / `volume`
+just work.
 
 > If a command later reports **“no swarmexec agent found in this swarm — run
 > `swarmexec init`”**, the agent isn't deployed (or isn't reachable) — run

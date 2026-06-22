@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +24,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/session"
+	cterm "swarmexec/client/internal/term"
 )
 
 const (
@@ -79,19 +84,24 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	dcli, err := newDockerClient(g.dockerContext)
+	out := cmd.OutOrStdout()
+	tctx, cerr := resolveInitContext(out, g)
+	if cerr != nil {
+		return cerr
+	}
+	dcli, err := newDockerClient(tctx.Name)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
+	fmt.Fprintf(out, "deploying agents into Docker context %q (%s)\n", tctx.Name, hostOrDefault(tctx.Host))
 
 	info, err := dcli.Info(ctx)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
 	}
 	if !info.Swarm.ControlAvailable {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("the selected Docker endpoint is not a Swarm manager (point --context/$DOCKER_CONTEXT at a manager node)")}
+		return &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
 	}
-	out := cmd.OutOrStdout()
 
 	steps := 3 // secret, service, rollout/config
 	step := func(n int, label string) {
@@ -186,6 +196,85 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 
 	fmt.Fprintf(out, "\n✓ ready — try:\n  swarmexec ps\n  swarmexec ui\n")
 	return nil
+}
+
+// resolveInitContext decides which Docker context to provision into, informing
+// the user and — when several exist and stdin is a terminal — prompting them to
+// choose.
+func resolveInitContext(out io.Writer, g *globalFlags) (dockerctx.Context, error) {
+	// An explicit --context / $DOCKER_CONTEXT wins; no prompt.
+	if explicit := firstNonEmpty(g.dockerContext, os.Getenv("DOCKER_CONTEXT")); explicit != "" {
+		host, _ := dockerctx.ResolveHost(explicit)
+		return dockerctx.Context{Name: explicit, Host: host, Current: true}, nil
+	}
+
+	contexts, err := dockerctx.List()
+	if err != nil || len(contexts) == 0 {
+		host, _ := dockerctx.ResolveHost("")
+		return dockerctx.Context{Name: dockerctx.Current(), Host: host}, nil
+	}
+
+	current := dockerctx.Current()
+	if len(contexts) == 1 {
+		return contexts[0], nil // single context: just use it (announced by caller)
+	}
+
+	// Several contexts: prompt when interactive, else fall back to the active one
+	// so scripts keep working.
+	if !cterm.IsTerminal(os.Stdin.Fd()) {
+		for _, c := range contexts {
+			if c.Name == current {
+				fmt.Fprintf(out, "multiple Docker contexts; using the active one %q (set --context to override)\n", c.Name)
+				return c, nil
+			}
+		}
+		return contexts[0], nil
+	}
+	return chooseContext(out, contexts, current)
+}
+
+// chooseContext prompts the operator to pick a context, defaulting to the active
+// one on an empty answer.
+func chooseContext(out io.Writer, contexts []dockerctx.Context, current string) (dockerctx.Context, error) {
+	def := 0
+	fmt.Fprintln(out, "Multiple Docker contexts found — choose where to deploy the agents:")
+	for i, c := range contexts {
+		marker := " "
+		if c.Name == current {
+			marker = "*"
+			def = i
+		}
+		fmt.Fprintf(out, "  [%d]%s %-16s %s\n", i+1, marker, c.Name, hostOrDefault(c.Host))
+	}
+	fmt.Fprintf(out, "select [1-%d] (default %d=%s): ", len(contexts), def+1, contexts[def].Name)
+
+	sc := bufio.NewScanner(os.Stdin)
+	if !sc.Scan() {
+		return contexts[def], nil
+	}
+	s := strings.TrimSpace(sc.Text())
+	if s == "" {
+		return contexts[def], nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 || n > len(contexts) {
+		return dockerctx.Context{}, &cliError{code: usageExitCode, err: fmt.Errorf("invalid selection %q", s)}
+	}
+	return contexts[n-1], nil
+}
+
+func hostOrDefault(h string) string {
+	if h == "" {
+		return "local socket"
+	}
+	return h
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // waitRollout polls the service's tasks until every desired task is running (or
