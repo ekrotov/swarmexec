@@ -5,10 +5,51 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/docker/docker/client"
 )
+
+func TestList(t *testing.T) {
+	dir := t.TempDir()
+	isolate(t, dir)
+	writeContext(t, dir, "pk", "ssh://root@docker1")
+	writeContext(t, dir, "staging", "ssh://root@staging")
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"currentContext":"pk"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, c := range cs {
+		names = append(names, c.Name)
+		if c.Name == "pk" && (!c.Current || c.Host != "ssh://root@docker1") {
+			t.Errorf("pk context wrong: %+v", c)
+		}
+	}
+	want := []string{"default", "pk", "staging"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	if Current() != "pk" {
+		t.Errorf("Current = %q, want pk", Current())
+	}
+}
+
+func TestList_OnlyDefault(t *testing.T) {
+	dir := t.TempDir()
+	isolate(t, dir)
+	cs, _ := List()
+	if len(cs) != 1 || cs[0].Name != "default" || !cs[0].Current {
+		t.Fatalf("expected a single current default context, got %+v", cs)
+	}
+	if Current() != "default" {
+		t.Errorf("Current = %q, want default", Current())
+	}
+}
 
 func writeContext(t *testing.T, dir, name, host string) {
 	t.Helper()

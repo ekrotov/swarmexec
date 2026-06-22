@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/docker/docker/client"
 )
@@ -38,6 +39,67 @@ func ResolveHost(override string) (string, error) {
 		return client.DefaultDockerHost, nil
 	}
 	return contextHost(name)
+}
+
+// Context is a Docker CLI context the cli can target.
+type Context struct {
+	Name    string
+	Host    string
+	Current bool // whether this is the active context
+}
+
+// Current returns the active context name ($DOCKER_CONTEXT, else the config's
+// current context, else "default").
+func Current() string {
+	if n := os.Getenv("DOCKER_CONTEXT"); n != "" {
+		return n
+	}
+	if n := currentContextName(); n != "" {
+		return n
+	}
+	return "default"
+}
+
+// List returns all available Docker contexts (the built-in "default" plus any
+// stored under the config dir), marking the active one.
+func List() ([]Context, error) {
+	current := Current()
+
+	defHost := os.Getenv("DOCKER_HOST")
+	if defHost == "" {
+		defHost = client.DefaultDockerHost
+	}
+	out := []Context{{Name: "default", Host: defHost, Current: current == "default"}}
+
+	entries, err := os.ReadDir(filepath.Join(configDir(), "contexts", "meta"))
+	if err != nil {
+		return out, nil // no stored contexts is fine
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(configDir(), "contexts", "meta", e.Name(), "meta.json"))
+		if err != nil {
+			continue
+		}
+		var meta struct {
+			Name      string `json:"Name"`
+			Endpoints map[string]struct {
+				Host string `json:"Host"`
+			} `json:"Endpoints"`
+		}
+		if json.Unmarshal(b, &meta) != nil || meta.Name == "" {
+			continue
+		}
+		out = append(out, Context{
+			Name:    meta.Name,
+			Host:    meta.Endpoints["docker"].Host,
+			Current: meta.Name == current,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 // configDir is the Docker config directory ($DOCKER_CONFIG or ~/.docker).
