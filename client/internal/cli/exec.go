@@ -78,7 +78,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	}
 
 	// Resolve node + container via the manager.
-	dcli, err := newDockerClient()
+	dcli, err := newDockerClient(g.dockerContext)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

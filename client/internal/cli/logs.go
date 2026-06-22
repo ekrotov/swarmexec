@@ -62,7 +62,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		ctx = context.Background()
 	}
 
-	dcli, err := newDockerClient()
+	dcli, err := newDockerClient(g.dockerContext)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
