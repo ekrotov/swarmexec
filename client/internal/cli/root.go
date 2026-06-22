@@ -36,17 +36,38 @@ type globalFlags struct {
 	dockerContext   string
 }
 
+// licensePlaceholder is shown by --info until a real license is chosen.
+const licensePlaceholder = "(placeholder — license TBD)"
+
+// contactEmail is the maintainer contact shown by --info.
+const contactEmail = "eugen.krotov@cloud-surfers.de"
+
+// infoText renders the --info block.
+func infoText(v Version) string {
+	return fmt.Sprintf("swarmexec %s\n  protocol: %s\n  license:  %s\n  contact:  %s\n",
+		v.Binary, v.Proto, licensePlaceholder, contactEmail)
+}
+
 // Execute builds and runs the root command, returning a process exit code.
 func Execute(v Version) int {
 	g := &globalFlags{}
+	var showInfo bool
 	root := &cobra.Command{
 		Use:           "swarmexec",
 		Short:         "Cluster-wide docker exec for Docker Swarm",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       fmt.Sprintf("%s (proto %s)", v.Binary, v.Proto),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if showInfo {
+				fmt.Fprint(cmd.OutOrStdout(), infoText(v))
+				return nil
+			}
+			return cmd.Help()
+		},
 	}
 	root.SetVersionTemplate("swarmexec {{.Version}}\n")
+	root.Flags().BoolVar(&showInfo, "info", false, "show version, license, and contact info")
 
 	pf := root.PersistentFlags()
 	pf.StringVar(&g.configPath, "config", "", "config file path (default ~/.config/swarmexec/config.yaml)")
