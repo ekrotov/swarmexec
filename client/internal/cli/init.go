@@ -21,6 +21,8 @@ import (
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
@@ -38,6 +40,9 @@ const (
 
 // errNoAgent is shown when an agent-needing command finds no agent deployed.
 var errNoAgent = errors.New("no swarmexec agent found in this swarm — run `swarmexec init` to provision it")
+
+// errAgentTooOld is shown when an agent rejects an RPC with Unimplemented.
+var errAgentTooOld = errors.New("agent is older than this client (missing RPC) — update it with `swarmexec init --force`")
 
 type initFlags struct {
 	image          string
@@ -447,10 +452,19 @@ func enrichAgentError(ctx context.Context, dcli *client.Client, err error) error
 	if err == nil {
 		return nil
 	}
+	if agentTooOld(err) {
+		return errAgentTooOld
+	}
 	if !agentDeployed(ctx, dcli) {
 		return errNoAgent
 	}
 	return err
+}
+
+// agentTooOld reports whether err is a gRPC Unimplemented status, i.e. the agent
+// predates an RPC this cli uses.
+func agentTooOld(err error) bool {
+	return status.Code(err) == codes.Unimplemented
 }
 
 // encodedRegistryAuth resolves local credentials for the image's registry and

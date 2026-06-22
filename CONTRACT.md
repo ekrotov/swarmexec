@@ -69,6 +69,12 @@ service Agent {
   // Remove a volume on THIS node (authorized + audited). Fails if the volume is
   // in use unless force is set.
   rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
+
+  // Report the agent's build and protocol version. Cheap, low-privilege probe
+  // used by `swarmexec doctor` and for client/agent skew detection. Calling it
+  // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
+  // turns into an "agent too old — run init --force" hint.
+  rpc Version(VersionRequest) returns (VersionResponse);
 }
 
 message ListRequest {
@@ -154,6 +160,13 @@ message RemoveVolumeRequest {
 }
 
 message RemoveVolumeResponse {}
+
+message VersionRequest {}
+
+message VersionResponse {
+  string version = 1;        // agent build version
+  string proto_version = 2;  // wire protocol version
+}
 ```
 
 ### 3.1 Logs framing (normative)

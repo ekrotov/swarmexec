@@ -109,7 +109,10 @@ just work.
 
 > If a command later reports **“no swarmexec agent found in this swarm — run
 > `swarmexec init`”**, the agent isn't deployed (or isn't reachable) — run
-> `init` to provision it.
+> `init` to provision it. To diagnose the whole swarm (manager reachable, agent
+> deployed, each node's agent reachability + version), run **`swarmexec doctor`**
+> — it flags nodes whose agent is unreachable or too old (run
+> `swarmexec init --force` to update those).
 
 The manual paths below give you full control (mTLS, custom stack) if you prefer.
 
