@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -215,6 +216,56 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		app.SetFocus(tv)
 	}
 
+	// showServiceLogs streams the logs of every container of a service into one
+	// viewer, each line prefixed with [container@node].
+	showServiceLogs := func(serviceName string, members []resolve.Candidate) {
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
+		follow := &atomic.Bool{}
+		follow.Store(true)
+		setTitle := func() {
+			state := "ON"
+			if !follow.Load() {
+				state = "OFF"
+			}
+			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — [f] follow: %s · ↑/↓ scroll · ESC/q close ", serviceName, len(members), state))
+		}
+		tv.SetBorder(true)
+		setTitle()
+		lctx, lcancel := context.WithCancel(ctx)
+		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
+				closeLogs()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
+				follow.Store(!follow.Load())
+				if follow.Load() {
+					tv.ScrollToEnd()
+				}
+				setTitle()
+				return nil
+			}
+			return ev
+		})
+		for _, c := range members {
+			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+			prefix := fmt.Sprintf("[%s@%s] ", shortID(c.ContainerID), orDash(c.NodeName))
+			go func(ep resolve.Endpoint, prefix string) {
+				lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
+					&linePrefixWriter{app: app, tv: tv, prefix: prefix, follow: follow},
+					&linePrefixWriter{app: app, tv: tv, prefix: prefix, stderr: true, follow: follow})
+				if lerr != nil && lctx.Err() == nil {
+					app.QueueUpdateDraw(func() {
+						fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))
+					})
+				}
+			}(ep, prefix)
+		}
+		pages.AddPage("logs", tv, true, true)
+		app.SetFocus(tv)
+	}
+
 	containerMenu := func(c resolve.Candidate) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		list := tview.NewList().ShowSecondaryText(false)
@@ -268,8 +319,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
 		if ref, ok := node.GetReference().(resolve.Candidate); ok {
 			containerMenu(ref)
-		} else {
-			node.SetExpanded(!node.IsExpanded()) // toggle a service group
+			return
+		}
+		// Service node → aggregated logs of all its containers.
+		var members []resolve.Candidate
+		for _, ch := range node.GetChildren() {
+			if c, ok := ch.GetReference().(resolve.Candidate); ok {
+				members = append(members, c)
+			}
+		}
+		if len(members) > 0 {
+			showServiceLogs(node.GetText(), members)
 		}
 	})
 
@@ -493,7 +553,23 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return ev
 	}
-	ctree.SetInputCapture(tabKeys)
+	// On the tree, h/j collapse/expand a service node; otherwise fall through to
+	// the shared navigation keys.
+	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune {
+			if n := ctree.GetCurrentNode(); n != nil && isServiceNode(n) {
+				switch ev.Rune() {
+				case 'h':
+					n.SetExpanded(false)
+					return nil
+				case 'j':
+					n.SetExpanded(true)
+					return nil
+				}
+			}
+		}
+		return tabKeys(ev)
+	})
 	vtable.SetInputCapture(tabKeys)
 
 	loadContainers()
@@ -503,6 +579,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
 	return nil
+}
+
+// isServiceNode reports whether a tree node is a service (group) node rather
+// than a container leaf (containers carry a resolve.Candidate reference).
+func isServiceNode(n *tview.TreeNode) bool {
+	_, ok := n.GetReference().(resolve.Candidate)
+	return !ok
 }
 
 // shellLabel renders a menu shell entry, greying it once a probe confirms the
@@ -576,5 +659,50 @@ func (w tvLogWriter) Write(p []byte) (int, error) {
 			w.tv.ScrollToEnd()
 		}
 	})
+	return len(p), nil
+}
+
+// linePrefixWriter buffers partial lines and writes each complete line to a
+// TextView with a fixed prefix — used to tag aggregated service logs with which
+// container/node they came from.
+type linePrefixWriter struct {
+	app    *tview.Application
+	tv     *tview.TextView
+	prefix string
+	stderr bool
+	follow *atomic.Bool
+
+	mu  sync.Mutex
+	buf []byte
+}
+
+func (w *linePrefixWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.buf = append(w.buf, p...)
+	var lines []string
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		lines = append(lines, string(w.buf[:i]))
+		w.buf = w.buf[i+1:]
+	}
+	w.mu.Unlock()
+
+	for _, line := range lines {
+		s := tview.Escape(w.prefix + line)
+		stderr := w.stderr
+		w.app.QueueUpdateDraw(func() {
+			if stderr {
+				fmt.Fprintf(w.tv, "[red]%s[-]\n", s)
+			} else {
+				fmt.Fprintf(w.tv, "%s\n", s)
+			}
+			if w.follow == nil || w.follow.Load() {
+				w.tv.ScrollToEnd()
+			}
+		})
+	}
 	return len(p), nil
 }
