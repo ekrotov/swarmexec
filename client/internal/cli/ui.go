@@ -508,11 +508,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		content.SwitchToPage(name)
 		if name == "containers" {
 			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2) ")
-			help.SetText(" [yellow]↑/↓ j/k h/l[white] move  [yellow]Tab/1/2[white] tabs  [yellow]Enter[white] menu  [yellow]r[white] refresh  [yellow]q[white] quit")
+			help.SetText(" [yellow]j/k[white] up/down  [yellow]h/l[white] collapse/expand  [yellow]Enter[white] logs/menu  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
 			app.SetFocus(ctree)
 		} else {
 			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-] ")
-			help.SetText(" [yellow]↑/↓ j/k h/l[white] move  [yellow]Tab/1/2[white] tabs  [yellow]Enter[white] node list  [yellow]r[white] refresh  [yellow]q[white] quit")
+			help.SetText(" [yellow]j/k[white] up/down  [yellow]Enter[white] node list  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
 			app.SetFocus(vtable)
 			loadVolumes()
 		}
@@ -545,27 +545,23 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					loadVolumes()
 				}
 				return nil
-			case 'j', 'l':
+			case 'j':
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-			case 'k', 'h':
+			case 'k':
 				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 			}
 		}
 		return ev
 	}
-	// On the tree, h/j collapse/expand a service node; otherwise fall through to
-	// the shared navigation keys.
+	// On the tree, h/l collapse/expand (mapped to ←/→ so tview handles the
+	// parent/child movement); j/k stay down/up via the shared keys.
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
-			if n := ctree.GetCurrentNode(); n != nil && isServiceNode(n) {
-				switch ev.Rune() {
-				case 'h':
-					n.SetExpanded(false)
-					return nil
-				case 'j':
-					n.SetExpanded(true)
-					return nil
-				}
+			switch ev.Rune() {
+			case 'h':
+				return tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModNone)
+			case 'l':
+				return tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone)
 			}
 		}
 		return tabKeys(ev)
@@ -579,13 +575,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
 	return nil
-}
-
-// isServiceNode reports whether a tree node is a service (group) node rather
-// than a container leaf (containers carry a resolve.Candidate reference).
-func isServiceNode(n *tview.TreeNode) bool {
-	_, ok := n.GetReference().(resolve.Candidate)
-	return !ok
 }
 
 // shellLabel renders a menu shell entry, greying it once a probe confirms the
