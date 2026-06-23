@@ -119,7 +119,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		tctx, tcancel := context.WithCancel(ctx)
 		tv := newTerminalView(app)
-		tv.SetTitle(fmt.Sprintf(" %v in %s on %s — Ctrl-] detach ", command, shortID(c.ContainerID), orDash(c.NodeName)))
+		tv.SetTitle(fmt.Sprintf(" %v · %s · %s on %s — Ctrl-] detach ", command, orDash(c.Service), shortID(c.ContainerID), orDash(c.NodeName)))
 		var once sync.Once
 		closeTerm := func() {
 			once.Do(func() {
