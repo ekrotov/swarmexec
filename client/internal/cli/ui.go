@@ -78,21 +78,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	}
 
 	// ---------------------------------------------------------------- containers
-	ctable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	ctable.SetSelectedStyle(selStyle)
-	cHeaders := []string{"SERVICE", "SLOT", "CONTAINER", "NODE", "UPTIME"}
-	var cands []resolve.Candidate
+	// A tree: services are parent nodes, their containers are children.
+	ctree := tview.NewTreeView()
+	croot := tview.NewTreeNode("")
+	ctree.SetRoot(croot).SetTopLevel(1) // hide the synthetic root; services are top-level
 	loadContainers := func() {
-		// Remember the selected container so a refresh keeps the cursor on it
-		// instead of jumping back to the top of the list.
+		// Remember the selected container so a refresh keeps the cursor on it.
 		prevID := ""
-		if row, _ := ctable.GetSelection(); row-1 >= 0 && row-1 < len(cands) {
-			prevID = cands[row-1].ContainerID
+		if n := ctree.GetCurrentNode(); n != nil {
+			if ref, ok := n.GetReference().(resolve.Candidate); ok {
+				prevID = ref.ContainerID
+			}
 		}
-		cs, lerr := r.Candidates(ctx, service)
-		cands = cs
-		// Group by service: sort so same-service containers are contiguous, then
-		// show the service name only on the group's first row.
+		cands, lerr := r.Candidates(ctx, service)
 		sort.SliceStable(cands, func(i, j int) bool {
 			if cands[i].Service != cands[j].Service {
 				return cands[i].Service < cands[j].Service
@@ -102,56 +100,43 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 			return cands[i].NodeName < cands[j].NodeName
 		})
-		ctable.Clear()
-		for c, h := range cHeaders {
-			ctable.SetCell(0, c, headerCell(h))
-		}
+		croot.ClearChildren()
 		if lerr != nil {
-			ctable.SetCell(1, 0, tview.NewTableCell("error: "+lerr.Error()).SetTextColor(tcell.ColorRed))
+			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
 			return
 		}
-		prevService := ""
-		for i, c := range cands {
-			slot := "-"
+		var first, target, svcNode *tview.TreeNode
+		curService := ""
+		for _, c := range cands {
+			if svcNode == nil || c.Service != curService {
+				curService = c.Service
+				svcNode = tview.NewTreeNode(orDash(c.Service)).SetColor(tcell.ColorAqua).SetExpanded(true)
+				croot.AddChild(svcNode)
+			}
+			slotPart := ""
 			if c.Slot > 0 {
-				slot = fmt.Sprintf("%d", c.Slot)
+				slotPart = fmt.Sprintf("slot %d  ", c.Slot)
 			}
-			svc := orDash(c.Service)
-			if c.Service == prevService {
-				svc = "" // same group as the row above → blank for visual grouping
+			label := fmt.Sprintf("%s  %s  %sup %s", shortID(c.ContainerID), orDash(c.NodeName), slotPart, uptime(c.Uptime))
+			node := tview.NewTreeNode(label).SetReference(c)
+			svcNode.AddChild(node)
+			if first == nil {
+				first = node
 			}
-			prevService = c.Service
-			cells := []*tview.TableCell{
-				tview.NewTableCell(svc).SetTextColor(tcell.ColorAqua),
-				tview.NewTableCell(slot).SetExpansion(1),
-				tview.NewTableCell(shortID(c.ContainerID)).SetExpansion(1),
-				tview.NewTableCell(orDash(c.NodeName)).SetExpansion(1),
-				tview.NewTableCell(uptime(c.Uptime)).SetExpansion(1),
-			}
-			for col, cell := range cells {
-				ctable.SetCell(i+1, col, cell)
+			if c.ContainerID == prevID {
+				target = node
 			}
 		}
-		if len(cands) > 0 {
-			sel := 1
-			for i, c := range cands {
-				if c.ContainerID == prevID {
-					sel = i + 1
-					break
-				}
-			}
-			ctable.Select(sel, 0)
+		if len(croot.GetChildren()) == 0 {
+			croot.AddChild(tview.NewTreeNode("(no running tasks)").SetColor(tcell.ColorGray).SetSelectable(false))
+		}
+		switch {
+		case target != nil:
+			ctree.SetCurrentNode(target)
+		case first != nil:
+			ctree.SetCurrentNode(first)
 		}
 	}
-	selectedContainer := func() (resolve.Candidate, bool) {
-		row, _ := ctable.GetSelection()
-		i := row - 1
-		if i < 0 || i >= len(cands) {
-			return resolve.Candidate{}, false
-		}
-		return cands[i], true
-	}
-
 	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		tctx, tcancel := context.WithCancel(ctx)
@@ -162,7 +147,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			once.Do(func() {
 				tcancel()
 				pages.RemovePage("term")
-				app.SetFocus(ctable)
+				app.SetFocus(ctree)
 				loadContainers()
 			})
 		}
@@ -203,7 +188,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		tv.SetBorder(true)
 		setTitle()
 		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctable) }
+		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
@@ -234,7 +219,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
-		closeMenu := func() { pages.RemovePage("menu"); app.SetFocus(ctable) }
+		closeMenu := func() { pages.RemovePage("menu"); app.SetFocus(ctree) }
 
 		// Optimistic until the shell probe returns; then unavailable shells grey.
 		bashOK, shOK, probed := true, true, false
@@ -280,9 +265,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		pages.AddPage("menu", centered(list, 48, 6), true, true)
 		app.SetFocus(list)
 	}
-	ctable.SetSelectedFunc(func(int, int) {
-		if c, ok := selectedContainer(); ok {
-			containerMenu(c)
+	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
+		if ref, ok := node.GetReference().(resolve.Candidate); ok {
+			containerMenu(ref)
+		} else {
+			node.SetExpanded(!node.IsExpanded()) // toggle a service group
 		}
 	})
 
@@ -444,7 +431,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	})
 
 	// ---------------------------------------------------------------- tabs/chrome
-	content.AddPage("containers", ctable, true, true)
+	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
@@ -462,7 +449,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		if name == "containers" {
 			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2) ")
 			help.SetText(" [yellow]↑/↓ j/k h/l[white] move  [yellow]Tab/1/2[white] tabs  [yellow]Enter[white] menu  [yellow]r[white] refresh  [yellow]q[white] quit")
-			app.SetFocus(ctable)
+			app.SetFocus(ctree)
 		} else {
 			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-] ")
 			help.SetText(" [yellow]↑/↓ j/k h/l[white] move  [yellow]Tab/1/2[white] tabs  [yellow]Enter[white] node list  [yellow]r[white] refresh  [yellow]q[white] quit")
@@ -506,7 +493,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return ev
 	}
-	ctable.SetInputCapture(tabKeys)
+	ctree.SetInputCapture(tabKeys)
 	vtable.SetInputCapture(tabKeys)
 
 	loadContainers()

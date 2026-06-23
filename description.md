@@ -132,8 +132,10 @@ readable output, and `config show` prints the resolved configuration.
 
 **Interactive TUI (`ui`).** A two-tab terminal UI (tview):
 
-- **Containers** tab — navigable table; Enter opens a modal menu **logs / bash /
-  sh**. Logs render in a scrollable live viewer where **`f`** toggles follow
+- **Containers** tab — a **tree** grouping containers under their service; Enter
+  on a container opens an action menu (**logs / bash / sh**, with shells the
+  container can't start greyed out), Enter on a service node expands/collapses
+  it. Logs render in a scrollable live viewer where **`f`** toggles follow
   (auto-scroll) on/off so you can pause to read; bash/sh run in an **embedded
   terminal modal** (a vt10x emulator bridged to the Exec stream, with resize and
   Ctrl-] to detach) so the TUI is never left.
