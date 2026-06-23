@@ -82,6 +82,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	cHeaders := []string{"SERVICE", "SLOT", "CONTAINER", "NODE", "IP", "UPTIME"}
 	var cands []resolve.Candidate
 	loadContainers := func() {
+		// Remember the selected container so a refresh keeps the cursor on it
+		// instead of jumping back to the top of the list.
+		prevID := ""
+		if row, _ := ctable.GetSelection(); row-1 >= 0 && row-1 < len(cands) {
+			prevID = cands[row-1].ContainerID
+		}
 		cs, lerr := r.Candidates(ctx, service)
 		cands = cs
 		ctable.Clear()
@@ -103,7 +109,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 		}
 		if len(cands) > 0 {
-			ctable.Select(1, 0)
+			sel := 1
+			for i, c := range cands {
+				if c.ContainerID == prevID {
+					sel = i + 1
+					break
+				}
+			}
+			ctable.Select(sel, 0)
 		}
 	}
 	selectedContainer := func() (resolve.Candidate, bool) {
@@ -130,11 +143,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			})
 		}
 		tv.detach = closeTerm
-		tv.run(tctx, cfg, ep, command, tty, f.connectTimeout, func(_ int, rerr error) {
+		tv.run(tctx, cfg, ep, command, tty, f.connectTimeout, func(code int, rerr error) {
 			app.QueueUpdateDraw(func() {
-				closeTerm()
-				if rerr != nil && tctx.Err() == nil {
+				switch {
+				case tctx.Err() != nil:
+					closeTerm() // user detached (Ctrl-]) — just close
+				case rerr != nil:
+					closeTerm()
 					info(enrichAgentError(ctx, dcli, rerr).Error())
+				case code != 0:
+					// The command failed (e.g. `bash` not in the image). Keep the
+					// pane up with its output so the error stays readable.
+					tv.showEnded(fmt.Sprintf("[swarmexec] %v exited with code %d — press any key to close", command, code))
+				default:
+					closeTerm() // clean exit
 				}
 			})
 		})

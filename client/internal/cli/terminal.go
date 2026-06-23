@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -33,7 +34,16 @@ type terminalView struct {
 	stdin      io.Writer // exec stdin; nil until the session starts
 
 	resizeCh chan os.Signal
-	detach   func() // close the modal (set by the caller)
+	detach   func()      // close the modal (set by the caller)
+	ended    atomic.Bool // session finished; any key now closes the modal
+}
+
+// showEnded freezes the pane with the session output still visible, appends a
+// closing hint, and switches to "any key closes" mode (used when the command
+// failed so the operator can read the error before the modal disappears).
+func (v *terminalView) showEnded(msg string) {
+	_, _ = v.vt.Write([]byte("\r\n" + msg + "\r\n"))
+	v.ended.Store(true)
 }
 
 func newTerminalView(app *tview.Application) *terminalView {
@@ -146,6 +156,14 @@ func (v *terminalView) Draw(screen tcell.Screen) {
 // the exec stdin. Ctrl-] detaches (closes the modal) without ending the shell.
 func (v *terminalView) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return v.WrapInputHandler(func(ev *tcell.EventKey, _ func(tview.Primitive)) {
+		// After the session ended (e.g. the command failed), the pane is frozen
+		// with the output visible; any key closes it.
+		if v.ended.Load() {
+			if v.detach != nil {
+				v.detach()
+			}
+			return
+		}
 		if ev.Key() == tcell.KeyCtrlRightSq { // Ctrl-]
 			if v.detach != nil {
 				v.detach()
