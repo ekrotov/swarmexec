@@ -87,6 +87,7 @@ func Execute(v Version) int {
 	root.AddCommand(newInitCmd(g))
 	root.AddCommand(newDownCmd(g))
 	root.AddCommand(newDoctorCmd(g))
+	root.AddCommand(newConfigCmd(g))
 	root.AddCommand(newExecCmd(g))
 	root.AddCommand(newPsCmd(g))
 	root.AddCommand(newLogsCmd(g))

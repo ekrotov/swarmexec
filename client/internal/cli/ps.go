@@ -13,18 +13,29 @@ import (
 )
 
 func newPsCmd(g *globalFlags) *cobra.Command {
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "ps [service]",
 		Short: "List candidate tasks/containers and the node each runs on",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPs(cmd, g, args)
+			return runPs(cmd, g, args, asJSON)
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON instead of a table")
 	return cmd
 }
 
-func runPs(cmd *cobra.Command, g *globalFlags, args []string) error {
+type psRow struct {
+	Service     string `json:"service"`
+	Slot        int    `json:"slot,omitempty"`
+	ContainerID string `json:"container_id"`
+	Node        string `json:"node"`
+	IP          string `json:"ip,omitempty"`
+	UptimeSecs  int64  `json:"uptime_seconds,omitempty"`
+}
+
+func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
@@ -49,6 +60,17 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string) error {
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
+	if asJSON {
+		rows := make([]psRow, 0, len(cands))
+		for _, c := range cands {
+			rows = append(rows, psRow{
+				Service: c.Service, Slot: c.Slot, ContainerID: c.ContainerID,
+				Node: c.NodeName, IP: c.NodeAddr, UptimeSecs: int64(c.Uptime.Seconds()),
+			})
+		}
+		return printJSON(os.Stdout, rows)
+	}
+
 	if len(cands) == 0 {
 		if service != "" {
 			return &cliError{code: session.TransportFailure, err: fmt.Errorf("no running tasks for service %q", service)}

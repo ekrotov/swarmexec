@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -44,6 +43,7 @@ type volumeFlags struct {
 	nodes          []string
 	force          bool
 	yes            bool
+	json           bool
 	connectTimeout time.Duration
 }
 
@@ -58,6 +58,7 @@ func newVolumeLsCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "per-node connect timeout")
+	cmd.Flags().BoolVar(&f.json, "json", false, "output JSON instead of a table")
 	return cmd
 }
 
@@ -94,6 +95,27 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	if len(args) == 1 {
 		filter = args[0]
 	}
+
+	if f.json {
+		type volRow struct {
+			Name   string   `json:"name"`
+			Driver string   `json:"driver"`
+			Nodes  []string `json:"nodes"`
+		}
+		rows := make([]volRow, 0, len(vols))
+		for _, v := range vols {
+			if filter != "" && !strings.Contains(v.Name, filter) {
+				continue
+			}
+			rows = append(rows, volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes)})
+		}
+		if err := printJSON(os.Stdout, rows); err != nil {
+			return err
+		}
+		reportNodeErrors(errs)
+		return nil
+	}
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, "VOLUME\tDRIVER\tNODES")
 	for _, v := range vols {
@@ -205,16 +227,10 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 		err  error
 	}
 	out := make([]res, len(nodes))
-	var wg sync.WaitGroup
-	for i, n := range nodes {
-		wg.Add(1)
-		go func(i int, n resolve.Node) {
-			defer wg.Done()
-			vs, err := listNodeVolumes(ctx, cfg, n, connectTimeout)
-			out[i] = res{node: n, vols: vs, err: err}
-		}(i, n)
-	}
-	wg.Wait()
+	forEachNode(nodes, func(i int, n resolve.Node) {
+		vs, err := listNodeVolumes(ctx, cfg, n, connectTimeout)
+		out[i] = res{node: n, vols: vs, err: err}
+	})
 
 	byName := map[string]*swarmVolume{}
 	errs := map[string]error{}
@@ -264,15 +280,9 @@ type rmResult struct {
 // removeOnNodes removes the volume on each node concurrently.
 func removeOnNodes(ctx context.Context, cfg config.Config, nodes []resolve.Node, name string, force bool, connectTimeout time.Duration) []rmResult {
 	out := make([]rmResult, len(nodes))
-	var wg sync.WaitGroup
-	for i, n := range nodes {
-		wg.Add(1)
-		go func(i int, n resolve.Node) {
-			defer wg.Done()
-			out[i] = rmResult{node: n, err: removeNodeVolume(ctx, cfg, n, name, force, connectTimeout)}
-		}(i, n)
-	}
-	wg.Wait()
+	forEachNode(nodes, func(i int, n resolve.Node) {
+		out[i] = rmResult{node: n, err: removeNodeVolume(ctx, cfg, n, name, force, connectTimeout)}
+	})
 	return out
 }
 
