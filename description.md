@@ -111,7 +111,9 @@ any agent report **“no swarmexec agent found … run `swarmexec init`.”**
 |---------|-------------|
 | `init` | provision the agent on every node via the manager API (self-signed + shared secret), pass registry creds, and write the client config |
 | `down` | remove the agent service (and its shared secret) provisioned by `init` |
-| `doctor` | diagnose the swarm: manager reachable, agent deployed, and each node's agent reachability + version (flags too-old agents) |
+| `doctor` | diagnose the swarm: manager reachable, agent deployed (+ pinned image), and each node's agent reachability + version (flags too-old agents) |
+| `config show` | print the effective client config (context, port, auth mode, secret masked) |
+| `completion` | generate a shell completion script (bash/zsh/fish/powershell) |
 | `ps [service]` | table of running tasks across the swarm (service, slot, container, node, ip, uptime) |
 | `exec <target> [-- cmd]` | interactive exec (auto-TTY for a bare shell; `-t` to force); raw-terminal bridge |
 | `logs <target> [-f] [--tail] [-t] [--since]` | stream a container's logs |
@@ -121,9 +123,12 @@ any agent report **“no swarmexec agent found … run `swarmexec init`.”**
 | `--info` / `--version` / `--help` | build/license/contact info; version; help |
 
 **Swarm-wide volumes.** Swarm volumes are node-local, so the cli queries every
-node's agent in parallel and aggregates `volume → [nodes that hold it]`,
-reporting unreachable nodes rather than failing. Removal can target all nodes or
-a chosen subset.
+node's agent (with bounded concurrency) and aggregates `volume → [nodes that
+hold it]`, reporting unreachable nodes rather than failing. Removal can target
+all nodes or a chosen subset.
+
+**Scripting.** `ps`, `volume ls`, and `doctor` accept `--json` for machine-
+readable output, and `config show` prints the resolved configuration.
 
 **Interactive TUI (`ui`).** A two-tab terminal UI (tview):
 

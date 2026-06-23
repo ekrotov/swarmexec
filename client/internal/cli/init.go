@@ -161,7 +161,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	var serviceID string
 	switch {
 	case existing == nil:
-		resp, cerr := dcli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{EncodedRegistryAuth: encodedAuth})
+		resp, cerr := dcli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{EncodedRegistryAuth: encodedAuth, QueryRegistry: true})
 		if cerr != nil {
 			fmt.Fprintln(out, "failed")
 			return &cliError{code: session.TransportFailure, err: fmt.Errorf("create agent service: %w", cerr)}
@@ -169,7 +169,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		serviceID = resp.ID
 		fmt.Fprintf(out, "created (%q, global)\n", f.serviceName)
 	case f.force:
-		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, existing.Version, spec, types.ServiceUpdateOptions{EncodedRegistryAuth: encodedAuth}); uerr != nil {
+		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, existing.Version, spec, types.ServiceUpdateOptions{EncodedRegistryAuth: encodedAuth, QueryRegistry: true}); uerr != nil {
 			fmt.Fprintln(out, "failed")
 			return &cliError{code: session.TransportFailure, err: fmt.Errorf("update agent service: %w", uerr)}
 		}
@@ -178,6 +178,10 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	default:
 		fmt.Fprintln(out, "already exists")
 		return &cliError{code: usageExitCode, err: fmt.Errorf("service %q already exists; re-run with --force to update it", f.serviceName)}
+	}
+
+	if img := inspectServiceImage(ctx, dcli, serviceID); img != "" {
+		fmt.Fprintf(out, "        image: %s\n", img)
 	}
 
 	// [3/3] wait for rollout -----------------------------------------------------
@@ -463,6 +467,36 @@ func agentDeployed(ctx context.Context, dcli serviceLister) bool {
 		}
 	}
 	return false
+}
+
+// inspectServiceImage reads back a service's resolved image (Docker pins the
+// @sha256 digest on deploy when QueryRegistry is set).
+func inspectServiceImage(ctx context.Context, dcli *client.Client, serviceID string) string {
+	svc, _, err := dcli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+	if err != nil || svc.Spec.TaskTemplate.ContainerSpec == nil {
+		return ""
+	}
+	return svc.Spec.TaskTemplate.ContainerSpec.Image
+}
+
+// agentServiceImage returns the image (including any pinned @sha256 digest) of
+// the deployed agent service, or "" if none is found.
+func agentServiceImage(ctx context.Context, dcli serviceLister) string {
+	if list, err := dcli.ServiceList(ctx, types.ServiceListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
+	}); err == nil && len(list) > 0 && list[0].Spec.TaskTemplate.ContainerSpec != nil {
+		return list[0].Spec.TaskTemplate.ContainerSpec.Image
+	}
+	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return ""
+	}
+	for _, s := range list {
+		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && strings.Contains(cs.Image, "swarm-remote-exec/agent") {
+			return cs.Image
+		}
+	}
+	return ""
 }
 
 // portConflict reports whether a service other than ownName already publishes
