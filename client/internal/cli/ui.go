@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -144,19 +145,37 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	showLogs := func(c resolve.Candidate) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
-		tv.SetBorder(true).SetTitle(fmt.Sprintf(" logs %s on %s — ↑/↓ scroll, ESC/q close ", shortID(c.ContainerID), orDash(c.NodeName)))
+		follow := &atomic.Bool{}
+		follow.Store(true)
+		setTitle := func() {
+			state := "ON"
+			if !follow.Load() {
+				state = "OFF"
+			}
+			tv.SetTitle(fmt.Sprintf(" logs %s on %s — [f] follow: %s · ↑/↓ scroll · ESC/q close ", shortID(c.ContainerID), orDash(c.NodeName), state))
+		}
+		tv.SetBorder(true)
+		setTitle()
 		lctx, lcancel := context.WithCancel(ctx)
 		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q') {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
 				closeLogs()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
+				follow.Store(!follow.Load())
+				if follow.Load() {
+					tv.ScrollToEnd() // re-enabling: jump to the newest line
+				}
+				setTitle()
 				return nil
 			}
 			return ev
 		})
 		go func() {
 			lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
-				tvLogWriter{app: app, tv: tv}, tvLogWriter{app: app, tv: tv, stderr: true})
+				tvLogWriter{app: app, tv: tv, follow: follow}, tvLogWriter{app: app, tv: tv, stderr: true, follow: follow})
 			if lerr != nil && lctx.Err() == nil {
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
@@ -469,6 +488,7 @@ type tvLogWriter struct {
 	app    *tview.Application
 	tv     *tview.TextView
 	stderr bool
+	follow *atomic.Bool // when set and false, new lines do not auto-scroll
 }
 
 func (w tvLogWriter) Write(p []byte) (int, error) {
@@ -479,7 +499,9 @@ func (w tvLogWriter) Write(p []byte) (int, error) {
 		} else {
 			fmt.Fprint(w.tv, s)
 		}
-		w.tv.ScrollToEnd()
+		if w.follow == nil || w.follow.Load() {
+			w.tv.ScrollToEnd()
+		}
 	})
 	return len(p), nil
 }
