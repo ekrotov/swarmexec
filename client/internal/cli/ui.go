@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,7 +80,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// ---------------------------------------------------------------- containers
 	ctable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	ctable.SetSelectedStyle(selStyle)
-	cHeaders := []string{"SERVICE", "SLOT", "CONTAINER", "NODE", "IP", "UPTIME"}
+	cHeaders := []string{"SERVICE", "SLOT", "CONTAINER", "NODE", "UPTIME"}
 	var cands []resolve.Candidate
 	loadContainers := func() {
 		// Remember the selected container so a refresh keeps the cursor on it
@@ -90,6 +91,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		cs, lerr := r.Candidates(ctx, service)
 		cands = cs
+		// Group by service: sort so same-service containers are contiguous, then
+		// show the service name only on the group's first row.
+		sort.SliceStable(cands, func(i, j int) bool {
+			if cands[i].Service != cands[j].Service {
+				return cands[i].Service < cands[j].Service
+			}
+			if cands[i].Slot != cands[j].Slot {
+				return cands[i].Slot < cands[j].Slot
+			}
+			return cands[i].NodeName < cands[j].NodeName
+		})
 		ctable.Clear()
 		for c, h := range cHeaders {
 			ctable.SetCell(0, c, headerCell(h))
@@ -98,14 +110,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			ctable.SetCell(1, 0, tview.NewTableCell("error: "+lerr.Error()).SetTextColor(tcell.ColorRed))
 			return
 		}
+		prevService := ""
 		for i, c := range cands {
 			slot := "-"
 			if c.Slot > 0 {
 				slot = fmt.Sprintf("%d", c.Slot)
 			}
-			vals := []string{orDash(c.Service), slot, shortID(c.ContainerID), orDash(c.NodeName), orDash(c.NodeAddr), uptime(c.Uptime)}
-			for col, v := range vals {
-				ctable.SetCell(i+1, col, tview.NewTableCell(v).SetExpansion(1))
+			svc := orDash(c.Service)
+			if c.Service == prevService {
+				svc = "" // same group as the row above → blank for visual grouping
+			}
+			prevService = c.Service
+			cells := []*tview.TableCell{
+				tview.NewTableCell(svc).SetTextColor(tcell.ColorAqua),
+				tview.NewTableCell(slot).SetExpansion(1),
+				tview.NewTableCell(shortID(c.ContainerID)).SetExpansion(1),
+				tview.NewTableCell(orDash(c.NodeName)).SetExpansion(1),
+				tview.NewTableCell(uptime(c.Uptime)).SetExpansion(1),
+			}
+			for col, cell := range cells {
+				ctable.SetCell(i+1, col, cell)
 			}
 		}
 		if len(cands) > 0 {
@@ -207,23 +231,54 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	}
 
 	containerMenu := func(c resolve.Candidate) {
-		m := tview.NewModal().
-			SetText(fmt.Sprintf("%s   on %s\ncontainer %s", orDash(c.Service), orDash(c.NodeName), shortID(c.ContainerID))).
-			AddButtons([]string{"Logs", "Bash", "Sh", "Cancel"}).
-			SetDoneFunc(func(_ int, label string) {
-				pages.RemovePage("menu")
-				app.SetFocus(ctable)
-				switch label {
-				case "Bash":
+		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+		list := tview.NewList().ShowSecondaryText(false)
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
+		closeMenu := func() { pages.RemovePage("menu"); app.SetFocus(ctable) }
+
+		// Optimistic until the shell probe returns; then unavailable shells grey.
+		bashOK, shOK, probed := true, true, false
+		render := func() {
+			cur := list.GetCurrentItem()
+			list.Clear()
+			list.AddItem("Logs", "", 0, func() { closeMenu(); showLogs(c) })
+			list.AddItem(shellLabel("Bash", bashOK, probed), "", 0, func() {
+				if bashOK {
+					closeMenu()
 					openTerminal(c, []string{"bash"}, true)
-				case "Sh":
-					openTerminal(c, []string{"sh"}, false)
-				case "Logs":
-					showLogs(c)
 				}
 			})
-		pages.AddPage("menu", m, true, true)
-		app.SetFocus(m)
+			list.AddItem(shellLabel("Sh", shOK, probed), "", 0, func() {
+				if shOK {
+					closeMenu()
+					openTerminal(c, []string{"sh"}, false)
+				}
+			})
+			list.AddItem("Cancel", "", 0, closeMenu)
+			if cur >= 0 && cur < list.GetItemCount() {
+				list.SetCurrentItem(cur)
+			}
+		}
+		render()
+		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape {
+				closeMenu()
+				return nil
+			}
+			return ev
+		})
+
+		go func() {
+			b, s := probeShells(ctx, cfg, ep, f.connectTimeout)
+			app.QueueUpdateDraw(func() {
+				bashOK, shOK, probed = b, s, true
+				list.SetTitle(fmt.Sprintf(" %s on %s — pick an action (ESC cancels) ", orDash(c.Service), orDash(c.NodeName)))
+				render()
+			})
+		}()
+
+		pages.AddPage("menu", centered(list, 48, 6), true, true)
+		app.SetFocus(list)
 	}
 	ctable.SetSelectedFunc(func(int, int) {
 		if c, ok := selectedContainer(); ok {
@@ -461,6 +516,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
 	return nil
+}
+
+// shellLabel renders a menu shell entry, greying it once a probe confirms the
+// container can't start that shell.
+func shellLabel(name string, ok, probed bool) string {
+	if probed && !ok {
+		return "[gray]" + name + " (not available)[-]"
+	}
+	return name
 }
 
 func headerCell(text string) *tview.TableCell {
