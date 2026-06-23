@@ -370,7 +370,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					return
 				}
 				for i, v := range vols {
-					vals := []string{v.Name, orDash(v.Driver), fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))}
+					vals := []string{shortVolume(v.Name), orDash(v.Driver), fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))}
 					for col, val := range vals {
 						vtable.SetCell(i+1, col, tview.NewTableCell(val).SetExpansion(1))
 					}
@@ -395,7 +395,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 	showVolumeNodes := func(v swarmVolume) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %d node(s) — space select · d delete · a all · ESC back ", v.Name, len(v.Nodes)))
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes)))
 		sel := make([]bool, len(v.Nodes))
 		render := func() {
 			cur := list.GetCurrentItem()
@@ -481,7 +481,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 			return ev
 		})
-		pages.AddPage("volnodes", centered(list, 56, len(v.Nodes)+4), true, true)
+		help := tview.NewTextView().SetDynamicColors(true).SetText(
+			" [yellow]space[white] select  [yellow]d[white] delete selected  [yellow]a[white] delete all  [yellow]ESC[white] back")
+		box := tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(list, 0, 1, true).
+			AddItem(help, 1, 0, false)
+		pages.AddPage("volnodes", centered(box, 64, len(v.Nodes)+5), true, true)
 		app.SetFocus(list)
 	}
 	vtable.SetSelectedFunc(func(int, int) {
@@ -586,6 +591,27 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 func isServiceNode(n *tview.TreeNode) bool {
 	_, ok := n.GetReference().(resolve.Candidate)
 	return !ok
+}
+
+// shortVolume abbreviates long anonymous-volume hashes (64-char hex) for display
+// while leaving human-named volumes intact. The full name is still used for
+// operations.
+func shortVolume(name string) string {
+	if len(name) >= 32 && isHexString(name) {
+		return name[:12] + "…"
+	}
+	return name
+}
+
+func isHexString(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // shellLabel renders a menu shell entry, greying it once a probe confirms the
