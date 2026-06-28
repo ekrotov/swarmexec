@@ -11,7 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -101,6 +103,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 			Id:      c.ID,
 			Name:    name,
 			Service: service,
+			Volumes: namedVolumes(c.Mounts),
 		})
 	}
 	return resp, nil
@@ -112,6 +115,18 @@ func containerName(names []string) string {
 		return ""
 	}
 	return strings.TrimPrefix(names[0], "/")
+}
+
+// namedVolumes returns the names of the named volumes a container mounts,
+// ignoring bind mounts and anonymous/tmpfs mounts (which have no volume name).
+func namedVolumes(mounts []types.MountPoint) []string {
+	var out []string
+	for _, m := range mounts {
+		if m.Type == mount.TypeVolume && m.Name != "" {
+			out = append(out, m.Name)
+		}
+	}
+	return out
 }
 
 // resolveService inspects the container to recover its swarm service name. A
