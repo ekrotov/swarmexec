@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -83,6 +84,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	ctree := tview.NewTreeView()
 	croot := tview.NewTreeNode("")
 	ctree.SetRoot(croot).SetTopLevel(1) // hide the synthetic root; services are top-level
+	// filter holds the active "/" search query; empty means show everything. A
+	// candidate matches when the query is a substring of its service, container
+	// id or node (case-insensitive).
+	filter := ""
+	matchesFilter := func(c resolve.Candidate) bool {
+		if filter == "" {
+			return true
+		}
+		q := strings.ToLower(filter)
+		return strings.Contains(strings.ToLower(c.Service), q) ||
+			strings.Contains(strings.ToLower(c.ContainerID), q) ||
+			strings.Contains(strings.ToLower(c.NodeName), q)
+	}
 	loadContainers := func() {
 		// Remember the selected container so a refresh keeps the cursor on it.
 		prevID := ""
@@ -106,6 +120,32 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
 			return
 		}
+		if filter != "" {
+			kept := cands[:0]
+			for _, c := range cands {
+				if matchesFilter(c) {
+					kept = append(kept, c)
+				}
+			}
+			cands = kept
+		}
+		// Pre-compute column widths so every container row lines up, regardless
+		// of node-name length or whether a task carries a slot.
+		slotStr := func(c resolve.Candidate) string {
+			if c.Slot > 0 {
+				return fmt.Sprintf("slot %d", c.Slot)
+			}
+			return ""
+		}
+		nodeW, slotW := 0, 0
+		for _, c := range cands {
+			if w := len(orDash(c.NodeName)); w > nodeW {
+				nodeW = w
+			}
+			if w := len(slotStr(c)); w > slotW {
+				slotW = w
+			}
+		}
 		var first, target, svcNode *tview.TreeNode
 		curService := ""
 		for _, c := range cands {
@@ -114,11 +154,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				svcNode = tview.NewTreeNode(orDash(c.Service)).SetColor(tcell.ColorAqua).SetExpanded(true)
 				croot.AddChild(svcNode)
 			}
-			slotPart := ""
-			if c.Slot > 0 {
-				slotPart = fmt.Sprintf("slot %d  ", c.Slot)
+			var label string
+			if slotW > 0 {
+				label = fmt.Sprintf("%-12s  %-*s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), slotW, slotStr(c), uptime(c.Uptime))
+			} else {
+				label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
 			}
-			label := fmt.Sprintf("%s  %s  %sup %s", shortID(c.ContainerID), orDash(c.NodeName), slotPart, uptime(c.Uptime))
 			node := tview.NewTreeNode(label).SetReference(c)
 			svcNode.AddChild(node)
 			if first == nil {
@@ -129,7 +170,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 		}
 		if len(croot.GetChildren()) == 0 {
-			croot.AddChild(tview.NewTreeNode("(no running tasks)").SetColor(tcell.ColorGray).SetSelectable(false))
+			empty := "(no running tasks)"
+			if filter != "" {
+				empty = fmt.Sprintf("(no matches for %q)", filter)
+			}
+			croot.AddChild(tview.NewTreeNode(empty).SetColor(tcell.ColorGray).SetSelectable(false))
 		}
 		switch {
 		case target != nil:
@@ -496,11 +541,62 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	help := tview.NewTextView().SetDynamicColors(true)
+	// Right side of the footer: a live cluster summary (ready nodes / reachable
+	// agents), filled in asynchronously so probing the agents never blocks the UI.
+	cluster := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	cluster.SetText("[gray]cluster: …[white] ")
+	footer := tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(help, 0, 1, false).
+		AddItem(cluster, 30, 0, false)
+	// "/" search bar: hidden (height 0) until activated; filters the container
+	// tree live by service / container id / node.
+	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0)
 	root := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tabBar, 1, 0, false).
 		AddItem(content, 0, 1, true).
-		AddItem(help, 1, 0, false)
+		AddItem(search, 0, 0, false).
+		AddItem(footer, 1, 0, false)
 	pages.AddPage("main", root, true, true)
+
+	startSearch := func() {
+		root.ResizeItem(search, 1, 0)
+		app.SetFocus(search)
+	}
+	search.SetChangedFunc(func(text string) {
+		filter = strings.TrimSpace(text)
+		loadContainers()
+	})
+	search.SetDoneFunc(func(key tcell.Key) {
+		if key == tcell.KeyEscape {
+			search.SetText("") // clears the filter via SetChangedFunc and reloads
+		}
+		if filter == "" {
+			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
+		}
+		app.SetFocus(ctree) // Enter keeps the filter; the bar stays as an indicator
+	})
+
+	// refreshCluster probes the swarm in the background and updates the footer
+	// summary. The agent probe (a Version RPC per node) can be slow, so it runs
+	// off the UI goroutine and pushes the result back via QueueUpdateDraw.
+	refreshCluster := func() {
+		go func() {
+			nodes, err := r.Nodes(ctx)
+			if err != nil {
+				app.QueueUpdateDraw(func() { cluster.SetText("[red]cluster: unreachable[white] ") })
+				return
+			}
+			agents := 0
+			for _, h := range checkNodes(ctx, cfg, nodes, f.connectTimeout) {
+				if h.err == nil {
+					agents++
+				}
+			}
+			app.QueueUpdateDraw(func() {
+				cluster.SetText(fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents ", len(nodes), agents, len(nodes)))
+			})
+		}()
+	}
 
 	active := "containers"
 	setTab := func(name string) {
@@ -508,7 +604,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		content.SwitchToPage(name)
 		if name == "containers" {
 			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2) ")
-			help.SetText(" [yellow]j/k[white] up/down  [yellow]h/l[white] collapse/expand  [yellow]Enter[white] logs/menu  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
+			help.SetText(" [yellow]j/k[white] up/down  [yellow]h/l[white] collapse/expand  [yellow]/[white] search  [yellow]Enter[white] logs/menu  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
 			app.SetFocus(ctree)
 		} else {
 			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-] ")
@@ -544,6 +640,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				} else {
 					loadVolumes()
 				}
+				refreshCluster()
 				return nil
 			case 'j':
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -553,11 +650,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return ev
 	}
-	// On the tree, h/l collapse/expand (mapped to ←/→ so tview handles the
-	// parent/child movement); j/k stay down/up via the shared keys.
+	// On the tree, "/" opens search; h/l collapse/expand (mapped to ←/→ so tview
+	// handles the parent/child movement); j/k stay down/up via the shared keys.
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
+			case '/':
+				startSearch()
+				return nil
 			case 'h':
 				return tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModNone)
 			case 'l':
@@ -570,6 +670,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 	loadContainers()
 	setTab("containers")
+	refreshCluster()
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
