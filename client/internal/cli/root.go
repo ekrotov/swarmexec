@@ -148,6 +148,15 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command) (config.Config, error) {
 	if pf.Changed("operator") {
 		cfg.Operator = g.operator
 	}
+
+	// With an ssh:// Docker context, tunnel agent traffic over the same ssh host
+	// (the nodes are usually only reachable through the bastion).
+	dialer, err := sshProxyDialer(g.dockerContext)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.ProxyDialer = dialer
+
 	return cfg, nil
 }
 

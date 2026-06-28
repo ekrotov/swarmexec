@@ -5,7 +5,9 @@
 package config
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -57,6 +59,14 @@ type Config struct {
 	// Operator is the identity reported for audit when no client certificate is
 	// used. Defaults to the local OS username.
 	Operator string `yaml:"operator"`
+
+	// ProxyDialer, when set, establishes the TCP connection to the agent
+	// instead of dialing the node directly. It is wired at runtime (never from
+	// YAML) when the Docker context is an ssh:// endpoint, so agent traffic
+	// tunnels over the same SSH connection as the Docker API — otherwise the
+	// nodes (only reachable through the bastion) would be unreachable. nil means
+	// dial the node directly.
+	ProxyDialer func(ctx context.Context, addr string) (net.Conn, error) `yaml:"-"`
 }
 
 // Default returns the built-in defaults.

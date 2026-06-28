@@ -46,6 +46,14 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 		grpc.FailOnNonTempDialError(true),
 	}
 
+	// When the Docker context is an ssh:// endpoint the swarm nodes are usually
+	// only reachable through the bastion, not directly. ProxyDialer tunnels the
+	// TCP connection over that same SSH host so agent RPCs work like the Docker
+	// API does. gRPC still uses addr for SNI/authority (set above).
+	if cfg.ProxyDialer != nil {
+		opts = append(opts, grpc.WithContextDialer(cfg.ProxyDialer))
+	}
+
 	// Shared-secret auth: attach the secret (and operator identity) to every RPC.
 	secret, err := cfg.AgentSecretValue()
 	if err != nil {
