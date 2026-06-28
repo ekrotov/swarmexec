@@ -44,6 +44,7 @@ message ContainerInfo {
   string id = 1;       // full container ID
   string name = 2;     // container name
   string service = 3;  // swarm service name if known, else empty
+  repeated string volumes = 4;  // names of named volumes this container mounts
 }
 
 message ClientMessage {

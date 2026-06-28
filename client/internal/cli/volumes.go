@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -90,6 +91,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
 		return e
 	}
+	usage := indexVolumeUsage(ctx, cfg, nodes, f.connectTimeout)
 
 	filter := ""
 	if len(args) == 1 {
@@ -97,17 +99,28 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 
 	if f.json {
+		type consumerRow struct {
+			Service   string `json:"service"`
+			Container string `json:"container"`
+			Node      string `json:"node"`
+		}
 		type volRow struct {
-			Name   string   `json:"name"`
-			Driver string   `json:"driver"`
-			Nodes  []string `json:"nodes"`
+			Name      string        `json:"name"`
+			Driver    string        `json:"driver"`
+			Nodes     []string      `json:"nodes"`
+			UsedBy    int           `json:"used_by"`
+			Consumers []consumerRow `json:"consumers"`
 		}
 		rows := make([]volRow, 0, len(vols))
 		for _, v := range vols {
 			if filter != "" && !strings.Contains(v.Name, filter) {
 				continue
 			}
-			rows = append(rows, volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes)})
+			cons := make([]consumerRow, 0, len(usage[v.Name]))
+			for _, c := range usage[v.Name] {
+				cons = append(cons, consumerRow{Service: c.Service, Container: c.Container, Node: c.Node})
+			}
+			rows = append(rows, volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons})
 		}
 		if err := printJSON(os.Stdout, rows); err != nil {
 			return err
@@ -117,12 +130,16 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "VOLUME\tDRIVER\tNODES")
+	fmt.Fprintln(w, "VOLUME\tDRIVER\tNODES\tUSED BY")
 	for _, v := range vols {
 		if filter != "" && !strings.Contains(v.Name, filter) {
 			continue
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","))
+		usedBy := "-"
+		if n := len(usage[v.Name]); n > 0 {
+			usedBy = strconv.Itoa(n)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy)
 	}
 	_ = w.Flush()
 	reportNodeErrors(errs)
@@ -270,6 +287,68 @@ func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, con
 		return nil, wrapGRPC(err)
 	}
 	return resp.Volumes, nil
+}
+
+// volumeConsumer is a container (and its service) that mounts a volume.
+type volumeConsumer struct {
+	Service   string
+	Container string
+	Node      string
+}
+
+// indexVolumeUsage maps each volume name to the containers that mount it, by
+// asking every node's agent for its containers and their named volumes. Nodes
+// whose agent is unreachable are skipped (best-effort: usage may be partial).
+func indexVolumeUsage(ctx context.Context, cfg config.Config, nodes []resolve.Node, connectTimeout time.Duration) map[string][]volumeConsumer {
+	type res struct {
+		node       resolve.Node
+		containers []*pb.ContainerInfo
+	}
+	out := make([]res, len(nodes))
+	forEachNode(nodes, func(i int, n resolve.Node) {
+		cs, err := listNodeContainers(ctx, cfg, n, connectTimeout)
+		if err != nil {
+			return // leave out[i].containers nil
+		}
+		out[i] = res{node: n, containers: cs}
+	})
+
+	usage := map[string][]volumeConsumer{}
+	for _, r := range out {
+		for _, c := range r.containers {
+			for _, vol := range c.GetVolumes() {
+				usage[vol] = append(usage[vol], volumeConsumer{
+					Service:   c.GetService(),
+					Container: c.GetName(),
+					Node:      r.node.Name,
+				})
+			}
+		}
+	}
+	for _, cs := range usage {
+		sort.Slice(cs, func(i, j int) bool {
+			if cs[i].Service != cs[j].Service {
+				return cs[i].Service < cs[j].Service
+			}
+			return cs[i].Container < cs[j].Container
+		})
+	}
+	return usage
+}
+
+func listNodeContainers(ctx context.Context, cfg config.Config, n resolve.Node, connectTimeout time.Duration) ([]*pb.ContainerInfo, error) {
+	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
+	conn, err := dial.Dial(dctx, n.DialHost, cfg.Port, cfg)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	resp, err := pb.NewAgentClient(conn).ListContainers(ctx, &pb.ListRequest{})
+	if err != nil {
+		return nil, wrapGRPC(err)
+	}
+	return resp.Containers, nil
 }
 
 type rmResult struct {

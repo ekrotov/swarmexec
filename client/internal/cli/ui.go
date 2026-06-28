@@ -381,8 +381,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// ------------------------------------------------------------------- volumes
 	vtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	vtable.SetSelectedStyle(selStyle)
-	vHeaders := []string{"VOLUME", "DRIVER", "NODES"}
+	vHeaders := []string{"VOLUME", "DRIVER", "NODES", "USED BY"}
 	var vols []swarmVolume
+	var volUsage map[string][]volumeConsumer
 	loadVolumes := func() {
 		vtable.Clear()
 		for c, h := range vHeaders {
@@ -393,15 +394,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			nodes, nerr := r.Nodes(ctx)
 			var vs []swarmVolume
 			var errs map[string]error
+			var usage map[string][]volumeConsumer
 			noAgent := false
 			if nerr == nil {
 				vs, errs = indexVolumes(ctx, cfg, nodes, f.connectTimeout)
+				usage = indexVolumeUsage(ctx, cfg, nodes, f.connectTimeout)
 				if len(nodes) > 0 && len(errs) == len(nodes) && !agentDeployed(ctx, dcli) {
 					noAgent = true
 				}
 			}
 			app.QueueUpdateDraw(func() {
 				vols = vs
+				volUsage = usage
 				vtable.Clear()
 				for c, h := range vHeaders {
 					vtable.SetCell(0, c, headerCell(h))
@@ -415,10 +419,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					return
 				}
 				for i, v := range vols {
-					vals := []string{shortVolume(v.Name), orDash(v.Driver), fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))}
-					for col, val := range vals {
-						vtable.SetCell(i+1, col, tview.NewTableCell(val).SetExpansion(1))
+					used := len(volUsage[v.Name])
+					usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+					if used > 0 {
+						usedCell = tview.NewTableCell(fmt.Sprintf("%d", used)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
 					}
+					vtable.SetCell(i+1, 0, tview.NewTableCell(v.Name).SetExpansion(1))
+					vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
+					vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
+					vtable.SetCell(i+1, 3, usedCell)
 				}
 				if len(vols) > 0 {
 					vtable.Select(1, 0)
@@ -540,6 +549,43 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 	})
 
+	// showVolumeConsumers lists the services/containers that mount a volume.
+	showVolumeConsumers := func(v swarmVolume) {
+		consumers := volUsage[v.Name]
+		list := tview.NewList().ShowSecondaryText(false)
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — used by %d — ESC back ", v.Name, len(consumers)))
+		if len(consumers) == 0 {
+			list.AddItem("(not in use by any container)", "", 0, nil)
+		} else {
+			svcW, contW := 0, 0
+			for _, c := range consumers {
+				if w := len(orDash(c.Service)); w > svcW {
+					svcW = w
+				}
+				if w := len(orDash(c.Container)); w > contW {
+					contW = w
+				}
+			}
+			for _, c := range consumers {
+				list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, orDash(c.Service), contW, orDash(c.Container), orDash(c.Node)), "", 0, nil)
+			}
+		}
+		closeUsers := func() { pages.RemovePage("volusers"); app.SetFocus(vtable) }
+		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+				closeUsers()
+				return nil
+			}
+			return ev
+		})
+		rows := len(consumers)
+		if rows == 0 {
+			rows = 1
+		}
+		pages.AddPage("volusers", centered(list, 72, rows+4), true, true)
+		app.SetFocus(list)
+	}
+
 	// ---------------------------------------------------------------- tabs/chrome
 	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
@@ -613,7 +659,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			app.SetFocus(ctree)
 		} else {
 			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-] ")
-			help.SetText(" [yellow]j/k[white] up/down  [yellow]Enter[white] node list  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
+			help.SetText(" [yellow]j/k[white] up/down  [yellow]Enter[white] node list  [yellow]i[white] used by  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
 			app.SetFocus(vtable)
 			loadVolumes()
 		}
@@ -671,7 +717,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return tabKeys(ev)
 	})
-	vtable.SetInputCapture(tabKeys)
+	// On the volumes table, "i" shows which services/containers use the volume.
+	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+			if v, ok := selectedVolume(); ok {
+				showVolumeConsumers(v)
+			}
+			return nil
+		}
+		return tabKeys(ev)
+	})
 
 	loadContainers()
 	setTab("containers")
