@@ -148,7 +148,19 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	spec := agentServiceSpec(f, secretID)
 	var encodedAuth string
 	if f.registryAuth {
-		if auth, aerr := encodedRegistryAuth(f.image); aerr == nil {
+		auth, aerr := encodedRegistryAuth(f.image)
+		host := registryHost(f.image)
+		switch {
+		case aerr != nil:
+			// Don't deploy blind: without distributed credentials the manager may
+			// pull fine (image cached / logged in) while every worker reports the
+			// image as unavailable.
+			fmt.Fprintln(out, "failed")
+			return &cliError{code: usageExitCode, err: fmt.Errorf("read registry credentials for %s: %w — run `docker login %s` first, or pass --registry-auth=false for a public image", host, aerr, host)}
+		case auth == "" && host != "docker.io":
+			fmt.Fprintln(out, "failed")
+			return &cliError{code: usageExitCode, err: fmt.Errorf("no registry credentials found for %s — worker nodes cannot pull the private image %q; run `docker login %s` first, or pass --registry-auth=false for a public image", host, f.image, host)}
+		default:
 			encodedAuth = auth
 		}
 	}
