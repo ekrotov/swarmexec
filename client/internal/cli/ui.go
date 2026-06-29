@@ -97,31 +97,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			strings.Contains(strings.ToLower(c.ContainerID), q) ||
 			strings.Contains(strings.ToLower(c.NodeName), q)
 	}
-	loadContainers := func() {
-		// Remember the selected container so a refresh keeps the cursor on it.
+	// lastCands caches the most recent fetch so the "/" filter can re-render
+	// locally without hitting the docker API on every keystroke (a remote call
+	// over the ssh tunnel — doing it per keystroke makes typing crawl).
+	var lastCands []resolve.Candidate
+	renderContainers := func() {
+		// Remember the selected container so a refresh/filter keeps the cursor.
 		prevID := ""
 		if n := ctree.GetCurrentNode(); n != nil {
 			if ref, ok := n.GetReference().(resolve.Candidate); ok {
 				prevID = ref.ContainerID
 			}
 		}
-		cands, lerr := r.Candidates(ctx, service)
-		sort.SliceStable(cands, func(i, j int) bool {
-			if cands[i].Service != cands[j].Service {
-				return cands[i].Service < cands[j].Service
-			}
-			if cands[i].Slot != cands[j].Slot {
-				return cands[i].Slot < cands[j].Slot
-			}
-			return cands[i].NodeName < cands[j].NodeName
-		})
 		croot.ClearChildren()
-		if lerr != nil {
-			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
-			return
-		}
+		cands := lastCands
 		if filter != "" {
-			kept := cands[:0]
+			kept := make([]resolve.Candidate, 0, len(cands))
 			for _, c := range cands {
 				if matchesFilter(c) {
 					kept = append(kept, c)
@@ -182,6 +173,25 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		case first != nil:
 			ctree.SetCurrentNode(first)
 		}
+	}
+	loadContainers := func() {
+		cands, lerr := r.Candidates(ctx, service)
+		if lerr != nil {
+			croot.ClearChildren()
+			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
+			return
+		}
+		sort.SliceStable(cands, func(i, j int) bool {
+			if cands[i].Service != cands[j].Service {
+				return cands[i].Service < cands[j].Service
+			}
+			if cands[i].Slot != cands[j].Slot {
+				return cands[i].Slot < cands[j].Slot
+			}
+			return cands[i].NodeName < cands[j].NodeName
+		})
+		lastCands = cands
+		renderContainers()
 	}
 	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
@@ -638,8 +648,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		app.SetFocus(search)
 	}
 	search.SetChangedFunc(func(text string) {
+		// Filter locally against the cached candidates — no docker call per keystroke.
 		filter = strings.TrimSpace(text)
-		loadContainers()
+		renderContainers()
 	})
 	search.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape {
