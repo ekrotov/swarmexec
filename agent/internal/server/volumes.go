@@ -66,11 +66,16 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 }
 
 // volumeSizes returns volume name -> on-disk size in bytes via the docker
-// disk-usage endpoint, scoped to volumes so images/containers/build-cache are
-// not walked. A failure is non-fatal: it returns nil so the listing still works
-// (sizes just show as unavailable).
+// disk-usage endpoint. A failure is non-fatal: it returns nil so the listing
+// still works (sizes just show as unavailable).
+//
+// NB: we request the full disk usage rather than scoping to Types:[volume].
+// Scoping makes some daemons return volumes without UsageData (no size
+// computed) — the same way a plain `docker system df` reports sizes but a
+// type-filtered query does not. The extra image/build-cache sizes are computed
+// and ignored; this whole call is opt-in (with_size) and runs off the hot path.
 func (s *Server) volumeSizes(ctx context.Context) map[string]int64 {
-	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{})
 	if err != nil {
 		s.log.Warn("DiskUsage failed; volume sizes unavailable", "err", err)
 		return nil
