@@ -156,10 +156,10 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 			// pull fine (image cached / logged in) while every worker reports the
 			// image as unavailable.
 			fmt.Fprintln(out, "failed")
-			return &cliError{code: usageExitCode, err: fmt.Errorf("read registry credentials for %s: %w — run `docker login %s` first, or pass --registry-auth=false for a public image", host, aerr, host)}
+			return &cliError{code: usageExitCode, err: fmt.Errorf("read local registry credentials for %s: %w — run `docker login %s` on THIS machine (where you run swarmexec, not the manager); init distributes them to the swarm nodes. Or pass --registry-auth=false for a public image", host, aerr, host)}
 		case auth == "" && host != "docker.io":
 			fmt.Fprintln(out, "failed")
-			return &cliError{code: usageExitCode, err: fmt.Errorf("no registry credentials found for %s — worker nodes cannot pull the private image %q; run `docker login %s` first, or pass --registry-auth=false for a public image", host, f.image, host)}
+			return &cliError{code: usageExitCode, err: fmt.Errorf("no registry credentials for %s found in this machine's Docker config — init reads your LOCAL `docker login` (not the manager's) and distributes it to the swarm nodes so they can pull the private image %q. Run `docker login %s` here, or pass --registry-auth=false for a public image", host, f.image, host)}
 		default:
 			encodedAuth = auth
 		}
