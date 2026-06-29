@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/client"
+	units "github.com/docker/go-units"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/status"
 
@@ -45,6 +46,7 @@ type volumeFlags struct {
 	force          bool
 	yes            bool
 	json           bool
+	size           bool
 	connectTimeout time.Duration
 }
 
@@ -60,6 +62,7 @@ func newVolumeLsCmd(g *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "per-node connect timeout")
 	cmd.Flags().BoolVar(&f.json, "json", false, "output JSON instead of a table")
+	cmd.Flags().BoolVar(&f.size, "size", false, "also compute each volume's on-disk size (slower: du per volume)")
 	return cmd
 }
 
@@ -92,6 +95,10 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		return e
 	}
 	usage := indexVolumeUsage(ctx, cfg, nodes, f.connectTimeout)
+	var sizes map[string]int64
+	if f.size {
+		sizes = indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
+	}
 
 	filter := ""
 	if len(args) == 1 {
@@ -110,6 +117,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 			Nodes     []string      `json:"nodes"`
 			UsedBy    int           `json:"used_by"`
 			Consumers []consumerRow `json:"consumers"`
+			SizeBytes *int64        `json:"size_bytes,omitempty"`
 		}
 		rows := make([]volRow, 0, len(vols))
 		for _, v := range vols {
@@ -120,7 +128,13 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 			for _, c := range usage[v.Name] {
 				cons = append(cons, consumerRow{Service: c.Service, Container: c.Container, Node: c.Node})
 			}
-			rows = append(rows, volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons})
+			row := volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons}
+			if f.size {
+				if sz, ok := sizes[v.Name]; ok {
+					row.SizeBytes = &sz
+				}
+			}
+			rows = append(rows, row)
 		}
 		if err := printJSON(os.Stdout, rows); err != nil {
 			return err
@@ -130,7 +144,11 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "VOLUME\tDRIVER\tNODES\tUSED BY")
+	header := "VOLUME\tDRIVER\tNODES\tUSED BY"
+	if f.size {
+		header += "\tSIZE"
+	}
+	fmt.Fprintln(w, header)
 	for _, v := range vols {
 		if filter != "" && !strings.Contains(v.Name, filter) {
 			continue
@@ -139,7 +157,15 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		if n := len(usage[v.Name]); n > 0 {
 			usedBy = strconv.Itoa(n)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy)
+		row := fmt.Sprintf("%s\t%s\t%s\t%s", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy)
+		if f.size {
+			sz := int64(-1)
+			if s, ok := sizes[v.Name]; ok {
+				sz = s
+			}
+			row += "\t" + humanBytes(sz)
+		}
+		fmt.Fprintln(w, row)
 	}
 	_ = w.Flush()
 	reportNodeErrors(errs)
@@ -245,7 +271,7 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 	}
 	out := make([]res, len(nodes))
 	forEachNode(nodes, func(i int, n resolve.Node) {
-		vs, err := listNodeVolumes(ctx, cfg, n, connectTimeout)
+		vs, err := listNodeVolumes(ctx, cfg, n, false, connectTimeout)
 		out[i] = res{node: n, vols: vs, err: err}
 	})
 
@@ -274,7 +300,7 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 	return vols, errs
 }
 
-func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, connectTimeout time.Duration) ([]*pb.VolumeInfo, error) {
+func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, withSize bool, connectTimeout time.Duration) ([]*pb.VolumeInfo, error) {
 	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	conn, err := dial.Dial(dctx, n.DialHost, cfg.Port, cfg)
 	cancel()
@@ -282,11 +308,46 @@ func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, con
 		return nil, err
 	}
 	defer conn.Close()
-	resp, err := pb.NewAgentClient(conn).ListVolumes(ctx, &pb.ListVolumesRequest{})
+	resp, err := pb.NewAgentClient(conn).ListVolumes(ctx, &pb.ListVolumesRequest{WithSize: withSize})
 	if err != nil {
 		return nil, wrapGRPC(err)
 	}
 	return resp.Volumes, nil
+}
+
+// indexVolumeSizes returns volume name -> total on-disk bytes, summed across the
+// nodes that hold it. Computing sizes is expensive (du-style), so this is a
+// separate opt-in pass. Volumes with no known size on any node are absent from
+// the map (callers render them as "-"). Unreachable nodes are skipped.
+func indexVolumeSizes(ctx context.Context, cfg config.Config, nodes []resolve.Node, connectTimeout time.Duration) map[string]int64 {
+	per := make([][]*pb.VolumeInfo, len(nodes))
+	forEachNode(nodes, func(i int, n resolve.Node) {
+		vs, err := listNodeVolumes(ctx, cfg, n, true, connectTimeout)
+		if err != nil {
+			return
+		}
+		per[i] = vs
+	})
+	sizes := map[string]int64{}
+	for _, vs := range per {
+		for _, v := range vs {
+			// Skip when the agent didn't report a size (older agent that predates
+			// size reporting) or it's not available (non-local driver).
+			if !v.GetSizeKnown() || v.GetSizeBytes() < 0 {
+				continue
+			}
+			sizes[v.GetName()] += v.GetSizeBytes()
+		}
+	}
+	return sizes
+}
+
+// humanBytes renders a byte count for display, or "-" when unknown (negative).
+func humanBytes(n int64) string {
+	if n < 0 {
+		return "-"
+	}
+	return units.HumanSize(float64(n))
 }
 
 // volumeConsumer is a container (and its service) that mounts a volume.

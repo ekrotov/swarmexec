@@ -47,6 +47,7 @@ type fakeDocker struct {
 	volumes      []*volume.Volume
 	volumeRemErr error
 	removedVols  []string
+	diskUsageErr error
 }
 
 func newFakeDocker() *fakeDocker {
@@ -121,6 +122,13 @@ func (f *fakeDocker) VolumeRemove(_ context.Context, name string, _ bool) error 
 	}
 	f.removedVols = append(f.removedVols, name)
 	return nil
+}
+
+func (f *fakeDocker) DiskUsage(_ context.Context, _ types.DiskUsageOptions) (types.DiskUsage, error) {
+	if f.diskUsageErr != nil {
+		return types.DiskUsage{}, f.diskUsageErr
+	}
+	return types.DiskUsage{Volumes: f.volumes}, nil
 }
 
 func (f *fakeDocker) Resizes() []container.ResizeOptions {

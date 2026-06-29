@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/volume"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -13,8 +14,10 @@ import (
 )
 
 // ListVolumes lists the volumes on this node. Swarm volumes are node-local, so
-// the cli queries every node and aggregates.
-func (s *Server) ListVolumes(ctx context.Context, _ *pb.ListVolumesRequest) (*pb.ListVolumesResponse, error) {
+// the cli queries every node and aggregates. With req.WithSize it also computes
+// each volume's on-disk size via the docker disk-usage endpoint (du-style; can
+// be slow), which is why it's opt-in.
+func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*pb.ListVolumesResponse, error) {
 	identity, err := s.identityFn(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
@@ -31,10 +34,23 @@ func (s *Server) ListVolumes(ctx context.Context, _ *pb.ListVolumesRequest) (*pb
 		s.log.Error("VolumeList failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "list volumes: %v", err)
 	}
+
+	// sizes maps volume name -> on-disk bytes (-1 = unavailable), only when asked.
+	var sizes map[string]int64
+	if req.GetWithSize() {
+		sizes = s.volumeSizes(ctx)
+	}
+
 	out := &pb.ListVolumesResponse{}
 	for _, v := range resp.Volumes {
 		if v == nil {
 			continue
+		}
+		size := int64(-1)
+		if sizes != nil {
+			if sz, ok := sizes[v.Name]; ok {
+				size = sz
+			}
 		}
 		out.Volumes = append(out.Volumes, &pb.VolumeInfo{
 			Name:       v.Name,
@@ -42,9 +58,31 @@ func (s *Server) ListVolumes(ctx context.Context, _ *pb.ListVolumesRequest) (*pb
 			Mountpoint: v.Mountpoint,
 			CreatedAt:  v.CreatedAt,
 			Scope:      v.Scope,
+			SizeBytes:  size,
+			SizeKnown:  sizes != nil,
 		})
 	}
 	return out, nil
+}
+
+// volumeSizes returns volume name -> on-disk size in bytes via the docker
+// disk-usage endpoint, scoped to volumes so images/containers/build-cache are
+// not walked. A failure is non-fatal: it returns nil so the listing still works
+// (sizes just show as unavailable).
+func (s *Server) volumeSizes(ctx context.Context) map[string]int64 {
+	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	if err != nil {
+		s.log.Warn("DiskUsage failed; volume sizes unavailable", "err", err)
+		return nil
+	}
+	sizes := make(map[string]int64, len(du.Volumes))
+	for _, v := range du.Volumes {
+		if v == nil || v.UsageData == nil {
+			continue
+		}
+		sizes[v.Name] = v.UsageData.Size // docker reports -1 for non-local drivers
+	}
+	return sizes
 }
 
 // RemoveVolume removes a volume on this node. It is authorized and audited; an

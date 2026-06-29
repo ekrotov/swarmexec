@@ -96,7 +96,12 @@ message LogChunk {
   }
 }
 
-message ListVolumesRequest {}
+message ListVolumesRequest {
+  // with_size asks the agent to also compute each volume's on-disk size via the
+  // docker disk-usage endpoint (du-style; can be slow). Off by default so the
+  // plain listing stays fast.
+  bool with_size = 1;
+}
 
 message ListVolumesResponse {
   repeated VolumeInfo volumes = 1;
@@ -108,6 +113,14 @@ message VolumeInfo {
   string mountpoint = 3;
   string created_at = 4;  // RFC3339, if known
   string scope = 5;       // "local" or "global"
+  // size_bytes is the on-disk size, only meaningful when size_known is true.
+  // -1 means "not available" (e.g. non-local driver).
+  int64 size_bytes = 6;
+  // size_known is true when the agent actually computed the size (with_size
+  // requested and disk-usage succeeded). It lets the client tell "0 bytes" from
+  // "an older agent that doesn't report sizes" (which would default size_bytes
+  // to 0).
+  bool size_known = 7;
 }
 
 message RemoveVolumeRequest {

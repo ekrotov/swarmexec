@@ -381,9 +381,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// ------------------------------------------------------------------- volumes
 	vtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	vtable.SetSelectedStyle(selStyle)
-	vHeaders := []string{"VOLUME", "DRIVER", "NODES", "USED BY"}
+	vHeaders := []string{"VOLUME", "DRIVER", "NODES", "USED BY", "SIZE"}
 	var vols []swarmVolume
 	var volUsage map[string][]volumeConsumer
+	var volSizes map[string]int64
 	loadVolumes := func() {
 		vtable.Clear()
 		for c, h := range vHeaders {
@@ -428,6 +429,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
 					vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
 					vtable.SetCell(i+1, 3, usedCell)
+					vtable.SetCell(i+1, 4, tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1))
 				}
 				if len(vols) > 0 {
 					vtable.Select(1, 0)
@@ -436,6 +438,23 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					vtable.SetCell(len(vols)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(errs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
 				}
 			})
+
+			// Sizes are computed via a du-style disk-usage scan, which is slow, so
+			// fill the SIZE column in a second pass once the list is already shown.
+			if nerr == nil && !noAgent {
+				sz := indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
+				app.QueueUpdateDraw(func() {
+					volSizes = sz
+					for i, v := range vs {
+						size := int64(-1)
+						color := tcell.ColorGray
+						if s, ok := sz[v.Name]; ok {
+							size, color = s, tcell.ColorWhite
+						}
+						vtable.SetCell(i+1, 4, tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1))
+					}
+				})
+			}
 		}()
 	}
 	selectedVolume := func() (swarmVolume, bool) {
@@ -698,13 +717,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				}
 			}
 		} else {
-			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY")
+			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tSIZE")
 			for _, v := range vols {
 				used := "-"
 				if n := len(volUsage[v.Name]); n > 0 {
 					used = fmt.Sprintf("%d", n)
 				}
-				fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used)
+				size := int64(-1)
+				if s, ok := volSizes[v.Name]; ok {
+					size = s
+				}
+				fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, humanBytes(size))
 			}
 		}
 		screen.SetClipboard([]byte(b.String()))
