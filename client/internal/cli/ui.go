@@ -389,12 +389,127 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	})
 
 	// ------------------------------------------------------------------- volumes
+	const (
+		volSortName = iota
+		volSortNodes
+		volSortUsed
+		volSortAge
+		volSortSize
+	)
+	// volSortCol maps a sort field to the header column it annotates with ▲/▼.
+	volSortCol := map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, volSortAge: 4, volSortSize: 5}
 	vtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	vtable.SetSelectedStyle(selStyle)
 	vHeaders := []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
 	var vols []swarmVolume
 	var volUsage map[string][]volumeConsumer
 	var volSizes map[string]int64
+	var volErrs map[string]error
+	sortField := volSortName
+	sortDesc := false
+
+	// sortVolumes orders rows by the active field; for size/age an unknown value
+	// always sorts last (regardless of direction), with name as the tiebreaker.
+	sortVolumes := func(rows []swarmVolume) {
+		known := func(v swarmVolume) bool {
+			switch sortField {
+			case volSortSize:
+				_, ok := volSizes[v.Name]
+				return ok
+			case volSortAge:
+				return !v.Created.IsZero()
+			default:
+				return true
+			}
+		}
+		less := func(a, b swarmVolume) bool {
+			switch sortField {
+			case volSortNodes:
+				if len(a.Nodes) != len(b.Nodes) {
+					return len(a.Nodes) < len(b.Nodes)
+				}
+			case volSortUsed:
+				if ua, ub := len(volUsage[a.Name]), len(volUsage[b.Name]); ua != ub {
+					return ua < ub
+				}
+			case volSortAge:
+				if !a.Created.Equal(b.Created) {
+					return a.Created.Before(b.Created) // earlier = older = "more age"
+				}
+			case volSortSize:
+				if sa, sb := volSizes[a.Name], volSizes[b.Name]; sa != sb {
+					return sa < sb
+				}
+			}
+			return a.Name < b.Name
+		}
+		sort.SliceStable(rows, func(i, j int) bool {
+			a, b := rows[i], rows[j]
+			if ka, kb := known(a), known(b); ka != kb {
+				return ka // known before unknown, both directions
+			}
+			if sortDesc {
+				return less(b, a)
+			}
+			return less(a, b)
+		})
+	}
+
+	renderVolumeTable := func() {
+		// Keep the cursor on the same volume across re-render (sort/size refresh).
+		selName := ""
+		if row, _ := vtable.GetSelection(); row >= 1 {
+			if c := vtable.GetCell(row, 0); c != nil {
+				selName = c.Text
+			}
+		}
+		vtable.Clear()
+		for c, h := range vHeaders {
+			if volSortCol[sortField] == c {
+				if sortDesc {
+					h += " ▼"
+				} else {
+					h += " ▲"
+				}
+			}
+			vtable.SetCell(0, c, headerCell(h))
+		}
+		rows := make([]swarmVolume, len(vols))
+		copy(rows, vols)
+		sortVolumes(rows)
+		selRow := 1
+		for i, v := range rows {
+			used := len(volUsage[v.Name])
+			usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+			if used > 0 {
+				usedCell = tview.NewTableCell(fmt.Sprintf("%d", used)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+			}
+			sizeCell := tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1)
+			if volSizes != nil {
+				size, color := int64(-1), tcell.ColorGray
+				if s, ok := volSizes[v.Name]; ok {
+					size, color = s, tcell.ColorWhite
+				}
+				sizeCell = tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1)
+			}
+			vtable.SetCell(i+1, 0, tview.NewTableCell(v.Name).SetExpansion(1))
+			vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
+			vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
+			vtable.SetCell(i+1, 3, usedCell)
+			vtable.SetCell(i+1, 4, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
+			vtable.SetCell(i+1, 5, sizeCell)
+			if v.Name == selName {
+				selRow = i + 1
+			}
+		}
+		if len(rows) > 0 {
+			vtable.Select(selRow, 0)
+		}
+		if len(volErrs) > 0 {
+			vtable.SetCell(len(rows)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(volErrs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
+		}
+	}
+
 	loadVolumes := func() {
 		vtable.Clear()
 		for c, h := range vHeaders {
@@ -415,39 +530,24 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				}
 			}
 			app.QueueUpdateDraw(func() {
-				vols = vs
-				volUsage = usage
-				vtable.Clear()
-				for c, h := range vHeaders {
-					vtable.SetCell(0, c, headerCell(h))
-				}
+				vols, volUsage, volErrs, volSizes = vs, usage, errs, nil
 				if nerr != nil {
+					vtable.Clear()
+					for c, h := range vHeaders {
+						vtable.SetCell(0, c, headerCell(h))
+					}
 					vtable.SetCell(1, 0, tview.NewTableCell("error: "+nerr.Error()).SetTextColor(tcell.ColorRed))
 					return
 				}
 				if noAgent {
+					vtable.Clear()
+					for c, h := range vHeaders {
+						vtable.SetCell(0, c, headerCell(h))
+					}
 					vtable.SetCell(1, 0, tview.NewTableCell(errNoAgent.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
 					return
 				}
-				for i, v := range vols {
-					used := len(volUsage[v.Name])
-					usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-					if used > 0 {
-						usedCell = tview.NewTableCell(fmt.Sprintf("%d", used)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
-					}
-					vtable.SetCell(i+1, 0, tview.NewTableCell(v.Name).SetExpansion(1))
-					vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
-					vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
-					vtable.SetCell(i+1, 3, usedCell)
-					vtable.SetCell(i+1, 4, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
-					vtable.SetCell(i+1, 5, tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1))
-				}
-				if len(vols) > 0 {
-					vtable.Select(1, 0)
-				}
-				if len(errs) > 0 {
-					vtable.SetCell(len(vols)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(errs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
-				}
+				renderVolumeTable()
 			})
 
 			// Sizes are computed via a du-style disk-usage scan, which is slow, so
@@ -456,14 +556,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				sz := indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
 				app.QueueUpdateDraw(func() {
 					volSizes = sz
-					for i, v := range vs {
-						size := int64(-1)
-						color := tcell.ColorGray
-						if s, ok := sz[v.Name]; ok {
-							size, color = s, tcell.ColorWhite
-						}
-						vtable.SetCell(i+1, 5, tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1))
-					}
+					renderVolumeTable()
 				})
 			}
 		}()
@@ -692,7 +785,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		if name == "containers" {
 			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		}
-		return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 	}
 	setTab := func(name string) {
 		active = name
@@ -734,7 +827,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 		} else {
 			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
-			for _, v := range vols {
+			rows := make([]swarmVolume, len(vols))
+			copy(rows, vols)
+			sortVolumes(rows)
+			for _, v := range rows {
 				used := "-"
 				if n := len(volUsage[v.Name]); n > 0 {
 					used = fmt.Sprintf("%d", n)
@@ -822,11 +918,24 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	})
 	// On the volumes table, "i" shows which services/containers use the volume.
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-			if v, ok := selectedVolume(); ok {
-				showVolumeConsumers(v)
+		if ev.Key() == tcell.KeyRune {
+			switch ev.Rune() {
+			case 'i':
+				if v, ok := selectedVolume(); ok {
+					showVolumeConsumers(v)
+				}
+				return nil
+			case 's':
+				// Cycle the sort field; pick a sensible default direction for it.
+				sortField = (sortField + 1) % 5
+				sortDesc = sortField != volSortName && sortField != volSortAge
+				renderVolumeTable()
+				return nil
+			case 'S':
+				sortDesc = !sortDesc
+				renderVolumeTable()
+				return nil
 			}
-			return nil
 		}
 		return tabKeys(ev)
 	})
