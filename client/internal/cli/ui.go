@@ -650,18 +650,76 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	}
 
 	active := "containers"
+	mouseEnabled := true
+	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
+	curHelp := ""
+	helpFor := func(name string) string {
+		if name == "containers" {
+			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		}
+		return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+	}
 	setTab := func(name string) {
 		active = name
 		content.SwitchToPage(name)
+		curHelp = helpFor(name)
+		help.SetText(curHelp)
 		if name == "containers" {
 			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2) ")
-			help.SetText(" [yellow]j/k[white] up/down  [yellow]h/l[white] collapse/expand  [yellow]/[white] search  [yellow]Enter[white] logs/menu  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
 			app.SetFocus(ctree)
 		} else {
 			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-] ")
-			help.SetText(" [yellow]j/k[white] up/down  [yellow]Enter[white] node list  [yellow]i[white] used by  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit")
 			app.SetFocus(vtable)
 			loadVolumes()
+		}
+	}
+
+	// flash briefly replaces the footer with a status message, then restores it.
+	flash := func(msg string) {
+		help.SetText(msg)
+		go func() {
+			time.Sleep(1500 * time.Millisecond)
+			app.QueueUpdateDraw(func() { help.SetText(curHelp) })
+		}()
+	}
+
+	// yankCurrent copies the active tab's list to the system clipboard via the
+	// terminal (OSC52), so it also works over ssh when the terminal supports it.
+	yankCurrent := func() {
+		if screen == nil {
+			return
+		}
+		var b strings.Builder
+		if active == "containers" {
+			for _, svc := range croot.GetChildren() {
+				fmt.Fprintln(&b, svc.GetText())
+				for _, c := range svc.GetChildren() {
+					fmt.Fprintf(&b, "  %s\n", c.GetText())
+				}
+			}
+		} else {
+			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY")
+			for _, v := range vols {
+				used := "-"
+				if n := len(volUsage[v.Name]); n > 0 {
+					used = fmt.Sprintf("%d", n)
+				}
+				fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used)
+			}
+		}
+		screen.SetClipboard([]byte(b.String()))
+		flash(" [green]✓ copied to clipboard[white]")
+	}
+
+	// toggleMouse flips tview's mouse capture. With it off, the terminal's own
+	// text selection / copy works again (tview otherwise grabs the mouse).
+	toggleMouse := func() {
+		mouseEnabled = !mouseEnabled
+		app.EnableMouse(mouseEnabled)
+		if mouseEnabled {
+			flash(" [green]mouse ON[white] — app handles the mouse")
+		} else {
+			flash(" [green]mouse OFF[white] — select & copy with your terminal (m to re-enable)")
 		}
 	}
 
@@ -692,6 +750,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					loadVolumes()
 				}
 				refreshCluster()
+				return nil
+			case 'y':
+				yankCurrent()
+				return nil
+			case 'm':
+				toggleMouse()
 				return nil
 			case 'j':
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -731,6 +795,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	loadContainers()
 	setTab("containers")
 	refreshCluster()
+
+	// Own the screen so we can post to the system clipboard (OSC52) on yank.
+	scr, serr := tcell.NewScreen()
+	if serr != nil {
+		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
+	}
+	screen = scr
+	app.SetScreen(screen)
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
