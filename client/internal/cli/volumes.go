@@ -25,9 +25,10 @@ import (
 
 // swarmVolume is a volume aggregated across the nodes that have it.
 type swarmVolume struct {
-	Name   string
-	Driver string
-	Nodes  []resolve.Node // nodes that hold a copy of this volume
+	Name    string
+	Driver  string
+	Nodes   []resolve.Node // nodes that hold a copy of this volume
+	Created time.Time      // earliest creation time across nodes; zero if unknown
 }
 
 func newVolumeCmd(g *globalFlags) *cobra.Command {
@@ -117,6 +118,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 			Nodes     []string      `json:"nodes"`
 			UsedBy    int           `json:"used_by"`
 			Consumers []consumerRow `json:"consumers"`
+			CreatedAt string        `json:"created_at,omitempty"`
 			SizeBytes *int64        `json:"size_bytes,omitempty"`
 		}
 		rows := make([]volRow, 0, len(vols))
@@ -129,6 +131,9 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 				cons = append(cons, consumerRow{Service: c.Service, Container: c.Container, Node: c.Node})
 			}
 			row := volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons}
+			if !v.Created.IsZero() {
+				row.CreatedAt = v.Created.UTC().Format(time.RFC3339)
+			}
 			if f.size {
 				if sz, ok := sizes[v.Name]; ok {
 					row.SizeBytes = &sz
@@ -144,7 +149,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	header := "VOLUME\tDRIVER\tNODES\tUSED BY"
+	header := "VOLUME\tDRIVER\tNODES\tUSED BY\tAGE"
 	if f.size {
 		header += "\tSIZE"
 	}
@@ -157,7 +162,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		if n := len(usage[v.Name]); n > 0 {
 			usedBy = strconv.Itoa(n)
 		}
-		row := fmt.Sprintf("%s\t%s\t%s\t%s", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy)
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy, volumeAge(v.Created))
 		if f.size {
 			sz := int64(-1)
 			if s, ok := sizes[v.Name]; ok {
@@ -289,6 +294,12 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 				byName[v.Name] = sv
 			}
 			sv.Nodes = append(sv.Nodes, r.node)
+			// Keep the earliest creation time across the nodes holding the volume.
+			if t, err := time.Parse(time.RFC3339, v.GetCreatedAt()); err == nil {
+				if sv.Created.IsZero() || t.Before(sv.Created) {
+					sv.Created = t
+				}
+			}
 		}
 	}
 	vols := make([]swarmVolume, 0, len(byName))
@@ -348,6 +359,24 @@ func humanBytes(n int64) string {
 		return "-"
 	}
 	return units.HumanSize(float64(n))
+}
+
+// volumeAge renders a volume's creation time as a compact relative age
+// (e.g. "3d"), or "-" when unknown.
+func volumeAge(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return uptime(time.Since(t))
+}
+
+// volumeCreated renders a volume's creation time as an absolute timestamp, or
+// "-" when unknown.
+func volumeCreated(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format("2006-01-02 15:04")
 }
 
 // volumeConsumer is a container (and its service) that mounts a volume.

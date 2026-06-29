@@ -381,7 +381,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// ------------------------------------------------------------------- volumes
 	vtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	vtable.SetSelectedStyle(selStyle)
-	vHeaders := []string{"VOLUME", "DRIVER", "NODES", "USED BY", "SIZE"}
+	vHeaders := []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
 	var vols []swarmVolume
 	var volUsage map[string][]volumeConsumer
 	var volSizes map[string]int64
@@ -429,7 +429,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
 					vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
 					vtable.SetCell(i+1, 3, usedCell)
-					vtable.SetCell(i+1, 4, tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1))
+					vtable.SetCell(i+1, 4, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
+					vtable.SetCell(i+1, 5, tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1))
 				}
 				if len(vols) > 0 {
 					vtable.Select(1, 0)
@@ -451,7 +452,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 						if s, ok := sz[v.Name]; ok {
 							size, color = s, tcell.ColorWhite
 						}
-						vtable.SetCell(i+1, 4, tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1))
+						vtable.SetCell(i+1, 5, tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1))
 					}
 				})
 			}
@@ -468,7 +469,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 	showVolumeNodes := func(v swarmVolume) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes)))
+		title := fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
+		if !v.Created.IsZero() {
+			title = fmt.Sprintf(" volume %s — %d node(s) · created %s ", shortVolume(v.Name), len(v.Nodes), volumeCreated(v.Created))
+		}
+		list.SetBorder(true).SetTitle(title)
 		sel := make([]bool, len(v.Nodes))
 		render := func() {
 			cur := list.GetCurrentItem()
@@ -717,7 +722,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				}
 			}
 		} else {
-			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tSIZE")
+			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
 			for _, v := range vols {
 				used := "-"
 				if n := len(volUsage[v.Name]); n > 0 {
@@ -727,7 +732,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				if s, ok := volSizes[v.Name]; ok {
 					size = s
 				}
-				fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, humanBytes(size))
+				fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), humanBytes(size))
 			}
 		}
 		screen.SetClipboard([]byte(b.String()))
