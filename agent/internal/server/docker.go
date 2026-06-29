@@ -22,6 +22,7 @@ type DockerClient interface {
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	VolumeList(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
+	DiskUsage(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
 }
 
 // swarmServiceLabel is the container label Docker sets on swarm task containers

@@ -33,6 +33,44 @@ func TestListVolumes(t *testing.T) {
 	}
 }
 
+func TestListVolumes_WithSize(t *testing.T) {
+	d := newFakeDocker()
+	d.volumes = []*volume.Volume{
+		{Name: "v1", Driver: "local", UsageData: &volume.UsageData{Size: 4096, RefCount: 1}},
+		{Name: "v2", Driver: "other", UsageData: &volume.UsageData{Size: -1, RefCount: -1}},
+	}
+	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
+
+	// Without with_size, the agent must not compute sizes: SizeBytes stays -1.
+	resp, err := srv.ListVolumes(context.Background(), &pb.ListVolumesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Volumes[0].SizeBytes != -1 || resp.Volumes[0].SizeKnown {
+		t.Errorf("without with_size: got size=%d known=%v, want -1/false", resp.Volumes[0].SizeBytes, resp.Volumes[0].SizeKnown)
+	}
+
+	// With with_size, sizes come from the disk-usage data (-1 for non-local) and
+	// size_known is set so the client can tell "0 bytes" from "not reported".
+	resp, err = srv.ListVolumes(context.Background(), &pb.ListVolumesRequest{WithSize: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, v := range resp.Volumes {
+		got[v.Name] = v.SizeBytes
+		if !v.SizeKnown {
+			t.Errorf("%s: size_known = false, want true", v.Name)
+		}
+	}
+	if got["v1"] != 4096 {
+		t.Errorf("v1 size = %d, want 4096", got["v1"])
+	}
+	if got["v2"] != -1 {
+		t.Errorf("v2 size = %d, want -1 (n/a)", got["v2"])
+	}
+}
+
 func TestListVolumes_Denied(t *testing.T) {
 	srv, m := newTestServer(newFakeDocker(), denyAuth{}, Options{})
 	if _, err := srv.ListVolumes(context.Background(), &pb.ListVolumesRequest{}); status.Code(err) != codes.PermissionDenied {
