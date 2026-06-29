@@ -48,6 +48,8 @@ type volumeFlags struct {
 	yes            bool
 	json           bool
 	size           bool
+	sort           string
+	reverse        bool
 	connectTimeout time.Duration
 }
 
@@ -64,6 +66,8 @@ func newVolumeLsCmd(g *globalFlags) *cobra.Command {
 	cmd.Flags().DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "per-node connect timeout")
 	cmd.Flags().BoolVar(&f.json, "json", false, "output JSON instead of a table")
 	cmd.Flags().BoolVar(&f.size, "size", false, "also compute each volume's on-disk size (slower: du per volume)")
+	cmd.Flags().StringVar(&f.sort, "sort", "name", "sort by: name|nodes|used|age|size (size implies --size)")
+	cmd.Flags().BoolVar(&f.reverse, "reverse", false, "reverse the sort direction")
 	return cmd
 }
 
@@ -91,15 +95,24 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	if err != nil {
 		return err
 	}
+	if !validVolumeSort(f.sort) {
+		return &cliError{code: usageExitCode, err: fmt.Errorf("invalid --sort %q (want name|nodes|used|age|size)", f.sort)}
+	}
 	vols, errs := indexVolumes(ctx, cfg, nodes, f.connectTimeout)
 	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
 		return e
 	}
 	usage := indexVolumeUsage(ctx, cfg, nodes, f.connectTimeout)
+	wantSize := f.size || f.sort == "size"
 	var sizes map[string]int64
-	if f.size {
+	if wantSize {
 		sizes = indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
 	}
+	desc := defaultVolumeSortDesc(f.sort)
+	if f.reverse {
+		desc = !desc
+	}
+	sortVolumesBy(vols, f.sort, desc, usage, sizes)
 
 	filter := ""
 	if len(args) == 1 {
@@ -134,7 +147,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 			if !v.Created.IsZero() {
 				row.CreatedAt = v.Created.UTC().Format(time.RFC3339)
 			}
-			if f.size {
+			if wantSize {
 				if sz, ok := sizes[v.Name]; ok {
 					row.SizeBytes = &sz
 				}
@@ -150,7 +163,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	header := "VOLUME\tDRIVER\tNODES\tUSED BY\tAGE"
-	if f.size {
+	if wantSize {
 		header += "\tSIZE"
 	}
 	fmt.Fprintln(w, header)
@@ -163,7 +176,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 			usedBy = strconv.Itoa(n)
 		}
 		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy, volumeAge(v.Created))
-		if f.size {
+		if wantSize {
 			sz := int64(-1)
 			if s, ok := sizes[v.Name]; ok {
 				sz = s
@@ -377,6 +390,74 @@ func volumeCreated(t time.Time) string {
 		return "-"
 	}
 	return t.Local().Format("2006-01-02 15:04")
+}
+
+// validVolumeSort reports whether field is a recognized --sort value.
+func validVolumeSort(field string) bool {
+	switch field {
+	case "name", "nodes", "used", "age", "size":
+		return true
+	}
+	return false
+}
+
+// defaultVolumeSortDesc picks the natural default direction for a sort field:
+// descending (biggest/most first) for nodes/used/size, ascending for name; age
+// ascends so the oldest (highest age) come first.
+func defaultVolumeSortDesc(field string) bool {
+	switch field {
+	case "nodes", "used", "size":
+		return true
+	default:
+		return false
+	}
+}
+
+// sortVolumesBy orders vols in place by field/direction. For size/age an unknown
+// value always sorts last (regardless of direction); name is the tiebreaker.
+func sortVolumesBy(vols []swarmVolume, field string, desc bool, usage map[string][]volumeConsumer, sizes map[string]int64) {
+	known := func(v swarmVolume) bool {
+		switch field {
+		case "size":
+			_, ok := sizes[v.Name]
+			return ok
+		case "age":
+			return !v.Created.IsZero()
+		default:
+			return true
+		}
+	}
+	less := func(a, b swarmVolume) bool {
+		switch field {
+		case "nodes":
+			if len(a.Nodes) != len(b.Nodes) {
+				return len(a.Nodes) < len(b.Nodes)
+			}
+		case "used":
+			if ua, ub := len(usage[a.Name]), len(usage[b.Name]); ua != ub {
+				return ua < ub
+			}
+		case "age":
+			if !a.Created.Equal(b.Created) {
+				return a.Created.Before(b.Created) // earlier = older
+			}
+		case "size":
+			if sa, sb := sizes[a.Name], sizes[b.Name]; sa != sb {
+				return sa < sb
+			}
+		}
+		return a.Name < b.Name
+	}
+	sort.SliceStable(vols, func(i, j int) bool {
+		a, b := vols[i], vols[j]
+		if ka, kb := known(a), known(b); ka != kb {
+			return ka // known before unknown, both directions
+		}
+		if desc {
+			return less(b, a)
+		}
+		return less(a, b)
+	})
 }
 
 // volumeConsumer is a container (and its service) that mounts a volume.
