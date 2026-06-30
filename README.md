@@ -476,6 +476,43 @@ docker service rm registry
 
 ---
 
+## 9. Related work
+
+Swarm has no built-in cluster-wide `docker exec`: containers, volumes and images
+are node-local, so the manager API only exposes services/tasks — not a shell into
+the container on a worker. A few projects work around this; swarmexec differs in
+running a **persistent, authenticated agent** rather than per-command tricks.
+
+**CLI tools** — all spin up an *ephemeral* helper (a throwaway service/container
+with the Docker socket mounted) for each command, then tear it down:
+
+- [opsani/skopos-plugin-swarm-exec](https://github.com/opsani/skopos-plugin-swarm-exec)
+  — creates a temporary service constrained to the target node, execs, cleans up.
+- [mavenugo/swarm-exec](https://github.com/mavenugo/swarm-exec)
+  — a global service that bind-mounts the Docker CLI/socket to run a command on every node.
+- [neuroforgede/docker-swarm-proxy](https://github.com/neuroforgede/docker-swarm-proxy)
+  — a Python Docker CLI plugin that proxies commands to any node (via `DOCKER_HOST`/SSH).
+- [pantafive/swarmServiceExec](https://github.com/pantafive/swarmServiceExec)
+  — an async wrapper around the "find the task's node, then exec" flow.
+
+These are handy and need nothing deployed, but each exec pays a container-spawn
+cost, they're typically exec-only (no aggregated logs/volume views), and access
+is whatever the node's Docker socket grants — no per-operator auth or audit.
+
+**GUI platforms** — [Portainer](https://docs.portainer.io/admin/environments/add/swarm/agent)
+(with the Portainer Agent) and [Swarmpit](https://swarmpit.io) solve the same
+node-local API limitation with a per-node agent and can exec/inspect cluster-wide
+— but as a web platform, not a headless CLI/TUI.
+
+**Where swarmexec sits:** the Portainer-style *persistent per-node agent*
+(fast exec, plus logs and swarm-wide volume management) delivered as a
+terminal-native, scriptable CLI/TUI — with its own mTLS / shared-secret auth,
+an audit log, and ssh-tunnel support for agents behind a bastion. Among the
+CLI tools, the dedicated long-running agent + protocol is the distinguishing
+trait; among the agent-based tools, being headless/CLI-only is.
+
+---
+
 ## More detail
 
 - [`CONTRACT.md`](CONTRACT.md) — the authoritative wire protocol.
