@@ -407,6 +407,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	var volErrs map[string]error
 	sortField := volSortName
 	sortDesc := false
+	volSizesLoading := false
 
 	// sortVolumes orders rows by the active field; for size/age an unknown value
 	// always sorts last (regardless of direction), with name as the tiebreaker.
@@ -472,13 +473,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					h += " ▲"
 				}
 			}
+			// While the (slow) size scan runs, show a loading marker on the SIZE
+			// header; the spinner goroutine animates this cell.
+			if c == volSortCol[volSortSize] && volSizesLoading {
+				h += " loading…"
+			}
 			vtable.SetCell(0, c, headerCell(h))
 		}
-		rows := make([]swarmVolume, len(vols))
-		copy(rows, vols)
-		sortVolumes(rows)
+		// Sort vols in place so the displayed order matches the slice that
+		// selectedVolume() indexes — otherwise a non-name sort makes the delete /
+		// nodes modal act on the wrong volume.
+		sortVolumes(vols)
 		selRow := 1
-		for i, v := range rows {
+		for i, v := range vols {
 			used := len(volUsage[v.Name])
 			usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
 			if used > 0 {
@@ -502,11 +509,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				selRow = i + 1
 			}
 		}
-		if len(rows) > 0 {
+		if len(vols) > 0 {
 			vtable.Select(selRow, 0)
 		}
 		if len(volErrs) > 0 {
-			vtable.SetCell(len(rows)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(volErrs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
+			vtable.SetCell(len(vols)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(volErrs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
 		}
 	}
 
@@ -552,9 +559,35 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 			// Sizes are computed via a du-style disk-usage scan, which is slow, so
 			// fill the SIZE column in a second pass once the list is already shown.
+			// A spinner on the SIZE header makes clear the data is still loading.
 			if nerr == nil && !noAgent {
-				sz := indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
 				app.QueueUpdateDraw(func() {
+					volSizesLoading = true
+					renderVolumeTable()
+				})
+				stop := make(chan struct{})
+				go func() {
+					frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+					tk := time.NewTicker(150 * time.Millisecond)
+					defer tk.Stop()
+					for i := 0; ; i++ {
+						select {
+						case <-stop:
+							return
+						case <-tk.C:
+							frame := frames[i%len(frames)]
+							app.QueueUpdateDraw(func() {
+								if volSizesLoading {
+									vtable.SetCell(0, volSortCol[volSortSize], headerCell("SIZE "+frame))
+								}
+							})
+						}
+					}
+				}()
+				sz := indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
+				close(stop)
+				app.QueueUpdateDraw(func() {
+					volSizesLoading = false
 					volSizes = sz
 					renderVolumeTable()
 				})
