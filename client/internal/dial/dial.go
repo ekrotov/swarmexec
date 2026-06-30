@@ -13,9 +13,11 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	"swarmexec/client/internal/config"
 	"swarmexec/internal/authmeta"
@@ -44,6 +46,16 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 		grpc.WithBlock(),
 		grpc.WithReturnConnectionError(),
 		grpc.FailOnNonTempDialError(true),
+		// Keep the connection warm with periodic pings. A long, silent RPC (e.g.
+		// the disk-usage scan behind volume sizes) sends no application bytes, so
+		// over an ssh -W tunnel the idle TCP link can be dropped by the bastion/NAT
+		// mid-call. Pings keep traffic flowing so the call survives. The agent's
+		// keepalive enforcement policy permits this interval.
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                15 * time.Second,
+			Timeout:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	}
 
 	// When the Docker context is an ssh:// endpoint the swarm nodes are usually

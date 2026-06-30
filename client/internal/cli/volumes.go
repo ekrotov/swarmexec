@@ -324,15 +324,27 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 	return vols, errs
 }
 
+// volumeSizeTimeout bounds a with_size ListVolumes call: the agent runs a
+// du-style disk-usage scan that can take a while, far longer than a connect.
+const volumeSizeTimeout = 2 * time.Minute
+
 func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, withSize bool, connectTimeout time.Duration) ([]*pb.VolumeInfo, error) {
-	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := dial.Dial(dctx, n.DialHost, cfg.Port, cfg)
-	cancel()
+	// One context for dial AND the RPC, cancelled only when we're done. Cancelling
+	// the dial context early (the old pattern) tears down the connection while a
+	// slow with_size scan is still running — over the ssh tunnel that surfaces as
+	// "context canceled" on the agent. With size we also need a generous deadline.
+	timeout := connectTimeout
+	if withSize && volumeSizeTimeout > timeout {
+		timeout = volumeSizeTimeout
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	conn, err := dial.Dial(cctx, n.DialHost, cfg.Port, cfg)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	resp, err := pb.NewAgentClient(conn).ListVolumes(ctx, &pb.ListVolumesRequest{WithSize: withSize})
+	resp, err := pb.NewAgentClient(conn).ListVolumes(cctx, &pb.ListVolumesRequest{WithSize: withSize})
 	if err != nil {
 		return nil, wrapGRPC(err)
 	}
