@@ -66,16 +66,16 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 }
 
 // volumeSizes returns volume name -> on-disk size in bytes via the docker
-// disk-usage endpoint. A failure is non-fatal: it returns nil so the listing
-// still works (sizes just show as unavailable).
+// disk-usage endpoint, scoped to volumes so images/containers/build-cache are
+// not walked (that walk dominates the cost on busy nodes). A failure is
+// non-fatal: it returns nil so the listing still works (sizes show as "-").
 //
-// NB: we request the full disk usage rather than scoping to Types:[volume].
-// Scoping makes some daemons return volumes without UsageData (no size
-// computed) — the same way a plain `docker system df` reports sizes but a
-// type-filtered query does not. The extra image/build-cache sizes are computed
-// and ignored; this whole call is opt-in (with_size) and runs off the hot path.
+// NB: the daemon computes volume sizes regardless of the type filter. The
+// earlier "no sizes with the filter" symptom was actually the scan being
+// cancelled when the idle ssh tunnel dropped mid-call; gRPC keepalive fixes
+// that, so scoping to volumes is safe and much faster than a full system df.
 func (s *Server) volumeSizes(ctx context.Context) map[string]int64 {
-	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{})
+	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
 	if err != nil {
 		s.log.Warn("DiskUsage failed; volume sizes unavailable", "err", err)
 		return nil
