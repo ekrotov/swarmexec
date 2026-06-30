@@ -19,6 +19,7 @@ import (
 	"github.com/docker/docker/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
@@ -131,7 +132,21 @@ func run(args []string) error {
 		SecretAuth:     secretAuthIdentity,
 	})
 
-	serverOpts := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(tlsCfg))}
+	serverOpts := []grpc.ServerOption{
+		grpc.Creds(credentials.NewTLS(tlsCfg)),
+		// Permit the client's keepalive pings (every ~15s, even without an active
+		// stream); the default policy would GOAWAY them as "too many pings". This
+		// keeps a long, silent RPC (e.g. the volume disk-usage scan) alive over an
+		// ssh tunnel. Also ping idle clients ourselves so dead links are noticed.
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
+	}
 	if secret != "" {
 		serverOpts = append(serverOpts,
 			grpc.ChainUnaryInterceptor(server.SecretUnaryInterceptor(secret)),
