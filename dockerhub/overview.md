@@ -4,6 +4,8 @@
 volume management, from a single terminal, without SSHing to the node that
 happens to run the task.
 
+📦 **Source & docs:** <https://gitlab.logle.io/internal-tools/swarm-remote-exec>
+
 This image is the **agent**: it runs as a **global** Swarm service (one task per
 node), has the local Docker socket mounted, and serves an mTLS gRPC endpoint that
 the `swarmexec` CLI connects to. The CLI resolves which node hosts your target
@@ -82,9 +84,11 @@ your Docker log driver (`docker service logs swarmexec_agent`).
 
 ## Links
 
-- **Source & full documentation:** the project repository (build, certificates,
-  configuration reference, troubleshooting, security notes).
-- **CLI binaries** (Linux / macOS / Windows) are attached to each release.
+- **Source & full documentation:**
+  <https://gitlab.logle.io/internal-tools/swarm-remote-exec> — build,
+  certificates, configuration reference, troubleshooting, security notes.
+- **CLI binaries** (Linux / macOS / Windows) are attached to each
+  [release](https://gitlab.logle.io/internal-tools/swarm-remote-exec/-/releases).
 
 ---
 
