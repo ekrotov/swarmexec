@@ -210,10 +210,11 @@ agent-image:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   # dev: :<sha> + :main
 
 # ----------------------------------------------------------------------------
-# site-image — build the swarm-exec.logle.io landing page image (nginx). On a
-# release it bakes the version and pushes :<version> + :latest, which Watchtower
-# picks up to refresh the deployed page. On the default branch it only rebuilds
-# when site/ changes (:<sha> + :main); the deployed service tracks :latest.
+# site-image — build the swarm-exec.logle.io landing page image (nginx). The
+# deployed service tracks :latest (Watchtower auto-updates it). :latest is
+# refreshed both on a release (version baked in) and when site/ changes on the
+# default branch (version shown as "latest"; the release/download links are
+# always-latest permalinks either way).
 # ----------------------------------------------------------------------------
 site-image:
   stage: image
@@ -235,8 +236,10 @@ site-image:
           *)   DESTS="$DESTS --destination $IMAGE:latest" ;;
         esac
       else
-        VERSION="$CI_COMMIT_SHORT_SHA"
-        DESTS="--destination $IMAGE:$VERSION --destination $IMAGE:main"
+        # Default-branch site change: refresh :latest (+ :main) so the deployed
+        # service updates. No release version to bake, so show "latest".
+        VERSION="latest"
+        DESTS="--destination $IMAGE:latest --destination $IMAGE:main"
       fi
       echo "building $IMAGE  ->  $DESTS"
       /kaniko/executor \
@@ -245,7 +248,7 @@ site-image:
         --build-arg "VERSION=$VERSION" \
         $DESTS
   rules:
-    - *semver-tag                 # release: bake version, push :<version> (+ :latest)
+    - *semver-tag                 # release: bake version, push :<version> + :latest
     - if: $CI_COMMIT_TAG          # any non-semver tag: do not push
       when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   # dev: only when the site changes

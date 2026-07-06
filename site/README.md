@@ -28,8 +28,10 @@ docker build -f site/Dockerfile --build-arg VERSION=v1.2.3 -t swarmexec-site .
 docker run --rm -p 8080:80 swarmexec-site   # open http://localhost:8080
 ```
 
-CI builds and pushes `registry.logle.io/internal-tools/swarm-remote-exec/site`
-(`:latest` + `:<version>` on release; `:main` on default-branch changes to `site/`).
+CI builds and pushes `registry.logle.io/internal-tools/swarm-remote-exec/site`.
+`:latest` is refreshed both on a release (`:<version>` too, version baked in) and
+when `site/` changes on the default branch (`:main` too). The deployed service
+tracks `:latest`, and Watchtower redeploys it on each push.
 
 ## Deploy (Docker Swarm)
 
