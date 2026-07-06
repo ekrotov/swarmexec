@@ -210,6 +210,49 @@ agent-image:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   # dev: :<sha> + :main
 
 # ----------------------------------------------------------------------------
+# site-image — build the swarm-exec.logle.io landing page image (nginx). On a
+# release it bakes the version and pushes :<version> + :latest, which Watchtower
+# picks up to refresh the deployed page. On the default branch it only rebuilds
+# when site/ changes (:<sha> + :main); the deployed service tracks :latest.
+# ----------------------------------------------------------------------------
+site-image:
+  stage: image
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - |
+      IMAGE="$CI_REGISTRY_IMAGE/site"
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        VERSION="$CI_COMMIT_TAG"
+        DESTS="--destination $IMAGE:$VERSION"
+        base="${CI_COMMIT_TAG%%+*}"
+        case "$base" in
+          *-*) echo "prerelease $VERSION — leaving :latest untouched" ;;
+          *)   DESTS="$DESTS --destination $IMAGE:latest" ;;
+        esac
+      else
+        VERSION="$CI_COMMIT_SHORT_SHA"
+        DESTS="--destination $IMAGE:$VERSION --destination $IMAGE:main"
+      fi
+      echo "building $IMAGE  ->  $DESTS"
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/site/Dockerfile" \
+        --build-arg "VERSION=$VERSION" \
+        $DESTS
+  rules:
+    - *semver-tag                 # release: bake version, push :<version> (+ :latest)
+    - if: $CI_COMMIT_TAG          # any non-semver tag: do not push
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   # dev: only when the site changes
+      changes:
+        - site/**/*
+
+# ----------------------------------------------------------------------------
 # release — publish a GitLab Release for the semver tag, linking the artifacts
 # ----------------------------------------------------------------------------
 release-publish:
@@ -230,19 +273,28 @@ release-publish:
       Container image: `$CI_REGISTRY_IMAGE/agent:$CI_COMMIT_TAG`
       (stable releases are also tagged `:latest`). cli binaries are attached below.
     assets:
+      # filepath gives each asset a stable vanity path, enabling "always latest"
+      # permalinks: <project>/-/releases/permalink/latest/downloads/bin/<name>
+      # (used by the swarm-exec.logle.io landing page).
       links:
         - name: swarmexec-linux-amd64
           url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-linux-amd64?job=build-cli"
+          filepath: /bin/swarmexec-linux-amd64
         - name: swarmexec-linux-arm64
           url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-linux-arm64?job=build-cli"
+          filepath: /bin/swarmexec-linux-arm64
         - name: swarmexec-darwin-amd64
           url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-darwin-amd64?job=build-cli"
+          filepath: /bin/swarmexec-darwin-amd64
         - name: swarmexec-darwin-arm64
           url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-darwin-arm64?job=build-cli"
+          filepath: /bin/swarmexec-darwin-arm64
         - name: swarmexec-windows-amd64.exe
           url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-windows-amd64.exe?job=build-cli"
+          filepath: /bin/swarmexec-windows-amd64.exe
         - name: SHA256SUMS
           url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/SHA256SUMS?job=build-cli"
+          filepath: /bin/SHA256SUMS
   rules:
     - *semver-tag
 

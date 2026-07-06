@@ -1,0 +1,51 @@
+# swarmexec landing page — served at https://swarm-exec.logle.io
+#
+# Deploy (on a manager, with the image built & pushed by CI):
+#   docker stack deploy -c site/deploy/site-stack.yml swarmexec-site
+#
+# Routing/TLS is handled by the shared Traefik on the external `gateway`
+# network (letsencrypt cert resolver), matching the rest of the logle.io infra.
+# Watchtower auto-updates the service when CI pushes a new :latest image, so a
+# new release refreshes the page without a manual redeploy.
+
+services:
+  site:
+    image: ${SWARMEXEC_SITE_IMAGE:-registry.logle.io/internal-tools/swarm-remote-exec/site:latest}
+    networks:
+      - gateway
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        max_replicas_per_node: 1
+      update_config:
+        order: start-first
+        parallelism: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          memory: 16M
+      labels:
+        # Auto-update on a new pushed image (same mechanism as the rest of infra).
+        - "com.centurylinklabs.watchtower.enable=true"
+        # Traefik v3 (shared gateway network, letsencrypt TLS).
+        - "traefik.enable=true"
+        - "traefik.http.routers.swarmexec-site.entrypoints=https"
+        - "traefik.http.routers.swarmexec-site.rule=Host(`swarm-exec.logle.io`)"
+        - "traefik.http.routers.swarmexec-site.tls=true"
+        - "traefik.http.routers.swarmexec-site.tls.certresolver=letsencrypt"
+        - "traefik.http.services.swarmexec-site.loadbalancer.server.port=80"
+        # Redirect plain HTTP to HTTPS.
+        - "traefik.http.routers.swarmexec-site-http.entrypoints=http"
+        - "traefik.http.routers.swarmexec-site-http.rule=Host(`swarm-exec.logle.io`)"
+        - "traefik.http.routers.swarmexec-site-http.middlewares=swarmexec-site-redirect"
+        - "traefik.http.middlewares.swarmexec-site-redirect.redirectscheme.scheme=https"
+
+networks:
+  gateway:
+    external: true
