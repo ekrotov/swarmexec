@@ -90,6 +90,11 @@ your Docker log driver (`docker service logs swarmexec_agent`).
 - **CLI binaries** (Linux / macOS / Windows) are attached to each
   [release](https://gitlab.logle.io/internal-tools/swarm-remote-exec/-/releases).
 
+## License
+
+Apache-2.0 — © 2026 Cloud Surfers GmbH. The `LICENSE` and `NOTICE` files ship
+inside the image at `/licenses/`.
+
 ---
 
 *The `swarmexec` CLI and this agent are versioned together — keep them on

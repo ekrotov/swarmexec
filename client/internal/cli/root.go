@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cli implements the swarmexec command surface (exec, ps, version) on
 // top of cobra, wires flags/env/config into a resolved configuration, and maps
 // outcomes to process exit codes (REQUIREMENTS §3, §6, §8).
@@ -38,7 +41,7 @@ type globalFlags struct {
 }
 
 // licenseName is shown by --info. See the LICENSE file for the full text.
-const licensePlaceholder = "Proprietary — © 2026 Cloud Surfers (all rights reserved)"
+const licenseName = "Apache-2.0 — © 2026 Cloud Surfers GmbH"
 
 // contactEmail is the maintainer contact shown by --info.
 const contactEmail = "eugen.krotov@cloud-surfers.de"
@@ -46,7 +49,7 @@ const contactEmail = "eugen.krotov@cloud-surfers.de"
 // infoText renders the --info block.
 func infoText(v Version) string {
 	return fmt.Sprintf("swarmexec %s\n  protocol: %s\n  license:  %s\n  contact:  %s\n",
-		v.Binary, v.Proto, licensePlaceholder, contactEmail)
+		v.Binary, v.Proto, licenseName, contactEmail)
 }
 
 // Execute builds and runs the root command, returning a process exit code.

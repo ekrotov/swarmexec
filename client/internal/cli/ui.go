@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -356,7 +359,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				closeMenu()
 				return nil
 			}
-			return ev
+			return vimListKeys(ev)
 		})
 
 		go func() {
@@ -693,7 +696,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				}
 				return nil
 			}
-			return ev
+			return vimListKeys(ev)
 		})
 		help := tview.NewTextView().SetDynamicColors(true).SetText(
 			" [yellow]space[white] select  [yellow]d[white] delete selected  [yellow]a[white] delete all  [yellow]ESC[white] back")
@@ -736,7 +739,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				closeUsers()
 				return nil
 			}
-			return ev
+			return vimListKeys(ev)
 		})
 		rows := len(consumers)
 		if rows == 0 {
@@ -1026,6 +1029,28 @@ func shellLabel(name string, ok, probed bool) string {
 		return "[gray]" + name + " (not available)[-]"
 	}
 	return name
+}
+
+// vimListKeys maps j/k/g/G to ↓/↑/Home/End for a tview.List. TextView brings
+// these natively, but List does not: it reads runes as item shortcuts, and
+// since our items carry no shortcut the lookup finds nothing and swallows the
+// key. Every List that the operator navigates has to run its input through
+// this, or vim movement silently dies the moment an overlay takes focus.
+func vimListKeys(ev *tcell.EventKey) *tcell.EventKey {
+	if ev.Key() != tcell.KeyRune {
+		return ev
+	}
+	switch ev.Rune() {
+	case 'j':
+		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	case 'k':
+		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	case 'g':
+		return tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone)
+	case 'G':
+		return tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone)
+	}
+	return ev
 }
 
 func headerCell(text string) *tview.TableCell {

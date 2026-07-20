@@ -5,12 +5,20 @@
 #
 # Routing/TLS is handled by the shared Traefik on the external `gateway`
 # network (letsencrypt cert resolver), matching the rest of the logle.io infra.
-# Watchtower auto-updates the service when CI pushes a new :latest image, so a
-# new release refreshes the page without a manual redeploy.
+#
+# Hardening: runs NON-ROOT (nginx-unprivileged, uid 101, serves on 8080), with a
+# read-only root filesystem (a small tmpfs holds nginx's pid + temp files) and
+# all Linux capabilities dropped. A static file server needs none of them.
 
 services:
   site:
     image: ${SWARMEXEC_SITE_IMAGE:-registry.logle.io/internal-tools/swarm-remote-exec/site:latest}
+    user: "101:101"          # nginx (non-root)
+    read_only: true          # immutable root filesystem
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp                  # nginx pid + client/proxy/fastcgi temp live here
     networks:
       - gateway
     deploy:
@@ -31,15 +39,14 @@ services:
         reservations:
           memory: 16M
       labels:
-        # Auto-update on a new pushed image (same mechanism as the rest of infra).
-        - "com.centurylinklabs.watchtower.enable=true"
-        # Traefik v3 (shared gateway network, letsencrypt TLS).
+        # Traefik v3 (shared gateway network, letsencrypt TLS). Non-root nginx
+        # serves on 8080.
         - "traefik.enable=true"
         - "traefik.http.routers.swarmexec-site.entrypoints=https"
         - "traefik.http.routers.swarmexec-site.rule=Host(`swarm-exec.logle.io`)"
         - "traefik.http.routers.swarmexec-site.tls=true"
         - "traefik.http.routers.swarmexec-site.tls.certresolver=letsencrypt"
-        - "traefik.http.services.swarmexec-site.loadbalancer.server.port=80"
+        - "traefik.http.services.swarmexec-site.loadbalancer.server.port=8080"
         # Redirect plain HTTP to HTTPS.
         - "traefik.http.routers.swarmexec-site-http.entrypoints=http"
         - "traefik.http.routers.swarmexec-site-http.rule=Host(`swarm-exec.logle.io`)"

@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 package resolve
 
 import (
@@ -8,6 +11,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/system"
 )
 
 // fakeDocker is an in-memory DockerClient honoring the filters the resolver uses
@@ -16,6 +20,17 @@ type fakeDocker struct {
 	services []swarm.Service
 	tasks    []swarm.Task
 	nodes    map[string]swarm.Node
+	peers    []swarm.Peer // raft peer list returned by Info
+	infoErr  error
+	infoCals int // how many times Info was called
+}
+
+func (f *fakeDocker) Info(_ context.Context) (system.Info, error) {
+	f.infoCals++
+	if f.infoErr != nil {
+		return system.Info{}, f.infoErr
+	}
+	return system.Info{Swarm: swarm.Info{RemoteManagers: f.peers}}, nil
 }
 
 func (f *fakeDocker) ServiceList(_ context.Context, opts types.ServiceListOptions) ([]swarm.Service, error) {
@@ -144,9 +159,11 @@ func TestCandidatesPopulatesServiceAndNodeAddr(t *testing.T) {
 	}
 }
 
+// A node reporting "0.0.0.0" that is not in the raft peer list (or whose peer
+// lookup failed) still degrades to the hostname — the last resort.
 func TestDialHost_IPModeFallsBackWhenAddrUnusable(t *testing.T) {
 	f := newFake()
-	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0") // joined without a routable advertise-addr
+	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0") // leader: no observed remote addr
 	f.tasks = []swarm.Task{task("t1", "svc-db", "node-z", 1, "cZ")}
 	r := New(f, AddrIP)
 
@@ -156,6 +173,100 @@ func TestDialHost_IPModeFallsBackWhenAddrUnusable(t *testing.T) {
 	}
 	if ep.DialHost != "host-z" {
 		t.Errorf("dial host = %q, want host-z (fallback from 0.0.0.0)", ep.DialHost)
+	}
+}
+
+// The leader reports Status.Addr "0.0.0.0" because swarm has no remote agent
+// session to observe for itself. Its real address is in the raft peer list, and
+// -addr-mode ip must use it rather than degrade to a hostname the operator may
+// not be able to resolve.
+func TestDialHost_IPModeRecoversLeaderAddrFromRaftPeers(t *testing.T) {
+	f := newFake()
+	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0")
+	f.peers = []swarm.Peer{
+		{NodeID: "node-a", Addr: "10.0.1.2:2377"},
+		{NodeID: "node-z", Addr: "10.0.1.5:2377"},
+	}
+	f.tasks = []swarm.Task{task("t1", "svc-db", "node-z", 1, "cZ")}
+	r := New(f, AddrIP)
+
+	ep, err := r.Resolve(context.Background(), Request{Target: "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.DialHost != "10.0.1.5" {
+		t.Errorf("dial host = %q, want 10.0.1.5 (recovered from raft peers)", ep.DialHost)
+	}
+}
+
+// A peer entry that is itself unusable must not win over the hostname.
+func TestDialHost_IPModeIgnoresUnusablePeerAddr(t *testing.T) {
+	f := newFake()
+	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0")
+	f.peers = []swarm.Peer{{NodeID: "node-z", Addr: "0.0.0.0:2377"}}
+	f.tasks = []swarm.Task{task("t1", "svc-db", "node-z", 1, "cZ")}
+	r := New(f, AddrIP)
+
+	ep, err := r.Resolve(context.Background(), Request{Target: "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.DialHost != "host-z" {
+		t.Errorf("dial host = %q, want host-z", ep.DialHost)
+	}
+}
+
+// A failing Info must not break resolution — it just costs the recovery.
+func TestDialHost_IPModeToleratesInfoError(t *testing.T) {
+	f := newFake()
+	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0")
+	f.infoErr = errors.New("manager unreachable")
+	f.tasks = []swarm.Task{task("t1", "svc-db", "node-z", 1, "cZ")}
+	r := New(f, AddrIP)
+
+	ep, err := r.Resolve(context.Background(), Request{Target: "db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ep.DialHost != "host-z" {
+		t.Errorf("dial host = %q, want host-z", ep.DialHost)
+	}
+}
+
+// The peer list costs one Info call per Resolver, however many nodes need it.
+func TestDialHost_PeerListFetchedOnce(t *testing.T) {
+	f := newFake()
+	f.nodes["node-y"] = node("node-y", "host-y", "0.0.0.0")
+	f.nodes["node-z"] = node("node-z", "host-z", "0.0.0.0")
+	f.peers = []swarm.Peer{
+		{NodeID: "node-y", Addr: "10.0.1.4:2377"},
+		{NodeID: "node-z", Addr: "10.0.1.5:2377"},
+	}
+	r := New(f, AddrIP)
+
+	nodes, err := r.Nodes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) == 0 {
+		t.Fatal("no nodes returned")
+	}
+	if f.infoCals != 1 {
+		t.Errorf("Info called %d times, want 1", f.infoCals)
+	}
+}
+
+func TestHostOnly(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"10.0.1.5:2377", "10.0.1.5"},
+		{"10.0.1.5", "10.0.1.5"},
+		{"[fd00::5]:2377", "fd00::5"},
+		{"  10.0.1.5:2377  ", "10.0.1.5"},
+		{"", ""},
+	} {
+		if got := hostOnly(tc.in); got != tc.want {
+			t.Errorf("hostOnly(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

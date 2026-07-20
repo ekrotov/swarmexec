@@ -28,5 +28,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # does not widen the trust boundary; the socket is never exposed to the network.
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /agent /agent
+# Apache-2.0 §4(a)/(d): the license and attribution notice travel with the image.
+COPY LICENSE NOTICE /licenses/
 EXPOSE 9443
 ENTRYPOINT ["/agent"]

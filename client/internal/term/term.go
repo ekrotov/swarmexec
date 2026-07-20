@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package term wraps golang.org/x/term with an idempotent terminal-state
 // restorer and terminal-size / resize helpers. The restorer is safe to call
 // from defers, signal handlers, panic recovery, and — crucially — explicitly

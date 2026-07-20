@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package dockerctx resolves the Docker daemon host the operator's machine
 // should talk to for swarm discovery, honoring Docker CLI contexts (including
 // ssh:// endpoints) the same way the `docker` CLI does — something the bare

@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package authmeta defines the gRPC metadata keys for shared-secret
 // authentication, shared by the agent (server) and cli (client) so they cannot
 // drift apart.

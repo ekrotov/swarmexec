@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package server implements the Agent gRPC service: container discovery and the
 // bidirectional interactive exec bridge defined in CONTRACT.md.
 package server

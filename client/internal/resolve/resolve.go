@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package resolve turns an operator-supplied target (service, service.slot,
 // task ID, or container ID) into a concrete dial endpoint: the node address to
 // connect the agent on, plus the full container ID to exec into. It talks to
@@ -8,15 +11,18 @@ package resolve
 import (
 	"context"
 	"fmt"
+	"net"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/system"
 )
 
 // DockerClient is the subset of the Docker SDK the resolver needs. The real
@@ -26,6 +32,7 @@ type DockerClient interface {
 	TaskList(ctx context.Context, options types.TaskListOptions) ([]swarm.Task, error)
 	NodeInspectWithRaw(ctx context.Context, nodeID string) (swarm.Node, []byte, error)
 	NodeList(ctx context.Context, options types.NodeListOptions) ([]swarm.Node, error)
+	Info(ctx context.Context) (system.Info, error)
 }
 
 // Node is a swarm node the cli can dial an agent on.
@@ -49,7 +56,7 @@ func (r *Resolver) Nodes(ctx context.Context) ([]Node, error) {
 		out = append(out, Node{
 			ID:       n.ID,
 			Name:     n.Description.Hostname,
-			DialHost: r.dialHost(n),
+			DialHost: r.dialHost(ctx, n),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -108,6 +115,11 @@ func (e *AmbiguousError) Error() string {
 type Resolver struct {
 	cli      DockerClient
 	addrMode AddrMode
+
+	// Raft peer addresses by node ID, fetched once per Resolver and used to
+	// recover the address of a node whose Status.Addr is unusable. See peerAddr.
+	peersOnce sync.Once
+	peers     map[string]string
 }
 
 // New builds a Resolver.
@@ -273,7 +285,7 @@ func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) 
 	// the hint directly.
 	host := nodeHint
 	if node, _, err := r.cli.NodeInspectWithRaw(ctx, nodeHint); err == nil {
-		host = r.dialHost(node)
+		host = r.dialHost(ctx, node)
 	}
 	return &Endpoint{DialHost: host, ContainerID: id}, nil
 }
@@ -353,7 +365,7 @@ func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidat
 		NodeID:      t.NodeID,
 		NodeName:    node.Description.Hostname,
 		NodeAddr:    node.Status.Addr,
-		DialHost:    r.dialHost(node),
+		DialHost:    r.dialHost(ctx, node),
 		ContainerID: containerID(t),
 	}
 	if !t.Status.Timestamp.IsZero() {
@@ -371,25 +383,75 @@ func (r *Resolver) endpointFromCandidate(c Candidate) *Endpoint {
 	}
 }
 
-func (r *Resolver) dialHost(node swarm.Node) string {
+func (r *Resolver) dialHost(ctx context.Context, node swarm.Node) string {
 	addr := node.Status.Addr
 	host := node.Description.Hostname
 	switch r.addrMode {
 	case AddrIP:
-		// Fall back to the hostname when the node has no usable advertised IP.
-		// A node that joined without a routable --advertise-addr reports
-		// "0.0.0.0", which dials the LOCAL host (not the target node) and yields
-		// confusing "No such container" errors.
 		if usableAddr(addr) {
 			return addr
+		}
+		// The leader reports Status.Addr "0.0.0.0". Swarm fills that field from
+		// the remote address it observes for a node's agent session, and the
+		// leader has no such remote connection to itself — so this is normal
+		// reporting, not a misconfigured --advertise-addr, and it moves to
+		// whichever node wins the next election. The node's real address is
+		// still in the raft peer list, so prefer that over degrading to the
+		// hostname: a hostname the operator cannot resolve is exactly what
+		// -addr-mode ip was chosen to avoid.
+		if p := r.peerAddr(ctx, node.ID); p != "" {
+			return p
 		}
 		return host
 	default:
 		if host != "" {
 			return host
 		}
+		if usableAddr(addr) {
+			return addr
+		}
+		if p := r.peerAddr(ctx, node.ID); p != "" {
+			return p
+		}
 		return addr
 	}
+}
+
+// peerAddr returns the node's host address as reported by the swarm raft peer
+// list, or "" when it is not listed or the lookup failed. Only managers appear
+// there — which covers every node that can report "0.0.0.0", since that is a
+// property of the leader and leaders are always managers.
+//
+// The list is fetched at most once per Resolver: it costs one Info call, and a
+// Resolver is short-lived (one command), so this never serves a stale address
+// across invocations.
+func (r *Resolver) peerAddr(ctx context.Context, nodeID string) string {
+	r.peersOnce.Do(func() {
+		info, err := r.cli.Info(ctx)
+		if err != nil {
+			return // leaves r.peers nil; lookups below return ""
+		}
+		r.peers = make(map[string]string, len(info.Swarm.RemoteManagers))
+		for _, p := range info.Swarm.RemoteManagers {
+			if h := hostOnly(p.Addr); usableAddr(h) {
+				r.peers[p.NodeID] = h
+			}
+		}
+	})
+	return r.peers[nodeID]
+}
+
+// hostOnly strips the port from a peer address ("10.0.1.5:2377" -> "10.0.1.5",
+// "[fd00::5]:2377" -> "fd00::5"), tolerating an address that carries no port.
+func hostOnly(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		return h
+	}
+	return addr
 }
 
 // usableAddr reports whether addr is a routable dial target. The Swarm

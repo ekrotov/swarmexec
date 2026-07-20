@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package session bridges the operator's terminal to the agent's Exec stream.
 // It implements the normative session lifecycle and framing from CONTRACT.md
 // §4–§6 and the terminal/exit semantics from REQUIREMENTS §5–§6.

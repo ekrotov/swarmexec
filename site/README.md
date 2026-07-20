@@ -28,8 +28,10 @@ docker build -f site/Dockerfile --build-arg VERSION=v1.2.3 -t swarmexec-site .
 docker run --rm -p 8080:80 swarmexec-site   # open http://localhost:8080
 ```
 
-CI builds and pushes `registry.logle.io/internal-tools/swarm-remote-exec/site`
-(`:latest` + `:<version>` on release; `:main` on default-branch changes to `site/`).
+CI builds and pushes `registry.logle.io/internal-tools/swarm-remote-exec/site`.
+`:latest` is refreshed both on a release (`:<version>` too, version baked in) and
+when `site/` changes on the default branch (`:main` too). The deployed service
+tracks `:latest`, and Watchtower redeploys it on each push.
 
 ## Deploy (Docker Swarm)
 
@@ -43,9 +45,18 @@ docker stack deploy -c site/deploy/site-stack.yml swarmexec-site
 Point a DNS record for `swarm-exec.logle.io` at the swarm ingress; Traefik
 requests the certificate via the `letsencrypt` resolver on first request.
 
+## Hardening
+
+The container runs **non-root**: it's built on `nginxinc/nginx-unprivileged`
+(uid 101), so even the master process is unprivileged, and nginx serves on
+**8080** (Traefik forwards to it). The stack additionally runs it with a
+**read-only root filesystem** (a small `tmpfs` on `/tmp` holds nginx's pid and
+temp files) and **drops all Linux capabilities** — a static file server needs
+none. Verified: read-only rootfs blocks writes, and it still serves as uid 101.
+
 ## Files
 
 - `index.html` — the page (self-contained, inline CSS, `__VERSION__` placeholder).
-- `nginx.conf` — minimal nginx config (gzip, security headers, `/healthz`).
-- `Dockerfile` — `nginx:alpine`, bakes `VERSION` into the page.
-- `deploy/site-stack.yml` — Swarm stack (Traefik labels, Watchtower, gateway net).
+- `nginx.conf` — minimal nginx config (listens on 8080, gzip, security headers, `/healthz`).
+- `Dockerfile` — `nginx-unprivileged` (non-root), bakes `VERSION` into the page.
+- `deploy/site-stack.yml` — Swarm stack (Traefik labels, gateway net, non-root + read-only + cap-drop).

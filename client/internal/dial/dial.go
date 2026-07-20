@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package dial builds the gRPC connection to a node's agent. The default is
 // mutual TLS with the agent's server identity verified against a CA. When a
 // shared secret is configured (self-signed agent), the client may skip server

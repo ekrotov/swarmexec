@@ -50,6 +50,10 @@
     .downloads a:hover { text-decoration: underline; }
     footer { color: var(--muted); font-size: .8rem; margin-top: 1.75rem; }
     footer a { color: var(--muted); }
+    /* Impressum/Datenschutz are legally required and must stay legible. */
+    .legal { margin-top: .6rem; }
+    .legal a { text-decoration: underline; }
+    .legal a:hover { color: var(--accent); }
     @media (max-width: 560px) { .links { grid-template-columns: 1fr; } .card { padding: 1.5rem; } }
   </style>
 </head>
@@ -100,7 +104,15 @@
       <footer>
         <span id="verline">Current release: <strong>__VERSION__</strong></span> ·
         pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
-        <a href="https://gitlab.logle.io/internal-tools/swarm-remote-exec">gitlab.logle.io/internal-tools/swarm-remote-exec</a>
+        <a href="https://gitlab.logle.io/internal-tools/swarm-remote-exec">gitlab.logle.io/internal-tools/swarm-remote-exec</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="https://www.cloud-surfers.com/datenschutz/">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
       </footer>
     </div>
   </main>
