@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package metrics provides an optional Prometheus-backed implementation of the
 // server.Metrics interface (REQUIREMENTS §6, nice-to-have).
 package metrics

@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Command agent is the swarmexec Swarm agent: a long-running mTLS gRPC server
 // that proxies interactive exec sessions into containers on its own node.
 package main

@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Command swarmexec is the operator CLI: an interactive, cluster-wide
 // `docker exec -it` for Docker Swarm. See client/REQUIREMENTS-client.md.
 package main

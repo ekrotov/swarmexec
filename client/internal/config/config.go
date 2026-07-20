@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package config resolves swarmexec client configuration from (in increasing
 // precedence) built-in defaults, an optional YAML config file, environment
 // variables, and finally command-line flags. The cli package binds flags and

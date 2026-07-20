@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tlsconf builds the mandatory mutual-TLS configuration for the agent
 // (REQUIREMENTS §5): the server presents its certificate and requires and
 // verifies a client certificate against the configured CA.

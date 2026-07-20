@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package auth defines the authorization hook invoked before every exec and a
 // default policy. The interface is intentionally narrow so a richer policy
 // (per-user/per-service allowlists, deny root, command allowlists) can be

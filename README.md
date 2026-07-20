@@ -518,3 +518,19 @@ trait; among the agent-based tools, being headless/CLI-only is.
 - [`CONTRACT.md`](CONTRACT.md) — the authoritative wire protocol.
 - [`agent/README.md`](agent/README.md) — agent internals, deployment, cert rotation.
 - [`client/README.md`](client/README.md) — cli internals and behavior.
+
+---
+
+## License
+
+swarmexec is open source under the [Apache License 2.0](LICENSE).
+
+Copyright 2026 Cloud Surfers GmbH.
+
+Contributions are welcome under the same license and require a DCO sign-off
+(`git commit -s`) — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+If you redistribute swarmexec — as source, as a binary, or inside a derivative
+work — the license requires you to keep the [`LICENSE`](LICENSE) and
+[`NOTICE`](NOTICE) files with it, so the attribution to this project travels
+along. Modified files must be marked as changed.

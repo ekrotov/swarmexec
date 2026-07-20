@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 package server
 
 // Metrics is an optional observability sink. The default implementation is a

@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Package config parses agent configuration from flags with environment
 // variable fallbacks (REQUIREMENTS §7).
 package config

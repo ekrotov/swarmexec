@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Authoritative wire protocol for swarmexec. Source of truth: CONTRACT.md §3.
 // Generated Go code lands in internal/pb and is shared by the cli and agent.
 syntax = "proto3";
