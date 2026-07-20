@@ -1212,20 +1212,53 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		if !ok {
 			return
 		}
+		// A left-aligned TextView, not the info() modal: tview.Modal centers
+		// each line on its own, which shears a padded key/value block out of
+		// alignment. Values are escaped because dynamic colors are on and an
+		// error string can contain "[".
+		esc := tview.Escape
 		var b strings.Builder
 		fmt.Fprintf(&b, "local:      127.0.0.1:%d\n", e.boundPort())
 		fmt.Fprintf(&b, "remote:     %d\n", e.remote)
-		fmt.Fprintf(&b, "container:  %s\n", shortID(e.cand.ContainerID))
-		fmt.Fprintf(&b, "service:    %s\n", orDash(e.cand.Service))
-		fmt.Fprintf(&b, "node:       %s\n", orDash(e.cand.NodeName))
-		fmt.Fprintf(&b, "state:      %s", e.state)
+		fmt.Fprintf(&b, "container:  %s\n", esc(shortID(e.cand.ContainerID)))
+		fmt.Fprintf(&b, "service:    %s\n", esc(orDash(e.cand.Service)))
+		fmt.Fprintf(&b, "node:       %s\n", esc(orDash(e.cand.NodeName)))
+		fmt.Fprintf(&b, "state:      %s", esc(e.state.String()))
 		if e.err != nil {
-			fmt.Fprintf(&b, "\n\nfailed: %v", e.err)
+			fmt.Fprintf(&b, "\n\n[red]failed:[-] %s", esc(e.err.Error()))
 		}
 		if e.connErr != nil {
-			fmt.Fprintf(&b, "\n\nlast connection failed:\n%v", e.connErr)
+			fmt.Fprintf(&b, "\n\n[yellow]last connection failed:[-]\n%s", esc(e.connErr.Error()))
 		}
-		info(b.String())
+		b.WriteString("\n\n[gray]d[-] stop   [gray]Esc[-] close")
+
+		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
+		closeDetail := func() { pages.RemovePage("fwddetail"); app.SetFocus(ftable) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape, ev.Key() == tcell.KeyEnter:
+				closeDetail()
+				return nil
+			case ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i'):
+				closeDetail()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				// Stop straight from the detail view — the operator is already
+				// looking at what they are about to kill.
+				forwards.remove(e.id)
+				closeDetail()
+				refreshForwardViews()
+				flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+				return nil
+			}
+			return ev
+		})
+		// Height tracks the content so a short forward gets a snug box and a
+		// failed one grows to fit its reason.
+		lines := strings.Count(b.String(), "\n") + 1
+		pages.AddPage("fwddetail", centered(tv, 66, lines+2), true, true)
+		app.SetFocus(tv)
 	})
 	// On the forwards table: d stops the selected forward, o copies its URL.
 	ftable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {

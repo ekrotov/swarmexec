@@ -64,14 +64,20 @@ type forwardEntry struct {
 }
 
 // label renders the forward for the tree annotation next to its container.
+// label renders "local→remote" so the container row shows both ends: the port
+// to connect to locally and the container port it lands on. Showing only the
+// local port (as this once did) left the mapping invisible on the main view —
+// you had to open the Forwards tab to learn which container port was hit. The
+// state lives on the local side: a number when bound, … while starting, ✗ when
+// failed; the remote port is always the anchor, since it identifies the target.
 func (e *forwardEntry) label() string {
 	switch e.state {
 	case forwardActive:
-		return fmt.Sprintf("→ %d", e.boundPort())
+		return fmt.Sprintf("%d→%d", e.boundPort(), e.remote)
 	case forwardStarting:
-		return "→ …"
+		return fmt.Sprintf("…→%d", e.remote)
 	default:
-		return "→ ✗"
+		return fmt.Sprintf("✗→%d", e.remote)
 	}
 }
 

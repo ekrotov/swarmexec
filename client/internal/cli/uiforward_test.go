@@ -185,12 +185,14 @@ func TestAnnotateForwards(t *testing.T) {
 		t.Errorf("no forwards should leave the label untouched, got %q", got)
 	}
 
-	active := forwardEntry{state: forwardActive, localAddr: "127.0.0.1:8080"}
-	starting := forwardEntry{state: forwardStarting, local: 9090}
-	failed := forwardEntry{state: forwardFailed, local: 7070}
+	// Each marker carries the remote (container) port, so the mapping is
+	// visible on the container row without opening the Forwards tab.
+	active := forwardEntry{state: forwardActive, localAddr: "127.0.0.1:9090", remote: 8080}
+	starting := forwardEntry{state: forwardStarting, local: 6000, remote: 5432}
+	failed := forwardEntry{state: forwardFailed, local: 7070, remote: 443}
 
 	got := annotateForwards(base, []forwardEntry{active, starting, failed})
-	for _, want := range []string{base, "→ 8080", "→ …", "→ ✗"} {
+	for _, want := range []string{base, "9090→8080", "…→5432", "✗→443"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("annotation %q missing %q", got, want)
 		}
