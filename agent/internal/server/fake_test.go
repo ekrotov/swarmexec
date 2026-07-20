@@ -14,8 +14,10 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/pkg/stdcopy"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // fakeDocker is an in-memory DockerClient. The exec "process" is driven by a
@@ -51,6 +53,13 @@ type fakeDocker struct {
 	volumeRemErr error
 	removedVols  []string
 	diskUsageErr error
+
+	// port-forward sidecar state
+	createContainerErr error
+	startErr           error
+	createdConfig      *container.Config
+	createdHostConfig  *container.HostConfig
+	removedContainers  []string
 }
 
 func newFakeDocker() *fakeDocker {
@@ -92,6 +101,48 @@ func (f *fakeDocker) ContainerExecAttach(_ context.Context, _ string, _ containe
 	f.containerConn = containerSide
 	f.attachedCh <- containerSide
 	return types.HijackedResponse{Conn: agentSide, Reader: bufio.NewReader(agentSide)}, nil
+}
+
+// --- port-forward sidecar surface ---
+
+func (f *fakeDocker) ContainerCreate(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, _ string) (container.CreateResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createContainerErr != nil {
+		return container.CreateResponse{}, f.createContainerErr
+	}
+	f.createdConfig, f.createdHostConfig = cfg, hostCfg
+	return container.CreateResponse{ID: "sidecar-1"}, nil
+}
+
+func (f *fakeDocker) ContainerStart(_ context.Context, _ string, _ container.StartOptions) error {
+	return f.startErr
+}
+
+// ContainerAttach mirrors ContainerExecAttach: the test drives the sidecar side
+// of the pipe, writing stdcopy-framed control lines and payload.
+func (f *fakeDocker) ContainerAttach(_ context.Context, _ string, _ container.AttachOptions) (types.HijackedResponse, error) {
+	if f.attachErr != nil {
+		return types.HijackedResponse{}, f.attachErr
+	}
+	agentSide, containerSide := newHalfDuplex()
+	f.containerConn = containerSide
+	f.attachedCh <- containerSide
+	return types.HijackedResponse{Conn: agentSide, Reader: bufio.NewReader(agentSide)}, nil
+}
+
+func (f *fakeDocker) ContainerRemove(_ context.Context, id string, _ container.RemoveOptions) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removedContainers = append(f.removedContainers, id)
+	return nil
+}
+
+// RemovedContainers reports sidecars the agent cleaned up.
+func (f *fakeDocker) RemovedContainers() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.removedContainers...)
 }
 
 func (f *fakeDocker) ContainerExecResize(_ context.Context, _ string, opts container.ResizeOptions) error {

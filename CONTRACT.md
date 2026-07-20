@@ -70,6 +70,12 @@ service Agent {
   // in use unless force is set.
   rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
 
+  // Forward a single TCP connection to a port inside a container on THIS node.
+  // Bidirectional: one stream carries exactly one connection, so a local
+  // listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
+  // the one transport). The first ClientMessage MUST carry a StartForward.
+  rpc PortForward(stream ForwardClientMessage) returns (stream ForwardServerMessage);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -161,6 +167,28 @@ message RemoveVolumeRequest {
 
 message RemoveVolumeResponse {}
 
+message StartForward {
+  string container_id = 1;  // full container ID to forward into
+  uint32 port = 2;          // TCP port inside the container
+}
+
+message ForwardClientMessage {
+  oneof payload {
+    StartForward start = 1;  // MUST be the first message
+    bytes data = 2;          // raw bytes toward the container
+  }
+}
+
+message ForwardReady {}
+
+message ForwardServerMessage {
+  oneof payload {
+    ForwardReady ready = 1;  // sent once, before any data
+    bytes data = 2;          // raw bytes from the container
+    string error = 3;        // terminal error; stream ends after this
+  }
+}
+
 message VersionRequest {}
 
 message VersionResponse {
@@ -168,6 +196,32 @@ message VersionResponse {
   string proto_version = 2;  // wire protocol version
 }
 ```
+
+### 3.2 Port-forward lifecycle (normative)
+
+1. Client opens the `PortForward` stream, one per accepted local TCP connection.
+2. Client sends exactly one `StartForward` as the **first** message. Anything
+   else first → `INVALID_ARGUMENT`. `port` outside 1–65535 → `INVALID_ARGUMENT`.
+3. Agent authorizes with action `"portforward"`; on failure returns
+   `PERMISSION_DENIED` and closes the stream.
+4. Agent establishes a connection to the target port and sends exactly one
+   `ready` **before any `data`**. A client MUST NOT treat the forward as usable
+   until it has seen `ready`; this is what distinguishes "the target accepted"
+   from "connected but silent", so a forward aimed at a closed port fails loudly
+   instead of hanging.
+5. Steady state: `data` in both directions, opaque bytes, no framing of any kind
+   imposed by this protocol.
+6. Client half-close (`CloseSend`) is close-write toward the target; the agent
+   keeps forwarding the read direction until the target closes.
+7. On any fatal error the agent sends one `error` message (or a gRPC status)
+   and ends the stream.
+
+The agent reaches the target port by joining its network namespace, because it
+generally shares no network with it — see `DESIGN-port-forward.md` for the
+constraint and the measurements behind it. That is an agent-side implementation
+detail and no part of this wire contract.
+
+The buffer-safety rule (§6) applies to `data` in both directions.
 
 ### 3.1 Logs framing (normative)
 

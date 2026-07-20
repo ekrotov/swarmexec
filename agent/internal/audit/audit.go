@@ -74,6 +74,35 @@ func (l *Logger) LogsEnd(identity, containerID string, dur time.Duration, bytesO
 	)
 }
 
+// ForwardStart records the beginning of a port-forward connection. Each
+// forwarded TCP connection is its own stream and so its own audit record;
+// "sidecar" reports whether the agent had to join the target's network
+// namespace to reach the port, or could dial it directly.
+func (l *Logger) ForwardStart(identity, containerID, service string, port uint32, sidecar bool, clientAddr string) {
+	l.log.Info("forward_start",
+		"event", "forward_start",
+		"identity", identity,
+		"container_id", containerID,
+		"service", service,
+		"port", port,
+		"sidecar", sidecar,
+		"client_addr", clientAddr,
+	)
+}
+
+// ForwardEnd records the end of a port-forward connection.
+func (l *Logger) ForwardEnd(identity, containerID string, port uint32, dur time.Duration, bytesIn, bytesOut int64) {
+	l.log.Info("forward_end",
+		"event", "forward_end",
+		"identity", identity,
+		"container_id", containerID,
+		"port", port,
+		"duration_ms", dur.Milliseconds(),
+		"bytes_in", bytesIn,
+		"bytes_out", bytesOut,
+	)
+}
+
 // VolumeRemove records a volume deletion attempt and its outcome.
 func (l *Logger) VolumeRemove(identity, name string, ok bool, errMsg string) {
 	l.log.Info("volume_remove",

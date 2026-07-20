@@ -42,6 +42,17 @@ func main() {
 }
 
 func run(args []string) error {
+	// Sidecar mode short-circuits everything below: a forward sidecar has no
+	// docker socket, no secrets and no listener — it only pipes one connection.
+	if addr, ok := forwardTarget(args); ok {
+		if err := runForwardSidecar(addr); err != nil {
+			// The control line on stderr already reported the reason to the
+			// agent; a second "fatal:" line would only pollute its log.
+			os.Exit(1)
+		}
+		return nil
+	}
+
 	cfg, err := config.Parse(args, os.Stderr)
 	if err != nil {
 		return err
@@ -133,6 +144,7 @@ func run(args []string) error {
 		IdleTimeout:    cfg.IdleTimeout,
 		MaxSessionTime: cfg.MaxSessionTime,
 		SecretAuth:     secretAuthIdentity,
+		ForwardImage:   cfg.ForwardImage,
 	})
 
 	serverOpts := []grpc.ServerOption{
