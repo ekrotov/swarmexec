@@ -1,6 +1,45 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gdamore/tcell/v2"
+)
+
+// tview.List reads runes as item shortcuts, so without this mapping j/k are
+// swallowed and vim movement dies as soon as an overlay list takes focus.
+func TestVimListKeys(t *testing.T) {
+	for _, tc := range []struct {
+		rune rune
+		want tcell.Key
+	}{
+		{'j', tcell.KeyDown},
+		{'k', tcell.KeyUp},
+		{'g', tcell.KeyHome},
+		{'G', tcell.KeyEnd},
+	} {
+		got := vimListKeys(tcell.NewEventKey(tcell.KeyRune, tc.rune, tcell.ModNone))
+		if got.Key() != tc.want {
+			t.Errorf("vimListKeys(%q) = %v, want %v", tc.rune, got.Key(), tc.want)
+		}
+	}
+
+	// Keys the overlays bind themselves must pass through untouched.
+	for _, r := range []rune{'d', 'a', ' ', 'q', 'i'} {
+		ev := tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone)
+		if got := vimListKeys(ev); got != ev {
+			t.Errorf("vimListKeys(%q) rewrote the event, want pass-through", r)
+		}
+	}
+
+	esc := tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone)
+	if got := vimListKeys(esc); got != esc {
+		t.Error("vimListKeys rewrote a non-rune key, want pass-through")
+	}
+}
 
 func TestShortVolume(t *testing.T) {
 	hash := "0319f545b2fd31e9fe03382447d1c1235c6cef40a6c527d8b3e55ad7cfc56af2"
