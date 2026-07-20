@@ -46,6 +46,10 @@ type Config struct {
 
 	DockerHost string // docker daemon endpoint
 
+	// ForwardImage overrides the image port-forward sidecars run from; empty
+	// means the agent's own image, found by self-inspection.
+	ForwardImage string
+
 	DrainTimeout   time.Duration // graceful-shutdown drain window
 	IdleTimeout    time.Duration // per-session idle timeout (0 = disabled)
 	MaxSessionTime time.Duration // per-session max duration (0 = disabled)
@@ -121,6 +125,7 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.DurationVar(&c.DrainTimeout, "drain-timeout", envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
 	fs.DurationVar(&c.IdleTimeout, "idle-timeout", envDuration("SWARMEXEC_IDLE_TIMEOUT", 0), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
 	fs.DurationVar(&c.MaxSessionTime, "max-session", envDuration("SWARMEXEC_MAX_SESSION", 0), "per-session max duration, 0=disabled (env SWARMEXEC_MAX_SESSION)")
+	fs.StringVar(&c.ForwardImage, "forward-image", env("SWARMEXEC_FORWARD_IMAGE", ""), "image for port-forward sidecars; empty = the agent's own image (env SWARMEXEC_FORWARD_IMAGE)")
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")
 	fs.StringVar(&c.LogFormat, "log-format", env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")
 	fs.StringVar(&c.AuditDest, "audit-dest", env("SWARMEXEC_AUDIT_DEST", "stdout"), "audit log destination: stdout|stderr|<file path> (env SWARMEXEC_AUDIT_DEST)")

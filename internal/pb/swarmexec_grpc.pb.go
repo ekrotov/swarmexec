@@ -1,3 +1,6 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
 // Authoritative wire protocol for swarmexec. Source of truth: CONTRACT.md §3.
 // Generated Go code lands in internal/pb and is shared by the cli and agent.
 
@@ -27,6 +30,7 @@ const (
 	Agent_Logs_FullMethodName           = "/swarmexec.Agent/Logs"
 	Agent_ListVolumes_FullMethodName    = "/swarmexec.Agent/ListVolumes"
 	Agent_RemoveVolume_FullMethodName   = "/swarmexec.Agent/RemoveVolume"
+	Agent_PortForward_FullMethodName    = "/swarmexec.Agent/PortForward"
 	Agent_Version_FullMethodName        = "/swarmexec.Agent/Version"
 )
 
@@ -49,6 +53,11 @@ type AgentClient interface {
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
 	// in use unless force is set.
 	RemoveVolume(ctx context.Context, in *RemoveVolumeRequest, opts ...grpc.CallOption) (*RemoveVolumeResponse, error)
+	// Forward a single TCP connection to a port inside a container on THIS node.
+	// Bidirectional: one stream carries exactly one connection, so a local
+	// listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
+	// the one transport). The first ClientMessage MUST carry a StartForward.
+	PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage], error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -126,6 +135,19 @@ func (c *agentClient) RemoveVolume(ctx context.Context, in *RemoveVolumeRequest,
 	return out, nil
 }
 
+func (c *agentClient) PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[2], Agent_PortForward_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ForwardClientMessage, ForwardServerMessage]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_PortForwardClient = grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage]
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -155,6 +177,11 @@ type AgentServer interface {
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
 	// in use unless force is set.
 	RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error)
+	// Forward a single TCP connection to a port inside a container on THIS node.
+	// Bidirectional: one stream carries exactly one connection, so a local
+	// listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
+	// the one transport). The first ClientMessage MUST carry a StartForward.
+	PortForward(grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]) error
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -184,6 +211,9 @@ func (UnimplementedAgentServer) ListVolumes(context.Context, *ListVolumesRequest
 }
 func (UnimplementedAgentServer) RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveVolume not implemented")
+}
+func (UnimplementedAgentServer) PortForward(grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method PortForward not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -281,6 +311,13 @@ func _Agent_RemoveVolume_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_PortForward_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServer).PortForward(&grpc.GenericServerStream[ForwardClientMessage, ForwardServerMessage]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_PortForwardServer = grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -334,6 +371,12 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Logs",
 			Handler:       _Agent_Logs_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "PortForward",
+			Handler:       _Agent_PortForward_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "swarmexec.proto",

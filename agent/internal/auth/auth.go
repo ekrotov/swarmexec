@@ -11,9 +11,14 @@ import "context"
 
 // Request is everything the authorizer needs to decide on a single action.
 type Request struct {
-	// Action is the operation being authorized: "exec", "logs", "volume.list",
-	// or "volume.remove".
+	// Action is the operation being authorized: "exec", "logs", "portforward",
+	// "volume.list", or "volume.remove".
 	Action string
+	// Port is the target TCP port inside the container for "portforward".
+	// Forwarding is a distinct exposure class from exec — it lifts an internal
+	// service port onto the operator's workstation, where every other process
+	// on that machine can reach it — so a policy can deny it independently.
+	Port uint32
 	// Volume is the target volume name for volume.* actions.
 	Volume string
 	// Identity is the client certificate Common Name (the operator identity).

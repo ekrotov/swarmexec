@@ -39,6 +39,11 @@ type Options struct {
 	// back to a client-supplied operator header or "anonymous" instead of
 	// failing. Leave false for CA-verified mTLS, where a cert CN is mandatory.
 	SecretAuth bool
+	// ForwardImage overrides the image port-forward sidecars run from. Empty
+	// means "the agent's own image", discovered by self-inspection, which is
+	// right on every normal deployment: it is already present on the node, so a
+	// forward never blocks on a registry pull.
+	ForwardImage string
 }
 
 // Server is the Agent gRPC service implementation.
@@ -62,6 +67,12 @@ type Server struct {
 	wg sync.WaitGroup
 
 	active atomic.Int64
+
+	// The agent's own image, resolved once by self-inspection and reused by
+	// every port-forward sidecar. See forwardImage.
+	forwardImageOnce sync.Once
+	forwardImageVal  string
+	forwardImageErr  error
 }
 
 // New constructs a Server. metrics may be nil, in which case a no-op sink is used.

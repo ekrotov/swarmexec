@@ -28,6 +28,12 @@ service Agent {
   // in use unless force is set.
   rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
 
+  // Forward a single TCP connection to a port inside a container on THIS node.
+  // Bidirectional: one stream carries exactly one connection, so a local
+  // listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
+  // the one transport). The first ClientMessage MUST carry a StartForward.
+  rpc PortForward(stream ForwardClientMessage) returns (stream ForwardServerMessage);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -132,6 +138,33 @@ message RemoveVolumeRequest {
 }
 
 message RemoveVolumeResponse {}
+
+message StartForward {
+  string container_id = 1;  // full container ID to forward into
+  uint32 port = 2;          // TCP port inside the container
+}
+
+message ForwardClientMessage {
+  oneof payload {
+    StartForward start = 1;  // MUST be the first message
+    bytes data = 2;          // raw bytes toward the container
+  }
+}
+
+// ForwardReady is sent once, after the agent has established the connection to
+// the target port and before any data. It lets the client distinguish "the
+// target accepted" from "connected, but the peer has not spoken yet" — without
+// it a forward pointing at a closed port looks healthy until the operator's
+// own client times out.
+message ForwardReady {}
+
+message ForwardServerMessage {
+  oneof payload {
+    ForwardReady ready = 1;  // sent once, before any data
+    bytes data = 2;          // raw bytes from the container
+    string error = 3;        // terminal error; stream ends after this
+  }
+}
 
 message VersionRequest {}
 
