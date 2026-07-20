@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -82,6 +84,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		app.SetFocus(m)
 	}
 
+	// forwards is the UI's only persistent background resource: a port forward
+	// outlives the overlay that started it, unlike every stream here.
+	forwards := newForwardRegistry()
+	defer forwards.stopAll()
+
+	// Set below, once the widgets they touch exist. They are declared up here
+	// because starting a forward has to refresh the tree, the forwards table and
+	// the footer, and those are all built further down.
+	var (
+		refreshForwardViews func()
+		flash               func(string)
+	)
+
 	// ---------------------------------------------------------------- containers
 	// A tree: services are parent nodes, their containers are children.
 	ctree := tview.NewTreeView()
@@ -154,7 +169,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			} else {
 				label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
 			}
-			node := tview.NewTreeNode(label).SetReference(c)
+			node := tview.NewTreeNode(annotateForwards(label, forwards.forContainer(c.ContainerID))).SetReference(c)
 			svcNode.AddChild(node)
 			if first == nil {
 				first = node
@@ -324,6 +339,98 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		app.SetFocus(tv)
 	}
 
+	// startForward brings a forward up off the UI goroutine: dialling the agent
+	// can take up to the connect timeout, and blocking the UI for that would
+	// freeze the whole app. The entry is registered immediately in the starting
+	// state so the operator sees that something is happening.
+	startForward := func(c resolve.Candidate, local, remote uint32) {
+		fctx, fcancel := context.WithCancel(ctx)
+		var once sync.Once
+		entry := forwards.add(c, local, remote, func() { once.Do(fcancel) })
+		refreshForwardViews()
+
+		go func() {
+			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+			fw, ferr := startForwarder(fctx, cfg, ep, forwardParams{
+				address:        "127.0.0.1", // loopback: do not re-expose an internal port to the local network
+				localPort:      local,
+				remotePort:     remote,
+				connectTimeout: f.connectTimeout,
+			})
+			if ferr != nil {
+				forwards.markFailed(entry.id, ferr)
+				app.QueueUpdateDraw(func() { refreshForwardViews() })
+				return
+			}
+			addr := fw.LocalAddr().String()
+			// Kept as a local: reading entry.localAddr later would race with
+			// the registry's own writers.
+			boundPort := local
+			if _, ps, perr := net.SplitHostPort(addr); perr == nil {
+				if n, cerr := strconv.ParseUint(ps, 10, 32); cerr == nil {
+					boundPort = uint32(n)
+				}
+			}
+			forwards.markActive(entry.id, addr)
+			app.QueueUpdateDraw(func() { refreshForwardViews() })
+
+			serr := fw.Serve(fctx, func(cerr error) {
+				// Announce the first failure only: against an outdated agent
+				// every connection fails, and flashing each one would hide the
+				// footer behind a stutter of identical messages.
+				// Only the first failure changes anything visible (the ⚠
+				// marker). Redrawing on every one would rebuild the whole
+				// container tree per rejected connection — a browser hammering
+				// a broken forward would turn that into a redraw storm.
+				if !forwards.noteConnError(entry.id, cerr) {
+					return
+				}
+				app.QueueUpdateDraw(func() {
+					refreshForwardViews()
+					flash(fmt.Sprintf(" [red]forward %d[white]: %v", boundPort, cerr))
+				})
+			})
+			fw.Close()
+			// A cancelled forward was stopped on purpose; anything else is a
+			// real failure the operator needs to see in the table.
+			if serr != nil && fctx.Err() == nil {
+				forwards.markFailed(entry.id, serr)
+				app.QueueUpdateDraw(func() { refreshForwardViews() })
+			}
+		}()
+	}
+
+	// portPrompt asks which port to forward. There is deliberately no list of
+	// exposed ports to pick from: the manager API cannot inspect a container on
+	// another node, and the services worth forwarding are exactly the ones that
+	// publish nothing — so a suggestion list would be empty where it matters.
+	portPrompt := func(c resolve.Candidate) {
+		input := tview.NewInputField().SetLabel(" port: ").SetFieldWidth(20)
+		input.SetBorder(true).SetTitle(fmt.Sprintf(" forward %s on %s ", orDash(c.Service), orDash(c.NodeName)))
+		hint := "  8080  or  9090:8080 (local:remote)"
+		input.SetPlaceholder(hint)
+
+		closePrompt := func() { pages.RemovePage("fwdprompt"); app.SetFocus(ctree) }
+		input.SetDoneFunc(func(key tcell.Key) {
+			if key != tcell.KeyEnter {
+				closePrompt()
+				return
+			}
+			local, remote, perr := parsePortSpec(strings.TrimSpace(input.GetText()))
+			if perr != nil {
+				// Keep the prompt open so the operator can correct the typo
+				// instead of retyping the whole thing.
+				input.SetTitle(fmt.Sprintf(" %v ", perr))
+				return
+			}
+			closePrompt()
+			startForward(c, local, remote)
+			flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
+		})
+		pages.AddPage("fwdprompt", centered(input, 54, 3), true, true)
+		app.SetFocus(input)
+	}
+
 	containerMenu := func(c resolve.Candidate) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		list := tview.NewList().ShowSecondaryText(false)
@@ -348,6 +455,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					openTerminal(c, []string{"sh"}, false)
 				}
 			})
+			list.AddItem("Port forward", "", 0, func() { closeMenu(); portPrompt(c) })
 			list.AddItem("Cancel", "", 0, closeMenu)
 			if cur >= 0 && cur < list.GetItemCount() {
 				list.SetCurrentItem(cur)
@@ -371,7 +479,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			})
 		}()
 
-		pages.AddPage("menu", centered(list, 48, 6), true, true)
+		// Height tracks the item count: 5 items plus the border.
+		pages.AddPage("menu", centered(list, 48, 7), true, true)
 		app.SetFocus(list)
 	}
 	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
@@ -749,9 +858,80 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		app.SetFocus(list)
 	}
 
+	// ------------------------------------------------------------------ forwards
+	ftable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	ftable.SetSelectedStyle(selStyle)
+	fHeaders := []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "AGE", "STATE"}
+	// fRows mirrors the rendered table so a row index maps back to a forward.
+	var fRows []forwardEntry
+	renderForwards := func() {
+		prev, _ := ftable.GetSelection()
+		ftable.Clear()
+		for i, h := range fHeaders {
+			ftable.SetCell(0, i, headerCell(h))
+		}
+		fRows = forwards.list()
+		for i, e := range fRows {
+			row := i + 1
+			local := "-"
+			if p := e.boundPort(); p > 0 {
+				local = fmt.Sprintf("127.0.0.1:%d", p)
+			}
+			state := e.state.String()
+			color := tcell.ColorWhite
+			switch e.state {
+			case forwardActive:
+				color = tcell.ColorGreen
+				if e.connErr != nil {
+					// Listening, but connections are failing — the operator
+					// needs to see that, not a reassuring green "active". Kept
+					// to a marker because the column truncates; Enter shows the
+					// reason in full, and it is flashed once when it happens.
+					color = tcell.ColorYellow
+					state = "active ⚠"
+				}
+			case forwardStarting:
+				color = tcell.ColorYellow
+			case forwardFailed:
+				color = tcell.ColorRed
+				if e.err != nil {
+					// The reason matters more than the word "failed": it is the
+					// only place the operator can learn what went wrong.
+					state = "failed: " + e.err.Error()
+				}
+			}
+			ftable.SetCell(row, 0, tview.NewTableCell(local))
+			ftable.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", e.remote)))
+			ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.cand.ContainerID)))
+			ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.cand.Service)))
+			ftable.SetCell(row, 4, tview.NewTableCell(orDash(e.cand.NodeName)))
+			ftable.SetCell(row, 5, tview.NewTableCell(uptime(time.Since(e.started))))
+			ftable.SetCell(row, 6, tview.NewTableCell(state).SetTextColor(color))
+		}
+		if len(fRows) == 0 {
+			ftable.SetCell(1, 0, tview.NewTableCell("(no forwards — press p on a container)").
+				SetTextColor(tcell.ColorGray).SetSelectable(false))
+			return
+		}
+		if prev > 0 && prev <= len(fRows) {
+			ftable.Select(prev, 0)
+		} else {
+			ftable.Select(1, 0)
+		}
+	}
+	// selectedForward maps the cursor row back to a forward.
+	selectedForward := func() (forwardEntry, bool) {
+		row, _ := ftable.GetSelection()
+		if row < 1 || row > len(fRows) {
+			return forwardEntry{}, false
+		}
+		return fRows[row-1], true
+	}
+
 	// ---------------------------------------------------------------- tabs/chrome
 	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
+	content.AddPage("forwards", ftable, true, false)
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	help := tview.NewTextView().SetDynamicColors(true)
@@ -759,8 +939,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// agents), filled in asynchronously so probing the agents never blocks the UI.
 	cluster := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
 	cluster.SetText("[gray]cluster: …[white] ")
+	// Forward count sits next to the cluster summary, the one footer slot built
+	// for asynchronously updated state. flash() cannot carry it: it self-clears
+	// after 1.5s, and a forward is persistent.
+	fwdCount := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
 	footer := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(help, 0, 1, false).
+		AddItem(fwdCount, 12, 0, false).
 		AddItem(cluster, 30, 0, false)
 	// "/" search bar: hidden (height 0) until activated; filters the container
 	// tree live by service / container id / node.
@@ -813,33 +998,59 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}()
 	}
 
+	// refreshForwardViews repaints everything a forward's state feeds: the
+	// footer counter, the forwards table, and the tree annotations. Must run on
+	// the UI goroutine.
+	refreshForwardViews = func() {
+		total, act := forwards.counts()
+		switch {
+		case total == 0:
+			fwdCount.SetText("")
+		case act == total:
+			fwdCount.SetText(fmt.Sprintf("[aqua]%d[white] fwd ", total))
+		default:
+			fwdCount.SetText(fmt.Sprintf("[aqua]%d[white]/%d fwd ", act, total))
+		}
+		renderForwards()
+		renderContainers()
+	}
+
 	active := "containers"
 	mouseEnabled := true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 	curHelp := ""
 	helpFor := func(name string) string {
-		if name == "containers" {
-			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		switch name {
+		case "containers":
+			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2/3[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		case "volumes":
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2/3[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		default:
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1/2/3[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		}
-		return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 	}
 	setTab := func(name string) {
 		active = name
 		content.SwitchToPage(name)
 		curHelp = helpFor(name)
 		help.SetText(curHelp)
-		if name == "containers" {
-			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2) ")
+		switch name {
+		case "containers":
+			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2)   Forwards (3) ")
 			app.SetFocus(ctree)
-		} else {
-			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-] ")
+		case "volumes":
+			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-]   Forwards (3) ")
 			app.SetFocus(vtable)
 			loadVolumes()
+		default:
+			tabBar.SetText("  Containers (1)   Volumes (2)   [black:teal] Forwards (3) [-:-] ")
+			app.SetFocus(ftable)
+			renderForwards()
 		}
 	}
 
 	// flash briefly replaces the footer with a status message, then restores it.
-	flash := func(msg string) {
+	flash = func(msg string) {
 		help.SetText(msg)
 		go func() {
 			time.Sleep(1500 * time.Millisecond)
@@ -854,14 +1065,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			return
 		}
 		var b strings.Builder
-		if active == "containers" {
+		switch active {
+		case "containers":
 			for _, svc := range croot.GetChildren() {
 				fmt.Fprintln(&b, svc.GetText())
 				for _, c := range svc.GetChildren() {
 					fmt.Fprintf(&b, "  %s\n", c.GetText())
 				}
 			}
-		} else {
+		case "forwards":
+			fmt.Fprintln(&b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
+			for _, e := range forwards.list() {
+				local := "-"
+				if p := e.boundPort(); p > 0 {
+					local = fmt.Sprintf("127.0.0.1:%d", p)
+				}
+				fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%s\t%s\n",
+					local, e.remote, shortID(e.cand.ContainerID),
+					orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
+			}
+		default:
 			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
 			rows := make([]swarmVolume, len(vols))
 			copy(rows, vols)
@@ -894,12 +1117,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 	}
 
+	// tabOrder drives Tab cycling; the forwards tab joins the rotation.
+	tabOrder := []string{"containers", "volumes", "forwards"}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyTab {
-			if active == "containers" {
-				setTab("volumes")
-			} else {
-				setTab("containers")
+			for i, name := range tabOrder {
+				if name == active {
+					setTab(tabOrder[(i+1)%len(tabOrder)])
+					break
+				}
 			}
 			return nil
 		}
@@ -911,14 +1137,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			case '2':
 				setTab("volumes")
 				return nil
+			case '3':
+				setTab("forwards")
+				return nil
 			case 'q':
 				app.Stop()
 				return nil
 			case 'r':
-				if active == "containers" {
+				switch active {
+				case "containers":
 					loadContainers()
-				} else {
+				case "volumes":
 					loadVolumes()
+				default:
+					renderForwards()
 				}
 				refreshCluster()
 				return nil
@@ -948,6 +1180,76 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				return tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModNone)
 			case 'l':
 				return tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone)
+			case 'p':
+				// On a service node, forward to the task under the cursor —
+				// exactly one, like kubectl does with a pod. Forwarding "the
+				// service" would have to load-balance, which makes debugging
+				// misleading.
+				if n := ctree.GetCurrentNode(); n != nil {
+					if c, ok := n.GetReference().(resolve.Candidate); ok {
+						portPrompt(c)
+					} else if kids := n.GetChildren(); len(kids) > 0 {
+						if c, ok := kids[0].GetReference().(resolve.Candidate); ok {
+							portPrompt(c)
+						}
+					}
+				}
+				return nil
+			}
+		}
+		return tabKeys(ev)
+	})
+	// Enter shows the full detail of a forward. The table truncates the state
+	// column, so this is where a failure reason is actually readable.
+	ftable.SetSelectedFunc(func(int, int) {
+		row, ok := selectedForward()
+		if !ok {
+			return
+		}
+		// Re-read from the registry: the rendered row's connErr is only as
+		// fresh as the last redraw, and redraws are deliberately rare.
+		e, ok := forwards.get(row.id)
+		if !ok {
+			return
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "local:      127.0.0.1:%d\n", e.boundPort())
+		fmt.Fprintf(&b, "remote:     %d\n", e.remote)
+		fmt.Fprintf(&b, "container:  %s\n", shortID(e.cand.ContainerID))
+		fmt.Fprintf(&b, "service:    %s\n", orDash(e.cand.Service))
+		fmt.Fprintf(&b, "node:       %s\n", orDash(e.cand.NodeName))
+		fmt.Fprintf(&b, "state:      %s", e.state)
+		if e.err != nil {
+			fmt.Fprintf(&b, "\n\nfailed: %v", e.err)
+		}
+		if e.connErr != nil {
+			fmt.Fprintf(&b, "\n\nlast connection failed:\n%v", e.connErr)
+		}
+		info(b.String())
+	})
+	// On the forwards table: d stops the selected forward, o copies its URL.
+	ftable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune {
+			switch ev.Rune() {
+			case 'd':
+				if e, ok := selectedForward(); ok {
+					forwards.remove(e.id)
+					refreshForwardViews()
+					flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+				}
+				return nil
+			case 'o':
+				// Copy rather than launch a browser: the UI often runs over
+				// ssh, where opening a local browser would target the wrong
+				// machine — and the forward is bound on the operator's side.
+				if e, ok := selectedForward(); ok && e.state == forwardActive {
+					url := fmt.Sprintf("http://127.0.0.1:%d", e.boundPort())
+					if screen != nil {
+						screen.SetClipboard([]byte(url))
+					}
+					flash(" [green]copied[white] " + url)
+				}
+				return nil
 			}
 		}
 		return tabKeys(ev)
