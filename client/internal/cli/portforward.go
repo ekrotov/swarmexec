@@ -220,7 +220,7 @@ func runForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p
 	}
 	defer fw.Close()
 
-	fmt.Fprintf(stdout, "forwarding %s -> %s:%d (%s)\n",
+	fmt.Fprintf(stdout, "forwarding %s -> %s:%d (%s) — press Ctrl-C to stop\n",
 		fw.LocalAddr(), shortID(ep.ContainerID), p.remotePort, ep.NodeName)
 
 	return fw.Serve(ctx, func(cerr error) {
