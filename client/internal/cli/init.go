@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	defaultAgentImage = "registry.logle.io/internal-tools/swarm-remote-exec/agent:latest"
+	defaultAgentImage = "registry.logle.io/cs-public/swarm-remote-exec/agent:latest"
 	defaultServiceNm  = "swarmexec_agent"
 	agentSecretName   = "swarmexec_agent_secret"
 	agentRoleLabel    = "swarmexec.role"

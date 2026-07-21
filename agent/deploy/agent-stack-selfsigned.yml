@@ -9,7 +9,7 @@
 #      openssl rand -base64 32 | docker secret create swarmexec_agent_secret -
 #
 # 2. Deploy:
-#      export SWARMEXEC_AGENT_IMAGE=registry.logle.io/internal-tools/swarm-remote-exec/agent:latest
+#      export SWARMEXEC_AGENT_IMAGE=registry.logle.io/cs-public/swarm-remote-exec/agent:latest
 #      docker login registry.logle.io
 #      docker stack deploy --with-registry-auth -c deploy/agent-stack-selfsigned.yml swarmexec
 #
@@ -24,7 +24,7 @@
 
 services:
   agent:
-    image: ${SWARMEXEC_AGENT_IMAGE:-registry.logle.io/internal-tools/swarm-remote-exec/agent:latest}
+    image: ${SWARMEXEC_AGENT_IMAGE:-registry.logle.io/cs-public/swarm-remote-exec/agent:latest}
     command:
       - "-listen=:9443"
       - "-self-signed"
