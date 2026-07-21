@@ -46,7 +46,7 @@ swarmexec ui                         # interactive TUI
 Pin this image explicitly if you like:
 
 ```sh
-swarmexec init --image <namespace>/swarmexec-agent:latest
+swarmexec init --image logleio/swarmexec-agent:latest
 ```
 
 ### Manual deploy (global service)
@@ -55,9 +55,10 @@ swarmexec init --image <namespace>/swarmexec-agent:latest
 docker service create \
   --name swarmexec_agent \
   --mode global \
+  --label swarmexec.role=agent \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   --publish mode=host,target=9443,published=9443 \
-  <namespace>/swarmexec-agent:latest
+  logleio/swarmexec-agent:latest
 ```
 
 The agent listens on host port **9443** on every node. See the project docs for

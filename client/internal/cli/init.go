@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	defaultAgentImage = "registry.logle.io/cs-public/swarm-remote-exec/agent:latest"
+	defaultAgentImage = "docker.io/logleio/swarmexec-agent:latest"
 	defaultServiceNm  = "swarmexec_agent"
 	agentSecretName   = "swarmexec_agent_secret"
 	agentRoleLabel    = "swarmexec.role"
@@ -477,11 +477,22 @@ func agentDeployed(ctx context.Context, dcli serviceLister) bool {
 		return true // can't tell — don't claim the agent is missing
 	}
 	for _, s := range list {
-		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && strings.Contains(cs.Image, "swarm-remote-exec/agent") {
+		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && isAgentImage(cs.Image) {
 			return true
 		}
 	}
 	return false
+}
+
+// isAgentImage reports whether an image reference looks like the swarmexec
+// agent. Label matching is the primary signal (agentServiceSpec always sets
+// swarmexec.role=agent); this is the fallback for services deployed without
+// that label. It matches both the Docker Hub name (logleio/swarmexec-agent)
+// and the older GitLab-registry name (…/swarm-remote-exec/agent), so a cluster
+// mid-migration is still recognized whichever image it runs.
+func isAgentImage(image string) bool {
+	return strings.Contains(image, "swarmexec-agent") ||
+		strings.Contains(image, "swarm-remote-exec/agent")
 }
 
 // inspectServiceImage reads back a service's resolved image (Docker pins the
@@ -507,7 +518,7 @@ func agentServiceImage(ctx context.Context, dcli serviceLister) string {
 		return ""
 	}
 	for _, s := range list {
-		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && strings.Contains(cs.Image, "swarm-remote-exec/agent") {
+		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && isAgentImage(cs.Image) {
 			return cs.Image
 		}
 	}

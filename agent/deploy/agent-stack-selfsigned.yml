@@ -8,10 +8,11 @@
 # 1. Create the shared secret (any high-entropy string):
 #      openssl rand -base64 32 | docker secret create swarmexec_agent_secret -
 #
-# 2. Deploy:
-#      export SWARMEXEC_AGENT_IMAGE=registry.logle.io/cs-public/swarm-remote-exec/agent:latest
-#      docker login registry.logle.io
-#      docker stack deploy --with-registry-auth -c deploy/agent-stack-selfsigned.yml swarmexec
+# 2. Deploy (the default image is public on Docker Hub, so no registry login):
+#      docker stack deploy -c deploy/agent-stack-selfsigned.yml swarmexec
+#    To pin a version or use the GitLab-registry mirror instead, set
+#    SWARMEXEC_AGENT_IMAGE, e.g.:
+#      export SWARMEXEC_AGENT_IMAGE=docker.io/logleio/swarmexec-agent:v1.1.3
 #
 # 3. Put the SAME secret in the client's ~/.config/swarmexec/config.yaml:
 #      agent_secret: <the value you created above>
@@ -24,7 +25,7 @@
 
 services:
   agent:
-    image: ${SWARMEXEC_AGENT_IMAGE:-registry.logle.io/cs-public/swarm-remote-exec/agent:latest}
+    image: ${SWARMEXEC_AGENT_IMAGE:-docker.io/logleio/swarmexec-agent:latest}
     command:
       - "-listen=:9443"
       - "-self-signed"
@@ -35,6 +36,11 @@ services:
       - "-audit-dest=stdout"
     deploy:
       mode: global
+      # Same label the CLI stamps on init-created agents, so `swarmexec down`,
+      # doctor and re-init recognize a manifest-deployed agent by label rather
+      # than by image name.
+      labels:
+        swarmexec.role: agent
       restart_policy:
         condition: any
       update_config:

@@ -230,9 +230,8 @@ cert/key or per-node SANs at all.
 openssl rand -base64 32 | docker secret create swarmexec_agent_secret -
 
 # 2. deploy the self-signed stack (no server cert/key secrets needed)
-export SWARMEXEC_AGENT_IMAGE=registry.logle.io/cs-public/swarm-remote-exec/agent:latest
-docker login registry.logle.io
-docker stack deploy --with-registry-auth -c agent/deploy/agent-stack-selfsigned.yml swarmexec
+#    the default agent image is public on Docker Hub, so no registry login:
+docker stack deploy -c agent/deploy/agent-stack-selfsigned.yml swarmexec
 ```
 
 Client side — put the same secret in `~/.config/swarmexec/config.yaml`:
