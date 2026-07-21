@@ -20,7 +20,7 @@
 # via that node's address on the published port using mTLS.
 services:
   agent:
-    image: registry.logle.io/internal-tools/swarm-remote-exec/agent:latest
+    image: registry.logle.io/cs-public/swarm-remote-exec/agent:latest
     command:
       - "-listen=:9443"
       - "-ca-cert=/run/secrets/swarmexec_ca"

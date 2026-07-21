@@ -12,7 +12,7 @@
 
 services:
   site:
-    image: ${SWARMEXEC_SITE_IMAGE:-registry.logle.io/internal-tools/swarm-remote-exec/site:latest}
+    image: ${SWARMEXEC_SITE_IMAGE:-registry.logle.io/cs-public/swarm-remote-exec/site:latest}
     user: "101:101"          # nginx (non-root)
     read_only: true          # immutable root filesystem
     cap_drop:

@@ -89,7 +89,7 @@ func TestAgentDeployed(t *testing.T) {
 	}{
 		{"none", fakeServiceLister{all: nil}, false},
 		{"labeled", fakeServiceLister{all: []swarm.Service{labeledAgent()}}, true},
-		{"by-image", fakeServiceLister{all: []swarm.Service{imagedAgent("registry.x/internal-tools/swarm-remote-exec/agent:latest")}}, true},
+		{"by-image", fakeServiceLister{all: []swarm.Service{imagedAgent("registry.x/cs-public/swarm-remote-exec/agent:latest")}}, true},
 		{"unrelated", fakeServiceLister{all: []swarm.Service{imagedAgent("nginx:latest")}}, false},
 		{"list-error-assumes-present", fakeServiceLister{err: errors.New("boom")}, true},
 	}
