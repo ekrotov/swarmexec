@@ -1,14 +1,12 @@
 # swarmexec agent — global Swarm service.
 #
-# The image is built and pushed by .gitlab-ci.yml to the GitLab Container
-# Registry at <project>/agent. Tags: :<version> and :latest for releases,
-# :main and :<short-sha> for default-branch dev builds. The `image:` below
-# tracks the latest release; switch the tag to :main to follow dev builds.
+# Releases publish the image to Docker Hub at docker.io/logleio/swarmexec-agent
+# (public), tagged :<version> and :latest; the CI also mirrors it to the GitLab
+# registry. The `image:` below tracks the latest release. Dev builds live only
+# in the GitLab registry as :main / :<short-sha>.
 #
-# Deploy with (--with-registry-auth forwards your registry login to every node so
-# a global service can pull from the private registry):
-#   docker login registry.logle.io
-#   docker stack deploy --with-registry-auth -c deploy/agent-stack.yml swarmexec
+# The Hub image is public, so no registry login is needed to pull it:
+#   docker stack deploy -c deploy/agent-stack.yml swarmexec
 #
 # Create the required secrets first (see deploy/secrets.sh or the README):
 #   docker secret create swarmexec_ca   ca.crt
@@ -20,7 +18,7 @@
 # via that node's address on the published port using mTLS.
 services:
   agent:
-    image: registry.logle.io/cs-public/swarm-remote-exec/agent:latest
+    image: docker.io/logleio/swarmexec-agent:latest
     command:
       - "-listen=:9443"
       - "-ca-cert=/run/secrets/swarmexec_ca"
@@ -32,6 +30,11 @@ services:
       - "-audit-dest=stdout"
     deploy:
       mode: global
+      # Same label the CLI stamps on init-created agents, so `swarmexec down`,
+      # doctor and re-init recognize a manifest-deployed agent by label rather
+      # than by image name.
+      labels:
+        swarmexec.role: agent
       restart_policy:
         condition: any
       update_config:

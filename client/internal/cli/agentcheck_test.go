@@ -81,6 +81,22 @@ func TestPortConflict(t *testing.T) {
 	}
 }
 
+func TestIsAgentImage(t *testing.T) {
+	cases := map[string]bool{
+		"docker.io/logleio/swarmexec-agent:latest":                   true, // Docker Hub (current default)
+		"logleio/swarmexec-agent:v1.1.4":                             true,
+		"registry.logle.io/cs-public/swarm-remote-exec/agent:latest": true, // legacy GitLab image, mid-migration
+		"registry.x/internal-tools/swarm-remote-exec/agent:1.0":      true, // legacy, older namespace
+		"nginx:latest":              false,
+		"docker.io/library/redis:7": false,
+	}
+	for img, want := range cases {
+		if got := isAgentImage(img); got != want {
+			t.Errorf("isAgentImage(%q) = %v, want %v", img, got, want)
+		}
+	}
+}
+
 func TestAgentDeployed(t *testing.T) {
 	cases := []struct {
 		name string
@@ -89,7 +105,8 @@ func TestAgentDeployed(t *testing.T) {
 	}{
 		{"none", fakeServiceLister{all: nil}, false},
 		{"labeled", fakeServiceLister{all: []swarm.Service{labeledAgent()}}, true},
-		{"by-image", fakeServiceLister{all: []swarm.Service{imagedAgent("registry.x/cs-public/swarm-remote-exec/agent:latest")}}, true},
+		{"by-image-hub", fakeServiceLister{all: []swarm.Service{imagedAgent("docker.io/logleio/swarmexec-agent:latest")}}, true},
+		{"by-image-gitlab-legacy", fakeServiceLister{all: []swarm.Service{imagedAgent("registry.x/cs-public/swarm-remote-exec/agent:latest")}}, true},
 		{"unrelated", fakeServiceLister{all: []swarm.Service{imagedAgent("nginx:latest")}}, false},
 		{"list-error-assumes-present", fakeServiceLister{err: errors.New("boom")}, true},
 	}
