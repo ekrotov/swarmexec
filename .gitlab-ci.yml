@@ -19,6 +19,7 @@ stages:
   - build
   - image
   - release
+  - deploy
 
 variables:
   GO_IMAGE: "golang:1.25"
@@ -343,3 +344,27 @@ dockerhub-description:
   rules:
     # Stable releases only (skip prereleases like v1.2.3-rc.1).
     - if: '$CI_COMMIT_TAG =~ /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/'
+
+# ----------------------------------------------------------------------------
+# deploy — Landing-Page-Deploy im Infrastruktur-Repo anstossen.
+#   Laeuft nur bei einem stabilen/prerelease Semver-Tag und erst, nachdem
+#   site-image das :<version>-Image gepusht hat. Die Ziel-Pipeline
+#   (infrastruktur/swar-exec-site) rendert das Stackfile mit dieser VERSION
+#   und deployt den Swarm-Stack.
+#
+#   Voraussetzung (einmalig): im Ziel-Projekt muss unter
+#   Settings > CI/CD > Job token permissions dieses Projekt erlaubt sein,
+#   sonst schlaegt der Trigger mit 404 fehl.
+# ----------------------------------------------------------------------------
+deploy-site:
+  stage: deploy
+  needs:
+    - job: site-image
+  variables:
+    VERSION: "$CI_COMMIT_TAG"
+  trigger:
+    project: infrastruktur/swar-exec-site
+    branch: main
+    strategy: depend
+  rules:
+    - *semver-tag
