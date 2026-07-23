@@ -949,7 +949,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		AddItem(cluster, 30, 0, false)
 	// "/" search bar: hidden (height 0) until activated; filters the container
 	// tree live by service / container id / node.
-	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0)
+	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
+		SetPlaceholder("filter services / containers / nodes")
 	root := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tabBar, 1, 0, false).
 		AddItem(content, 0, 1, true).
@@ -957,8 +958,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		AddItem(footer, 1, 0, false)
 	pages.AddPage("main", root, true, true)
 
+	// savedHelp holds the footer help to restore when search closes. While the
+	// search field has focus the footer shows how to leave it — there is no
+	// other on-screen hint, which is what made "how do I exit search?" a real
+	// snag. (Not curHelp: that is declared further down, out of scope here.)
+	var savedHelp string
 	startSearch := func() {
 		root.ResizeItem(search, 1, 0)
+		savedHelp = help.GetText(false)
+		help.SetText(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
 		app.SetFocus(search)
 	}
 	search.SetChangedFunc(func(text string) {
@@ -973,7 +981,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		if filter == "" {
 			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
 		}
-		app.SetFocus(ctree) // Enter keeps the filter; the bar stays as an indicator
+		help.SetText(savedHelp) // restore the tab help
+		app.SetFocus(ctree)     // Enter keeps the filter; the bar stays as an indicator
 	})
 
 	// refreshCluster probes the swarm in the background and updates the footer
