@@ -20,5 +20,8 @@ RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index.html \
 USER nginx
 
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1
+# Use 127.0.0.1, NOT localhost: nginx binds IPv4 only (`listen 8080;`), while
+# localhost also resolves to ::1, and busybox wget tries ::1 without falling
+# back — so `localhost` yields "connection refused" and the check never passes.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1
