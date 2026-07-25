@@ -333,8 +333,10 @@
             fallback, and the one option that implies a local daemon.</li>
         </ul>
         The <code>docker</code> CLI itself is needed only to <em>create</em> named
-        contexts (<code>docker context create</code>); use <code>$DOCKER_HOST</code> to
-        skip it entirely. (<code>init</code> reads local <code>docker login</code>
+        contexts (<code>docker context create</code>) — or create them with
+        <code>swarmexec context create &lt;name&gt; --docker-host …</code>, so the docker
+        CLI is no longer needed even for that; use <code>$DOCKER_HOST</code> to skip
+        named contexts entirely. (<code>init</code> reads local <code>docker login</code>
         credentials only for a <em>private</em> agent image — not for the public default.)
       </div>
       <p>
@@ -560,6 +562,45 @@
       <h3><code>config show</code> — inspect config</h3>
       <p>Prints the effective, merged client configuration with the secret masked.</p>
       <div class="cmd">swarmexec config show  [--json]</div>
+
+      <h3><code>context</code> (alias <code>ctx</code>) — manage Docker contexts</h3>
+      <p>
+        Create and manage the Docker contexts that <code>--context</code> (and
+        <code>$DOCKER_CONTEXT</code>) resolve for the manager API. swarmexec writes
+        docker's own on-disk store, so contexts made here are interchangeable with the
+        <code>docker</code> CLI — and you no longer need docker installed even to create
+        one. The built-in <code>default</code> context cannot be removed.
+      </p>
+
+      <p><code>context create &lt;name&gt;</code> — create a context pointing at a manager host (takes exactly one name argument):</p>
+      <div class="cmd">swarmexec context create <span class="k">&lt;name&gt;</span> --docker-host &lt;endpoint&gt;</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--docker-host</code></td><td>—</td><td>required — docker daemon endpoint: <code>ssh://</code> | <code>tcp://</code> | <code>unix://</code> | <code>npipe://</code></td></tr>
+          <tr><td><code>--description</code></td><td>—</td><td>optional description</td></tr>
+          <tr><td><code>--use</code></td><td><code>false</code></td><td>also make it the current context</td></tr>
+        </tbody>
+      </table></div>
+
+      <p><code>context ls</code> (alias <code>list</code>) — list contexts; columns <code>NAME&nbsp;&nbsp;CURRENT&nbsp;&nbsp;DOCKER&nbsp;ENDPOINT</code> (the active one marked <code>*</code>):</p>
+      <div class="cmd">swarmexec context ls  [--json]</div>
+
+      <p><code>context use &lt;name&gt;</code> — set the current context:</p>
+      <div class="cmd">swarmexec context use <span class="k">&lt;name&gt;</span></div>
+
+      <p><code>context rm &lt;name&gt; [name...]</code> (alias <code>remove</code>) — remove one or more contexts:</p>
+      <div class="cmd">swarmexec context rm <span class="k">&lt;name&gt;</span> [name...]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f</code>, <code>--force</code></td><td><code>false</code></td><td>required to remove the <em>current</em> context (its selection resets to <code>default</code>)</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="prompt"><span class="c">$</span> swarmexec context create prod --docker-host ssh://ops@manager --use
+<span class="c">$</span> swarmexec context ls
+<span class="c">$</span> swarmexec --context prod ps</div>
 
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
