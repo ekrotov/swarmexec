@@ -1,0 +1,3 @@
+# swarmexec landing site — public marketing/docs pages, crawling welcome.
+User-agent: *
+Allow: /
