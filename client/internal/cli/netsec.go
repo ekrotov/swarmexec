@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
@@ -384,4 +385,33 @@ func serviceUsesSecret(s swarm.Service, id, name string) bool {
 		}
 	}
 	return false
+}
+
+// serviceVolumeNames returns the set of named volumes referenced by any service
+// spec (its TaskTemplate mounts). Used to spare service-declared volumes from a
+// prune even when no task currently runs. Best effort: a ServiceList failure
+// yields an empty set (prune then falls back to the running-container view).
+func serviceVolumeNames(ctx context.Context, dcli *client.Client) map[string]bool {
+	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return map[string]bool{}
+	}
+	return serviceVolumeMounts(svcs)
+}
+
+// serviceVolumeMounts is the pure core of serviceVolumeNames.
+func serviceVolumeMounts(svcs []swarm.Service) map[string]bool {
+	m := map[string]bool{}
+	for _, s := range svcs {
+		cs := s.Spec.TaskTemplate.ContainerSpec
+		if cs == nil {
+			continue
+		}
+		for _, mt := range cs.Mounts {
+			if mt.Type == mount.TypeVolume && mt.Source != "" {
+				m[mt.Source] = true
+			}
+		}
+	}
+	return m
 }
