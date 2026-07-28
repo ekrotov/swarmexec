@@ -37,23 +37,40 @@ func newUICmd(g *globalFlags) *cobra.Command {
 		Short: "Interactive view of containers, volumes, networks, secrets and contexts",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUI(cmd, g, f, args)
+			// Loop so activating a context in the Contexts tab restarts the UI
+			// cleanly against the chosen cluster; "" means a normal quit.
+			ctxOverride := g.dockerContext
+			for {
+				next, err := runUI(cmd, g, f, args, ctxOverride)
+				if err != nil {
+					return err
+				}
+				if next == "" {
+					return nil
+				}
+				ctxOverride = next
+			}
 		},
 	}
 	cmd.Flags().DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to an agent")
 	return cmd
 }
 
-func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error {
+// runUI runs one session of the UI against ctxOverride's docker context. It
+// returns the name of a context to switch to (the operator activated one in the
+// Contexts tab) so the caller can restart cleanly against it, or "" on a normal
+// quit. Restarting — rather than swapping the docker client live — keeps the
+// switch free of data races on the in-flight background loads.
+func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return "", &cliError{code: usageExitCode, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return "", &cliError{code: usageExitCode, err: err}
 	}
 	if !cterm.IsTerminal(os.Stdout.Fd()) || !cterm.IsTerminal(os.Stdin.Fd()) {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
+		return "", &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
 	}
 
 	ctx := cmd.Context()
@@ -65,9 +82,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		service = args[0]
 	}
 
-	dcli, err := newDockerClient(g.dockerContext)
+	// switchTo is set when the operator activates a context in the Contexts tab;
+	// the UI then stops and the caller restarts against it.
+	var switchTo string
+
+	dcli, err := newDockerClient(ctxOverride)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return "", &cliError{code: session.TransportFailure, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
 
@@ -1320,9 +1341,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx is this session's effective docker context (what the UI is
-	// connected to): the --context override, else $DOCKER_CONTEXT, else the
-	// stored current, else "default". Shown in the footer and marked here.
-	activeCtx := firstNonEmpty(g.dockerContext, os.Getenv("DOCKER_CONTEXT"))
+	// connected to): the context the session was started with, else
+	// $DOCKER_CONTEXT, else the stored current, else "default". Shown in the
+	// footer and marked here.
+	activeCtx := firstNonEmpty(ctxOverride, os.Getenv("DOCKER_CONTEXT"))
 	if activeCtx == "" {
 		activeCtx = dockerctx.Current()
 	}
@@ -1442,6 +1464,21 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			})
 		pages.AddPage("confirm", m, true, true)
 		app.SetFocus(m)
+	}
+	// activateContext makes c the current docker context and restarts the UI so
+	// it reconnects to that cluster. Restarting (rather than swapping the client
+	// live) avoids racing the in-flight background loads.
+	activateContext := func(c dockerctx.Context) {
+		if c.Name == activeCtx {
+			flash(" [gray]already on[white] context " + c.Name)
+			return
+		}
+		if err := dockerctx.Use(c.Name); err != nil {
+			info("switch failed: " + err.Error())
+			return
+		}
+		switchTo = c.Name
+		app.Stop() // the caller restarts against switchTo
 	}
 
 	// ---------------------------------------------------------------- tabs/chrome
@@ -1569,7 +1606,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		case "secrets":
 			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "contexts":
-			return " [yellow]j/k[white] up/down  [yellow]n[white] new  [yellow]d[white] delete  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]u[white] use  [yellow]n[white] new  [yellow]d[white] delete  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		default:
 			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		}
@@ -1953,7 +1990,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		return tabKeys(ev)
 	})
-	// On the contexts table, "n" creates a context and "d" removes the selected.
+	// On the contexts table: "n" creates, "d" removes, "u" (or Enter) activates.
 	cxtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
@@ -1965,9 +2002,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					deleteContext(c)
 				}
 				return nil
+			case 'u':
+				if c, ok := selectedContext(); ok {
+					activateContext(c)
+				}
+				return nil
 			}
 		}
 		return tabKeys(ev)
+	})
+	cxtable.SetSelectedFunc(func(int, int) {
+		if c, ok := selectedContext(); ok {
+			activateContext(c)
+		}
 	})
 
 	loadContainers()
@@ -1977,15 +2024,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	scr, serr := tcell.NewScreen()
 	if serr != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
+		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
 	}
 	screen = scr
 	app.SetScreen(screen)
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
+		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
-	return nil
+	return switchTo, nil
 }
 
 // svcRef marks a service (group) node and carries its name. It is deliberately
