@@ -610,16 +610,19 @@
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
       <p>
-        <code>swarmexec ui</code> has three tabs — <strong>Containers&nbsp;(1)</strong>,
-        <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong> — and a
-        footer showing a live cluster summary and forward count. These keys work on every
-        tab:
+        <code>swarmexec ui</code> has six tabs — <strong>Containers&nbsp;(1)</strong>,
+        <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
+        <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
+        <strong>Contexts&nbsp;(6)</strong> — and a footer showing the active docker
+        context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
+        you're on), a live cluster summary and the forward count. These keys work on
+        every tab:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
-          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>jump to Containers / Volumes / Forwards</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>6</kbd></td><td>jump to Containers / Volumes / Forwards / Networks / Secrets / Contexts</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>refresh the active tab and the cluster summary</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
@@ -638,6 +641,14 @@
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
         </tbody>
       </table></div>
+      <p>
+        Every service is shown (even one scaled to zero), each row rendered like a
+        <code>docker service ls</code> line — name, mode, running/desired count, image
+        and published ports — and coloured by health (aqua = all tasks up, orange =
+        partial, red = down, grey = scaled to zero). A <code>▸</code>/<code>▾</code>
+        marker shows whether a service is collapsed or expanded; its running containers
+        nest underneath.
+      </p>
       <p>
         The action menu offers <strong>Logs</strong>, <strong>Bash</strong>,
         <strong>Sh</strong> and <strong>Port forward</strong> (unavailable shells are
@@ -675,6 +686,46 @@
         (e.g. <code>9090→8080</code>). Forwards keep running when their overlay closes;
         they stop on <kbd>d</kbd> or when you quit the UI.
       </p>
+
+      <h3>Networks tab</h3>
+      <p>
+        A read-only list of the swarm's networks — name, driver, scope, type
+        (ingress / internal / attachable) and how many services attach to each.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>show the attached services, each with its running containers nested underneath</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Secrets tab</h3>
+      <p>
+        A read-only list of the swarm's secrets — name, how many services use each,
+        age, last update and label count. Secret <strong>values</strong> are never
+        shown: the Docker API does not expose them.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Contexts tab</h3>
+      <p>
+        Lists your Docker contexts (name and endpoint) with the active one marked
+        <code>▶</code> — the same context shown in the footer. You can manage them
+        without leaving the UI; the built-in <code>default</code> context is protected.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one and restarts the UI against that cluster (active port-forwards end)</td></tr>
+          <tr><td><kbd>n</kbd></td><td>create a context — a form for name, docker host (<code>ssh://</code> / <code>tcp://</code> / <code>unix://</code>) and an optional description</td></tr>
+          <tr><td><kbd>d</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
+        </tbody>
+      </table></div>
 
       <h3>Embedded shell &amp; logs</h3>
       <p>
