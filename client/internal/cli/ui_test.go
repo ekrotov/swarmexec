@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
+	"swarmexec/client/internal/resolve"
 )
 
 // tview.List reads runes as item shortcuts, so without this mapping j/k are
@@ -81,5 +84,44 @@ func TestServiceLabel(t *testing.T) {
 	}
 	if got, want := serviceLabel("", 0, 0), "-  0/0"; got != want {
 		t.Errorf("serviceLabel(empty) = %q, want %q", got, want)
+	}
+}
+
+func TestTrimFoldMarker(t *testing.T) {
+	cases := map[string]string{
+		"▸ web  1/3": "web  1/3", // collapsed
+		"▾ web  1/3": "web  1/3", // expanded
+		"  -  0/0":   "-  0/0",   // childless padding
+		"web  1/3":   "web  1/3", // already plain
+	}
+	for in, want := range cases {
+		if got := trimFoldMarker(in); got != want {
+			t.Errorf("trimFoldMarker(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The h/l fold keys depend on telling a service group from a container leaf and
+// on finding a leaf's owning service (tview.TreeNode has no parent pointer).
+func TestServiceParentAndNode(t *testing.T) {
+	root := tview.NewTreeNode("root")
+	web := tview.NewTreeNode("web").SetReference(svcRef{name: "web"})
+	db := tview.NewTreeNode("db").SetReference(svcRef{name: "db"})
+	root.AddChild(web)
+	root.AddChild(db)
+	leaf := tview.NewTreeNode("c1").SetReference(resolve.Candidate{ContainerID: "abc"})
+	web.AddChild(leaf)
+
+	if got := serviceParent(root, leaf); got != web {
+		t.Errorf("serviceParent(leaf) = %v, want the web node", got)
+	}
+	if got := serviceParent(root, web); got != nil {
+		t.Errorf("serviceParent(service) = %v, want nil", got)
+	}
+	if !isServiceNode(web) {
+		t.Error("service group should be a service node")
+	}
+	if isServiceNode(leaf) {
+		t.Error("container leaf should not be a service node")
 	}
 }
