@@ -128,6 +128,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	var (
 		refreshForwardViews func()
 		flash               func(string)
+		updateStatus        func() // recomposes the footer status line
 	)
 
 	// ---------------------------------------------------------------- containers
@@ -644,6 +645,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	var volUsage map[string][]volumeConsumer
 	var volSizes map[string]int64
 	var volErrs map[string]error
+	// selectedVols holds the volumes marked with space for a bulk delete, keyed
+	// by name so the selection survives sorting and re-render.
+	selectedVols := map[string]bool{}
 	sortField := volSortName
 	sortDesc := false
 	volSizesLoading := false
@@ -700,7 +704,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		selName := ""
 		if row, _ := vtable.GetSelection(); row >= 1 {
 			if c := vtable.GetCell(row, 0); c != nil {
-				selName = c.Text
+				selName = strings.TrimLeft(c.Text, "▣ ") // drop the selection marker
 			}
 		}
 		vtable.Clear()
@@ -738,7 +742,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				sizeCell = tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1)
 			}
-			vtable.SetCell(i+1, 0, tview.NewTableCell(v.Name).SetExpansion(1))
+			mark, nameColor := "  ", tcell.ColorWhite
+			if selectedVols[v.Name] {
+				mark, nameColor = "▣ ", tcell.ColorAqua
+			}
+			vtable.SetCell(i+1, 0, tview.NewTableCell(mark+v.Name).SetTextColor(nameColor).SetExpansion(1))
 			vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
 			vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
 			vtable.SetCell(i+1, 3, usedCell)
@@ -983,6 +991,85 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		pages.AddPage("volusers", centered(list, 72, rows+4), true, true)
 		app.SetFocus(list)
+	}
+
+	// deleteVolumes removes each target volume on every node that holds it, behind
+	// a single confirm. Volumes are node-local, so a volume is removed across all
+	// its v.Nodes. Shared by the multi-select delete and prune.
+	deleteVolumes := func(targets []swarmVolume, prompt string) {
+		if len(targets) == 0 {
+			return
+		}
+		shown := make([]string, 0, len(targets))
+		for _, v := range targets {
+			shown = append(shown, shortVolume(v.Name))
+		}
+		extra := 0
+		if len(shown) > 12 {
+			extra, shown = len(shown)-12, shown[:12]
+		}
+		body := prompt + "\n\n" + strings.Join(shown, "\n")
+		if extra > 0 {
+			body += fmt.Sprintf("\n(+%d more)", extra)
+		}
+		m := tview.NewModal().SetText(body).AddButtons([]string{"Delete", "Cancel"}).
+			SetDoneFunc(func(_ int, label string) {
+				pages.RemovePage("confirm")
+				if label != "Delete" {
+					app.SetFocus(vtable)
+					return
+				}
+				go func() {
+					var fails []string
+					removed := 0
+					for _, v := range targets {
+						ok := true
+						for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
+							if res.err != nil {
+								ok = false
+								fails = append(fails, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.node.Name, res.err))
+							}
+						}
+						if ok {
+							removed++
+						}
+					}
+					app.QueueUpdateDraw(func() {
+						selectedVols = map[string]bool{}
+						loadVolumes()
+						updateStatus()
+						summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
+						if len(fails) > 0 {
+							summary += ":\n" + joinLines(fails)
+						}
+						info(summary)
+					})
+				}()
+			})
+		pages.AddPage("confirm", m, true, true)
+		app.SetFocus(m)
+	}
+
+	// pruneVolumes deletes every volume that no running container mounts and no
+	// service declares (service-declared volumes are spared even with no running
+	// task). The service check needs a ServiceList, so it runs off the UI goroutine.
+	pruneVolumes := func() {
+		go func() {
+			declared := serviceVolumeNames(ctx, dcli)
+			app.QueueUpdateDraw(func() {
+				var targets []swarmVolume
+				for _, v := range vols {
+					if len(volUsage[v.Name]) == 0 && !declared[v.Name] {
+						targets = append(targets, v)
+					}
+				}
+				if len(targets) == 0 {
+					info("no unused volumes to prune (all are in use or declared by a service)")
+					return
+				}
+				deleteVolumes(targets, fmt.Sprintf("Prune %d unused volume(s)? This cannot be undone.", len(targets)))
+			})
+		}()
 	}
 
 	// ------------------------------------------------------------------ forwards
@@ -1514,30 +1601,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	content.AddPage("contexts", cxtable, true, false)
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	// Two-line footer: the per-tab key hints on top, then one consolidated status
+	// line — active context · live cluster summary · forward count · (on the
+	// volumes tab) selection count. updateStatus() composes the status line; the
+	// async cluster/forward refreshers feed it. clusterText holds the last cluster
+	// probe result so a forward or selection change can recompose without re-probing.
 	help := tview.NewTextView().SetDynamicColors(true)
-	// Right side of the footer: a live cluster summary (ready nodes / reachable
-	// agents), filled in asynchronously so probing the agents never blocks the UI.
-	cluster := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
-	cluster.SetText("[gray]cluster: …[white] ")
-	// Forward count sits next to the cluster summary, the one footer slot built
-	// for asynchronously updated state. flash() cannot carry it: it self-clears
-	// after 1.5s, and a forward is persistent.
-	fwdCount := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
-	// Active docker context (computed with the Contexts tab) — always shown so
-	// it's clear which cluster the UI is talking to.
-	ctxView := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
-	ctxView.SetText(fmt.Sprintf("[aqua]ctx[white] %s ", activeCtx))
-	ctxW := len(activeCtx) + 6
-	if ctxW < 12 {
-		ctxW = 12
-	} else if ctxW > 30 {
-		ctxW = 30
-	}
-	footer := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(help, 0, 1, false).
-		AddItem(fwdCount, 12, 0, false).
-		AddItem(ctxView, ctxW, 0, false).
-		AddItem(cluster, 30, 0, false)
+	status := tview.NewTextView().SetDynamicColors(true)
+	clusterText := "[gray]cluster: …[white]"
+	footer := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(help, 1, 0, false).
+		AddItem(status, 1, 0, false)
 	// "/" search bar: hidden (height 0) until activated; filters the container
 	// tree live by service / container id / node.
 	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
@@ -1546,7 +1620,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		AddItem(tabBar, 1, 0, false).
 		AddItem(content, 0, 1, true).
 		AddItem(search, 0, 0, false).
-		AddItem(footer, 1, 0, false)
+		AddItem(footer, 2, 0, false)
 	pages.AddPage("main", root, true, true)
 
 	// savedHelp holds the footer help to restore when search closes. While the
@@ -1583,7 +1657,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		go func() {
 			nodes, err := r.Nodes(ctx)
 			if err != nil {
-				app.QueueUpdateDraw(func() { cluster.SetText("[red]cluster: unreachable[white] ") })
+				app.QueueUpdateDraw(func() {
+					clusterText = "[red]cluster: unreachable[white]"
+					if updateStatus != nil {
+						updateStatus()
+					}
+				})
 				return
 			}
 			agents := 0
@@ -1593,7 +1672,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			}
 			app.QueueUpdateDraw(func() {
-				cluster.SetText(fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents ", len(nodes), agents, len(nodes)))
+				clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", len(nodes), agents, len(nodes))
+				if updateStatus != nil {
+					updateStatus()
+				}
 			})
 		}()
 	}
@@ -1602,14 +1684,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// footer counter, the forwards table, and the tree annotations. Must run on
 	// the UI goroutine.
 	refreshForwardViews = func() {
-		total, act := forwards.counts()
-		switch {
-		case total == 0:
-			fwdCount.SetText("")
-		case act == total:
-			fwdCount.SetText(fmt.Sprintf("[aqua]%d[white] fwd ", total))
-		default:
-			fwdCount.SetText(fmt.Sprintf("[aqua]%d[white]/%d fwd ", act, total))
+		if updateStatus != nil {
+			updateStatus()
 		}
 		renderForwards()
 		renderContainers()
@@ -1619,12 +1695,33 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	mouseEnabled := true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 	curHelp := ""
+	// updateStatus composes the footer status line from the active context, the
+	// last cluster probe, the forward count and (on the volumes tab) the number
+	// of selected volumes. Assigned here — after `active` exists — and called by
+	// the refreshers, setTab and the volume-selection toggle.
+	updateStatus = func() {
+		parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", activeCtx)}
+		if clusterText != "" {
+			parts = append(parts, clusterText)
+		}
+		if total, act := forwards.counts(); total > 0 {
+			if act == total {
+				parts = append(parts, fmt.Sprintf("[aqua]%d[white] fwd", total))
+			} else {
+				parts = append(parts, fmt.Sprintf("[aqua]%d[white]/%d fwd", act, total))
+			}
+		}
+		if active == "volumes" && len(selectedVols) > 0 {
+			parts = append(parts, fmt.Sprintf("[yellow]▣ %d selected[white]", len(selectedVols)))
+		}
+		status.SetText(" " + strings.Join(parts, "  ·  "))
+	}
 	helpFor := func(name string) string {
 		switch name {
 		case "containers":
 			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "volumes":
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]space[white] select  [yellow]d[white] delete  [yellow]P[white] prune  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort  [yellow]y[white] copy  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "networks":
 			return " [yellow]j/k[white] up/down  [yellow]Enter/i[white] attached  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "secrets":
@@ -1662,6 +1759,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		curHelp = helpFor(name)
 		help.SetText(curHelp)
 		renderTabBar(name)
+		updateStatus() // the selection count shows only on the volumes tab
 		switch name {
 		case "containers":
 			app.SetFocus(ctree)
@@ -1981,6 +2079,35 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
+			case ' ':
+				// Toggle the current volume's selection for a bulk delete.
+				if v, ok := selectedVolume(); ok {
+					if selectedVols[v.Name] {
+						delete(selectedVols, v.Name)
+					} else {
+						selectedVols[v.Name] = true
+					}
+					renderVolumeTable()
+					updateStatus()
+				}
+				return nil
+			case 'd':
+				// Delete the selected volumes, or the one under the cursor.
+				var targets []swarmVolume
+				if len(selectedVols) > 0 {
+					for _, v := range vols {
+						if selectedVols[v.Name] {
+							targets = append(targets, v)
+						}
+					}
+				} else if v, ok := selectedVolume(); ok {
+					targets = []swarmVolume{v}
+				}
+				deleteVolumes(targets, fmt.Sprintf("Remove %d volume(s) on every node that holds them?", len(targets)))
+				return nil
+			case 'P':
+				pruneVolumes()
+				return nil
 			case 'i':
 				if v, ok := selectedVolume(); ok {
 					showVolumeConsumers(v)

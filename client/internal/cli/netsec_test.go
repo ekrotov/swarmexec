@@ -8,6 +8,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/swarm"
 )
 
@@ -77,6 +78,37 @@ func TestServiceSecretMembership(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("serviceSecretMembership = %v, want %v", got, want)
+	}
+}
+
+func volSvc(name string, volumeMounts ...string) swarm.Service {
+	var s swarm.Service
+	s.Spec.Name = name
+	s.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{}
+	for _, v := range volumeMounts {
+		s.Spec.TaskTemplate.ContainerSpec.Mounts = append(s.Spec.TaskTemplate.ContainerSpec.Mounts,
+			mount.Mount{Type: mount.TypeVolume, Source: v})
+	}
+	return s
+}
+
+func TestServiceVolumeMounts(t *testing.T) {
+	svcs := []swarm.Service{
+		volSvc("db", "pgdata"),
+		volSvc("web", "pgdata", "assets"), // shared volume + own
+		// A bind mount (not a volume) is ignored.
+		func() swarm.Service {
+			s := volSvc("logger")
+			s.Spec.TaskTemplate.ContainerSpec.Mounts = []mount.Mount{{Type: mount.TypeBind, Source: "/var/log"}}
+			return s
+		}(),
+		// No container spec must not panic.
+		{Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "bare"}}},
+	}
+	got := serviceVolumeMounts(svcs)
+	want := map[string]bool{"pgdata": true, "assets": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("serviceVolumeMounts = %v, want %v", got, want)
 	}
 }
 
