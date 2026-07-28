@@ -14,9 +14,10 @@ ARG VERSION=dev
 # Root only for the build steps; the base image drops back to the nginx user.
 USER root
 COPY site/nginx.conf /etc/nginx/conf.d/default.conf
-COPY site/index.html site/docs.html /usr/share/nginx/html/
+COPY site/index.html site/docs.html site/datenschutz.html /usr/share/nginx/html/
+# Only index.html and docs.html carry the __VERSION__ placeholder; datenschutz.html does not.
 RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html \
- && chown nginx:nginx /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html /etc/nginx/conf.d/default.conf
+ && chown nginx:nginx /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html /usr/share/nginx/html/datenschutz.html /etc/nginx/conf.d/default.conf
 USER nginx
 
 EXPOSE 8080
