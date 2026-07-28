@@ -87,6 +87,20 @@ func TestServiceLabel(t *testing.T) {
 	}
 }
 
+func TestTrimFoldMarker(t *testing.T) {
+	cases := map[string]string{
+		"▸ web  1/3": "web  1/3", // collapsed
+		"▾ web  1/3": "web  1/3", // expanded
+		"  -  0/0":   "-  0/0",   // childless padding
+		"web  1/3":   "web  1/3", // already plain
+	}
+	for in, want := range cases {
+		if got := trimFoldMarker(in); got != want {
+			t.Errorf("trimFoldMarker(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // The h/l fold keys depend on telling a service group from a container leaf and
 // on finding a leaf's owning service (tview.TreeNode has no parent pointer).
 func TestServiceParentAndNode(t *testing.T) {

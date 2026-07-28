@@ -125,6 +125,28 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		lastCands []resolve.Candidate
 		lastSvcs  []resolve.Service
 	)
+	// svcCounts caches each service's running/desired so the fold marker (▸/▾)
+	// can be rebuilt on a fold without re-rendering the whole tree. A service
+	// with no containers gets no marker (nothing to expand), just padding so the
+	// names still line up.
+	svcCounts := map[string][2]int{}
+	markService := func(n *tview.TreeNode) {
+		ref, ok := n.GetReference().(svcRef)
+		if !ok {
+			return
+		}
+		c := svcCounts[ref.name]
+		label := serviceLabel(ref.name, c[0], c[1])
+		switch {
+		case len(n.GetChildren()) == 0:
+			n.SetText("  " + label)
+		case n.IsExpanded():
+			n.SetText("▾ " + label)
+		default:
+			n.SetText("▸ " + label)
+		}
+	}
+
 	renderContainers := func() {
 		// Remember the cursor (a leaf by container id, else a service by name)
 		// and which services were expanded, so a refresh keeps both.
@@ -185,6 +207,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				continue
 			}
 			// Collapsed by default (spec); keep a service the operator expanded.
+			svcCounts[s.Name] = [2]int{s.Running, s.Desired}
 			svcNode := tview.NewTreeNode(serviceLabel(s.Name, s.Running, s.Desired)).
 				SetColor(serviceColor(s.Running, s.Desired)).
 				SetReference(svcRef{name: s.Name}).
@@ -210,6 +233,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					svcNode.SetExpanded(true) // reveal the previously-selected leaf
 				}
 			}
+			// Marker depends on the final child count / expanded state, so set it
+			// once the leaves are attached.
+			markService(svcNode)
 		}
 		if len(croot.GetChildren()) == 0 {
 			empty := "(no services)"
@@ -540,7 +566,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 		}
 		if len(members) > 0 {
-			showServiceLogs(node.GetText(), members)
+			showServiceLogs(trimFoldMarker(node.GetText()), members)
 		}
 	})
 
@@ -1038,38 +1064,43 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return nets[i], true
 	}
-	// showNetworkMembers lists the services attached to a network (resolved from
-	// service specs) and its attached containers. Containers need a verbose
-	// inspect per network, so they load lazily after the overlay is up.
+	// showNetworkMembers lists the services attached to a network with the
+	// containers of each service nested under it. Service membership is known
+	// synchronously (from the list); the per-service containers need a task
+	// lookup, so they fill in lazily after the overlay is up.
 	showNetworkMembers := func(n swarmNetwork) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached — ESC back ", n.Name))
-		fill := func(containers []netContainer, loading bool) {
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services — ESC back ", n.Name))
+		render := func(svcs []netService, loading bool) {
 			cur := list.GetCurrentItem()
 			list.Clear()
-			list.AddItem(fmt.Sprintf("services (%d)", len(n.Services)), "", 0, nil)
-			if len(n.Services) == 0 {
-				list.AddItem("  (none)", "", 0, nil)
-			}
-			for _, s := range n.Services {
-				list.AddItem("  "+s, "", 0, nil)
-			}
-			if loading {
-				list.AddItem("containers …", "", 0, nil)
-			} else {
-				list.AddItem(fmt.Sprintf("containers (%d)", len(containers)), "", 0, nil)
-				if len(containers) == 0 {
-					list.AddItem("  (none)", "", 0, nil)
+			if len(svcs) == 0 {
+				if loading {
+					list.AddItem("loading…", "", 0, nil)
+				} else {
+					list.AddItem("(no services attached)", "", 0, nil)
 				}
-				for _, c := range containers {
-					list.AddItem(fmt.Sprintf("  %s  %s", c.Name, orDash(c.IPv4)), "", 0, nil)
+			}
+			for _, s := range svcs {
+				head := s.Name + " …"
+				if !loading {
+					head = fmt.Sprintf("%s (%d)", s.Name, len(s.Containers))
+				}
+				list.AddItem(head, "", 0, nil)
+				for _, c := range s.Containers {
+					list.AddItem(fmt.Sprintf("    %s  %s  %s", c.ID, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
 				}
 			}
 			if cur < list.GetItemCount() {
 				list.SetCurrentItem(cur)
 			}
 		}
-		fill(nil, true)
+		// Seed with the services already known from the list; containers pending.
+		init := make([]netService, 0, len(n.Services))
+		for _, s := range n.Services {
+			init = append(init, netService{Name: s})
+		}
+		render(init, true)
 		closeMembers := func() { pages.RemovePage("netmembers"); app.SetFocus(nettable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
@@ -1078,14 +1109,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 			return vimListKeys(ev)
 		})
-		pages.AddPage("netmembers", centered(list, 72, len(n.Services)+8), true, true)
+		height := len(n.Services) + 6
+		if height > 22 {
+			height = 22
+		}
+		pages.AddPage("netmembers", centered(list, 78, height), true, true)
 		app.SetFocus(list)
 		go func() {
-			cs := networkContainers(ctx, dcli, n.ID)
+			members := networkMembers(ctx, dcli, n)
 			app.QueueUpdateDraw(func() {
 				// Only repaint if this overlay is still the one on screen.
 				if pages.HasPage("netmembers") {
-					fill(cs, false)
+					render(members, false)
 				}
 			})
 		}()
@@ -1386,7 +1421,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		switch active {
 		case "containers":
 			for _, svc := range croot.GetChildren() {
-				fmt.Fprintln(&b, svc.GetText())
+				fmt.Fprintln(&b, trimFoldMarker(svc.GetText()))
 				for _, c := range svc.GetChildren() {
 					fmt.Fprintf(&b, "  %s\n", c.GetText())
 				}
@@ -1522,6 +1557,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				if n := ctree.GetCurrentNode(); n != nil {
 					if isServiceNode(n) {
 						n.SetExpanded(false)
+						markService(n)
 					} else if p := serviceParent(croot, n); p != nil {
 						ctree.SetCurrentNode(p)
 					}
@@ -1535,6 +1571,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 						ctree.SetCurrentNode(n.GetChildren()[0])
 					} else {
 						n.SetExpanded(true)
+						markService(n)
 					}
 				}
 				return nil
@@ -1712,6 +1749,12 @@ type svcRef struct{ name string }
 func isServiceNode(n *tview.TreeNode) bool {
 	_, ok := n.GetReference().(resolve.Candidate)
 	return !ok
+}
+
+// trimFoldMarker strips the leading ▸/▾ fold marker (or its blank padding) from
+// a service node's text, recovering the plain "name  running/desired" label.
+func trimFoldMarker(s string) string {
+	return strings.TrimLeft(s, "▸▾ ")
 }
 
 // networkType summarizes a network's role for the TYPE column. The flags are

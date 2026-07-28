@@ -36,10 +36,18 @@ type swarmNetwork struct {
 	Services   []string // service names attached, from service specs
 }
 
-// netContainer is a container endpoint attached to a network.
+// netContainer is a container (running task) attached to a network.
 type netContainer struct {
-	Name string
+	ID   string // short container id
+	Node string // node hostname it runs on
 	IPv4 string
+}
+
+// netService groups the containers attached to a network by the service they
+// belong to — the shape the network detail view renders.
+type netService struct {
+	Name       string
+	Containers []netContainer
 }
 
 // swarmSecret is a secret's metadata. Secret *values* are never retrievable via
@@ -126,24 +134,118 @@ func serviceNetworkMembership(svcs []swarm.Service) map[string][]string {
 	return m
 }
 
-// networkContainers returns the container endpoints attached to a network via a
-// verbose inspect (the only call that reports cluster-wide attachments for an
-// overlay). Best effort — an inspect error yields nil. The swarm load-balancer
-// pseudo-endpoint is skipped: it is plumbing, not a container.
-func networkContainers(ctx context.Context, dcli *client.Client, id string) []netContainer {
-	n, err := dcli.NetworkInspect(ctx, id, network.InspectOptions{Verbose: true})
-	if err != nil {
-		return nil
+// networkMembers returns the services attached to a network, each carrying the
+// running containers (swarm tasks) attached to that network. Grouping is driven
+// by tasks — the reliable source that ties a container to both its service and
+// its networks. A service with a spec attachment but no running task still
+// appears (with zero containers). Best effort: failed API calls degrade to
+// empty rather than failing the view.
+func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) []netService {
+	idName := serviceIDNames(ctx, dcli)
+	nodeName := nodeHostnames(ctx, dcli)
+
+	byService := map[string][]netContainer{}
+	if tasks, err := dcli.TaskList(ctx, types.TaskListOptions{}); err == nil {
+		for _, t := range tasks {
+			if t.Status.State != swarm.TaskStateRunning || !taskOnNetwork(t, net.ID) {
+				continue
+			}
+			name := idName[t.ServiceID]
+			if name == "" {
+				name = shortID(t.ServiceID)
+			}
+			byService[name] = append(byService[name], netContainer{
+				ID:   shortID(t.Status.ContainerStatus.ContainerID),
+				Node: nodeName[t.NodeID],
+				IPv4: taskIPv4(t, net.ID),
+			})
+		}
 	}
-	var cs []netContainer
-	for _, ep := range n.Containers {
-		if ep.Name == "" || strings.HasPrefix(ep.Name, "lb-") {
+
+	// Union the services known from specs (may have zero running tasks) with the
+	// services actually running tasks on the network.
+	seen := map[string]bool{}
+	var out []netService
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		cs := byService[name]
+		sort.Slice(cs, func(i, j int) bool { return cs[i].ID < cs[j].ID })
+		out = append(out, netService{Name: name, Containers: cs})
+	}
+	for _, s := range net.Services {
+		add(s)
+	}
+	taskOnly := make([]string, 0, len(byService))
+	for s := range byService {
+		taskOnly = append(taskOnly, s)
+	}
+	sort.Strings(taskOnly)
+	for _, s := range taskOnly {
+		add(s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// serviceIDNames maps service ID to name (for turning a task's ServiceID into a
+// readable service name).
+func serviceIDNames(ctx context.Context, dcli *client.Client) map[string]string {
+	m := map[string]string{}
+	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return m
+	}
+	for _, s := range svcs {
+		m[s.ID] = s.Spec.Name
+	}
+	return m
+}
+
+// nodeHostnames maps node ID to hostname, so a task's NodeID shows as a name.
+func nodeHostnames(ctx context.Context, dcli *client.Client) map[string]string {
+	m := map[string]string{}
+	nodes, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	if err != nil {
+		return m
+	}
+	for _, n := range nodes {
+		m[n.ID] = n.Description.Hostname
+	}
+	return m
+}
+
+// taskOnNetwork reports whether a task is attached to the given network. Task
+// attachments carry the resolved network ID, so an ID match is reliable.
+func taskOnNetwork(t swarm.Task, netID string) bool {
+	for _, a := range t.NetworksAttachments {
+		if a.Network.ID == netID {
+			return true
+		}
+	}
+	return false
+}
+
+// taskIPv4 returns the task's IPv4 address on the network, or "". Addresses are
+// CIDR (e.g. "10.0.1.5/24"), so the mask is stripped.
+func taskIPv4(t swarm.Task, netID string) string {
+	for _, a := range t.NetworksAttachments {
+		if a.Network.ID != netID {
 			continue
 		}
-		cs = append(cs, netContainer{Name: ep.Name, IPv4: ep.IPv4Address})
+		for _, addr := range a.Addresses {
+			ip := addr
+			if i := strings.IndexByte(addr, '/'); i >= 0 {
+				ip = addr[:i]
+			}
+			if strings.Contains(ip, ".") {
+				return ip
+			}
+		}
 	}
-	sort.Slice(cs, func(i, j int) bool { return cs[i].Name < cs[j].Name })
-	return cs
+	return ""
 }
 
 // listSecrets returns secret metadata (never the value — the API does not
