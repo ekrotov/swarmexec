@@ -103,6 +103,9 @@ type Service struct {
 	Running int
 	Desired int
 	Global  bool
+	Mode    string // replicated | global | replicated-job | global-job
+	Image   string // container image, digest stripped for display
+	Ports   string // published ports, e.g. "*:80->80/tcp"; "" if none
 }
 
 // AmbiguousError is returned when a bare service name has more than one running
@@ -375,7 +378,13 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 	}
 	out := make([]Service, 0, len(svcs))
 	for _, s := range svcs {
-		svc := Service{Name: s.Spec.Name, Global: s.Spec.Mode.Global != nil}
+		svc := Service{
+			Name:   s.Spec.Name,
+			Global: s.Spec.Mode.Global != nil,
+			Mode:   serviceMode(s.Spec.Mode),
+			Image:  serviceImage(s.Spec.TaskTemplate.ContainerSpec),
+			Ports:  servicePorts(servicePortConfigs(s)),
+		}
 		if st := s.ServiceStatus; st != nil {
 			svc.Running = int(st.RunningTasks)
 			svc.Desired = int(st.DesiredTasks)
@@ -412,6 +421,66 @@ func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running,
 		}
 	}
 	return running, desired
+}
+
+// serviceMode maps a swarm service mode to the docker service ls MODE string.
+func serviceMode(m swarm.ServiceMode) string {
+	switch {
+	case m.Global != nil:
+		return "global"
+	case m.GlobalJob != nil:
+		return "global-job"
+	case m.ReplicatedJob != nil:
+		return "replicated-job"
+	default:
+		return "replicated"
+	}
+}
+
+// serviceImage returns the service's container image with any @sha256 digest
+// stripped, matching how docker service ls renders the IMAGE column.
+func serviceImage(cs *swarm.ContainerSpec) string {
+	if cs == nil {
+		return ""
+	}
+	img := cs.Image
+	if i := strings.IndexByte(img, '@'); i >= 0 {
+		img = img[:i]
+	}
+	return img
+}
+
+// servicePortConfigs returns the service's published ports, preferring the
+// realized endpoint and falling back to the spec.
+func servicePortConfigs(s swarm.Service) []swarm.PortConfig {
+	if len(s.Endpoint.Ports) > 0 {
+		return s.Endpoint.Ports
+	}
+	if s.Spec.EndpointSpec != nil {
+		return s.Spec.EndpointSpec.Ports
+	}
+	return nil
+}
+
+// servicePorts formats published ports like docker service ls, e.g.
+// "*:8080->80/tcp" for ingress and "8080->80/tcp" for host mode.
+func servicePorts(ports []swarm.PortConfig) string {
+	var out []string
+	for _, p := range ports {
+		if p.PublishedPort == 0 {
+			continue
+		}
+		proto := string(p.Protocol)
+		if proto == "" {
+			proto = "tcp"
+		}
+		prefix := ""
+		if p.PublishMode == swarm.PortConfigPublishModeIngress || p.PublishMode == "" {
+			prefix = "*:"
+		}
+		out = append(out, fmt.Sprintf("%s%d->%d/%s", prefix, p.PublishedPort, p.TargetPort, proto))
+	}
+	return strings.Join(out, ", ")
 }
 
 func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidate, error) {

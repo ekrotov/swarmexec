@@ -125,25 +125,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		lastCands []resolve.Candidate
 		lastSvcs  []resolve.Service
 	)
-	// svcCounts caches each service's running/desired so the fold marker (▸/▾)
-	// can be rebuilt on a fold without re-rendering the whole tree. A service
-	// with no containers gets no marker (nothing to expand), just padding so the
-	// names still line up.
-	svcCounts := map[string][2]int{}
+	// svcByName / svcCols cache the current services and the column widths so the
+	// fold marker (▸/▾) can be rebuilt on a fold — and the docker service ls-style
+	// row (mode, replicas, image, ports) stays aligned — without re-rendering the
+	// whole tree. A service with no containers gets no marker (nothing to expand),
+	// just padding so the rows still line up.
+	svcByName := map[string]resolve.Service{}
+	svcCols := svcColumns{}
 	markService := func(n *tview.TreeNode) {
 		ref, ok := n.GetReference().(svcRef)
 		if !ok {
 			return
 		}
-		c := svcCounts[ref.name]
-		label := serviceLabel(ref.name, c[0], c[1])
+		row := serviceRow(svcByName[ref.name], svcCols)
 		switch {
 		case len(n.GetChildren()) == 0:
-			n.SetText("  " + label)
+			n.SetText("  " + row)
 		case n.IsExpanded():
-			n.SetText("▾ " + label)
+			n.SetText("▾ " + row)
 		default:
-			n.SetText("▸ " + label)
+			n.SetText("▸ " + row)
 		}
 	}
 
@@ -189,6 +190,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 		}
 
+		// Column widths for the docker service ls-style service rows, computed
+		// over every service so the alignment stays stable while filtering.
+		svcCols = svcColumns{}
+		svcByName = make(map[string]resolve.Service, len(lastSvcs))
+		for _, s := range lastSvcs {
+			svcByName[s.Name] = s
+			if w := len(orDash(s.Name)); w > svcCols.name {
+				svcCols.name = w
+			}
+			if w := len(orDash(s.Mode)); w > svcCols.mode {
+				svcCols.mode = w
+			}
+			if w := len(fmt.Sprintf("%d/%d", s.Running, s.Desired)); w > svcCols.repl {
+				svcCols.repl = w
+			}
+			if w := len(s.Image); w > svcCols.image {
+				svcCols.image = w
+			}
+		}
+
 		q := strings.ToLower(strings.TrimSpace(filter))
 		var firstSvc, targetSvc, targetLeaf *tview.TreeNode
 		for _, s := range lastSvcs {
@@ -207,8 +228,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				continue
 			}
 			// Collapsed by default (spec); keep a service the operator expanded.
-			svcCounts[s.Name] = [2]int{s.Running, s.Desired}
-			svcNode := tview.NewTreeNode(serviceLabel(s.Name, s.Running, s.Desired)).
+			svcNode := tview.NewTreeNode(serviceRow(s, svcCols)).
 				SetColor(serviceColor(s.Running, s.Desired)).
 				SetReference(svcRef{name: s.Name}).
 				SetExpanded(wasExpanded[s.Name])
@@ -566,7 +586,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 		}
 		if len(members) > 0 {
-			showServiceLogs(trimFoldMarker(node.GetText()), members)
+			title := trimFoldMarker(node.GetText())
+			if ref, ok := node.GetReference().(svcRef); ok {
+				title = ref.name // the row now carries mode/image/ports — log by name
+			}
+			showServiceLogs(title, members)
 		}
 	})
 
@@ -1853,9 +1877,27 @@ func serviceColor(running, desired int) tcell.Color {
 	}
 }
 
-// serviceLabel renders a service group node as "name  running/desired".
-func serviceLabel(name string, running, desired int) string {
-	return fmt.Sprintf("%s  %d/%d", orDash(name), running, desired)
+// svcColumns holds the padding widths that align the service rows in the
+// containers tree, computed once per render across all services.
+type svcColumns struct {
+	name, mode, repl, image int
+}
+
+// serviceRow renders a service group node like a docker service ls line —
+// "name  mode  running/desired  image  ports" — padded to the shared column
+// widths. Image and ports are appended only when present, and trailing padding
+// is trimmed so a selected row's highlight does not run past the text.
+func serviceRow(s resolve.Service, c svcColumns) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-*s  %-*s  %-*s",
+		c.name, orDash(s.Name), c.mode, orDash(s.Mode), c.repl, fmt.Sprintf("%d/%d", s.Running, s.Desired))
+	if c.image > 0 {
+		fmt.Fprintf(&b, "  %-*s", c.image, orDash(s.Image))
+	}
+	if s.Ports != "" {
+		fmt.Fprintf(&b, "  %s", s.Ports)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 // shortVolume abbreviates long anonymous-volume hashes (64-char hex) for display

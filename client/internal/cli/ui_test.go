@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -78,12 +79,27 @@ func TestServiceColor(t *testing.T) {
 	}
 }
 
-func TestServiceLabel(t *testing.T) {
-	if got, want := serviceLabel("web", 1, 3), "web  1/3"; got != want {
-		t.Errorf("serviceLabel = %q, want %q", got, want)
+func TestServiceRow(t *testing.T) {
+	cols := svcColumns{name: 6, mode: 10, repl: 3, image: 11}
+	web := resolve.Service{Name: "web", Mode: "replicated", Running: 1, Desired: 3, Image: "nginx:1.27", Ports: "*:80->80/tcp"}
+	if got, want := serviceRow(web, cols), "web     replicated  1/3  nginx:1.27   *:80->80/tcp"; got != want {
+		t.Errorf("serviceRow(web) = %q, want %q", got, want)
 	}
-	if got, want := serviceLabel("", 0, 0), "-  0/0"; got != want {
-		t.Errorf("serviceLabel(empty) = %q, want %q", got, want)
+	// No ports → the padded image column must not leave a trailing space.
+	db := resolve.Service{Name: "db", Mode: "global", Running: 2, Desired: 2, Image: "postgres:15"}
+	got := serviceRow(db, cols)
+	if strings.HasSuffix(got, " ") {
+		t.Errorf("serviceRow(db) has trailing space: %q", got)
+	}
+	for _, want := range []string{"db", "global", "2/2", "postgres:15"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("serviceRow(db) = %q, missing %q", got, want)
+		}
+	}
+	// Zero image width drops the image column entirely.
+	bare := serviceRow(resolve.Service{Name: "x", Mode: "replicated"}, svcColumns{name: 1, mode: 10, repl: 3})
+	if strings.Contains(bare, "-") {
+		t.Errorf("serviceRow with no image column should not render a dash: %q", bare)
 	}
 }
 
