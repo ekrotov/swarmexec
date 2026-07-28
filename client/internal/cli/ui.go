@@ -1138,6 +1138,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					list.AddItem("(no services attached)", "", 0, nil)
 				}
 			}
+			// Pad the id/node columns to the widest across every service so the
+			// node and IP columns line up down the whole list, not just per row.
+			idW, nodeW := 0, 0
+			for _, s := range svcs {
+				for _, c := range s.Containers {
+					if w := len(c.ID); w > idW {
+						idW = w
+					}
+					if w := len(orDash(c.Node)); w > nodeW {
+						nodeW = w
+					}
+				}
+			}
 			for _, s := range svcs {
 				head := s.Name + " …"
 				if !loading {
@@ -1145,7 +1158,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				list.AddItem(head, "", 0, nil)
 				for _, c := range s.Containers {
-					list.AddItem(fmt.Sprintf("    %s  %s  %s", c.ID, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
+					list.AddItem(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
 				}
 			}
 			if cur < list.GetItemCount() {
