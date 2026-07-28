@@ -1221,8 +1221,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return ev
 	}
-	// On the tree, "/" opens search; h/l collapse/expand (mapped to ←/→ so tview
-	// handles the parent/child movement); j/k stay down/up via the shared keys.
+	// On the tree, "/" opens search; h/l collapse/expand the service under the
+	// cursor; j/k stay down/up via the shared keys.
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
@@ -1230,9 +1230,28 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				startSearch()
 				return nil
 			case 'h':
-				return tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModNone)
+				// Collapse. tview's TreeView has no fold key — Left/Right only
+				// move the cursor — so fold explicitly. On a container leaf,
+				// step out to its service (press h again to fold it).
+				if n := ctree.GetCurrentNode(); n != nil {
+					if isServiceNode(n) {
+						n.SetExpanded(false)
+					} else if p := serviceParent(croot, n); p != nil {
+						ctree.SetCurrentNode(p)
+					}
+				}
+				return nil
 			case 'l':
-				return tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone)
+				// Expand the service under the cursor; if it is already open,
+				// descend to its first container.
+				if n := ctree.GetCurrentNode(); n != nil && isServiceNode(n) {
+					if n.IsExpanded() && len(n.GetChildren()) > 0 {
+						ctree.SetCurrentNode(n.GetChildren()[0])
+					} else {
+						n.SetExpanded(true)
+					}
+				}
+				return nil
 			case 'p':
 				// On a service node, forward to the task under the cursor —
 				// exactly one, like kubectl does with a pod. Forwarding "the
@@ -1393,6 +1412,19 @@ type svcRef struct{ name string }
 func isServiceNode(n *tview.TreeNode) bool {
 	_, ok := n.GetReference().(resolve.Candidate)
 	return !ok
+}
+
+// serviceParent returns the service node that owns leaf, or nil. tview.TreeNode
+// exposes no parent pointer, so we scan the (shallow, two-level) tree.
+func serviceParent(root, leaf *tview.TreeNode) *tview.TreeNode {
+	for _, svc := range root.GetChildren() {
+		for _, c := range svc.GetChildren() {
+			if c == leaf {
+				return svc
+			}
+		}
+	}
+	return nil
 }
 
 // serviceColor maps a service's running/desired task counts to a health color
