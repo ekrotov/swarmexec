@@ -47,6 +47,39 @@ func TestServiceNetworkMembership(t *testing.T) {
 	}
 }
 
+func secretSvc(name string, secretRefs ...swarm.SecretReference) swarm.Service {
+	var s swarm.Service
+	s.Spec.Name = name
+	s.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{}
+	for i := range secretRefs {
+		s.Spec.TaskTemplate.ContainerSpec.Secrets = append(s.Spec.TaskTemplate.ContainerSpec.Secrets, &secretRefs[i])
+	}
+	return s
+}
+
+func TestServiceSecretMembership(t *testing.T) {
+	svcs := []swarm.Service{
+		secretSvc("web", swarm.SecretReference{SecretID: "sid1", SecretName: "db-pw"}),
+		secretSvc("api", swarm.SecretReference{SecretID: "sid1", SecretName: "db-pw"}, swarm.SecretReference{SecretID: "sid2", SecretName: "api-key"}),
+		// A service with no container spec must not panic.
+		{Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "bare"}}},
+	}
+	got := serviceSecretMembership(svcs)
+	for _, m := range got {
+		sort.Strings(m)
+	}
+	// Keyed by both ID and name so listSecrets can match either.
+	want := map[string][]string{
+		"sid1":    {"api", "web"},
+		"db-pw":   {"api", "web"},
+		"sid2":    {"api"},
+		"api-key": {"api"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("serviceSecretMembership = %v, want %v", got, want)
+	}
+}
+
 func TestNetworkType(t *testing.T) {
 	cases := []struct {
 		n    swarmNetwork

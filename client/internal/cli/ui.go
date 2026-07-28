@@ -1134,7 +1134,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// ------------------------------------------------------------------- secrets
 	sectable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	sectable.SetSelectedStyle(selStyle)
-	sHeaders := []string{"SECRET", "AGE", "UPDATED", "LABELS"}
+	sHeaders := []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
 	var secs []swarmSecret
 	renderSecrets := func() {
 		selName := ""
@@ -1149,14 +1149,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		selRow := 1
 		for i, s := range secs {
+			usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+			if len(s.Services) > 0 {
+				usedCell = tview.NewTableCell(fmt.Sprintf("%d", len(s.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+			}
 			labels := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
 			if len(s.Labels) > 0 {
 				labels = tview.NewTableCell(fmt.Sprintf("%d", len(s.Labels))).SetExpansion(1)
 			}
 			sectable.SetCell(i+1, 0, tview.NewTableCell(s.Name).SetExpansion(1))
-			sectable.SetCell(i+1, 1, tview.NewTableCell(volumeAge(s.Created)).SetExpansion(1))
-			sectable.SetCell(i+1, 2, tview.NewTableCell(volumeAge(s.Updated)).SetExpansion(1))
-			sectable.SetCell(i+1, 3, labels)
+			sectable.SetCell(i+1, 1, usedCell)
+			sectable.SetCell(i+1, 2, tview.NewTableCell(volumeAge(s.Created)).SetExpansion(1))
+			sectable.SetCell(i+1, 3, tview.NewTableCell(volumeAge(s.Updated)).SetExpansion(1))
+			sectable.SetCell(i+1, 4, labels)
 			if s.Name == selName {
 				selRow = i + 1
 			}
@@ -1195,8 +1200,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return secs[i], true
 	}
-	// showSecretDetail shows a secret's metadata. The value is deliberately
-	// absent: the Docker API never returns it, and the overlay says so.
+	// showSecretDetail shows a secret's metadata and the services/containers that
+	// use it. The value is deliberately absent: the Docker API never returns it,
+	// and the overlay says so. Usage (services with their running containers)
+	// needs a task lookup, so it fills in lazily after the overlay is up.
 	showSecretDetail := func(s swarmSecret) {
 		ts := func(t time.Time) string {
 			if t.IsZero() {
@@ -1204,37 +1211,81 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 			return t.Local().Format("2006-01-02 15:04:05")
 		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "Name:     %s\n", s.Name)
-		fmt.Fprintf(&b, "ID:       %s\n", s.ID)
-		fmt.Fprintf(&b, "Created:  %s\n", ts(s.Created))
-		fmt.Fprintf(&b, "Updated:  %s\n", ts(s.Updated))
-		if len(s.Labels) == 0 {
-			fmt.Fprintf(&b, "Labels:   -\n")
-		} else {
-			fmt.Fprintf(&b, "Labels:\n")
-			keys := make([]string, 0, len(s.Labels))
-			for k := range s.Labels {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				fmt.Fprintf(&b, "  %s=%s\n", k, s.Labels[k])
-			}
-		}
-		fmt.Fprintf(&b, "\n[gray]the secret value is not retrievable via the Docker API[white]")
-		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
+		tv := tview.NewTextView().SetDynamicColors(true)
 		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — ESC back ", s.Name))
+		render := func(members []netService, loading bool) {
+			var b strings.Builder
+			fmt.Fprintf(&b, "Name:     %s\n", s.Name)
+			fmt.Fprintf(&b, "ID:       %s\n", s.ID)
+			fmt.Fprintf(&b, "Created:  %s\n", ts(s.Created))
+			fmt.Fprintf(&b, "Updated:  %s\n", ts(s.Updated))
+			if len(s.Labels) == 0 {
+				fmt.Fprintf(&b, "Labels:   -\n")
+			} else {
+				fmt.Fprintf(&b, "Labels:\n")
+				keys := make([]string, 0, len(s.Labels))
+				for k := range s.Labels {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					fmt.Fprintf(&b, "  %s=%s\n", k, s.Labels[k])
+				}
+			}
+			fmt.Fprintf(&b, "\nused by:\n")
+			if len(members) == 0 {
+				if loading {
+					fmt.Fprintf(&b, "  …\n")
+				} else {
+					fmt.Fprintf(&b, "  (no services)\n")
+				}
+			}
+			for _, m := range members {
+				head := m.Name + " …"
+				if !loading {
+					head = fmt.Sprintf("%s (%d)", m.Name, len(m.Containers))
+				}
+				fmt.Fprintf(&b, "  %s\n", head)
+				for _, c := range m.Containers {
+					fmt.Fprintf(&b, "      %s  %s\n", c.ID, orDash(c.Node))
+				}
+			}
+			fmt.Fprintf(&b, "\n[gray]the secret value is not retrievable via the Docker API[white]")
+			tv.SetText(b.String())
+		}
+		// Seed with the service names already known from the list; containers pending.
+		init := make([]netService, 0, len(s.Services))
+		for _, name := range s.Services {
+			init = append(init, netService{Name: name})
+		}
+		render(init, true)
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				pages.RemovePage("secdetail")
 				app.SetFocus(sectable)
 				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 			}
 			return ev
 		})
-		pages.AddPage("secdetail", centered(tv, 72, 9+len(s.Labels)), true, true)
+		height := 11 + len(s.Labels) + len(s.Services)
+		if height > 24 {
+			height = 24
+		}
+		pages.AddPage("secdetail", centered(tv, 72, height), true, true)
 		app.SetFocus(tv)
+		go func() {
+			members := secretMembers(ctx, dcli, s)
+			app.QueueUpdateDraw(func() {
+				if pages.HasPage("secdetail") {
+					render(members, false)
+				}
+			})
+		}()
 	}
 	sectable.SetSelectedFunc(func(int, int) {
 		if s, ok := selectedSecret(); ok {
@@ -1444,9 +1495,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
 			}
 		case "secrets":
-			fmt.Fprintln(&b, "SECRET\tAGE\tUPDATED\tLABELS")
+			fmt.Fprintln(&b, "SECRET\tUSED BY\tAGE\tUPDATED\tLABELS")
 			for _, s := range secs {
-				fmt.Fprintf(&b, "%s\t%s\t%s\t%d\n", s.Name, volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
+				fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
 			}
 		default:
 			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")

@@ -50,14 +50,16 @@ type netService struct {
 	Containers []netContainer
 }
 
-// swarmSecret is a secret's metadata. Secret *values* are never retrievable via
-// the Docker API, so only metadata is surfaced.
+// swarmSecret is a secret's metadata plus the services that use it. Secret
+// *values* are never retrievable via the Docker API, so only metadata is
+// surfaced.
 type swarmSecret struct {
-	ID      string
-	Name    string
-	Created time.Time
-	Updated time.Time
-	Labels  map[string]string
+	ID       string
+	Name     string
+	Created  time.Time
+	Updated  time.Time
+	Labels   map[string]string
+	Services []string // service names that reference the secret
 }
 
 // listNetworks returns every network on the manager with attached-service
@@ -249,22 +251,137 @@ func taskIPv4(t swarm.Task, netID string) string {
 }
 
 // listSecrets returns secret metadata (never the value — the API does not
-// expose it).
+// expose it) with the services that use each secret resolved from service specs.
 func listSecrets(ctx context.Context, dcli *client.Client) ([]swarmSecret, error) {
 	secs, err := dcli.SecretList(ctx, types.SecretListOptions{})
 	if err != nil {
 		return nil, err
 	}
+	members := secretServiceMembers(ctx, dcli)
 	out := make([]swarmSecret, 0, len(secs))
 	for _, s := range secs {
+		// A reference may name the secret by ID or name, so merge both buckets.
+		set := map[string]bool{}
+		var svcs []string
+		for _, name := range append(members[s.ID], members[s.Spec.Name]...) {
+			if !set[name] {
+				set[name] = true
+				svcs = append(svcs, name)
+			}
+		}
+		sort.Strings(svcs)
 		out = append(out, swarmSecret{
-			ID:      s.ID,
-			Name:    s.Spec.Name,
-			Created: s.Meta.CreatedAt,
-			Updated: s.Meta.UpdatedAt,
-			Labels:  s.Spec.Labels,
+			ID:       s.ID,
+			Name:     s.Spec.Name,
+			Created:  s.Meta.CreatedAt,
+			Updated:  s.Meta.UpdatedAt,
+			Labels:   s.Spec.Labels,
+			Services: svcs,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// secretServiceMembers maps a secret — keyed by both ID and name — to the
+// services that reference it. Best effort: a ServiceList failure yields an empty
+// map so the secret list still renders.
+func secretServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
+	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return map[string][]string{}
+	}
+	return serviceSecretMembership(svcs)
+}
+
+// serviceSecretMembership is the pure core of secretServiceMembers.
+func serviceSecretMembership(svcs []swarm.Service) map[string][]string {
+	m := map[string][]string{}
+	for _, s := range svcs {
+		cs := s.Spec.TaskTemplate.ContainerSpec
+		if cs == nil {
+			continue
+		}
+		seen := map[string]bool{}
+		add := func(key string) {
+			if key == "" || seen[key] {
+				return
+			}
+			seen[key] = true
+			m[key] = append(m[key], s.Spec.Name)
+		}
+		for _, ref := range cs.Secrets {
+			if ref == nil {
+				continue
+			}
+			add(ref.SecretID)
+			add(ref.SecretName)
+		}
+	}
+	return m
+}
+
+// secretMembers returns the services that use a secret, each carrying the
+// running containers (swarm tasks) of that service. Structure mirrors
+// networkMembers so the detail views render the same way. Best effort: failed
+// API calls degrade to empty.
+func secretMembers(ctx context.Context, dcli *client.Client, secret swarmSecret) []netService {
+	usingIDs := map[string]bool{}
+	usingNames := map[string]bool{}
+	idName := map[string]string{}
+	if svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{}); err == nil {
+		for _, s := range svcs {
+			idName[s.ID] = s.Spec.Name
+			if serviceUsesSecret(s, secret.ID, secret.Name) {
+				usingIDs[s.ID] = true
+				usingNames[s.Spec.Name] = true
+			}
+		}
+	}
+	nodeName := nodeHostnames(ctx, dcli)
+
+	byService := map[string][]netContainer{}
+	if tasks, err := dcli.TaskList(ctx, types.TaskListOptions{}); err == nil {
+		for _, t := range tasks {
+			if t.Status.State != swarm.TaskStateRunning || !usingIDs[t.ServiceID] {
+				continue
+			}
+			name := idName[t.ServiceID]
+			if name == "" {
+				name = shortID(t.ServiceID)
+			}
+			byService[name] = append(byService[name], netContainer{
+				ID:   shortID(t.Status.ContainerStatus.ContainerID),
+				Node: nodeName[t.NodeID],
+			})
+		}
+	}
+
+	names := make([]string, 0, len(usingNames))
+	for n := range usingNames {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]netService, 0, len(names))
+	for _, name := range names {
+		cs := byService[name]
+		sort.Slice(cs, func(i, j int) bool { return cs[i].ID < cs[j].ID })
+		out = append(out, netService{Name: name, Containers: cs})
+	}
+	return out
+}
+
+// serviceUsesSecret reports whether a service references the secret by ID or
+// name in its container spec.
+func serviceUsesSecret(s swarm.Service, id, name string) bool {
+	cs := s.Spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return false
+	}
+	for _, ref := range cs.Secrets {
+		if ref != nil && (ref.SecretID == id || ref.SecretName == name) {
+			return true
+		}
+	}
+	return false
 }
