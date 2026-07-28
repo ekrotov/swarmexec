@@ -52,3 +52,34 @@ func TestShortVolume(t *testing.T) {
 		}
 	}
 }
+
+// serviceColor encodes the containers-tab health rules: 0/0 grey, 0/n red,
+// partial orange, n/n aqua.
+func TestServiceColor(t *testing.T) {
+	cases := []struct {
+		running, desired int
+		want             tcell.Color
+		name             string
+	}{
+		{0, 0, tcell.ColorGray, "scaled to zero"},
+		{0, 3, tcell.ColorRed, "down"},
+		{1, 3, tcell.ColorOrange, "partial"},
+		{3, 3, tcell.ColorAqua, "healthy"},
+		{1, 1, tcell.ColorAqua, "single healthy"},
+		{2, 0, tcell.ColorGray, "desired zero wins"},
+	}
+	for _, c := range cases {
+		if got := serviceColor(c.running, c.desired); got != c.want {
+			t.Errorf("%s: serviceColor(%d,%d) = %v, want %v", c.name, c.running, c.desired, got, c.want)
+		}
+	}
+}
+
+func TestServiceLabel(t *testing.T) {
+	if got, want := serviceLabel("web", 1, 3), "web  1/3"; got != want {
+		t.Errorf("serviceLabel = %q, want %q", got, want)
+	}
+	if got, want := serviceLabel("", 0, 0), "-  0/0"; got != want {
+		t.Errorf("serviceLabel(empty) = %q, want %q", got, want)
+	}
+}

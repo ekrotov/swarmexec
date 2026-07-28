@@ -104,8 +104,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	ctree.SetRoot(croot).SetTopLevel(1) // hide the synthetic root; services are top-level
 	// filter holds the active "/" search query; empty means show everything. A
 	// candidate matches when the query is a substring of its service, container
-	// id or node (case-insensitive).
-	filter := ""
+	// id or node (case-insensitive). It starts from the optional `ui [service]`
+	// argument so `swarmexec ui web` opens pre-narrowed to matching services.
+	filter := service
 	matchesFilter := func(c resolve.Candidate) bool {
 		if filter == "" {
 			return true
@@ -115,28 +116,38 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			strings.Contains(strings.ToLower(c.ContainerID), q) ||
 			strings.Contains(strings.ToLower(c.NodeName), q)
 	}
-	// lastCands caches the most recent fetch so the "/" filter can re-render
-	// locally without hitting the docker API on every keystroke (a remote call
-	// over the ssh tunnel — doing it per keystroke makes typing crawl).
-	var lastCands []resolve.Candidate
+	// lastCands / lastSvcs cache the most recent fetch so the "/" filter can
+	// re-render locally without hitting the docker API on every keystroke (a
+	// remote call over the ssh tunnel — doing it per keystroke makes typing
+	// crawl). lastSvcs drives the tree so every service shows, even one with no
+	// running task; lastCands supplies the container leaves.
+	var (
+		lastCands []resolve.Candidate
+		lastSvcs  []resolve.Service
+	)
 	renderContainers := func() {
-		// Remember the selected container so a refresh/filter keeps the cursor.
-		prevID := ""
+		// Remember the cursor (a leaf by container id, else a service by name)
+		// and which services were expanded, so a refresh keeps both.
+		prevID, prevSvc := "", ""
 		if n := ctree.GetCurrentNode(); n != nil {
 			if ref, ok := n.GetReference().(resolve.Candidate); ok {
 				prevID = ref.ContainerID
+			} else if ref, ok := n.GetReference().(svcRef); ok {
+				prevSvc = ref.name
+			}
+		}
+		wasExpanded := map[string]bool{}
+		for _, sn := range croot.GetChildren() {
+			if ref, ok := sn.GetReference().(svcRef); ok {
+				wasExpanded[ref.name] = sn.IsExpanded()
 			}
 		}
 		croot.ClearChildren()
-		cands := lastCands
-		if filter != "" {
-			kept := make([]resolve.Candidate, 0, len(cands))
-			for _, c := range cands {
-				if matchesFilter(c) {
-					kept = append(kept, c)
-				}
-			}
-			cands = kept
+
+		// Group running containers by service for the leaves.
+		byService := map[string][]resolve.Candidate{}
+		for _, c := range lastCands {
+			byService[c.Service] = append(byService[c.Service], c)
 		}
 		// Pre-compute column widths so every container row lines up, regardless
 		// of node-name length or whether a task carries a slot.
@@ -147,7 +158,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			return ""
 		}
 		nodeW, slotW := 0, 0
-		for _, c := range cands {
+		for _, c := range lastCands {
 			if w := len(orDash(c.NodeName)); w > nodeW {
 				nodeW = w
 			}
@@ -155,45 +166,77 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 				slotW = w
 			}
 		}
-		var first, target, svcNode *tview.TreeNode
-		curService := ""
-		for _, c := range cands {
-			if svcNode == nil || c.Service != curService {
-				curService = c.Service
-				svcNode = tview.NewTreeNode(orDash(c.Service)).SetColor(tcell.ColorAqua).SetExpanded(true)
-				croot.AddChild(svcNode)
+
+		q := strings.ToLower(strings.TrimSpace(filter))
+		var firstSvc, targetSvc, targetLeaf *tview.TreeNode
+		for _, s := range lastSvcs {
+			nameMatch := q == "" || strings.Contains(strings.ToLower(s.Name), q)
+			// Which running containers to list: all when the service name matches,
+			// otherwise only the containers that match the filter themselves.
+			var shown []resolve.Candidate
+			for _, c := range byService[s.Name] {
+				if nameMatch || matchesFilter(c) {
+					shown = append(shown, c)
+				}
 			}
-			var label string
-			if slotW > 0 {
-				label = fmt.Sprintf("%-12s  %-*s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), slotW, slotStr(c), uptime(c.Uptime))
-			} else {
-				label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
+			// Hide a service only if it neither matches by name nor has any
+			// matching container.
+			if !nameMatch && len(shown) == 0 {
+				continue
 			}
-			node := tview.NewTreeNode(annotateForwards(label, forwards.forContainer(c.ContainerID))).SetReference(c)
-			svcNode.AddChild(node)
-			if first == nil {
-				first = node
+			// Collapsed by default (spec); keep a service the operator expanded.
+			svcNode := tview.NewTreeNode(serviceLabel(s.Name, s.Running, s.Desired)).
+				SetColor(serviceColor(s.Running, s.Desired)).
+				SetReference(svcRef{name: s.Name}).
+				SetExpanded(wasExpanded[s.Name])
+			croot.AddChild(svcNode)
+			if firstSvc == nil {
+				firstSvc = svcNode
 			}
-			if c.ContainerID == prevID {
-				target = node
+			if s.Name == prevSvc {
+				targetSvc = svcNode
+			}
+			for _, c := range shown {
+				var label string
+				if slotW > 0 {
+					label = fmt.Sprintf("%-12s  %-*s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), slotW, slotStr(c), uptime(c.Uptime))
+				} else {
+					label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
+				}
+				leaf := tview.NewTreeNode(annotateForwards(label, forwards.forContainer(c.ContainerID))).SetReference(c)
+				svcNode.AddChild(leaf)
+				if c.ContainerID == prevID {
+					targetLeaf = leaf
+					svcNode.SetExpanded(true) // reveal the previously-selected leaf
+				}
 			}
 		}
 		if len(croot.GetChildren()) == 0 {
-			empty := "(no running tasks)"
-			if filter != "" {
+			empty := "(no services)"
+			if q != "" {
 				empty = fmt.Sprintf("(no matches for %q)", filter)
 			}
 			croot.AddChild(tview.NewTreeNode(empty).SetColor(tcell.ColorGray).SetSelectable(false))
 		}
 		switch {
-		case target != nil:
-			ctree.SetCurrentNode(target)
-		case first != nil:
-			ctree.SetCurrentNode(first)
+		case targetLeaf != nil:
+			ctree.SetCurrentNode(targetLeaf)
+		case targetSvc != nil:
+			ctree.SetCurrentNode(targetSvc)
+		case firstSvc != nil:
+			ctree.SetCurrentNode(firstSvc)
 		}
 	}
 	loadContainers := func() {
-		cands, lerr := r.Candidates(ctx, service)
+		svcs, serr := r.Services(ctx)
+		if serr != nil {
+			croot.ClearChildren()
+			croot.AddChild(tview.NewTreeNode("error: " + serr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
+			return
+		}
+		// Fetch every running container (not just the CLI-arg service); the tree
+		// filters client-side so services with 0 containers still appear.
+		cands, lerr := r.Candidates(ctx, "")
 		if lerr != nil {
 			croot.ClearChildren()
 			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
@@ -208,6 +251,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			}
 			return cands[i].NodeName < cands[j].NodeName
 		})
+		lastSvcs = svcs
 		lastCands = cands
 		renderContainers()
 	}
@@ -1338,11 +1382,38 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	return nil
 }
 
+// svcRef marks a service (group) node and carries its name. It is deliberately
+// NOT a resolve.Candidate, so isServiceNode (and every other
+// GetReference().(resolve.Candidate) check) still treats it as a group node; it
+// only lets a re-render restore the cursor and expansion state by service name.
+type svcRef struct{ name string }
+
 // isServiceNode reports whether a tree node is a service (group) node rather
 // than a container leaf (containers carry a resolve.Candidate reference).
 func isServiceNode(n *tview.TreeNode) bool {
 	_, ok := n.GetReference().(resolve.Candidate)
 	return !ok
+}
+
+// serviceColor maps a service's running/desired task counts to a health color
+// for the containers tree: grey when scaled to zero (0/0), red when down (0/n),
+// orange when partial (e.g. 1/3), aqua when healthy (n/n).
+func serviceColor(running, desired int) tcell.Color {
+	switch {
+	case desired == 0:
+		return tcell.ColorGray
+	case running == 0:
+		return tcell.ColorRed
+	case running != desired:
+		return tcell.ColorOrange
+	default:
+		return tcell.ColorAqua
+	}
+}
+
+// serviceLabel renders a service group node as "name  running/desired".
+func serviceLabel(name string, running, desired int) string {
+	return fmt.Sprintf("%s  %d/%d", orDash(name), running, desired)
 }
 
 // shortVolume abbreviates long anonymous-volume hashes (64-char hex) for display
