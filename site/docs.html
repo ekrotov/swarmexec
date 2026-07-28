@@ -610,17 +610,19 @@
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
       <p>
-        <code>swarmexec ui</code> has five tabs — <strong>Containers&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> has six tabs — <strong>Containers&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
-        <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong> — and a
-        footer showing a live cluster summary and forward count. These keys work on every
-        tab:
+        <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
+        <strong>Contexts&nbsp;(6)</strong> — and a footer showing the active docker
+        context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
+        you're on), a live cluster summary and the forward count. These keys work on
+        every tab:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>jump to Containers / Volumes / Forwards / Networks / Secrets</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>6</kbd></td><td>jump to Containers / Volumes / Forwards / Networks / Secrets / Contexts</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>refresh the active tab and the cluster summary</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
@@ -707,6 +709,21 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Contexts tab</h3>
+      <p>
+        Lists your Docker contexts (name and endpoint) with the active one marked
+        <code>▶</code> — the same context shown in the footer. You can manage them
+        without leaving the UI; the built-in <code>default</code> context is protected.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one and restarts the UI against that cluster (active port-forwards end)</td></tr>
+          <tr><td><kbd>n</kbd></td><td>create a context — a form for name, docker host (<code>ssh://</code> / <code>tcp://</code> / <code>unix://</code>) and an optional description</td></tr>
+          <tr><td><kbd>d</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
         </tbody>
       </table></div>
 
