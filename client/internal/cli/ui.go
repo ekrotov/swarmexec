@@ -33,7 +33,7 @@ func newUICmd(g *globalFlags) *cobra.Command {
 	f := &uiFlags{}
 	cmd := &cobra.Command{
 		Use:   "ui [service]",
-		Short: "Interactive view of containers and volumes",
+		Short: "Interactive view of containers, volumes, networks and secrets",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUI(cmd, g, f, args)
@@ -972,10 +972,247 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return fRows[row-1], true
 	}
 
+	// ------------------------------------------------------------------ networks
+	nettable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	nettable.SetSelectedStyle(selStyle)
+	nHeaders := []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "SERVICES", "AGE"}
+	var nets []swarmNetwork
+	renderNetworks := func() {
+		selName := ""
+		if row, _ := nettable.GetSelection(); row >= 1 {
+			if c := nettable.GetCell(row, 0); c != nil {
+				selName = c.Text
+			}
+		}
+		nettable.Clear()
+		for c, h := range nHeaders {
+			nettable.SetCell(0, c, headerCell(h))
+		}
+		selRow := 1
+		for i, n := range nets {
+			svcCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+			if len(n.Services) > 0 {
+				svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+			}
+			nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetExpansion(1))
+			nettable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
+			nettable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
+			nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetExpansion(1))
+			nettable.SetCell(i+1, 4, svcCell)
+			nettable.SetCell(i+1, 5, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
+			if n.Name == selName {
+				selRow = i + 1
+			}
+		}
+		if len(nets) > 0 {
+			nettable.Select(selRow, 0)
+		}
+	}
+	loadNetworks := func() {
+		nettable.Clear()
+		for c, h := range nHeaders {
+			nettable.SetCell(0, c, headerCell(h))
+		}
+		nettable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+		go func() {
+			list, err := listNetworks(ctx, dcli)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					nettable.Clear()
+					for c, h := range nHeaders {
+						nettable.SetCell(0, c, headerCell(h))
+					}
+					nettable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+					return
+				}
+				nets = list
+				renderNetworks()
+			})
+		}()
+	}
+	selectedNetwork := func() (swarmNetwork, bool) {
+		row, _ := nettable.GetSelection()
+		i := row - 1
+		if i < 0 || i >= len(nets) {
+			return swarmNetwork{}, false
+		}
+		return nets[i], true
+	}
+	// showNetworkMembers lists the services attached to a network (resolved from
+	// service specs) and its attached containers. Containers need a verbose
+	// inspect per network, so they load lazily after the overlay is up.
+	showNetworkMembers := func(n swarmNetwork) {
+		list := tview.NewList().ShowSecondaryText(false)
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached — ESC back ", n.Name))
+		fill := func(containers []netContainer, loading bool) {
+			cur := list.GetCurrentItem()
+			list.Clear()
+			list.AddItem(fmt.Sprintf("services (%d)", len(n.Services)), "", 0, nil)
+			if len(n.Services) == 0 {
+				list.AddItem("  (none)", "", 0, nil)
+			}
+			for _, s := range n.Services {
+				list.AddItem("  "+s, "", 0, nil)
+			}
+			if loading {
+				list.AddItem("containers …", "", 0, nil)
+			} else {
+				list.AddItem(fmt.Sprintf("containers (%d)", len(containers)), "", 0, nil)
+				if len(containers) == 0 {
+					list.AddItem("  (none)", "", 0, nil)
+				}
+				for _, c := range containers {
+					list.AddItem(fmt.Sprintf("  %s  %s", c.Name, orDash(c.IPv4)), "", 0, nil)
+				}
+			}
+			if cur < list.GetItemCount() {
+				list.SetCurrentItem(cur)
+			}
+		}
+		fill(nil, true)
+		closeMembers := func() { pages.RemovePage("netmembers"); app.SetFocus(nettable) }
+		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+				closeMembers()
+				return nil
+			}
+			return vimListKeys(ev)
+		})
+		pages.AddPage("netmembers", centered(list, 72, len(n.Services)+8), true, true)
+		app.SetFocus(list)
+		go func() {
+			cs := networkContainers(ctx, dcli, n.ID)
+			app.QueueUpdateDraw(func() {
+				// Only repaint if this overlay is still the one on screen.
+				if pages.HasPage("netmembers") {
+					fill(cs, false)
+				}
+			})
+		}()
+	}
+	nettable.SetSelectedFunc(func(int, int) {
+		if n, ok := selectedNetwork(); ok {
+			showNetworkMembers(n)
+		}
+	})
+
+	// ------------------------------------------------------------------- secrets
+	sectable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	sectable.SetSelectedStyle(selStyle)
+	sHeaders := []string{"SECRET", "AGE", "UPDATED", "LABELS"}
+	var secs []swarmSecret
+	renderSecrets := func() {
+		selName := ""
+		if row, _ := sectable.GetSelection(); row >= 1 {
+			if c := sectable.GetCell(row, 0); c != nil {
+				selName = c.Text
+			}
+		}
+		sectable.Clear()
+		for c, h := range sHeaders {
+			sectable.SetCell(0, c, headerCell(h))
+		}
+		selRow := 1
+		for i, s := range secs {
+			labels := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+			if len(s.Labels) > 0 {
+				labels = tview.NewTableCell(fmt.Sprintf("%d", len(s.Labels))).SetExpansion(1)
+			}
+			sectable.SetCell(i+1, 0, tview.NewTableCell(s.Name).SetExpansion(1))
+			sectable.SetCell(i+1, 1, tview.NewTableCell(volumeAge(s.Created)).SetExpansion(1))
+			sectable.SetCell(i+1, 2, tview.NewTableCell(volumeAge(s.Updated)).SetExpansion(1))
+			sectable.SetCell(i+1, 3, labels)
+			if s.Name == selName {
+				selRow = i + 1
+			}
+		}
+		if len(secs) > 0 {
+			sectable.Select(selRow, 0)
+		}
+	}
+	loadSecrets := func() {
+		sectable.Clear()
+		for c, h := range sHeaders {
+			sectable.SetCell(0, c, headerCell(h))
+		}
+		sectable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+		go func() {
+			list, err := listSecrets(ctx, dcli)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					sectable.Clear()
+					for c, h := range sHeaders {
+						sectable.SetCell(0, c, headerCell(h))
+					}
+					sectable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+					return
+				}
+				secs = list
+				renderSecrets()
+			})
+		}()
+	}
+	selectedSecret := func() (swarmSecret, bool) {
+		row, _ := sectable.GetSelection()
+		i := row - 1
+		if i < 0 || i >= len(secs) {
+			return swarmSecret{}, false
+		}
+		return secs[i], true
+	}
+	// showSecretDetail shows a secret's metadata. The value is deliberately
+	// absent: the Docker API never returns it, and the overlay says so.
+	showSecretDetail := func(s swarmSecret) {
+		ts := func(t time.Time) string {
+			if t.IsZero() {
+				return "-"
+			}
+			return t.Local().Format("2006-01-02 15:04:05")
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "Name:     %s\n", s.Name)
+		fmt.Fprintf(&b, "ID:       %s\n", s.ID)
+		fmt.Fprintf(&b, "Created:  %s\n", ts(s.Created))
+		fmt.Fprintf(&b, "Updated:  %s\n", ts(s.Updated))
+		if len(s.Labels) == 0 {
+			fmt.Fprintf(&b, "Labels:   -\n")
+		} else {
+			fmt.Fprintf(&b, "Labels:\n")
+			keys := make([]string, 0, len(s.Labels))
+			for k := range s.Labels {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Fprintf(&b, "  %s=%s\n", k, s.Labels[k])
+			}
+		}
+		fmt.Fprintf(&b, "\n[gray]the secret value is not retrievable via the Docker API[white]")
+		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — ESC back ", s.Name))
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+				pages.RemovePage("secdetail")
+				app.SetFocus(sectable)
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("secdetail", centered(tv, 72, 9+len(s.Labels)), true, true)
+		app.SetFocus(tv)
+	}
+	sectable.SetSelectedFunc(func(int, int) {
+		if s, ok := selectedSecret(); ok {
+			showSecretDetail(s)
+		}
+	})
+
 	// ---------------------------------------------------------------- tabs/chrome
 	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
 	content.AddPage("forwards", ftable, true, false)
+	content.AddPage("networks", nettable, true, false)
+	content.AddPage("secrets", sectable, true, false)
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	help := tview.NewTextView().SetDynamicColors(true)
@@ -1075,30 +1312,58 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	helpFor := func(name string) string {
 		switch name {
 		case "containers":
-			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2/3[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "volumes":
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1/2/3[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		case "networks":
+			return " [yellow]j/k[white] up/down  [yellow]Enter/i[white] attached  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		case "secrets":
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		default:
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1/2/3[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		}
+	}
+	// tabChrome renders the tab bar with one tab highlighted, so adding a tab is
+	// a single list entry instead of five hand-aligned strings.
+	tabList := []struct{ key, label string }{
+		{"containers", "Containers (1)"},
+		{"volumes", "Volumes (2)"},
+		{"forwards", "Forwards (3)"},
+		{"networks", "Networks (4)"},
+		{"secrets", "Secrets (5)"},
+	}
+	renderTabBar := func(active string) {
+		var b strings.Builder
+		for _, t := range tabList {
+			if t.key == active {
+				fmt.Fprintf(&b, " [black:teal] %s [-:-]  ", t.label)
+			} else {
+				fmt.Fprintf(&b, " %s  ", t.label)
+			}
+		}
+		tabBar.SetText(b.String())
 	}
 	setTab := func(name string) {
 		active = name
 		content.SwitchToPage(name)
 		curHelp = helpFor(name)
 		help.SetText(curHelp)
+		renderTabBar(name)
 		switch name {
 		case "containers":
-			tabBar.SetText(" [black:teal] Containers (1) [-:-]   Volumes (2)   Forwards (3) ")
 			app.SetFocus(ctree)
 		case "volumes":
-			tabBar.SetText("  Containers (1)   [black:teal] Volumes (2) [-:-]   Forwards (3) ")
 			app.SetFocus(vtable)
 			loadVolumes()
-		default:
-			tabBar.SetText("  Containers (1)   Volumes (2)   [black:teal] Forwards (3) [-:-] ")
+		case "forwards":
 			app.SetFocus(ftable)
 			renderForwards()
+		case "networks":
+			app.SetFocus(nettable)
+			loadNetworks()
+		case "secrets":
+			app.SetFocus(sectable)
+			loadSecrets()
 		}
 	}
 
@@ -1137,6 +1402,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					local, e.remote, shortID(e.cand.ContainerID),
 					orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
 			}
+		case "networks":
+			fmt.Fprintln(&b, "NETWORK\tDRIVER\tSCOPE\tTYPE\tSERVICES\tAGE")
+			for _, n := range nets {
+				fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%d\t%s\n",
+					n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
+			}
+		case "secrets":
+			fmt.Fprintln(&b, "SECRET\tAGE\tUPDATED\tLABELS")
+			for _, s := range secs {
+				fmt.Fprintf(&b, "%s\t%s\t%s\t%d\n", s.Name, volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
+			}
 		default:
 			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
 			rows := make([]swarmVolume, len(vols))
@@ -1170,8 +1446,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 	}
 
-	// tabOrder drives Tab cycling; the forwards tab joins the rotation.
-	tabOrder := []string{"containers", "volumes", "forwards"}
+	// tabOrder drives Tab cycling; forwards, networks and secrets all join it.
+	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets"}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyTab {
 			for i, name := range tabOrder {
@@ -1193,6 +1469,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			case '3':
 				setTab("forwards")
 				return nil
+			case '4':
+				setTab("networks")
+				return nil
+			case '5':
+				setTab("secrets")
+				return nil
 			case 'q':
 				app.Stop()
 				return nil
@@ -1202,6 +1484,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					loadContainers()
 				case "volumes":
 					loadVolumes()
+				case "networks":
+					loadNetworks()
+				case "secrets":
+					loadSecrets()
 				default:
 					renderForwards()
 				}
@@ -1382,6 +1668,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 		return tabKeys(ev)
 	})
+	// On the networks table, "i" (like the volumes tab) shows the attached
+	// services/containers; Enter does the same.
+	nettable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+			if n, ok := selectedNetwork(); ok {
+				showNetworkMembers(n)
+			}
+			return nil
+		}
+		return tabKeys(ev)
+	})
+	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		return tabKeys(ev)
+	})
 
 	loadContainers()
 	setTab("containers")
@@ -1412,6 +1712,22 @@ type svcRef struct{ name string }
 func isServiceNode(n *tview.TreeNode) bool {
 	_, ok := n.GetReference().(resolve.Candidate)
 	return !ok
+}
+
+// networkType summarizes a network's role for the TYPE column. The flags are
+// mutually meaningful but rarely combine, so the most operationally salient one
+// wins: ingress (routing mesh) over internal (no egress) over attachable.
+func networkType(n swarmNetwork) string {
+	switch {
+	case n.Ingress:
+		return "ingress"
+	case n.Internal:
+		return "internal"
+	case n.Attachable:
+		return "attachable"
+	default:
+		return "-"
+	}
 }
 
 // serviceParent returns the service node that owns leaf, or nil. tview.TreeNode
