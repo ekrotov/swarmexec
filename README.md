@@ -1,5 +1,7 @@
 # swarmexec
 
+![swarmexec vs docker exec: instead of docker node ls → find the node → ssh node-3 → docker exec, just run `swarmexec exec web -- sh`](site/demo.gif)
+
 Cluster-wide `docker exec -it` for Docker Swarm. Get an interactive shell (or run
 a one-off command) inside **any** container in a Swarm, from a single host —
 without SSHing to the node that happens to run the task.

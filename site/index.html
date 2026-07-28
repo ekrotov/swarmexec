@@ -36,6 +36,7 @@
       overflow-x: auto; white-space: pre; font-size: .9rem;
     }
     .prompt .c { color: var(--aqua); }
+    .demo { display: block; width: 100%; height: auto; margin: 1.5rem 0; border: 1px solid var(--border); border-radius: 10px; }
     .links { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1.75rem; }
     a.btn {
       display: flex; flex-direction: column; gap: .15rem;
@@ -67,6 +68,9 @@
     <div class="card">
       <h1>swarmexec<span class="cursor">_</span></h1>
       <p class="tagline">Cluster-wide <code>docker exec -it</code> for Docker Swarm.</p>
+
+      <img class="demo" src="/demo.gif" width="860" height="470" loading="lazy"
+           alt="Instead of docker node ls, finding the node, ssh node-3 and docker exec, just run: swarmexec exec web -- sh">
 
       <p class="lead">
         Get an interactive shell (or run a one-off command) inside <strong>any</strong>
