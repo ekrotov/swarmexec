@@ -20,6 +20,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -33,7 +34,7 @@ func newUICmd(g *globalFlags) *cobra.Command {
 	f := &uiFlags{}
 	cmd := &cobra.Command{
 		Use:   "ui [service]",
-		Short: "Interactive view of containers, volumes, networks and secrets",
+		Short: "Interactive view of containers, volumes, networks, secrets and contexts",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUI(cmd, g, f, args)
@@ -1317,12 +1318,139 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 	})
 
+	// ------------------------------------------------------------------ contexts
+	// activeCtx is this session's effective docker context (what the UI is
+	// connected to): the --context override, else $DOCKER_CONTEXT, else the
+	// stored current, else "default". Shown in the footer and marked here.
+	activeCtx := firstNonEmpty(g.dockerContext, os.Getenv("DOCKER_CONTEXT"))
+	if activeCtx == "" {
+		activeCtx = dockerctx.Current()
+	}
+	if activeCtx == "" {
+		activeCtx = "default"
+	}
+	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	cxtable.SetSelectedStyle(selStyle)
+	cxHeaders := []string{"CONTEXT", "DOCKER HOST"}
+	var ctxs []dockerctx.Context
+	renderContexts := func() {
+		selName := ""
+		if row, _ := cxtable.GetSelection(); row >= 1 {
+			if c := cxtable.GetCell(row, 0); c != nil {
+				selName = strings.TrimLeft(c.Text, "▶ ")
+			}
+		}
+		cxtable.Clear()
+		for c, h := range cxHeaders {
+			cxtable.SetCell(0, c, headerCell(h))
+		}
+		selRow := 1
+		for i, c := range ctxs {
+			label, color := "  "+c.Name, tcell.ColorWhite
+			if c.Name == activeCtx {
+				label, color = "▶ "+c.Name, tcell.ColorAqua // the active session context
+			}
+			cxtable.SetCell(i+1, 0, tview.NewTableCell(label).SetTextColor(color).SetExpansion(1))
+			cxtable.SetCell(i+1, 1, tview.NewTableCell(orDash(c.Host)).SetTextColor(tcell.ColorGray).SetExpansion(2))
+			if c.Name == selName {
+				selRow = i + 1
+			}
+		}
+		if len(ctxs) > 0 {
+			cxtable.Select(selRow, 0)
+		}
+	}
+	// Contexts come from docker's local store (no network), so load synchronously.
+	loadContexts := func() {
+		list, err := dockerctx.List()
+		if err != nil {
+			cxtable.Clear()
+			for c, h := range cxHeaders {
+				cxtable.SetCell(0, c, headerCell(h))
+			}
+			cxtable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+			return
+		}
+		ctxs = list
+		renderContexts()
+	}
+	selectedContext := func() (dockerctx.Context, bool) {
+		row, _ := cxtable.GetSelection()
+		i := row - 1
+		if i < 0 || i >= len(ctxs) {
+			return dockerctx.Context{}, false
+		}
+		return ctxs[i], true
+	}
+	// showCreateContext opens a form to add a docker context (name + endpoint).
+	showCreateContext := func() {
+		var name, host, desc string
+		form := tview.NewForm()
+		form.SetBorder(true).SetTitle(" new context — Esc cancels ")
+		form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
+		form.AddInputField("Docker host", "", 44, nil, func(t string) { host = t })
+		form.AddInputField("Description", "", 44, nil, func(t string) { desc = t })
+		if hf, ok := form.GetFormItem(1).(*tview.InputField); ok {
+			hf.SetPlaceholder("ssh://ops@manager  |  tcp://host:2376")
+		}
+		closeForm := func() { pages.RemovePage("ctxform"); app.SetFocus(cxtable) }
+		form.AddButton("Create", func() {
+			if err := dockerctx.Create(strings.TrimSpace(name), strings.TrimSpace(host), strings.TrimSpace(desc)); err != nil {
+				info("create failed: " + err.Error())
+				return
+			}
+			closeForm()
+			loadContexts()
+			flash(" [green]created[white] context " + strings.TrimSpace(name))
+		})
+		form.AddButton("Cancel", closeForm)
+		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape {
+				closeForm()
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("ctxform", centered(form, 66, 13), true, true)
+		app.SetFocus(form)
+	}
+	// deleteContext removes the selected context behind a confirm. "default" is
+	// protected; removing the current one resets the selection to default.
+	deleteContext := func(c dockerctx.Context) {
+		if c.Name == "default" {
+			info("the built-in \"default\" context cannot be removed")
+			return
+		}
+		force := c.Name == dockerctx.Current()
+		msg := fmt.Sprintf("Remove context %q?\n%s", c.Name, orDash(c.Host))
+		if force {
+			msg += "\n\nIt is the current context — its selection resets to \"default\"."
+		}
+		m := tview.NewModal().SetText(msg).AddButtons([]string{"Delete", "Cancel"}).
+			SetDoneFunc(func(_ int, label string) {
+				pages.RemovePage("confirm")
+				if label != "Delete" {
+					app.SetFocus(cxtable)
+					return
+				}
+				if err := dockerctx.Remove(c.Name, force); err != nil {
+					info("remove failed: " + err.Error())
+					return
+				}
+				loadContexts()
+				flash(" [green]removed[white] context " + c.Name)
+			})
+		pages.AddPage("confirm", m, true, true)
+		app.SetFocus(m)
+	}
+
 	// ---------------------------------------------------------------- tabs/chrome
 	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
 	content.AddPage("forwards", ftable, true, false)
 	content.AddPage("networks", nettable, true, false)
 	content.AddPage("secrets", sectable, true, false)
+	content.AddPage("contexts", cxtable, true, false)
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	help := tview.NewTextView().SetDynamicColors(true)
@@ -1334,9 +1462,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	// for asynchronously updated state. flash() cannot carry it: it self-clears
 	// after 1.5s, and a forward is persistent.
 	fwdCount := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	// Active docker context (computed with the Contexts tab) — always shown so
+	// it's clear which cluster the UI is talking to.
+	ctxView := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	ctxView.SetText(fmt.Sprintf("[aqua]ctx[white] %s ", activeCtx))
+	ctxW := len(activeCtx) + 6
+	if ctxW < 12 {
+		ctxW = 12
+	} else if ctxW > 30 {
+		ctxW = 30
+	}
 	footer := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(help, 0, 1, false).
 		AddItem(fwdCount, 12, 0, false).
+		AddItem(ctxView, ctxW, 0, false).
 		AddItem(cluster, 30, 0, false)
 	// "/" search bar: hidden (height 0) until activated; filters the container
 	// tree live by service / container id / node.
@@ -1422,15 +1561,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	helpFor := func(name string) string {
 		switch name {
 		case "containers":
-			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "volumes":
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort/reverse  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "networks":
-			return " [yellow]j/k[white] up/down  [yellow]Enter/i[white] attached  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]Enter/i[white] attached  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "secrets":
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+		case "contexts":
+			return " [yellow]j/k[white] up/down  [yellow]n[white] new  [yellow]d[white] delete  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		default:
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1-5[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		}
 	}
 	// tabChrome renders the tab bar with one tab highlighted, so adding a tab is
@@ -1441,6 +1582,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		{"forwards", "Forwards (3)"},
 		{"networks", "Networks (4)"},
 		{"secrets", "Secrets (5)"},
+		{"contexts", "Contexts (6)"},
 	}
 	renderTabBar := func(active string) {
 		var b strings.Builder
@@ -1474,6 +1616,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		case "secrets":
 			app.SetFocus(sectable)
 			loadSecrets()
+		case "contexts":
+			app.SetFocus(cxtable)
+			loadContexts()
 		}
 	}
 
@@ -1523,6 +1668,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			for _, s := range secs {
 				fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
 			}
+		case "contexts":
+			fmt.Fprintln(&b, "CONTEXT\tDOCKER HOST\tACTIVE")
+			for _, c := range ctxs {
+				mark := ""
+				if c.Name == activeCtx {
+					mark = "*"
+				}
+				fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
+			}
 		default:
 			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
 			rows := make([]swarmVolume, len(vols))
@@ -1556,8 +1710,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		}
 	}
 
-	// tabOrder drives Tab cycling; forwards, networks and secrets all join it.
-	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets"}
+	// tabOrder drives Tab cycling; every tab joins it.
+	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts"}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyTab {
 			for i, name := range tabOrder {
@@ -1585,6 +1739,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 			case '5':
 				setTab("secrets")
 				return nil
+			case '6':
+				setTab("contexts")
+				return nil
 			case 'q':
 				app.Stop()
 				return nil
@@ -1598,6 +1755,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 					loadNetworks()
 				case "secrets":
 					loadSecrets()
+				case "contexts":
+					loadContexts()
 				default:
 					renderForwards()
 				}
@@ -1792,6 +1951,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		return tabKeys(ev)
 	})
 	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		return tabKeys(ev)
+	})
+	// On the contexts table, "n" creates a context and "d" removes the selected.
+	cxtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune {
+			switch ev.Rune() {
+			case 'n':
+				showCreateContext()
+				return nil
+			case 'd':
+				if c, ok := selectedContext(); ok {
+					deleteContext(c)
+				}
+				return nil
+			}
+		}
 		return tabKeys(ev)
 	})
 
