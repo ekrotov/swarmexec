@@ -613,10 +613,11 @@
         <code>swarmexec ui</code> has six tabs — <strong>Containers&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong> — and a footer showing the active docker
-        context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
-        you're on), a live cluster summary and the forward count. These keys work on
-        every tab:
+        <strong>Contexts&nbsp;(6)</strong> — and a two-line footer: the per-tab key
+        hints on top, then a status line with the active docker context
+        (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster you're
+        on), a live cluster summary, the forward count and — on the Volumes tab — how
+        many volumes you have selected. These keys work on every tab:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
@@ -660,16 +661,21 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>space</kbd></td><td>select / deselect the volume (marked <code>▣</code>) for a bulk delete</td></tr>
+          <tr><td><kbd>d</kbd></td><td>delete the selected volumes — or the one under the cursor — on every node that holds them, behind a confirm</td></tr>
+          <tr><td><kbd>P</kbd></td><td>prune: delete every volume no running container mounts <em>and</em> no service declares, behind a confirm</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>show which nodes hold the volume</td></tr>
           <tr><td><kbd>i</kbd></td><td>show which services/containers use it</td></tr>
-          <tr><td><kbd>s</kbd></td><td>cycle the sort field (name → nodes → used → age → size)</td></tr>
-          <tr><td><kbd>S</kbd></td><td>reverse the sort direction</td></tr>
+          <tr><td><kbd>s</kbd> <kbd>S</kbd></td><td>cycle the sort field (name → nodes → used → age → size) / reverse</td></tr>
         </tbody>
       </table></div>
       <p>
-        In the node list, <kbd>space</kbd> selects nodes, <kbd>d</kbd> deletes the
-        selected (or highlighted) volume, <kbd>a</kbd> deletes on all nodes — each behind
-        a confirmation.
+        Deleting is node-aware: a volume is removed on every node holding it. Prune
+        spares volumes a service <em>declares</em> even when no task is running, so it
+        won't wipe a stopped stack's data. For finer control, <kbd>Enter</kbd> opens the
+        per-node list where <kbd>space</kbd> selects nodes, <kbd>d</kbd> deletes the
+        highlighted node's copy and <kbd>a</kbd> deletes on all nodes — each behind a
+        confirmation.
       </p>
 
       <h3>Forwards tab</h3>
