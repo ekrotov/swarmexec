@@ -59,8 +59,19 @@ func newUICmd(g *globalFlags) *cobra.Command {
 // runUI runs one session of the UI against ctxOverride's docker context. It
 // returns the name of a context to switch to (the operator activated one in the
 // Contexts tab) so the caller can restart cleanly against it, or "" on a normal
-// quit. Restarting — rather than swapping the docker client live — keeps the
-// switch free of data races on the in-flight background loads.
+// quit.
+//
+// A context switch restarts the UI rather than re-pointing it live, for two
+// reasons:
+//   - Data races: the docker client and resolver are read by many background
+//     goroutines (per-node volume/agent probes, the cluster-summary probe,
+//     container loads). Reassigning them under those in-flight reads would be a
+//     data race, so a live swap would need locking around every access.
+//   - Cluster-bound state: active port-forwards, open exec/logs streams, the
+//     async cluster summary and cached candidates all belong to the old cluster.
+//     A fresh run tears them down (the deferred cleanups fire, old goroutines
+//     drain) and rebuilds everything for the new cluster, so there is no
+//     half-switched state — e.g. a forward left pointing at an old-cluster node.
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
