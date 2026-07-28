@@ -352,19 +352,35 @@ dockerhub-description:
 #   (infrastruktur/swar-exec-site) rendert das Stackfile mit dieser VERSION
 #   und deployt den Swarm-Stack.
 #
-#   Voraussetzung (einmalig): im Ziel-Projekt muss unter
-#   Settings > CI/CD > Job token permissions dieses Projekt erlaubt sein,
-#   sonst schlaegt der Trigger mit 404 fehl.
+#   Angestossen ueber einen PIPELINE-TRIGGER-TOKEN (nicht die trigger:-Bridge),
+#   der ohne die Job-Token-Allowlist des Ziel-Projekts auskommt. Voraussetzung
+#   (einmalig): im Ziel-Projekt unter Settings > CI/CD > Pipeline trigger tokens
+#   einen Token erzeugen und ihn hier als maskierte, geschuetzte CI/CD-Variable
+#   SITE_DEPLOY_TRIGGER_TOKEN hinterlegen.
+#   Fire-and-forget: der Job wartet NICHT auf das Ergebnis der Ziel-Pipeline
+#   (das leistete die fruehere trigger:-Bridge mit strategy: depend).
 # ----------------------------------------------------------------------------
 deploy-site:
   stage: deploy
+  image: alpine:3
   needs:
     - job: site-image
-  variables:
-    VERSION: "$CI_COMMIT_TAG"
-  trigger:
-    project: infrastruktur/swar-exec-site
-    branch: main
-    strategy: depend
   rules:
     - *semver-tag
+  before_script:
+    - apk add --no-cache curl >/dev/null
+  script:
+    - |
+      if [ -z "$SITE_DEPLOY_TRIGGER_TOKEN" ]; then
+        echo "SITE_DEPLOY_TRIGGER_TOKEN not set — cannot trigger the site deploy."
+        echo "Create a pipeline trigger token in infrastruktur/swar-exec-site"
+        echo "(Settings > CI/CD > Pipeline trigger tokens) and add it here as a"
+        echo "masked, protected CI/CD variable."
+        exit 1
+      fi
+      echo "triggering site deploy for $CI_COMMIT_TAG"
+      curl --fail --silent --show-error --request POST \
+        --form "token=$SITE_DEPLOY_TRIGGER_TOKEN" \
+        --form "ref=main" \
+        --form "variables[VERSION]=$CI_COMMIT_TAG" \
+        "$CI_API_V4_URL/projects/infrastruktur%2Fswar-exec-site/trigger/pipeline"
