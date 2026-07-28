@@ -423,11 +423,11 @@ func TestServicesUsesServiceStatus(t *testing.T) {
 	}
 	// Sorted by name.
 	want := []Service{
-		{Name: "agent", Running: 2, Desired: 2, Global: true},
-		{Name: "api", Running: 1, Desired: 3},
-		{Name: "cache", Running: 0, Desired: 0},
-		{Name: "db", Running: 0, Desired: 3},
-		{Name: "web", Running: 3, Desired: 3},
+		{Name: "agent", Running: 2, Desired: 2, Global: true, Mode: "global"},
+		{Name: "api", Running: 1, Desired: 3, Mode: "replicated"},
+		{Name: "cache", Running: 0, Desired: 0, Mode: "replicated"},
+		{Name: "db", Running: 0, Desired: 3, Mode: "replicated"},
+		{Name: "web", Running: 3, Desired: 3, Mode: "replicated"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d services, want %d: %+v", len(got), len(want), got)
@@ -436,6 +436,50 @@ func TestServicesUsesServiceStatus(t *testing.T) {
 		if got[i] != w {
 			t.Errorf("service[%d] = %+v, want %+v", i, got[i], w)
 		}
+	}
+}
+
+func TestServiceMode(t *testing.T) {
+	cases := []struct {
+		m    swarm.ServiceMode
+		want string
+	}{
+		{swarm.ServiceMode{Global: &swarm.GlobalService{}}, "global"},
+		{swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}}, "global-job"},
+		{swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{}}, "replicated-job"},
+		{swarm.ServiceMode{}, "replicated"},
+	}
+	for _, c := range cases {
+		if got := serviceMode(c.m); got != c.want {
+			t.Errorf("serviceMode(%+v) = %q, want %q", c.m, got, c.want)
+		}
+	}
+}
+
+func TestServiceImage(t *testing.T) {
+	if got := serviceImage(nil); got != "" {
+		t.Errorf("serviceImage(nil) = %q, want empty", got)
+	}
+	// The @sha256 digest is stripped for display.
+	if got, want := serviceImage(&swarm.ContainerSpec{Image: "nginx:1.27@sha256:deadbeef"}), "nginx:1.27"; got != want {
+		t.Errorf("serviceImage = %q, want %q", got, want)
+	}
+	if got, want := serviceImage(&swarm.ContainerSpec{Image: "postgres:15"}), "postgres:15"; got != want {
+		t.Errorf("serviceImage = %q, want %q", got, want)
+	}
+}
+
+func TestServicePorts(t *testing.T) {
+	ports := []swarm.PortConfig{
+		{PublishedPort: 8080, TargetPort: 80, Protocol: "tcp", PublishMode: swarm.PortConfigPublishModeIngress},
+		{PublishedPort: 5353, TargetPort: 53, Protocol: "udp", PublishMode: swarm.PortConfigPublishModeHost},
+		{PublishedPort: 0, TargetPort: 9000}, // unpublished → skipped
+	}
+	if got, want := servicePorts(ports), "*:8080->80/tcp, 5353->53/udp"; got != want {
+		t.Errorf("servicePorts = %q, want %q", got, want)
+	}
+	if got := servicePorts(nil); got != "" {
+		t.Errorf("servicePorts(nil) = %q, want empty", got)
 	}
 }
 
