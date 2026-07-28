@@ -396,3 +396,73 @@ func TestResolveContainerIDWithNodeHint(t *testing.T) {
 		t.Errorf("got host=%q container=%q, want host-b/deadbeefcafe", ep.DialHost, ep.ContainerID)
 	}
 }
+
+// svcStatus builds a service carrying the manager's ServiceStatus shortcut.
+func svcStatus(id, name string, running, desired uint64, global bool) swarm.Service {
+	s := svc(id, name)
+	s.ServiceStatus = &swarm.ServiceStatus{RunningTasks: running, DesiredTasks: desired}
+	if global {
+		s.Spec.Mode.Global = &swarm.GlobalService{}
+	}
+	return s
+}
+
+func TestServicesUsesServiceStatus(t *testing.T) {
+	f := newFake()
+	f.services = []swarm.Service{
+		svcStatus("s-web", "web", 3, 3, false),     // healthy
+		svcStatus("s-api", "api", 1, 3, false),     // partial
+		svcStatus("s-db", "db", 0, 3, false),       // down
+		svcStatus("s-cache", "cache", 0, 0, false), // scaled to zero
+		svcStatus("s-agent", "agent", 2, 2, true),  // global
+	}
+	r := New(f, AddrHostname)
+	got, err := r.Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	// Sorted by name.
+	want := []Service{
+		{Name: "agent", Running: 2, Desired: 2, Global: true},
+		{Name: "api", Running: 1, Desired: 3},
+		{Name: "cache", Running: 0, Desired: 0},
+		{Name: "db", Running: 0, Desired: 3},
+		{Name: "web", Running: 3, Desired: 3},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d services, want %d: %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("service[%d] = %+v, want %+v", i, got[i], w)
+		}
+	}
+}
+
+func TestServicesFallbackWithoutStatus(t *testing.T) {
+	f := newFake()
+	// No ServiceStatus: a replicated service with replicas=2, one task running.
+	rep := svc("s-web", "web")
+	two := uint64(2)
+	rep.Spec.Mode.Replicated = &swarm.ReplicatedService{Replicas: &two}
+	f.services = []swarm.Service{rep}
+	f.tasks = []swarm.Task{
+		task("t1", "s-web", "node-a", 1, "cWEB"), // running with a container
+		task("t2", "s-web", "node-b", 2, ""),     // scheduled, no container yet
+	}
+	// task() sets state Running via helper? ensure Status.State is running.
+	for i := range f.tasks {
+		f.tasks[i].Status.State = swarm.TaskStateRunning
+	}
+	r := New(f, AddrHostname)
+	got, err := r.Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 service, got %+v", got)
+	}
+	if got[0].Desired != 2 || got[0].Running != 1 {
+		t.Errorf("fallback counts = %d/%d, want 1/2", got[0].Running, got[0].Desired)
+	}
+}

@@ -95,6 +95,16 @@ type Candidate struct {
 	Uptime      time.Duration
 }
 
+// Service is a swarm service with its running/desired task counts, for the
+// containers overview — which lists every service, including those with zero
+// running tasks (which Candidates omits).
+type Service struct {
+	Name    string
+	Running int
+	Desired int
+	Global  bool
+}
+
 // AmbiguousError is returned when a bare service name has more than one running
 // task and the caller must disambiguate (slot or interactive pick).
 type AmbiguousError struct {
@@ -352,6 +362,56 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 		return cands[i].Slot < cands[j].Slot
 	})
 	return cands, nil
+}
+
+// Services lists every swarm service with its running/desired task counts.
+// It asks the manager for the ServiceStatus shortcut (Status: true) so it does
+// not have to list tasks per service; if the manager does not populate it, it
+// falls back to counting tasks. Results are sorted by name.
+func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
+	svcs, err := r.cli.ServiceList(ctx, types.ServiceListOptions{Status: true})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Service, 0, len(svcs))
+	for _, s := range svcs {
+		svc := Service{Name: s.Spec.Name, Global: s.Spec.Mode.Global != nil}
+		if st := s.ServiceStatus; st != nil {
+			svc.Running = int(st.RunningTasks)
+			svc.Desired = int(st.DesiredTasks)
+		} else {
+			svc.Running, svc.Desired = r.serviceCounts(ctx, s)
+		}
+		out = append(out, svc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// serviceCounts computes running/desired task counts when the manager did not
+// return a ServiceStatus. Desired is the replica count for a replicated
+// service, or the number of not-shutdown tasks for a global one; running counts
+// tasks actually in the running state with a container.
+func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running, desired int) {
+	if rep := s.Spec.Mode.Replicated; rep != nil && rep.Replicas != nil {
+		desired = int(*rep.Replicas)
+	}
+	tasks, err := r.cli.TaskList(ctx, types.TaskListOptions{
+		Filters: filters.NewArgs(filters.Arg("service", s.ID)),
+	})
+	if err != nil {
+		return running, desired
+	}
+	global := s.Spec.Mode.Global != nil
+	for _, t := range tasks {
+		if global && t.DesiredState != swarm.TaskStateShutdown {
+			desired++
+		}
+		if t.Status.State == swarm.TaskStateRunning && containerID(t) != "" {
+			running++
+		}
+	}
+	return running, desired
 }
 
 func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidate, error) {
