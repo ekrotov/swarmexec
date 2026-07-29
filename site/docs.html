@@ -661,8 +661,10 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>/</kbd></td><td>search — filter the list by volume name, driver or node</td></tr>
           <tr><td><kbd>space</kbd></td><td>select / deselect the volume (marked <code>▣</code>) for a bulk delete</td></tr>
-          <tr><td><kbd>d</kbd></td><td>delete the selected volumes — or the one under the cursor — on every node that holds them, behind a confirm</td></tr>
+          <tr><td><kbd>a</kbd></td><td>select / deselect all currently displayed volumes</td></tr>
+          <tr><td><kbd>d</kbd></td><td>delete the selected volumes — or the one under the cursor — on every node that holds them, behind a confirm (with a progress overlay; deletes run with bounded parallelism)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: delete every volume no running container mounts <em>and</em> no service declares, behind a confirm</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>show which nodes hold the volume</td></tr>
           <tr><td><kbd>i</kbd></td><td>show which services/containers use it</td></tr>
