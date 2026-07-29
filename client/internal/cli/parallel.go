@@ -13,6 +13,11 @@ import (
 // large swarm does not open hundreds of TLS connections at once.
 const nodeFanoutLimit = 16
 
+// volumeDeleteFanout caps how many volumes are deleted in parallel in the UI.
+// Kept modest because each volume delete already fans out across its nodes (up
+// to nodeFanoutLimit), so the product bounds the load on the agents.
+const volumeDeleteFanout = 6
+
 // forEachNode runs fn for every node with bounded concurrency. fn receives the
 // node's index so it can write into a pre-sized result slice without locking.
 func forEachNode(nodes []resolve.Node, fn func(i int, n resolve.Node)) {

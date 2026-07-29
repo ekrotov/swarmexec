@@ -648,6 +648,25 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// selectedVols holds the volumes marked with space for a bulk delete, keyed
 	// by name so the selection survives sorting and re-render.
 	selectedVols := map[string]bool{}
+	// shownVols is the filtered + sorted subset currently displayed; it is what
+	// selectedVolume() and "select all" index. volFilter is the "/" search query.
+	var shownVols []swarmVolume
+	volFilter := ""
+	volMatches := func(v swarmVolume) bool {
+		q := strings.ToLower(strings.TrimSpace(volFilter))
+		if q == "" {
+			return true
+		}
+		if strings.Contains(strings.ToLower(v.Name), q) || strings.Contains(strings.ToLower(v.Driver), q) {
+			return true
+		}
+		for _, n := range v.Nodes {
+			if strings.Contains(strings.ToLower(n.Name), q) {
+				return true
+			}
+		}
+		return false
+	}
 	sortField := volSortName
 	sortDesc := false
 	volSizesLoading := false
@@ -723,12 +742,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			vtable.SetCell(0, c, headerCell(h))
 		}
-		// Sort vols in place so the displayed order matches the slice that
-		// selectedVolume() indexes — otherwise a non-name sort makes the delete /
-		// nodes modal act on the wrong volume.
-		sortVolumes(vols)
+		// Build the displayed subset from the "/" filter, then sort it. The
+		// displayed order must match the slice selectedVolume() indexes, so both
+		// use shownVols — otherwise a filter/sort makes delete act on the wrong row.
+		shownVols = shownVols[:0]
+		for _, v := range vols {
+			if volMatches(v) {
+				shownVols = append(shownVols, v)
+			}
+		}
+		sortVolumes(shownVols)
 		selRow := 1
-		for i, v := range vols {
+		for i, v := range shownVols {
 			used := len(volUsage[v.Name])
 			usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
 			if used > 0 {
@@ -756,11 +781,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				selRow = i + 1
 			}
 		}
-		if len(vols) > 0 {
+		if len(shownVols) > 0 {
 			vtable.Select(selRow, 0)
 		}
 		if len(volErrs) > 0 {
-			vtable.SetCell(len(vols)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(volErrs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
+			vtable.SetCell(len(shownVols)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(volErrs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
 		}
 	}
 
@@ -844,10 +869,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	selectedVolume := func() (swarmVolume, bool) {
 		row, _ := vtable.GetSelection()
 		i := row - 1
-		if i < 0 || i >= len(vols) {
+		if i < 0 || i >= len(shownVols) {
 			return swarmVolume{}, false
 		}
-		return vols[i], true
+		return shownVols[i], true
 	}
 
 	showVolumeNodes := func(v swarmVolume) {
@@ -1023,27 +1048,50 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				// take a while, so show a progress overlay instead of freezing.
 				prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 				prog.SetBorder(true).SetTitle(" deleting volumes ")
-				prog.SetText(fmt.Sprintf("\ndeleting 0/%d…", len(targets)))
+				prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
 				pages.AddPage("volprogress", centered(prog, 60, 5), true, true)
 				app.SetFocus(prog)
 				go func() {
-					var fails []string
-					removed := 0
-					for i, v := range targets {
-						app.QueueUpdateDraw(func() {
-							prog.SetText(fmt.Sprintf("\ndeleting %d/%d\n[gray]%s[white]", i+1, len(targets), shortVolume(v.Name)))
-						})
-						ok := true
-						for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
-							if res.err != nil {
-								ok = false
-								fails = append(fails, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.node.Name, res.err))
+					// Delete volumes with bounded parallelism: each volume already
+					// fans out across its nodes, so a small volume-level pool keeps
+					// the total load on the agents in check. A mutex guards the
+					// shared counters and the progress overlay shows completions.
+					var (
+						mu      sync.Mutex
+						fails   []string
+						done    int
+						removed int
+					)
+					sem := make(chan struct{}, volumeDeleteFanout)
+					var wg sync.WaitGroup
+					for _, v := range targets {
+						wg.Add(1)
+						sem <- struct{}{}
+						go func(v swarmVolume) {
+							defer wg.Done()
+							defer func() { <-sem }()
+							ok := true
+							var vf []string
+							for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
+								if res.err != nil {
+									ok = false
+									vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.node.Name, res.err))
+								}
 							}
-						}
-						if ok {
-							removed++
-						}
+							mu.Lock()
+							done++
+							if ok {
+								removed++
+							}
+							fails = append(fails, vf...)
+							d := done
+							mu.Unlock()
+							app.QueueUpdateDraw(func() {
+								prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets)))
+							})
+						}(v)
 					}
+					wg.Wait()
 					app.QueueUpdateDraw(func() {
 						pages.RemovePage("volprogress")
 						selectedVols = map[string]bool{}
@@ -1639,26 +1687,52 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// other on-screen hint, which is what made "how do I exit search?" a real
 	// snag. (Not curHelp: that is declared further down, out of scope here.)
 	var savedHelp string
-	startSearch := func() {
+	// searchMode selects what the shared "/" search bar filters: the container
+	// tree ("containers") or the volumes table ("volumes").
+	var searchMode string
+	startSearch := func(mode string) {
+		searchMode = mode
 		root.ResizeItem(search, 1, 0)
 		savedHelp = help.GetText(false)
 		help.SetText(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
+		if mode == "volumes" {
+			search.SetPlaceholder("filter volumes / driver / node")
+			search.SetText(volFilter)
+		} else {
+			search.SetPlaceholder("filter services / containers / nodes")
+			search.SetText(filter)
+		}
 		app.SetFocus(search)
 	}
 	search.SetChangedFunc(func(text string) {
-		// Filter locally against the cached candidates — no docker call per keystroke.
-		filter = strings.TrimSpace(text)
-		renderContainers()
+		// Filter locally against the cached data — no docker call per keystroke.
+		t := strings.TrimSpace(text)
+		if searchMode == "volumes" {
+			volFilter = t
+			renderVolumeTable()
+		} else {
+			filter = t
+			renderContainers()
+		}
 	})
 	search.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape {
-			search.SetText("") // clears the filter via SetChangedFunc and reloads
+			search.SetText("") // clears the active filter via SetChangedFunc
 		}
-		if filter == "" {
+		isVol := searchMode == "volumes"
+		empty := filter == ""
+		if isVol {
+			empty = volFilter == ""
+		}
+		if empty {
 			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
 		}
 		help.SetText(savedHelp) // restore the tab help
-		app.SetFocus(ctree)     // Enter keeps the filter; the bar stays as an indicator
+		if isVol {
+			app.SetFocus(vtable) // Enter keeps the filter; the bar stays as an indicator
+		} else {
+			app.SetFocus(ctree)
+		}
 	})
 
 	// refreshCluster probes the swarm in the background and updates the footer
@@ -1732,7 +1806,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "containers":
 			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "volumes":
-			return " [yellow]j/k[white] up/down  [yellow]space[white] select  [yellow]d[white] delete  [yellow]P[white] prune  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s/S[white] sort  [yellow]y[white] copy  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return " [yellow]j/k[white] up/down  [yellow]/[white] search  [yellow]space[white] select  [yellow]a[white] all  [yellow]d[white] delete  [yellow]P[white] prune  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s[white] sort  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "networks":
 			return " [yellow]j/k[white] up/down  [yellow]Enter/i[white] attached  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
 		case "secrets":
@@ -1848,11 +1922,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
 			}
 		default:
+			// Copy the displayed (filtered + sorted) volumes.
 			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
-			rows := make([]swarmVolume, len(vols))
-			copy(rows, vols)
-			sortVolumes(rows)
-			for _, v := range rows {
+			for _, v := range shownVols {
 				used := "-"
 				if n := len(volUsage[v.Name]); n > 0 {
 					used = fmt.Sprintf("%d", n)
@@ -1952,7 +2024,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case '/':
-				startSearch()
+				startSearch("containers")
 				return nil
 			case 'h':
 				// Collapse. tview's TreeView has no fold key — Left/Right only
@@ -2090,6 +2162,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
+			case '/':
+				startSearch("volumes")
+				return nil
 			case ' ':
 				// Toggle the current volume's selection for a bulk delete.
 				if v, ok := selectedVolume(); ok {
@@ -2101,6 +2176,25 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					renderVolumeTable()
 					updateStatus()
 				}
+				return nil
+			case 'a':
+				// Select or deselect all currently displayed volumes.
+				all := len(shownVols) > 0
+				for _, v := range shownVols {
+					if !selectedVols[v.Name] {
+						all = false
+						break
+					}
+				}
+				for _, v := range shownVols {
+					if all {
+						delete(selectedVols, v.Name)
+					} else {
+						selectedVols[v.Name] = true
+					}
+				}
+				renderVolumeTable()
+				updateStatus()
 				return nil
 			case 'd':
 				// Delete the selected volumes, or the one under the cursor.
