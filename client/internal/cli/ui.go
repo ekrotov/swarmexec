@@ -1019,10 +1019,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					app.SetFocus(vtable)
 					return
 				}
+				// Deleting runs per volume across every node it holds, which can
+				// take a while, so show a progress overlay instead of freezing.
+				prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
+				prog.SetBorder(true).SetTitle(" deleting volumes ")
+				prog.SetText(fmt.Sprintf("\ndeleting 0/%d…", len(targets)))
+				pages.AddPage("volprogress", centered(prog, 60, 5), true, true)
+				app.SetFocus(prog)
 				go func() {
 					var fails []string
 					removed := 0
-					for _, v := range targets {
+					for i, v := range targets {
+						app.QueueUpdateDraw(func() {
+							prog.SetText(fmt.Sprintf("\ndeleting %d/%d\n[gray]%s[white]", i+1, len(targets), shortVolume(v.Name)))
+						})
 						ok := true
 						for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
 							if res.err != nil {
@@ -1035,6 +1045,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						}
 					}
 					app.QueueUpdateDraw(func() {
+						pages.RemovePage("volprogress")
 						selectedVols = map[string]bool{}
 						loadVolumes()
 						updateStatus()
