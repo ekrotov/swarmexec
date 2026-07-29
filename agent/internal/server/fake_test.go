@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -183,6 +184,11 @@ func (f *fakeDocker) DiskUsage(_ context.Context, _ types.DiskUsageOptions) (typ
 		return types.DiskUsage{}, f.diskUsageErr
 	}
 	return types.DiskUsage{Volumes: f.volumes}, nil
+}
+
+func (f *fakeDocker) Events(_ context.Context, _ events.ListOptions) (<-chan events.Message, <-chan error) {
+	// No events in tests; the volume-size cache is exercised via refresh().
+	return make(chan events.Message), make(chan error)
 }
 
 func (f *fakeDocker) Resizes() []container.ResizeOptions {

@@ -7,7 +7,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/volume"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,10 +37,15 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 		return nil, status.Errorf(codes.Internal, "list volumes: %v", err)
 	}
 
-	// sizes maps volume name -> on-disk bytes (-1 = unavailable), only when asked.
-	var sizes map[string]int64
+	// Sizes come from the background cache (no per-request du scan). ready is
+	// false only briefly after startup, before the first scan completes; then a
+	// volume shows SizeKnown=false and the cli renders "…" until the next list.
+	var (
+		sizes map[string]int64
+		ready bool
+	)
 	if req.GetWithSize() {
-		sizes = s.volumeSizes(ctx)
+		sizes, _, ready = s.sizeCache.get()
 	}
 
 	out := &pb.ListVolumesResponse{}
@@ -49,10 +53,10 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 		if v == nil {
 			continue
 		}
-		size := int64(-1)
-		if sizes != nil {
+		size, known := int64(-1), false
+		if ready {
 			if sz, ok := sizes[v.Name]; ok {
-				size = sz
+				size, known = sz, true
 			}
 		}
 		out.Volumes = append(out.Volumes, &pb.VolumeInfo{
@@ -62,35 +66,10 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 			CreatedAt:  v.CreatedAt,
 			Scope:      v.Scope,
 			SizeBytes:  size,
-			SizeKnown:  sizes != nil,
+			SizeKnown:  known,
 		})
 	}
 	return out, nil
-}
-
-// volumeSizes returns volume name -> on-disk size in bytes via the docker
-// disk-usage endpoint, scoped to volumes so images/containers/build-cache are
-// not walked (that walk dominates the cost on busy nodes). A failure is
-// non-fatal: it returns nil so the listing still works (sizes show as "-").
-//
-// NB: the daemon computes volume sizes regardless of the type filter. The
-// earlier "no sizes with the filter" symptom was actually the scan being
-// cancelled when the idle ssh tunnel dropped mid-call; gRPC keepalive fixes
-// that, so scoping to volumes is safe and much faster than a full system df.
-func (s *Server) volumeSizes(ctx context.Context) map[string]int64 {
-	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
-	if err != nil {
-		s.log.Warn("DiskUsage failed; volume sizes unavailable", "err", err)
-		return nil
-	}
-	sizes := make(map[string]int64, len(du.Volumes))
-	for _, v := range du.Volumes {
-		if v == nil || v.UsageData == nil {
-			continue
-		}
-		sizes[v.Name] = v.UsageData.Size // docker reports -1 for non-local drivers
-	}
-	return sizes
 }
 
 // RemoveVolume removes a volume on this node. It is authorized and audited; an
