@@ -53,8 +53,10 @@ func TestListVolumes_WithSize(t *testing.T) {
 		t.Errorf("without with_size: got size=%d known=%v, want -1/false", resp.Volumes[0].SizeBytes, resp.Volumes[0].SizeKnown)
 	}
 
-	// With with_size, sizes come from the disk-usage data (-1 for non-local) and
+	// With with_size, sizes come from the background cache (-1 for non-local) and
 	// size_known is set so the client can tell "0 bytes" from "not reported".
+	// Warm the cache directly instead of starting the background loop.
+	srv.sizeCache.refresh(context.Background())
 	resp, err = srv.ListVolumes(context.Background(), &pb.ListVolumesRequest{WithSize: true})
 	if err != nil {
 		t.Fatal(err)

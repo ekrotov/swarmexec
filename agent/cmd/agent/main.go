@@ -147,6 +147,13 @@ func run(args []string) error {
 		ForwardImage:   cfg.ForwardImage,
 	})
 
+	// Background volume-size cache: scans at startup, then refreshes on volume
+	// create/destroy events and periodically, so ListVolumes(with_size) answers
+	// from memory instead of running a slow du-style scan per request.
+	cacheCtx, cacheCancel := context.WithCancel(context.Background())
+	defer cacheCancel()
+	srv.StartVolumeSizeCache(cacheCtx)
+
 	serverOpts := []grpc.ServerOption{
 		grpc.Creds(credentials.NewTLS(tlsCfg)),
 		// Permit the client's keepalive pings (every ~15s, even without an active

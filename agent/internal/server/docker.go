@@ -9,6 +9,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -35,6 +36,9 @@ type DockerClient interface {
 	VolumeList(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
 	DiskUsage(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
+	// Events streams docker daemon events; the volume-size cache watches
+	// volume create/destroy to refresh reactively.
+	Events(ctx context.Context, options events.ListOptions) (<-chan events.Message, <-chan error)
 }
 
 // swarmServiceLabel is the container label Docker sets on swarm task containers

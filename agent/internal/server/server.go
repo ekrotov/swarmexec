@@ -44,18 +44,22 @@ type Options struct {
 	// right on every normal deployment: it is already present on the node, so a
 	// forward never blocks on a registry pull.
 	ForwardImage string
+	// VolumeSizeInterval sets the volume-size cache's periodic rescan interval.
+	// Zero uses the default (volumeSizeInterval).
+	VolumeSizeInterval time.Duration
 }
 
 // Server is the Agent gRPC service implementation.
 type Server struct {
 	pb.UnimplementedAgentServer
 
-	docker  DockerClient
-	authz   auth.Authorizer
-	audit   *audit.Logger
-	log     *slog.Logger
-	metrics Metrics
-	opts    Options
+	docker    DockerClient
+	authz     auth.Authorizer
+	audit     *audit.Logger
+	log       *slog.Logger
+	metrics   Metrics
+	opts      Options
+	sizeCache *volumeSizeCache // serves ListVolumes(with_size) from memory
 
 	// identityFn extracts the authenticated client identity from the RPC
 	// context. Overridable in tests; defaults to the mTLS peer CN.
@@ -88,12 +92,20 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 		metrics: metrics,
 		opts:    opts,
 	}
+	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {
 		s.identityFn = identityFromPeer
 	}
 	return s
+}
+
+// StartVolumeSizeCache launches the background volume-size cache: an initial
+// scan, then reactive (volume create/destroy) and periodic refreshes, until ctx
+// is cancelled. Call it once after New.
+func (s *Server) StartVolumeSizeCache(ctx context.Context) {
+	go s.sizeCache.run(ctx)
 }
 
 // ListContainers lists running containers on the local node, optionally
