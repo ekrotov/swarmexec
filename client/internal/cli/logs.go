@@ -29,6 +29,9 @@ type logsFlags struct {
 	since          time.Duration
 	node           string
 	connectTimeout time.Duration
+	logFormat      string // classic | json | gelf | raw
+	minLevel       string // trace..fatal; "" = no level filter
+	grep           string // regexp on the (parsed) message; "" = no text filter
 }
 
 func newLogsCmd(g *globalFlags) *cobra.Command {
@@ -48,6 +51,9 @@ func newLogsCmd(g *globalFlags) *cobra.Command {
 	fl.DurationVar(&f.since, "since", 0, "only logs newer than this (e.g. 10m, 1h; 0 = no limit)")
 	fl.StringVar(&f.node, "node", "", "node hint/override for container-id targets")
 	fl.DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the agent")
+	fl.StringVar(&f.logFormat, "log-format", "", "parse lines as: classic | json | gelf | raw (default from config, else classic)")
+	fl.StringVar(&f.minLevel, "min-level", "", "only show this level and above: trace|debug|info|warn|error|fatal")
+	fl.StringVar(&f.grep, "grep", "", "only show lines whose message matches this regexp")
 	return cmd
 }
 
@@ -80,13 +86,34 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		}
 	}
 
-	if err := streamLogs(ctx, cfg, *ep, logsParams{
+	// Optional format-aware parsing + filtering (flags override config defaults).
+	format, filter, ferr := buildLogFilter(
+		firstNonEmpty(f.logFormat, cfg.Logs.Format),
+		firstNonEmpty(f.minLevel, cfg.Logs.MinLevel),
+		f.grep,
+	)
+	if ferr != nil {
+		return &cliError{code: usageExitCode, err: ferr}
+	}
+	var stdout, stderr io.Writer = os.Stdout, os.Stderr
+	var flushers []*filterWriter
+	if filteringActive(format, filter) {
+		fo := newFilterWriter(os.Stdout, format, filter, renderPlain)
+		fe := newFilterWriter(os.Stderr, format, filter, renderPlain)
+		stdout, stderr, flushers = fo, fe, []*filterWriter{fo, fe}
+	}
+
+	err = streamLogs(ctx, cfg, *ep, logsParams{
 		follow:         f.follow,
 		tail:           f.tail,
 		timestamps:     f.timestamps,
 		since:          f.since,
 		connectTimeout: f.connectTimeout,
-	}, os.Stdout, os.Stderr); err != nil {
+	}, stdout, stderr)
+	for _, w := range flushers {
+		w.Flush()
+	}
+	if err != nil {
 		return &cliError{code: session.TransportFailure, err: enrichAgentError(ctx, dcli, err)}
 	}
 	return nil
