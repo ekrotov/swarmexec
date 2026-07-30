@@ -437,6 +437,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	}
 
+	// logPage wraps a log TextView with a footer key-hint line — the same place
+	// every tab shows its shortcuts — so the log view's keys are consistent and
+	// spelled out, instead of being crammed into the border title.
+	logPage := func(tv *tview.TextView) tview.Primitive {
+		hint := tview.NewTextView().SetDynamicColors(true).SetText(logViewHelp)
+		return tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(tv, 0, 1, true).
+			AddItem(hint, 1, 0, false)
+	}
+
 	showLogs := func(c resolve.Candidate) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
@@ -445,11 +455,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		format, filter := logDefaults()
 		lv := newLogViewer(app, tv, follow, format, filter)
 		setTitle := func() {
-			state := "ON"
+			state := "on"
 			if !follow.Load() {
-				state = "OFF"
+				state = "off"
 			}
-			tv.SetTitle(fmt.Sprintf(" logs %s on %s — [f]follow:%s [F]format [l]level [/]grep · %s · ESC/q close ",
+			tv.SetTitle(fmt.Sprintf(" logs %s on %s — follow:%s · %s ",
 				shortID(c.ContainerID), orDash(c.NodeName), state, lv.status()))
 		}
 		tv.SetBorder(true)
@@ -464,7 +474,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
 		}()
-		pages.AddPage("logs", tv, true, true)
+		pages.AddPage("logs", logPage(tv), true, true)
 		app.SetFocus(tv)
 	}
 
@@ -477,11 +487,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		format, filter := logDefaults()
 		lv := newLogViewer(app, tv, follow, format, filter)
 		setTitle := func() {
-			state := "ON"
+			state := "on"
 			if !follow.Load() {
-				state = "OFF"
+				state = "off"
 			}
-			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — [f]follow:%s [F]format [l]level [/]grep · %s · ESC/q close ",
+			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — follow:%s · %s ",
 				serviceName, len(members), state, lv.status()))
 		}
 		tv.SetBorder(true)
@@ -503,7 +513,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			}(ep, prefix)
 		}
-		pages.AddPage("logs", tv, true, true)
+		pages.AddPage("logs", logPage(tv), true, true)
 		app.SetFocus(tv)
 	}
 

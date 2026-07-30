@@ -19,6 +19,12 @@ import (
 // when the operator changes the format or filter live.
 const logBufferCap = 5000
 
+// logViewHelp is the footer key hint shown under every log view. It lives in the
+// footer (not the border title) so the log shortcuts are discoverable in the
+// same place as every other tab's shortcuts, and each key spells out what it
+// does rather than using a one-word label.
+const logViewHelp = " [yellow]f[white] follow on/off  [yellow]F[white] cycle format (classic/json/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
+
 type logRow struct {
 	prefix string // service view tag "[cid@node] "; "" for a single container
 	line   string // raw log line
@@ -43,26 +49,35 @@ func newLogViewer(app *tview.Application, tv *tview.TextView, follow *atomic.Boo
 	return &logViewer{app: app, tv: tv, follow: follow, format: format, filter: filter}
 }
 
-// add buffers a raw line and, if it passes the current filter, appends it to the
-// view. Called from stream goroutines.
-func (v *logViewer) add(prefix, line string, stderr bool) {
+// addLines buffers a batch of raw lines and appends the ones that pass the
+// current filter to the view in a single redraw. Called from stream goroutines
+// once per network chunk — QueueUpdateDraw blocks until the main loop runs it
+// and forces a full redraw, so doing it per line would starve keyboard input on
+// a chatty container. Batching per chunk keeps the UI responsive.
+func (v *logViewer) addLines(prefix string, lines []string, stderr bool) {
+	if len(lines) == 0 {
+		return
+	}
 	v.mu.Lock()
-	row := logRow{prefix: prefix, line: line, stderr: stderr}
-	v.rows = append(v.rows, row)
+	var b bytes.Buffer
+	for _, line := range lines {
+		row := logRow{prefix: prefix, line: line, stderr: stderr}
+		v.rows = append(v.rows, row)
+		if v.filter.Match(v.format.Parse(line)) {
+			b.WriteString(renderLogRow(v.format, row))
+			b.WriteByte('\n')
+		}
+	}
 	if len(v.rows) > logBufferCap {
 		v.rows = v.rows[len(v.rows)-logBufferCap:]
 	}
-	show := v.filter.Match(v.format.Parse(line))
-	var rendered string
-	if show {
-		rendered = renderLogRow(v.format, row)
-	}
+	out := b.String()
 	v.mu.Unlock()
-	if !show {
+	if out == "" {
 		return
 	}
 	v.app.QueueUpdateDraw(func() {
-		fmt.Fprintln(v.tv, rendered)
+		fmt.Fprint(v.tv, out)
 		if v.follow == nil || v.follow.Load() {
 			v.tv.ScrollToEnd()
 		}
@@ -173,9 +188,7 @@ func (w *logIngest) Write(p []byte) (int, error) {
 		w.buf = w.buf[i+1:]
 	}
 	w.mu.Unlock()
-	for _, line := range lines {
-		w.v.add(w.prefix, line, w.stderr)
-	}
+	w.v.addLines(w.prefix, lines, w.stderr)
 	return len(p), nil
 }
 
