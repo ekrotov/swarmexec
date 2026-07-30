@@ -4,11 +4,11 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -371,40 +372,94 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		app.SetFocus(tv)
 	}
 
-	showLogs := func(c resolve.Candidate) {
-		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
-		follow := &atomic.Bool{}
-		follow.Store(true)
-		setTitle := func() {
-			state := "ON"
-			if !follow.Load() {
-				state = "OFF"
-			}
-			tv.SetTitle(fmt.Sprintf(" logs %s on %s — [f] follow: %s · ↑/↓ scroll · ESC/q close ", shortID(c.ContainerID), orDash(c.NodeName), state))
+	// logDefaults resolves the log view's initial format+filter from config,
+	// falling back to sane defaults when the config values are invalid.
+	logDefaults := func() (logfmt.Format, logfmt.Filter) {
+		format, filter, err := buildLogFilter(cfg.Logs.Format, cfg.Logs.MinLevel, "")
+		if err != nil {
+			return logfmt.DefaultFormat(), logfmt.Filter{}
 		}
-		tv.SetBorder(true)
-		setTitle()
-		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		return format, filter
+	}
+	// logGrepPrompt asks for a message regexp and applies it to a log view.
+	logGrepPrompt := func(lv *logViewer, back tview.Primitive, after func()) {
+		in := tview.NewInputField().SetLabel("grep: ").SetFieldWidth(44).
+			SetPlaceholder("regexp on the message — empty clears")
+		in.SetDoneFunc(func(key tcell.Key) {
+			pages.RemovePage("loggrep")
+			app.SetFocus(back)
+			if key == tcell.KeyEscape {
+				return
+			}
+			txt := strings.TrimSpace(in.GetText())
+			if txt == "" {
+				lv.setGrep(nil)
+				after()
+				return
+			}
+			re, err := regexp.Compile(txt)
+			if err != nil {
+				info("invalid grep regexp: " + err.Error())
+				return
+			}
+			lv.setGrep(re)
+			after()
+		})
+		in.SetBorder(true).SetTitle(" filter logs ")
+		pages.AddPage("loggrep", centered(in, 64, 3), true, true)
+		app.SetFocus(in)
+	}
+	// logViewKeys is the shared input capture for a log view: close, follow,
+	// cycle format (F) / min-level (l), and grep (/).
+	logViewKeys := func(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle func()) func(*tcell.EventKey) *tcell.EventKey {
+		return func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
 				closeLogs()
-				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
 				follow.Store(!follow.Load())
 				if follow.Load() {
 					tv.ScrollToEnd() // re-enabling: jump to the newest line
 				}
 				setTitle()
-				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'F':
+				lv.cycleFormat()
+				setTitle()
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
+				lv.cycleLevel()
+				setTitle()
+			case ev.Key() == tcell.KeyRune && ev.Rune() == '/':
+				logGrepPrompt(lv, tv, setTitle)
+			default:
+				return ev
 			}
-			return ev
-		})
+			return nil
+		}
+	}
+
+	showLogs := func(c resolve.Candidate) {
+		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
+		follow := &atomic.Bool{}
+		follow.Store(true)
+		format, filter := logDefaults()
+		lv := newLogViewer(app, tv, follow, format, filter)
+		setTitle := func() {
+			state := "ON"
+			if !follow.Load() {
+				state = "OFF"
+			}
+			tv.SetTitle(fmt.Sprintf(" logs %s on %s — [f]follow:%s [F]format [l]level [/]grep · %s · ESC/q close ",
+				shortID(c.ContainerID), orDash(c.NodeName), state, lv.status()))
+		}
+		tv.SetBorder(true)
+		setTitle()
+		lctx, lcancel := context.WithCancel(ctx)
+		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
+		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle))
 		go func() {
 			lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
-				tvLogWriter{app: app, tv: tv, follow: follow}, tvLogWriter{app: app, tv: tv, stderr: true, follow: follow})
+				&logIngest{v: lv}, &logIngest{v: lv, stderr: true})
 			if lerr != nil && lctx.Err() == nil {
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
@@ -419,39 +474,28 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 		follow := &atomic.Bool{}
 		follow.Store(true)
+		format, filter := logDefaults()
+		lv := newLogViewer(app, tv, follow, format, filter)
 		setTitle := func() {
 			state := "ON"
 			if !follow.Load() {
 				state = "OFF"
 			}
-			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — [f] follow: %s · ↑/↓ scroll · ESC/q close ", serviceName, len(members), state))
+			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — [f]follow:%s [F]format [l]level [/]grep · %s · ESC/q close ",
+				serviceName, len(members), state, lv.status()))
 		}
 		tv.SetBorder(true)
 		setTitle()
 		lctx, lcancel := context.WithCancel(ctx)
 		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			switch {
-			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
-				closeLogs()
-				return nil
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
-				follow.Store(!follow.Load())
-				if follow.Load() {
-					tv.ScrollToEnd()
-				}
-				setTitle()
-				return nil
-			}
-			return ev
-		})
+		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle))
 		for _, c := range members {
 			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 			prefix := fmt.Sprintf("[%s@%s] ", shortID(c.ContainerID), orDash(c.NodeName))
 			go func(ep resolve.Endpoint, prefix string) {
 				lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
-					&linePrefixWriter{app: app, tv: tv, prefix: prefix, follow: follow},
-					&linePrefixWriter{app: app, tv: tv, prefix: prefix, stderr: true, follow: follow})
+					&logIngest{v: lv, prefix: prefix},
+					&logIngest{v: lv, prefix: prefix, stderr: true})
 				if lerr != nil && lctx.Err() == nil {
 					app.QueueUpdateDraw(func() {
 						fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))
@@ -2469,73 +2513,4 @@ func centered(p tview.Primitive, width, height int) tview.Primitive {
 			AddItem(p, height, 1, true).
 			AddItem(nil, 0, 1, false), width, 1, true).
 		AddItem(nil, 0, 1, false)
-}
-
-// tvLogWriter appends streamed log bytes to a TextView on the UI goroutine,
-// auto-scrolling to the end. stderr chunks are colored red.
-type tvLogWriter struct {
-	app    *tview.Application
-	tv     *tview.TextView
-	stderr bool
-	follow *atomic.Bool // when set and false, new lines do not auto-scroll
-}
-
-func (w tvLogWriter) Write(p []byte) (int, error) {
-	s := tview.Escape(string(p))
-	w.app.QueueUpdateDraw(func() {
-		if w.stderr {
-			fmt.Fprintf(w.tv, "[red]%s[-]", s)
-		} else {
-			fmt.Fprint(w.tv, s)
-		}
-		if w.follow == nil || w.follow.Load() {
-			w.tv.ScrollToEnd()
-		}
-	})
-	return len(p), nil
-}
-
-// linePrefixWriter buffers partial lines and writes each complete line to a
-// TextView with a fixed prefix — used to tag aggregated service logs with which
-// container/node they came from.
-type linePrefixWriter struct {
-	app    *tview.Application
-	tv     *tview.TextView
-	prefix string
-	stderr bool
-	follow *atomic.Bool
-
-	mu  sync.Mutex
-	buf []byte
-}
-
-func (w *linePrefixWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	w.buf = append(w.buf, p...)
-	var lines []string
-	for {
-		i := bytes.IndexByte(w.buf, '\n')
-		if i < 0 {
-			break
-		}
-		lines = append(lines, string(w.buf[:i]))
-		w.buf = w.buf[i+1:]
-	}
-	w.mu.Unlock()
-
-	for _, line := range lines {
-		s := tview.Escape(w.prefix + line)
-		stderr := w.stderr
-		w.app.QueueUpdateDraw(func() {
-			if stderr {
-				fmt.Fprintf(w.tv, "[red]%s[-]\n", s)
-			} else {
-				fmt.Fprintf(w.tv, "%s\n", s)
-			}
-			if w.follow == nil || w.follow.Load() {
-				w.tv.ScrollToEnd()
-			}
-		})
-	}
-	return len(p), nil
 }
