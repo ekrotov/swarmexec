@@ -103,6 +103,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
 
+	// Configurable shortcut keys (keys.yaml). Never fails: invalid/conflicting
+	// bindings fall back to defaults with a warning shown once on startup.
+	km, keyWarnings := loadKeybinds("")
+
 	app := tview.NewApplication()
 	pages := tview.NewPages()   // overlays: menus, terminal, logs, volume nodes
 	content := tview.NewPages() // the two tabs
@@ -1801,20 +1805,29 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		status.SetText(" " + strings.Join(parts, "  ·  "))
 	}
+	// helpFor builds the footer key hints from the live keymap, so remapped keys
+	// show correctly. j/k, Enter and Tab/1-6 are fixed and stay literal.
 	helpFor := func(name string) string {
+		kl := keyLabel
+		tail := fmt.Sprintf("[yellow]%s[white] copy  [yellow]%s[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]%s[white] refresh  [yellow]%s[white] quit",
+			kl(km.Copy), kl(km.ToggleMouse), kl(km.Refresh), kl(km.Quit))
 		switch name {
 		case "containers":
-			return " [yellow]j/k[white] up/down  [yellow]h/l[white] fold  [yellow]/[white] search  [yellow]Enter[white] menu  [yellow]p[white] forward  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]Enter[white] menu  [yellow]%s[white] forward  %s",
+				kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
 		case "volumes":
-			return " [yellow]j/k[white] up/down  [yellow]/[white] search  [yellow]space[white] select  [yellow]a[white] all  [yellow]d[white] delete  [yellow]P[white] prune  [yellow]Enter[white] nodes  [yellow]i[white] used by  [yellow]s[white] sort  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
+				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
 		case "networks":
-			return " [yellow]j/k[white] up/down  [yellow]Enter/i[white] attached  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  %s", kl(km.NetAttached), tail)
 		case "secrets":
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  %s", tail)
 		case "contexts":
-			return " [yellow]j/k[white] up/down  [yellow]u[white] use  [yellow]n[white] new  [yellow]d[white] delete  [yellow]y[white] copy  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete  %s",
+				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete), tail)
 		default:
-			return " [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]d[white] stop  [yellow]o[white] copy url  [yellow]m[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]r[white] refresh  [yellow]q[white] quit"
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url  %s",
+				kl(km.FwdStop), kl(km.FwdCopyURL), tail)
 		}
 	}
 	// tabChrome renders the tab bar with one tab highlighted, so adding a tab is
@@ -1984,10 +1997,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case '6':
 				setTab("contexts")
 				return nil
-			case 'q':
+			case km.Quit:
 				app.Stop()
 				return nil
-			case 'r':
+			case km.Refresh:
 				switch active {
 				case "containers":
 					loadContainers()
@@ -2004,10 +2017,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				refreshCluster()
 				return nil
-			case 'y':
+			case km.Copy:
 				yankCurrent()
 				return nil
-			case 'm':
+			case km.ToggleMouse:
 				toggleMouse()
 				return nil
 			case 'j':
@@ -2023,10 +2036,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
-			case '/':
+			case km.Search:
 				startSearch("containers")
 				return nil
-			case 'h':
+			case km.Fold:
 				// Collapse. tview's TreeView has no fold key — Left/Right only
 				// move the cursor — so fold explicitly. On a container leaf,
 				// step out to its service (press h again to fold it).
@@ -2039,7 +2052,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 				return nil
-			case 'l':
+			case km.Unfold:
 				// Expand the service under the cursor; if it is already open,
 				// descend to its first container.
 				if n := ctree.GetCurrentNode(); n != nil && isServiceNode(n) {
@@ -2051,7 +2064,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 				return nil
-			case 'p':
+			case km.Forward:
 				// On a service node, forward to the task under the cursor —
 				// exactly one, like kubectl does with a pod. Forwarding "the
 				// service" would have to load-balance, which makes debugging
@@ -2135,14 +2148,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	ftable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
-			case 'd':
+			case km.FwdStop:
 				if e, ok := selectedForward(); ok {
 					forwards.remove(e.id)
 					refreshForwardViews()
 					flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
 				}
 				return nil
-			case 'o':
+			case km.FwdCopyURL:
 				// Copy rather than launch a browser: the UI often runs over
 				// ssh, where opening a local browser would target the wrong
 				// machine — and the forward is bound on the operator's side.
@@ -2162,10 +2175,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
-			case '/':
+			case km.Search:
 				startSearch("volumes")
 				return nil
-			case ' ':
+			case km.VolSelect:
 				// Toggle the current volume's selection for a bulk delete.
 				if v, ok := selectedVolume(); ok {
 					if selectedVols[v.Name] {
@@ -2177,7 +2190,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					updateStatus()
 				}
 				return nil
-			case 'a':
+			case km.VolSelectAll:
 				// Select or deselect all currently displayed volumes.
 				all := len(shownVols) > 0
 				for _, v := range shownVols {
@@ -2196,7 +2209,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				renderVolumeTable()
 				updateStatus()
 				return nil
-			case 'd':
+			case km.VolDelete:
 				// Delete the selected volumes, or the one under the cursor.
 				var targets []swarmVolume
 				if len(selectedVols) > 0 {
@@ -2210,21 +2223,21 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				deleteVolumes(targets, fmt.Sprintf("Remove %d volume(s) on every node that holds them?", len(targets)))
 				return nil
-			case 'P':
+			case km.VolPrune:
 				pruneVolumes()
 				return nil
-			case 'i':
+			case km.VolUsedBy:
 				if v, ok := selectedVolume(); ok {
 					showVolumeConsumers(v)
 				}
 				return nil
-			case 's':
+			case km.VolSort:
 				// Cycle the sort field; pick a sensible default direction for it.
 				sortField = (sortField + 1) % 5
 				sortDesc = sortField != volSortName && sortField != volSortAge
 				renderVolumeTable()
 				return nil
-			case 'S':
+			case km.VolSortRev:
 				sortDesc = !sortDesc
 				renderVolumeTable()
 				return nil
@@ -2235,7 +2248,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// On the networks table, "i" (like the volumes tab) shows the attached
 	// services/containers; Enter does the same.
 	nettable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetAttached {
 			if n, ok := selectedNetwork(); ok {
 				showNetworkMembers(n)
 			}
@@ -2250,15 +2263,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	cxtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
-			case 'n':
+			case km.CtxNew:
 				showCreateContext()
 				return nil
-			case 'd':
+			case km.CtxDelete:
 				if c, ok := selectedContext(); ok {
 					deleteContext(c)
 				}
 				return nil
-			case 'u':
+			case km.CtxUse:
 				if c, ok := selectedContext(); ok {
 					activateContext(c)
 				}
@@ -2276,6 +2289,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	loadContainers()
 	setTab("containers")
 	refreshCluster()
+
+	// Surface any keys.yaml problems once, non-fatally, over the started UI.
+	if len(keyWarnings) > 0 {
+		info("keys.yaml:\n\n" + strings.Join(keyWarnings, "\n"))
+	}
 
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	scr, serr := tcell.NewScreen()
