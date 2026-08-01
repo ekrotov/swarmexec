@@ -520,6 +520,23 @@
         defaults can be set once under the <a href="#config"><code>logs:</code> config
         section</a> (flags override).
       </div>
+      <p>
+        <strong>Follow across container replacement.</strong> With <code>-f</code> on a
+        <em>service</em> or <em>service.slot</em> target, <code>logs</code> keeps
+        following when the container it is streaming is replaced by a rolling update,
+        restart or reschedule: it re-resolves the service's current running container
+        (the same slot, or the same node for a <code>global</code> service), reconnects
+        automatically — like <code>docker service logs -f</code> — and prints a dim
+        notice line (<code>container replaced; reconnected to &lt;id&gt; on &lt;node&gt;</code>).
+        It waits up to ~30s for a replacement to schedule before giving up, and stops
+        cleanly if the service is removed. A bare <em>container-id</em> target has no
+        successor, so it simply stops as before.
+      </p>
+      <div class="note">
+        Detection lives in the client: it learns topology from the swarm manager it is
+        already connected to — the per-node agents are local to their node and cannot see
+        swarm-level replacements.
+      </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
@@ -691,6 +708,11 @@
         greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
         and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
       </p>
+      <p>
+        The tree auto-refreshes every ~10s, so a container replaced or a service scaled
+        in the background shows up on its own — the cursor and any expanded services are
+        preserved. <kbd>r</kbd> still forces an immediate refresh.
+      </p>
 
       <h3>Volumes tab</h3>
       <div class="tablewrap"><table>
@@ -791,6 +813,12 @@
       <p>
         The view re-renders the buffered lines live when you change format, level or
         grep, and the title bar shows the active <code>fmt:… lvl:… grep:…</code> status.
+      </p>
+      <p>
+        When following, the log view reconnects across container replacement the same way
+        the <a href="#commands"><code>logs</code></a> command does — for both a single
+        container's logs and a service's aggregated logs (each replica followed by slot).
+        Reconnect notices appear inline in the log view.
       </p>
 
       <!-- 11 -->

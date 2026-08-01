@@ -73,6 +73,11 @@ func newUICmd(g *globalFlags) *cobra.Command {
 //     A fresh run tears them down (the deferred cleanups fire, old goroutines
 //     drain) and rebuilds everything for the new cluster, so there is no
 //     half-switched state — e.g. a forward left pointing at an old-cluster node.
+//
+// treeRefreshInterval is how often the UI re-polls the swarm so the container
+// tree reflects background changes (rolling updates, restarts, scaling).
+const treeRefreshInterval = 10 * time.Second
+
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
@@ -89,6 +94,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Cancel every background goroutine derived from ctx (the auto-refresh ticker,
+	// open streams, forwards) when this run returns — e.g. on a Contexts-tab
+	// cluster switch, where the caller restarts runUI with a fresh context.
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	var service string
 	if len(args) == 1 {
 		service = args[0]
@@ -310,6 +320,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			ctree.SetCurrentNode(firstSvc)
 		}
 	}
+	sortCands := func(cands []resolve.Candidate) {
+		sort.SliceStable(cands, func(i, j int) bool {
+			if cands[i].Service != cands[j].Service {
+				return cands[i].Service < cands[j].Service
+			}
+			if cands[i].Slot != cands[j].Slot {
+				return cands[i].Slot < cands[j].Slot
+			}
+			return cands[i].NodeName < cands[j].NodeName
+		})
+	}
 	loadContainers := func() {
 		svcs, serr := r.Services(ctx)
 		if serr != nil {
@@ -325,18 +346,36 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
 			return
 		}
-		sort.SliceStable(cands, func(i, j int) bool {
-			if cands[i].Service != cands[j].Service {
-				return cands[i].Service < cands[j].Service
-			}
-			if cands[i].Slot != cands[j].Slot {
-				return cands[i].Slot < cands[j].Slot
-			}
-			return cands[i].NodeName < cands[j].NodeName
-		})
+		sortCands(cands)
 		lastSvcs = svcs
 		lastCands = cands
 		renderContainers()
+	}
+	// autoRefreshContainers re-lists services/containers off the UI goroutine on a
+	// timer so a container replaced by a rolling update (or a scaled service)
+	// shows up without pressing r. renderContainers restores the cursor and the
+	// expanded services, so the refresh is unobtrusive. A transient probe error is
+	// ignored rather than clobbering the tree with an error node.
+	autoRefreshContainers := func() {
+		go func() {
+			svcs, serr := r.Services(ctx)
+			if serr != nil {
+				return
+			}
+			cands, lerr := r.Candidates(ctx, "")
+			if lerr != nil {
+				return
+			}
+			sortCands(cands)
+			if ctx.Err() != nil {
+				return // run ended while we were probing; the app is stopping
+			}
+			app.QueueUpdateDraw(func() {
+				lastSvcs = svcs
+				lastCands = cands
+				renderContainers()
+			})
+		}()
 	}
 	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
@@ -491,9 +530,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		lctx, lcancel := context.WithCancel(ctx)
 		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
 		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
+		target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
 		go func() {
-			lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
-				&logIngest{v: lv}, &logIngest{v: lv, stderr: true})
+			lerr := streamServiceLogs(lctx, cfg, r, target, ep,
+				logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
+				&logIngest{v: lv}, &logIngest{v: lv, stderr: true}, lv.addNote)
 			if lerr != nil && lctx.Err() == nil {
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
@@ -526,17 +567,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 		for _, c := range members {
 			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-			prefix := fmt.Sprintf("[%s@%s] ", shortID(c.ContainerID), orDash(c.NodeName))
-			go func(ep resolve.Endpoint, prefix string) {
-				lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
+			target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
+			// A slot (or node, for a global service) tag stays valid across
+			// replacements, unlike the container id — the reconnect notice reports
+			// the new container/node.
+			prefix := fmt.Sprintf("[slot %d] ", c.Slot)
+			if c.Slot == 0 {
+				prefix = fmt.Sprintf("[%s] ", orDash(c.NodeName))
+			}
+			go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
+				lerr := streamServiceLogs(lctx, cfg, r, target, ep,
+					logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
 					&logIngest{v: lv, prefix: prefix},
-					&logIngest{v: lv, prefix: prefix, stderr: true})
+					&logIngest{v: lv, prefix: prefix, stderr: true},
+					func(msg string) { lv.addNote(prefix + msg) })
 				if lerr != nil && lctx.Err() == nil {
 					app.QueueUpdateDraw(func() {
 						fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))
 					})
 				}
-			}(ep, prefix)
+			}(ep, target, prefix)
 		}
 		pages.AddPage("logs", page, true, true)
 		app.SetFocus(tv)
@@ -2355,6 +2405,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	loadContainers()
 	setTab("containers")
 	refreshCluster()
+
+	// Poll the swarm so the container tree notices background changes (rolling
+	// updates, restarts, scaling) on its own. The client learns topology from the
+	// manager; the agents are node-local and cannot push such events.
+	go func() {
+		t := time.NewTicker(treeRefreshInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				autoRefreshContainers()
+			}
+		}
+	}()
 
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	scr, serr := tcell.NewScreen()

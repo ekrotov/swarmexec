@@ -26,9 +26,10 @@ const logBufferCap = 5000
 const logViewHelp = " [yellow]f[white] follow on/off  [yellow]F[white] cycle format (classic/json/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
 
 type logRow struct {
-	prefix string // service view tag "[cid@node] "; "" for a single container
-	line   string // raw log line
+	prefix string // service view tag, e.g. "[slot 2] "; "" for a single container
+	line   string // raw log line, or the note text when note is set
 	stderr bool
+	note   bool // a status line (e.g. a reconnect notice): always shown, never parsed
 }
 
 // logViewer renders a format-aware, filtered log stream into a TextView and
@@ -84,6 +85,25 @@ func (v *logViewer) addLines(prefix string, lines []string, stderr bool) {
 	})
 }
 
+// addNote appends a dim status line (e.g. a reconnect notice). It is always
+// shown regardless of the active filter and survives a re-render.
+func (v *logViewer) addNote(text string) {
+	v.mu.Lock()
+	row := logRow{note: true, line: text}
+	v.rows = append(v.rows, row)
+	if len(v.rows) > logBufferCap {
+		v.rows = v.rows[len(v.rows)-logBufferCap:]
+	}
+	rendered := renderLogRow(v.format, row)
+	v.mu.Unlock()
+	v.app.QueueUpdateDraw(func() {
+		fmt.Fprintln(v.tv, rendered)
+		if v.follow == nil || v.follow.Load() {
+			v.tv.ScrollToEnd()
+		}
+	})
+}
+
 // rebuild re-renders the whole buffer through the current format and filter.
 // It is only called from the key handlers (cycleFormat/cycleLevel/setGrep),
 // which run on the main event goroutine, so it updates the TextView directly
@@ -95,7 +115,7 @@ func (v *logViewer) rebuild() {
 	v.mu.Lock()
 	var b bytes.Buffer
 	for _, r := range v.rows {
-		if v.filter.Match(v.format.Parse(r.line)) {
+		if r.note || v.filter.Match(v.format.Parse(r.line)) {
 			b.WriteString(renderLogRow(v.format, r))
 			b.WriteByte('\n')
 		}
@@ -201,6 +221,9 @@ func (w *logIngest) Write(p []byte) (int, error) {
 // given format. Structured formats show "LEVEL  message"; plain formats keep
 // the raw line (stderr red, else tinted by level when one was detected).
 func renderLogRow(f logfmt.Format, r logRow) string {
+	if r.note {
+		return "[gray]" + tview.Escape(r.line) + "[-]"
+	}
 	e := f.Parse(r.line)
 	prefix := ""
 	if r.prefix != "" {
