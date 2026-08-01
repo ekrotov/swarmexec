@@ -63,6 +63,10 @@ type Config struct {
 	// used. Defaults to the local OS username.
 	Operator string `yaml:"operator"`
 
+	// Logs holds default log-format/filter settings for `logs` and the TUI log
+	// view (flags override these).
+	Logs LogsConfig `yaml:"logs"`
+
 	// ProxyDialer, when set, establishes the TCP connection to the agent
 	// instead of dialing the node directly. It is wired at runtime (never from
 	// YAML) when the Docker context is an ssh:// endpoint, so agent traffic
@@ -70,6 +74,14 @@ type Config struct {
 	// nodes (only reachable through the bastion) would be unreachable. nil means
 	// dial the node directly.
 	ProxyDialer func(ctx context.Context, addr string) (net.Conn, error) `yaml:"-"`
+}
+
+// LogsConfig holds default log parsing/filtering for the log views.
+type LogsConfig struct {
+	// Format parses lines: classic | json | gelf | raw. Empty = classic.
+	Format string `yaml:"format"`
+	// MinLevel hides lines below this level: trace..fatal. Empty = no filter.
+	MinLevel string `yaml:"min_level"`
 }
 
 // Default returns the built-in defaults.
