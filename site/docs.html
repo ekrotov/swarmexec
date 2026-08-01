@@ -821,6 +821,31 @@
         Reconnect notices appear inline in the log view.
       </p>
 
+      <h3>Custom keys</h3>
+      <p>
+        The shortcut keys are remappable in <code>~/.config/swarmexec/keys.yaml</code>
+        (next to <code>config.yaml</code>; override the path with
+        <code>$SWARMEXEC_KEYS</code>). Each value is a single key, or the word
+        <code>space</code>. The structural keys — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
+        <kbd>Tab</kbd>, the arrows, the tab-number keys <kbd>1</kbd>–<kbd>6</kbd> and the
+        vim aliases <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — are fixed. The
+        footer always shows your actual keys.
+      </p>
+      <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — omit any line to keep its default</span>
+quit: q          refresh: r        copy: y            toggle_mouse: m
+search: /        fold: h           unfold: l          forward: p
+volume_select: space               volume_select_all: a
+volume_delete: d volume_prune: P   volume_used_by: i
+volume_sort: s   volume_sort_reverse: S
+network_attached: i
+context_use: u   context_new: n    context_delete: d
+forward_stop: d  forward_copy_url: o</div>
+      <p>
+        Loading never fails: an invalid or reserved key, an unknown action, or two
+        actions bound to the same key on one tab each fall back to the default, and the
+        UI shows the warnings once on startup.
+      </p>
+
       <!-- 11 -->
       <h2 id="exit">11. Exit codes</h2>
       <div class="tablewrap"><table>
