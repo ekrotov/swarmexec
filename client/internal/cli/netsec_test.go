@@ -120,13 +120,33 @@ func TestNetworkType(t *testing.T) {
 		{swarmNetwork{Ingress: true}, "ingress"},
 		{swarmNetwork{Internal: true}, "internal"},
 		{swarmNetwork{Attachable: true}, "attachable"},
+		{swarmNetwork{Driver: "overlay"}, "overlay"},
+		{swarmNetwork{Driver: "bridge"}, "bridge"},
 		{swarmNetwork{}, "-"},
-		// Ingress wins when several flags are set.
-		{swarmNetwork{Ingress: true, Internal: true, Attachable: true}, "ingress"},
+		// Attachable wins when several flags are set (matches the colour priority).
+		{swarmNetwork{Ingress: true, Internal: true, Attachable: true}, "attachable"},
+		{swarmNetwork{Ingress: true, Internal: true}, "internal"},
 	}
 	for _, c := range cases {
 		if got := networkType(c.n); got != c.want {
 			t.Errorf("networkType(%+v) = %q, want %q", c.n, got, c.want)
 		}
+	}
+}
+
+func TestServicesExcluding(t *testing.T) {
+	got := servicesExcluding([]string{"web", "db", "cache"}, []string{"db"})
+	want := []string{"cache", "web"} // sorted, db removed
+	if len(got) != len(want) {
+		t.Fatalf("servicesExcluding = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("servicesExcluding = %v, want %v", got, want)
+		}
+	}
+	// Nothing excluded → all, sorted.
+	if all := servicesExcluding([]string{"b", "a"}, nil); all[0] != "a" || all[1] != "b" {
+		t.Errorf("servicesExcluding(no exclude) = %v, want [a b]", all)
 	}
 }

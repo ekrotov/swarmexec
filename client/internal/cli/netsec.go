@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -98,6 +99,88 @@ func listNetworks(ctx context.Context, dcli *client.Client) ([]swarmNetwork, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// servicesExcluding returns the names in all that are not in exclude, sorted —
+// the eligible attach targets (every service not already attached).
+func servicesExcluding(all, exclude []string) []string {
+	skip := make(map[string]bool, len(exclude))
+	for _, e := range exclude {
+		skip[e] = true
+	}
+	out := make([]string, 0, len(all))
+	for _, a := range all {
+		if !skip[a] {
+			out = append(out, a)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// attachServiceToNetwork adds a network to a service's spec via a
+// read-modify-write ServiceUpdate. This triggers a rolling update of the
+// service. It errors (a no-op) if the service is already attached, or if the
+// service does not exist.
+func attachServiceToNetwork(ctx context.Context, dcli *client.Client, serviceName, networkID, networkName string) error {
+	svc, err := serviceByName(ctx, dcli, serviceName)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", serviceName)
+	}
+	for _, a := range svc.Spec.TaskTemplate.Networks {
+		if a.Target == networkID || a.Target == networkName {
+			return fmt.Errorf("service %q is already attached to network %q", serviceName, networkName)
+		}
+	}
+	for _, a := range svc.Spec.Networks {
+		if a.Target == networkID || a.Target == networkName {
+			return fmt.Errorf("service %q is already attached to network %q", serviceName, networkName)
+		}
+	}
+	spec := svc.Spec
+	// TaskTemplate.Networks is the current location (Spec.Networks is deprecated).
+	spec.TaskTemplate.Networks = append(spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: networkID})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// attachSecretToService adds a secret reference to a service's container spec
+// (read-modify-write ServiceUpdate), mounted at /run/secrets/<name> like
+// `docker service update --secret-add`. Triggers a rolling update. Errors (a
+// no-op) if the service already uses the secret, or does not exist.
+func attachSecretToService(ctx context.Context, dcli *client.Client, serviceName, secretID, secretName string) error {
+	svc, err := serviceByName(ctx, dcli, serviceName)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", serviceName)
+	}
+	cs := svc.Spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return fmt.Errorf("service %q has no container spec", serviceName)
+	}
+	for _, ref := range cs.Secrets {
+		if ref.SecretID == secretID || ref.SecretName == secretName {
+			return fmt.Errorf("service %q already uses secret %q", serviceName, secretName)
+		}
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Secrets = append(spec.TaskTemplate.ContainerSpec.Secrets, &swarm.SecretReference{
+		SecretID:   secretID,
+		SecretName: secretName,
+		File: &swarm.SecretReferenceFileTarget{
+			Name: secretName,
+			UID:  "0",
+			GID:  "0",
+			Mode: 0o444,
+		},
+	})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
 }
 
 // networkServiceMembers maps a network — keyed by both ID and name, since a

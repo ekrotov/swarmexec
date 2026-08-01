@@ -697,15 +697,32 @@
 
       <h3>Networks tab</h3>
       <p>
-        A read-only list of the swarm's networks — name, driver, scope, type
-        (ingress / internal / attachable) and how many services attach to each.
+        A list of the swarm's networks — name, driver, scope, type
+        (ingress / internal / attachable) and how many services attach to each. The
+        <code>TYPE</code> column shows <code>overlay</code> or the driver name (e.g.
+        <code>bridge</code>) for plain networks rather than a dash. Each network's name
+        and its <code>TYPE</code> cell are colour-coded by kind (highest priority first):
       </p>
+      <ul>
+        <li><strong>attachable</strong> — green</li>
+        <li><strong>internal</strong> — yellow</li>
+        <li><strong>ingress</strong> — gray</li>
+        <li>other overlay / swarm-scoped — aqua</li>
+        <li>local (<code>bridge</code>, <code>host</code>, …) — dimmed gray</li>
+      </ul>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>show the attached services, each with its running containers nested underneath</td></tr>
+          <tr><td><kbd>a</kbd></td><td>in the members view: attach a service to this network — an autocomplete input (suggesting services not already attached; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
       </table></div>
+      <p>
+        Attaching does a service update that adds the network to the service spec, then
+        refreshes the Networks tab. This is a manager-API operation
+        (<code>ServiceUpdate</code>) — the same channel the client uses for topology —
+        and it triggers a <strong>rolling update</strong> that restarts the service's tasks.
+      </p>
 
       <h3>Secrets tab</h3>
       <p>
@@ -717,8 +734,16 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
+          <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
       </table></div>
+      <p>
+        The secret is added to the service and mounted at
+        <code>/run/secrets/&lt;name&gt;</code> (like <code>docker service update
+        --secret-add</code>), then the Secrets tab refreshes. Like the network attach,
+        this is a manager-API <code>ServiceUpdate</code> that triggers a
+        <strong>rolling update</strong> restarting the service's tasks.
+      </p>
 
       <h3>Contexts tab</h3>
       <p>
