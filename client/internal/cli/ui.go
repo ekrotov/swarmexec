@@ -130,6 +130,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		refreshForwardViews func()
 		flash               func(string)
 		updateStatus        func() // recomposes the footer status line
+		toggleMouse         func() // flips tview's mouse capture (defined below)
+		mouseEnabled        bool   // mirrors app.EnableMouse; toggled by 'm'
 	)
 
 	// ---------------------------------------------------------------- containers
@@ -409,9 +411,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage("loggrep", centered(in, 64, 3), true, true)
 		app.SetFocus(in)
 	}
+	// logFooterText is the log view's footer hint. It appends the mouse state
+	// because that is what decides whether terminal text-selection works: while
+	// the app captures the mouse (the default), tview grabs drags for scrolling
+	// and the terminal cannot select/copy — press m to hand the mouse back.
+	logFooterText := func() string {
+		m := " [yellow]m[white] mouse: app — press to select/copy in terminal"
+		if !mouseEnabled {
+			m = " [yellow]m[white] mouse: off — select & copy with your terminal"
+		}
+		return logViewHelp + "  " + m
+	}
 	// logViewKeys is the shared input capture for a log view: close, follow,
-	// cycle format (F) / min-level (l), and grep (/).
-	logViewKeys := func(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle func()) func(*tcell.EventKey) *tcell.EventKey {
+	// cycle format (F) / min-level (l), grep (/) and mouse capture (m).
+	logViewKeys := func(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
 		return func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
@@ -430,6 +443,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				setTitle()
 			case ev.Key() == tcell.KeyRune && ev.Rune() == '/':
 				logGrepPrompt(lv, tv, setTitle)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'm':
+				// Same mouse toggle as the tabs, but the tabs' flash lands on the
+				// footer hidden behind this overlay, so reflect the state in the
+				// log footer instead.
+				if toggleMouse != nil {
+					toggleMouse()
+				}
+				refreshHint()
 			default:
 				return ev
 			}
@@ -439,12 +460,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	// logPage wraps a log TextView with a footer key-hint line — the same place
 	// every tab shows its shortcuts — so the log view's keys are consistent and
-	// spelled out, instead of being crammed into the border title.
-	logPage := func(tv *tview.TextView) tview.Primitive {
-		hint := tview.NewTextView().SetDynamicColors(true).SetText(logViewHelp)
-		return tview.NewFlex().SetDirection(tview.FlexRow).
+	// spelled out, instead of being crammed into the border title. It returns the
+	// page and a closure that repaints the hint (used when the mouse state flips).
+	logPage := func(tv *tview.TextView) (tview.Primitive, func()) {
+		hint := tview.NewTextView().SetDynamicColors(true).SetText(logFooterText())
+		page := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(tv, 0, 1, true).
 			AddItem(hint, 1, 0, false)
+		return page, func() { hint.SetText(logFooterText()) }
 	}
 
 	showLogs := func(c resolve.Candidate) {
@@ -464,9 +487,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		tv.SetBorder(true)
 		setTitle()
+		page, refreshHint := logPage(tv)
 		lctx, lcancel := context.WithCancel(ctx)
 		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
-		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle))
+		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 		go func() {
 			lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
 				&logIngest{v: lv}, &logIngest{v: lv, stderr: true})
@@ -474,7 +498,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
 		}()
-		pages.AddPage("logs", logPage(tv), true, true)
+		pages.AddPage("logs", page, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -496,9 +520,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		tv.SetBorder(true)
 		setTitle()
+		page, refreshHint := logPage(tv)
 		lctx, lcancel := context.WithCancel(ctx)
 		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
-		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle))
+		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 		for _, c := range members {
 			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 			prefix := fmt.Sprintf("[%s@%s] ", shortID(c.ContainerID), orDash(c.NodeName))
@@ -513,7 +538,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			}(ep, prefix)
 		}
-		pages.AddPage("logs", logPage(tv), true, true)
+		pages.AddPage("logs", page, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -1831,7 +1856,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 
 	active := "containers"
-	mouseEnabled := true
+	mouseEnabled = true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 	curHelp := ""
 	// updateStatus composes the footer status line from the active context, the
@@ -1996,7 +2021,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	// toggleMouse flips tview's mouse capture. With it off, the terminal's own
 	// text selection / copy works again (tview otherwise grabs the mouse).
-	toggleMouse := func() {
+	toggleMouse = func() {
 		mouseEnabled = !mouseEnabled
 		app.EnableMouse(mouseEnabled)
 		if mouseEnabled {
