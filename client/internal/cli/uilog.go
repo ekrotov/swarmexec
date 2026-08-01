@@ -85,6 +85,12 @@ func (v *logViewer) addLines(prefix string, lines []string, stderr bool) {
 }
 
 // rebuild re-renders the whole buffer through the current format and filter.
+// It is only called from the key handlers (cycleFormat/cycleLevel/setGrep),
+// which run on the main event goroutine, so it updates the TextView directly
+// and lets tview redraw after the handler returns. It must NOT use
+// QueueUpdateDraw: that blocks until the main loop runs it, and calling it from
+// the main loop itself deadlocks — which is what froze the view on a format
+// cycle.
 func (v *logViewer) rebuild() {
 	v.mu.Lock()
 	var b bytes.Buffer
@@ -95,14 +101,13 @@ func (v *logViewer) rebuild() {
 		}
 	}
 	out := b.String()
+	follow := v.follow == nil || v.follow.Load()
 	v.mu.Unlock()
-	v.app.QueueUpdateDraw(func() {
-		v.tv.Clear()
-		fmt.Fprint(v.tv, out)
-		if v.follow == nil || v.follow.Load() {
-			v.tv.ScrollToEnd()
-		}
-	})
+	v.tv.Clear()
+	fmt.Fprint(v.tv, out)
+	if follow {
+		v.tv.ScrollToEnd()
+	}
 }
 
 // cycleFormat advances to the next built-in format and re-renders.
