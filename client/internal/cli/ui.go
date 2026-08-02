@@ -4,11 +4,11 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +22,7 @@ import (
 
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -73,6 +74,11 @@ func newUICmd(g *globalFlags) *cobra.Command {
 //     A fresh run tears them down (the deferred cleanups fire, old goroutines
 //     drain) and rebuilds everything for the new cluster, so there is no
 //     half-switched state — e.g. a forward left pointing at an old-cluster node.
+//
+// treeRefreshInterval is how often the UI re-polls the swarm so the container
+// tree reflects background changes (rolling updates, restarts, scaling).
+const treeRefreshInterval = 10 * time.Second
+
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
@@ -89,9 +95,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Per-run context so background goroutines (the responsiveness watchdog, the
-	// log-viewer refresher) stop when this run returns — e.g. on a Contexts-tab
-	// cluster switch, where the caller restarts runUI with a fresh context.
+	// Per-run context so background goroutines (the auto-refresh ticker, the
+	// responsiveness watchdog, the log-viewer refresher, open streams, forwards)
+	// stop when this run returns — e.g. on a Contexts-tab cluster switch, where
+	// the caller restarts runUI with a fresh context.
 	ctx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
 	var service string
@@ -141,6 +148,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		refreshForwardViews func()
 		flash               func(string)
 		updateStatus        func() // recomposes the footer status line
+		toggleMouse         func() // flips tview's mouse capture (defined below)
+		mouseEnabled        bool   // mirrors app.EnableMouse; toggled by 'm'
 	)
 
 	// ---------------------------------------------------------------- containers
@@ -319,6 +328,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			ctree.SetCurrentNode(firstSvc)
 		}
 	}
+	sortCands := func(cands []resolve.Candidate) {
+		sort.SliceStable(cands, func(i, j int) bool {
+			if cands[i].Service != cands[j].Service {
+				return cands[i].Service < cands[j].Service
+			}
+			if cands[i].Slot != cands[j].Slot {
+				return cands[i].Slot < cands[j].Slot
+			}
+			return cands[i].NodeName < cands[j].NodeName
+		})
+	}
 	// fetchContainers does the two manager round-trips (off the UI goroutine) and
 	// returns sorted results. It is instrumented so a slow manager shows up in the
 	// log viewer.
@@ -337,15 +357,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if err != nil {
 			return nil, nil, err
 		}
-		sort.SliceStable(cands, func(i, j int) bool {
-			if cands[i].Service != cands[j].Service {
-				return cands[i].Service < cands[j].Service
-			}
-			if cands[i].Slot != cands[j].Slot {
-				return cands[i].Slot < cands[j].Slot
-			}
-			return cands[i].NodeName < cands[j].NodeName
-		})
+		sortCands(cands)
 		return svcs, cands, nil
 	}
 	// applyContainers updates the tree from a fetch result. UI-goroutine only.
@@ -372,6 +384,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		go func() {
 			svcs, cands, err := fetchContainers()
 			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, err) })
+		}()
+	}
+	// autoRefreshContainers re-lists services/containers off the UI goroutine on a
+	// timer so a container replaced by a rolling update (or a scaled service) shows
+	// up without pressing r. renderContainers restores the cursor and expanded
+	// services, so the refresh is unobtrusive. A transient probe error is ignored
+	// rather than clobbering the tree with an error node.
+	autoRefreshContainers := func() {
+		go func() {
+			svcs, cands, err := fetchContainers()
+			if err != nil || ctx.Err() != nil {
+				return // transient error, or run ended while probing
+			}
+			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, nil) })
 		}()
 	}
 	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
@@ -410,45 +436,133 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		app.SetFocus(tv)
 	}
 
-	showLogs := func(c resolve.Candidate) {
-		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
-		follow := &atomic.Bool{}
-		follow.Store(true)
-		setTitle := func() {
-			state := "ON"
-			if !follow.Load() {
-				state = "OFF"
-			}
-			tv.SetTitle(fmt.Sprintf(" logs %s on %s — [f] follow: %s · ↑/↓ scroll · ESC/q close ", shortID(c.ContainerID), orDash(c.NodeName), state))
+	// logDefaults resolves the log view's initial format+filter from config,
+	// falling back to sane defaults when the config values are invalid.
+	logDefaults := func() (logfmt.Format, logfmt.Filter) {
+		format, filter, err := buildLogFilter(cfg.Logs.Format, cfg.Logs.MinLevel, "")
+		if err != nil {
+			return logfmt.DefaultFormat(), logfmt.Filter{}
 		}
-		tv.SetBorder(true)
-		setTitle()
-		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		return format, filter
+	}
+	// logGrepPrompt asks for a message regexp and applies it to a log view.
+	logGrepPrompt := func(lv *logViewer, back tview.Primitive, after func()) {
+		in := tview.NewInputField().SetLabel("grep: ").SetFieldWidth(44).
+			SetPlaceholder("regexp on the message — empty clears")
+		in.SetDoneFunc(func(key tcell.Key) {
+			pages.RemovePage("loggrep")
+			app.SetFocus(back)
+			if key == tcell.KeyEscape {
+				return
+			}
+			txt := strings.TrimSpace(in.GetText())
+			if txt == "" {
+				lv.setGrep(nil)
+				after()
+				return
+			}
+			re, err := regexp.Compile(txt)
+			if err != nil {
+				info("invalid grep regexp: " + err.Error())
+				return
+			}
+			lv.setGrep(re)
+			after()
+		})
+		in.SetBorder(true).SetTitle(" filter logs ")
+		pages.AddPage("loggrep", centered(in, 64, 3), true, true)
+		app.SetFocus(in)
+	}
+	// logFooterText is the log view's footer hint. It appends the mouse state
+	// because that is what decides whether terminal text-selection works: while
+	// the app captures the mouse (the default), tview grabs drags for scrolling
+	// and the terminal cannot select/copy — press m to hand the mouse back.
+	logFooterText := func() string {
+		m := " [yellow]m[white] mouse: app — press to select/copy in terminal"
+		if !mouseEnabled {
+			m = " [yellow]m[white] mouse: off — select & copy with your terminal"
+		}
+		return logViewHelp + "  " + m
+	}
+	// logViewKeys is the shared input capture for a log view: close, follow,
+	// cycle format (F) / min-level (l), grep (/) and mouse capture (m).
+	logViewKeys := func(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
+		return func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
 				closeLogs()
-				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
 				follow.Store(!follow.Load())
 				if follow.Load() {
 					tv.ScrollToEnd() // re-enabling: jump to the newest line
 				}
 				setTitle()
-				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'F':
+				lv.cycleFormat()
+				setTitle()
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
+				lv.cycleLevel()
+				setTitle()
+			case ev.Key() == tcell.KeyRune && ev.Rune() == '/':
+				logGrepPrompt(lv, tv, setTitle)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'm':
+				// Same mouse toggle as the tabs, but the tabs' flash lands on the
+				// footer hidden behind this overlay, so reflect the state in the
+				// log footer instead.
+				if toggleMouse != nil {
+					toggleMouse()
+				}
+				refreshHint()
+			default:
+				return ev
 			}
-			return ev
-		})
+			return nil
+		}
+	}
+
+	// logPage wraps a log TextView with a footer key-hint line — the same place
+	// every tab shows its shortcuts — so the log view's keys are consistent and
+	// spelled out, instead of being crammed into the border title. It returns the
+	// page and a closure that repaints the hint (used when the mouse state flips).
+	logPage := func(tv *tview.TextView) (tview.Primitive, func()) {
+		hint := tview.NewTextView().SetDynamicColors(true).SetText(logFooterText())
+		page := tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(tv, 0, 1, true).
+			AddItem(hint, 1, 0, false)
+		return page, func() { hint.SetText(logFooterText()) }
+	}
+
+	showLogs := func(c resolve.Candidate) {
+		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
+		follow := &atomic.Bool{}
+		follow.Store(true)
+		format, filter := logDefaults()
+		lv := newLogViewer(app, tv, follow, format, filter)
+		setTitle := func() {
+			state := "on"
+			if !follow.Load() {
+				state = "off"
+			}
+			tv.SetTitle(fmt.Sprintf(" logs %s on %s — follow:%s · %s ",
+				shortID(c.ContainerID), orDash(c.NodeName), state, lv.status()))
+		}
+		tv.SetBorder(true)
+		setTitle()
+		page, refreshHint := logPage(tv)
+		lctx, lcancel := context.WithCancel(ctx)
+		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
+		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
+		target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
 		go func() {
-			lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
-				tvLogWriter{app: app, tv: tv, follow: follow}, tvLogWriter{app: app, tv: tv, stderr: true, follow: follow})
+			lerr := streamServiceLogs(lctx, cfg, r, target, ep,
+				logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
+				&logIngest{v: lv}, &logIngest{v: lv, stderr: true}, lv.addNote)
 			if lerr != nil && lctx.Err() == nil {
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
 		}()
-		pages.AddPage("logs", tv, true, true)
+		pages.AddPage("logs", page, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -458,47 +572,46 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 		follow := &atomic.Bool{}
 		follow.Store(true)
+		format, filter := logDefaults()
+		lv := newLogViewer(app, tv, follow, format, filter)
 		setTitle := func() {
-			state := "ON"
+			state := "on"
 			if !follow.Load() {
-				state = "OFF"
+				state = "off"
 			}
-			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — [f] follow: %s · ↑/↓ scroll · ESC/q close ", serviceName, len(members), state))
+			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — follow:%s · %s ",
+				serviceName, len(members), state, lv.status()))
 		}
 		tv.SetBorder(true)
 		setTitle()
+		page, refreshHint := logPage(tv)
 		lctx, lcancel := context.WithCancel(ctx)
 		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			switch {
-			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
-				closeLogs()
-				return nil
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
-				follow.Store(!follow.Load())
-				if follow.Load() {
-					tv.ScrollToEnd()
-				}
-				setTitle()
-				return nil
-			}
-			return ev
-		})
+		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 		for _, c := range members {
 			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-			prefix := fmt.Sprintf("[%s@%s] ", shortID(c.ContainerID), orDash(c.NodeName))
-			go func(ep resolve.Endpoint, prefix string) {
-				lerr := streamLogs(lctx, cfg, ep, logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
-					&linePrefixWriter{app: app, tv: tv, prefix: prefix, follow: follow},
-					&linePrefixWriter{app: app, tv: tv, prefix: prefix, stderr: true, follow: follow})
+			target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
+			// A slot (or node, for a global service) tag stays valid across
+			// replacements, unlike the container id — the reconnect notice reports
+			// the new container/node.
+			prefix := fmt.Sprintf("[slot %d] ", c.Slot)
+			if c.Slot == 0 {
+				prefix = fmt.Sprintf("[%s] ", orDash(c.NodeName))
+			}
+			go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
+				lerr := streamServiceLogs(lctx, cfg, r, target, ep,
+					logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
+					&logIngest{v: lv, prefix: prefix},
+					&logIngest{v: lv, prefix: prefix, stderr: true},
+					func(msg string) { lv.addNote(prefix + msg) })
 				if lerr != nil && lctx.Err() == nil {
 					app.QueueUpdateDraw(func() {
 						fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))
 					})
 				}
-			}(ep, prefix)
+			}(ep, target, prefix)
 		}
-		pages.AddPage("logs", tv, true, true)
+		pages.AddPage("logs", page, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -1264,10 +1377,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if len(n.Services) > 0 {
 				svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
 			}
-			nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetExpansion(1))
+			typeColor := networkTypeColor(n)
+			nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetTextColor(typeColor).SetExpansion(1))
 			nettable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
 			nettable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
-			nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetExpansion(1))
+			nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetTextColor(typeColor).SetExpansion(1))
 			nettable.SetCell(i+1, 4, svcCell)
 			nettable.SetCell(i+1, 5, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
 			if n.Name == selName {
@@ -1310,13 +1424,80 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		return nets[i], true
 	}
+	// serviceNamesFromCache returns the known service names (the containers-tab
+	// cache), used to seed the attach autocomplete. It is only a suggestion list —
+	// the actual attach resolves the name live, so a just-created service that is
+	// not cached yet can still be typed in.
+	serviceNamesFromCache := func() []string {
+		names := make([]string, 0, len(lastSvcs))
+		for _, s := range lastSvcs {
+			names = append(names, s.Name)
+		}
+		return names
+	}
+	// servicePrompt opens an autocomplete input to choose a service, then a
+	// confirmation (the change triggers a rolling update of that service), then
+	// runs do(service) off the UI goroutine and calls onDone on success. It backs
+	// both attach and detach: actionLabel is the confirm button ("Attach" /
+	// "Detach"), confirmVerb the sentence lead-in, suggestions feed the
+	// autocomplete only, and back gets focus when the operator cancels.
+	servicePrompt := func(title, confirmVerb, actionLabel string, suggestions []string, back tview.Primitive, do func(string) error, onDone func()) {
+		in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(46)
+		in.SetPlaceholder("type or ↓ to pick; Enter confirms, Esc cancels")
+		in.SetAutocompleteFunc(func(text string) []string {
+			text = strings.ToLower(strings.TrimSpace(text))
+			var out []string
+			for _, s := range suggestions {
+				if text == "" || strings.Contains(strings.ToLower(s), text) {
+					out = append(out, s)
+				}
+			}
+			return out
+		})
+		in.SetDoneFunc(func(key tcell.Key) {
+			name := strings.TrimSpace(in.GetText())
+			if key != tcell.KeyEnter || name == "" {
+				pages.RemovePage("svcprompt")
+				app.SetFocus(back)
+				return
+			}
+			pages.RemovePage("svcprompt")
+			confirm := tview.NewModal().
+				SetText(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name)).
+				AddButtons([]string{actionLabel, "Cancel"}).
+				SetDoneFunc(func(_ int, label string) {
+					pages.RemovePage("svcconfirm")
+					if label != actionLabel {
+						app.SetFocus(back)
+						return
+					}
+					go func() {
+						err := do(name)
+						app.QueueUpdateDraw(func() {
+							if err != nil {
+								info(strings.ToLower(actionLabel) + " failed: " + err.Error())
+								return
+							}
+							onDone()
+							info(fmt.Sprintf("%q updated — rolling update started", name))
+						})
+					}()
+				})
+			pages.AddPage("svcconfirm", confirm, true, true)
+			app.SetFocus(confirm)
+		})
+		in.SetBorder(true).SetTitle(" " + title + " ")
+		pages.AddPage("svcprompt", centered(in, 66, 3), true, true)
+		app.SetFocus(in)
+	}
+
 	// showNetworkMembers lists the services attached to a network with the
 	// containers of each service nested under it. Service membership is known
 	// synchronously (from the list); the per-service containers need a task
 	// lookup, so they fill in lazily after the overlay is up.
 	showNetworkMembers := func(n swarmNetwork) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services — ESC back ", n.Name))
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services — [a] attach · [d] detach · ESC back ", n.Name))
 		render := func(svcs []netService, loading bool) {
 			cur := list.GetCurrentItem()
 			list.Clear()
@@ -1362,8 +1543,32 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		render(init, true)
 		closeMembers := func() { pages.RemovePage("netmembers"); app.SetFocus(nettable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeMembers()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				suggestions := servicesExcluding(serviceNamesFromCache(), n.Services)
+				servicePrompt(
+					fmt.Sprintf("attach a service to network %q", n.Name),
+					fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
+					suggestions, list,
+					func(svc string) error { return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name) },
+					func() { closeMembers(); loadNetworks() },
+				)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				if len(n.Services) == 0 {
+					info("no services are attached to this network")
+					return nil
+				}
+				servicePrompt(
+					fmt.Sprintf("detach a service from network %q", n.Name),
+					fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
+					n.Services, list,
+					func(svc string) error { return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name) },
+					func() { closeMembers(); loadNetworks() },
+				)
 				return nil
 			}
 			return vimListKeys(ev)
@@ -1473,7 +1678,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return t.Local().Format("2006-01-02 15:04:05")
 		}
 		tv := tview.NewTextView().SetDynamicColors(true)
-		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — ESC back ", s.Name))
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — [a] attach · [d] detach service · ESC back ", s.Name))
 		render := func(members []netService, loading bool) {
 			var b strings.Builder
 			fmt.Fprintf(&b, "Name:     %s\n", s.Name)
@@ -1525,6 +1730,29 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				pages.RemovePage("secdetail")
 				app.SetFocus(sectable)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				suggestions := servicesExcluding(serviceNamesFromCache(), s.Services)
+				servicePrompt(
+					fmt.Sprintf("attach secret %q to a service", s.Name),
+					fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
+					suggestions, tv,
+					func(svc string) error { return attachSecretToService(ctx, dcli, svc, s.ID, s.Name) },
+					func() { pages.RemovePage("secdetail"); app.SetFocus(sectable); loadSecrets() },
+				)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				if len(s.Services) == 0 {
+					info("no services use this secret")
+					return nil
+				}
+				servicePrompt(
+					fmt.Sprintf("detach secret %q from a service", s.Name),
+					fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
+					s.Services, tv,
+					func(svc string) error { return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name) },
+					func() { pages.RemovePage("secdetail"); app.SetFocus(sectable); loadSecrets() },
+				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -1822,7 +2050,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 
 	active := "containers"
-	mouseEnabled := true
+	mouseEnabled = true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 	curHelp := ""
 	// updateStatus composes the footer status line from the active context, the
@@ -1996,7 +2224,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	// toggleMouse flips tview's mouse capture. With it off, the terminal's own
 	// text selection / copy works again (tview otherwise grabs the mouse).
-	toggleMouse := func() {
+	toggleMouse = func() {
 		mouseEnabled = !mouseEnabled
 		app.EnableMouse(mouseEnabled)
 		if mouseEnabled {
@@ -2406,6 +2634,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	setTab("containers")
 	refreshCluster()
 
+	// Poll the swarm so the container tree notices background changes (rolling
+	// updates, restarts, scaling) on its own. The client learns topology from the
+	// manager; the agents are node-local and cannot push such events.
+	go func() {
+		t := time.NewTicker(treeRefreshInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				autoRefreshContainers()
+			}
+		}
+	}()
+
 	// Surface any keys.yaml problems once, non-fatally, over the started UI.
 	if len(keyWarnings) > 0 {
 		info("keys.yaml:\n\n" + strings.Join(keyWarnings, "\n"))
@@ -2500,14 +2744,34 @@ func colorLogLine(line string) string {
 
 func networkType(n swarmNetwork) string {
 	switch {
-	case n.Ingress:
-		return "ingress"
-	case n.Internal:
-		return "internal"
 	case n.Attachable:
 		return "attachable"
+	case n.Internal:
+		return "internal"
+	case n.Ingress:
+		return "ingress"
+	case n.Driver == "overlay":
+		return "overlay"
 	default:
-		return "-"
+		return orDash(n.Driver)
+	}
+}
+
+// networkTypeColor marks a network by type. Priority (highest first) matches the
+// networkType switch: attachable→green, internal→yellow, ingress→gray,
+// overlay(swarm)→aqua, everything local (bridge/host/…)→dimmed.
+func networkTypeColor(n swarmNetwork) tcell.Color {
+	switch {
+	case n.Attachable:
+		return tcell.ColorGreen
+	case n.Internal:
+		return tcell.ColorYellow
+	case n.Ingress:
+		return tcell.ColorGray
+	case n.Driver == "overlay" || n.Scope == "swarm":
+		return tcell.ColorAqua
+	default:
+		return tcell.ColorDimGray
 	}
 }
 
@@ -2654,73 +2918,4 @@ func centered(p tview.Primitive, width, height int) tview.Primitive {
 			AddItem(p, height, 1, true).
 			AddItem(nil, 0, 1, false), width, 1, true).
 		AddItem(nil, 0, 1, false)
-}
-
-// tvLogWriter appends streamed log bytes to a TextView on the UI goroutine,
-// auto-scrolling to the end. stderr chunks are colored red.
-type tvLogWriter struct {
-	app    *tview.Application
-	tv     *tview.TextView
-	stderr bool
-	follow *atomic.Bool // when set and false, new lines do not auto-scroll
-}
-
-func (w tvLogWriter) Write(p []byte) (int, error) {
-	s := tview.Escape(string(p))
-	w.app.QueueUpdateDraw(func() {
-		if w.stderr {
-			fmt.Fprintf(w.tv, "[red]%s[-]", s)
-		} else {
-			fmt.Fprint(w.tv, s)
-		}
-		if w.follow == nil || w.follow.Load() {
-			w.tv.ScrollToEnd()
-		}
-	})
-	return len(p), nil
-}
-
-// linePrefixWriter buffers partial lines and writes each complete line to a
-// TextView with a fixed prefix — used to tag aggregated service logs with which
-// container/node they came from.
-type linePrefixWriter struct {
-	app    *tview.Application
-	tv     *tview.TextView
-	prefix string
-	stderr bool
-	follow *atomic.Bool
-
-	mu  sync.Mutex
-	buf []byte
-}
-
-func (w *linePrefixWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	w.buf = append(w.buf, p...)
-	var lines []string
-	for {
-		i := bytes.IndexByte(w.buf, '\n')
-		if i < 0 {
-			break
-		}
-		lines = append(lines, string(w.buf[:i]))
-		w.buf = w.buf[i+1:]
-	}
-	w.mu.Unlock()
-
-	for _, line := range lines {
-		s := tview.Escape(w.prefix + line)
-		stderr := w.stderr
-		w.app.QueueUpdateDraw(func() {
-			if stderr {
-				fmt.Fprintf(w.tv, "[red]%s[-]\n", s)
-			} else {
-				fmt.Fprintf(w.tv, "%s\n", s)
-			}
-			if w.follow == nil || w.follow.Load() {
-				w.tv.ScrollToEnd()
-			}
-		})
-	}
-	return len(p), nil
 }

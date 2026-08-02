@@ -255,8 +255,18 @@
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>read the secret from this file (takes precedence over <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>skip agent server-cert verification (self-signed agents)</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>audit identity when no client cert is used (default: OS username)</td></tr>
+          <tr><td><code>logs.format</code></td><td>string</td><td>default log format for <code>logs</code> and the TUI: <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (empty = <code>classic</code>)</td></tr>
+          <tr><td><code>logs.min_level</code></td><td>string</td><td>default minimum level: <code>trace</code>..<code>fatal</code> (omit for no level filter)</td></tr>
         </tbody>
       </table></div>
+      <p>
+        The <code>logs:</code> section sets defaults for format-aware log parsing and
+        filtering; the <code>logs</code> command's <code>--log-format</code> /
+        <code>--min-level</code> flags override them:
+      </p>
+      <div class="cmd">logs:
+  format: json        <span class="k"># classic | json | gelf | raw</span>
+  min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
       <p>Inspect the effective, merged configuration (secret masked) with:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
 
@@ -500,12 +510,54 @@
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>lines from the end to start with (<code>0</code> = all)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (default from config, else <code>classic</code>)</td></tr>
+          <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
+          <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Format-aware parsing &amp; filtering.</strong> <code>--log-format</code>
+        tells the client how to read each line so it can pull out a <em>level</em> and a
+        <em>message</em>: <code>classic</code> extracts a level from a plain text line,
+        <code>json</code> parses logstash-style JSON (<code>level</code>/<code>message</code>
+        fields), <code>gelf</code> parses Graylog GELF JSON (numeric syslog level), and
+        <code>raw</code> passes lines through unchanged. <code>--min-level</code> then
+        drops anything below the chosen level, and <code>--grep</code> keeps only lines
+        whose parsed message matches the regexp.
+      </p>
+      <div class="note">
+        Lines with <strong>no detectable level</strong> always pass the
+        <code>--min-level</code> filter, so multi-line stack traces aren't lost. The same
+        defaults can be set once under the <a href="#config"><code>logs:</code> config
+        section</a> (flags override).
+      </div>
+      <p>
+        <strong>Follow across container replacement.</strong> With <code>-f</code> on a
+        <em>service</em> or <em>service.slot</em> target, <code>logs</code> keeps
+        following when the container it is streaming is replaced by a rolling update,
+        restart or reschedule: it re-resolves the service's current running container
+        (the same slot, or the same node for a <code>global</code> service), reconnects
+        automatically — like <code>docker service logs -f</code> — and prints a dim
+        notice line (<code>container replaced; reconnected to &lt;id&gt; on &lt;node&gt;</code>).
+        It waits up to ~30s for a replacement to schedule before giving up, and stops
+        cleanly if the service is removed. A bare <em>container-id</em> target has no
+        successor, so it simply stops as before.
+      </p>
+      <div class="note">
+        Detection lives in the client: it learns topology from the swarm manager it is
+        already connected to — the per-node agents are local to their node and cannot see
+        swarm-level replacements.
+      </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
-<span class="c">$</span> swarmexec logs --since 15m -t web</div>
+<span class="c">$</span> swarmexec logs --since 15m -t web
+<span class="c">$</span> swarmexec logs --log-format json --min-level warn web
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
+      <div class="note">
+        Forward-looking: the format selection is designed to later support automatic
+        per-service format detection via an online service (not implemented yet).
+      </div>
 
       <h3><code>port-forward</code> (alias <code>pf</code>) — forward a local port</h3>
       <p>
@@ -670,6 +722,11 @@
         greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
         and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
       </p>
+      <p>
+        The tree auto-refreshes every ~10s, so a container replaced or a service scaled
+        in the background shows up on its own — the cursor and any expanded services are
+        preserved. <kbd>r</kbd> still forces an immediate refresh.
+      </p>
 
       <h3>Volumes tab</h3>
       <div class="tablewrap"><table>
@@ -711,15 +768,33 @@
 
       <h3>Networks tab</h3>
       <p>
-        A read-only list of the swarm's networks — name, driver, scope, type
-        (ingress / internal / attachable) and how many services attach to each.
+        A list of the swarm's networks — name, driver, scope, type
+        (ingress / internal / attachable) and how many services attach to each. The
+        <code>TYPE</code> column shows <code>overlay</code> or the driver name (e.g.
+        <code>bridge</code>) for plain networks rather than a dash. Each network's name
+        and its <code>TYPE</code> cell are colour-coded by kind (highest priority first):
       </p>
+      <ul>
+        <li><strong>attachable</strong> — green</li>
+        <li><strong>internal</strong> — yellow</li>
+        <li><strong>ingress</strong> — gray</li>
+        <li>other overlay / swarm-scoped — aqua</li>
+        <li>local (<code>bridge</code>, <code>host</code>, …) — dimmed gray</li>
+      </ul>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>show the attached services, each with its running containers nested underneath</td></tr>
+          <tr><td><kbd>a</kbd></td><td>in the members view: attach a service to this network — an autocomplete input (suggesting services not already attached; you may also type any name), then a rolling-update confirmation</td></tr>
+          <tr><td><kbd>d</kbd></td><td>in the members view: detach a service from this network — an autocomplete input (suggesting the services currently attached; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
       </table></div>
+      <p>
+        Attaching or detaching does a service update that adds or removes the network in
+        the service spec, then refreshes the Networks tab. This is a manager-API operation
+        (<code>ServiceUpdate</code>) — the same channel the client uses for topology —
+        and it triggers a <strong>rolling update</strong> that restarts the service's tasks.
+      </p>
 
       <h3>Secrets tab</h3>
       <p>
@@ -731,8 +806,18 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
+          <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
+          <tr><td><kbd>d</kbd></td><td>in the detail view: detach the secret from a service — an autocomplete input (suggesting services that currently use it; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
       </table></div>
+      <p>
+        Attaching adds the secret to the service, mounted at
+        <code>/run/secrets/&lt;name&gt;</code> (like <code>docker service update
+        --secret-add</code>); detaching removes the secret reference. Then the Secrets tab
+        refreshes. Like the network attach/detach, each is a manager-API
+        <code>ServiceUpdate</code> that triggers a <strong>rolling update</strong>
+        restarting the service's tasks.
+      </p>
 
       <h3>Contexts tab</h3>
       <p>
@@ -751,9 +836,31 @@
 
       <h3>Embedded shell &amp; logs</h3>
       <p>
-        In an embedded shell, <kbd>Ctrl-]</kbd> detaches (without ending the process). In
-        a logs view, <kbd>f</kbd> toggles follow, <kbd>↑</kbd>/<kbd>↓</kbd> scroll, and
-        <kbd>Esc</kbd>/<kbd>q</kbd> close.
+        In an embedded shell, <kbd>Ctrl-]</kbd> detaches (without ending the process). The
+        logs view — a single container or a service's aggregated logs — supports the same
+        format-aware parsing and filtering as the <code>logs</code> command:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>f</kbd></td><td>toggle follow</td></tr>
+          <tr><td><kbd>F</kbd></td><td>cycle log format (classic → json → gelf → raw)</td></tr>
+          <tr><td><kbd>l</kbd></td><td>cycle minimum level filter (off → trace → … → fatal → off)</td></tr>
+          <tr><td><kbd>/</kbd></td><td>enter a grep regexp on the message (empty clears it)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>scroll</td></tr>
+          <tr><td><kbd>Esc</kbd> / <kbd>q</kbd></td><td>close</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The view re-renders the buffered lines live when you change format, level or
+        grep, and the title bar shows the active <code>fmt:… lvl:… grep:…</code> status.
+      </p>
+      <p>
+        When following, the log view reconnects across container replacement the same way
+        the <a href="#commands"><code>logs</code></a> command does — for both a single
+        container's logs and a service's aggregated logs (each replica followed by slot).
+        Reconnect notices appear inline in the log view.
       </p>
 
       <h3>Log viewer</h3>

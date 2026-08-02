@@ -10,6 +10,7 @@ package resolve
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -322,6 +323,63 @@ func (r *Resolver) candidatesForService(ctx context.Context, svc *swarm.Service)
 	}
 	sort.Slice(cands, func(i, j int) bool { return cands[i].Slot < cands[j].Slot })
 	return cands, nil
+}
+
+// ErrTargetGone reports that the service a FollowTarget names no longer exists,
+// so there is nothing left to follow (as opposed to a replacement that is still
+// being scheduled). Callers use it to stop following instead of waiting.
+var ErrTargetGone = errors.New("service no longer exists")
+
+// FollowTarget identifies a logical replica to keep following across container
+// replacements (rolling update, restart, reschedule). Slot pins a replicated
+// service's slot; for a global service (Slot 0) NodeID pins the node. With
+// neither, the newest running task of the service wins.
+type FollowTarget struct {
+	Service string
+	Slot    int
+	NodeID  string
+}
+
+// Successor returns the running container that currently satisfies a
+// FollowTarget — the replacement after a swap, or the same container while it is
+// still up. found is false with a nil error when the service exists but has no
+// matching running task yet (the replacement is still scheduling); it returns
+// ErrTargetGone when the service itself is gone.
+func (r *Resolver) Successor(ctx context.Context, t FollowTarget) (Candidate, bool, error) {
+	svc, err := r.findService(ctx, t.Service)
+	if err != nil {
+		return Candidate{}, false, err
+	}
+	if svc == nil {
+		return Candidate{}, false, ErrTargetGone
+	}
+	cands, err := r.candidatesForService(ctx, svc)
+	if err != nil {
+		return Candidate{}, false, err
+	}
+	var best *Candidate
+	for i := range cands {
+		c := &cands[i]
+		switch {
+		case t.Slot > 0:
+			if c.Slot != t.Slot {
+				continue
+			}
+		case t.NodeID != "":
+			if c.NodeID != t.NodeID {
+				continue
+			}
+		}
+		// Newest wins — during a rolling update a slot can briefly hold both the
+		// old and the new task; the smaller uptime is the replacement.
+		if best == nil || c.Uptime < best.Uptime {
+			best = c
+		}
+	}
+	if best == nil {
+		return Candidate{}, false, nil
+	}
+	return *best, true, nil
 }
 
 // Candidates lists running tasks for `ps`. An empty service lists all services.
