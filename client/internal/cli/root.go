@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
 )
@@ -37,6 +38,8 @@ type globalFlags struct {
 	insecure        bool
 	operator        string
 	dockerContext   string
+	logLevel        string  // debug|info|warn|error|off
+	logFile         string  // log file path; "" = default next to config
 	version         Version // build info, for `doctor` skew checks
 }
 
@@ -62,6 +65,9 @@ func Execute(v Version) int {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       fmt.Sprintf("%s (proto %s)", v.Binary, v.Proto),
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			return g.initLogging()
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if showInfo {
 				fmt.Fprint(cmd.OutOrStdout(), infoText(v))
@@ -86,6 +92,8 @@ func Execute(v Version) int {
 	pf.BoolVar(&g.insecure, "insecure", false, "skip agent server-certificate verification (self-signed agents)")
 	pf.StringVar(&g.operator, "operator", "", "operator identity reported for audit (default: OS username)")
 	pf.StringVar(&g.dockerContext, "context", "", "docker context for the manager API; supports ssh:// (also $DOCKER_CONTEXT)")
+	pf.StringVar(&g.logLevel, "log-level", "info", "log verbosity: debug|info|warn|error|off")
+	pf.StringVar(&g.logFile, "log-file", "", "log file path (default swarmexec.log next to config; the TUI also has a live viewer)")
 
 	root.AddCommand(newInitCmd(g))
 	root.AddCommand(newDownCmd(g))
@@ -113,6 +121,32 @@ func Execute(v Version) int {
 	// cobra usage / flag-parse errors.
 	fmt.Fprintln(os.Stderr, "swarmexec: "+err.Error())
 	return usageExitCode
+}
+
+// initLogging sets up the shared logger for every subcommand: an in-memory ring
+// (fed to the TUI viewer) and, unless disabled, a log file. "--log-level off"
+// leaves the no-op logger in place. A log-file open failure is non-fatal — it
+// falls back to ring-only so a command never fails just because it could not
+// write a log.
+func (g *globalFlags) initLogging() error {
+	if g.logLevel == "off" {
+		return nil
+	}
+	path := g.logFile
+	if path == "" {
+		cfgPath := g.configPath
+		if cfgPath == "" {
+			cfgPath = config.DefaultFilePath()
+		}
+		path = clientlog.DefaultLogPath(cfgPath)
+	}
+	if _, err := clientlog.Init(g.logLevel, path); err != nil {
+		if _, rerr := clientlog.Init(g.logLevel, ""); rerr != nil {
+			return nil // ring-only init cannot fail; belt and braces
+		}
+		clientlog.L().Warn("log file unavailable, logging to memory only", "path", path, "err", err.Error())
+	}
+	return nil
 }
 
 // resolveConfig merges defaults + file + env, then overlays explicitly-set
