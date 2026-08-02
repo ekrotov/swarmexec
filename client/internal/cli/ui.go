@@ -2377,11 +2377,92 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 	// On the tree, "/" opens search; h/l collapse/expand the service under the
 	// cursor; j/k stay down/up via the shared keys.
+	// showInspect renders an inspect in a scrollable overlay with two views: a
+	// tabular, operator-first summary (default) and the raw daemon JSON, toggled
+	// with `t`. fetch runs off the UI goroutine so a slow manager cannot freeze
+	// the loop. It returns (formatted, rawJSON).
+	showInspect := func(title string, op string, fetch func() (string, string, error)) {
+		tv := tview.NewTextView().SetScrollable(true).SetWrap(true)
+		tv.SetBorder(true)
+		var formatted, rawJSON string
+		loaded := false
+		showRaw := false
+		apply := func() {
+			mode := "table"
+			if showRaw {
+				mode = "raw json"
+			}
+			tv.SetTitle(fmt.Sprintf(" inspect %s — %s · [t] toggle view · ESC/q close ", title, mode))
+			if !loaded {
+				tv.SetDynamicColors(true).SetText("loading…")
+				return
+			}
+			if showRaw {
+				// Raw JSON contains [brackets]; disable dynamic colours so they are literal.
+				tv.SetDynamicColors(false).SetText(rawJSON)
+			} else {
+				tv.SetDynamicColors(true).SetText(formatted)
+			}
+			tv.ScrollToBeginning()
+		}
+		apply()
+		closeInspect := func() { pages.RemovePage("inspect"); app.SetFocus(ctree) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+				closeInspect()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
+				showRaw = !showRaw
+				apply()
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("inspect", centered(tv, 110, 40), true, true)
+		app.SetFocus(tv)
+		go func() {
+			start := time.Now()
+			f, raw, err := fetch()
+			clientlog.Timed(op, start, err)
+			app.QueueUpdateDraw(func() {
+				if !pages.HasPage("inspect") {
+					return
+				}
+				if err != nil {
+					tv.SetDynamicColors(false).SetText("error: " + err.Error())
+					return
+				}
+				formatted, rawJSON, loaded = f, raw, true
+				apply()
+			})
+		}()
+	}
+	// inspectCurrent shows service inspect on a service node, task inspect on a
+	// container leaf (both from the manager).
+	inspectCurrent := func() {
+		n := ctree.GetCurrentNode()
+		if n == nil {
+			return
+		}
+		if c, ok := n.GetReference().(resolve.Candidate); ok {
+			showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task",
+				func() (string, string, error) { return taskInspectViews(ctx, dcli, c.TaskID) })
+			return
+		}
+		if ref, ok := n.GetReference().(svcRef); ok {
+			showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service",
+				func() (string, string, error) { return serviceInspectViews(ctx, dcli, ref.name) })
+		}
+	}
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case km.Search:
 				startSearch("containers")
+				return nil
+			case km.ContainerInspect:
+				inspectCurrent()
 				return nil
 			case km.Fold:
 				// Collapse. tview's TreeView has no fold key — Left/Right only

@@ -23,7 +23,7 @@ type keybinds struct {
 	// containers + volumes
 	Search rune
 	// containers
-	Fold, Unfold, Forward rune
+	Fold, Unfold, Forward, ContainerInspect rune
 	// volumes
 	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev rune
 	// networks
@@ -52,6 +52,7 @@ var keyActions = []keyAction{
 	{"fold", []string{"containers"}, 'h', func(k *keybinds) *rune { return &k.Fold }},
 	{"unfold", []string{"containers"}, 'l', func(k *keybinds) *rune { return &k.Unfold }},
 	{"forward", []string{"containers"}, 'p', func(k *keybinds) *rune { return &k.Forward }},
+	{"container_inspect", []string{"containers"}, 'i', func(k *keybinds) *rune { return &k.ContainerInspect }},
 	{"volume_select", []string{"volumes"}, ' ', func(k *keybinds) *rune { return &k.VolSelect }},
 	{"volume_select_all", []string{"volumes"}, 'a', func(k *keybinds) *rune { return &k.VolSelectAll }},
 	{"volume_delete", []string{"volumes"}, 'd', func(k *keybinds) *rune { return &k.VolDelete }},
