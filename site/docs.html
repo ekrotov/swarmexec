@@ -715,11 +715,12 @@
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>show the attached services, each with its running containers nested underneath</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the members view: attach a service to this network — an autocomplete input (suggesting services not already attached; you may also type any name), then a rolling-update confirmation</td></tr>
+          <tr><td><kbd>d</kbd></td><td>in the members view: detach a service from this network — an autocomplete input (suggesting the services currently attached; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
       </table></div>
       <p>
-        Attaching does a service update that adds the network to the service spec, then
-        refreshes the Networks tab. This is a manager-API operation
+        Attaching or detaching does a service update that adds or removes the network in
+        the service spec, then refreshes the Networks tab. This is a manager-API operation
         (<code>ServiceUpdate</code>) — the same channel the client uses for topology —
         and it triggers a <strong>rolling update</strong> that restarts the service's tasks.
       </p>
@@ -735,14 +736,16 @@
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
+          <tr><td><kbd>d</kbd></td><td>in the detail view: detach the secret from a service — an autocomplete input (suggesting services that currently use it; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
       </table></div>
       <p>
-        The secret is added to the service and mounted at
+        Attaching adds the secret to the service, mounted at
         <code>/run/secrets/&lt;name&gt;</code> (like <code>docker service update
-        --secret-add</code>), then the Secrets tab refreshes. Like the network attach,
-        this is a manager-API <code>ServiceUpdate</code> that triggers a
-        <strong>rolling update</strong> restarting the service's tasks.
+        --secret-add</code>); detaching removes the secret reference. Then the Secrets tab
+        refreshes. Like the network attach/detach, each is a manager-API
+        <code>ServiceUpdate</code> that triggers a <strong>rolling update</strong>
+        restarting the service's tasks.
       </p>
 
       <h3>Contexts tab</h3>

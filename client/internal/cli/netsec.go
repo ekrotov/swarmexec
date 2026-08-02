@@ -183,6 +183,78 @@ func attachSecretToService(ctx context.Context, dcli *client.Client, serviceName
 	return err
 }
 
+// detachServiceFromNetwork removes a network from a service's spec via a
+// read-modify-write ServiceUpdate (rolling update). Errors (a no-op) if the
+// service is not attached, or does not exist.
+func detachServiceFromNetwork(ctx context.Context, dcli *client.Client, serviceName, networkID, networkName string) error {
+	svc, err := serviceByName(ctx, dcli, serviceName)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", serviceName)
+	}
+	matches := func(target string) bool { return target == networkID || target == networkName }
+	spec := svc.Spec
+	tt, n1 := dropNetwork(spec.TaskTemplate.Networks, matches)
+	sn, n2 := dropNetwork(spec.Networks, matches)
+	if n1+n2 == 0 {
+		return fmt.Errorf("service %q is not attached to network %q", serviceName, networkName)
+	}
+	spec.TaskTemplate.Networks = tt
+	spec.Networks = sn
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// dropNetwork returns the attachments that do not match, plus how many it
+// removed.
+func dropNetwork(nets []swarm.NetworkAttachmentConfig, matches func(string) bool) ([]swarm.NetworkAttachmentConfig, int) {
+	var out []swarm.NetworkAttachmentConfig
+	removed := 0
+	for _, a := range nets {
+		if matches(a.Target) {
+			removed++
+			continue
+		}
+		out = append(out, a)
+	}
+	return out, removed
+}
+
+// detachSecretFromService removes a secret reference from a service's container
+// spec via a read-modify-write ServiceUpdate (rolling update). Errors (a no-op)
+// if the service does not use the secret, or does not exist.
+func detachSecretFromService(ctx context.Context, dcli *client.Client, serviceName, secretID, secretName string) error {
+	svc, err := serviceByName(ctx, dcli, serviceName)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", serviceName)
+	}
+	cs := svc.Spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return fmt.Errorf("service %q has no container spec", serviceName)
+	}
+	var kept []*swarm.SecretReference
+	removed := false
+	for _, ref := range cs.Secrets {
+		if ref.SecretID == secretID || ref.SecretName == secretName {
+			removed = true
+			continue
+		}
+		kept = append(kept, ref)
+	}
+	if !removed {
+		return fmt.Errorf("service %q does not use secret %q", serviceName, secretName)
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Secrets = kept
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
 // networkServiceMembers maps a network — keyed by both ID and name, since a
 // service's attachment Target may be either — to the services attached to it.
 // Best effort: a ServiceList failure yields an empty map so the network list

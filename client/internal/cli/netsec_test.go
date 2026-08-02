@@ -134,6 +134,20 @@ func TestNetworkType(t *testing.T) {
 	}
 }
 
+func TestDropNetwork(t *testing.T) {
+	nets := []swarm.NetworkAttachmentConfig{{Target: "a"}, {Target: "b"}, {Target: "a"}}
+	got, removed := dropNetwork(nets, func(target string) bool { return target == "a" })
+	if removed != 2 {
+		t.Errorf("removed = %d, want 2", removed)
+	}
+	if len(got) != 1 || got[0].Target != "b" {
+		t.Errorf("kept = %v, want [{b}]", got)
+	}
+	if _, r := dropNetwork(nets, func(string) bool { return false }); r != 0 {
+		t.Errorf("removed = %d, want 0 when nothing matches", r)
+	}
+}
+
 func TestServicesExcluding(t *testing.T) {
 	got := servicesExcluding([]string{"web", "db", "cache"}, []string{"db"})
 	want := []string{"cache", "web"} // sorted, db removed
