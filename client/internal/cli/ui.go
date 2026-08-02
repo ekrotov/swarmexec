@@ -20,6 +20,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/resolve"
@@ -94,9 +95,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Cancel every background goroutine derived from ctx (the auto-refresh ticker,
-	// open streams, forwards) when this run returns — e.g. on a Contexts-tab
-	// cluster switch, where the caller restarts runUI with a fresh context.
+	// Per-run context so background goroutines (the auto-refresh ticker, the
+	// responsiveness watchdog, the log-viewer refresher, open streams, forwards)
+	// stop when this run returns — e.g. on a Contexts-tab cluster switch, where
+	// the caller restarts runUI with a fresh context.
 	ctx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
 	var service string
@@ -124,8 +126,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	selStyle := tcell.StyleDefault.Background(tcell.ColorTeal).Foreground(tcell.ColorWhite)
 
-	// generic info modal.
+	// generic info modal. Every message is also logged (with context) so the log
+	// viewer / file has a record of what the operator was shown.
 	info := func(msg string) {
+		clientlog.L().Info("ui notice", "msg", msg)
 		m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
 			SetDoneFunc(func(int, string) { pages.RemovePage("info") })
 		pages.AddPage("info", m, true, true)
@@ -335,50 +339,65 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return cands[i].NodeName < cands[j].NodeName
 		})
 	}
-	loadContainers := func() {
-		svcs, serr := r.Services(ctx)
-		if serr != nil {
-			croot.ClearChildren()
-			croot.AddChild(tview.NewTreeNode("error: " + serr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
-			return
+	// fetchContainers does the two manager round-trips (off the UI goroutine) and
+	// returns sorted results. It is instrumented so a slow manager shows up in the
+	// log viewer.
+	fetchContainers := func() ([]resolve.Service, []resolve.Candidate, error) {
+		start := time.Now()
+		svcs, err := r.Services(ctx)
+		clientlog.Timed("ui.containers.Services", start, err)
+		if err != nil {
+			return nil, nil, err
 		}
 		// Fetch every running container (not just the CLI-arg service); the tree
 		// filters client-side so services with 0 containers still appear.
-		cands, lerr := r.Candidates(ctx, "")
-		if lerr != nil {
-			croot.ClearChildren()
-			croot.AddChild(tview.NewTreeNode("error: " + lerr.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
-			return
+		start = time.Now()
+		cands, err := r.Candidates(ctx, "")
+		clientlog.Timed("ui.containers.Candidates", start, err)
+		if err != nil {
+			return nil, nil, err
 		}
 		sortCands(cands)
+		return svcs, cands, nil
+	}
+	// applyContainers updates the tree from a fetch result. UI-goroutine only.
+	applyContainers := func(svcs []resolve.Service, cands []resolve.Candidate, err error) {
+		if err != nil {
+			croot.ClearChildren()
+			croot.AddChild(tview.NewTreeNode("error: " + err.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
+			return
+		}
 		lastSvcs = svcs
 		lastCands = cands
 		renderContainers()
 	}
+	// loadContainersSync fetches and applies on the caller's goroutine — used at
+	// startup, before app.Run, where QueueUpdateDraw would deadlock.
+	loadContainersSync := func() {
+		svcs, cands, err := fetchContainers()
+		applyContainers(svcs, cands, err)
+	}
+	// loadContainers refreshes without freezing the event loop: it fetches off the
+	// UI goroutine (two manager round-trips that used to run inline and stall the
+	// whole TUI) and applies the result via QueueUpdateDraw.
+	loadContainers := func() {
+		go func() {
+			svcs, cands, err := fetchContainers()
+			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, err) })
+		}()
+	}
 	// autoRefreshContainers re-lists services/containers off the UI goroutine on a
-	// timer so a container replaced by a rolling update (or a scaled service)
-	// shows up without pressing r. renderContainers restores the cursor and the
-	// expanded services, so the refresh is unobtrusive. A transient probe error is
-	// ignored rather than clobbering the tree with an error node.
+	// timer so a container replaced by a rolling update (or a scaled service) shows
+	// up without pressing r. renderContainers restores the cursor and expanded
+	// services, so the refresh is unobtrusive. A transient probe error is ignored
+	// rather than clobbering the tree with an error node.
 	autoRefreshContainers := func() {
 		go func() {
-			svcs, serr := r.Services(ctx)
-			if serr != nil {
-				return
+			svcs, cands, err := fetchContainers()
+			if err != nil || ctx.Err() != nil {
+				return // transient error, or run ended while probing
 			}
-			cands, lerr := r.Candidates(ctx, "")
-			if lerr != nil {
-				return
-			}
-			sortCands(cands)
-			if ctx.Err() != nil {
-				return // run ended while we were probing; the app is stopping
-			}
-			app.QueueUpdateDraw(func() {
-				lastSvcs = svcs
-				lastCands = cands
-				renderContainers()
-			})
+			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, nil) })
 		}()
 	}
 	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
@@ -929,6 +948,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		vtable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
 		go func() {
+			start := time.Now()
 			nodes, nerr := r.Nodes(ctx)
 			var vs []swarmVolume
 			var errs map[string]error
@@ -941,6 +961,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					noAgent = true
 				}
 			}
+			clientlog.Timed("ui.loadVolumes", start, nerr, "nodes", len(nodes), "vols", len(vs))
 			app.QueueUpdateDraw(func() {
 				vols, volUsage, volErrs, volSizes = vs, usage, errs, nil
 				if nerr != nil {
@@ -1378,7 +1399,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		nettable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
 		go func() {
+			start := time.Now()
 			list, err := listNetworks(ctx, dcli)
+			clientlog.Timed("ui.loadNetworks", start, err)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
 					nettable.Clear()
@@ -1618,7 +1641,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		sectable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
 		go func() {
+			start := time.Now()
 			list, err := listSecrets(ctx, dcli)
+			clientlog.Timed("ui.loadSecrets", start, err)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
 					sectable.Clear()
@@ -2209,9 +2234,84 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	}
 
+	// Toggleable log viewer: an overlay showing the in-memory log ring, refreshed
+	// live while open. Opened/closed with the backtick key from any tab.
+	var (
+		logViewStop chan struct{}
+		logViewPrev tview.Primitive
+	)
+	closeLogView := func() {
+		if logViewStop != nil {
+			close(logViewStop)
+			logViewStop = nil
+		}
+		pages.RemovePage("logview")
+		if logViewPrev != nil {
+			app.SetFocus(logViewPrev)
+		}
+	}
+	openLogView := func() {
+		logViewPrev = app.GetFocus()
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
+		tv.SetBorder(true).SetTitle(" logs — [`]/ESC close · ↑/↓ scroll · newest at bottom ")
+		refresh := func() {
+			r := clientlog.RingBuffer()
+			var b strings.Builder
+			if r == nil {
+				b.WriteString("[gray]logging is disabled (--log-level off)[-]")
+			} else if lines := r.Lines(); len(lines) == 0 {
+				b.WriteString("[gray](no log records yet)[-]")
+			} else {
+				for _, line := range lines {
+					b.WriteString(colorLogLine(line))
+					b.WriteByte('\n')
+				}
+			}
+			tv.SetText(b.String())
+			tv.ScrollToEnd()
+		}
+		refresh()
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == 'q')) {
+				closeLogView()
+				return nil
+			}
+			return ev
+		})
+		stop := make(chan struct{})
+		logViewStop = stop
+		pages.AddPage("logview", tv, true, true)
+		app.SetFocus(tv)
+		go func() {
+			tk := time.NewTicker(700 * time.Millisecond)
+			defer tk.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-stop:
+					return
+				case <-tk.C:
+					app.QueueUpdateDraw(refresh)
+				}
+			}
+		}()
+	}
+	toggleLogView := func() {
+		if pages.HasPage("logview") {
+			closeLogView()
+		} else {
+			openLogView()
+		}
+	}
+
 	// tabOrder drives Tab cycling; every tab joins it.
 	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts"}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == '`' {
+			toggleLogView()
+			return nil
+		}
 		if ev.Key() == tcell.KeyTab {
 			for i, name := range tabOrder {
 				if name == active {
@@ -2530,7 +2630,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	})
 
-	loadContainers()
+	loadContainersSync() // startup: before app.Run, so fetch+apply inline
 	setTab("containers")
 	refreshCluster()
 
@@ -2554,6 +2654,38 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	if len(keyWarnings) > 0 {
 		info("keys.yaml:\n\n" + strings.Join(keyWarnings, "\n"))
 	}
+
+	// Responsiveness watchdog: time how long the event loop takes to service a
+	// no-op; a stall means something is blocking the loop (the "UI reagiert nicht"
+	// symptom). Logged so the viewer/file shows it. QueueUpdate runs in its own
+	// goroutine so a stuck loop cannot block the measurement.
+	clientlog.L().Info("ui started", "log_level", g.logLevel)
+	go func() {
+		tk := time.NewTicker(2 * time.Second)
+		defer tk.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tk.C:
+				sent := time.Now()
+				done := make(chan struct{})
+				go func() { app.QueueUpdate(func() {}); close(done) }()
+				select {
+				case <-done:
+					if d := time.Since(sent); d > uiStallWarn {
+						clientlog.L().Warn("ui event loop was busy", "blocked_ms", d.Milliseconds())
+					}
+				case <-time.After(uiStallWarn):
+					clientlog.L().Warn("ui event loop stalled", "over_ms", uiStallWarn.Milliseconds())
+					<-done
+					clientlog.L().Warn("ui event loop recovered", "after_ms", time.Since(sent).Milliseconds())
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
 
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	scr, serr := tcell.NewScreen()
@@ -2591,6 +2723,25 @@ func trimFoldMarker(s string) string {
 // networkType summarizes a network's role for the TYPE column. The flags are
 // mutually meaningful but rarely combine, so the most operationally salient one
 // wins: ingress (routing mesh) over internal (no egress) over attachable.
+// uiStallWarn is how long the event loop may take to service a no-op before the
+// watchdog logs it as a stall.
+const uiStallWarn = 250 * time.Millisecond
+
+// colorLogLine tints a slog text line for the log viewer by its level= field.
+func colorLogLine(line string) string {
+	esc := tview.Escape(line)
+	switch {
+	case strings.Contains(line, "level=ERROR"):
+		return "[red]" + esc + "[-]"
+	case strings.Contains(line, "level=WARN"):
+		return "[yellow]" + esc + "[-]"
+	case strings.Contains(line, "level=DEBUG"):
+		return "[gray]" + esc + "[-]"
+	default:
+		return esc
+	}
+}
+
 func networkType(n swarmNetwork) string {
 	switch {
 	case n.Attachable:

@@ -238,7 +238,9 @@
       <p>
         Override it with <code>--config &lt;path&gt;</code>. The file is YAML; a missing
         file is fine, a malformed one is an error. It is written <code>0600</code>
-        (it may hold the shared secret). Keys:
+        (it may hold the shared secret). The log file lives next to it by default —
+        <code>~/.config/swarmexec/swarmexec.log</code> — unless you set
+        <code>--log-file</code>. Keys:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Type</th><th>Meaning</th></tr></thead>
@@ -382,10 +384,21 @@
           <tr><td><code>--agent-secret-file</code></td><td>—</td><td>file to read the shared secret from</td></tr>
           <tr><td><code>--insecure</code></td><td><code>false</code></td><td>skip agent server-certificate verification</td></tr>
           <tr><td><code>--operator</code></td><td>OS username</td><td>operator identity reported for audit</td></tr>
+          <tr><td><code>--log-level</code></td><td><code>info</code></td><td>log verbosity: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> disables logging entirely)</td></tr>
+          <tr><td><code>--log-file</code></td><td>—</td><td>log file path (default <code>swarmexec.log</code> next to the config file)</td></tr>
           <tr><td><code>--info</code></td><td>—</td><td>show version, license, and contact info</td></tr>
           <tr><td><code>--version</code></td><td>—</td><td>print the client and protocol version</td></tr>
         </tbody>
       </table></div>
+      <div class="note">
+        <strong>Logging.</strong> swarmexec logs in structured form (Go
+        <code>slog</code>, text format) to the log file <em>and</em> an in-memory ring
+        buffer. In the TUI, logs are never written to the terminal (that would corrupt
+        the screen) — the ring buffer feeds a live in-app viewer instead
+        (see <a href="#tui">The TUI</a>). <code>--log-level off</code> disables logging
+        altogether; a log-file that can't be opened is non-fatal (it falls back to the
+        ring buffer only).
+      </div>
 
       <!-- 9 -->
       <h2 id="commands">9. Commands</h2>
@@ -680,6 +693,7 @@
           <tr><td><kbd>r</kbd></td><td>refresh the active tab and the cluster summary</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
           <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>
+          <tr><td><kbd>`</kbd></td><td>open / close the live log viewer (see below)</td></tr>
           <tr><td><kbd>q</kbd></td><td>quit</td></tr>
         </tbody>
       </table></div>
@@ -848,6 +862,23 @@
         container's logs and a service's aggregated logs (each replica followed by slot).
         Reconnect notices appear inline in the log view.
       </p>
+
+      <h3>Log viewer</h3>
+      <p>
+        Press <kbd>`</kbd> (backtick) from any tab to toggle a live log overlay. It
+        shows the most recent records from the in-memory ring buffer — newest at the
+        bottom — refreshing while open and colour-coded by level (red = error, yellow =
+        warn, gray = debug). <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
+        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. This is the TUI's window
+        onto the same logs that go to the log file, since the terminal itself can't show
+        them while the UI is drawing.
+      </p>
+      <div class="note">
+        <strong>Responsiveness.</strong> The container list refreshes off the UI thread
+        (its two manager API calls used to run inline and could briefly freeze the TUI),
+        and a background watchdog logs a warning when the event loop stalls — handy for
+        diagnosing sluggishness from the log viewer.
+      </div>
 
       <h3>Custom keys</h3>
       <p>

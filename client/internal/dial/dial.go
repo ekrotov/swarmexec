@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/internal/authmeta"
 )
@@ -79,7 +80,9 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	start := time.Now()
 	conn, err := grpc.DialContext(ctx, addr, opts...) //nolint:staticcheck // WithBlock needs DialContext
+	clientlog.Timed("dial.agent", start, err, "addr", addr)
 	if err != nil {
 		return nil, fmt.Errorf("cannot reach agent on %s (mTLS/connection error: %w)", addr, err)
 	}
