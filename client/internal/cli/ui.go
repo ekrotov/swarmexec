@@ -1356,10 +1356,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if len(n.Services) > 0 {
 				svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
 			}
-			nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetExpansion(1))
+			typeColor := networkTypeColor(n)
+			nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetTextColor(typeColor).SetExpansion(1))
 			nettable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
 			nettable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
-			nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetExpansion(1))
+			nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetTextColor(typeColor).SetExpansion(1))
 			nettable.SetCell(i+1, 4, svcCell)
 			nettable.SetCell(i+1, 5, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
 			if n.Name == selName {
@@ -1400,13 +1401,80 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		return nets[i], true
 	}
+	// serviceNamesFromCache returns the known service names (the containers-tab
+	// cache), used to seed the attach autocomplete. It is only a suggestion list —
+	// the actual attach resolves the name live, so a just-created service that is
+	// not cached yet can still be typed in.
+	serviceNamesFromCache := func() []string {
+		names := make([]string, 0, len(lastSvcs))
+		for _, s := range lastSvcs {
+			names = append(names, s.Name)
+		}
+		return names
+	}
+	// servicePrompt opens an autocomplete input to choose a service, then a
+	// confirmation (the change triggers a rolling update of that service), then
+	// runs do(service) off the UI goroutine and calls onDone on success. It backs
+	// both attach and detach: actionLabel is the confirm button ("Attach" /
+	// "Detach"), confirmVerb the sentence lead-in, suggestions feed the
+	// autocomplete only, and back gets focus when the operator cancels.
+	servicePrompt := func(title, confirmVerb, actionLabel string, suggestions []string, back tview.Primitive, do func(string) error, onDone func()) {
+		in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(46)
+		in.SetPlaceholder("type or ↓ to pick; Enter confirms, Esc cancels")
+		in.SetAutocompleteFunc(func(text string) []string {
+			text = strings.ToLower(strings.TrimSpace(text))
+			var out []string
+			for _, s := range suggestions {
+				if text == "" || strings.Contains(strings.ToLower(s), text) {
+					out = append(out, s)
+				}
+			}
+			return out
+		})
+		in.SetDoneFunc(func(key tcell.Key) {
+			name := strings.TrimSpace(in.GetText())
+			if key != tcell.KeyEnter || name == "" {
+				pages.RemovePage("svcprompt")
+				app.SetFocus(back)
+				return
+			}
+			pages.RemovePage("svcprompt")
+			confirm := tview.NewModal().
+				SetText(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name)).
+				AddButtons([]string{actionLabel, "Cancel"}).
+				SetDoneFunc(func(_ int, label string) {
+					pages.RemovePage("svcconfirm")
+					if label != actionLabel {
+						app.SetFocus(back)
+						return
+					}
+					go func() {
+						err := do(name)
+						app.QueueUpdateDraw(func() {
+							if err != nil {
+								info(strings.ToLower(actionLabel) + " failed: " + err.Error())
+								return
+							}
+							onDone()
+							info(fmt.Sprintf("%q updated — rolling update started", name))
+						})
+					}()
+				})
+			pages.AddPage("svcconfirm", confirm, true, true)
+			app.SetFocus(confirm)
+		})
+		in.SetBorder(true).SetTitle(" " + title + " ")
+		pages.AddPage("svcprompt", centered(in, 66, 3), true, true)
+		app.SetFocus(in)
+	}
+
 	// showNetworkMembers lists the services attached to a network with the
 	// containers of each service nested under it. Service membership is known
 	// synchronously (from the list); the per-service containers need a task
 	// lookup, so they fill in lazily after the overlay is up.
 	showNetworkMembers := func(n swarmNetwork) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services — ESC back ", n.Name))
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services — [a] attach · [d] detach · ESC back ", n.Name))
 		render := func(svcs []netService, loading bool) {
 			cur := list.GetCurrentItem()
 			list.Clear()
@@ -1452,8 +1520,32 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		render(init, true)
 		closeMembers := func() { pages.RemovePage("netmembers"); app.SetFocus(nettable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeMembers()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				suggestions := servicesExcluding(serviceNamesFromCache(), n.Services)
+				servicePrompt(
+					fmt.Sprintf("attach a service to network %q", n.Name),
+					fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
+					suggestions, list,
+					func(svc string) error { return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name) },
+					func() { closeMembers(); loadNetworks() },
+				)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				if len(n.Services) == 0 {
+					info("no services are attached to this network")
+					return nil
+				}
+				servicePrompt(
+					fmt.Sprintf("detach a service from network %q", n.Name),
+					fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
+					n.Services, list,
+					func(svc string) error { return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name) },
+					func() { closeMembers(); loadNetworks() },
+				)
 				return nil
 			}
 			return vimListKeys(ev)
@@ -1561,7 +1653,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return t.Local().Format("2006-01-02 15:04:05")
 		}
 		tv := tview.NewTextView().SetDynamicColors(true)
-		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — ESC back ", s.Name))
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — [a] attach · [d] detach service · ESC back ", s.Name))
 		render := func(members []netService, loading bool) {
 			var b strings.Builder
 			fmt.Fprintf(&b, "Name:     %s\n", s.Name)
@@ -1613,6 +1705,29 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				pages.RemovePage("secdetail")
 				app.SetFocus(sectable)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				suggestions := servicesExcluding(serviceNamesFromCache(), s.Services)
+				servicePrompt(
+					fmt.Sprintf("attach secret %q to a service", s.Name),
+					fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
+					suggestions, tv,
+					func(svc string) error { return attachSecretToService(ctx, dcli, svc, s.ID, s.Name) },
+					func() { pages.RemovePage("secdetail"); app.SetFocus(sectable); loadSecrets() },
+				)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				if len(s.Services) == 0 {
+					info("no services use this secret")
+					return nil
+				}
+				servicePrompt(
+					fmt.Sprintf("detach secret %q from a service", s.Name),
+					fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
+					s.Services, tv,
+					func(svc string) error { return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name) },
+					func() { pages.RemovePage("secdetail"); app.SetFocus(sectable); loadSecrets() },
+				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -2478,14 +2593,34 @@ func trimFoldMarker(s string) string {
 // wins: ingress (routing mesh) over internal (no egress) over attachable.
 func networkType(n swarmNetwork) string {
 	switch {
-	case n.Ingress:
-		return "ingress"
-	case n.Internal:
-		return "internal"
 	case n.Attachable:
 		return "attachable"
+	case n.Internal:
+		return "internal"
+	case n.Ingress:
+		return "ingress"
+	case n.Driver == "overlay":
+		return "overlay"
 	default:
-		return "-"
+		return orDash(n.Driver)
+	}
+}
+
+// networkTypeColor marks a network by type. Priority (highest first) matches the
+// networkType switch: attachable→green, internal→yellow, ingress→gray,
+// overlay(swarm)→aqua, everything local (bridge/host/…)→dimmed.
+func networkTypeColor(n swarmNetwork) tcell.Color {
+	switch {
+	case n.Attachable:
+		return tcell.ColorGreen
+	case n.Internal:
+		return tcell.ColorYellow
+	case n.Ingress:
+		return tcell.ColorGray
+	case n.Driver == "overlay" || n.Scope == "swarm":
+		return tcell.ColorAqua
+	default:
+		return tcell.ColorDimGray
 	}
 }
 
