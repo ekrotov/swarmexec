@@ -706,6 +706,7 @@
           <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>collapse / expand a service</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a scrollable overlay showing a tabular summary; <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes)</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -721,6 +722,21 @@
         <strong>Sh</strong> and <strong>Port forward</strong> (unavailable shells are
         greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
         and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
+      </p>
+      <p>
+        <kbd>i</kbd> opens an <strong>inspect overlay</strong> for the node under the
+        cursor — on a <strong>service</strong> it shows <code>docker service inspect</code>,
+        and on a <strong>container</strong> leaf the <strong>swarm task inspect</strong>
+        (the manager's view of that instance: state, slot, node, container id, container
+        spec, resources and status history). Both come from the swarm manager. The overlay
+        opens on a <strong>tabular, operator-first summary</strong> with sections ordered
+        by operational relevance — networks, labels, volumes/mounts and secrets (and
+        configs) first, then ports, image, mode, env, resources, placement and update
+        policy (plus state, node and container id for a container/task), with ids and
+        timestamps last. Press <kbd>t</kbd> to toggle between this summary and the raw
+        daemon JSON. Note this is the manager's task view, not a full node-local
+        <code>docker container inspect</code> of the running container — a real container
+        inspect via the agent is planned.
       </p>
       <p>
         The tree auto-refreshes every ~10s, so a container replaced or a service scaled
@@ -893,6 +909,7 @@
       <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — omit any line to keep its default</span>
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
+container_inspect: i
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_sort: s   volume_sort_reverse: S
