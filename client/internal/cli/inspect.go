@@ -17,30 +17,72 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
-	"github.com/rivo/tview"
 )
 
 // The inspect overlay shows a tabular, operator-first view by default (networks,
 // labels, volumes, secrets on top; the rest ordered by relevance) plus a raw
-// JSON view. Both the parsed object (for the table) and the raw daemon bytes
-// (for the JSON) come from one manager inspect call.
+// JSON view. The tabular view is emitted as structured lines so the overlay can
+// colour them, make data lines individually selectable, and copy one. Both views
+// come from one manager inspect call.
 
-// serviceInspectViews returns the formatted (tabular) and raw-JSON views of a
-// service inspect. ref is a service name or ID.
-func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string) (formatted, raw string, err error) {
+// inspKind classifies a formatted inspect line for display and selectability.
+type inspKind int
+
+const (
+	inspTitle  inspKind = iota // the header line (service/task identity)
+	inspHeader                 // a section header
+	inspField                  // a data line — selectable/copyable
+	inspDim                    // a placeholder ("-") — not selectable
+	inspBlank                  // spacer
+)
+
+// inspLine is one line of the tabular inspect view.
+type inspLine struct {
+	Text string
+	Kind inspKind
+}
+
+type inspBuilder struct{ lines []inspLine }
+
+func (b *inspBuilder) push(k inspKind, s string) {
+	b.lines = append(b.lines, inspLine{Text: s, Kind: k})
+}
+func (b *inspBuilder) title(s string)   { b.push(inspTitle, s) }
+func (b *inspBuilder) section(s string) { b.push(inspBlank, ""); b.push(inspHeader, s) }
+
+func (b *inspBuilder) kv(k, v string) {
+	if v == "" {
+		return
+	}
+	b.push(inspField, fmt.Sprintf("  %-14s %s", k, v))
+}
+
+func (b *inspBuilder) list(items []string) {
+	if len(items) == 0 {
+		b.push(inspDim, "  -")
+		return
+	}
+	for _, it := range items {
+		b.push(inspField, "  "+it)
+	}
+}
+
+// serviceInspectViews returns the formatted (tabular) lines and raw-JSON view of
+// a service inspect. ref is a service name or ID.
+func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string) ([]inspLine, string, error) {
 	svc, rawb, err := dcli.ServiceInspectWithRaw(ctx, ref, types.ServiceInspectOptions{})
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 	return formatServiceInspect(svc, netNameMap(ctx, dcli)), prettyJSON(rawb), nil
 }
 
-// taskInspectViews returns the formatted and raw-JSON views of a task inspect —
-// the manager's view of a container instance.
-func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (formatted, raw string, err error) {
+// taskInspectViews returns the formatted lines and raw-JSON view of a task
+// inspect — the manager's view of a container instance.
+func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) ([]inspLine, string, error) {
 	task, rawb, err := dcli.TaskInspectWithRaw(ctx, taskID)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 	return formatTaskInspect(task, netNameMap(ctx, dcli), nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
 }
@@ -70,155 +112,121 @@ func prettyJSON(raw []byte) string {
 
 // --- tabular formatting -----------------------------------------------------
 
-func formatServiceInspect(svc swarm.Service, netNames map[string]string) string {
-	var b strings.Builder
+func formatServiceInspect(svc swarm.Service, netNames map[string]string) []inspLine {
+	var b inspBuilder
 	cs := svc.Spec.TaskTemplate.ContainerSpec
-	fmt.Fprintf(&b, "[aqua]SERVICE[-]  %s\n", tview.Escape(svc.Spec.Name))
+	b.title("SERVICE  " + svc.Spec.Name)
 
-	inspSection(&b, "NETWORKS")
-	inspLines(&b, serviceNetworks(svc, netNames))
-
-	inspSection(&b, "LABELS")
-	inspLines(&b, kvPairs(svc.Spec.Labels))
-
-	inspSection(&b, "VOLUMES / MOUNTS")
-	inspLines(&b, specMounts(cs))
-
-	inspSection(&b, "SECRETS")
-	inspLines(&b, specSecrets(cs))
+	b.section("NETWORKS")
+	b.list(serviceNetworks(svc, netNames))
+	b.section("LABELS")
+	b.list(kvPairs(svc.Spec.Labels))
+	b.section("VOLUMES / MOUNTS")
+	b.list(specMounts(cs))
+	b.section("SECRETS")
+	b.list(specSecrets(cs))
 	if cfgs := specConfigs(cs); len(cfgs) > 0 {
-		inspSection(&b, "CONFIGS")
-		inspLines(&b, cfgs)
+		b.section("CONFIGS")
+		b.list(cfgs)
 	}
-
-	inspSection(&b, "PORTS")
-	inspLines(&b, servicePortLines(svc))
-
-	inspSection(&b, "IMAGE")
-	inspLines(&b, imageLine(cs))
-
-	inspSection(&b, "MODE")
-	inspLines(&b, []string{serviceModeStr(svc)})
-
+	b.section("PORTS")
+	b.list(servicePortLines(svc))
+	b.section("IMAGE")
+	b.list(imageLine(cs))
+	b.section("MODE")
+	b.list([]string{serviceModeStr(svc)})
 	if cs != nil && len(cs.Env) > 0 {
-		inspSection(&b, "ENV")
-		inspLines(&b, cs.Env)
+		b.section("ENV")
+		b.list(cs.Env)
 	}
 	if lines := resourceLines(svc.Spec.TaskTemplate.Resources); len(lines) > 0 {
-		inspSection(&b, "RESOURCES")
-		inspLines(&b, lines)
+		b.section("RESOURCES")
+		b.list(lines)
 	}
 	if p := svc.Spec.TaskTemplate.Placement; p != nil && len(p.Constraints) > 0 {
-		inspSection(&b, "PLACEMENT")
-		inspLines(&b, p.Constraints)
+		b.section("PLACEMENT")
+		b.list(p.Constraints)
 	}
 	if uc := svc.Spec.UpdateConfig; uc != nil {
-		inspSection(&b, "UPDATE POLICY")
-		inspLines(&b, []string{
+		b.section("UPDATE POLICY")
+		b.list([]string{
 			fmt.Sprintf("parallelism %d", uc.Parallelism),
 			fmt.Sprintf("delay %s", uc.Delay),
 			fmt.Sprintf("order %s", uc.Order),
 			fmt.Sprintf("on-failure %s", uc.FailureAction),
 		})
 	}
-
-	inspSection(&b, "META")
-	inspKV(&b, "id", svc.ID)
-	inspKV(&b, "created", tstr(svc.Meta.CreatedAt))
-	inspKV(&b, "updated", tstr(svc.Meta.UpdatedAt))
-	return b.String()
+	b.section("META")
+	b.kv("id", svc.ID)
+	b.kv("created", tstr(svc.Meta.CreatedAt))
+	b.kv("updated", tstr(svc.Meta.UpdatedAt))
+	return b.lines
 }
 
-func formatTaskInspect(task swarm.Task, netNames, nodeNames map[string]string) string {
-	var b strings.Builder
+func formatTaskInspect(task swarm.Task, netNames, nodeNames map[string]string) []inspLine {
+	var b inspBuilder
 	cs := task.Spec.ContainerSpec
-	fmt.Fprintf(&b, "[aqua]TASK[-]  %s  [gray](slot %d)[-]\n", shortID(task.ID), task.Slot)
+	b.title(fmt.Sprintf("TASK  %s  (slot %d)", shortID(task.ID), task.Slot))
 
-	inspSection(&b, "NETWORKS")
-	inspLines(&b, taskNetworks(task, netNames))
-
-	inspSection(&b, "LABELS")
+	b.section("NETWORKS")
+	b.list(taskNetworks(task, netNames))
+	b.section("LABELS")
 	if cs != nil {
-		inspLines(&b, kvPairs(cs.Labels))
+		b.list(kvPairs(cs.Labels))
 	} else {
-		inspLines(&b, nil)
+		b.list(nil)
 	}
-
-	inspSection(&b, "VOLUMES / MOUNTS")
-	inspLines(&b, specMounts(cs))
-
-	inspSection(&b, "SECRETS")
-	inspLines(&b, specSecrets(cs))
+	b.section("VOLUMES / MOUNTS")
+	b.list(specMounts(cs))
+	b.section("SECRETS")
+	b.list(specSecrets(cs))
 	if cfgs := specConfigs(cs); len(cfgs) > 0 {
-		inspSection(&b, "CONFIGS")
-		inspLines(&b, cfgs)
+		b.section("CONFIGS")
+		b.list(cfgs)
 	}
-
-	inspSection(&b, "STATE")
-	inspKV(&b, "state", string(task.Status.State))
-	inspKV(&b, "desired", string(task.DesiredState))
-	inspKV(&b, "message", task.Status.Message)
-	inspKV(&b, "error", task.Status.Err)
+	b.section("STATE")
+	b.kv("state", string(task.Status.State))
+	b.kv("desired", string(task.DesiredState))
+	b.kv("message", task.Status.Message)
+	b.kv("error", task.Status.Err)
 	if st := task.Status.ContainerStatus; st != nil && st.ExitCode != 0 {
-		inspKV(&b, "exit code", fmt.Sprintf("%d", st.ExitCode))
+		b.kv("exit code", fmt.Sprintf("%d", st.ExitCode))
 	}
-	inspKV(&b, "since", tstr(task.Status.Timestamp))
+	b.kv("since", tstr(task.Status.Timestamp))
 
-	inspSection(&b, "PLACEMENT")
+	b.section("PLACEMENT")
 	node := nodeNames[task.NodeID]
 	if node == "" {
 		node = shortID(task.NodeID)
 	}
-	inspKV(&b, "node", node)
-	inspKV(&b, "slot", fmt.Sprintf("%d", task.Slot))
+	b.kv("node", node)
+	b.kv("slot", fmt.Sprintf("%d", task.Slot))
 
-	inspSection(&b, "CONTAINER")
+	b.section("CONTAINER")
 	if st := task.Status.ContainerStatus; st != nil {
-		inspKV(&b, "id", st.ContainerID)
+		b.kv("id", st.ContainerID)
 		if st.PID != 0 {
-			inspKV(&b, "pid", fmt.Sprintf("%d", st.PID))
+			b.kv("pid", fmt.Sprintf("%d", st.PID))
 		}
 	}
-
-	inspSection(&b, "IMAGE")
-	inspLines(&b, imageLine(cs))
-
+	b.section("IMAGE")
+	b.list(imageLine(cs))
 	if cs != nil && len(cs.Env) > 0 {
-		inspSection(&b, "ENV")
-		inspLines(&b, cs.Env)
+		b.section("ENV")
+		b.list(cs.Env)
 	}
 	if lines := resourceLines(task.Spec.Resources); len(lines) > 0 {
-		inspSection(&b, "RESOURCES")
-		inspLines(&b, lines)
+		b.section("RESOURCES")
+		b.list(lines)
 	}
-
-	inspSection(&b, "META")
-	inspKV(&b, "task id", task.ID)
-	inspKV(&b, "service id", task.ServiceID)
-	inspKV(&b, "created", tstr(task.Meta.CreatedAt))
-	return b.String()
+	b.section("META")
+	b.kv("task id", task.ID)
+	b.kv("service id", task.ServiceID)
+	b.kv("created", tstr(task.Meta.CreatedAt))
+	return b.lines
 }
 
-// --- section helpers --------------------------------------------------------
-
-func inspSection(b *strings.Builder, title string) { fmt.Fprintf(b, "\n[aqua]%s[-]\n", title) }
-
-func inspKV(b *strings.Builder, k, v string) {
-	if v == "" {
-		return
-	}
-	fmt.Fprintf(b, "  %-14s %s\n", k, tview.Escape(v))
-}
-
-func inspLines(b *strings.Builder, items []string) {
-	if len(items) == 0 {
-		fmt.Fprintf(b, "  [gray]-[-]\n")
-		return
-	}
-	for _, it := range items {
-		fmt.Fprintf(b, "  %s\n", tview.Escape(it))
-	}
-}
+// --- field helpers ----------------------------------------------------------
 
 func kvPairs(m map[string]string) []string {
 	if len(m) == 0 {

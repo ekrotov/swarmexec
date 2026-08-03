@@ -147,9 +147,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	var (
 		refreshForwardViews func()
 		flash               func(string)
-		updateStatus        func() // recomposes the footer status line
-		toggleMouse         func() // flips tview's mouse capture (defined below)
-		mouseEnabled        bool   // mirrors app.EnableMouse; toggled by 'm'
+		updateStatus        func()       // recomposes the footer status line
+		toggleMouse         func()       // flips tview's mouse capture (defined below)
+		mouseEnabled        bool         // mirrors app.EnableMouse; toggled by 'm'
+		overlayDepth        atomic.Int32 // number of open overlays (pauses the tree auto-refresh)
+		autoRefreshBusy     atomic.Bool  // guards against overlapping tree refreshes
+		// pushOverlayHelp overrides the single bottom footer with an overlay's own
+		// keys, returning a setter (to update it while the overlay is open) and a
+		// restore func (call on close). Nesting-safe: each call saves the current
+		// footer text. Assigned once the footer widget exists.
+		pushOverlayHelp func(string) (set func(string), restore func())
 	)
 
 	// ---------------------------------------------------------------- containers
@@ -391,11 +398,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// up without pressing r. renderContainers restores the cursor and expanded
 	// services, so the refresh is unobtrusive. A transient probe error is ignored
 	// rather than clobbering the tree with an error node.
+	//
+	// It skips while an overlay is open — the tree is hidden, and its periodic
+	// renderContainers on the UI goroutine would compete with keystrokes in the
+	// overlay (laggy input) — and never overlaps itself (a slow probe over ssh can
+	// outlast the tick).
 	autoRefreshContainers := func() {
+		if overlayDepth.Load() > 0 || !autoRefreshBusy.CompareAndSwap(false, true) {
+			return
+		}
 		go func() {
+			defer autoRefreshBusy.Store(false)
 			svcs, cands, err := fetchContainers()
-			if err != nil || ctx.Err() != nil {
-				return // transient error, or run ended while probing
+			if err != nil || ctx.Err() != nil || overlayDepth.Load() > 0 {
+				return // transient error, run ending, or an overlay opened meanwhile
 			}
 			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, nil) })
 		}()
@@ -1497,7 +1513,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// lookup, so they fill in lazily after the overlay is up.
 	showNetworkMembers := func(n swarmNetwork) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services — [a] attach · [d] detach · ESC back ", n.Name))
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services ", n.Name))
 		render := func(svcs []netService, loading bool) {
 			cur := list.GetCurrentItem()
 			list.Clear()
@@ -1541,7 +1557,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			init = append(init, netService{Name: s})
 		}
 		render(init, true)
-		closeMembers := func() { pages.RemovePage("netmembers"); app.SetFocus(nettable) }
+		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "move", "Esc", "back"))
+		closeMembers := func() { restoreHelp(); pages.RemovePage("netmembers"); app.SetFocus(nettable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -1678,7 +1695,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return t.Local().Format("2006-01-02 15:04:05")
 		}
 		tv := tview.NewTextView().SetDynamicColors(true)
-		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s — [a] attach · [d] detach service · ESC back ", s.Name))
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s ", s.Name))
 		render := func(members []netService, loading bool) {
 			var b strings.Builder
 			fmt.Fprintf(&b, "Name:     %s\n", s.Name)
@@ -1725,11 +1742,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			init = append(init, netService{Name: name})
 		}
 		render(init, true)
+		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
+		closeSecret := func() { restoreHelp(); pages.RemovePage("secdetail"); app.SetFocus(sectable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
-				pages.RemovePage("secdetail")
-				app.SetFocus(sectable)
+				closeSecret()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
 				suggestions := servicesExcluding(serviceNamesFromCache(), s.Services)
@@ -1738,7 +1756,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
 					suggestions, tv,
 					func(svc string) error { return attachSecretToService(ctx, dcli, svc, s.ID, s.Name) },
-					func() { pages.RemovePage("secdetail"); app.SetFocus(sectable); loadSecrets() },
+					func() { closeSecret(); loadSecrets() },
 				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
@@ -1751,7 +1769,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
 					s.Services, tv,
 					func(svc string) error { return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name) },
-					func() { pages.RemovePage("secdetail"); app.SetFocus(sectable); loadSecrets() },
+					func() { closeSecret(); loadSecrets() },
 				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
@@ -2157,6 +2175,27 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}()
 	}
 
+	// pushOverlayHelp points the single bottom footer at an overlay's keys. It
+	// saves the current footer text and returns a setter (to update while open)
+	// and a restore (to call on close). Because each call captures the then-
+	// current text, nested overlays restore correctly. It also tracks how many
+	// overlays are open (overlayDepth) so the background tree refresh can pause —
+	// otherwise its periodic renderContainers on the UI goroutine competes with
+	// keystrokes in an overlay and makes them feel laggy.
+	pushOverlayHelp = func(markup string) (func(string), func()) {
+		prev := help.GetText(false)
+		help.SetText(markup)
+		overlayDepth.Add(1)
+		var once sync.Once
+		restore := func() {
+			once.Do(func() {
+				overlayDepth.Add(-1)
+				help.SetText(prev)
+			})
+		}
+		return func(m string) { help.SetText(m) }, restore
+	}
+
 	// yankCurrent copies the active tab's list to the system clipboard via the
 	// terminal (OSC52), so it also works over ssh when the terminal supports it.
 	yankCurrent := func() {
@@ -2237,13 +2276,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// Toggleable log viewer: an overlay showing the in-memory log ring, refreshed
 	// live while open. Opened/closed with the backtick key from any tab.
 	var (
-		logViewStop chan struct{}
-		logViewPrev tview.Primitive
+		logViewStop    chan struct{}
+		logViewPrev    tview.Primitive
+		logViewRestore func()
 	)
 	closeLogView := func() {
 		if logViewStop != nil {
 			close(logViewStop)
 			logViewStop = nil
+		}
+		if logViewRestore != nil {
+			logViewRestore()
+			logViewRestore = nil
 		}
 		pages.RemovePage("logview")
 		if logViewPrev != nil {
@@ -2252,8 +2296,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 	openLogView := func() {
 		logViewPrev = app.GetFocus()
+		_, logViewRestore = pushOverlayHelp(footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
 		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-		tv.SetBorder(true).SetTitle(" logs — [`]/ESC close · ↑/↓ scroll · newest at bottom ")
+		tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
 		refresh := func() {
 			r := clientlog.RingBuffer()
 			var b strings.Builder
@@ -2388,7 +2433,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, back tview.Primitive, after func()) {
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — [a]dd [e]dit [d]elete · [w] apply · ESC cancel ", title))
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
 		render := func() {
 			idx := list.GetCurrentItem()
 			list.Clear()
@@ -2404,7 +2449,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		render()
-		closeEd := func() { pages.RemovePage("listedit"); app.SetFocus(back) }
+		_, restoreHelp := pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "j/k", "move", "Esc", "cancel"))
+		closeEd := func() { restoreHelp(); pages.RemovePage("listedit"); app.SetFocus(back) }
 		prompt := func(label, initial string, done func(string)) {
 			in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
 			if suggest != nil {
@@ -2469,6 +2515,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 									app.SetFocus(list)
 									return
 								}
+								restoreHelp()
 								pages.RemovePage("listedit")
 								info("service updated — rolling update started")
 								if after != nil {
@@ -2639,36 +2686,109 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}()
 	}
 
-	showInspect := func(title string, op string, editSvc string, fetch func() (string, string, error)) {
-		tv := tview.NewTextView().SetScrollable(true).SetWrap(true)
-		tv.SetBorder(true)
-		var formatted, rawJSON string
+	showInspect := func(title string, op string, editSvc string, fetch func() ([]inspLine, string, error)) {
+		table := tview.NewTable().SetSelectable(true, false)
+		table.SetBorder(true)
+		var lines []inspLine
+		var rawJSON string
+		var plain []string // plain text of each current row, for copy
 		loaded := false
 		showRaw := false
-		apply := func() {
+
+		keysText := func() string {
+			toggle := "raw JSON"
+			if showRaw {
+				toggle = "table"
+			}
+			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
+			if editSvc != "" {
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]n[white] networks")
+			}
+			parts = append(parts, "[yellow]Esc/q[white] close")
+			return " " + strings.Join(parts, "  ")
+		}
+		// The single bottom footer shows this overlay's keys; pushed on open below.
+		var setHelp func(string) = func(string) {}
+		var restoreHelp func()
+		setFooter := func(status string) {
+			t := keysText()
+			if status != "" {
+				t = " " + status + "  ·" + t
+			}
+			setHelp(t)
+		}
+		populate := func() {
 			mode := "table"
 			if showRaw {
 				mode = "raw json"
 			}
-			edit := ""
-			if editSvc != "" {
-				edit = " · [s]cale [p]orts [l]abels [n]ets"
-			}
-			tv.SetTitle(fmt.Sprintf(" inspect %s — %s · [t] toggle%s · ESC/q close ", title, mode, edit))
+			table.SetTitle(fmt.Sprintf(" inspect %s — %s ", title, mode))
+			table.Clear()
+			plain = plain[:0]
 			if !loaded {
-				tv.SetDynamicColors(true).SetText("loading…")
+				table.SetCell(0, 0, tview.NewTableCell("loading…").SetSelectable(false))
+				plain = append(plain, "")
+				setFooter("")
 				return
 			}
+			firstSel := -1
 			if showRaw {
-				// Raw JSON contains [brackets]; disable dynamic colours so they are literal.
-				tv.SetDynamicColors(false).SetText(rawJSON)
+				for i, ln := range strings.Split(rawJSON, "\n") {
+					table.SetCell(i, 0, tview.NewTableCell(tview.Escape(ln)).SetTextColor(tcell.ColorWhite))
+					if firstSel < 0 {
+						firstSel = i
+					}
+					plain = append(plain, ln)
+				}
 			} else {
-				tv.SetDynamicColors(true).SetText(formatted)
+				for i, ln := range lines {
+					cell := tview.NewTableCell(tview.Escape(ln.Text))
+					switch ln.Kind {
+					case inspTitle:
+						cell.SetTextColor(tcell.ColorAqua).SetAttributes(tcell.AttrBold).SetSelectable(false)
+					case inspHeader:
+						cell.SetTextColor(tcell.ColorAqua).SetSelectable(false)
+					case inspDim:
+						cell.SetTextColor(tcell.ColorGray).SetSelectable(false)
+					case inspBlank:
+						cell.SetSelectable(false)
+					default:
+						cell.SetTextColor(tcell.ColorWhite)
+						if firstSel < 0 {
+							firstSel = i
+						}
+					}
+					table.SetCell(i, 0, cell)
+					plain = append(plain, ln.Text)
+				}
 			}
-			tv.ScrollToBeginning()
+			table.ScrollToBeginning()
+			if firstSel < 0 {
+				firstSel = 0
+			}
+			table.Select(firstSel, 0)
+			setFooter("")
 		}
-		apply()
-		closeInspect := func() { pages.RemovePage("inspect"); app.SetFocus(ctree) }
+		copyLine := func() {
+			r, _ := table.GetSelection()
+			if r < 0 || r >= len(plain) {
+				return
+			}
+			txt := strings.TrimSpace(plain[r])
+			if txt == "" || screen == nil {
+				return
+			}
+			screen.SetClipboard([]byte(txt))
+			clientlog.L().Debug("inspect copy", "text", txt)
+			setFooter("[green]✓ copied to clipboard[white]")
+		}
+		closeInspect := func() {
+			if restoreHelp != nil {
+				restoreHelp()
+			}
+			pages.RemovePage("inspect")
+			app.SetFocus(ctree)
+		}
 		// reload re-fetches the inspect (after an edit) and refreshes the tree.
 		reload := func() {
 			loadContainers()
@@ -2678,37 +2798,47 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					if err != nil || !pages.HasPage("inspect") {
 						return
 					}
-					formatted, rawJSON, loaded = f, raw, true
-					apply()
+					lines, rawJSON, loaded = f, raw, true
+					populate()
 				})
 			}()
 		}
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		table.SetSelectionChangedFunc(func(int, int) { setFooter("") })
+		table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeInspect()
 				return nil
+			case ev.Key() == tcell.KeyEnter || (ev.Key() == tcell.KeyRune && ev.Rune() == 'y'):
+				copyLine()
+				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
 				showRaw = !showRaw
-				apply()
+				populate()
 				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 's':
-				openScalePrompt(editSvc, tv, reload)
+				openScalePrompt(editSvc, table, reload)
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'p':
-				openPortsEditor(editSvc, tv, reload)
+				openPortsEditor(editSvc, table, reload)
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
-				openLabelsEditor(editSvc, tv, reload)
+				openLabelsEditor(editSvc, table, reload)
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'n':
-				openNetworksEditor(editSvc, tv, reload)
+				openNetworksEditor(editSvc, table, reload)
 				return nil
 			}
 			return ev
 		})
-		pages.AddPage("inspect", centered(tv, 110, 40), true, true)
-		app.SetFocus(tv)
+		setHelp, restoreHelp = pushOverlayHelp(keysText())
+		populate() // shows "loading…"
+		pages.AddPage("inspect", centered(table, 110, 40), true, true)
+		app.SetFocus(table)
 		go func() {
 			start := time.Now()
 			f, raw, err := fetch()
@@ -2718,11 +2848,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				if err != nil {
-					tv.SetDynamicColors(false).SetText("error: " + err.Error())
+					table.Clear()
+					table.SetCell(0, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+					setFooter("")
 					return
 				}
-				formatted, rawJSON, loaded = f, raw, true
-				apply()
+				lines, rawJSON, loaded = f, raw, true
+				populate()
 			})
 		}()
 	}
@@ -2735,12 +2867,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		if c, ok := n.GetReference().(resolve.Candidate); ok {
 			showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task", "",
-				func() (string, string, error) { return taskInspectViews(ctx, dcli, c.TaskID) })
+				func() ([]inspLine, string, error) { return taskInspectViews(ctx, dcli, c.TaskID) })
 			return
 		}
 		if ref, ok := n.GetReference().(svcRef); ok {
 			showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service", ref.name,
-				func() (string, string, error) { return serviceInspectViews(ctx, dcli, ref.name) })
+				func() ([]inspLine, string, error) { return serviceInspectViews(ctx, dcli, ref.name) })
 		}
 	}
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -3287,4 +3419,15 @@ func centered(p tview.Primitive, width, height int) tview.Primitive {
 			AddItem(p, height, 1, true).
 			AddItem(nil, 0, 1, false), width, 1, true).
 		AddItem(nil, 0, 1, false)
+}
+
+// footerKeys builds the markup for the bottom footer from key,description pairs
+// (dynamic-colour tags, as the footer is a TextView). Overlays feed it to
+// pushOverlayHelp so the single bottom footer describes the active view's keys.
+func footerKeys(pairs ...string) string {
+	var b strings.Builder
+	for i := 0; i+1 < len(pairs); i += 2 {
+		fmt.Fprintf(&b, " [yellow]%s[white] %s ", pairs[i], pairs[i+1])
+	}
+	return b.String()
 }
