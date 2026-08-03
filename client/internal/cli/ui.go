@@ -2430,10 +2430,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// operator add/edit/delete locally, then apply them all at once (one
 	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
 	// the final list; after runs on success. Used for a service's ports and labels.
-	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, back tview.Primitive, after func()) {
+	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit bool, back tview.Primitive, after func()) {
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
+		keyPairs := []string{"a", "add"}
+		if allowEdit {
+			keyPairs = append(keyPairs, "e", "edit")
+		}
+		keyPairs = append(keyPairs, "d", "delete", "w", "apply", "j/k", "move", "Esc", "cancel")
 		render := func() {
 			idx := list.GetCurrentItem()
 			list.Clear()
@@ -2449,7 +2454,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		render()
-		_, restoreHelp := pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "j/k", "move", "Esc", "cancel"))
+		_, restoreHelp := pushOverlayHelp(footerKeys(keyPairs...))
 		closeEd := func() { restoreHelp(); pages.RemovePage("listedit"); app.SetFocus(back) }
 		prompt := func(label, initial string, done func(string)) {
 			in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
@@ -2486,7 +2491,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
 				prompt("add: ", "", func(n string) { cur = append(cur, n) })
 				return nil
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
+			case allowEdit && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
 				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
 					prompt("edit: ", cur[i], func(n string) { cur[i] = n })
 				}
@@ -2557,7 +2562,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServicePorts(ctx, dcli, svcName, ports)
-					}, nil, back, after)
+					}, nil, true, back, after)
 			})
 		}()
 	}
@@ -2583,7 +2588,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceLabels(ctx, dcli, svcName, labels)
-					}, nil, back, after)
+					}, nil, true, back, after)
 			})
 		}()
 	}
@@ -2635,7 +2640,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, back, after)
+					}, false, back, after)
 			})
 		}()
 	}
