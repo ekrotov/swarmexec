@@ -706,7 +706,7 @@
           <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>collapse / expand a service</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a scrollable overlay showing a tabular summary; <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>p</kbd> ports, <kbd>l</kbd> labels</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a scrollable overlay showing a tabular summary; <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>n</kbd> networks</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -750,10 +750,11 @@
           <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
           <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code></td></tr>
           <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries</td></tr>
+          <tr><td><kbd>n</kbd></td><td>edit networks — the same staged list editor over the service's network attachments; the add/edit input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code></td></tr>
         </tbody>
       </table></div>
       <p>
-        The ports and labels editors are <strong>staged</strong>: <kbd>a</kbd> adds an
+        The ports, labels and networks editors are <strong>staged</strong>: <kbd>a</kbd> adds an
         entry, <kbd>e</kbd> edits the one under the cursor, <kbd>d</kbd> deletes it, and
         <kbd>w</kbd> applies all changes at once (behind a confirmation); <kbd>Esc</kbd>
         cancels and discards the staged edits.

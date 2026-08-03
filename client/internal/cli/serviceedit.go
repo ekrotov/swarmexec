@@ -6,10 +6,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
 )
@@ -118,6 +120,77 @@ func currentServiceReplicas(ctx context.Context, dcli *client.Client, name strin
 		replicas = *r.Replicas
 	}
 	return replicas, true, nil
+}
+
+// setServiceNetworks replaces the networks a service is attached to. targetIDs
+// are network IDs (or names the daemon can resolve). It writes the current
+// TaskTemplate.Networks and clears the deprecated Spec.Networks so it cannot
+// override.
+func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, targetIDs []string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	spec := svc.Spec
+	var nets []swarm.NetworkAttachmentConfig
+	for _, id := range targetIDs {
+		nets = append(nets, swarm.NetworkAttachmentConfig{Target: id})
+	}
+	spec.TaskTemplate.Networks = nets
+	spec.Networks = nil
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// listNetworkRefs returns name->ID and ID->name maps plus the sorted network
+// names, for the networks editor (autocomplete + name/ID resolution).
+func listNetworkRefs(ctx context.Context, dcli *client.Client) (idByName, idToName map[string]string, names []string) {
+	idByName, idToName = map[string]string{}, map[string]string{}
+	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return idByName, idToName, names
+	}
+	for _, n := range nets {
+		idByName[n.Name] = n.ID
+		idToName[n.ID] = n.Name
+		names = append(names, n.Name)
+	}
+	sort.Strings(names)
+	return idByName, idToName, names
+}
+
+// currentServiceNetworks returns the network names a service is attached to.
+func currentServiceNetworks(ctx context.Context, dcli *client.Client, name string, idToName map[string]string) ([]string, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(target string) {
+		if target == "" || seen[target] {
+			return
+		}
+		seen[target] = true
+		n := idToName[target]
+		if n == "" {
+			n = target
+		}
+		out = append(out, n)
+	}
+	for _, a := range svc.Spec.TaskTemplate.Networks {
+		add(a.Target)
+	}
+	for _, a := range svc.Spec.Networks {
+		add(a.Target)
+	}
+	return out, nil
 }
 
 // formatServicePort renders a port config as "published:target/proto".

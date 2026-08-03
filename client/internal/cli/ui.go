@@ -2385,7 +2385,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// operator add/edit/delete locally, then apply them all at once (one
 	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
 	// the final list; after runs on success. Used for a service's ports and labels.
-	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, back tview.Primitive, after func()) {
+	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, back tview.Primitive, after func()) {
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — [a]dd [e]dit [d]elete · [w] apply · ESC cancel ", title))
@@ -2407,6 +2407,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		closeEd := func() { pages.RemovePage("listedit"); app.SetFocus(back) }
 		prompt := func(label, initial string, done func(string)) {
 			in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
+			if suggest != nil {
+				in.SetAutocompleteFunc(suggest)
+			}
 			in.SetDoneFunc(func(k tcell.Key) {
 				pages.RemovePage("listeditprompt")
 				app.SetFocus(list)
@@ -2507,7 +2510,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServicePorts(ctx, dcli, svcName, ports)
-					}, back, after)
+					}, nil, back, after)
 			})
 		}()
 	}
@@ -2533,6 +2536,58 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceLabels(ctx, dcli, svcName, labels)
+					}, nil, back, after)
+			})
+		}()
+	}
+	// openNetworksEditor edits the networks a service is attached to, with
+	// autocomplete of network names (add/remove), applied in one ServiceUpdate.
+	openNetworksEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			idByName, idToName, allNames := listNetworkRefs(ctx, dcli)
+			current, err := currentServiceNetworks(ctx, dcli, svcName, idToName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load networks: " + err.Error())
+					return
+				}
+				attached := map[string]bool{}
+				for _, c := range current {
+					attached[c] = true
+				}
+				editList("networks of "+svcName, "Update the networks", current,
+					func(s string) (string, error) {
+						if _, ok := idByName[s]; ok {
+							return s, nil // known name
+						}
+						if n := idToName[s]; n != "" {
+							return n, nil // an id → show its name
+						}
+						return "", fmt.Errorf("unknown network %q", s)
+					},
+					func(list []string) error {
+						ids := make([]string, 0, len(list))
+						for _, name := range list {
+							id := idByName[name]
+							if id == "" {
+								id = name // already an id
+							}
+							ids = append(ids, id)
+						}
+						return setServiceNetworks(ctx, dcli, svcName, ids)
+					},
+					func(text string) []string {
+						text = strings.ToLower(strings.TrimSpace(text))
+						var out []string
+						for _, n := range allNames {
+							if attached[n] {
+								continue
+							}
+							if text == "" || strings.Contains(strings.ToLower(n), text) {
+								out = append(out, n)
+							}
+						}
+						return out
 					}, back, after)
 			})
 		}()
@@ -2597,7 +2652,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			edit := ""
 			if editSvc != "" {
-				edit = " · [s]cale [p]orts [l]abels"
+				edit = " · [s]cale [p]orts [l]abels [n]ets"
 			}
 			tv.SetTitle(fmt.Sprintf(" inspect %s — %s · [t] toggle%s · ESC/q close ", title, mode, edit))
 			if !loaded {
@@ -2645,6 +2700,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
 				openLabelsEditor(editSvc, tv, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'n':
+				openNetworksEditor(editSvc, tv, reload)
 				return nil
 			}
 			return ev
