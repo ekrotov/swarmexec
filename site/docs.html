@@ -706,7 +706,7 @@
           <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>collapse / expand a service</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a scrollable overlay showing a tabular summary; <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>n</kbd> networks</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>n</kbd> networks</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -738,6 +738,28 @@
         <code>docker container inspect</code> of the running container — a real container
         inspect via the agent is planned.
       </p>
+      <p>
+        The overlay is <strong>navigable and selectable</strong>, not just a plain scroll:
+        data lines are individually selectable and you move the cursor line by line with
+        <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd> (section headers and blank
+        lines are skipped). <kbd>y</kbd> or <kbd>Enter</kbd> copies the selected line to
+        your clipboard over OSC52 — the same yank mechanism used elsewhere — so you can
+        grab a single id, mount or address without selecting text by hand. Both views (the
+        tabular summary and the raw JSON reached with <kbd>t</kbd>) are selectable and
+        copyable line by line. A <strong>footer always lists the available keys</strong>,
+        so what you can do is visible at a glance; for a service the footer also shows the
+        edit keys below.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>move the selection between data lines (headers/blanks skipped)</td></tr>
+          <tr><td><kbd>y</kbd> <kbd>Enter</kbd></td><td>copy the selected line to the clipboard (OSC52)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>toggle between the tabular summary and the raw daemon JSON (both selectable)</td></tr>
+          <tr><td><kbd>s</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>n</kbd></td><td>edit the service — scale / ports / labels / networks (service only; see below)</td></tr>
+          <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>close the overlay</td></tr>
+        </tbody>
+      </table></div>
       <p>
         When you inspect a <strong>service</strong> (not a container/task leaf, whose
         overlay stays read-only), the overlay title also exposes three edit keys, each a
