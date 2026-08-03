@@ -772,14 +772,17 @@
           <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
           <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code></td></tr>
           <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries</td></tr>
-          <tr><td><kbd>n</kbd></td><td>edit networks — the same staged list editor over the service's network attachments; the add/edit input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code></td></tr>
+          <tr><td><kbd>n</kbd></td><td>edit networks — a staged list editor over the service's network attachments; since an entry is just a name it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code></td></tr>
         </tbody>
       </table></div>
       <p>
-        The ports, labels and networks editors are <strong>staged</strong>: <kbd>a</kbd> adds an
-        entry, <kbd>e</kbd> edits the one under the cursor, <kbd>d</kbd> deletes it, and
-        <kbd>w</kbd> applies all changes at once (behind a confirmation); <kbd>Esc</kbd>
-        cancels and discards the staged edits.
+        These editors are <strong>staged</strong>: <kbd>a</kbd> adds an entry, <kbd>d</kbd>
+        deletes the one under the cursor, and <kbd>w</kbd> applies all changes at once
+        (behind a confirmation); <kbd>Esc</kbd> cancels and discards the staged edits. The
+        <strong>ports</strong> and <strong>labels</strong> editors also have <kbd>e</kbd> to
+        edit the entry under the cursor; the <strong>networks</strong> editor has no
+        <kbd>e</kbd> — a network entry is just a name, so it's add (<kbd>a</kbd>) / remove
+        (<kbd>d</kbd>) only.
       </p>
       <p>
         The tree auto-refreshes every ~10s, so a container replaced or a service scaled
