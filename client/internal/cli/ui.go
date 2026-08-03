@@ -2381,7 +2381,210 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// tabular, operator-first summary (default) and the raw daemon JSON, toggled
 	// with `t`. fetch runs off the UI goroutine so a slow manager cannot freeze
 	// the loop. It returns (formatted, rawJSON).
-	showInspect := func(title string, op string, fetch func() (string, string, error)) {
+	// editList is a staged list editor: it shows the current entries and lets the
+	// operator add/edit/delete locally, then apply them all at once (one
+	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
+	// the final list; after runs on success. Used for a service's ports and labels.
+	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, back tview.Primitive, after func()) {
+		cur := append([]string{}, items...)
+		list := tview.NewList().ShowSecondaryText(false)
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — [a]dd [e]dit [d]elete · [w] apply · ESC cancel ", title))
+		render := func() {
+			idx := list.GetCurrentItem()
+			list.Clear()
+			if len(cur) == 0 {
+				list.AddItem("(none)", "", 0, nil)
+			} else {
+				for _, it := range cur {
+					list.AddItem(it, "", 0, nil)
+				}
+			}
+			if idx >= 0 && idx < list.GetItemCount() {
+				list.SetCurrentItem(idx)
+			}
+		}
+		render()
+		closeEd := func() { pages.RemovePage("listedit"); app.SetFocus(back) }
+		prompt := func(label, initial string, done func(string)) {
+			in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
+			in.SetDoneFunc(func(k tcell.Key) {
+				pages.RemovePage("listeditprompt")
+				app.SetFocus(list)
+				if k != tcell.KeyEnter {
+					return
+				}
+				txt := strings.TrimSpace(in.GetText())
+				if txt == "" {
+					return
+				}
+				norm, err := validate(txt)
+				if err != nil {
+					info(err.Error())
+					return
+				}
+				done(norm)
+				render()
+			})
+			in.SetBorder(true)
+			pages.AddPage("listeditprompt", centered(in, 60, 3), true, true)
+			app.SetFocus(in)
+		}
+		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape:
+				closeEd()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				prompt("add: ", "", func(n string) { cur = append(cur, n) })
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
+				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
+					prompt("edit: ", cur[i], func(n string) { cur[i] = n })
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
+					cur = append(cur[:i], cur[i+1:]...)
+					render()
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
+				confirm := tview.NewModal().
+					SetText(fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", applyVerb)).
+					AddButtons([]string{"Apply", "Cancel"}).
+					SetDoneFunc(func(_ int, lbl string) {
+						pages.RemovePage("listeditconfirm")
+						if lbl != "Apply" {
+							app.SetFocus(list)
+							return
+						}
+						go func() {
+							err := onApply(cur)
+							app.QueueUpdateDraw(func() {
+								if err != nil {
+									info("update failed: " + err.Error())
+									app.SetFocus(list)
+									return
+								}
+								pages.RemovePage("listedit")
+								info("service updated — rolling update started")
+								if after != nil {
+									after()
+								}
+							})
+						}()
+					})
+				pages.AddPage("listeditconfirm", confirm, true, true)
+				app.SetFocus(confirm)
+				return nil
+			}
+			return vimListKeys(ev)
+		})
+		pages.AddPage("listedit", centered(list, 72, 18), true, true)
+		app.SetFocus(list)
+	}
+	// openPortsEditor / openLabelsEditor fetch the service's current ports/labels
+	// off the UI goroutine, then open the staged editor.
+	openPortsEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			items, err := currentServicePorts(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load ports: " + err.Error())
+					return
+				}
+				editList("ports of "+svcName, "Update the published ports", items,
+					func(s string) (string, error) {
+						p, e := parseServicePort(s)
+						if e != nil {
+							return "", e
+						}
+						return formatServicePort(p), nil
+					},
+					func(list []string) error {
+						ports, e := portsFromStrings(list)
+						if e != nil {
+							return e
+						}
+						return setServicePorts(ctx, dcli, svcName, ports)
+					}, back, after)
+			})
+		}()
+	}
+	openLabelsEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			items, err := currentServiceLabels(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load labels: " + err.Error())
+					return
+				}
+				editList("labels of "+svcName, "Update the labels", items,
+					func(s string) (string, error) {
+						k, v, e := parseLabel(s)
+						if e != nil {
+							return "", e
+						}
+						return k + "=" + v, nil
+					},
+					func(list []string) error {
+						labels, e := labelsFromStrings(list)
+						if e != nil {
+							return e
+						}
+						return setServiceLabels(ctx, dcli, svcName, labels)
+					}, back, after)
+			})
+		}()
+	}
+	// openScalePrompt asks for a new replica count and scales the service.
+	openScalePrompt := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			cur, replicated, err := currentServiceReplicas(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load service: " + err.Error())
+					return
+				}
+				if !replicated {
+					info(fmt.Sprintf("service %q is not replicated and cannot be scaled", svcName))
+					return
+				}
+				in := tview.NewInputField().SetLabel("replicas: ").SetText(fmt.Sprintf("%d", cur)).
+					SetFieldWidth(8).SetAcceptanceFunc(tview.InputFieldInteger)
+				in.SetDoneFunc(func(k tcell.Key) {
+					pages.RemovePage("scaleprompt")
+					app.SetFocus(back)
+					if k != tcell.KeyEnter {
+						return
+					}
+					n, perr := strconv.ParseUint(strings.TrimSpace(in.GetText()), 10, 64)
+					if perr != nil {
+						info("invalid replica count")
+						return
+					}
+					go func() {
+						serr := scaleService(ctx, dcli, svcName, n)
+						app.QueueUpdateDraw(func() {
+							if serr != nil {
+								info("scale failed: " + serr.Error())
+								return
+							}
+							info(fmt.Sprintf("scaled %q to %d — reconciling", svcName, n))
+							if after != nil {
+								after()
+							}
+						})
+					}()
+				})
+				in.SetBorder(true).SetTitle(" scale service ")
+				pages.AddPage("scaleprompt", centered(in, 50, 3), true, true)
+				app.SetFocus(in)
+			})
+		}()
+	}
+
+	showInspect := func(title string, op string, editSvc string, fetch func() (string, string, error)) {
 		tv := tview.NewTextView().SetScrollable(true).SetWrap(true)
 		tv.SetBorder(true)
 		var formatted, rawJSON string
@@ -2392,7 +2595,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if showRaw {
 				mode = "raw json"
 			}
-			tv.SetTitle(fmt.Sprintf(" inspect %s — %s · [t] toggle view · ESC/q close ", title, mode))
+			edit := ""
+			if editSvc != "" {
+				edit = " · [s]cale [p]orts [l]abels"
+			}
+			tv.SetTitle(fmt.Sprintf(" inspect %s — %s · [t] toggle%s · ESC/q close ", title, mode, edit))
 			if !loaded {
 				tv.SetDynamicColors(true).SetText("loading…")
 				return
@@ -2407,6 +2614,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		apply()
 		closeInspect := func() { pages.RemovePage("inspect"); app.SetFocus(ctree) }
+		// reload re-fetches the inspect (after an edit) and refreshes the tree.
+		reload := func() {
+			loadContainers()
+			go func() {
+				f, raw, err := fetch()
+				app.QueueUpdateDraw(func() {
+					if err != nil || !pages.HasPage("inspect") {
+						return
+					}
+					formatted, rawJSON, loaded = f, raw, true
+					apply()
+				})
+			}()
+		}
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -2415,6 +2636,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
 				showRaw = !showRaw
 				apply()
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 's':
+				openScalePrompt(editSvc, tv, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'p':
+				openPortsEditor(editSvc, tv, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
+				openLabelsEditor(editSvc, tv, reload)
 				return nil
 			}
 			return ev
@@ -2446,12 +2676,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return
 		}
 		if c, ok := n.GetReference().(resolve.Candidate); ok {
-			showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task",
+			showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task", "",
 				func() (string, string, error) { return taskInspectViews(ctx, dcli, c.TaskID) })
 			return
 		}
 		if ref, ok := n.GetReference().(svcRef); ok {
-			showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service",
+			showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service", ref.name,
 				func() (string, string, error) { return serviceInspectViews(ctx, dcli, ref.name) })
 		}
 	}
