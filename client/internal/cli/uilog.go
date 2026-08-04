@@ -47,6 +47,12 @@ type logViewer struct {
 }
 
 func newLogViewer(app *tview.Application, tv *tview.TextView, follow *atomic.Bool, format logfmt.Format, filter logfmt.Filter) *logViewer {
+	// Cap the TextView's own buffer, not just our raw-line ring: without this the
+	// TextView grows unbounded while streaming, so every redraw (and ScrollToEnd
+	// while following) gets progressively slower and starves keyboard input — you
+	// could no longer toggle follow on a long-running view. SetMaxLines trims old
+	// rendered lines to match the ring cap, keeping redraws constant-time.
+	tv.SetMaxLines(logBufferCap)
 	return &logViewer{app: app, tv: tv, follow: follow, format: format, filter: filter}
 }
 
