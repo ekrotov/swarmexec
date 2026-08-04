@@ -283,6 +283,30 @@ func setServiceMounts(ctx context.Context, dcli *client.Client, name string, mou
 	return err
 }
 
+// addServiceMount appends a single mount to a service (read-modify-write
+// ServiceUpdate). Errors if a mount already exists at the same target.
+func addServiceMount(ctx context.Context, dcli *client.Client, name string, m mount.Mount) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	if svc.Spec.TaskTemplate.ContainerSpec == nil {
+		return fmt.Errorf("service %q has no container spec", name)
+	}
+	for _, ex := range svc.Spec.TaskTemplate.ContainerSpec.Mounts {
+		if ex.Target == m.Target {
+			return fmt.Errorf("service %q already has a mount at %q", name, m.Target)
+		}
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, m)
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
 // currentServiceMountSpecs returns a service's mounts as editable strings.
 func currentServiceMountSpecs(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)

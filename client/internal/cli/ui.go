@@ -2104,8 +2104,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]Enter[white] menu  [yellow]%s[white] forward  %s",
 				kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
 		case "volumes":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
-				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
+				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
 		case "networks":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  %s", kl(km.NetAttached), tail)
 		case "secrets":
@@ -3130,11 +3130,86 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return tabKeys(ev)
 	})
 	// On the volumes table, "i" shows which services/containers use the volume.
+	// attachVolumeToService mounts a volume into a service from the Volumes tab:
+	// pick a service (autocomplete), enter the container target path, choose
+	// read-only or not, then a ServiceUpdate adds the mount.
+	attachVolumeToService := func(volName string) {
+		in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(42).
+			SetPlaceholder("type or ↓ to pick; Enter next, Esc cancel")
+		names := serviceNamesFromCache()
+		in.SetAutocompleteFunc(func(text string) []string {
+			text = strings.ToLower(strings.TrimSpace(text))
+			var out []string
+			for _, s := range names {
+				if text == "" || strings.Contains(strings.ToLower(s), text) {
+					out = append(out, s)
+				}
+			}
+			return out
+		})
+		in.SetDoneFunc(func(key tcell.Key) {
+			svc := strings.TrimSpace(in.GetText())
+			pages.RemovePage("volattach")
+			if key != tcell.KeyEnter || svc == "" {
+				app.SetFocus(vtable)
+				return
+			}
+			tin := tview.NewInputField().SetLabel("target path: ").SetFieldWidth(42).SetPlaceholder("/data")
+			tin.SetDoneFunc(func(k tcell.Key) {
+				target := strings.TrimSpace(tin.GetText())
+				pages.RemovePage("volattachtgt")
+				if k != tcell.KeyEnter || target == "" {
+					app.SetFocus(vtable)
+					return
+				}
+				if !strings.HasPrefix(target, "/") {
+					info("target must be an absolute path")
+					return
+				}
+				m := tview.NewModal().
+					SetText(fmt.Sprintf("Attach volume %q to service %q at %s?\n\nThis triggers a rolling update of the service.", volName, svc, target)).
+					AddButtons([]string{"Attach", "Attach read-only", "Cancel"}).
+					SetDoneFunc(func(_ int, lbl string) {
+						pages.RemovePage("volattachconfirm")
+						if lbl == "Cancel" || lbl == "" {
+							app.SetFocus(vtable)
+							return
+						}
+						mnt := mount.Mount{Type: mount.TypeVolume, Source: volName, Target: target, ReadOnly: lbl == "Attach read-only"}
+						go func() {
+							err := addServiceMount(ctx, dcli, svc, mnt)
+							app.QueueUpdateDraw(func() {
+								app.SetFocus(vtable)
+								if err != nil {
+									info("attach failed: " + err.Error())
+									return
+								}
+								loadVolumes()
+								info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
+							})
+						}()
+					})
+				pages.AddPage("volattachconfirm", m, true, true)
+				app.SetFocus(m)
+			})
+			tin.SetBorder(true).SetTitle(fmt.Sprintf(" attach %s → %s ", volName, svc))
+			pages.AddPage("volattachtgt", centered(tin, 64, 3), true, true)
+			app.SetFocus(tin)
+		})
+		in.SetBorder(true).SetTitle(fmt.Sprintf(" attach volume %q to service ", volName))
+		pages.AddPage("volattach", centered(in, 64, 3), true, true)
+		app.SetFocus(in)
+	}
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case km.Search:
 				startSearch("volumes")
+				return nil
+			case km.VolAttach:
+				if v, ok := selectedVolume(); ok {
+					attachVolumeToService(v.Name)
+				}
 				return nil
 			case km.VolSelect:
 				// Toggle the current volume's selection for a bulk delete.
