@@ -728,7 +728,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
-		closeMenu := func() { pages.RemovePage("menu"); app.SetFocus(ctree) }
+		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+		closeMenu := func() { restoreHelp(); pages.RemovePage("menu"); app.SetFocus(ctree) }
 
 		// Optimistic until the shell probe returns; then unavailable shells grey.
 		bashOK, shOK, probed := true, true, false
@@ -767,7 +768,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			b, s := probeShells(ctx, cfg, ep, f.connectTimeout)
 			app.QueueUpdateDraw(func() {
 				bashOK, shOK, probed = b, s, true
-				list.SetTitle(fmt.Sprintf(" %s on %s — pick an action (ESC cancels) ", orDash(c.Service), orDash(c.NodeName)))
+				list.SetTitle(fmt.Sprintf(" %s on %s — actions ", orDash(c.Service), orDash(c.NodeName)))
 				render()
 			})
 		}()
@@ -1156,7 +1157,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	showVolumeConsumers := func(v swarmVolume) {
 		consumers := volUsage[v.Name]
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — used by %d — ESC back ", v.Name, len(consumers)))
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — used by %d ", v.Name, len(consumers)))
 		if len(consumers) == 0 {
 			list.AddItem("(not in use by any container)", "", 0, nil)
 		} else {
@@ -1173,7 +1174,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, orDash(c.Service), contW, orDash(c.Container), orDash(c.Node)), "", 0, nil)
 			}
 		}
-		closeUsers := func() { pages.RemovePage("volusers"); app.SetFocus(vtable) }
+		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Esc", "back"))
+		closeUsers := func() { restoreHelp(); pages.RemovePage("volusers"); app.SetFocus(vtable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
 				closeUsers()
@@ -1870,14 +1872,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	showCreateContext := func() {
 		var name, host, desc string
 		form := tview.NewForm()
-		form.SetBorder(true).SetTitle(" new context — Esc cancels ")
+		form.SetBorder(true).SetTitle(" new context ")
 		form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
 		form.AddInputField("Docker host", "", 44, nil, func(t string) { host = t })
 		form.AddInputField("Description", "", 44, nil, func(t string) { desc = t })
 		if hf, ok := form.GetFormItem(1).(*tview.InputField); ok {
 			hf.SetPlaceholder("ssh://ops@manager  |  tcp://host:2376")
 		}
-		closeForm := func() { pages.RemovePage("ctxform"); app.SetFocus(cxtable) }
+		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+		closeForm := func() { restoreHelp(); pages.RemovePage("ctxform"); app.SetFocus(cxtable) }
 		form.AddButton("Create", func() {
 			if err := dockerctx.Create(strings.TrimSpace(name), strings.TrimSpace(host), strings.TrimSpace(desc)); err != nil {
 				info("create failed: " + err.Error())
@@ -2439,7 +2442,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if allowEdit {
 			keyPairs = append(keyPairs, "e", "edit")
 		}
-		keyPairs = append(keyPairs, "d", "delete", "w", "apply", "j/k", "move", "Esc", "cancel")
+		keyPairs = append(keyPairs, "d", "delete", "u", "undo", "w", "apply", "j/k", "move", "Esc", "cancel")
+		// history stacks snapshots of cur before each staged change, so `u` undoes
+		// one step (add/edit/delete) as long as nothing has been applied yet.
+		var history [][]string
 		render := func() {
 			idx := list.GetCurrentItem()
 			list.Clear()
@@ -2455,6 +2461,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		render()
+		snapshot := func() { history = append(history, append([]string{}, cur...)) }
+		undo := func() {
+			if len(history) == 0 {
+				return
+			}
+			cur = history[len(history)-1]
+			history = history[:len(history)-1]
+			render()
+		}
 		_, restoreHelp := pushOverlayHelp(footerKeys(keyPairs...))
 		closeEd := func() { restoreHelp(); pages.RemovePage("listedit"); app.SetFocus(back) }
 		prompt := func(label, initial string, done func(string)) {
@@ -2490,18 +2505,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				closeEd()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-				prompt("add: ", "", func(n string) { cur = append(cur, n) })
+				prompt("add: ", "", func(n string) { snapshot(); cur = append(cur, n) })
 				return nil
 			case allowEdit && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
 				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
-					prompt("edit: ", cur[i], func(n string) { cur[i] = n })
+					prompt("edit: ", cur[i], func(n string) { snapshot(); cur[i] = n })
 				}
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
 				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
+					snapshot()
 					cur = append(cur[:i], cur[i+1:]...)
 					render()
 				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'u':
+				undo()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
 				text := fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", applyVerb)
@@ -2699,6 +2718,34 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// read-only flag). For bind mounts it can't verify the host path (no host
 	// access), so on apply it warns which nodes the service could run on and that
 	// each bind source must already exist on all of them.
+	// openEnvEditor edits a service's environment variables (KEY=VALUE), with
+	// edit allowed (adjust a value in place), add and remove.
+	openEnvEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			items, err := currentServiceEnv(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load env: " + err.Error())
+					return
+				}
+				editList("env of "+svcName, "Update the environment", items,
+					func(s string) (string, error) {
+						k, v, e := parseEnv(s)
+						if e != nil {
+							return "", e
+						}
+						return k + "=" + v, nil
+					},
+					func(list []string) error {
+						env, e := envFromStrings(list)
+						if e != nil {
+							return e
+						}
+						return setServiceEnv(ctx, dcli, svcName, env)
+					}, nil, true, nil, back, after)
+			})
+		}()
+	}
 	openMountsEditor := func(svcName string, back tview.Primitive, after func()) {
 		go func() {
 			items, err := currentServiceMountSpecs(ctx, dcli, svcName)
@@ -2809,7 +2856,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts")
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -2944,6 +2991,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'v':
 				openMountsEditor(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
+				openEnvEditor(editSvc, table, reload)
 				return nil
 			}
 			return ev

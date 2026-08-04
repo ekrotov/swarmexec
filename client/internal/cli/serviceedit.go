@@ -194,6 +194,73 @@ func currentServiceNetworks(ctx context.Context, dcli *client.Client, name strin
 	return out, nil
 }
 
+// setServiceEnv replaces a service's environment variables ("KEY=VALUE").
+// Read-modify-write ServiceUpdate (rolling update).
+func setServiceEnv(ctx context.Context, dcli *client.Client, name string, env []string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	if svc.Spec.TaskTemplate.ContainerSpec == nil {
+		return fmt.Errorf("service %q has no container spec", name)
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Env = env
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// currentServiceEnv returns a service's environment variables as "KEY=VALUE".
+func currentServiceEnv(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	var out []string
+	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil {
+		out = append(out, cs.Env...)
+	}
+	return out, nil
+}
+
+// parseEnv splits "KEY=VALUE"; the key is trimmed and required, the value is
+// kept verbatim (env values may contain '=' and meaningful whitespace).
+func parseEnv(s string) (key, value string, err error) {
+	i := strings.Index(s, "=")
+	if i <= 0 {
+		return "", "", fmt.Errorf("environment variable must be KEY=VALUE")
+	}
+	key = strings.TrimSpace(s[:i])
+	if key == "" {
+		return "", "", fmt.Errorf("environment variable key must not be empty")
+	}
+	return key, s[i+1:], nil
+}
+
+// envFromStrings validates edited "KEY=VALUE" entries and rejects a duplicate key.
+func envFromStrings(items []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		k, v, err := parseEnv(it)
+		if err != nil {
+			return nil, err
+		}
+		if seen[k] {
+			return nil, fmt.Errorf("duplicate environment variable %q", k)
+		}
+		seen[k] = true
+		out = append(out, k+"="+v)
+	}
+	return out, nil
+}
+
 // setServiceSecrets replaces the secrets a service references. secretNames are
 // resolved to their IDs; each is mounted at /run/secrets/<name>. Read-modify-
 // write ServiceUpdate (rolling update).
