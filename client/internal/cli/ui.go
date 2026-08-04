@@ -2644,6 +2644,50 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 	}
+	// openSecretsEditor edits the secrets a service references, with autocomplete
+	// of secret names (add/remove), applied in one ServiceUpdate. Works even when
+	// the service has none yet.
+	openSecretsEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			all := secretNames(ctx, dcli)
+			current, err := currentServiceSecrets(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load secrets: " + err.Error())
+					return
+				}
+				known := map[string]bool{}
+				for _, n := range all {
+					known[n] = true
+				}
+				attached := map[string]bool{}
+				for _, c := range current {
+					attached[c] = true
+				}
+				editList("secrets of "+svcName, "Update the secrets", current,
+					func(s string) (string, error) {
+						if known[s] {
+							return s, nil
+						}
+						return "", fmt.Errorf("unknown secret %q", s)
+					},
+					func(list []string) error { return setServiceSecrets(ctx, dcli, svcName, list) },
+					func(text string) []string {
+						text = strings.ToLower(strings.TrimSpace(text))
+						var out []string
+						for _, n := range all {
+							if attached[n] {
+								continue
+							}
+							if text == "" || strings.Contains(strings.ToLower(n), text) {
+								out = append(out, n)
+							}
+						}
+						return out
+					}, false, back, after)
+			})
+		}()
+	}
 	// openScalePrompt asks for a new replica count and scales the service.
 	openScalePrompt := func(svcName string, back tview.Primitive, after func()) {
 		go func() {
@@ -2707,7 +2751,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]n[white] networks")
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]n[white] networks", "[yellow]S[white] secrets")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -2836,6 +2880,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'n':
 				openNetworksEditor(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'S':
+				openSecretsEditor(editSvc, table, reload)
 				return nil
 			}
 			return ev
