@@ -193,6 +193,76 @@ func currentServiceNetworks(ctx context.Context, dcli *client.Client, name strin
 	return out, nil
 }
 
+// setServiceSecrets replaces the secrets a service references. secretNames are
+// resolved to their IDs; each is mounted at /run/secrets/<name>. Read-modify-
+// write ServiceUpdate (rolling update).
+func setServiceSecrets(ctx context.Context, dcli *client.Client, name string, secretNames []string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	cs := svc.Spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return fmt.Errorf("service %q has no container spec", name)
+	}
+	idByName := map[string]string{}
+	if secs, e := dcli.SecretList(ctx, types.SecretListOptions{}); e == nil {
+		for _, s := range secs {
+			idByName[s.Spec.Name] = s.ID
+		}
+	}
+	var refs []*swarm.SecretReference
+	for _, sn := range secretNames {
+		id := idByName[sn]
+		if id == "" {
+			return fmt.Errorf("unknown secret %q", sn)
+		}
+		refs = append(refs, &swarm.SecretReference{
+			SecretID:   id,
+			SecretName: sn,
+			File:       &swarm.SecretReferenceFileTarget{Name: sn, UID: "0", GID: "0", Mode: 0o444},
+		})
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Secrets = refs
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// currentServiceSecrets returns the secret names a service references.
+func currentServiceSecrets(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	var out []string
+	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil {
+		for _, r := range cs.Secrets {
+			out = append(out, r.SecretName)
+		}
+	}
+	return out, nil
+}
+
+// secretNames lists all secret names in the swarm, for the secrets editor's
+// autocomplete. Best effort.
+func secretNames(ctx context.Context, dcli *client.Client) []string {
+	var out []string
+	if secs, e := dcli.SecretList(ctx, types.SecretListOptions{}); e == nil {
+		for _, s := range secs {
+			out = append(out, s.Spec.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // formatServicePort renders a port config as "published:target/proto".
 func formatServicePort(p swarm.PortConfig) string {
 	return fmt.Sprintf("%d:%d/%s", p.PublishedPort, p.TargetPort, p.Protocol)
