@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
@@ -261,6 +262,221 @@ func secretNames(ctx context.Context, dcli *client.Client) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// setServiceMounts replaces a service's mounts (volumes/binds). Read-modify-
+// write ServiceUpdate (rolling update).
+func setServiceMounts(ctx context.Context, dcli *client.Client, name string, mounts []mount.Mount) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	if svc.Spec.TaskTemplate.ContainerSpec == nil {
+		return fmt.Errorf("service %q has no container spec", name)
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Mounts = mounts
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// addServiceMount appends a single mount to a service (read-modify-write
+// ServiceUpdate). Errors if a mount already exists at the same target.
+func addServiceMount(ctx context.Context, dcli *client.Client, name string, m mount.Mount) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	if svc.Spec.TaskTemplate.ContainerSpec == nil {
+		return fmt.Errorf("service %q has no container spec", name)
+	}
+	for _, ex := range svc.Spec.TaskTemplate.ContainerSpec.Mounts {
+		if ex.Target == m.Target {
+			return fmt.Errorf("service %q already has a mount at %q", name, m.Target)
+		}
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, m)
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// currentServiceMountSpecs returns a service's mounts as editable strings.
+func currentServiceMountSpecs(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	var out []string
+	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil {
+		for _, m := range cs.Mounts {
+			out = append(out, formatServiceMount(m))
+		}
+	}
+	return out, nil
+}
+
+// formatServiceMount renders a mount as "type:source:target[:ro]".
+func formatServiceMount(m mount.Mount) string {
+	s := fmt.Sprintf("%s:%s:%s", m.Type, m.Source, m.Target)
+	if m.ReadOnly {
+		s += ":ro"
+	}
+	return s
+}
+
+// parseServiceMount parses "TYPE:SOURCE:TARGET[:ro]" (TYPE volume|bind) into a
+// Mount. Bind sources must be absolute host paths; targets must be absolute.
+func parseServiceMount(s string) (mount.Mount, error) {
+	parts := strings.Split(strings.TrimSpace(s), ":")
+	ro := false
+	if len(parts) > 0 && parts[len(parts)-1] == "ro" {
+		ro = true
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) != 3 {
+		return mount.Mount{}, fmt.Errorf("format: volume:NAME:TARGET[:ro] or bind:/host/path:TARGET[:ro]")
+	}
+	typ, src, tgt := parts[0], parts[1], parts[2]
+	if src == "" || tgt == "" {
+		return mount.Mount{}, fmt.Errorf("source and target are required")
+	}
+	if !strings.HasPrefix(tgt, "/") {
+		return mount.Mount{}, fmt.Errorf("target %q must be an absolute path", tgt)
+	}
+	var mt mount.Type
+	switch typ {
+	case "volume":
+		mt = mount.TypeVolume
+	case "bind":
+		mt = mount.TypeBind
+		if !strings.HasPrefix(src, "/") {
+			return mount.Mount{}, fmt.Errorf("bind source %q must be an absolute host path", src)
+		}
+	default:
+		return mount.Mount{}, fmt.Errorf("mount type must be 'volume' or 'bind' (got %q)", typ)
+	}
+	return mount.Mount{Type: mt, Source: src, Target: tgt, ReadOnly: ro}, nil
+}
+
+// mountsFromStrings converts edited strings back to mounts, rejecting a
+// duplicate target.
+func mountsFromStrings(items []string) ([]mount.Mount, error) {
+	var out []mount.Mount
+	seen := map[string]bool{}
+	for _, it := range items {
+		m, err := parseServiceMount(it)
+		if err != nil {
+			return nil, err
+		}
+		if seen[m.Target] {
+			return nil, fmt.Errorf("duplicate mount target %q", m.Target)
+		}
+		seen[m.Target] = true
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+// candidateNodesForService computes, client-side, the hostnames of nodes a
+// service could be scheduled on (ready + active, satisfying every placement
+// constraint we can evaluate). It also returns any constraints it could not
+// evaluate, so the caller can qualify the result. Used for the bind-mount guard
+// warning — swarmexec cannot check host paths, so it at least tells the operator
+// which nodes must carry the path.
+func candidateNodesForService(ctx context.Context, dcli *client.Client, name string) (nodes []string, unevaluated []string, err error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	if svc == nil {
+		return nil, nil, fmt.Errorf("no service named %q", name)
+	}
+	var constraints []string
+	if p := svc.Spec.TaskTemplate.Placement; p != nil {
+		constraints = p.Constraints
+	}
+	nl, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	unevalSet := map[string]bool{}
+	for _, n := range nl {
+		if n.Status.State != swarm.NodeStateReady || n.Spec.Availability != swarm.NodeAvailabilityActive {
+			continue
+		}
+		ok := true
+		for _, c := range constraints {
+			matches, known := nodeMatchesConstraint(n, c)
+			if !known {
+				unevalSet[c] = true
+				continue
+			}
+			if !matches {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			nodes = append(nodes, n.Description.Hostname)
+		}
+	}
+	sort.Strings(nodes)
+	for c := range unevalSet {
+		unevaluated = append(unevaluated, c)
+	}
+	sort.Strings(unevaluated)
+	return nodes, unevaluated, nil
+}
+
+// nodeMatchesConstraint evaluates a single Swarm placement constraint against a
+// node. known is false for constraint keys it doesn't understand (caller treats
+// those conservatively). Supports == and != on node.role / node.hostname /
+// node.id / node.platform.os|arch / node.labels.* / engine.labels.*.
+func nodeMatchesConstraint(n swarm.Node, c string) (matches, known bool) {
+	c = strings.TrimSpace(c)
+	var key, val string
+	neg := false
+	if i := strings.Index(c, "!="); i >= 0 {
+		key, val, neg = strings.TrimSpace(c[:i]), strings.TrimSpace(c[i+2:]), true
+	} else if i := strings.Index(c, "=="); i >= 0 {
+		key, val = strings.TrimSpace(c[:i]), strings.TrimSpace(c[i+2:])
+	} else {
+		return false, false
+	}
+	var actual string
+	switch {
+	case key == "node.role":
+		actual = string(n.Spec.Role)
+	case key == "node.hostname":
+		actual = n.Description.Hostname
+	case key == "node.id":
+		actual = n.ID
+	case key == "node.platform.os":
+		actual = n.Description.Platform.OS
+	case key == "node.platform.arch":
+		actual = n.Description.Platform.Architecture
+	case strings.HasPrefix(key, "node.labels."):
+		actual = n.Spec.Labels[strings.TrimPrefix(key, "node.labels.")]
+	case strings.HasPrefix(key, "engine.labels."):
+		actual = n.Description.Engine.Labels[strings.TrimPrefix(key, "engine.labels.")]
+	default:
+		return false, false
+	}
+	eq := actual == val
+	if neg {
+		return !eq, true
+	}
+	return eq, true
 }
 
 // formatServicePort renders a port config as "published:target/proto".

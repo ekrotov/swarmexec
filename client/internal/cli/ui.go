@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/docker/docker/api/types/mount"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
@@ -2103,8 +2104,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]Enter[white] menu  [yellow]%s[white] forward  %s",
 				kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
 		case "volumes":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
-				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
+				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
 		case "networks":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  %s", kl(km.NetAttached), tail)
 		case "secrets":
@@ -2430,7 +2431,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// operator add/edit/delete locally, then apply them all at once (one
 	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
 	// the final list; after runs on success. Used for a service's ports and labels.
-	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit bool, back tview.Primitive, after func()) {
+	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit bool, confirmNote func([]string) string, back tview.Primitive, after func()) {
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
@@ -2503,8 +2504,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
+				text := fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", applyVerb)
+				if confirmNote != nil {
+					if note := confirmNote(cur); note != "" {
+						text = note + "\n\n" + text
+					}
+				}
 				confirm := tview.NewModal().
-					SetText(fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", applyVerb)).
+					SetText(text).
 					AddButtons([]string{"Apply", "Cancel"}).
 					SetDoneFunc(func(_ int, lbl string) {
 						pages.RemovePage("listeditconfirm")
@@ -2562,7 +2569,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServicePorts(ctx, dcli, svcName, ports)
-					}, nil, true, back, after)
+					}, nil, true, nil, back, after)
 			})
 		}()
 	}
@@ -2588,7 +2595,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceLabels(ctx, dcli, svcName, labels)
-					}, nil, true, back, after)
+					}, nil, true, nil, back, after)
 			})
 		}()
 	}
@@ -2640,7 +2647,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, back, after)
+					}, false, nil, back, after)
 			})
 		}()
 	}
@@ -2684,7 +2691,58 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, back, after)
+					}, false, nil, back, after)
+			})
+		}()
+	}
+	// openMountsEditor edits a service's mounts (volumes + binds, with a
+	// read-only flag). For bind mounts it can't verify the host path (no host
+	// access), so on apply it warns which nodes the service could run on and that
+	// each bind source must already exist on all of them.
+	openMountsEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			items, err := currentServiceMountSpecs(ctx, dcli, svcName)
+			nodes, uneval, nerr := candidateNodesForService(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load mounts: " + err.Error())
+					return
+				}
+				confirmNote := func(list []string) string {
+					var binds []string
+					for _, it := range list {
+						if m, e := parseServiceMount(it); e == nil && m.Type == mount.TypeBind {
+							binds = append(binds, m.Source)
+						}
+					}
+					if len(binds) == 0 {
+						return ""
+					}
+					where := "(could not determine nodes)"
+					if nerr == nil {
+						where = fmt.Sprintf("%d node(s): %s", len(nodes), strings.Join(nodes, ", "))
+					}
+					msg := fmt.Sprintf("⚠ bind sources must ALREADY exist on every node this service can run on — swarmexec cannot verify this.\nnodes: %s\nbinds: %s", where, strings.Join(binds, ", "))
+					if nerr == nil && len(uneval) > 0 {
+						msg += fmt.Sprintf("\n(unevaluated constraints: %s — the real node set may be narrower)", strings.Join(uneval, ", "))
+					}
+					return msg
+				}
+				editList("mounts of "+svcName, "Update the mounts", items,
+					func(s string) (string, error) {
+						m, e := parseServiceMount(s)
+						if e != nil {
+							return "", e
+						}
+						return formatServiceMount(m), nil
+					},
+					func(list []string) error {
+						ms, e := mountsFromStrings(list)
+						if e != nil {
+							return e
+						}
+						return setServiceMounts(ctx, dcli, svcName, ms)
+					}, nil, true, confirmNote, back, after)
 			})
 		}()
 	}
@@ -2751,7 +2809,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]n[white] networks", "[yellow]S[white] secrets")
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -2883,6 +2941,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'S':
 				openSecretsEditor(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'v':
+				openMountsEditor(editSvc, table, reload)
 				return nil
 			}
 			return ev
@@ -3069,11 +3130,86 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return tabKeys(ev)
 	})
 	// On the volumes table, "i" shows which services/containers use the volume.
+	// attachVolumeToService mounts a volume into a service from the Volumes tab:
+	// pick a service (autocomplete), enter the container target path, choose
+	// read-only or not, then a ServiceUpdate adds the mount.
+	attachVolumeToService := func(volName string) {
+		in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(42).
+			SetPlaceholder("type or ↓ to pick; Enter next, Esc cancel")
+		names := serviceNamesFromCache()
+		in.SetAutocompleteFunc(func(text string) []string {
+			text = strings.ToLower(strings.TrimSpace(text))
+			var out []string
+			for _, s := range names {
+				if text == "" || strings.Contains(strings.ToLower(s), text) {
+					out = append(out, s)
+				}
+			}
+			return out
+		})
+		in.SetDoneFunc(func(key tcell.Key) {
+			svc := strings.TrimSpace(in.GetText())
+			pages.RemovePage("volattach")
+			if key != tcell.KeyEnter || svc == "" {
+				app.SetFocus(vtable)
+				return
+			}
+			tin := tview.NewInputField().SetLabel("target path: ").SetFieldWidth(42).SetPlaceholder("/data")
+			tin.SetDoneFunc(func(k tcell.Key) {
+				target := strings.TrimSpace(tin.GetText())
+				pages.RemovePage("volattachtgt")
+				if k != tcell.KeyEnter || target == "" {
+					app.SetFocus(vtable)
+					return
+				}
+				if !strings.HasPrefix(target, "/") {
+					info("target must be an absolute path")
+					return
+				}
+				m := tview.NewModal().
+					SetText(fmt.Sprintf("Attach volume %q to service %q at %s?\n\nThis triggers a rolling update of the service.", volName, svc, target)).
+					AddButtons([]string{"Attach", "Attach read-only", "Cancel"}).
+					SetDoneFunc(func(_ int, lbl string) {
+						pages.RemovePage("volattachconfirm")
+						if lbl == "Cancel" || lbl == "" {
+							app.SetFocus(vtable)
+							return
+						}
+						mnt := mount.Mount{Type: mount.TypeVolume, Source: volName, Target: target, ReadOnly: lbl == "Attach read-only"}
+						go func() {
+							err := addServiceMount(ctx, dcli, svc, mnt)
+							app.QueueUpdateDraw(func() {
+								app.SetFocus(vtable)
+								if err != nil {
+									info("attach failed: " + err.Error())
+									return
+								}
+								loadVolumes()
+								info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
+							})
+						}()
+					})
+				pages.AddPage("volattachconfirm", m, true, true)
+				app.SetFocus(m)
+			})
+			tin.SetBorder(true).SetTitle(fmt.Sprintf(" attach %s → %s ", volName, svc))
+			pages.AddPage("volattachtgt", centered(tin, 64, 3), true, true)
+			app.SetFocus(tin)
+		})
+		in.SetBorder(true).SetTitle(fmt.Sprintf(" attach volume %q to service ", volName))
+		pages.AddPage("volattach", centered(in, 64, 3), true, true)
+		app.SetFocus(in)
+	}
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case km.Search:
 				startSearch("volumes")
+				return nil
+			case km.VolAttach:
+				if v, ok := selectedVolume(); ok {
+					attachVolumeToService(v.Name)
+				}
 				return nil
 			case km.VolSelect:
 				// Toggle the current volume's selection for a bulk delete.
