@@ -150,3 +150,25 @@ func TestNodeMatchesConstraint(t *testing.T) {
 		}
 	}
 }
+
+func TestParseEnvAndFromStrings(t *testing.T) {
+	// value may contain '=' and is kept verbatim; key is trimmed.
+	k, v, err := parseEnv("URL=https://a?b=c")
+	if err != nil || k != "URL" || v != "https://a?b=c" {
+		t.Errorf("parseEnv = %q/%q/%v", k, v, err)
+	}
+	if _, v, err := parseEnv("EMPTY="); err != nil || v != "" {
+		t.Errorf("empty value should be allowed, got v=%q err=%v", v, err)
+	}
+	for _, bad := range []string{"noeq", "=v", "  =v"} {
+		if _, _, err := parseEnv(bad); err == nil {
+			t.Errorf("parseEnv(%q) should have errored", bad)
+		}
+	}
+	if _, err := envFromStrings([]string{"A=1", "A=2"}); err == nil {
+		t.Error("duplicate env key should be rejected")
+	}
+	if got, err := envFromStrings([]string{"A=1", "B=2"}); err != nil || len(got) != 2 {
+		t.Errorf("envFromStrings = %v err=%v", got, err)
+	}
+}
