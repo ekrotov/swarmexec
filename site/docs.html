@@ -706,7 +706,7 @@
           <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>collapse / expand a service</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -742,9 +742,11 @@
         The overlay is <strong>navigable and selectable</strong>, not just a plain scroll:
         data lines are individually selectable and you move the cursor line by line with
         <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd> (section headers and blank
-        lines are skipped). <kbd>y</kbd> or <kbd>Enter</kbd> copies the selected line to
-        your clipboard over OSC52 — the same yank mechanism used elsewhere — so you can
-        grab a single id, mount or address without selecting text by hand. Both views (the
+        lines are skipped). <kbd>y</kbd> always copies the selected line to your clipboard
+        over OSC52 — the same yank mechanism used elsewhere — so you can grab a single id,
+        mount or address without selecting text by hand. <kbd>Enter</kbd> also copies, except
+        on a collapsible <strong>NETWORKS</strong> row, where it instead expands/collapses that
+        network (see below). Both views (the
         tabular summary and the raw JSON reached with <kbd>t</kbd>) are selectable and
         copyable line by line. A <strong>footer always lists the available keys</strong>,
         so what you can do is visible at a glance; for a service the footer also shows the
@@ -754,12 +756,24 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>move the selection between data lines (headers/blanks skipped)</td></tr>
-          <tr><td><kbd>y</kbd> <kbd>Enter</kbd></td><td>copy the selected line to the clipboard (OSC52)</td></tr>
+          <tr><td><kbd>y</kbd></td><td>copy the selected line to the clipboard (OSC52) — always</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that network; on any other line, copy it (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>toggle between the tabular summary and the raw daemon JSON (both selectable)</td></tr>
-          <tr><td><kbd>s</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd></td><td>edit the service — scale / ports / labels / env / networks / secrets / mounts (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; see below)</td></tr>
+          <tr><td><kbd>s</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edit the service — scale / ports / labels / env / networks / secrets / mounts / aliases (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; <kbd>A</kbd> is capital too; see below)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>close the overlay</td></tr>
         </tbody>
       </table></div>
+      <p>
+        The <strong>NETWORKS</strong> section is <strong>collapsible</strong>: each attached
+        network shows as a collapsed row <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>.
+        Move onto that row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
+        lists the DNS names that resolve to the service/container on that network — the
+        service name, <code>tasks.&lt;service&gt;</code>, any custom aliases, and (for a
+        container/task) its address — so you can see under which DNS name the
+        service/container is reached and which aliases it carries, per network. On these
+        network rows <kbd>Enter</kbd> toggles; on every other line it copies (and <kbd>y</kbd>
+        always copies).
+      </p>
       <p>
         When you inspect a <strong>service</strong> (not a container/task leaf, whose
         overlay stays read-only), the overlay title also exposes several edit keys, each a
@@ -776,6 +790,7 @@
           <tr><td><kbd>n</kbd></td><td>edit networks — a staged list editor over the service's network attachments; since an entry is just a name it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code></td></tr>
           <tr><td><kbd>S</kbd></td><td>edit secrets (capital <kbd>S</kbd>, i.e. Shift+s, to distinguish it from <kbd>s</kbd> scale) — the same staged list editor as networks over the secrets the service references; an entry is just a name, so it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes secret names</strong> (suggesting secrets the service doesn't already use, or type one yourself). Applying replaces the service's secret references in one <code>ServiceUpdate</code> (rolling update); each secret is mounted at <code>/run/secrets/&lt;name&gt;</code>. Works even when the service currently has no secrets</td></tr>
           <tr><td><kbd>v</kbd></td><td>edit mounts — a staged list editor over the service's volumes and bind mounts, each entered as <code>volume:NAME:TARGET[:ro]</code> or <code>bind:/host/path:TARGET[:ro]</code> (e.g. <code>volume:pgdata:/var/lib/postgresql/data</code>, <code>bind:/opt/app/config:/etc/app:ro</code>). Unlike networks/secrets this editor <strong>does</strong> allow <kbd>e</kbd> edit. A trailing <code>:ro</code> makes the mount read-only (default is read-write); bind sources and all targets must be absolute paths. Applying replaces the mounts in one <code>ServiceUpdate</code> (rolling update). <strong>Bind-mount guard (soft):</strong> if the staged list contains any bind mounts, applying first shows a warning listing the nodes the service could be scheduled on (computed from placement constraints plus node role/labels/availability) and reminds you that each bind source must <strong>already exist</strong> on all of them — swarmexec cannot verify host paths (the agent has no host filesystem access), so there is no autocomplete for bind paths and no existence check; it is advisory only</td></tr>
+          <tr><td><kbd>A</kbd></td><td>edit aliases (capital <kbd>A</kbd>, i.e. Shift+a) — add/edit/remove the service's DNS aliases <em>on a network</em>. If the service is attached to several networks it first asks which one; then a staged list editor opens (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>u</kbd> undo / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel). Applying replaces that network's aliases in one <code>ServiceUpdate</code> (rolling update). Works even when the service has no aliases yet</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -784,8 +799,8 @@
         (add / edit / delete) as long as you haven't applied yet — press it repeatedly to
         step back through the staged history — and <kbd>w</kbd> applies all changes at once
         (behind a confirmation); <kbd>Esc</kbd> cancels and discards the staged edits. The
-        <strong>ports</strong>, <strong>labels</strong>, <strong>mounts</strong> and
-        <strong>env</strong> editors
+        <strong>ports</strong>, <strong>labels</strong>, <strong>mounts</strong>,
+        <strong>env</strong> and <strong>aliases</strong> editors
         also have <kbd>e</kbd> to edit the entry under the cursor; the
         <strong>networks</strong> and <strong>secrets</strong> editors have no <kbd>e</kbd> —
         a network or secret entry is just a name, so it's add (<kbd>a</kbd>) /

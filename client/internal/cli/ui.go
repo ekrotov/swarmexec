@@ -2840,12 +2840,84 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}()
 	}
 
+	// openAliasEditor edits the DNS aliases of a service on one network. Aliases
+	// live per network attachment, so if the service is on several networks it
+	// first asks which one, then opens the staged alias editor.
+	openAliasEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			att, err := serviceAttachedNetworks(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load networks: " + err.Error())
+					return
+				}
+				if len(att) == 0 {
+					info(fmt.Sprintf("service %q is not attached to any network", svcName))
+					return
+				}
+				editAliases := func(n attachedNet) {
+					editList("aliases of "+svcName+" on "+n.Name, "Update the aliases", n.Aliases,
+						func(s string) (string, error) {
+							s = strings.TrimSpace(s)
+							if s == "" {
+								return "", fmt.Errorf("alias must not be empty")
+							}
+							return s, nil
+						},
+						func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, n.Target, list) },
+						nil, true, nil, back, after)
+				}
+				if len(att) == 1 {
+					editAliases(att[0])
+					return
+				}
+				byName := map[string]attachedNet{}
+				var names []string
+				for _, a := range att {
+					names = append(names, a.Name)
+					byName[a.Name] = a
+				}
+				in := tview.NewInputField().SetLabel("network: ").SetFieldWidth(40).
+					SetPlaceholder("which network's aliases to edit")
+				in.SetAutocompleteFunc(func(text string) []string {
+					text = strings.ToLower(strings.TrimSpace(text))
+					var o []string
+					for _, nm := range names {
+						if text == "" || strings.Contains(strings.ToLower(nm), text) {
+							o = append(o, nm)
+						}
+					}
+					return o
+				})
+				in.SetDoneFunc(func(k tcell.Key) {
+					nm := strings.TrimSpace(in.GetText())
+					pages.RemovePage("aliasnetpick")
+					if k != tcell.KeyEnter || nm == "" {
+						app.SetFocus(back)
+						return
+					}
+					n, ok := byName[nm]
+					if !ok {
+						info("unknown network " + nm)
+						return
+					}
+					editAliases(n)
+				})
+				in.SetBorder(true).SetTitle(" pick network for aliases ")
+				pages.AddPage("aliasnetpick", centered(in, 60, 3), true, true)
+				app.SetFocus(in)
+			})
+		}()
+	}
+
 	showInspect := func(title string, op string, editSvc string, fetch func() ([]inspLine, string, error)) {
 		table := tview.NewTable().SetSelectable(true, false)
 		table.SetBorder(true)
 		var lines []inspLine
 		var rawJSON string
-		var plain []string // plain text of each current row, for copy
+		var plain []string            // plain text of each current row, for copy
+		rowNet := map[int]string{}    // table row -> network name, for collapsible net rows
+		expanded := map[string]bool{} // which networks are expanded
 		loaded := false
 		showRaw := false
 
@@ -2856,7 +2928,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts")
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]A[white] aliases")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -2877,50 +2949,74 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				mode = "raw json"
 			}
 			table.SetTitle(fmt.Sprintf(" inspect %s — %s ", title, mode))
+			keepRow, _ := table.GetSelection()
 			table.Clear()
 			plain = plain[:0]
+			for k := range rowNet {
+				delete(rowNet, k)
+			}
 			if !loaded {
 				table.SetCell(0, 0, tview.NewTableCell("loading…").SetSelectable(false))
 				plain = append(plain, "")
 				setFooter("")
 				return
 			}
-			firstSel := -1
+			firstSel, r := -1, 0
+			put := func(text string, color tcell.Color, bold, selectable bool, plainText, net string) {
+				cell := tview.NewTableCell(tview.Escape(text)).SetTextColor(color).SetSelectable(selectable)
+				if bold {
+					cell.SetAttributes(tcell.AttrBold)
+				}
+				table.SetCell(r, 0, cell)
+				plain = append(plain, plainText)
+				if net != "" {
+					rowNet[r] = net
+				}
+				if selectable && firstSel < 0 {
+					firstSel = r
+				}
+				r++
+			}
 			if showRaw {
-				for i, ln := range strings.Split(rawJSON, "\n") {
-					table.SetCell(i, 0, tview.NewTableCell(tview.Escape(ln)).SetTextColor(tcell.ColorWhite))
-					if firstSel < 0 {
-						firstSel = i
-					}
-					plain = append(plain, ln)
+				for _, ln := range strings.Split(rawJSON, "\n") {
+					put(ln, tcell.ColorWhite, false, true, ln, "")
 				}
 			} else {
-				for i, ln := range lines {
-					cell := tview.NewTableCell(tview.Escape(ln.Text))
+				for _, ln := range lines {
 					switch ln.Kind {
 					case inspTitle:
-						cell.SetTextColor(tcell.ColorAqua).SetAttributes(tcell.AttrBold).SetSelectable(false)
+						put(ln.Text, tcell.ColorAqua, true, false, ln.Text, "")
 					case inspHeader:
-						cell.SetTextColor(tcell.ColorAqua).SetSelectable(false)
+						put(ln.Text, tcell.ColorAqua, false, false, ln.Text, "")
 					case inspDim:
-						cell.SetTextColor(tcell.ColorGray).SetSelectable(false)
+						put(ln.Text, tcell.ColorGray, false, false, ln.Text, "")
 					case inspBlank:
-						cell.SetSelectable(false)
-					default:
-						cell.SetTextColor(tcell.ColorWhite)
-						if firstSel < 0 {
-							firstSel = i
+						put("", tcell.ColorWhite, false, false, "", "")
+					case inspNet:
+						marker := "+"
+						if expanded[ln.Net] {
+							marker = "-"
 						}
+						put(fmt.Sprintf("  %s %s (%d dns names)", marker, ln.Text, ln.Count), tcell.ColorWhite, false, true, ln.Text, ln.Net)
+						if expanded[ln.Net] {
+							for _, c := range ln.Children {
+								put("      "+c, tcell.ColorGray, false, true, c, "")
+							}
+						}
+					default: // inspField
+						put(ln.Text, tcell.ColorWhite, false, true, ln.Text, "")
 					}
-					table.SetCell(i, 0, cell)
-					plain = append(plain, ln.Text)
 				}
 			}
 			table.ScrollToBeginning()
 			if firstSel < 0 {
 				firstSel = 0
 			}
-			table.Select(firstSel, 0)
+			if keepRow > 0 && keepRow < r {
+				table.Select(keepRow, 0)
+			} else {
+				table.Select(firstSel, 0)
+			}
 			setFooter("")
 		}
 		copyLine := func() {
@@ -2963,7 +3059,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeInspect()
 				return nil
-			case ev.Key() == tcell.KeyEnter || (ev.Key() == tcell.KeyRune && ev.Rune() == 'y'):
+			case ev.Key() == tcell.KeyEnter:
+				// Enter on a collapsible network row toggles it; otherwise copies.
+				r, _ := table.GetSelection()
+				if net, ok := rowNet[r]; ok {
+					expanded[net] = !expanded[net]
+					populate()
+				} else {
+					copyLine()
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':
 				copyLine()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
@@ -2994,6 +3100,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
 				openEnvEditor(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'A':
+				openAliasEditor(editSvc, table, reload)
 				return nil
 			}
 			return ev

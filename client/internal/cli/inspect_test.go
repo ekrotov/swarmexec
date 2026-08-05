@@ -16,6 +16,10 @@ func joinInspLines(lines []inspLine) string {
 	for _, l := range lines {
 		b.WriteString(l.Text)
 		b.WriteByte('\n')
+		for _, c := range l.Children { // collapsible net rows keep DNS/addr here
+			b.WriteString(c)
+			b.WriteByte('\n')
+		}
 	}
 	return b.String()
 }
@@ -76,15 +80,35 @@ func TestFormatTaskInspect_NetworksAndState(t *testing.T) {
 	task.NetworksAttachments = []swarm.NetworkAttachment{
 		{Network: swarm.Network{ID: "netid1"}, Addresses: []string{"10.0.1.5/24"}},
 	}
+	task.ServiceID = "svc1"
 	task.Spec.ContainerSpec = &swarm.ContainerSpec{Image: "nginx:1"}
 
-	lines := formatTaskInspect(task, map[string]string{"netid1": "frontend-net"}, map[string]string{"node1": "host-a"})
+	// Owning service carries the DNS name + an alias the task inherits.
+	var owning swarm.Service
+	owning.Spec.Name = "web"
+	owning.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1", Aliases: []string{"frontend"}}}
+
+	lines := formatTaskInspect(task, &owning, map[string]string{"netid1": "frontend-net"}, map[string]string{"node1": "host-a"})
 	joined := joinInspLines(lines)
 
-	for _, want := range []string{"frontend-net", "10.0.1.5/24", "running", "cabc123"} {
+	// Net name in the collapsible header; DNS names + alias + addr in its children.
+	for _, want := range []string{"frontend-net", "10.0.1.5/24", "running", "cabc123", "web", "tasks.web", "frontend"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("task inspect missing %q:\n%s", want, joined)
 		}
+	}
+	// The network row is a collapsible inspNet entry with a DNS-name count.
+	var netLine *inspLine
+	for i := range lines {
+		if lines[i].Kind == inspNet && lines[i].Net == "frontend-net" {
+			netLine = &lines[i]
+		}
+	}
+	if netLine == nil {
+		t.Fatalf("no collapsible net row for frontend-net")
+	}
+	if netLine.Count != 3 { // web, tasks.web, frontend
+		t.Errorf("dns-name count = %d, want 3", netLine.Count)
 	}
 	if i, j := headerIndex(lines, "NETWORKS"), headerIndex(lines, "STATE"); !(i >= 0 && i < j) {
 		t.Errorf("NETWORKS should precede STATE (net=%d state=%d)", i, j)
