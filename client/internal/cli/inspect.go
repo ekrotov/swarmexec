@@ -34,12 +34,18 @@ const (
 	inspField                  // a data line — selectable/copyable
 	inspDim                    // a placeholder ("-") — not selectable
 	inspBlank                  // spacer
+	inspNet                    // a collapsible network row: "+ name (N dns names)"
 )
 
-// inspLine is one line of the tabular inspect view.
+// inspLine is one line of the tabular inspect view. For inspNet rows, Net is the
+// network name (collapse key), Count the number of DNS names, and Children the
+// lines revealed when expanded (DNS names, then any extra like addresses).
 type inspLine struct {
-	Text string
-	Kind inspKind
+	Text     string
+	Kind     inspKind
+	Net      string
+	Count    int
+	Children []string
 }
 
 type inspBuilder struct{ lines []inspLine }
@@ -49,6 +55,12 @@ func (b *inspBuilder) push(k inspKind, s string) {
 }
 func (b *inspBuilder) title(s string)   { b.push(inspTitle, s) }
 func (b *inspBuilder) section(s string) { b.push(inspBlank, ""); b.push(inspHeader, s) }
+
+// net adds a collapsible network row. dnsCount is shown in the header; children
+// are the lines shown when expanded.
+func (b *inspBuilder) net(name string, dnsCount int, children []string) {
+	b.lines = append(b.lines, inspLine{Kind: inspNet, Text: name, Net: name, Count: dnsCount, Children: children})
+}
 
 func (b *inspBuilder) kv(k, v string) {
 	if v == "" {
@@ -84,7 +96,15 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 	if err != nil {
 		return nil, "", err
 	}
-	return formatTaskInspect(task, netNameMap(ctx, dcli), nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
+	// The owning service carries the DNS name and per-network aliases the task
+	// inherits; fetch it best-effort so the task's NETWORKS can show them too.
+	var owning *swarm.Service
+	if task.ServiceID != "" {
+		if s, _, e := dcli.ServiceInspectWithRaw(ctx, task.ServiceID, types.ServiceInspectOptions{}); e == nil {
+			owning = &s
+		}
+	}
+	return formatTaskInspect(task, owning, netNameMap(ctx, dcli), nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
 }
 
 // netNameMap maps a network ID (and name) to its name so attachments that carry
@@ -118,7 +138,13 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string) []inspL
 	b.title("SERVICE  " + svc.Spec.Name)
 
 	b.section("NETWORKS")
-	b.list(serviceNetworks(svc, netNames))
+	nets := serviceNetDNS(svc, netNames)
+	if len(nets) == 0 {
+		b.list(nil)
+	}
+	for _, n := range nets {
+		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...))
+	}
 	b.section("LABELS")
 	b.list(kvPairs(svc.Spec.Labels))
 	b.section("VOLUMES / MOUNTS")
@@ -163,13 +189,19 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string) []inspL
 	return b.lines
 }
 
-func formatTaskInspect(task swarm.Task, netNames, nodeNames map[string]string) []inspLine {
+func formatTaskInspect(task swarm.Task, owning *swarm.Service, netNames, nodeNames map[string]string) []inspLine {
 	var b inspBuilder
 	cs := task.Spec.ContainerSpec
 	b.title(fmt.Sprintf("TASK  %s  (slot %d)", shortID(task.ID), task.Slot))
 
 	b.section("NETWORKS")
-	b.list(taskNetworks(task, netNames))
+	nets := taskNetDNS(task, owning, netNames)
+	if len(nets) == 0 {
+		b.list(nil)
+	}
+	for _, n := range nets {
+		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...))
+	}
 	b.section("LABELS")
 	if cs != nil {
 		b.list(kvPairs(cs.Labels))
@@ -244,31 +276,64 @@ func kvPairs(m map[string]string) []string {
 	return out
 }
 
-func serviceNetworks(svc swarm.Service, netNames map[string]string) []string {
-	var out []string
+// netDNS is a network a service/task is attached to, with the DNS names that
+// resolve to it there (the default service name, tasks.<name>, and any custom
+// aliases) and optional extra lines shown when expanded (e.g. task addresses).
+type netDNS struct {
+	Name  string
+	DNS   []string
+	Extra []string
+}
+
+// dnsNames builds the DNS names resolvable for a service on a network: the
+// service name, tasks.<name>, plus the attachment's aliases.
+func dnsNames(svcName string, aliases []string) []string {
+	if svcName == "" {
+		return append([]string{}, aliases...)
+	}
+	out := []string{svcName, "tasks." + svcName}
+	return append(out, aliases...)
+}
+
+// serviceNetDNS returns the service's networks with their DNS names/aliases.
+func serviceNetDNS(svc swarm.Service, netNames map[string]string) []netDNS {
+	var out []netDNS
 	seen := map[string]bool{}
-	add := func(target string) {
-		if target == "" || seen[target] {
+	add := func(a swarm.NetworkAttachmentConfig) {
+		if a.Target == "" || seen[a.Target] {
 			return
 		}
-		seen[target] = true
-		name := netNames[target]
+		seen[a.Target] = true
+		name := netNames[a.Target]
 		if name == "" {
-			name = target
+			name = a.Target
 		}
-		out = append(out, name)
+		out = append(out, netDNS{Name: name, DNS: dnsNames(svc.Spec.Name, a.Aliases)})
 	}
 	for _, a := range svc.Spec.TaskTemplate.Networks {
-		add(a.Target)
+		add(a)
 	}
 	for _, a := range svc.Spec.Networks {
-		add(a.Target)
+		add(a)
 	}
 	return out
 }
 
-func taskNetworks(task swarm.Task, netNames map[string]string) []string {
-	var out []string
+// taskNetDNS returns a task's networks with the DNS names/aliases it inherits
+// from its owning service (may be nil), plus the task's address on each network.
+func taskNetDNS(task swarm.Task, owning *swarm.Service, netNames map[string]string) []netDNS {
+	svcName, aliasByNet := "", map[string][]string{}
+	if owning != nil {
+		svcName = owning.Spec.Name
+		for _, a := range owning.Spec.TaskTemplate.Networks {
+			n := netNames[a.Target]
+			if n == "" {
+				n = a.Target
+			}
+			aliasByNet[n] = a.Aliases
+		}
+	}
+	var out []netDNS
 	for _, a := range task.NetworksAttachments {
 		name := a.Network.Spec.Name
 		if name == "" {
@@ -278,11 +343,11 @@ func taskNetworks(task swarm.Task, netNames map[string]string) []string {
 				name = shortID(a.Network.ID)
 			}
 		}
+		nd := netDNS{Name: name, DNS: dnsNames(svcName, aliasByNet[name])}
 		if ips := strings.Join(a.Addresses, ", "); ips != "" {
-			out = append(out, fmt.Sprintf("%s  %s", name, ips))
-		} else {
-			out = append(out, name)
+			nd.Extra = []string{"addr: " + ips}
 		}
+		out = append(out, nd)
 	}
 	return out
 }

@@ -163,6 +163,78 @@ func listNetworkRefs(ctx context.Context, dcli *client.Client) (idByName, idToNa
 	return idByName, idToName, names
 }
 
+// attachedNet is one of a service's network attachments, with the network's
+// resolved name and its custom aliases — for the alias editor.
+type attachedNet struct {
+	Target  string
+	Name    string
+	Aliases []string
+}
+
+// serviceAttachedNetworks lists a service's network attachments with their
+// current aliases.
+func serviceAttachedNetworks(ctx context.Context, dcli *client.Client, name string) ([]attachedNet, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	_, idToName, _ := listNetworkRefs(ctx, dcli)
+	var out []attachedNet
+	seen := map[string]bool{}
+	add := func(a swarm.NetworkAttachmentConfig) {
+		if a.Target == "" || seen[a.Target] {
+			return
+		}
+		seen[a.Target] = true
+		n := idToName[a.Target]
+		if n == "" {
+			n = a.Target
+		}
+		out = append(out, attachedNet{Target: a.Target, Name: n, Aliases: append([]string{}, a.Aliases...)})
+	}
+	for _, a := range svc.Spec.TaskTemplate.Networks {
+		add(a)
+	}
+	for _, a := range svc.Spec.Networks {
+		add(a)
+	}
+	return out, nil
+}
+
+// setNetworkAliases replaces the aliases of a service's attachment to one
+// network (read-modify-write ServiceUpdate, rolling update).
+func setNetworkAliases(ctx context.Context, dcli *client.Client, name, target string, aliases []string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	spec := svc.Spec
+	found := false
+	for i := range spec.TaskTemplate.Networks {
+		if spec.TaskTemplate.Networks[i].Target == target {
+			spec.TaskTemplate.Networks[i].Aliases = aliases
+			found = true
+		}
+	}
+	for i := range spec.Networks {
+		if spec.Networks[i].Target == target {
+			spec.Networks[i].Aliases = aliases
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("service %q is not attached to network %q", name, target)
+	}
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
 // currentServiceNetworks returns the network names a service is attached to.
 func currentServiceNetworks(ctx context.Context, dcli *client.Client, name string, idToName map[string]string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
