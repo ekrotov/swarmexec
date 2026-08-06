@@ -2443,7 +2443,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// operator add/edit/delete locally, then apply them all at once (one
 	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
 	// the final list; after runs on success. Used for a service's ports and labels.
-	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit, multiline bool, confirmNote func([]string) string, entryAction *listEntryAction, back tview.Primitive, after func()) {
+	// formPrompt (optional) replaces the default single-line add/edit prompt with
+	// a custom form: it receives the current entry (empty when adding), a submit
+	// callback that validates+stages+closes on success (returning an error to show
+	// otherwise), and a cancel callback; it returns the primitive to display.
+	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit, multiline bool, confirmNote func([]string) string, entryAction *listEntryAction, formPrompt func(initial string, submit func(raw string) error, cancel func()) tview.Primitive, back tview.Primitive, after func()) {
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
@@ -2462,11 +2466,35 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		render := func() {
 			idx := list.GetCurrentItem()
 			list.Clear()
-			if len(cur) == 0 {
+			if len(cur) == 0 && len(items) == 0 {
 				list.AddItem("(none)", "", 0, nil)
 			} else {
+				// Highlight staged (not-yet-applied) changes: an entry not present in
+				// the original set is added/edited (green); originals missing from cur
+				// are shown as dim-red "removed" ghosts. Diff is a multiset so it
+				// survives undo without any parallel bookkeeping.
+				origCount := map[string]int{}
+				for _, it := range items {
+					origCount[it]++
+				}
 				for _, it := range cur {
-					list.AddItem(it, "", 0, nil)
+					label := tview.Escape(it)
+					if origCount[it] > 0 {
+						origCount[it]-- // unchanged — matches an original
+					} else {
+						label = "[green::b]" + label + " (new)[-:-:-]"
+					}
+					list.AddItem(label, "", 0, nil)
+				}
+				// origCount now holds the leftovers = removed items; show them (in the
+				// original order) after the live rows. They sit beyond len(cur), so the
+				// e/d/y handlers (which guard i<len(cur)) treat them as inert.
+				shown := map[string]int{}
+				for _, it := range items {
+					if shown[it] < origCount[it] {
+						shown[it]++
+						list.AddItem("[red::d]- "+tview.Escape(it)+" (removed)[-:-:-]", "", 0, nil)
+					}
 				}
 			}
 			if idx >= 0 && idx < list.GetItemCount() {
@@ -2500,6 +2528,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			render()
 		}
 		prompt := func(label, initial string, done func(string)) {
+			if formPrompt != nil {
+				// Custom form: submit validates+stages+closes on success; the form
+				// keeps focus on failure (it surfaces the error itself).
+				cancel := func() { pages.RemovePage("listeditprompt"); app.SetFocus(list) }
+				submit := func(raw string) error {
+					norm, err := validate(strings.TrimSpace(raw))
+					if err != nil {
+						return err
+					}
+					done(norm)
+					render()
+					pages.RemovePage("listeditprompt")
+					app.SetFocus(list)
+					return nil
+				}
+				form := formPrompt(initial, submit, cancel)
+				pages.AddPage("listeditprompt", centered(form, 78, 15), true, true)
+				app.SetFocus(form)
+				return
+			}
 			if multiline {
 				// Long / multi-line values (e.g. GITLAB_OMNIBUS_CONFIG) are painful
 				// in a one-line field, so edit them in a scrollable TextArea.
@@ -2540,9 +2588,80 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			pages.AddPage("listeditprompt", centered(in, 60, 3), true, true)
 			app.SetFocus(in)
 		}
+		// hasChanges reports whether anything is staged but not yet applied (cur
+		// differs from the original set — order included; j/k only navigate here).
+		hasChanges := func() bool {
+			if len(cur) != len(items) {
+				return true
+			}
+			for i := range cur {
+				if cur[i] != items[i] {
+					return true
+				}
+			}
+			return false
+		}
+		// applyFlow runs the rolling-update confirmation and, on Apply, commits cur.
+		// Shared by `w` and the "unapplied changes" reminder shown when leaving.
+		applyFlow := func() {
+			text := fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", applyVerb)
+			if confirmNote != nil {
+				if note := confirmNote(cur); note != "" {
+					text = note + "\n\n" + text
+				}
+			}
+			confirm := tview.NewModal().
+				SetText(text).
+				AddButtons([]string{"Apply", "Cancel"}).
+				SetDoneFunc(func(_ int, lbl string) {
+					pages.RemovePage("listeditconfirm")
+					if lbl != "Apply" {
+						app.SetFocus(list)
+						return
+					}
+					go func() {
+						err := onApply(cur)
+						app.QueueUpdateDraw(func() {
+							if err != nil {
+								info("update failed: " + err.Error())
+								app.SetFocus(list)
+								return
+							}
+							restoreHelp()
+							pages.RemovePage("listedit")
+							info("service updated — rolling update started")
+							if after != nil {
+								after()
+							}
+						})
+					}()
+				})
+			pages.AddPage("listeditconfirm", confirm, true, true)
+			app.SetFocus(confirm)
+		}
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape:
+				if hasChanges() {
+					// Don't silently drop staged edits — make the operator choose.
+					leave := tview.NewModal().
+						SetText("You have unapplied changes.\n\nApply them now, discard them, or keep editing?").
+						AddButtons([]string{"Apply", "Discard", "Keep editing"}).
+						SetDoneFunc(func(_ int, lbl string) {
+							pages.RemovePage("listeditleave")
+							switch lbl {
+							case "Apply":
+								applyFlow()
+							case "Discard":
+								closeEd()
+							default:
+								app.SetFocus(list)
+							}
+						})
+					pages.AddPage("listeditleave", leave, true, true)
+					app.SetFocus(leave)
+					return nil
+				}
 				closeEd()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
@@ -2577,40 +2696,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				undo()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
-				text := fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", applyVerb)
-				if confirmNote != nil {
-					if note := confirmNote(cur); note != "" {
-						text = note + "\n\n" + text
-					}
-				}
-				confirm := tview.NewModal().
-					SetText(text).
-					AddButtons([]string{"Apply", "Cancel"}).
-					SetDoneFunc(func(_ int, lbl string) {
-						pages.RemovePage("listeditconfirm")
-						if lbl != "Apply" {
-							app.SetFocus(list)
-							return
-						}
-						go func() {
-							err := onApply(cur)
-							app.QueueUpdateDraw(func() {
-								if err != nil {
-									info("update failed: " + err.Error())
-									app.SetFocus(list)
-									return
-								}
-								restoreHelp()
-								pages.RemovePage("listedit")
-								info("service updated — rolling update started")
-								if after != nil {
-									after()
-								}
-							})
-						}()
-					})
-				pages.AddPage("listeditconfirm", confirm, true, true)
-				app.SetFocus(confirm)
+				applyFlow()
 				return nil
 			}
 			return vimListKeys(ev)
@@ -2642,7 +2728,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServicePorts(ctx, dcli, svcName, ports)
-					}, nil, true, false, nil, nil, back, after)
+					}, nil, true, false, nil, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2668,7 +2754,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceLabels(ctx, dcli, svcName, labels)
-					}, nil, true, false, nil, nil, back, after)
+					}, nil, true, false, nil, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2704,7 +2790,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						return s, nil
 					},
 					func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, target, list) },
-					nil, true, false, nil, nil, back, after)
+					nil, true, false, nil, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2761,7 +2847,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						key:   'A',
 						label: "aliases",
 						run:   func(net string) { openAliasEditorForNet(svcName, net, idByName[net], back, after) },
-					}, back, after)
+					}, nil, back, after)
 			})
 		}()
 	}
@@ -2805,7 +2891,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, false, nil, nil, back, after)
+					}, false, false, nil, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2837,9 +2923,95 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceEnv(ctx, dcli, svcName, env)
-					}, nil, true, true, nil, nil, back, after)
+					}, nil, true, true, nil, nil, nil, back, after)
 			})
 		}()
+	}
+	// placementListEditor opens a staged list editor whose add/edit input
+	// autocompletes cluster-derived candidates (excluding ones already staged).
+	// Shared by the constraints and the spread-preferences editors.
+	placementListEditor := func(title, applyVerb string, items, cand []string, validate func(string) (string, error), apply func([]string) error, back tview.Primitive, after func()) {
+		have := map[string]bool{}
+		for _, it := range items {
+			have[it] = true
+		}
+		editList(title, applyVerb, items, validate, apply,
+			func(text string) []string {
+				text = strings.ToLower(strings.TrimSpace(text))
+				var out []string
+				for _, c := range cand {
+					if have[c] {
+						continue
+					}
+					if text == "" || strings.Contains(strings.ToLower(c), text) {
+						out = append(out, c)
+					}
+				}
+				return out
+			}, true, false, nil, nil, nil, back, after)
+	}
+	// openPlacementConstraintsEditor edits the service's hard placement
+	// constraints (node.* / engine.* == / !=) with node-derived autocomplete.
+	openPlacementConstraintsEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			items, err := currentServicePlacement(ctx, dcli, svcName)
+			cand, cerr := placementSuggestions(ctx, dcli)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load placement: " + err.Error())
+					return
+				}
+				if cerr != nil {
+					cand = nil // autocomplete is best-effort
+				}
+				placementListEditor("constraints of "+svcName, "Update the placement constraints",
+					items, cand, validatePlacementConstraint,
+					func(list []string) error { return setServicePlacement(ctx, dcli, svcName, list) },
+					back, after)
+			})
+		}()
+	}
+	// openSpreadEditor edits the service's spread placement preferences — bare
+	// node attributes (e.g. node.labels.zone) that Swarm spreads tasks over — in
+	// priority order, with node-derived autocomplete.
+	openSpreadEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			items, err := currentServiceSpread(ctx, dcli, svcName)
+			cand, cerr := spreadSuggestions(ctx, dcli)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load spread preferences: " + err.Error())
+					return
+				}
+				if cerr != nil {
+					cand = nil
+				}
+				placementListEditor("spread of "+svcName, "Update the spread preferences",
+					items, cand, validateSpreadDescriptor,
+					func(list []string) error { return setServiceSpread(ctx, dcli, svcName, list) },
+					back, after)
+			})
+		}()
+	}
+	// openPlacementMenu groups the two placement concerns (hard constraints and
+	// soft spread preferences) under one key so the inspect footer stays short.
+	openPlacementMenu := func(svcName string, back tview.Primitive, after func()) {
+		m := tview.NewModal().
+			SetText("Edit placement for " + svcName).
+			AddButtons([]string{"Constraints", "Spread preferences", "Cancel"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("placementmenu")
+				switch lbl {
+				case "Constraints":
+					openPlacementConstraintsEditor(svcName, back, after)
+				case "Spread preferences":
+					openSpreadEditor(svcName, back, after)
+				default:
+					app.SetFocus(back)
+				}
+			})
+		pages.AddPage("placementmenu", m, true, true)
+		app.SetFocus(m)
 	}
 	openMountsEditor := func(svcName string, back tview.Primitive, after func()) {
 		go func() {
@@ -2870,6 +3042,94 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 					return msg
 				}
+				// volNames feeds the volume-mode autocomplete. Seed from whatever the
+				// Volumes tab already loaded, then refresh in the background (volume
+				// listing is a per-node agent fan-out, so we don't block opening).
+				volNames := make([]string, 0, len(vols))
+				for _, v := range vols {
+					volNames = append(volNames, v.Name)
+				}
+				go func() {
+					vnodes, e := r.Nodes(ctx)
+					if e != nil {
+						return
+					}
+					vs, _ := indexVolumes(ctx, cfg, vnodes, f.connectTimeout)
+					names := make([]string, 0, len(vs))
+					for _, v := range vs {
+						names = append(names, v.Name)
+					}
+					sort.Strings(names)
+					app.QueueUpdateDraw(func() { volNames = names })
+				}()
+				// mountForm splits a mount into separate inputs: a "bind mount" toggle,
+				// a source (host path when bind, else a volume name with autocomplete),
+				// the container path, and a read-only toggle. It replaces the old single
+				// "type:source:target[:ro]" text entry.
+				mountForm := func(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
+					isBind, src, tgt, ro := false, "", "", false
+					if m, e := parseServiceMount(initial); e == nil {
+						isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
+					}
+					form := tview.NewForm()
+					srcField := tview.NewInputField().SetText(src).SetFieldWidth(48)
+					tgtField := tview.NewInputField().SetLabel("container path").SetText(tgt).SetFieldWidth(48).SetPlaceholder("/data")
+					roCheck := tview.NewCheckbox().SetLabel("read-only").SetChecked(ro)
+					volSuggest := func(text string) []string {
+						text = strings.ToLower(strings.TrimSpace(text))
+						var out []string
+						for _, n := range volNames {
+							if text == "" || strings.Contains(strings.ToLower(n), text) {
+								out = append(out, n)
+							}
+						}
+						return out
+					}
+					applyMode := func(bind bool) {
+						if bind {
+							srcField.SetLabel("host path").SetPlaceholder("/opt/app/config").SetAutocompleteFunc(nil)
+						} else {
+							srcField.SetLabel("volume").SetPlaceholder("volume name").SetAutocompleteFunc(volSuggest)
+						}
+					}
+					bindCheck := tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).
+						SetChangedFunc(func(checked bool) { applyMode(checked) })
+					applyMode(isBind)
+					setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
+					save := func() {
+						typ := "volume"
+						if bindCheck.IsChecked() {
+							typ = "bind"
+						}
+						s := strings.TrimSpace(srcField.GetText())
+						t := strings.TrimSpace(tgtField.GetText())
+						if s == "" || t == "" {
+							setTitle(" ⚠ source and container path are required ")
+							return
+						}
+						raw := typ + ":" + s + ":" + t
+						if roCheck.IsChecked() {
+							raw += ":ro"
+						}
+						if e := submit(raw); e != nil {
+							setTitle(" ⚠ " + e.Error() + " ")
+						}
+					}
+					form.AddFormItem(bindCheck)
+					form.AddFormItem(srcField)
+					form.AddFormItem(tgtField)
+					form.AddFormItem(roCheck)
+					form.AddButton("Save", save)
+					form.AddButton("Cancel", cancel)
+					form.SetCancelFunc(cancel)
+					form.SetBorder(true)
+					if initial == "" {
+						setTitle(" add mount · Tab moves · Enter on Save ")
+					} else {
+						setTitle(" edit mount · Tab moves · Enter on Save ")
+					}
+					return form
+				}
 				editList("mounts of "+svcName, "Update the mounts", items,
 					func(s string) (string, error) {
 						m, e := parseServiceMount(s)
@@ -2884,7 +3144,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceMounts(ctx, dcli, svcName, ms)
-					}, nil, true, false, confirmNote, nil, back, after)
+					}, nil, true, false, confirmNote, nil, mountForm, back, after)
 			})
 		}()
 	}
@@ -2953,7 +3213,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts")
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]P[white] placement")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -3125,6 +3385,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
 				openEnvEditor(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'P':
+				openPlacementMenu(editSvc, table, reload)
 				return nil
 			}
 			return ev

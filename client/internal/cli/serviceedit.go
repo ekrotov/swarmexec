@@ -618,6 +618,202 @@ func nodeMatchesConstraint(n swarm.Node, c string) (matches, known bool) {
 	return eq, true
 }
 
+// currentServicePlacement returns the service's placement constraints (the
+// `node.*` / `engine.*` == / != expressions).
+func currentServicePlacement(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	if p := svc.Spec.TaskTemplate.Placement; p != nil {
+		return append([]string{}, p.Constraints...), nil
+	}
+	return nil, nil
+}
+
+// setServicePlacement replaces the service's placement constraints in one
+// ServiceUpdate (read-modify-write; preferences and other placement fields are
+// preserved).
+func setServicePlacement(ctx context.Context, dcli *client.Client, name string, constraints []string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	spec := svc.Spec
+	if spec.TaskTemplate.Placement == nil {
+		spec.TaskTemplate.Placement = &swarm.Placement{}
+	}
+	spec.TaskTemplate.Placement.Constraints = constraints
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// validatePlacementConstraint checks a single constraint and returns it in the
+// canonical spaceless "key==value" / "key!=value" form. Keys are limited to the
+// ones Swarm understands (and that nodeMatchesConstraint can evaluate).
+func validatePlacementConstraint(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	op, at := "", -1
+	if i := strings.Index(s, "=="); i >= 0 {
+		op, at = "==", i
+	}
+	if i := strings.Index(s, "!="); i >= 0 && (at < 0 || i < at) {
+		op, at = "!=", i
+	}
+	if at < 0 {
+		return "", fmt.Errorf("constraint must contain == or !=, e.g. node.labels.zone==eu")
+	}
+	key := strings.TrimSpace(s[:at])
+	val := strings.TrimSpace(s[at+2:])
+	known := key == "node.role" || key == "node.hostname" || key == "node.id" ||
+		key == "node.platform.os" || key == "node.platform.arch" ||
+		(strings.HasPrefix(key, "node.labels.") && len(key) > len("node.labels.")) ||
+		(strings.HasPrefix(key, "engine.labels.") && len(key) > len("engine.labels."))
+	if !known {
+		return "", fmt.Errorf("unknown constraint key %q (use node.role / node.hostname / node.id / node.platform.os|arch / node.labels.<k> / engine.labels.<k>)", key)
+	}
+	if val == "" {
+		return "", fmt.Errorf("constraint value must not be empty")
+	}
+	if strings.ContainsAny(val, " \t") {
+		return "", fmt.Errorf("constraint value %q must not contain spaces", val)
+	}
+	return key + op + val, nil
+}
+
+// placementSuggestions builds fully-formed candidate constraints from the
+// current cluster (node roles, hostnames, platforms and labels) for the
+// placement editor's autocomplete. The operator offered is ==; the user can
+// still type an != constraint by hand.
+func placementSuggestions(ctx context.Context, dcli *client.Client) ([]string, error) {
+	nl, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{"node.role==manager": true, "node.role==worker": true}
+	for _, n := range nl {
+		if h := n.Description.Hostname; h != "" {
+			set["node.hostname=="+h] = true
+		}
+		if os := n.Description.Platform.OS; os != "" {
+			set["node.platform.os=="+os] = true
+		}
+		if a := n.Description.Platform.Architecture; a != "" {
+			set["node.platform.arch=="+a] = true
+		}
+		for k, v := range n.Spec.Labels {
+			set["node.labels."+k+"=="+v] = true
+		}
+		for k, v := range n.Description.Engine.Labels {
+			set["engine.labels."+k+"=="+v] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// currentServiceSpread returns the descriptors of the service's spread
+// placement preferences (Placement.Preferences[].Spread.SpreadDescriptor).
+func currentServiceSpread(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return nil, err
+	}
+	if svc == nil {
+		return nil, fmt.Errorf("no service named %q", name)
+	}
+	var out []string
+	if p := svc.Spec.TaskTemplate.Placement; p != nil {
+		for _, pref := range p.Preferences {
+			if pref.Spread != nil {
+				out = append(out, pref.Spread.SpreadDescriptor)
+			}
+		}
+	}
+	return out, nil
+}
+
+// setServiceSpread replaces the service's spread placement preferences (in the
+// given order) in one ServiceUpdate. Constraints and other placement fields are
+// preserved.
+func setServiceSpread(ctx context.Context, dcli *client.Client, name string, descriptors []string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	spec := svc.Spec
+	if spec.TaskTemplate.Placement == nil {
+		spec.TaskTemplate.Placement = &swarm.Placement{}
+	}
+	prefs := make([]swarm.PlacementPreference, 0, len(descriptors))
+	for _, d := range descriptors {
+		prefs = append(prefs, swarm.PlacementPreference{Spread: &swarm.SpreadOver{SpreadDescriptor: d}})
+	}
+	spec.TaskTemplate.Placement.Preferences = prefs
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// validateSpreadDescriptor checks a spread descriptor — a bare node attribute
+// (no operator/value) that Swarm spreads tasks evenly over.
+func validateSpreadDescriptor(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("spread descriptor must not be empty, e.g. node.labels.zone")
+	}
+	if strings.ContainsAny(s, " \t=!") {
+		return "", fmt.Errorf("spread descriptor %q is just a node attribute — no operator or value", s)
+	}
+	known := s == "node.hostname" || s == "node.id" || s == "node.role" ||
+		s == "node.platform.os" || s == "node.platform.arch" ||
+		(strings.HasPrefix(s, "node.labels.") && len(s) > len("node.labels.")) ||
+		(strings.HasPrefix(s, "engine.labels.") && len(s) > len("engine.labels."))
+	if !known {
+		return "", fmt.Errorf("unknown spread descriptor %q (use node.hostname / node.id / node.role / node.platform.os|arch / node.labels.<k> / engine.labels.<k>)", s)
+	}
+	return s, nil
+}
+
+// spreadSuggestions builds candidate spread descriptors (bare node attributes)
+// from the current cluster for the spread editor's autocomplete.
+func spreadSuggestions(ctx context.Context, dcli *client.Client) ([]string, error) {
+	nl, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{
+		"node.hostname": true, "node.role": true,
+		"node.platform.os": true, "node.platform.arch": true,
+	}
+	for _, n := range nl {
+		for k := range n.Spec.Labels {
+			set["node.labels."+k] = true
+		}
+		for k := range n.Description.Engine.Labels {
+			set["engine.labels."+k] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // formatServicePort renders a port config as "published:target/proto".
 func formatServicePort(p swarm.PortConfig) string {
 	return fmt.Sprintf("%d:%d/%s", p.PublishedPort, p.TargetPort, p.Protocol)
