@@ -80,6 +80,15 @@ func newUICmd(g *globalFlags) *cobra.Command {
 // tree reflects background changes (rolling updates, restarts, scaling).
 const treeRefreshInterval = 10 * time.Second
 
+// listEntryAction is an optional per-entry action a staged list editor exposes:
+// pressing key on the selected entry closes the editor and runs the action with
+// that entry (e.g. the networks editor's "aliases" action).
+type listEntryAction struct {
+	key   rune
+	label string
+	run   func(entry string)
+}
+
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
@@ -2434,7 +2443,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// operator add/edit/delete locally, then apply them all at once (one
 	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
 	// the final list; after runs on success. Used for a service's ports and labels.
-	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit bool, confirmNote func([]string) string, back tview.Primitive, after func()) {
+	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit, multiline bool, confirmNote func([]string) string, entryAction *listEntryAction, back tview.Primitive, after func()) {
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
@@ -2442,7 +2451,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if allowEdit {
 			keyPairs = append(keyPairs, "e", "edit")
 		}
-		keyPairs = append(keyPairs, "d", "delete", "u", "undo", "w", "apply", "j/k", "move", "Esc", "cancel")
+		keyPairs = append(keyPairs, "d", "delete", "y", "copy")
+		if entryAction != nil {
+			keyPairs = append(keyPairs, string(entryAction.key), entryAction.label)
+		}
+		keyPairs = append(keyPairs, "u", "undo", "w", "apply", "j/k", "move", "Esc", "cancel")
 		// history stacks snapshots of cur before each staged change, so `u` undoes
 		// one step (add/edit/delete) as long as nothing has been applied yet.
 		var history [][]string
@@ -2470,9 +2483,47 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			history = history[:len(history)-1]
 			render()
 		}
-		_, restoreHelp := pushOverlayHelp(footerKeys(keyPairs...))
+		setHelp, restoreHelp := pushOverlayHelp(footerKeys(keyPairs...))
 		closeEd := func() { restoreHelp(); pages.RemovePage("listedit"); app.SetFocus(back) }
+		// commit validates a typed entry and applies it via done.
+		commit := func(raw string, done func(string)) {
+			txt := strings.TrimSpace(raw)
+			if txt == "" {
+				return
+			}
+			norm, err := validate(txt)
+			if err != nil {
+				info(err.Error())
+				return
+			}
+			done(norm)
+			render()
+		}
 		prompt := func(label, initial string, done func(string)) {
+			if multiline {
+				// Long / multi-line values (e.g. GITLAB_OMNIBUS_CONFIG) are painful
+				// in a one-line field, so edit them in a scrollable TextArea.
+				ta := tview.NewTextArea().SetText(initial, true)
+				ta.SetBorder(true).SetTitle(" " + label + " — Ctrl-S save · Esc cancel ")
+				ta.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+					switch ev.Key() {
+					case tcell.KeyEscape:
+						pages.RemovePage("listeditprompt")
+						app.SetFocus(list)
+						return nil
+					case tcell.KeyCtrlS:
+						txt := ta.GetText()
+						pages.RemovePage("listeditprompt")
+						app.SetFocus(list)
+						commit(txt, done)
+						return nil
+					}
+					return ev
+				})
+				pages.AddPage("listeditprompt", centered(ta, 96, 22), true, true)
+				app.SetFocus(ta)
+				return
+			}
 			in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
 			if suggest != nil {
 				in.SetAutocompleteFunc(suggest)
@@ -2483,17 +2534,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				if k != tcell.KeyEnter {
 					return
 				}
-				txt := strings.TrimSpace(in.GetText())
-				if txt == "" {
-					return
-				}
-				norm, err := validate(txt)
-				if err != nil {
-					info(err.Error())
-					return
-				}
-				done(norm)
-				render()
+				commit(in.GetText(), done)
 			})
 			in.SetBorder(true)
 			pages.AddPage("listeditprompt", centered(in, 60, 3), true, true)
@@ -2517,6 +2558,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					snapshot()
 					cur = append(cur[:i], cur[i+1:]...)
 					render()
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':
+				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) && screen != nil {
+					screen.SetClipboard([]byte(cur[i]))
+					setHelp(" [green]✓ copied[white] · " + footerKeys(keyPairs...))
+				}
+				return nil
+			case entryAction != nil && ev.Key() == tcell.KeyRune && ev.Rune() == entryAction.key:
+				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
+					entry := cur[i]
+					closeEd()
+					entryAction.run(entry)
 				}
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'u':
@@ -2588,7 +2642,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServicePorts(ctx, dcli, svcName, ports)
-					}, nil, true, nil, back, after)
+					}, nil, true, false, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2614,12 +2668,49 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceLabels(ctx, dcli, svcName, labels)
-					}, nil, true, nil, back, after)
+					}, nil, true, false, nil, nil, back, after)
+			})
+		}()
+	}
+	// openAliasEditorForNet edits a service's DNS aliases on one network. Reached
+	// from the networks editor (select a network, press A), so aliases only show
+	// in that context, not as a top-level inspect key.
+	openAliasEditorForNet := func(svcName, netName, target string, back tview.Primitive, after func()) {
+		go func() {
+			att, err := serviceAttachedNetworks(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load aliases: " + err.Error())
+					return
+				}
+				var aliases []string
+				found := false
+				for _, a := range att {
+					if a.Target == target || a.Name == netName {
+						aliases = a.Aliases
+						found = true
+					}
+				}
+				if !found {
+					info(fmt.Sprintf("service %q is not attached to network %q yet — apply the network first, then set aliases", svcName, netName))
+					return
+				}
+				editList("aliases of "+svcName+" on "+netName, "Update the aliases", aliases,
+					func(s string) (string, error) {
+						s = strings.TrimSpace(s)
+						if s == "" {
+							return "", fmt.Errorf("alias must not be empty")
+						}
+						return s, nil
+					},
+					func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, target, list) },
+					nil, true, false, nil, nil, back, after)
 			})
 		}()
 	}
 	// openNetworksEditor edits the networks a service is attached to, with
 	// autocomplete of network names (add/remove), applied in one ServiceUpdate.
+	// Selecting a network and pressing A edits that network's DNS aliases.
 	openNetworksEditor := func(svcName string, back tview.Primitive, after func()) {
 		go func() {
 			idByName, idToName, allNames := listNetworkRefs(ctx, dcli)
@@ -2666,7 +2757,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, nil, back, after)
+					}, false, false, nil, &listEntryAction{
+						key:   'A',
+						label: "aliases",
+						run:   func(net string) { openAliasEditorForNet(svcName, net, idByName[net], back, after) },
+					}, back, after)
 			})
 		}()
 	}
@@ -2710,7 +2805,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, nil, back, after)
+					}, false, false, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2742,7 +2837,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceEnv(ctx, dcli, svcName, env)
-					}, nil, true, nil, back, after)
+					}, nil, true, true, nil, nil, back, after)
 			})
 		}()
 	}
@@ -2789,7 +2884,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return e
 						}
 						return setServiceMounts(ctx, dcli, svcName, ms)
-					}, nil, true, confirmNote, back, after)
+					}, nil, true, false, confirmNote, nil, back, after)
 			})
 		}()
 	}
@@ -2840,76 +2935,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}()
 	}
 
-	// openAliasEditor edits the DNS aliases of a service on one network. Aliases
-	// live per network attachment, so if the service is on several networks it
-	// first asks which one, then opens the staged alias editor.
-	openAliasEditor := func(svcName string, back tview.Primitive, after func()) {
-		go func() {
-			att, err := serviceAttachedNetworks(ctx, dcli, svcName)
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					info("cannot load networks: " + err.Error())
-					return
-				}
-				if len(att) == 0 {
-					info(fmt.Sprintf("service %q is not attached to any network", svcName))
-					return
-				}
-				editAliases := func(n attachedNet) {
-					editList("aliases of "+svcName+" on "+n.Name, "Update the aliases", n.Aliases,
-						func(s string) (string, error) {
-							s = strings.TrimSpace(s)
-							if s == "" {
-								return "", fmt.Errorf("alias must not be empty")
-							}
-							return s, nil
-						},
-						func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, n.Target, list) },
-						nil, true, nil, back, after)
-				}
-				if len(att) == 1 {
-					editAliases(att[0])
-					return
-				}
-				byName := map[string]attachedNet{}
-				var names []string
-				for _, a := range att {
-					names = append(names, a.Name)
-					byName[a.Name] = a
-				}
-				in := tview.NewInputField().SetLabel("network: ").SetFieldWidth(40).
-					SetPlaceholder("which network's aliases to edit")
-				in.SetAutocompleteFunc(func(text string) []string {
-					text = strings.ToLower(strings.TrimSpace(text))
-					var o []string
-					for _, nm := range names {
-						if text == "" || strings.Contains(strings.ToLower(nm), text) {
-							o = append(o, nm)
-						}
-					}
-					return o
-				})
-				in.SetDoneFunc(func(k tcell.Key) {
-					nm := strings.TrimSpace(in.GetText())
-					pages.RemovePage("aliasnetpick")
-					if k != tcell.KeyEnter || nm == "" {
-						app.SetFocus(back)
-						return
-					}
-					n, ok := byName[nm]
-					if !ok {
-						info("unknown network " + nm)
-						return
-					}
-					editAliases(n)
-				})
-				in.SetBorder(true).SetTitle(" pick network for aliases ")
-				pages.AddPage("aliasnetpick", centered(in, 60, 3), true, true)
-				app.SetFocus(in)
-			})
-		}()
-	}
-
 	showInspect := func(title string, op string, editSvc string, fetch func() ([]inspLine, string, error)) {
 		table := tview.NewTable().SetSelectable(true, false)
 		table.SetBorder(true)
@@ -2928,7 +2953,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]A[white] aliases")
+				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -3100,9 +3125,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
 				openEnvEditor(editSvc, table, reload)
-				return nil
-			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'A':
-				openAliasEditor(editSvc, table, reload)
 				return nil
 			}
 			return ev
