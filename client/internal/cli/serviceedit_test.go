@@ -109,6 +109,57 @@ func TestParseServiceMount(t *testing.T) {
 	}
 }
 
+func TestValidatePlacementConstraint(t *testing.T) {
+	ok := []struct{ in, want string }{
+		{"node.role==manager", "node.role==manager"},
+		{" node.role == manager ", "node.role==manager"}, // spaces normalized away
+		{"node.hostname!=host-a", "node.hostname!=host-a"},
+		{"node.labels.zone==eu-west", "node.labels.zone==eu-west"},
+		{"engine.labels.driver==overlay2", "engine.labels.driver==overlay2"},
+	}
+	for _, c := range ok {
+		got, err := validatePlacementConstraint(c.in)
+		if err != nil {
+			t.Errorf("validatePlacementConstraint(%q) error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("validatePlacementConstraint(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	for _, bad := range []string{
+		"",                     // empty
+		"node.role",            // no operator
+		"node.role==",          // empty value
+		"foo.bar==baz",         // unknown key
+		"node.labels.==x",      // empty label name
+		"node.role==two words", // value with spaces
+	} {
+		if _, err := validatePlacementConstraint(bad); err == nil {
+			t.Errorf("validatePlacementConstraint(%q) should have errored", bad)
+		}
+	}
+}
+
+func TestValidateSpreadDescriptor(t *testing.T) {
+	for _, ok := range []string{"node.hostname", "node.labels.zone", "engine.labels.driver", "node.platform.os"} {
+		if got, err := validateSpreadDescriptor(" " + ok + " "); err != nil || got != ok {
+			t.Errorf("validateSpreadDescriptor(%q) = %q, %v", ok, got, err)
+		}
+	}
+	for _, bad := range []string{
+		"",                     // empty
+		"node.labels.zone==eu", // has operator/value — that's a constraint, not a descriptor
+		"node.labels.",         // empty label name
+		"foo.bar",              // unknown attribute
+		"node hostname",        // space
+	} {
+		if _, err := validateSpreadDescriptor(bad); err == nil {
+			t.Errorf("validateSpreadDescriptor(%q) should have errored", bad)
+		}
+	}
+}
+
 func TestMountsFromStrings_DuplicateTarget(t *testing.T) {
 	if _, err := mountsFromStrings([]string{"volume:a:/data", "bind:/x:/data"}); err == nil {
 		t.Error("duplicate mount target should be rejected")
