@@ -107,6 +107,133 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 	return formatTaskInspect(task, owning, netNameMap(ctx, dcli), nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
 }
 
+// serviceDiffLines inspects a service and returns a unified diff of its current
+// spec against its PreviousSpec (what the last update changed). hasPrev is false
+// when the service has never been updated (no PreviousSpec to compare against).
+func serviceDiffLines(ctx context.Context, dcli *client.Client, ref string) (lines []string, hasPrev bool, err error) {
+	svc, _, err := dcli.ServiceInspectWithRaw(ctx, ref, types.ServiceInspectOptions{})
+	if err != nil {
+		return nil, false, err
+	}
+	l, ok := serviceSpecDiff(svc, netNameMap(ctx, dcli))
+	return l, ok, nil
+}
+
+// serviceSpecDiff compares a service's current spec to its PreviousSpec and
+// returns the changed lines ("- " removed, "+ " added), grouped by field (the
+// canonical line prefix). Unchanged fields are omitted.
+func serviceSpecDiff(svc swarm.Service, netNames map[string]string) (lines []string, hasPrev bool) {
+	if svc.PreviousSpec == nil {
+		return nil, false
+	}
+	prev := specLines(*svc.PreviousSpec, netNames)
+	cur := specLines(svc.Spec, netNames)
+	prevSet := map[string]bool{}
+	for _, l := range prev {
+		prevSet[l] = true
+	}
+	curSet := map[string]bool{}
+	for _, l := range cur {
+		curSet[l] = true
+	}
+	seen := map[string]bool{}
+	var all []string
+	for _, l := range append(append([]string{}, prev...), cur...) {
+		if !seen[l] {
+			seen[l] = true
+			all = append(all, l)
+		}
+	}
+	sort.Strings(all) // groups by "field:" prefix, so an edited value's -/+ sit together
+	for _, l := range all {
+		switch {
+		case prevSet[l] && curSet[l]:
+			// unchanged — omit
+		case curSet[l]:
+			lines = append(lines, "+ "+l)
+		default:
+			lines = append(lines, "- "+l)
+		}
+	}
+	return lines, true
+}
+
+// specLines renders the operator-relevant fields of a service spec as canonical,
+// comparable "field: value" lines (sorted-friendly prefixes) for diffing.
+func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
+	var out []string
+	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
+		out = append(out, "image: "+cs.Image)
+		if len(cs.Command) > 0 {
+			out = append(out, "command: "+strings.Join(cs.Command, " "))
+		}
+		if len(cs.Args) > 0 {
+			out = append(out, "args: "+strings.Join(cs.Args, " "))
+		}
+		for _, e := range cs.Env {
+			out = append(out, "env: "+e)
+		}
+		for _, s := range cs.Secrets {
+			out = append(out, "secret: "+s.SecretName)
+		}
+		for _, m := range cs.Mounts {
+			out = append(out, "mount: "+formatServiceMount(m))
+		}
+	}
+	if spec.Mode.Replicated != nil && spec.Mode.Replicated.Replicas != nil {
+		out = append(out, fmt.Sprintf("mode: replicated %d", *spec.Mode.Replicated.Replicas))
+	} else if spec.Mode.Global != nil {
+		out = append(out, "mode: global")
+	}
+	for k, v := range spec.Labels {
+		out = append(out, "label: "+k+"="+v)
+	}
+	for _, n := range spec.TaskTemplate.Networks {
+		name := netNames[n.Target]
+		if name == "" {
+			name = n.Target
+		}
+		out = append(out, "network: "+name)
+		for _, a := range n.Aliases {
+			out = append(out, "alias: "+name+"/"+a)
+		}
+	}
+	if p := spec.TaskTemplate.Placement; p != nil {
+		for _, c := range p.Constraints {
+			out = append(out, "constraint: "+c)
+		}
+		for _, pr := range p.Preferences {
+			if pr.Spread != nil {
+				out = append(out, "spread: "+pr.Spread.SpreadDescriptor)
+			}
+		}
+	}
+	if spec.EndpointSpec != nil {
+		for _, port := range spec.EndpointSpec.Ports {
+			out = append(out, "port: "+formatServicePort(port))
+		}
+	}
+	if r := spec.TaskTemplate.Resources; r != nil {
+		if l := r.Limits; l != nil {
+			if l.NanoCPUs > 0 {
+				out = append(out, fmt.Sprintf("cpu-limit: %.2f", float64(l.NanoCPUs)/1e9))
+			}
+			if l.MemoryBytes > 0 {
+				out = append(out, fmt.Sprintf("mem-limit: %d", l.MemoryBytes))
+			}
+		}
+		if rv := r.Reservations; rv != nil {
+			if rv.NanoCPUs > 0 {
+				out = append(out, fmt.Sprintf("cpu-reservation: %.2f", float64(rv.NanoCPUs)/1e9))
+			}
+			if rv.MemoryBytes > 0 {
+				out = append(out, fmt.Sprintf("mem-reservation: %d", rv.MemoryBytes))
+			}
+		}
+	}
+	return out
+}
+
 // netNameMap maps a network ID (and name) to its name so attachments that carry
 // only an ID render readably. Best effort.
 func netNameMap(ctx context.Context, dcli *client.Client) map[string]string {

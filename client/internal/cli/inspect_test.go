@@ -70,6 +70,38 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 	}
 }
 
+func TestServiceSpecDiff(t *testing.T) {
+	var svc swarm.Service
+	prev := swarm.ServiceSpec{}
+	prev.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{Image: "nginx:1", Env: []string{"LOG=info", "KEEP=1"}}
+	prev.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
+	svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{Image: "nginx:2", Env: []string{"LOG=debug", "KEEP=1"}}
+	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}, {Target: "netid2"}}
+	svc.PreviousSpec = &prev
+
+	lines, hasPrev := serviceSpecDiff(svc, map[string]string{"netid1": "frontend", "netid2": "monitoring"})
+	if !hasPrev {
+		t.Fatal("hasPrev should be true when PreviousSpec is set")
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"- image: nginx:1", "+ image: nginx:2", "- env: LOG=info", "+ env: LOG=debug", "+ network: monitoring"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("diff missing %q:\n%s", want, joined)
+		}
+	}
+	// Unchanged fields must be omitted.
+	for _, notWant := range []string{"KEEP=1", "network: frontend"} {
+		if strings.Contains(joined, notWant) {
+			t.Errorf("diff should omit unchanged %q:\n%s", notWant, joined)
+		}
+	}
+	// No previous spec → nothing to diff.
+	svc.PreviousSpec = nil
+	if _, ok := serviceSpecDiff(svc, nil); ok {
+		t.Error("hasPrev should be false when PreviousSpec is nil")
+	}
+}
+
 func TestFormatTaskInspect_NetworksAndState(t *testing.T) {
 	var task swarm.Task
 	task.ID = "task123"
