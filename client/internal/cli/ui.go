@@ -4194,15 +4194,67 @@ func joinLines(ss []string) string {
 	return out
 }
 
-// centered wraps p in a width×height box centered on screen (for modals).
+// overlayFooterReserve is the number of bottom rows a centered overlay must
+// leave uncovered so the always-present two-line footer (drawn by the "main"
+// page beneath every overlay) stays visible — the key hints live there.
+const overlayFooterReserve = 2
+
+// centered floats p (its natural width×height) in the upper-centre of the
+// screen, transparent around it so the page beneath shows through — used for
+// every menu/editor/inspect overlay. Crucially it never draws over the bottom
+// overlayFooterReserve rows: on a terminal too short for p's natural height the
+// box shrinks to fit the space above the footer instead of covering it (the old
+// fixed-height Flex would overflow and hide the shortcut footer). p shrinks; the
+// footer survives.
 func centered(p tview.Primitive, width, height int) tview.Primitive {
-	return tview.NewFlex().
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, 0, 1, false).
-			AddItem(p, height, 1, true).
-			AddItem(nil, 0, 1, false), width, 1, true).
-		AddItem(nil, 0, 1, false)
+	return &centeredBox{Box: tview.NewBox(), inner: p, width: width, height: height}
+}
+
+// centeredBox is the size-aware layout backing centered(). It embeds Box only
+// for the default Primitive plumbing; it draws nothing itself (transparent
+// margins) and delegates focus/input/mouse/paste to its inner primitive, which
+// callers focus directly.
+type centeredBox struct {
+	*tview.Box
+	inner         tview.Primitive
+	width, height int
+}
+
+func (c *centeredBox) Draw(screen tcell.Screen) {
+	x, y, w, h := c.GetRect()
+	if w <= 0 || h <= 0 {
+		return
+	}
+	avail := h - overlayFooterReserve
+	if avail < 1 {
+		avail = h // terminal shorter than the footer itself: don't vanish
+	}
+	bw, bh := c.width, c.height
+	if bw > w {
+		bw = w
+	}
+	if bh > avail {
+		bh = avail
+	}
+	bx := x + (w-bw)/2
+	by := y + (avail-bh)/2
+	if by < y {
+		by = y
+	}
+	c.inner.SetRect(bx, by, bw, bh)
+	c.inner.Draw(screen)
+}
+
+func (c *centeredBox) Focus(delegate func(p tview.Primitive)) { delegate(c.inner) }
+func (c *centeredBox) HasFocus() bool                         { return c.inner.HasFocus() }
+func (c *centeredBox) InputHandler() func(*tcell.EventKey, func(p tview.Primitive)) {
+	return c.inner.InputHandler()
+}
+func (c *centeredBox) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(p tview.Primitive)) (bool, tview.Primitive) {
+	return c.inner.MouseHandler()
+}
+func (c *centeredBox) PasteHandler() func(string, func(p tview.Primitive)) {
+	return c.inner.PasteHandler()
 }
 
 // footerKeys builds the markup for the bottom footer from key,description pairs
