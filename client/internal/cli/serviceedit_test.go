@@ -160,6 +160,44 @@ func TestValidateSpreadDescriptor(t *testing.T) {
 	}
 }
 
+func TestResourceParseFormat(t *testing.T) {
+	if n, err := parseCPUCores("0.5"); err != nil || n != 500_000_000 {
+		t.Errorf("parseCPUCores(0.5) = %d, %v", n, err)
+	}
+	if n, err := parseCPUCores(""); err != nil || n != 0 {
+		t.Errorf("empty CPU should parse to 0, got %d, %v", n, err)
+	}
+	for _, bad := range []string{"abc", "-1"} {
+		if _, err := parseCPUCores(bad); err == nil {
+			t.Errorf("parseCPUCores(%q) should have errored", bad)
+		}
+	}
+	if got := formatCPUCores(500_000_000); got != "0.5" {
+		t.Errorf("formatCPUCores(0.5 cores) = %q", got)
+	}
+	if got := formatCPUCores(0); got != "" {
+		t.Errorf("formatCPUCores(0) = %q, want empty", got)
+	}
+
+	if b, err := parseMemBytes("512m"); err != nil || b != 512*1024*1024 {
+		t.Errorf("parseMemBytes(512m) = %d, %v", b, err)
+	}
+	if n, err := parseMemBytes(""); err != nil || n != 0 {
+		t.Errorf("empty memory should parse to 0, got %d, %v", n, err)
+	}
+	if _, err := parseMemBytes("bogus"); err == nil {
+		t.Error("parseMemBytes(bogus) should have errored")
+	}
+	if got := formatMemBytes(0); got != "" {
+		t.Errorf("formatMemBytes(0) = %q, want empty", got)
+	}
+	// memory round-trips through format→parse
+	const twoGiB = int64(2 * 1024 * 1024 * 1024)
+	if rb, _ := parseMemBytes(formatMemBytes(twoGiB)); rb != twoGiB {
+		t.Errorf("memory round-trip failed: %d", rb)
+	}
+}
+
 func TestMountsFromStrings_DuplicateTarget(t *testing.T) {
 	if _, err := mountsFromStrings([]string{"volume:a:/data", "bind:/x:/data"}); err == nil {
 		t.Error("duplicate mount target should be rejected")

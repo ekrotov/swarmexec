@@ -3194,6 +3194,90 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 	}
+	// openResourcesEditor sets/edits/clears the service's CPU and memory limits
+	// (and reservations) in a form. An empty field clears that limit; applying
+	// does one ServiceUpdate (rolling update).
+	openResourcesEditor := func(svcName string, back tview.Primitive, after func()) {
+		go func() {
+			rc, err := currentServiceResources(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					info("cannot load resources: " + err.Error())
+					return
+				}
+				form := tview.NewForm()
+				cpuL := tview.NewInputField().SetLabel("CPU limit (cores)").SetText(rc.CPULimit).SetFieldWidth(16).SetPlaceholder("e.g. 0.5 — empty = none")
+				memL := tview.NewInputField().SetLabel("Memory limit").SetText(rc.MemLimit).SetFieldWidth(16).SetPlaceholder("e.g. 512m — empty = none")
+				cpuR := tview.NewInputField().SetLabel("CPU reservation").SetText(rc.CPUReservation).SetFieldWidth(16).SetPlaceholder("optional")
+				memR := tview.NewInputField().SetLabel("Memory reservation").SetText(rc.MemReservation).SetFieldWidth(16).SetPlaceholder("optional")
+				setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
+				_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
+				closeForm := func() {
+					restoreHelp()
+					pages.RemovePage("resedit")
+					app.SetFocus(back)
+				}
+				apply := func() {
+					cl, e1 := parseCPUCores(cpuL.GetText())
+					ml, e2 := parseMemBytes(memL.GetText())
+					cr, e3 := parseCPUCores(cpuR.GetText())
+					mr, e4 := parseMemBytes(memR.GetText())
+					for _, e := range []error{e1, e2, e3, e4} {
+						if e != nil {
+							setTitle(" ⚠ " + e.Error() + " ")
+							return
+						}
+					}
+					if cl > 0 && cr > cl {
+						setTitle(" ⚠ CPU reservation exceeds the limit ")
+						return
+					}
+					if ml > 0 && mr > ml {
+						setTitle(" ⚠ memory reservation exceeds the limit ")
+						return
+					}
+					confirm := tview.NewModal().
+						SetText("Update resource limits for " + svcName + "?\n\nThis triggers a rolling update of the service.").
+						AddButtons([]string{"Apply", "Cancel"}).
+						SetDoneFunc(func(_ int, lbl string) {
+							pages.RemovePage("resconfirm")
+							if lbl != "Apply" {
+								app.SetFocus(form)
+								return
+							}
+							go func() {
+								aerr := setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
+								app.QueueUpdateDraw(func() {
+									if aerr != nil {
+										info("update failed: " + aerr.Error())
+										app.SetFocus(form)
+										return
+									}
+									closeForm()
+									info("service updated — rolling update started")
+									if after != nil {
+										after()
+									}
+								})
+							}()
+						})
+					pages.AddPage("resconfirm", confirm, true, true)
+					app.SetFocus(confirm)
+				}
+				form.AddFormItem(cpuL)
+				form.AddFormItem(memL)
+				form.AddFormItem(cpuR)
+				form.AddFormItem(memR)
+				form.AddButton("Apply", apply)
+				form.AddButton("Cancel", closeForm)
+				form.SetCancelFunc(closeForm)
+				form.SetBorder(true)
+				setTitle(" resource limits of " + svcName + " — empty clears a limit ")
+				pages.AddPage("resedit", centered(form, 70, 15), true, true)
+				app.SetFocus(form)
+			})
+		}()
+	}
 
 	showInspect := func(title string, op string, editSvc string, fetch func() ([]inspLine, string, error)) {
 		table := tview.NewTable().SetSelectable(true, false)
@@ -3213,7 +3297,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]P[white] placement")
+				parts = append(parts, "[yellow]d[white] diff", "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -3338,6 +3422,59 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				})
 			}()
 		}
+		// openDiff shows a unified diff of the service's current spec against its
+		// PreviousSpec (what the last rolling update changed). Service-only.
+		openDiff := func() {
+			tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
+			tv.SetBorder(true).SetTitle(fmt.Sprintf(" diff %s — previous → current ", editSvc))
+			_, restoreDiff := pushOverlayHelp(footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
+			closeDiff := func() {
+				restoreDiff()
+				pages.RemovePage("inspectdiff")
+				app.SetFocus(table)
+			}
+			tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+				if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'd')) {
+					closeDiff()
+					return nil
+				}
+				return ev
+			})
+			tv.SetText("loading…")
+			pages.AddPage("inspectdiff", centered(tv, 100, 32), true, true)
+			app.SetFocus(tv)
+			go func() {
+				lines, hasPrev, derr := serviceDiffLines(ctx, dcli, editSvc)
+				app.QueueUpdateDraw(func() {
+					if !pages.HasPage("inspectdiff") {
+						return
+					}
+					switch {
+					case derr != nil:
+						tv.SetText("[red]error: " + tview.Escape(derr.Error()) + "[white]")
+					case !hasPrev:
+						tv.SetText("[gray]No previous version to diff — this service has not been updated since it was created.[white]")
+					case len(lines) == 0:
+						tv.SetText("[gray]No field-level differences between the current and previous spec (only metadata changed).[white]")
+					default:
+						var b strings.Builder
+						b.WriteString("previous → current   ([red]- removed[white]  [green]+ added[white])\n\n")
+						for _, l := range lines {
+							switch {
+							case strings.HasPrefix(l, "+ "):
+								b.WriteString("[green]" + tview.Escape(l) + "[white]\n")
+							case strings.HasPrefix(l, "- "):
+								b.WriteString("[red]" + tview.Escape(l) + "[white]\n")
+							default:
+								b.WriteString(tview.Escape(l) + "\n")
+							}
+						}
+						tv.SetText(b.String())
+						tv.ScrollToBeginning()
+					}
+				})
+			}()
+		}
 		table.SetSelectionChangedFunc(func(int, int) { setFooter("") })
 		table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -3365,6 +3502,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
 				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				openDiff()
+				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 's':
 				openScalePrompt(editSvc, table, reload)
 				return nil
@@ -3385,6 +3525,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
 				openEnvEditor(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'r':
+				openResourcesEditor(editSvc, table, reload)
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'P':
 				openPlacementMenu(editSvc, table, reload)

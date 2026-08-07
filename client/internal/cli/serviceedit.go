@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	units "github.com/docker/go-units"
 )
 
 // Service edits (scale, ports, labels) are manager-API ServiceUpdate operations
@@ -812,6 +813,111 @@ func spreadSuggestions(ctx context.Context, dcli *client.Client) ([]string, erro
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// serviceResources holds a service's CPU/memory limits and reservations as
+// display strings (empty = unset). CPU is in cores (e.g. "0.5"); memory is a
+// human size (e.g. "512MiB").
+type serviceResources struct {
+	CPULimit, MemLimit, CPUReservation, MemReservation string
+}
+
+// currentServiceResources returns the service's current limits/reservations as
+// display strings for the resources editor.
+func currentServiceResources(ctx context.Context, dcli *client.Client, name string) (serviceResources, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return serviceResources{}, err
+	}
+	if svc == nil {
+		return serviceResources{}, fmt.Errorf("no service named %q", name)
+	}
+	var r serviceResources
+	if res := svc.Spec.TaskTemplate.Resources; res != nil {
+		if l := res.Limits; l != nil {
+			r.CPULimit = formatCPUCores(l.NanoCPUs)
+			r.MemLimit = formatMemBytes(l.MemoryBytes)
+		}
+		if rv := res.Reservations; rv != nil {
+			r.CPUReservation = formatCPUCores(rv.NanoCPUs)
+			r.MemReservation = formatMemBytes(rv.MemoryBytes)
+		}
+	}
+	return r, nil
+}
+
+// setServiceResources sets the service's CPU/memory limits and reservations in
+// one ServiceUpdate. A zero value clears that field (Swarm treats 0 as
+// unlimited). Pids limits and generic (device) reservations are preserved.
+func setServiceResources(ctx context.Context, dcli *client.Client, name string, cpuLimit, memLimit, cpuReservation, memReservation int64) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	spec := svc.Spec
+	if spec.TaskTemplate.Resources == nil {
+		spec.TaskTemplate.Resources = &swarm.ResourceRequirements{}
+	}
+	res := spec.TaskTemplate.Resources
+	if res.Limits == nil {
+		res.Limits = &swarm.Limit{}
+	}
+	res.Limits.NanoCPUs = cpuLimit
+	res.Limits.MemoryBytes = memLimit
+	if res.Reservations == nil {
+		res.Reservations = &swarm.Resources{}
+	}
+	res.Reservations.NanoCPUs = cpuReservation
+	res.Reservations.MemoryBytes = memReservation
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
+// parseCPUCores parses a CPU amount in cores ("0.5", "2") into NanoCPUs. An
+// empty string means "unset" (0).
+func parseCPUCores(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	cores, err := strconv.ParseFloat(s, 64)
+	if err != nil || cores < 0 {
+		return 0, fmt.Errorf("invalid CPU value %q (use cores, e.g. 0.5 or 2)", s)
+	}
+	return int64(cores * 1e9), nil
+}
+
+// parseMemBytes parses a human memory size ("512m", "2g", "1.5GiB") into bytes.
+// An empty string means "unset" (0).
+func parseMemBytes(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	b, err := units.RAMInBytes(s)
+	if err != nil || b < 0 {
+		return 0, fmt.Errorf("invalid memory value %q (use e.g. 512m, 2g, 1.5GiB)", s)
+	}
+	return b, nil
+}
+
+// formatCPUCores renders NanoCPUs as a compact cores string ("" when unset).
+func formatCPUCores(nano int64) string {
+	if nano <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(float64(nano)/1e9, 'f', -1, 64)
+}
+
+// formatMemBytes renders bytes as a 1024-based size ("" when unset).
+func formatMemBytes(b int64) string {
+	if b <= 0 {
+		return ""
+	}
+	return units.BytesSize(float64(b))
 }
 
 // formatServicePort renders a port config as "published:target/proto".
