@@ -2550,8 +2550,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			if multiline {
 				// Long / multi-line values (e.g. GITLAB_OMNIBUS_CONFIG) are painful
-				// in a one-line field, so edit them in a scrollable TextArea.
-				ta := tview.NewTextArea().SetText(initial, true)
+				// in a one-line field, so edit them in a scrollable TextArea. Place
+				// the cursor at the START (not the end): cursor-at-end scrolls a
+				// freshly-built, not-yet-sized TextArea to its bottom, so the operator
+				// only sees the tail of the value with the cursor pinned to the last
+				// row. Start-of-text shows the value from the top.
+				ta := tview.NewTextArea().SetText(initial, false)
 				ta.SetBorder(true).SetTitle(" " + label + " — Ctrl-S save · Esc cancel ")
 				ta.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 					switch ev.Key() {
@@ -2645,17 +2649,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				if hasChanges() {
 					// Don't silently drop staged edits — make the operator choose.
 					leave := tview.NewModal().
-						SetText("You have unapplied changes.\n\nApply them now, discard them, or keep editing?").
+						SetText("You have unapplied changes.\n\nApply them now, discard them, or keep editing?\n(Esc discards and leaves.)").
 						AddButtons([]string{"Apply", "Discard", "Keep editing"}).
 						SetDoneFunc(func(_ int, lbl string) {
 							pages.RemovePage("listeditleave")
 							switch lbl {
 							case "Apply":
 								applyFlow()
-							case "Discard":
-								closeEd()
-							default:
+							case "Keep editing":
 								app.SetFocus(list)
+							default:
+								// "Discard" button or Esc (empty label): leave the
+								// editor, dropping the staged (never-applied) edits.
+								// Esc must be an exit here — mapping it to "keep
+								// editing" traps the operator, since Esc on the list
+								// only re-opens this same guard, forever.
+								closeEd()
 							}
 						})
 					pages.AddPage("listeditleave", leave, true, true)
