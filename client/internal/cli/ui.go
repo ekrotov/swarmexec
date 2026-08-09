@@ -167,6 +167,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		// restore func (call on close). Nesting-safe: each call saves the current
 		// footer text. Assigned once the footer widget exists.
 		pushOverlayHelp func(string) (set func(string), restore func())
+		// openAliasEditorForNet opens the staged DNS-alias editor for a service on
+		// one network. Declared up here so the network-members overlay (defined
+		// earlier than the inspect editors) can reuse it; assigned further down.
+		openAliasEditorForNet func(svcName, netName, target string, back tview.Primitive, after func())
 	)
 
 	// ---------------------------------------------------------------- containers
@@ -1526,20 +1530,30 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	showNetworkMembers := func(n swarmNetwork) {
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services ", n.Name))
-		render := func(svcs []netService, loading bool) {
+		// members/expanded drive the collapsible view; rowSvc maps each list row
+		// back to the service it belongs to (for Enter = toggle aliases and
+		// A = add alias). loaded flips once the task/spec lookup returns.
+		var members []netService
+		var rowSvc []string
+		expanded := map[string]bool{}
+		loaded := false
+		render := func() {
 			cur := list.GetCurrentItem()
 			list.Clear()
-			if len(svcs) == 0 {
-				if loading {
-					list.AddItem("loading…", "", 0, nil)
-				} else {
+			rowSvc = rowSvc[:0]
+			meta := func(svc string) { rowSvc = append(rowSvc, svc) }
+			if len(members) == 0 {
+				if loaded {
 					list.AddItem("(no services attached)", "", 0, nil)
+				} else {
+					list.AddItem("loading…", "", 0, nil)
 				}
+				meta("")
 			}
 			// Pad the id/node columns to the widest across every service so the
 			// node and IP columns line up down the whole list, not just per row.
 			idW, nodeW := 0, 0
-			for _, s := range svcs {
+			for _, s := range members {
 				for _, c := range s.Containers {
 					if w := len(c.ID); w > idW {
 						idW = w
@@ -1549,32 +1563,89 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 			}
-			for _, s := range svcs {
-				head := s.Name + " …"
-				if !loading {
-					head = fmt.Sprintf("%s (%d)", s.Name, len(s.Containers))
+			for _, s := range members {
+				head := tview.Escape(s.Name) + " …"
+				if loaded {
+					head = fmt.Sprintf("%s (%d)", tview.Escape(s.Name), len(s.Containers))
+					switch {
+					case len(s.Aliases) == 0:
+						head += "  [gray]no aliases[-]"
+					case expanded[s.Name]:
+						head += fmt.Sprintf("  [aqua]- %d aliases[-]", len(s.Aliases))
+					default:
+						head += fmt.Sprintf("  [aqua]+ %d aliases[-]", len(s.Aliases))
+					}
 				}
 				list.AddItem(head, "", 0, nil)
+				meta(s.Name)
+				if loaded && expanded[s.Name] {
+					for _, a := range s.Aliases {
+						list.AddItem("        [gray]alias:[-] "+tview.Escape(a), "", 0, nil)
+						meta(s.Name)
+					}
+				}
 				for _, c := range s.Containers {
 					list.AddItem(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
+					meta(s.Name)
 				}
 			}
 			if cur < list.GetItemCount() {
 				list.SetCurrentItem(cur)
 			}
 		}
-		// Seed with the services already known from the list; containers pending.
-		init := make([]netService, 0, len(n.Services))
+		// Seed with the services already known from the list; containers/aliases
+		// fill in once the task/spec lookup returns.
+		members = make([]netService, 0, len(n.Services))
 		for _, s := range n.Services {
-			init = append(init, netService{Name: s})
+			members = append(members, netService{Name: s})
 		}
-		render(init, true)
-		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "move", "Esc", "back"))
+		render()
+		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
 		closeMembers := func() { restoreHelp(); pages.RemovePage("netmembers"); app.SetFocus(nettable) }
+		reload := func() {
+			go func() {
+				m := networkMembers(ctx, dcli, n)
+				app.QueueUpdateDraw(func() {
+					// Only repaint if this overlay is still the one on screen.
+					if pages.HasPage("netmembers") {
+						members, loaded = m, true
+						render()
+					}
+				})
+			}()
+		}
+		curSvc := func() string {
+			i := list.GetCurrentItem()
+			if i < 0 || i >= len(rowSvc) {
+				return ""
+			}
+			return rowSvc[i]
+		}
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeMembers()
+				return nil
+			case ev.Key() == tcell.KeyEnter:
+				// Toggle the current row's service, so Enter anywhere in a service's
+				// block expands/collapses its aliases.
+				if svc := curSvc(); svc != "" {
+					expanded[svc] = !expanded[svc]
+					render()
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'A':
+				svc := curSvc()
+				if svc == "" {
+					return nil
+				}
+				if !loaded {
+					info("still loading — try again in a moment")
+					return nil
+				}
+				// Same staged alias editor as the inspect view; applies via
+				// setNetworkAliases, then reloads this view to show the new aliases.
+				openAliasEditorForNet(svc, n.Name, n.ID, list, reload)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
 				suggestions := servicesExcluding(serviceNamesFromCache(), n.Services)
@@ -1608,15 +1679,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		pages.AddPage("netmembers", centered(list, 78, height), true, true)
 		app.SetFocus(list)
-		go func() {
-			members := networkMembers(ctx, dcli, n)
-			app.QueueUpdateDraw(func() {
-				// Only repaint if this overlay is still the one on screen.
-				if pages.HasPage("netmembers") {
-					render(members, false)
-				}
-			})
-		}()
+		reload()
 	}
 	nettable.SetSelectedFunc(func(int, int) {
 		if n, ok := selectedNetwork(); ok {
@@ -2770,7 +2833,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// openAliasEditorForNet edits a service's DNS aliases on one network. Reached
 	// from the networks editor (select a network, press A), so aliases only show
 	// in that context, not as a top-level inspect key.
-	openAliasEditorForNet := func(svcName, netName, target string, back tview.Primitive, after func()) {
+	openAliasEditorForNet = func(svcName, netName, target string, back tview.Primitive, after func()) {
 		go func() {
 			att, err := serviceAttachedNetworks(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
@@ -3203,6 +3266,36 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 	}
+	// openForceUpdate redeploys a service (docker service update --force) after a
+	// confirm — every task is restarted/rescheduled, which unsticks a service in
+	// an incomplete state (e.g. 1/2). No spec change beyond bumping ForceUpdate.
+	openForceUpdate := func(svcName string, back tview.Primitive, after func()) {
+		confirm := tview.NewModal().
+			SetText(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName)).
+			AddButtons([]string{"Force update", "Cancel"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("forceconfirm")
+				app.SetFocus(back)
+				if lbl != "Force update" {
+					return
+				}
+				go func() {
+					err := forceUpdateService(ctx, dcli, svcName)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("force update failed: " + err.Error())
+							return
+						}
+						info(fmt.Sprintf("force-updating %q — reconciling", svcName))
+						if after != nil {
+							after()
+						}
+					})
+				}()
+			})
+		pages.AddPage("forceconfirm", confirm, true, true)
+		app.SetFocus(confirm)
+	}
 	// openResourcesEditor sets/edits/clears the service's CPU and memory limits
 	// (and reservations) in a form. An empty field clears that limit; applying
 	// does one ServiceUpdate (rolling update).
@@ -3306,7 +3399,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]d[white] diff", "[yellow]s[white] scale", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
+				parts = append(parts, "[yellow]d[white] diff", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -3516,6 +3609,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 's':
 				openScalePrompt(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
+				openForceUpdate(editSvc, table, reload)
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'p':
 				openPortsEditor(editSvc, table, reload)
