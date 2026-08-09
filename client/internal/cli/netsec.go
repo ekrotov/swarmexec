@@ -46,10 +46,12 @@ type netContainer struct {
 }
 
 // netService groups the containers attached to a network by the service they
-// belong to — the shape the network detail view renders.
+// belong to — the shape the network detail view renders. Aliases are the
+// service's custom DNS aliases on this network (collapsible in the view).
 type netService struct {
 	Name       string
 	Containers []netContainer
+	Aliases    []string
 }
 
 // swarmSecret is a secret's metadata plus the services that use it. Secret
@@ -299,8 +301,18 @@ func serviceNetworkMembership(svcs []swarm.Service) map[string][]string {
 // appears (with zero containers). Best effort: failed API calls degrade to
 // empty rather than failing the view.
 func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) []netService {
-	idName := serviceIDNames(ctx, dcli)
 	nodeName := nodeHostnames(ctx, dcli)
+
+	// One ServiceList yields both id→name (to label each task's service) and each
+	// service's custom DNS aliases on this network — no extra per-service inspect.
+	idName := map[string]string{}
+	aliasesBySvc := map[string][]string{}
+	if svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{}); err == nil {
+		for _, s := range svcs {
+			idName[s.ID] = s.Spec.Name
+			aliasesBySvc[s.Spec.Name] = serviceAliasesOnNetwork(s, net)
+		}
+	}
 
 	byService := map[string][]netContainer{}
 	if tasks, err := dcli.TaskList(ctx, types.TaskListOptions{}); err == nil {
@@ -331,7 +343,7 @@ func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) 
 		seen[name] = true
 		cs := byService[name]
 		sort.Slice(cs, func(i, j int) bool { return cs[i].ID < cs[j].ID })
-		out = append(out, netService{Name: name, Containers: cs})
+		out = append(out, netService{Name: name, Containers: cs, Aliases: aliasesBySvc[name]})
 	}
 	for _, s := range net.Services {
 		add(s)
@@ -346,20 +358,6 @@ func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
-}
-
-// serviceIDNames maps service ID to name (for turning a task's ServiceID into a
-// readable service name).
-func serviceIDNames(ctx context.Context, dcli *client.Client) map[string]string {
-	m := map[string]string{}
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
-	if err != nil {
-		return m
-	}
-	for _, s := range svcs {
-		m[s.ID] = s.Spec.Name
-	}
-	return m
 }
 
 // nodeHostnames maps node ID to hostname, so a task's NodeID shows as a name.
@@ -404,6 +402,26 @@ func taskIPv4(t swarm.Task, netID string) string {
 		}
 	}
 	return ""
+}
+
+// serviceAliasesOnNetwork returns a service's custom DNS aliases on one network,
+// read straight from its spec — the attachment whose Target matches the network
+// by id or name. Empty when the service sets no aliases there.
+func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
+	match := func(a swarm.NetworkAttachmentConfig) bool {
+		return a.Target == net.ID || a.Target == net.Name
+	}
+	for _, a := range s.Spec.TaskTemplate.Networks {
+		if match(a) && len(a.Aliases) > 0 {
+			return append([]string{}, a.Aliases...)
+		}
+	}
+	for _, a := range s.Spec.Networks {
+		if match(a) && len(a.Aliases) > 0 {
+			return append([]string{}, a.Aliases...)
+		}
+	}
+	return nil
 }
 
 // listSecrets returns secret metadata (never the value — the API does not

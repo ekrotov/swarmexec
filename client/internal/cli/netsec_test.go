@@ -48,6 +48,37 @@ func TestServiceNetworkMembership(t *testing.T) {
 	}
 }
 
+func TestServiceAliasesOnNetwork(t *testing.T) {
+	var s swarm.Service
+	s.Spec.Name = "web"
+	// Attached by network ID on the task template, with two aliases.
+	s.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{
+		{Target: "net-id-1", Aliases: []string{"web", "frontend"}},
+	}
+	// A second attachment referenced by NAME on the deprecated spec field.
+	s.Spec.Networks = []swarm.NetworkAttachmentConfig{
+		{Target: "backend", Aliases: []string{"api"}},
+	}
+
+	cases := []struct {
+		name string
+		net  swarmNetwork
+		want []string
+	}{
+		{"by id", swarmNetwork{ID: "net-id-1", Name: "frontend-net"}, []string{"web", "frontend"}},
+		{"by name", swarmNetwork{ID: "backend-id", Name: "backend"}, []string{"api"}},
+		{"not attached", swarmNetwork{ID: "other-id", Name: "other"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := serviceAliasesOnNetwork(s, tc.net)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("serviceAliasesOnNetwork = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func secretSvc(name string, secretRefs ...swarm.SecretReference) swarm.Service {
 	var s swarm.Service
 	s.Spec.Name = name

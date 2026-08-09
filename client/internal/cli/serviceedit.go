@@ -286,6 +286,25 @@ func setServiceEnv(ctx context.Context, dcli *client.Client, name string, env []
 	return err
 }
 
+// forceUpdateService redeploys a service without changing its spec — the
+// equivalent of `docker service update --force`. Bumping TaskTemplate.ForceUpdate
+// makes Swarm reconcile every task (restart/reschedule), which is how you unstick
+// a service sitting in an incomplete state (e.g. 1/2 replicas). Read-modify-write
+// ServiceUpdate; nothing else in the spec changes.
+func forceUpdateService(ctx context.Context, dcli *client.Client, name string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ForceUpdate++
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
 // currentServiceEnv returns a service's environment variables as "KEY=VALUE".
 func currentServiceEnv(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
