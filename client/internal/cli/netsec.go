@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,8 @@ type swarmNetwork struct {
 	Internal   bool
 	Attachable bool
 	Ingress    bool
+	Encrypted  bool   // overlay data-plane encryption (--opt encrypted)
+	MTU        string // com.docker.network.driver.mtu, "" if unset
 	Created    time.Time
 	Services   []string // service names attached, from service specs
 }
@@ -95,12 +98,102 @@ func listNetworks(ctx context.Context, dcli *client.Client) ([]swarmNetwork, err
 			Internal:   n.Internal,
 			Attachable: n.Attachable,
 			Ingress:    n.Ingress,
+			Encrypted:  networkEncrypted(n.Options),
+			MTU:        n.Options["com.docker.network.driver.mtu"],
 			Created:    n.Created,
 			Services:   svcs,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// networkEncrypted reports whether an overlay network has data-plane encryption
+// on, read from its driver options. The docker CLI's `--opt encrypted` form
+// stores an empty value (presence = on); `--opt encrypted=false` turns it off.
+func networkEncrypted(opts map[string]string) bool {
+	v, ok := opts["encrypted"]
+	if !ok {
+		return false
+	}
+	return v != "false" && v != "0"
+}
+
+// newNetworkOpts is the create-network form's collected input. Empty optional
+// fields are omitted. Driver defaults to overlay (the swarm-scoped default).
+type newNetworkOpts struct {
+	Name       string
+	Driver     string
+	Attachable bool
+	Encrypted  bool
+	Internal   bool
+	IPv6       bool
+	MTU        string // optional; validated as an integer
+	Subnet     string // optional CIDR, e.g. 10.10.0.0/24
+	Gateway    string // optional; requires Subnet
+	Labels     map[string]string
+}
+
+// buildNetworkCreateOptions maps the form input onto docker's CreateOptions,
+// validating the numeric/relational constraints. Split out from createNetwork so
+// the mapping is unit-testable without a daemon.
+func buildNetworkCreateOptions(o newNetworkOpts) (string, network.CreateOptions, error) {
+	name := strings.TrimSpace(o.Name)
+	if name == "" {
+		return "", network.CreateOptions{}, fmt.Errorf("network name is required")
+	}
+	driver := strings.TrimSpace(o.Driver)
+	if driver == "" {
+		driver = "overlay"
+	}
+	opts := network.CreateOptions{
+		Driver:     driver,
+		Attachable: o.Attachable,
+		Internal:   o.Internal,
+	}
+	driverOpts := map[string]string{}
+	if o.Encrypted {
+		// Send an explicit "true": unambiguous vs the CLI's empty-value form.
+		driverOpts["encrypted"] = "true"
+	}
+	if mtu := strings.TrimSpace(o.MTU); mtu != "" {
+		if _, err := strconv.Atoi(mtu); err != nil {
+			return "", network.CreateOptions{}, fmt.Errorf("MTU must be a number, got %q", o.MTU)
+		}
+		driverOpts["com.docker.network.driver.mtu"] = mtu
+	}
+	if len(driverOpts) > 0 {
+		opts.Options = driverOpts
+	}
+	if o.IPv6 {
+		v6 := true
+		opts.EnableIPv6 = &v6
+	}
+	subnet, gateway := strings.TrimSpace(o.Subnet), strings.TrimSpace(o.Gateway)
+	if gateway != "" && subnet == "" {
+		return "", network.CreateOptions{}, fmt.Errorf("a gateway requires a subnet")
+	}
+	if subnet != "" {
+		cfg := network.IPAMConfig{Subnet: subnet}
+		if gateway != "" {
+			cfg.Gateway = gateway
+		}
+		opts.IPAM = &network.IPAM{Config: []network.IPAMConfig{cfg}}
+	}
+	if len(o.Labels) > 0 {
+		opts.Labels = o.Labels
+	}
+	return name, opts, nil
+}
+
+// createNetwork creates a network from the form input (default driver overlay).
+func createNetwork(ctx context.Context, dcli *client.Client, o newNetworkOpts) error {
+	name, opts, err := buildNetworkCreateOptions(o)
+	if err != nil {
+		return err
+	}
+	_, err = dcli.NetworkCreate(ctx, name, opts)
+	return err
 }
 
 // servicesExcluding returns the names in all that are not in exclude, sorted —

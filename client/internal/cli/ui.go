@@ -1390,7 +1390,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// ------------------------------------------------------------------ networks
 	nettable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	nettable.SetSelectedStyle(selStyle)
-	nHeaders := []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "SERVICES", "AGE"}
+	nHeaders := []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
 	var nets []swarmNetwork
 	renderNetworks := func() {
 		selName := ""
@@ -1410,12 +1410,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
 			}
 			typeColor := networkTypeColor(n)
+			encCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+			if n.Encrypted {
+				encCell = tview.NewTableCell("🔒 yes").SetTextColor(tcell.ColorGreen).SetExpansion(1)
+			}
 			nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetTextColor(typeColor).SetExpansion(1))
 			nettable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
 			nettable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
 			nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetTextColor(typeColor).SetExpansion(1))
-			nettable.SetCell(i+1, 4, svcCell)
-			nettable.SetCell(i+1, 5, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
+			nettable.SetCell(i+1, 4, encCell)
+			nettable.SetCell(i+1, 5, svcCell)
+			nettable.SetCell(i+1, 6, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
 			if n.Name == selName {
 				selRow = i + 1
 			}
@@ -1529,7 +1534,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// lookup, so they fill in lazily after the overlay is up.
 	showNetworkMembers := func(n swarmNetwork) {
 		list := tview.NewList().ShowSecondaryText(false)
-		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — attached services ", n.Name))
+		badge := ""
+		if n.Encrypted {
+			badge += " · 🔒 encrypted"
+		}
+		if n.MTU != "" {
+			badge += " · mtu " + n.MTU
+		}
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s%s — attached services ", n.Name, badge))
 		// members/expanded drive the collapsible view; rowSvc maps each list row
 		// back to the service it belongs to (for Enter = toggle aliases and
 		// A = add alias). loaded flips once the task/spec lookup returns.
@@ -1686,6 +1698,53 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			showNetworkMembers(n)
 		}
 	})
+	// showCreateNetwork opens a form to create a network (default driver overlay)
+	// with the common swarm options — attachable, encrypted, internal, IPv6, MTU
+	// and an optional subnet/gateway and labels.
+	showCreateNetwork := func() {
+		o := newNetworkOpts{Driver: "overlay"}
+		var labels string
+		form := tview.NewForm()
+		form.SetBorder(true).SetTitle(" new network ")
+		form.AddInputField("Name", "", 32, nil, func(t string) { o.Name = t })
+		form.AddInputField("Driver", "overlay", 20, nil, func(t string) { o.Driver = t })
+		form.AddCheckbox("Attachable (standalone containers may join)", false, func(c bool) { o.Attachable = c })
+		form.AddCheckbox("Encrypted (overlay data-plane encryption)", false, func(c bool) { o.Encrypted = c })
+		form.AddCheckbox("Internal (no external routing)", false, func(c bool) { o.Internal = c })
+		form.AddCheckbox("Enable IPv6", false, func(c bool) { o.IPv6 = c })
+		form.AddInputField("MTU (optional)", "", 8, tview.InputFieldInteger, func(t string) { o.MTU = t })
+		form.AddInputField("Subnet (optional, e.g. 10.10.0.0/24)", "", 22, nil, func(t string) { o.Subnet = t })
+		form.AddInputField("Gateway (optional)", "", 22, nil, func(t string) { o.Gateway = t })
+		form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
+		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+		closeForm := func() { restoreHelp(); pages.RemovePage("netform"); app.SetFocus(nettable) }
+		form.AddButton("Create", func() {
+			lbls, err := parseKVList(labels)
+			if err != nil {
+				info("invalid labels: " + err.Error())
+				return
+			}
+			o.Labels = lbls
+			if err := createNetwork(ctx, dcli, o); err != nil {
+				info("create failed: " + err.Error())
+				return
+			}
+			name := strings.TrimSpace(o.Name)
+			closeForm()
+			loadNetworks()
+			flash(" [green]created[white] network " + name)
+		})
+		form.AddButton("Cancel", closeForm)
+		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape {
+				closeForm()
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("netform", centered(form, 74, 22), true, true)
+		app.SetFocus(form)
+	}
 
 	// ------------------------------------------------------------------- secrets
 	sectable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
@@ -2182,7 +2241,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
 				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
 		case "networks":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  %s", kl(km.NetAttached), tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  %s", kl(km.NetAttached), kl(km.NetNew), tail)
 		case "secrets":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  %s", tail)
 		case "contexts":
@@ -3977,6 +4036,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if n, ok := selectedNetwork(); ok {
 				showNetworkMembers(n)
 			}
+			return nil
+		}
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetNew {
+			showCreateNetwork()
 			return nil
 		}
 		return tabKeys(ev)
