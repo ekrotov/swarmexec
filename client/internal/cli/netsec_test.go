@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 )
 
@@ -76,6 +77,83 @@ func TestServiceAliasesOnNetwork(t *testing.T) {
 				t.Errorf("serviceAliasesOnNetwork = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNetworkEncrypted(t *testing.T) {
+	cases := []struct {
+		opts map[string]string
+		want bool
+	}{
+		{nil, false},
+		{map[string]string{}, false},
+		{map[string]string{"encrypted": ""}, true},     // docker CLI's --opt encrypted form
+		{map[string]string{"encrypted": "true"}, true}, // our explicit form
+		{map[string]string{"encrypted": "false"}, false},
+		{map[string]string{"encrypted": "0"}, false},
+		{map[string]string{"com.docker.network.driver.mtu": "1400"}, false},
+	}
+	for _, c := range cases {
+		if got := networkEncrypted(c.opts); got != c.want {
+			t.Errorf("networkEncrypted(%v) = %v, want %v", c.opts, got, c.want)
+		}
+	}
+}
+
+func TestBuildNetworkCreateOptions(t *testing.T) {
+	// Full happy path: every option set.
+	name, opts, err := buildNetworkCreateOptions(newNetworkOpts{
+		Name: "  app-net ", Driver: "", Attachable: true, Encrypted: true,
+		Internal: true, IPv6: true, MTU: "1400", Subnet: "10.10.0.0/24",
+		Gateway: "10.10.0.1", Labels: map[string]string{"team": "infra"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "app-net" {
+		t.Errorf("name = %q, want trimmed %q", name, "app-net")
+	}
+	if opts.Driver != "overlay" {
+		t.Errorf("driver = %q, want default overlay", opts.Driver)
+	}
+	if !opts.Attachable || !opts.Internal {
+		t.Errorf("attachable/internal not set: %+v", opts)
+	}
+	if opts.Options["encrypted"] != "true" {
+		t.Errorf("encrypted opt = %q, want true", opts.Options["encrypted"])
+	}
+	if opts.Options["com.docker.network.driver.mtu"] != "1400" {
+		t.Errorf("mtu opt = %q", opts.Options["com.docker.network.driver.mtu"])
+	}
+	if opts.EnableIPv6 == nil || !*opts.EnableIPv6 {
+		t.Errorf("ipv6 not enabled")
+	}
+	wantIPAM := []network.IPAMConfig{{Subnet: "10.10.0.0/24", Gateway: "10.10.0.1"}}
+	if opts.IPAM == nil || !reflect.DeepEqual(opts.IPAM.Config, wantIPAM) {
+		t.Errorf("ipam = %+v, want %+v", opts.IPAM, wantIPAM)
+	}
+	if opts.Labels["team"] != "infra" {
+		t.Errorf("labels = %v", opts.Labels)
+	}
+
+	// Minimal: only a name → overlay, no driver options at all.
+	_, min, err := buildNetworkCreateOptions(newNetworkOpts{Name: "n"})
+	if err != nil {
+		t.Fatalf("minimal: %v", err)
+	}
+	if min.Options != nil {
+		t.Errorf("expected nil Options when nothing set, got %v", min.Options)
+	}
+
+	// Error cases.
+	if _, _, err := buildNetworkCreateOptions(newNetworkOpts{Name: ""}); err == nil {
+		t.Error("expected error for empty name")
+	}
+	if _, _, err := buildNetworkCreateOptions(newNetworkOpts{Name: "n", MTU: "big"}); err == nil {
+		t.Error("expected error for non-numeric MTU")
+	}
+	if _, _, err := buildNetworkCreateOptions(newNetworkOpts{Name: "n", Gateway: "10.0.0.1"}); err == nil {
+		t.Error("expected error for gateway without subnet")
 	}
 }
 

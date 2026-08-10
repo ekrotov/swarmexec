@@ -1027,3 +1027,22 @@ func labelsFromStrings(items []string) (map[string]string, error) {
 	}
 	return out, nil
 }
+
+// parseKVList parses a comma-separated "k=v,k=v" string into a map, tolerating
+// surrounding spaces and empty segments. Empty input yields a nil map.
+func parseKVList(s string) (map[string]string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	var items []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			items = append(items, p)
+		}
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	return labelsFromStrings(items)
+}

@@ -877,9 +877,13 @@
       <h3>Networks tab</h3>
       <p>
         A list of the swarm's networks — name, driver, scope, type
-        (ingress / internal / attachable) and how many services attach to each. The
+        (ingress / internal / attachable), whether the network is <strong>encrypted</strong>
+        and how many services attach to each. The
         <code>TYPE</code> column shows <code>overlay</code> or the driver name (e.g.
-        <code>bridge</code>) for plain networks rather than a dash. Each network's name
+        <code>bridge</code>) for plain networks rather than a dash. The <code>ENC</code>
+        column shows <span style="color:#3fb950">🔒&nbsp;yes</span> when the overlay network
+        has data-plane encryption on (created with <code>--opt encrypted</code>), else a dash.
+        Each network's name
         and its <code>TYPE</code> cell are colour-coded by kind (highest priority first):
       </p>
       <ul>
@@ -892,6 +896,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>create a network — opens a form (default driver <code>overlay</code>) with the common swarm options: <strong>attachable</strong> (let standalone containers join), <strong>encrypted</strong> (overlay data-plane encryption), <strong>internal</strong> (no external routing), <strong>IPv6</strong>, an optional <strong>MTU</strong>, an optional <strong>subnet</strong>/<strong>gateway</strong> (IPAM) and <strong>labels</strong> (<code>k=v,k=v</code>). <kbd>Tab</kbd> moves between fields, <kbd>Enter</kbd> on <em>Create</em> confirms, <kbd>Esc</kbd> cancels. Creates it via one manager-API <code>NetworkCreate</code>, then refreshes the tab</td></tr>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>show the attached services, each with its running containers nested underneath. Each service header also shows how many <strong>DNS aliases</strong> it has on this network (or <em>no aliases</em>)</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>in the members view: <strong>expand / collapse</strong> the selected service's DNS aliases (kept collapsed by default so the list stays compact); the aliases appear indented under the service header</td></tr>
           <tr><td><kbd>A</kbd></td><td>in the members view: <strong>add / edit</strong> the selected service's DNS aliases on this network — opens the same staged alias editor as the inspect view (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel); applying replaces that network's aliases in one <code>ServiceUpdate</code> and refreshes the view. Works even when the service has no aliases yet. (<kbd>A</kbd> is capital, Shift+a, to distinguish it from <kbd>a</kbd> attach; standalone non-swarm containers are not editable — aliases are a per-service <code>ServiceUpdate</code>)</td></tr>
@@ -1007,7 +1012,7 @@ container_inspect: i
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S
-network_attached: i
+network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
 forward_stop: d  forward_copy_url: o</div>
       <p>
