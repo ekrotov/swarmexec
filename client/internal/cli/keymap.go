@@ -25,7 +25,7 @@ type keybinds struct {
 	// containers
 	Fold, Unfold, Forward, ContainerInspect rune
 	// volumes
-	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach rune
+	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach, VolNew rune
 	// networks
 	NetAttached, NetNew rune
 	// contexts
@@ -61,6 +61,7 @@ var keyActions = []keyAction{
 	{"volume_sort", []string{"volumes"}, 's', func(k *keybinds) *rune { return &k.VolSort }},
 	{"volume_sort_reverse", []string{"volumes"}, 'S', func(k *keybinds) *rune { return &k.VolSortRev }},
 	{"volume_attach", []string{"volumes"}, 'A', func(k *keybinds) *rune { return &k.VolAttach }},
+	{"volume_new", []string{"volumes"}, 'n', func(k *keybinds) *rune { return &k.VolNew }},
 	{"network_attached", []string{"networks"}, 'i', func(k *keybinds) *rune { return &k.NetAttached }},
 	{"network_new", []string{"networks"}, 'n', func(k *keybinds) *rune { return &k.NetNew }},
 	{"context_use", []string{"contexts"}, 'u', func(k *keybinds) *rune { return &k.CtxUse }},

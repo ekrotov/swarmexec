@@ -30,8 +30,9 @@ import (
 type swarmVolume struct {
 	Name    string
 	Driver  string
-	Nodes   []resolve.Node // nodes that hold a copy of this volume
-	Created time.Time      // earliest creation time across nodes; zero if unknown
+	Nodes   []resolve.Node    // nodes that hold a copy of this volume
+	Labels  map[string]string // volume labels (same across nodes for a named volume)
+	Created time.Time         // earliest creation time across nodes; zero if unknown
 }
 
 func newVolumeCmd(g *globalFlags) *cobra.Command {
@@ -306,7 +307,7 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 		for _, v := range r.vols {
 			sv := byName[v.Name]
 			if sv == nil {
-				sv = &swarmVolume{Name: v.Name, Driver: v.Driver}
+				sv = &swarmVolume{Name: v.Name, Driver: v.Driver, Labels: v.GetLabels()}
 				byName[v.Name] = sv
 			}
 			sv.Nodes = append(sv.Nodes, r.node)
@@ -560,6 +561,50 @@ func removeNodeVolume(ctx context.Context, cfg config.Config, n resolve.Node, na
 	}
 	defer conn.Close()
 	_, err = pb.NewAgentClient(conn).RemoveVolume(ctx, &pb.RemoveVolumeRequest{Name: name, Force: force})
+	return wrapGRPC(err)
+}
+
+// newVolumeOpts is the create-volume form's input. Driver empty means the
+// daemon default ("local").
+type newVolumeOpts struct {
+	Name   string
+	Driver string
+	Labels map[string]string
+}
+
+// buildVolumeCreateReq validates the form input and builds the RPC request.
+// Split out from createNodeVolume so the mapping is unit-testable.
+func buildVolumeCreateReq(o newVolumeOpts) (*pb.CreateVolumeRequest, error) {
+	name := strings.TrimSpace(o.Name)
+	if name == "" {
+		return nil, fmt.Errorf("volume name is required")
+	}
+	return &pb.CreateVolumeRequest{
+		Name:   name,
+		Driver: strings.TrimSpace(o.Driver),
+		Labels: o.Labels,
+	}, nil
+}
+
+// createVolumeOnNodes creates the volume on each target node concurrently
+// (volumes are node-local). Reuses the {node,err} result shape.
+func createVolumeOnNodes(ctx context.Context, cfg config.Config, nodes []resolve.Node, req *pb.CreateVolumeRequest, connectTimeout time.Duration) []rmResult {
+	out := make([]rmResult, len(nodes))
+	forEachNode(nodes, func(i int, n resolve.Node) {
+		out[i] = rmResult{node: n, err: createNodeVolume(ctx, cfg, n, req, connectTimeout)}
+	})
+	return out
+}
+
+func createNodeVolume(ctx context.Context, cfg config.Config, n resolve.Node, req *pb.CreateVolumeRequest, connectTimeout time.Duration) error {
+	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
+	conn, err := dial.Dial(dctx, n.DialHost, cfg.Port, cfg)
+	cancel()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = pb.NewAgentClient(conn).CreateVolume(ctx, req)
 	return wrapGRPC(err)
 }
 

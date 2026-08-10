@@ -123,3 +123,46 @@ func TestRemoveVolume_Denied(t *testing.T) {
 		t.Errorf("AuthDenied = %d, want 1", m.denied.Load())
 	}
 }
+
+func TestCreateVolume(t *testing.T) {
+	d := newFakeDocker()
+	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
+	labels := map[string]string{"env": "prod"}
+	resp, err := srv.CreateVolume(context.Background(), &pb.CreateVolumeRequest{
+		Name:   "v1",
+		Driver: "local",
+		Labels: labels,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.createdVolOpts.Name != "v1" || d.createdVolOpts.Driver != "local" {
+		t.Errorf("docker received name=%q driver=%q, want v1/local", d.createdVolOpts.Name, d.createdVolOpts.Driver)
+	}
+	if d.createdVolOpts.Labels["env"] != "prod" {
+		t.Errorf("docker received labels %v, want env=prod", d.createdVolOpts.Labels)
+	}
+	if resp.GetVolume().GetName() != "v1" {
+		t.Errorf("response volume name = %q, want v1", resp.GetVolume().GetName())
+	}
+	if resp.GetVolume().GetLabels()["env"] != "prod" {
+		t.Errorf("response labels = %v, want env=prod", resp.GetVolume().GetLabels())
+	}
+}
+
+func TestCreateVolume_RequiresName(t *testing.T) {
+	srv, _ := newTestServer(newFakeDocker(), auth.AllowAll{}, Options{})
+	if _, err := srv.CreateVolume(context.Background(), &pb.CreateVolumeRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("want InvalidArgument, got %v", err)
+	}
+}
+
+func TestCreateVolume_Denied(t *testing.T) {
+	srv, m := newTestServer(newFakeDocker(), denyAuth{}, Options{})
+	if _, err := srv.CreateVolume(context.Background(), &pb.CreateVolumeRequest{Name: "v1"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("want PermissionDenied, got %v", err)
+	}
+	if m.denied.Load() != 1 {
+		t.Errorf("AuthDenied = %d, want 1", m.denied.Load())
+	}
+}

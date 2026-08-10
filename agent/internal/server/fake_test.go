@@ -50,10 +50,12 @@ type fakeDocker struct {
 	logsReader io.ReadCloser
 	logsErr    error
 
-	volumes      []*volume.Volume
-	volumeRemErr error
-	removedVols  []string
-	diskUsageErr error
+	volumes         []*volume.Volume
+	volumeRemErr    error
+	removedVols     []string
+	volumeCreateErr error
+	createdVolOpts  volume.CreateOptions
+	diskUsageErr    error
 
 	// port-forward sidecar state
 	createContainerErr error
@@ -169,6 +171,20 @@ func (f *fakeDocker) ContainerLogs(_ context.Context, _ string, _ container.Logs
 
 func (f *fakeDocker) VolumeList(_ context.Context, _ volume.ListOptions) (volume.ListResponse, error) {
 	return volume.ListResponse{Volumes: f.volumes}, nil
+}
+
+func (f *fakeDocker) VolumeCreate(_ context.Context, opts volume.CreateOptions) (volume.Volume, error) {
+	if f.volumeCreateErr != nil {
+		return volume.Volume{}, f.volumeCreateErr
+	}
+	f.createdVolOpts = opts
+	return volume.Volume{
+		Name:       opts.Name,
+		Driver:     opts.Driver,
+		Mountpoint: "/var/lib/docker/volumes/" + opts.Name + "/_data",
+		Scope:      "local",
+		Labels:     opts.Labels,
+	}, nil
 }
 
 func (f *fakeDocker) VolumeRemove(_ context.Context, name string, _ bool) error {

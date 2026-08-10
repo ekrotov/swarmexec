@@ -34,6 +34,7 @@ type DockerClient interface {
 	ContainerAttach(ctx context.Context, containerID string, options container.AttachOptions) (types.HijackedResponse, error)
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	VolumeList(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
+	VolumeCreate(ctx context.Context, options volume.CreateOptions) (volume.Volume, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
 	DiskUsage(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
 	// Events streams docker daemon events; the volume-size cache watches

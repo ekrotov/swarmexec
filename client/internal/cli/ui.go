@@ -1154,10 +1154,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		})
 		help := tview.NewTextView().SetDynamicColors(true).SetText(
 			" [yellow]space[white] select  [yellow]d[white] delete selected  [yellow]a[white] delete all  [yellow]ESC[white] back")
-		box := tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(list, 0, 1, true).
-			AddItem(help, 1, 0, false)
-		pages.AddPage("volnodes", centered(box, 64, len(v.Nodes)+5), true, true)
+		box := tview.NewFlex().SetDirection(tview.FlexRow)
+		labelH := 0
+		// The volume's labels (read-only) above the node list — Docker has no
+		// volume-update API, so they can't be edited after creation. Kept out of
+		// the list so the node row indices stay 1:1 with v.Nodes.
+		if lbls := kvPairs(v.Labels); len(lbls) > 0 {
+			lv := tview.NewTextView().SetDynamicColors(true).
+				SetText(" [gray]labels[-]\n   " + tview.Escape(strings.Join(lbls, "\n   ")))
+			labelH = len(lbls) + 1
+			box.AddItem(lv, labelH, 0, false)
+		}
+		box.AddItem(list, 0, 1, true).AddItem(help, 1, 0, false)
+		pages.AddPage("volnodes", centered(box, 64, len(v.Nodes)+5+labelH), true, true)
 		app.SetFocus(list)
 	}
 	vtable.SetSelectedFunc(func(int, int) {
@@ -1165,6 +1174,98 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			showVolumeNodes(v)
 		}
 	})
+	// showCreateVolume opens a form to create a volume (default driver local) with
+	// labels, targeting one node or (blank) all nodes — volumes are node-local, so
+	// creation goes to each target node's agent.
+	showCreateVolume := func() {
+		o := newVolumeOpts{Driver: "local"}
+		var labels, nodeSel string
+		var allNodes []resolve.Node // fetched on open, for autocomplete + targeting
+		form := tview.NewForm()
+		form.SetBorder(true).SetTitle(" new volume ")
+		form.AddInputField("Name", "", 32, nil, func(t string) { o.Name = t })
+		form.AddInputField("Driver", "local", 20, nil, func(t string) { o.Driver = t })
+		form.AddInputField("Labels (k=v,k=v)", "", 40, nil, func(t string) { labels = t })
+		form.AddInputField("Node (blank = all nodes)", "", 24, nil, func(t string) { nodeSel = t })
+		if nf, ok := form.GetFormItem(3).(*tview.InputField); ok {
+			nf.SetAutocompleteFunc(func(text string) []string {
+				text = strings.ToLower(strings.TrimSpace(text))
+				var out []string
+				for _, name := range nodeNames(allNodes) {
+					if text == "" || strings.Contains(strings.ToLower(name), text) {
+						out = append(out, name)
+					}
+				}
+				return out
+			})
+		}
+		go func() {
+			ns, err := r.Nodes(ctx)
+			app.QueueUpdateDraw(func() {
+				if err == nil {
+					allNodes = ns
+				}
+			})
+		}()
+		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+		closeForm := func() { restoreHelp(); pages.RemovePage("volform"); app.SetFocus(vtable) }
+		form.AddButton("Create", func() {
+			lbls, err := parseKVList(labels)
+			if err != nil {
+				info("invalid labels: " + err.Error())
+				return
+			}
+			o.Labels = lbls
+			req, err := buildVolumeCreateReq(o)
+			if err != nil {
+				info(err.Error())
+				return
+			}
+			targets := allNodes
+			if s := strings.TrimSpace(nodeSel); s != "" {
+				targets = filterNodes(allNodes, []string{s})
+				if len(targets) == 0 {
+					info(fmt.Sprintf("no node named %q", s))
+					return
+				}
+			}
+			if len(targets) == 0 {
+				info("no nodes available")
+				return
+			}
+			go func() {
+				results := createVolumeOnNodes(ctx, cfg, targets, req, f.connectTimeout)
+				app.QueueUpdateDraw(func() {
+					closeForm()
+					loadVolumes()
+					ok := 0
+					var failed []string
+					for _, res := range results {
+						if res.err != nil {
+							failed = append(failed, res.node.Name+": "+res.err.Error())
+						} else {
+							ok++
+						}
+					}
+					if len(failed) == 0 {
+						flash(fmt.Sprintf(" [green]created[white] volume %s on %d node(s)", req.Name, ok))
+						return
+					}
+					info(fmt.Sprintf("volume %q: %d ok, %d failed\n%s", req.Name, ok, len(failed), joinLines(failed)))
+				})
+			}()
+		})
+		form.AddButton("Cancel", closeForm)
+		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape {
+				closeForm()
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("volform", centered(form, 66, 15), true, true)
+		app.SetFocus(form)
+	}
 
 	// showVolumeConsumers lists the services/containers that mount a volume.
 	showVolumeConsumers := func(v swarmVolume) {
@@ -2250,8 +2351,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]Enter[white] menu  [yellow]%s[white] forward  %s",
 				kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
 		case "volumes":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
-				kl(km.Search), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
+				kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
 		case "networks":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  %s", kl(km.NetAttached), kl(km.NetNew), tail)
 		case "secrets":
@@ -3972,6 +4073,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			switch ev.Rune() {
 			case km.Search:
 				startSearch("volumes")
+				return nil
+			case km.VolNew:
+				showCreateVolume()
 				return nil
 			case km.VolAttach:
 				if v, ok := selectedVolume(); ok {
