@@ -3527,7 +3527,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						if expanded[ln.Net] {
 							marker = "-"
 						}
-						put(fmt.Sprintf("  %s %s (%d dns names)", marker, ln.Text, ln.Count), tcell.ColorWhite, false, true, ln.Text, ln.Net)
+						lock := ""
+						if ln.Encrypted {
+							lock = " 🔒"
+						}
+						put(fmt.Sprintf("  %s %s%s (%d dns names)", marker, ln.Text, lock, ln.Count), tcell.ColorWhite, false, true, ln.Text, ln.Net)
 						if expanded[ln.Net] {
 							for _, c := range ln.Children {
 								put("      "+c, tcell.ColorGray, false, true, c, "")

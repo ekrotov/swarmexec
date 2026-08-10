@@ -766,7 +766,9 @@
       <p>
         The <strong>NETWORKS</strong> section is <strong>collapsible</strong>: each attached
         network shows as a collapsed row <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>.
-        Move onto that row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
+        A <strong>🔒 lock icon</strong> after the network name marks an <strong>encrypted</strong>
+        overlay network (data-plane encryption, <code>--opt encrypted</code>); its absence means
+        unencrypted. Move onto that row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
         lists the DNS names that resolve to the service/container on that network — the
         service name, <code>tasks.&lt;service&gt;</code>, any custom aliases, and (for a
         container/task) its address — so you can see under which DNS name the

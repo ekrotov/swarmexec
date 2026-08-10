@@ -45,12 +45,18 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 		Mounts:  []mount.Mount{{Type: mount.TypeVolume, Source: "assets", Target: "/data"}},
 	}
 
-	lines := formatServiceInspect(s, map[string]string{"netid1": "frontend-net"})
+	lines := formatServiceInspect(s, map[string]string{"netid1": "frontend-net"}, map[string]bool{"netid1": true})
 	joined := joinInspLines(lines)
 
 	for _, want := range []string{"frontend-net", "tier=frontend", "assets -> /data", "db-pw", "nginx:1"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("formatted output missing %q:\n%s", want, joined)
+		}
+	}
+	// The encrypted network's inspNet row must be marked so the view can show a lock.
+	for _, l := range lines {
+		if l.Kind == inspNet && l.Net == "frontend-net" && !l.Encrypted {
+			t.Errorf("network row not marked encrypted: %+v", l)
 		}
 	}
 	// Operator-first ordering: networks, labels, volumes, secrets — all before META.
@@ -120,7 +126,7 @@ func TestFormatTaskInspect_NetworksAndState(t *testing.T) {
 	owning.Spec.Name = "web"
 	owning.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1", Aliases: []string{"frontend"}}}
 
-	lines := formatTaskInspect(task, &owning, map[string]string{"netid1": "frontend-net"}, map[string]string{"node1": "host-a"})
+	lines := formatTaskInspect(task, &owning, map[string]string{"netid1": "frontend-net"}, map[string]bool{"netid1": true}, map[string]string{"node1": "host-a"})
 	joined := joinInspLines(lines)
 
 	// Net name in the collapsible header; DNS names + alias + addr in its children.
