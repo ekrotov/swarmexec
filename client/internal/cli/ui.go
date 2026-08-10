@@ -1554,6 +1554,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			list.Clear()
 			rowSvc = rowSvc[:0]
 			meta := func(svc string) { rowSvc = append(rowSvc, svc) }
+			// The network's own labels (read-only) at the top — Docker has no
+			// network-update API, so they can't be edited here.
+			if lbls := kvPairs(n.Labels); len(lbls) > 0 {
+				list.AddItem("[gray]labels[-]", "", 0, nil)
+				meta("")
+				for _, l := range lbls {
+					list.AddItem("    "+tview.Escape(l), "", 0, nil)
+					meta("")
+				}
+				list.AddItem("", "", 0, nil)
+				meta("")
+			}
 			if len(members) == 0 {
 				if loaded {
 					list.AddItem("(no services attached)", "", 0, nil)
