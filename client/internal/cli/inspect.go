@@ -41,11 +41,12 @@ const (
 // network name (collapse key), Count the number of DNS names, and Children the
 // lines revealed when expanded (DNS names, then any extra like addresses).
 type inspLine struct {
-	Text     string
-	Kind     inspKind
-	Net      string
-	Count    int
-	Children []string
+	Text      string
+	Kind      inspKind
+	Net       string
+	Count     int
+	Children  []string
+	Encrypted bool // inspNet: network has overlay data-plane encryption on
 }
 
 type inspBuilder struct{ lines []inspLine }
@@ -57,9 +58,9 @@ func (b *inspBuilder) title(s string)   { b.push(inspTitle, s) }
 func (b *inspBuilder) section(s string) { b.push(inspBlank, ""); b.push(inspHeader, s) }
 
 // net adds a collapsible network row. dnsCount is shown in the header; children
-// are the lines shown when expanded.
-func (b *inspBuilder) net(name string, dnsCount int, children []string) {
-	b.lines = append(b.lines, inspLine{Kind: inspNet, Text: name, Net: name, Count: dnsCount, Children: children})
+// are the lines shown when expanded; encrypted marks it with a lock icon.
+func (b *inspBuilder) net(name string, dnsCount int, children []string, encrypted bool) {
+	b.lines = append(b.lines, inspLine{Kind: inspNet, Text: name, Net: name, Count: dnsCount, Children: children, Encrypted: encrypted})
 }
 
 func (b *inspBuilder) kv(k, v string) {
@@ -86,7 +87,8 @@ func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string) (
 	if err != nil {
 		return nil, "", err
 	}
-	return formatServiceInspect(svc, netNameMap(ctx, dcli)), prettyJSON(rawb), nil
+	names, enc := networkMaps(ctx, dcli)
+	return formatServiceInspect(svc, names, enc), prettyJSON(rawb), nil
 }
 
 // taskInspectViews returns the formatted lines and raw-JSON view of a task
@@ -104,7 +106,8 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 			owning = &s
 		}
 	}
-	return formatTaskInspect(task, owning, netNameMap(ctx, dcli), nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
+	names, enc := networkMaps(ctx, dcli)
+	return formatTaskInspect(task, owning, names, enc, nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
 }
 
 // serviceDiffLines inspects a service and returns a unified diff of its current
@@ -115,7 +118,8 @@ func serviceDiffLines(ctx context.Context, dcli *client.Client, ref string) (lin
 	if err != nil {
 		return nil, false, err
 	}
-	l, ok := serviceSpecDiff(svc, netNameMap(ctx, dcli))
+	names, _ := networkMaps(ctx, dcli)
+	l, ok := serviceSpecDiff(svc, names)
 	return l, ok, nil
 }
 
@@ -234,19 +238,23 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 	return out
 }
 
-// netNameMap maps a network ID (and name) to its name so attachments that carry
-// only an ID render readably. Best effort.
-func netNameMap(ctx context.Context, dcli *client.Client) map[string]string {
-	m := map[string]string{}
+// networkMaps returns, from one NetworkList: a network ID/name → name map (so
+// attachments that carry only an ID render readably) and an ID/name → encrypted
+// map (overlay data-plane encryption). Best effort; empty maps on error.
+func networkMaps(ctx context.Context, dcli *client.Client) (names map[string]string, encrypted map[string]bool) {
+	names, encrypted = map[string]string{}, map[string]bool{}
 	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
-		return m
+		return names, encrypted
 	}
 	for _, n := range nets {
-		m[n.ID] = n.Name
-		m[n.Name] = n.Name
+		names[n.ID] = n.Name
+		names[n.Name] = n.Name
+		enc := networkEncrypted(n.Options)
+		encrypted[n.ID] = enc
+		encrypted[n.Name] = enc
 	}
-	return m
+	return names, encrypted
 }
 
 func prettyJSON(raw []byte) string {
@@ -259,18 +267,18 @@ func prettyJSON(raw []byte) string {
 
 // --- tabular formatting -----------------------------------------------------
 
-func formatServiceInspect(svc swarm.Service, netNames map[string]string) []inspLine {
+func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncrypted map[string]bool) []inspLine {
 	var b inspBuilder
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	b.title("SERVICE  " + svc.Spec.Name)
 
 	b.section("NETWORKS")
-	nets := serviceNetDNS(svc, netNames)
+	nets := serviceNetDNS(svc, netNames, netEncrypted)
 	if len(nets) == 0 {
 		b.list(nil)
 	}
 	for _, n := range nets {
-		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...))
+		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...), n.Encrypted)
 	}
 	b.section("LABELS")
 	b.list(kvPairs(svc.Spec.Labels))
@@ -316,18 +324,18 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string) []inspL
 	return b.lines
 }
 
-func formatTaskInspect(task swarm.Task, owning *swarm.Service, netNames, nodeNames map[string]string) []inspLine {
+func formatTaskInspect(task swarm.Task, owning *swarm.Service, netNames map[string]string, netEncrypted map[string]bool, nodeNames map[string]string) []inspLine {
 	var b inspBuilder
 	cs := task.Spec.ContainerSpec
 	b.title(fmt.Sprintf("TASK  %s  (slot %d)", shortID(task.ID), task.Slot))
 
 	b.section("NETWORKS")
-	nets := taskNetDNS(task, owning, netNames)
+	nets := taskNetDNS(task, owning, netNames, netEncrypted)
 	if len(nets) == 0 {
 		b.list(nil)
 	}
 	for _, n := range nets {
-		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...))
+		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...), n.Encrypted)
 	}
 	b.section("LABELS")
 	if cs != nil {
@@ -407,9 +415,10 @@ func kvPairs(m map[string]string) []string {
 // resolve to it there (the default service name, tasks.<name>, and any custom
 // aliases) and optional extra lines shown when expanded (e.g. task addresses).
 type netDNS struct {
-	Name  string
-	DNS   []string
-	Extra []string
+	Name      string
+	DNS       []string
+	Extra     []string
+	Encrypted bool
 }
 
 // dnsNames builds the DNS names resolvable for a service on a network: the
@@ -422,8 +431,9 @@ func dnsNames(svcName string, aliases []string) []string {
 	return append(out, aliases...)
 }
 
-// serviceNetDNS returns the service's networks with their DNS names/aliases.
-func serviceNetDNS(svc swarm.Service, netNames map[string]string) []netDNS {
+// serviceNetDNS returns the service's networks with their DNS names/aliases and
+// whether each network is encrypted.
+func serviceNetDNS(svc swarm.Service, netNames map[string]string, netEncrypted map[string]bool) []netDNS {
 	var out []netDNS
 	seen := map[string]bool{}
 	add := func(a swarm.NetworkAttachmentConfig) {
@@ -435,7 +445,7 @@ func serviceNetDNS(svc swarm.Service, netNames map[string]string) []netDNS {
 		if name == "" {
 			name = a.Target
 		}
-		out = append(out, netDNS{Name: name, DNS: dnsNames(svc.Spec.Name, a.Aliases)})
+		out = append(out, netDNS{Name: name, DNS: dnsNames(svc.Spec.Name, a.Aliases), Encrypted: netEncrypted[a.Target]})
 	}
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a)
@@ -448,7 +458,7 @@ func serviceNetDNS(svc swarm.Service, netNames map[string]string) []netDNS {
 
 // taskNetDNS returns a task's networks with the DNS names/aliases it inherits
 // from its owning service (may be nil), plus the task's address on each network.
-func taskNetDNS(task swarm.Task, owning *swarm.Service, netNames map[string]string) []netDNS {
+func taskNetDNS(task swarm.Task, owning *swarm.Service, netNames map[string]string, netEncrypted map[string]bool) []netDNS {
 	svcName, aliasByNet := "", map[string][]string{}
 	if owning != nil {
 		svcName = owning.Spec.Name
@@ -470,7 +480,7 @@ func taskNetDNS(task swarm.Task, owning *swarm.Service, netNames map[string]stri
 				name = shortID(a.Network.ID)
 			}
 		}
-		nd := netDNS{Name: name, DNS: dnsNames(svcName, aliasByNet[name])}
+		nd := netDNS{Name: name, DNS: dnsNames(svcName, aliasByNet[name]), Encrypted: netEncrypted[a.Network.ID] || netEncrypted[name]}
 		if ips := strings.Join(a.Addresses, ", "); ips != "" {
 			nd.Extra = []string{"addr: " + ips}
 		}
