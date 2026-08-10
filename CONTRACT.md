@@ -70,6 +70,10 @@ service Agent {
   // in use unless force is set.
   rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
 
+  // Create a volume on THIS node (authorized + audited). Volumes are node-local,
+  // so the cli targets a specific node's agent.
+  rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse);
+
   // Forward a single TCP connection to a port inside a container on THIS node.
   // Bidirectional: one stream carries exactly one connection, so a local
   // listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
@@ -158,6 +162,9 @@ message VolumeInfo {
   string mountpoint = 3;
   string created_at = 4;  // RFC3339, if known
   string scope = 5;       // "local" or "global"
+  int64 size_bytes = 6;   // on-disk size; only meaningful when size_known is true
+  bool size_known = 7;    // true when the agent actually computed the size
+  map<string, string> labels = 8;  // volume metadata labels, as set at creation
 }
 
 message RemoveVolumeRequest {
@@ -166,6 +173,17 @@ message RemoveVolumeRequest {
 }
 
 message RemoveVolumeResponse {}
+
+message CreateVolumeRequest {
+  string name = 1;
+  string driver = 2;                 // empty means "local"
+  map<string, string> labels = 3;
+  map<string, string> driver_opts = 4;
+}
+
+message CreateVolumeResponse {
+  VolumeInfo volume = 1;             // the created volume
+}
 
 message StartForward {
   string container_id = 1;  // full container ID to forward into

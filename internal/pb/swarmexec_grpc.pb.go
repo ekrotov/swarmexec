@@ -30,6 +30,7 @@ const (
 	Agent_Logs_FullMethodName           = "/swarmexec.Agent/Logs"
 	Agent_ListVolumes_FullMethodName    = "/swarmexec.Agent/ListVolumes"
 	Agent_RemoveVolume_FullMethodName   = "/swarmexec.Agent/RemoveVolume"
+	Agent_CreateVolume_FullMethodName   = "/swarmexec.Agent/CreateVolume"
 	Agent_PortForward_FullMethodName    = "/swarmexec.Agent/PortForward"
 	Agent_Version_FullMethodName        = "/swarmexec.Agent/Version"
 )
@@ -53,6 +54,9 @@ type AgentClient interface {
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
 	// in use unless force is set.
 	RemoveVolume(ctx context.Context, in *RemoveVolumeRequest, opts ...grpc.CallOption) (*RemoveVolumeResponse, error)
+	// Create a volume on THIS node (authorized + audited). Volumes are node-local,
+	// so the cli targets a specific node's agent.
+	CreateVolume(ctx context.Context, in *CreateVolumeRequest, opts ...grpc.CallOption) (*CreateVolumeResponse, error)
 	// Forward a single TCP connection to a port inside a container on THIS node.
 	// Bidirectional: one stream carries exactly one connection, so a local
 	// listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
@@ -135,6 +139,16 @@ func (c *agentClient) RemoveVolume(ctx context.Context, in *RemoveVolumeRequest,
 	return out, nil
 }
 
+func (c *agentClient) CreateVolume(ctx context.Context, in *CreateVolumeRequest, opts ...grpc.CallOption) (*CreateVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateVolumeResponse)
+	err := c.cc.Invoke(ctx, Agent_CreateVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[2], Agent_PortForward_FullMethodName, cOpts...)
@@ -177,6 +191,9 @@ type AgentServer interface {
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
 	// in use unless force is set.
 	RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error)
+	// Create a volume on THIS node (authorized + audited). Volumes are node-local,
+	// so the cli targets a specific node's agent.
+	CreateVolume(context.Context, *CreateVolumeRequest) (*CreateVolumeResponse, error)
 	// Forward a single TCP connection to a port inside a container on THIS node.
 	// Bidirectional: one stream carries exactly one connection, so a local
 	// listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
@@ -211,6 +228,9 @@ func (UnimplementedAgentServer) ListVolumes(context.Context, *ListVolumesRequest
 }
 func (UnimplementedAgentServer) RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveVolume not implemented")
+}
+func (UnimplementedAgentServer) CreateVolume(context.Context, *CreateVolumeRequest) (*CreateVolumeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateVolume not implemented")
 }
 func (UnimplementedAgentServer) PortForward(grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method PortForward not implemented")
@@ -311,6 +331,24 @@ func _Agent_RemoveVolume_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_CreateVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).CreateVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_CreateVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).CreateVolume(ctx, req.(*CreateVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_PortForward_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(AgentServer).PortForward(&grpc.GenericServerStream[ForwardClientMessage, ForwardServerMessage]{ServerStream: stream})
 }
@@ -354,6 +392,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveVolume",
 			Handler:    _Agent_RemoveVolume_Handler,
+		},
+		{
+			MethodName: "CreateVolume",
+			Handler:    _Agent_CreateVolume_Handler,
 		},
 		{
 			MethodName: "Version",

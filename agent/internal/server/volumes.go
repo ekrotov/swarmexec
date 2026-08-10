@@ -67,6 +67,7 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 			Scope:      v.Scope,
 			SizeBytes:  size,
 			SizeKnown:  known,
+			Labels:     v.Labels,
 		})
 	}
 	return out, nil
@@ -103,6 +104,48 @@ func (s *Server) RemoveVolume(ctx context.Context, req *pb.RemoveVolumeRequest) 
 	}
 	s.audit.VolumeRemove(identity, req.GetName(), true, "")
 	return &pb.RemoveVolumeResponse{}, nil
+}
+
+// CreateVolume creates a volume on this node. It is authorized and audited.
+// Volumes are node-local, so the cli targets a specific node's agent.
+func (s *Server) CreateVolume(ctx context.Context, req *pb.CreateVolumeRequest) (*pb.CreateVolumeResponse, error) {
+	if req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "CreateVolumeRequest requires name")
+	}
+	identity, err := s.identityFn(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+	}
+	decision := s.authz.Authorize(ctx, auth.Request{
+		Action:   "volume.create",
+		Identity: identity,
+		Volume:   req.GetName(),
+	})
+	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
+	if !decision.Allow {
+		s.metrics.AuthDenied()
+		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	}
+
+	v, err := s.docker.VolumeCreate(ctx, volume.CreateOptions{
+		Name:       req.GetName(),
+		Driver:     req.GetDriver(),
+		Labels:     req.GetLabels(),
+		DriverOpts: req.GetDriverOpts(),
+	})
+	if err != nil {
+		s.audit.VolumeCreate(identity, req.GetName(), false, err.Error())
+		return nil, status.Errorf(codes.Internal, "create volume %s: %v", req.GetName(), err)
+	}
+	s.audit.VolumeCreate(identity, req.GetName(), true, "")
+	return &pb.CreateVolumeResponse{Volume: &pb.VolumeInfo{
+		Name:       v.Name,
+		Driver:     v.Driver,
+		Mountpoint: v.Mountpoint,
+		CreatedAt:  v.CreatedAt,
+		Scope:      string(v.Scope),
+		Labels:     v.Labels,
+	}}, nil
 }
 
 // isVolumeInUse reports whether the error indicates the volume is still in use.

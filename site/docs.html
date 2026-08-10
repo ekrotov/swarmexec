@@ -842,11 +842,12 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>/</kbd></td><td>search — filter the list by volume name, driver or node</td></tr>
+          <tr><td><kbd>n</kbd></td><td>create a volume — a form with <strong>name</strong>, <strong>driver</strong> (default <code>local</code>), <strong>labels</strong> (<code>k=v,k=v</code>) and a <strong>node</strong> target (autocompletes node names; <strong>leave blank to create on every node</strong>, since volumes are node-local). Creates it on each target node's agent and reports per-node success/failure. <kbd>Tab</kbd> moves between fields, <kbd>Esc</kbd> cancels</td></tr>
           <tr><td><kbd>space</kbd></td><td>select / deselect the volume (marked <code>▣</code>) for a bulk delete</td></tr>
           <tr><td><kbd>a</kbd></td><td>select / deselect all currently displayed volumes</td></tr>
           <tr><td><kbd>d</kbd></td><td>delete the selected volumes — or the one under the cursor — on every node that holds them, behind a confirm (with a progress overlay; deletes run with bounded parallelism)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: delete every volume no running container mounts <em>and</em> no service declares, behind a confirm</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>show which nodes hold the volume</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>show which nodes hold the volume; the volume's <strong>labels</strong> are listed read-only above the nodes (Docker has no volume-update API, so labels can't be edited after creation — set them when you create the volume)</td></tr>
           <tr><td><kbd>i</kbd></td><td>show which services/containers use it</td></tr>
           <tr><td><kbd>A</kbd></td><td>attach the volume to a service: pick a service (name autocomplete) → enter the container target path (absolute) → choose <em>Attach</em> or <em>Attach read-only</em>. Adds the mount via one <code>ServiceUpdate</code> (rolling update) — the volume counterpart to the network/secret attach actions; the reverse lives in the service inspect <kbd>v</kbd> mounts editor</td></tr>
           <tr><td><kbd>s</kbd> <kbd>S</kbd></td><td>cycle the sort field (name → nodes → used → age → size) / reverse</td></tr>
@@ -1013,7 +1014,7 @@ search: /        fold: h           unfold: l          forward: p
 container_inspect: i
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
-volume_attach: A volume_sort: s     volume_sort_reverse: S
+volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
 forward_stop: d  forward_copy_url: o</div>
