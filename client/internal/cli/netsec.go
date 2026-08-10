@@ -37,6 +37,7 @@ type swarmNetwork struct {
 	Ingress    bool
 	Encrypted  bool   // overlay data-plane encryption (--opt encrypted)
 	MTU        string // com.docker.network.driver.mtu, "" if unset
+	Labels     map[string]string
 	Created    time.Time
 	Services   []string // service names attached, from service specs
 }
@@ -100,6 +101,7 @@ func listNetworks(ctx context.Context, dcli *client.Client) ([]swarmNetwork, err
 			Ingress:    n.Ingress,
 			Encrypted:  networkEncrypted(n.Options),
 			MTU:        n.Options["com.docker.network.driver.mtu"],
+			Labels:     n.Labels,
 			Created:    n.Created,
 			Services:   svcs,
 		})
