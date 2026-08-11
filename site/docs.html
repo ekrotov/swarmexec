@@ -675,10 +675,10 @@
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
       <p>
-        <code>swarmexec ui</code> has six tabs — <strong>Containers&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> has seven tabs — <strong>Containers&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong> — and a two-line footer: the per-tab key
+        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — and a two-line footer: the per-tab key
         hints on top, then a status line with the active docker context
         (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster you're
         on), a live cluster summary, the forward count and — on the Volumes tab — how
@@ -952,6 +952,23 @@
         </tbody>
       </table></div>
 
+      <h3>Nodes tab</h3>
+      <p>
+        Lists the swarm's nodes with general info and a few aggregations — <code>NODE</code>
+        (hostname; managers in aqua, the leader marked <code>★</code>), <code>ROLE</code>
+        (manager / worker), <code>AVAIL</code> (active / pause / drain, colour-coded),
+        <code>STATE</code> (ready / down), <code>ENGINE</code> version, <code>TASKS</code>
+        (running tasks scheduled on the node), <code>VOLS</code> (volumes the node holds —
+        node-local, so it fills in a moment after the rest) and <code>LABELS</code> (count).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, volume count and the full label list</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edit the selected node's <strong>labels</strong> — a staged list editor (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel) over <code>key=value</code> entries. Applying does one <code>NodeUpdate</code> — unlike a service, a node update <strong>applies immediately</strong> (no rolling update). Node labels are commonly used as placement-constraint targets (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+        </tbody>
+      </table></div>
+
       <h3>Embedded shell &amp; logs</h3>
       <p>
         In an embedded shell, <kbd>Ctrl-]</kbd> detaches (without ending the process). The
@@ -1017,6 +1034,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
+node_edit_labels: l
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two

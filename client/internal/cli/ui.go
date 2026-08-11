@@ -2190,6 +2190,268 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		app.Stop() // the caller restarts against switchTo
 	}
 
+	// -------------------------------------------------------------------- nodes
+	notable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	notable.SetSelectedStyle(selStyle)
+	noHeaders := []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
+	var nodeInfos []swarmNodeInfo
+	nodeVolCounts := map[string]int{}
+	nodeVolsLoaded := false
+	renderNodes := func() {
+		selName := ""
+		if row, _ := notable.GetSelection(); row >= 1 {
+			if c := notable.GetCell(row, 0); c != nil {
+				selName = strings.TrimPrefix(c.Text, "★ ")
+			}
+		}
+		notable.Clear()
+		for c, h := range noHeaders {
+			notable.SetCell(0, c, headerCell(h))
+		}
+		selRow := 1
+		for i, n := range nodeInfos {
+			name, nameColor := n.Hostname, tcell.ColorWhite
+			if n.Role == "manager" {
+				nameColor = tcell.ColorAqua
+			}
+			if n.Leader {
+				name = "★ " + name
+			}
+			vols := "…"
+			if nodeVolsLoaded {
+				vols = fmt.Sprintf("%d", nodeVolCounts[n.Hostname])
+			}
+			notable.SetCell(i+1, 0, tview.NewTableCell(name).SetTextColor(nameColor).SetExpansion(2))
+			notable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Role)).SetExpansion(1))
+			notable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
+			notable.SetCell(i+1, 3, tview.NewTableCell(orDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
+			notable.SetCell(i+1, 4, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
+			notable.SetCell(i+1, 5, tview.NewTableCell(fmt.Sprintf("%d", n.Tasks)).SetExpansion(1))
+			notable.SetCell(i+1, 6, tview.NewTableCell(vols).SetExpansion(1))
+			notable.SetCell(i+1, 7, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
+			if n.Hostname == selName {
+				selRow = i + 1
+			}
+		}
+		if len(nodeInfos) > 0 {
+			notable.Select(selRow, 0)
+		}
+	}
+	loadNodes := func() {
+		notable.Clear()
+		for c, h := range noHeaders {
+			notable.SetCell(0, c, headerCell(h))
+		}
+		notable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+		go func() {
+			start := time.Now()
+			list, err := listNodeInfos(ctx, dcli)
+			clientlog.Timed("ui.loadNodes", start, err)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					notable.Clear()
+					for c, h := range noHeaders {
+						notable.SetCell(0, c, headerCell(h))
+					}
+					notable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed))
+					return
+				}
+				nodeInfos, nodeVolsLoaded = list, false
+				renderNodes()
+			})
+		}()
+		// Per-node volume counts are node-local (agent fan-out), so fill them in
+		// asynchronously — the VOLS column shows "…" until they arrive.
+		go func() {
+			counts := map[string]int{}
+			if ns, nerr := r.Nodes(ctx); nerr == nil {
+				vs, _ := indexVolumes(ctx, cfg, ns, f.connectTimeout)
+				counts = volumeCountsByNode(vs)
+			}
+			app.QueueUpdateDraw(func() {
+				// Mark loaded even on failure so VOLS shows a number, not "…" forever.
+				nodeVolCounts, nodeVolsLoaded = counts, true
+				renderNodes()
+			})
+		}()
+	}
+	selectedNode := func() (swarmNodeInfo, bool) {
+		row, _ := notable.GetSelection()
+		i := row - 1
+		if i < 0 || i >= len(nodeInfos) {
+			return swarmNodeInfo{}, false
+		}
+		return nodeInfos[i], true
+	}
+	// editNodeLabels is a compact staged editor (add/edit/delete/apply) over a
+	// node's labels, applied via NodeUpdate. Dedicated (not the service editList)
+	// because a node update is immediate — there is no rolling update.
+	editNodeLabels := func(n swarmNodeInfo, after func()) {
+		cur := kvPairs(n.Labels)
+		list := tview.NewList().ShowSecondaryText(false)
+		list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
+		render := func() {
+			i := list.GetCurrentItem()
+			list.Clear()
+			if len(cur) == 0 {
+				list.AddItem("[gray](no labels)[-]", "", 0, nil)
+			}
+			for _, it := range cur {
+				list.AddItem(tview.Escape(it), "", 0, nil)
+			}
+			if i < list.GetItemCount() {
+				list.SetCurrentItem(i)
+			}
+		}
+		render()
+		_, restoreHelp := pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
+		closeEd := func() { restoreHelp(); pages.RemovePage("nodelabels"); app.SetFocus(notable) }
+		promptLabel := func(initial string, done func(string)) {
+			in := tview.NewInputField().SetLabel("key=value: ").SetText(initial).SetFieldWidth(44)
+			in.SetDoneFunc(func(k tcell.Key) {
+				pages.RemovePage("nodelabelprompt")
+				app.SetFocus(list)
+				if k != tcell.KeyEnter {
+					return
+				}
+				txt := strings.TrimSpace(in.GetText())
+				if txt == "" {
+					return
+				}
+				if _, _, err := parseLabel(txt); err != nil {
+					info(err.Error())
+					return
+				}
+				done(txt)
+				render()
+			})
+			in.SetBorder(true)
+			pages.AddPage("nodelabelprompt", centered(in, 60, 3), true, true)
+			app.SetFocus(in)
+		}
+		apply := func() {
+			lbls, err := labelsFromStrings(cur)
+			if err != nil {
+				info(err.Error())
+				return
+			}
+			confirm := tview.NewModal().
+				SetText(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname)).
+				AddButtons([]string{"Apply", "Cancel"}).
+				SetDoneFunc(func(_ int, lbl string) {
+					pages.RemovePage("nodelabelconfirm")
+					if lbl != "Apply" {
+						app.SetFocus(list)
+						return
+					}
+					go func() {
+						err := setNodeLabels(ctx, dcli, n.ID, lbls)
+						app.QueueUpdateDraw(func() {
+							if err != nil {
+								info("update failed: " + err.Error())
+								app.SetFocus(list)
+								return
+							}
+							closeEd()
+							info(fmt.Sprintf("node %s labels updated", n.Hostname))
+							if after != nil {
+								after()
+							}
+						})
+					}()
+				})
+			pages.AddPage("nodelabelconfirm", confirm, true, true)
+			app.SetFocus(confirm)
+		}
+		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape:
+				closeEd()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				promptLabel("", func(v string) { cur = append(cur, v) })
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
+				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
+					promptLabel(cur[i], func(v string) { cur[i] = v })
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+				if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
+					cur = append(cur[:i], cur[i+1:]...)
+					render()
+				}
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
+				apply()
+				return nil
+			}
+			return vimListKeys(ev)
+		})
+		pages.AddPage("nodelabels", centered(list, 70, 16), true, true)
+		app.SetFocus(list)
+	}
+	showNodeDetail := func(n swarmNodeInfo) {
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
+		var b strings.Builder
+		kv := func(k, v string) { fmt.Fprintf(&b, "  [gray]%-13s[-] %s\n", k, tview.Escape(v)) }
+		role := n.Role
+		if n.Leader {
+			role += " (leader)"
+		}
+		kv("hostname", n.Hostname)
+		kv("id", n.ID)
+		kv("role", orDash(role))
+		kv("availability", orDash(n.Availability))
+		kv("state", orDash(n.State))
+		kv("address", orDash(n.Addr))
+		kv("engine", orDash(n.EngineVersion))
+		kv("platform", orDash(strings.Trim(n.OS+"/"+n.Arch, "/")))
+		kv("cpus", formatCPUCores(n.NanoCPUs))
+		kv("memory", formatMemBytes(n.MemoryBytes))
+		kv("tasks", fmt.Sprintf("%d running", n.Tasks))
+		vol := "…"
+		if nodeVolsLoaded {
+			vol = fmt.Sprintf("%d", nodeVolCounts[n.Hostname])
+		}
+		kv("volumes", vol)
+		b.WriteString("\n  [gray]labels[-]\n")
+		if lbls := kvPairs(n.Labels); len(lbls) > 0 {
+			for _, l := range lbls {
+				fmt.Fprintf(&b, "    %s\n", tview.Escape(l))
+			}
+		} else {
+			b.WriteString("    [gray](none)[-]\n")
+		}
+		tv.SetText(b.String())
+		_, restoreHelp := pushOverlayHelp(footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
+		closeDetail := func() { restoreHelp(); pages.RemovePage("nodedetail"); app.SetFocus(notable) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+				closeDetail()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
+				closeDetail()
+				editNodeLabels(n, loadNodes)
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+			}
+			return ev
+		})
+		pages.AddPage("nodedetail", centered(tv, 72, 24), true, true)
+		app.SetFocus(tv)
+	}
+	notable.SetSelectedFunc(func(int, int) {
+		if n, ok := selectedNode(); ok {
+			showNodeDetail(n)
+		}
+	})
+
 	// ---------------------------------------------------------------- tabs/chrome
 	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
@@ -2197,6 +2459,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	content.AddPage("networks", nettable, true, false)
 	content.AddPage("secrets", sectable, true, false)
 	content.AddPage("contexts", cxtable, true, false)
+	content.AddPage("nodes", notable, true, false)
 
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	// Two-line footer: the per-tab key hints on top, then one consolidated status
@@ -2360,6 +2623,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "contexts":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete  %s",
 				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete), tail)
+		case "nodes":
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] edit labels  %s", kl(km.NodeLabels), tail)
 		default:
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url  %s",
 				kl(km.FwdStop), kl(km.FwdCopyURL), tail)
@@ -2374,6 +2639,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		{"networks", "Networks (4)"},
 		{"secrets", "Secrets (5)"},
 		{"contexts", "Contexts (6)"},
+		{"nodes", "Nodes (7)"},
 	}
 	renderTabBar := func(active string) {
 		var b strings.Builder
@@ -2411,6 +2677,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "contexts":
 			app.SetFocus(cxtable)
 			loadContexts()
+		case "nodes":
+			app.SetFocus(notable)
+			loadNodes()
 		}
 	}
 
@@ -2599,7 +2868,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 
 	// tabOrder drives Tab cycling; every tab joins it.
-	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts"}
+	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes"}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune && ev.Rune() == '`' {
 			toggleLogView()
@@ -2634,6 +2903,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case '6':
 				setTab("contexts")
 				return nil
+			case '7':
+				setTab("nodes")
+				return nil
 			case km.Quit:
 				app.Stop()
 				return nil
@@ -2649,6 +2921,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					loadSecrets()
 				case "contexts":
 					loadContexts()
+				case "nodes":
+					loadNodes()
 				default:
 					renderForwards()
 				}
@@ -4193,6 +4467,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			activateContext(c)
 		}
 	})
+	// On the nodes table: edit the selected node's labels; Enter/i opens details.
+	notable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeLabels {
+			if n, ok := selectedNode(); ok {
+				editNodeLabels(n, loadNodes)
+			}
+			return nil
+		}
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+			if n, ok := selectedNode(); ok {
+				showNodeDetail(n)
+			}
+			return nil
+		}
+		return tabKeys(ev)
+	})
 
 	loadContainersSync() // startup: before app.Run, so fetch+apply inline
 	setTab("containers")
@@ -4336,6 +4626,33 @@ func networkTypeColor(n swarmNetwork) tcell.Color {
 		return tcell.ColorAqua
 	default:
 		return tcell.ColorDimGray
+	}
+}
+
+// nodeAvailColor colours a node's availability: active→green, drain→yellow,
+// pause→gray, anything else default.
+func nodeAvailColor(a string) tcell.Color {
+	switch a {
+	case "active":
+		return tcell.ColorGreen
+	case "drain":
+		return tcell.ColorYellow
+	case "pause":
+		return tcell.ColorGray
+	default:
+		return tcell.ColorWhite
+	}
+}
+
+// nodeStateColor colours a node's state: ready→green, down→red, else yellow.
+func nodeStateColor(s string) tcell.Color {
+	switch s {
+	case "ready":
+		return tcell.ColorGreen
+	case "down", "disconnected", "unknown":
+		return tcell.ColorRed
+	default:
+		return tcell.ColorYellow
 	}
 }
 
