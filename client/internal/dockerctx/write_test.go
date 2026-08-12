@@ -19,7 +19,7 @@ func TestCreateRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	isolate(t, dir)
 
-	if err := Create("prod", "ssh://ops@manager.example.com", "the prod swarm"); err != nil {
+	if err := Create(CreateOptions{Name: "prod", Host: "ssh://ops@manager.example.com", Description: "the prod swarm"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -82,16 +82,16 @@ func TestCreateRejects(t *testing.T) {
 		{"ok2", "", "empty host"},
 	}
 	for _, tc := range tests {
-		if err := Create(tc.name, tc.host, ""); err == nil {
+		if err := Create(CreateOptions{Name: tc.name, Host: tc.host}); err == nil {
 			t.Errorf("Create(%q,%q) accepted, want rejection (%s)", tc.name, tc.host, tc.why)
 		}
 	}
 
 	// Duplicate.
-	if err := Create("dup", "tcp://h:2376", ""); err != nil {
+	if err := Create(CreateOptions{Name: "dup", Host: "tcp://h:2376"}); err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	if err := Create("dup", "tcp://h:2376", ""); err == nil {
+	if err := Create(CreateOptions{Name: "dup", Host: "tcp://h:2376"}); err == nil {
 		t.Error("second Create of the same name accepted, want rejection")
 	}
 }
@@ -105,7 +105,7 @@ func TestUsePreservesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Create("staging", "ssh://stg", ""); err != nil {
+	if err := Create(CreateOptions{Name: "staging", Host: "ssh://stg"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Use("staging"); err != nil {
@@ -153,7 +153,7 @@ func TestUseUnknownFails(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	isolate(t, t.TempDir())
-	if err := Create("gone", "tcp://h:2376", ""); err != nil {
+	if err := Create(CreateOptions{Name: "gone", Host: "tcp://h:2376"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Remove("gone", false); err != nil {
@@ -174,7 +174,7 @@ func TestRemove(t *testing.T) {
 
 func TestRemoveCurrentNeedsForce(t *testing.T) {
 	isolate(t, t.TempDir())
-	if err := Create("live", "ssh://h", ""); err != nil {
+	if err := Create(CreateOptions{Name: "live", Host: "ssh://h"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Use("live"); err != nil {
@@ -195,5 +195,42 @@ func TestRemoveCurrentNeedsForce(t *testing.T) {
 	// The selection must fall back to default.
 	if Current() != "default" {
 		t.Errorf("Current() = %q after forced remove, want default", Current())
+	}
+}
+
+func TestBuildSSHHost(t *testing.T) {
+	cases := []struct{ user, host, port, want string }{
+		{"ops", "manager", "2222", "ssh://ops@manager:2222"},
+		{"", "manager", "", "ssh://manager"},
+		{"ops", "manager", "", "ssh://ops@manager"},
+		{"", "10.0.0.5", "22", "ssh://10.0.0.5:22"},
+	}
+	for _, c := range cases {
+		got, err := BuildSSHHost(c.user, c.host, c.port)
+		if err != nil || got != c.want {
+			t.Errorf("BuildSSHHost(%q,%q,%q) = %q,%v want %q", c.user, c.host, c.port, got, err, c.want)
+		}
+	}
+	if _, err := BuildSSHHost("ops", "  ", "22"); err == nil {
+		t.Error("empty host should error")
+	}
+}
+
+func TestProxyJumpRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	isolate(t, dir)
+
+	if err := Create(CreateOptions{Name: "jctx", Host: "ssh://ops@manager", ProxyJump: "edge,bastion"}); err != nil {
+		t.Fatalf("Create ssh: %v", err)
+	}
+	if got := ResolveProxyJump("jctx"); got != "edge,bastion" {
+		t.Errorf("ResolveProxyJump = %q, want %q", got, "edge,bastion")
+	}
+	// A non-ssh context must not store a ProxyJump.
+	if err := Create(CreateOptions{Name: "tcpctx", Host: "tcp://h:2376", ProxyJump: "edge"}); err != nil {
+		t.Fatalf("Create tcp: %v", err)
+	}
+	if got := ResolveProxyJump("tcpctx"); got != "" {
+		t.Errorf("ResolveProxyJump(tcp) = %q, want empty", got)
 	}
 }

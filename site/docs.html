@@ -965,7 +965,7 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one and restarts the UI against that cluster (active port-forwards end)</td></tr>
-          <tr><td><kbd>n</kbd></td><td>create a context — a form for name, docker host (<code>ssh://</code> / <code>tcp://</code> / <code>unix://</code>) and an optional description</td></tr>
+          <tr><td><kbd>n</kbd></td><td>create a context — a <strong>guided</strong> form. A checkbox <strong>“Connect to Docker over SSH”</strong> decides the endpoint: when on, you fill in SSH <strong>user / host / port</strong> and a second checkbox <strong>“Use a jump host”</strong> reveals a <strong>jump host(s)</strong> field (comma-separated, multi-hop <code>ProxyJump</code>) — swarmexec stores them on the context and injects <code>-J</code> into <em>both</em> the Docker-API and the agent-tunnel ssh connections, so bastions work without editing <code>~/.ssh/config</code>. When off, you enter a plain <code>tcp://</code> / <code>unix://</code> host. The form assembles the docker host for you, and <strong>Test</strong> pings the assembled endpoint before you save. Also on the CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
         </tbody>
       </table></div>

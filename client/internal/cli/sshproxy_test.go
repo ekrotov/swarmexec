@@ -15,6 +15,7 @@ func TestSSHForwardArgs(t *testing.T) {
 		name   string
 		spec   *ssh.Spec
 		target string
+		jump   string
 		want   []string
 	}{
 		{
@@ -30,15 +31,16 @@ func TestSSHForwardArgs(t *testing.T) {
 			want:   []string{"-W", "node-1:9443", "--", "bastion"},
 		},
 		{
-			name:   "user and host",
-			spec:   &ssh.Spec{User: "deploy", Host: "bastion"},
+			name:   "with jump hosts",
+			spec:   &ssh.Spec{User: "deploy", Host: "manager"},
 			target: "10.0.0.5:9443",
-			want:   []string{"-l", "deploy", "-W", "10.0.0.5:9443", "--", "bastion"},
+			jump:   "edge,bastion",
+			want:   []string{"-l", "deploy", "-J", "edge,bastion", "-W", "10.0.0.5:9443", "--", "manager"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := sshForwardArgs(tt.spec, tt.target)
+			got := sshForwardArgs(tt.spec, tt.target, tt.jump)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("sshForwardArgs() = %v, want %v", got, tt.want)
 			}

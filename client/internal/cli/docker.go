@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,8 +29,10 @@ func newDockerClient(contextOverride string) (*client.Client, error) {
 	opts := []client.Opt{client.WithAPIVersionNegotiation()}
 	if strings.HasPrefix(host, "ssh://") {
 		// ssh endpoints need a connection helper (it tunnels the Docker API over
-		// ssh, the same way `docker --context <ssh-ctx>` does).
-		helper, err := connhelper.GetConnectionHelper(host)
+		// ssh, the same way `docker --context <ssh-ctx>` does). Inject the
+		// context's ProxyJump (-J) so the API hop goes through the same bastion(s)
+		// as the agent tunnel — no ~/.ssh/config needed.
+		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, sshExtraFlags(contextOverride))
 		if err != nil {
 			return nil, fmt.Errorf("set up ssh connection to %s: %w", host, err)
 		}
@@ -47,6 +50,39 @@ func newDockerClient(contextOverride string) (*client.Client, error) {
 		return nil, fmt.Errorf("connect to Docker manager API (%s): %w", host, err)
 	}
 	return c, nil
+}
+
+// pingDockerHost builds a throwaway client for host (ssh endpoints get -J
+// proxyJump) and verifies it with an Info call — used to test a context before
+// saving it.
+func pingDockerHost(ctx context.Context, host, proxyJump string) error {
+	opts := []client.Opt{client.WithAPIVersionNegotiation()}
+	if strings.HasPrefix(host, "ssh://") {
+		var flags []string
+		if pj := strings.TrimSpace(proxyJump); pj != "" {
+			flags = []string{"-J", pj}
+		}
+		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, flags)
+		if err != nil {
+			return fmt.Errorf("set up ssh connection: %w", err)
+		}
+		opts = append(opts,
+			client.WithHTTPClient(&http.Client{Transport: &http.Transport{DialContext: helper.Dialer}}),
+			client.WithHost(helper.Host),
+			client.WithDialContext(helper.Dialer),
+		)
+	} else {
+		opts = append(opts, client.WithHost(host))
+	}
+	c, err := client.NewClientWithOpts(opts...)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	_, err = c.Info(cctx)
+	return err
 }
 
 func shortID(id string) string {
