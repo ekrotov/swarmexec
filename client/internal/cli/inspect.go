@@ -307,7 +307,13 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	b.list(imageLines(cs, img))
 	if img.newer && img.latestDigest != "" && cs != nil {
 		target := stripDigest(cs.Image) + "@" + img.latestDigest
-		b.upgrade("⚠ a newer version is available in the registry (latest "+shortDigest(img.latestDigest)+") — press u to update", target)
+		// Prefer the newer image's real version; fall back to a short digest only
+		// when the image carries no version label.
+		label := img.latestVersion
+		if label == "" {
+			label = shortDigest(img.latestDigest)
+		}
+		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", target)
 	}
 	b.section("MODE")
 	b.list([]string{serviceModeStr(svc)})

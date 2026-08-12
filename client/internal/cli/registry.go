@@ -25,11 +25,12 @@ import (
 
 // imageStatus is what a registry check yields for one pinned `:latest` image.
 type imageStatus struct {
-	pinnedDigest string // sha256:… the service is pinned to (from the spec)
-	version      string // org.opencontainers.image.version of the pinned image, "" if unknown
-	latestDigest string // current digest of repo:latest in the registry
-	newer        bool   // registry :latest differs from the pinned digest
-	ok           bool   // a registry lookup succeeded (latest digest fetched)
+	pinnedDigest  string // sha256:… the service is pinned to (from the spec)
+	version       string // org.opencontainers.image.version of the pinned image, "" if unknown
+	latestDigest  string // current digest of repo:latest in the registry
+	latestVersion string // version label of the registry's current :latest image, "" if unknown
+	newer         bool   // registry :latest differs from the pinned digest
+	ok            bool   // a registry lookup succeeded (latest digest fetched)
 }
 
 // parsePinnedLatest splits a spec image ref into repo and pinned digest, but only
@@ -126,6 +127,13 @@ func checkImageStatus(ctx context.Context, resolver imageResolver, specRef strin
 	}
 	if ver, err := resolver.versionLabel(ctx, repo, digest); err == nil {
 		st.version = ver
+	}
+	// When a newer image exists, resolve ITS version too, so the UI can offer a
+	// concrete version rather than a bare digest.
+	if st.newer {
+		if ver, err := resolver.versionLabel(ctx, repo, st.latestDigest); err == nil {
+			st.latestVersion = ver
+		}
 	}
 	return st
 }

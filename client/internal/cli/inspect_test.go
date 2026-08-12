@@ -45,10 +45,10 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 		Mounts:  []mount.Mount{{Type: mount.TypeVolume, Source: "assets", Target: "/data"}},
 	}
 
-	lines := formatServiceInspect(s, map[string]string{"netid1": "frontend-net"}, map[string]bool{"netid1": true}, imageStatus{version: "1.2.3", newer: true, latestDigest: "sha256:abcdef0123456789"})
+	lines := formatServiceInspect(s, map[string]string{"netid1": "frontend-net"}, map[string]bool{"netid1": true}, imageStatus{version: "1.2.3", newer: true, latestDigest: "sha256:abcdef0123456789", latestVersion: "1.5.0"})
 	joined := joinInspLines(lines)
 
-	for _, want := range []string{"frontend-net", "tier=frontend", "assets -> /data", "db-pw", "nginx:1", "version behind :latest: 1.2.3", "newer version is available"} {
+	for _, want := range []string{"frontend-net", "tier=frontend", "assets -> /data", "db-pw", "nginx:1", "version behind :latest: 1.2.3", "newer version is available: 1.5.0"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("formatted output missing %q:\n%s", want, joined)
 		}
