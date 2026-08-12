@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 620" width="800" height="620" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <!-- Concept 3: Isometric swarm / manager routing to one node -->
+  <rect width="800" height="620" fill="#0d1117"/>
+
+  <!-- title -->
+  <text x="400" y="58" text-anchor="middle" font-size="34" font-weight="700" fill="#e6edf3" letter-spacing="-1">swarmexec<tspan fill="#39c5cf">_</tspan></text>
+  <text x="400" y="88" text-anchor="middle" font-size="16" fill="#8b949e">one command routes to the right node</text>
+
+  <!-- routing lines: manager -> workers -->
+  <g fill="none" stroke-width="2.5">
+    <path d="M400 250 L200 380" stroke="#30363d" stroke-dasharray="6 6"/>
+    <path d="M400 250 L340 380" stroke="#30363d" stroke-dasharray="6 6"/>
+    <path d="M400 250 L620 380" stroke="#30363d" stroke-dasharray="6 6"/>
+    <!-- active route to target -->
+    <path d="M400 250 L480 380" stroke="#39c5cf" stroke-dasharray="6 6">
+      <animate attributeName="stroke-dashoffset" values="24;0" dur="0.7s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- MANAGER cube (aqua) at top center, top point ~ (400,140) -->
+  <g transform="translate(400,140)">
+    <path d="M0,0 L60,30 L0,60 L-60,30 Z" fill="#39c5cf"/>
+    <path d="M-60,30 L0,60 L0,110 L-60,80 Z" fill="#1c7178"/>
+    <path d="M0,60 L60,30 L60,80 L0,110 Z" fill="#279aa1"/>
+    <text x="0" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#0d1117">mgr</text>
+  </g>
+
+  <!-- worker cubes (panel) -->
+  <g transform="translate(200,380)">
+    <path d="M0,0 L60,30 L0,60 L-60,30 Z" fill="#21262d"/>
+    <path d="M-60,30 L0,60 L0,110 L-60,80 Z" fill="#161b22"/>
+    <path d="M0,60 L60,30 L60,80 L0,110 Z" fill="#1b2129"/>
+  </g>
+  <g transform="translate(340,380)">
+    <path d="M0,0 L60,30 L0,60 L-60,30 Z" fill="#21262d"/>
+    <path d="M-60,30 L0,60 L0,110 L-60,80 Z" fill="#161b22"/>
+    <path d="M0,60 L60,30 L60,80 L0,110 Z" fill="#1b2129"/>
+  </g>
+  <g transform="translate(620,380)">
+    <path d="M0,0 L60,30 L0,60 L-60,30 Z" fill="#21262d"/>
+    <path d="M-60,30 L0,60 L0,110 L-60,80 Z" fill="#161b22"/>
+    <path d="M0,60 L60,30 L60,80 L0,110 Z" fill="#1b2129"/>
+  </g>
+
+  <!-- TARGET worker cube (accent blue) -->
+  <g transform="translate(480,380)">
+    <path d="M0,-14 L74,23 L0,60 L-74,23 Z" fill="none" stroke="#2f81f7" stroke-width="2" opacity="0.5"/>
+    <path d="M0,0 L60,30 L0,60 L-60,30 Z" fill="#2f81f7"/>
+    <path d="M-60,30 L0,60 L0,110 L-60,80 Z" fill="#1b4b8f"/>
+    <path d="M0,60 L60,30 L60,80 L0,110 Z" fill="#245fb8"/>
+    <text x="0" y="34" text-anchor="middle" font-size="13" font-weight="700" fill="#e6edf3">web</text>
+  </g>
+
+  <!-- terminal callout near target -->
+  <g transform="translate(560,520)">
+    <rect x="0" y="0" width="180" height="58" rx="10" fill="#010409" stroke="#30363d" stroke-width="1.5"/>
+    <text x="14" y="35" font-size="16" xml:space="preserve"><tspan fill="#39c5cf">$ </tspan><tspan fill="#8b949e">exec </tspan><tspan fill="#e6edf3">web -- sh</tspan></text>
+  </g>
+</svg>

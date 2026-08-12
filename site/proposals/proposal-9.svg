@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 150" width="150" height="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <!-- Concept 9: hex swarm cluster mark -->
+  <rect x="1" y="1" width="148" height="148" rx="34" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <!-- links -->
+  <g stroke="#30363d" stroke-width="2.5">
+    <line x1="75" y1="75" x2="101" y2="30"/>
+    <line x1="75" y1="75" x2="49" y2="30"/>
+    <line x1="75" y1="75" x2="30" y2="75"/>
+    <line x1="75" y1="75" x2="49" y2="120"/>
+    <line x1="75" y1="75" x2="101" y2="120"/>
+    <line x1="75" y1="75" x2="120" y2="75" stroke="#39c5cf"/>
+  </g>
+  <!-- worker nodes -->
+  <g fill="#0d1117" stroke="#30363d" stroke-width="2.5">
+    <circle cx="101" cy="30" r="9"/>
+    <circle cx="49" cy="30" r="9"/>
+    <circle cx="30" cy="75" r="9"/>
+    <circle cx="49" cy="120" r="9"/>
+    <circle cx="101" cy="120" r="9"/>
+  </g>
+  <circle cx="120" cy="75" r="10" fill="#0d1117" stroke="#2f81f7" stroke-width="3"/>
+  <!-- central manager hexagon -->
+  <path d="M99,75 L87,95.8 L63,95.8 L51,75 L63,54.2 L87,54.2 Z" fill="#39c5cf"/>
+  <path d="M66,68 L78,75 L66,82" fill="none" stroke="#0d1117" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="81" y="78" width="12" height="4.5" rx="2" fill="#0d1117"/>
+</svg>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec — image proposals</title>
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #161b22; --border: #30363d;
+      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      padding: 2.5rem 2rem; line-height: 1.6;
+    }
+    main { width: 100%; max-width: 1000px; margin: 0 auto; }
+    h1 { margin: 0 0 .25rem; font-size: 1.8rem; letter-spacing: -.02em; }
+    h1 .cursor { color: var(--aqua); }
+    p.lead { color: var(--muted); margin: 0 0 2rem; }
+    .grid { display: grid; gap: 1.5rem; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem; overflow: hidden;
+    }
+    .card figure { margin: 0; }
+    .card img {
+      display: block; width: 100%; height: auto;
+      background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    }
+    .card figcaption { margin-top: .9rem; }
+    .card .n { color: var(--aqua); font-weight: 700; }
+    .card .concept { color: var(--fg); font-weight: 600; }
+    .card .desc { color: var(--muted); font-size: .9rem; }
+    h2 { font-size: 1.15rem; margin: 2.5rem 0 .25rem; }
+    h2 .cursor { color: var(--aqua); }
+    p.sub { color: var(--muted); margin: 0 0 1.25rem; font-size: .9rem; }
+    .icons { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
+    .icons .card { padding: 1rem; text-align: center; }
+    .icons img { width: 150px; height: 150px; max-width: 100%; margin: 0 auto; border-radius: 12px; }
+    .icons .n { color: var(--aqua); font-weight: 700; }
+    .icons .concept { display: block; margin-top: .6rem; font-size: .82rem; color: var(--fg); }
+    @media (max-width: 720px) { .icons { grid-template-columns: repeat(2, 1fr); } }
+    footer { color: var(--muted); font-size: .8rem; margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>swarmexec<span class="cursor">_</span> image proposals</h1>
+    <p class="lead">Five distinct hero/brand concepts. Review candidates — not wired into the live site.</p>
+
+    <div class="grid">
+      <div class="card">
+        <figure>
+          <img src="proposal-1.png" alt="Proposal 1: terminal-prompt logo mark">
+          <figcaption>
+            <div><span class="n">01</span> · <span class="concept">Terminal-prompt logo mark</span></div>
+            <div class="desc">Terminal window framing the exec command over the wordmark with a blinking aqua cursor.</div>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="card">
+        <figure>
+          <img src="proposal-2.png" alt="Proposal 2: wordmark lockup">
+          <figcaption>
+            <div><span class="n">02</span> · <span class="concept">Wordmark lockup</span></div>
+            <div class="desc">Prompt-glyph badge + large wordmark, tagline and feature chips — a clean horizontal logo.</div>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="card">
+        <figure>
+          <img src="proposal-3.png" alt="Proposal 3: isometric swarm scene">
+          <figcaption>
+            <div><span class="n">03</span> · <span class="concept">Isometric swarm scene</span></div>
+            <div class="desc">Manager cube routing along a live link to one highlighted worker node — one command, any node.</div>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="card">
+        <figure>
+          <img src="proposal-4.png" alt="Proposal 4: before/after docker exec vs swarmexec">
+          <figcaption>
+            <div><span class="n">04</span> · <span class="concept">Before / after motif</span></div>
+            <div class="desc">Six-step SSH-and-hunt workflow versus a single swarmexec command, side by side.</div>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="card">
+        <figure>
+          <img src="proposal-5.png" alt="Proposal 5: abstract secure network routing hero">
+          <figcaption>
+            <div><span class="n">05</span> · <span class="concept">Secure network routing hero</span></div>
+            <div class="desc">mTLS hub radiating to swarm nodes with one active encrypted link to the target — abstract hero.</div>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+
+    <h2>Icon / favicon marks <span class="cursor">_</span> 150&times;150</h2>
+    <p class="sub">Square brand marks for favicon / app-icon / Docker Hub avatar use.</p>
+    <div class="icons">
+      <div class="card">
+        <img src="proposal-6.png" alt="Proposal 6: prompt-glyph icon">
+        <span class="concept"><span class="n">06</span> Prompt glyph &gt;_</span>
+      </div>
+      <div class="card">
+        <img src="proposal-7.png" alt="Proposal 7: se monogram">
+        <span class="concept"><span class="n">07</span> &quot;se&quot; monogram + cursor</span>
+      </div>
+      <div class="card">
+        <img src="proposal-8.png" alt="Proposal 8: isometric node cube">
+        <span class="concept"><span class="n">08</span> Isometric exec node</span>
+      </div>
+      <div class="card">
+        <img src="proposal-9.png" alt="Proposal 9: hex swarm cluster">
+        <span class="concept"><span class="n">09</span> Hex swarm cluster</span>
+      </div>
+      <div class="card">
+        <img src="proposal-10.png" alt="Proposal 10: mTLS lock + exec">
+        <span class="concept"><span class="n">10</span> mTLS lock + exec</span>
+      </div>
+    </div>
+
+    <footer>Concepts share the site palette (#0d1117 / #161b22 / #2f81f7 / #39c5cf). SVGs alongside as proposal-N.svg.</footer>
+  </main>
+</body>
+</html>

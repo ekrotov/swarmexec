@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <!-- Concept 2: Wordmark lockup -->
+  <rect width="1200" height="420" fill="#0d1117"/>
+
+  <!-- prompt glyph badge -->
+  <rect x="120" y="150" width="120" height="120" rx="24" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <path d="M155 190 L188 210 L155 230" fill="none" stroke="#39c5cf" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="196" y="222" width="30" height="9" rx="4" fill="#2f81f7"/>
+
+  <!-- wordmark -->
+  <text x="290" y="232" font-size="78" font-weight="700" fill="#e6edf3" letter-spacing="-3">swarmexec<tspan fill="#39c5cf">_<animate attributeName="opacity" values="1;1;0;0" dur="1.1s" repeatCount="indefinite"/></tspan></text>
+
+  <!-- tagline -->
+  <text x="292" y="286" font-size="26" fill="#39c5cf">Cluster-wide docker exec -it for Docker Swarm.</text>
+
+  <!-- divider -->
+  <line x1="292" y1="312" x2="1000" y2="312" stroke="#30363d" stroke-width="2"/>
+
+  <!-- feature chips -->
+  <g font-size="19" fill="#8b949e">
+    <text x="292" y="352">one command</text>
+    <text x="470" y="352" fill="#484f58">·</text>
+    <text x="495" y="352">any node</text>
+    <text x="620" y="352" fill="#484f58">·</text>
+    <text x="645" y="352">mTLS-secured</text>
+    <text x="840" y="352" fill="#484f58">·</text>
+    <text x="865" y="352">one terminal</text>
+  </g>
+</svg>
