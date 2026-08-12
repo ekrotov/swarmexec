@@ -75,35 +75,72 @@ func Exists(name string) bool {
 	return err == nil
 }
 
-// Create writes a new docker context pointing at host. description is optional.
-// It errors if the name is invalid, the host scheme is unsupported, or a context
-// of that name already exists.
-func Create(name, host, description string) error {
-	if err := ValidateName(name); err != nil {
+// ProxyJumpKey is the context-metadata key under which swarmexec stores an
+// ssh ProxyJump (comma-separated jump hosts). Docker ignores unknown metadata
+// keys, so this rides along in the standard context without breaking `docker`.
+const ProxyJumpKey = "swarmexec.ssh.proxyjump"
+
+// CreateOptions describes a context to create. Host must carry a supported
+// scheme (ssh/tcp/unix/npipe). ProxyJump (ssh only) is stored so swarmexec can
+// inject `-J` into both the Docker-API and agent-tunnel ssh connections.
+type CreateOptions struct {
+	Name        string
+	Host        string
+	Description string
+	ProxyJump   string
+}
+
+// BuildSSHHost assembles an ssh:// docker host from its parts. Only host is
+// required; user and port are optional.
+func BuildSSHHost(user, host, port string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", fmt.Errorf("ssh host is required")
+	}
+	var b strings.Builder
+	b.WriteString("ssh://")
+	if u := strings.TrimSpace(user); u != "" {
+		b.WriteString(u + "@")
+	}
+	b.WriteString(host)
+	if p := strings.TrimSpace(port); p != "" {
+		b.WriteString(":" + p)
+	}
+	return b.String(), nil
+}
+
+// Create writes a new docker context from o. Description and ProxyJump are
+// optional. It errors if the name is invalid, the host scheme is unsupported, or
+// a context of that name already exists.
+func Create(o CreateOptions) error {
+	if err := ValidateName(o.Name); err != nil {
 		return err
 	}
-	if err := validateHost(host); err != nil {
+	if err := validateHost(o.Host); err != nil {
 		return err
 	}
-	if Exists(name) {
-		return fmt.Errorf("context %q already exists", name)
+	if Exists(o.Name) {
+		return fmt.Errorf("context %q already exists", o.Name)
 	}
 
 	md := map[string]string{}
-	if description != "" {
-		md["Description"] = description
+	if o.Description != "" {
+		md["Description"] = o.Description
+	}
+	if pj := strings.TrimSpace(o.ProxyJump); pj != "" && strings.HasPrefix(o.Host, "ssh://") {
+		md[ProxyJumpKey] = pj
 	}
 	meta := contextMeta{
-		Name:      name,
+		Name:      o.Name,
 		Metadata:  md,
-		Endpoints: map[string]endpointMeta{"docker": {Host: host, SkipTLSVerify: false}},
+		Endpoints: map[string]endpointMeta{"docker": {Host: o.Host, SkipTLSVerify: false}},
 	}
 	b, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode context metadata: %w", err)
 	}
 
-	dir := metaDir(name)
+	dir := metaDir(o.Name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create context dir: %w", err)
 	}

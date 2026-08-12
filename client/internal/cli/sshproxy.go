@@ -38,9 +38,10 @@ func sshProxyDialer(contextOverride string) (func(context.Context, string) (net.
 	if err != nil {
 		return nil, fmt.Errorf("parse ssh docker context %q: %w", host, err)
 	}
+	jump := dockerctx.ResolveProxyJump(contextOverride)
 	return func(ctx context.Context, addr string) (net.Conn, error) {
 		// commandconn runs ssh via exec (no shell), so args need no quoting.
-		conn, cerr := commandconn.New(ctx, "ssh", sshForwardArgs(sp, addr)...)
+		conn, cerr := commandconn.New(ctx, "ssh", sshForwardArgs(sp, addr, jump)...)
 		if cerr != nil {
 			return nil, fmt.Errorf("ssh tunnel to %s via %s: %w", addr, sp.Host, cerr)
 		}
@@ -48,10 +49,10 @@ func sshProxyDialer(contextOverride string) (func(context.Context, string) (net.
 	}, nil
 }
 
-// sshForwardArgs builds `ssh [-l user] [-p port] -W <target> -- <host>`, which
-// forwards this process's stdio to target through the ssh host — exactly the
-// net.Conn commandconn wraps.
-func sshForwardArgs(sp *ssh.Spec, target string) []string {
+// sshForwardArgs builds `ssh [-l user] [-p port] [-J jump] -W <target> -- <host>`,
+// which forwards this process's stdio to target through the ssh host (via the
+// jump host(s) when set) — exactly the net.Conn commandconn wraps.
+func sshForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
 	var args []string
 	if sp.User != "" {
 		args = append(args, "-l", sp.User)
@@ -59,6 +60,19 @@ func sshForwardArgs(sp *ssh.Spec, target string) []string {
 	if sp.Port != "" {
 		args = append(args, "-p", sp.Port)
 	}
+	if pj := strings.TrimSpace(proxyJump); pj != "" {
+		args = append(args, "-J", pj)
+	}
 	args = append(args, "-W", target, "--", sp.Host)
 	return args
+}
+
+// sshExtraFlags returns extra ssh CLI flags for the resolved context — currently
+// the ProxyJump (-J). Shared by the Docker-API connhelper and the agent tunnel so
+// both hop through the same bastion(s).
+func sshExtraFlags(contextOverride string) []string {
+	if pj := strings.TrimSpace(dockerctx.ResolveProxyJump(contextOverride)); pj != "" {
+		return []string{"-J", pj}
+	}
+	return nil
 }

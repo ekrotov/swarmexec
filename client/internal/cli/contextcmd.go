@@ -35,6 +35,7 @@ func newContextCreateCmd() *cobra.Command {
 	var (
 		host        string
 		description string
+		sshJump     string
 		useIt       bool
 	)
 	cmd := &cobra.Command{
@@ -48,7 +49,7 @@ func newContextCreateCmd() *cobra.Command {
 			if host == "" {
 				return &cliError{code: usageExitCode, err: fmt.Errorf("--docker-host is required (e.g. ssh://ops@manager)")}
 			}
-			if err := dockerctx.Create(args[0], host, description); err != nil {
+			if err := dockerctx.Create(dockerctx.CreateOptions{Name: args[0], Host: host, Description: description, ProxyJump: sshJump}); err != nil {
 				return &cliError{code: usageExitCode, err: err}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "created context %q -> %s\n", args[0], host)
@@ -64,6 +65,7 @@ func newContextCreateCmd() *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVar(&host, "docker-host", "", "docker daemon endpoint (ssh:// | tcp:// | unix:// | npipe://)")
 	fl.StringVar(&description, "description", "", "optional description")
+	fl.StringVar(&sshJump, "ssh-jump", "", "ssh jump host(s) for an ssh:// context, comma-separated (ProxyJump / -J)")
 	fl.BoolVar(&useIt, "use", false, "also make it the current context")
 	return cmd
 }

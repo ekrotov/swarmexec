@@ -44,6 +44,42 @@ func ResolveHost(override string) (string, error) {
 	return contextHost(name)
 }
 
+// ResolveProxyJump returns the ssh ProxyJump (comma-separated jump hosts) stored
+// for the resolved context, or "" if none / not an ssh context. Same context
+// precedence as ResolveHost. Best-effort: any read error yields "".
+func ResolveProxyJump(override string) string {
+	name := override
+	if name == "" {
+		name = os.Getenv("DOCKER_CONTEXT")
+	}
+	if name == "" {
+		if os.Getenv("DOCKER_HOST") != "" {
+			return ""
+		}
+		name = currentContextName()
+	}
+	if name == "" || name == "default" {
+		return ""
+	}
+	return contextMetaValue(name, ProxyJumpKey)
+}
+
+// contextMetaValue reads a single Metadata key from a context's meta.json.
+func contextMetaValue(name, key string) string {
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(name)))
+	b, err := os.ReadFile(filepath.Join(configDir(), "contexts", "meta", digest, "meta.json"))
+	if err != nil {
+		return ""
+	}
+	var meta struct {
+		Metadata map[string]string `json:"Metadata"`
+	}
+	if json.Unmarshal(b, &meta) != nil {
+		return ""
+	}
+	return meta.Metadata[key]
+}
+
 // Context is a Docker CLI context the cli can target.
 type Context struct {
 	Name    string

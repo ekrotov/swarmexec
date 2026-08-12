@@ -2130,29 +2130,113 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		return ctxs[i], true
 	}
-	// showCreateContext opens a form to add a docker context (name + endpoint).
+	// showCreateContext opens a guided form to add a docker context. The operator
+	// explicitly decides whether to connect over SSH and, if so, whether to go
+	// through a jump host — the relevant fields appear only when opted in. For SSH
+	// the jump host(s) are stored on the context and injected as -J into both the
+	// Docker-API and agent-tunnel ssh connections (no ~/.ssh/config needed).
+	// "Test" verifies the assembled endpoint (a live daemon ping) before saving.
 	showCreateContext := func() {
-		var name, host, desc string
-		form := tview.NewForm()
-		form.SetBorder(true).SetTitle(" new context ")
-		form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
-		form.AddInputField("Docker host", "", 44, nil, func(t string) { host = t })
-		form.AddInputField("Description", "", 44, nil, func(t string) { desc = t })
-		if hf, ok := form.GetFormItem(1).(*tview.InputField); ok {
-			hf.SetPlaceholder("ssh://ops@manager  |  tcp://host:2376")
-		}
-		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
-		closeForm := func() { restoreHelp(); pages.RemovePage("ctxform"); app.SetFocus(cxtable) }
-		form.AddButton("Create", func() {
-			if err := dockerctx.Create(strings.TrimSpace(name), strings.TrimSpace(host), strings.TrimSpace(desc)); err != nil {
-				info("create failed: " + err.Error())
-				return
+		var (
+			name, desc                      string
+			useSSH                          = true
+			useJump                         bool
+			sshUser, sshHost, sshPort, jump string
+			plainHost                       string
+		)
+		assembleHost := func() (string, error) {
+			if useSSH {
+				return dockerctx.BuildSSHHost(sshUser, sshHost, sshPort)
 			}
-			closeForm()
-			loadContexts()
-			flash(" [green]created[white] context " + strings.TrimSpace(name))
-		})
-		form.AddButton("Cancel", closeForm)
+			h := strings.TrimSpace(plainHost)
+			if h == "" {
+				return "", fmt.Errorf("docker host is required (tcp:// or unix://)")
+			}
+			return h, nil
+		}
+		proxyJump := func() string {
+			if useSSH && useJump {
+				return strings.TrimSpace(jump)
+			}
+			return ""
+		}
+		form := tview.NewForm()
+		form.SetItemPadding(0) // compact: the SSH+jump form has many rows
+		form.SetBorder(true).SetTitle(" new context ")
+		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
+		closeForm := func() { restoreHelp(); pages.RemovePage("ctxform"); app.SetFocus(cxtable) }
+
+		var render func()
+		render = func() {
+			form.Clear(true)
+			form.AddInputField("Name", name, 32, nil, func(t string) { name = t })
+			form.AddCheckbox("Connect to Docker over SSH", useSSH, func(c bool) {
+				if c != useSSH {
+					useSSH = c
+					render()
+					app.SetFocus(form) // form was rebuilt; restore focus to it
+				}
+			})
+			if useSSH {
+				form.AddInputField("SSH user", sshUser, 20, nil, func(t string) { sshUser = t })
+				form.AddInputField("SSH host", sshHost, 28, nil, func(t string) { sshHost = t })
+				form.AddInputField("SSH port (22)", sshPort, 8, nil, func(t string) { sshPort = t })
+				form.AddCheckbox("Use a jump host (bastion)", useJump, func(c bool) {
+					if c != useJump {
+						useJump = c
+						render()
+						app.SetFocus(form)
+					}
+				})
+				if useJump {
+					form.AddInputField("Jump host(s)", jump, 34, nil, func(t string) { jump = t })
+					if hf, ok := form.GetFormItem(form.GetFormItemCount() - 1).(*tview.InputField); ok {
+						hf.SetPlaceholder("bastion  (or edge,bastion for multi-hop)")
+					}
+				}
+			} else {
+				form.AddInputField("Docker host", plainHost, 34, nil, func(t string) { plainHost = t })
+				if hf, ok := form.GetFormItem(form.GetFormItemCount() - 1).(*tview.InputField); ok {
+					hf.SetPlaceholder("tcp://host:2376 | unix:///var/run/docker.sock")
+				}
+			}
+			form.AddInputField("Description", desc, 34, nil, func(t string) { desc = t })
+			form.AddButton("Test", func() {
+				host, err := assembleHost()
+				if err != nil {
+					info(err.Error())
+					return
+				}
+				pj := proxyJump()
+				flash(" [gray]testing " + host + " …[white]")
+				go func() {
+					terr := pingDockerHost(ctx, host, pj)
+					app.QueueUpdateDraw(func() {
+						if terr != nil {
+							info("test failed: " + terr.Error())
+							return
+						}
+						flash(" [green]✓ connection ok[white] — " + host)
+					})
+				}()
+			})
+			form.AddButton("Create", func() {
+				host, err := assembleHost()
+				if err != nil {
+					info(err.Error())
+					return
+				}
+				if err := dockerctx.Create(dockerctx.CreateOptions{Name: strings.TrimSpace(name), Host: host, Description: strings.TrimSpace(desc), ProxyJump: proxyJump()}); err != nil {
+					info("create failed: " + err.Error())
+					return
+				}
+				closeForm()
+				loadContexts()
+				flash(" [green]created[white] context " + strings.TrimSpace(name))
+			})
+			form.AddButton("Cancel", closeForm)
+		}
+		render()
 		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			if ev.Key() == tcell.KeyEscape {
 				closeForm()
@@ -2160,7 +2244,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("ctxform", centered(form, 66, 13), true, true)
+		pages.AddPage("ctxform", centered(form, 76, 22), true, true)
 		app.SetFocus(form)
 	}
 	// deleteContext removes the selected context behind a confirm. "default" is
