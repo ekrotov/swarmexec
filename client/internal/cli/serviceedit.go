@@ -305,6 +305,19 @@ func forceUpdateService(ctx context.Context, dcli *client.Client, name string) e
 	return err
 }
 
+// removeService permanently deletes a service (and stops all its tasks). This
+// cannot be undone; the caller confirms first.
+func removeService(ctx context.Context, dcli *client.Client, name string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	return dcli.ServiceRemove(ctx, svc.ID)
+}
+
 // updateServiceImage sets a service's image (read-modify-write ServiceUpdate,
 // rolling update). Used to move a :latest service onto the registry's current
 // digest — the caller passes the fully-qualified ref (repo:latest@sha256:…).

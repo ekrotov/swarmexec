@@ -3760,6 +3760,37 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage("forceconfirm", confirm, true, true)
 		app.SetFocus(confirm)
 	}
+	// openRemoveService permanently deletes a service after a confirm. onRemoved is
+	// called on success (the caller closes the inspect overlay and refreshes the
+	// tree, since the service no longer exists).
+	openRemoveService := func(svcName string, back tview.Primitive, onRemoved func()) {
+		confirm := tview.NewModal().
+			SetText(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName)).
+			AddButtons([]string{"Remove", "Cancel"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("svcremoveconfirm")
+				if lbl != "Remove" {
+					app.SetFocus(back)
+					return
+				}
+				go func() {
+					err := removeService(ctx, dcli, svcName)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("remove failed: " + err.Error())
+							app.SetFocus(back)
+							return
+						}
+						info(fmt.Sprintf("removed service %q", svcName))
+						if onRemoved != nil {
+							onRemoved()
+						}
+					})
+				}()
+			})
+		pages.AddPage("svcremoveconfirm", confirm, true, true)
+		app.SetFocus(confirm)
+	}
 	// openImageUpgrade updates a :latest service onto the registry's current digest
 	// (target = repo:latest@sha256:…), after a confirm. Rolling update.
 	openImageUpgrade := func(svcName, target string, back tview.Primitive, after func()) {
@@ -3931,7 +3962,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]d[white] diff", "[yellow]D[white] why/placement", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
+				parts = append(parts, "[yellow]d[white] diff", "[yellow]D[white] why/placement", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement", "[red]X[white] remove")
 				if hasUpgrade {
 					parts = append(parts, "[yellow]u[white] update-to-latest")
 				}
@@ -4172,6 +4203,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
 				openForceUpdate(editSvc, table, reload)
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'X':
+				// Destructive: remove the service, then close inspect (it's gone)
+				// and refresh the tree.
+				openRemoveService(editSvc, table, func() { closeInspect(); loadContainers() })
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'p':
 				openPortsEditor(editSvc, table, reload)
