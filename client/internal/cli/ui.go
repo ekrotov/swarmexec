@@ -3789,6 +3789,43 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage("upgradeconfirm", confirm, true, true)
 		app.SetFocus(confirm)
 	}
+	// showPlacementDiagnosis explains why a service is not running everywhere it is
+	// expected to — per-node exclusion reasons for a global service, and the
+	// scheduler's own message on each non-running task for a replicated one.
+	showPlacementDiagnosis := func(svcName string, back tview.Primitive) {
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" why? — placement of %s ", svcName))
+		tv.SetText("  [gray]diagnosing…[-]")
+		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
+		closeDiag := func() { restoreHelp(); pages.RemovePage("placediag"); app.SetFocus(back) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+				closeDiag()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+			}
+			return ev
+		})
+		pages.AddPage("placediag", centered(tv, 90, 24), true, true)
+		app.SetFocus(tv)
+		go func() {
+			rep, err := diagnoseServicePlacement(ctx, dcli, svcName)
+			app.QueueUpdateDraw(func() {
+				if !pages.HasPage("placediag") {
+					return
+				}
+				if err != nil {
+					tv.SetText("  [red]diagnosis failed:[-] " + tview.Escape(err.Error()))
+					return
+				}
+				tv.SetText(renderPlaceReport(rep))
+			})
+		}()
+	}
 	// openResourcesEditor sets/edits/clears the service's CPU and memory limits
 	// (and reservations) in a form. An empty field clears that limit; applying
 	// does one ServiceUpdate (rolling update).
@@ -3894,7 +3931,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]d[white] diff", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
+				parts = append(parts, "[yellow]d[white] diff", "[yellow]D[white] why/placement", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
 				if hasUpgrade {
 					parts = append(parts, "[yellow]u[white] update-to-latest")
 				}
@@ -4126,6 +4163,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
 				openDiff()
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'D':
+				showPlacementDiagnosis(editSvc, table)
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 's':
 				openScalePrompt(editSvc, table, reload)
@@ -4697,6 +4737,40 @@ func networkTypeColor(n swarmNetwork) tcell.Color {
 	default:
 		return tcell.ColorDimGray
 	}
+}
+
+// renderPlaceReport formats a placement diagnosis as colour-tagged text for the
+// overlay: a ✓/✗ per node (global) or per non-running task (replicated) with the
+// reason, and a short explanation of what "desired" means.
+func renderPlaceReport(rep placeReport) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "  [aqua]%s[-]  —  %s  —  %d/%d running\n\n", tview.Escape(rep.Service), rep.Mode, rep.Running, rep.Desired)
+	if len(rep.Rows) == 0 {
+		b.WriteString("  [green]✓ all desired tasks are running[-]\n")
+	}
+	w := 0
+	for _, r := range rep.Rows {
+		if len(r.Node) > w {
+			w = len(r.Node)
+		}
+	}
+	for _, r := range rep.Rows {
+		mark, color := "[green]✓[-]", "[white]"
+		if !r.OK {
+			mark, color = "[red]✗[-]", "[yellow]"
+		}
+		fmt.Fprintf(&b, "  %s %-*s  %s%s[-]\n", mark, w, tview.Escape(r.Node), color, tview.Escape(r.Detail))
+	}
+	if len(rep.Unevaluated) > 0 {
+		fmt.Fprintf(&b, "\n  [gray]note: constraints not checkable client-side (assumed OK): %s[-]\n", tview.Escape(strings.Join(rep.Unevaluated, ", ")))
+	}
+	b.WriteString("\n")
+	if rep.Global {
+		b.WriteString("  [gray]global: \"desired\" = eligible nodes. A node is excluded by drain/pause,\n  a down state, an unmet placement constraint, or a platform mismatch.[-]\n")
+	} else {
+		b.WriteString("  [gray]replicated: rows are the tasks that are not running, with the\n  scheduler's own reason (constraints, resources, image pull, …).[-]\n")
+	}
+	return b.String()
 }
 
 // nodeAvailColor colours a node's availability: active→green, drain→yellow,
