@@ -29,12 +29,13 @@ import (
 type inspKind int
 
 const (
-	inspTitle  inspKind = iota // the header line (service/task identity)
-	inspHeader                 // a section header
-	inspField                  // a data line — selectable/copyable
-	inspDim                    // a placeholder ("-") — not selectable
-	inspBlank                  // spacer
-	inspNet                    // a collapsible network row: "+ name (N dns names)"
+	inspTitle   inspKind = iota // the header line (service/task identity)
+	inspHeader                  // a section header
+	inspField                   // a data line — selectable/copyable
+	inspDim                     // a placeholder ("-") — not selectable
+	inspBlank                   // spacer
+	inspNet                     // a collapsible network row: "+ name (N dns names)"
+	inspUpgrade                 // an actionable "newer version available" row
 )
 
 // inspLine is one line of the tabular inspect view. For inspNet rows, Net is the
@@ -46,7 +47,8 @@ type inspLine struct {
 	Net       string
 	Count     int
 	Children  []string
-	Encrypted bool // inspNet: network has overlay data-plane encryption on
+	Encrypted bool   // inspNet: network has overlay data-plane encryption on
+	Upgrade   string // inspUpgrade: the image ref to update the service to
 }
 
 type inspBuilder struct{ lines []inspLine }
@@ -61,6 +63,11 @@ func (b *inspBuilder) section(s string) { b.push(inspBlank, ""); b.push(inspHead
 // are the lines shown when expanded; encrypted marks it with a lock icon.
 func (b *inspBuilder) net(name string, dnsCount int, children []string, encrypted bool) {
 	b.lines = append(b.lines, inspLine{Kind: inspNet, Text: name, Net: name, Count: dnsCount, Children: children, Encrypted: encrypted})
+}
+
+// upgrade adds an actionable row offering to update the service to target.
+func (b *inspBuilder) upgrade(text, target string) {
+	b.lines = append(b.lines, inspLine{Kind: inspUpgrade, Text: text, Upgrade: target})
 }
 
 func (b *inspBuilder) kv(k, v string) {
@@ -82,13 +89,17 @@ func (b *inspBuilder) list(items []string) {
 
 // serviceInspectViews returns the formatted (tabular) lines and raw-JSON view of
 // a service inspect. ref is a service name or ID.
-func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string) ([]inspLine, string, error) {
+func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, reg *registryCache) ([]inspLine, string, error) {
 	svc, rawb, err := dcli.ServiceInspectWithRaw(ctx, ref, types.ServiceInspectOptions{})
 	if err != nil {
 		return nil, "", err
 	}
 	names, enc := networkMaps(ctx, dcli)
-	return formatServiceInspect(svc, names, enc), prettyJSON(rawb), nil
+	var img imageStatus
+	if reg != nil && svc.Spec.TaskTemplate.ContainerSpec != nil {
+		img = reg.statusNow(ctx, svc.Spec.TaskTemplate.ContainerSpec.Image, 5*time.Second)
+	}
+	return formatServiceInspect(svc, names, enc, img), prettyJSON(rawb), nil
 }
 
 // taskInspectViews returns the formatted lines and raw-JSON view of a task
@@ -267,7 +278,7 @@ func prettyJSON(raw []byte) string {
 
 // --- tabular formatting -----------------------------------------------------
 
-func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncrypted map[string]bool) []inspLine {
+func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncrypted map[string]bool, img imageStatus) []inspLine {
 	var b inspBuilder
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	b.title("SERVICE  " + svc.Spec.Name)
@@ -293,7 +304,11 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	b.section("PORTS")
 	b.list(servicePortLines(svc))
 	b.section("IMAGE")
-	b.list(imageLine(cs))
+	b.list(imageLines(cs, img))
+	if img.newer && img.latestDigest != "" && cs != nil {
+		target := stripDigest(cs.Image) + "@" + img.latestDigest
+		b.upgrade("⚠ a newer version is available in the registry (latest "+shortDigest(img.latestDigest)+") — press u to update", target)
+	}
 	b.section("MODE")
 	b.list([]string{serviceModeStr(svc)})
 	if cs != nil && len(cs.Env) > 0 {
@@ -534,6 +549,36 @@ func imageLine(cs *swarm.ContainerSpec) []string {
 		return nil
 	}
 	return []string{cs.Image}
+}
+
+// imageLines is imageLine plus, for a :latest image, the real version behind the
+// pinned digest. The "newer available" notice is a separate actionable row.
+func imageLines(cs *swarm.ContainerSpec, st imageStatus) []string {
+	out := imageLine(cs)
+	if out == nil {
+		return nil
+	}
+	if st.version != "" {
+		out = append(out, "version behind :latest: "+st.version)
+	}
+	return out
+}
+
+// shortDigest trims a "sha256:<hex>" digest to a readable prefix.
+func shortDigest(d string) string {
+	d = strings.TrimPrefix(d, "sha256:")
+	if len(d) > 12 {
+		return d[:12]
+	}
+	return d
+}
+
+// stripDigest removes an "@sha256:…" suffix from an image ref, leaving repo:tag.
+func stripDigest(ref string) string {
+	if i := strings.IndexByte(ref, '@'); i >= 0 {
+		return ref[:i]
+	}
+	return ref
 }
 
 func servicePortLines(svc swarm.Service) []string {

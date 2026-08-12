@@ -699,6 +699,23 @@
       </table></div>
 
       <h3>Containers tab</h3>
+      <p>
+        <strong>:latest version check.</strong> Swarm pins <code>:latest</code> to a digest at
+        deploy time, so a service tagged <code>:latest</code> actually runs a fixed image.
+        swarmexec resolves that against the registry (using your local docker credentials) and
+        annotates the service row <strong>right after the image URI</strong>: the
+        <strong>real version</strong> in parentheses — read from the image's
+        <code>org.opencontainers.image.version</code> label — and an
+        <strong>up-arrow&nbsp;↑</strong> when the registry's current <code>:latest</code> is a
+        newer digest than the one the service is pinned to (e.g.
+        <code>nginx:latest (1.4.0) ↑</code>).
+        Best-effort and cached: registry errors just leave the row unannotated. The inspect
+        overlay's <code>IMAGE</code> section shows the same version and, when a newer image
+        exists, a selectable <em>newer&nbsp;version&nbsp;available</em> row — move onto it and
+        press <kbd>u</kbd> (or <kbd>Enter</kbd>) to <strong>update the service</strong> onto the
+        registry's current <code>:latest</code> digest (one <code>ServiceUpdate</code> / rolling
+        update, behind a confirm).
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>

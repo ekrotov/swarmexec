@@ -45,10 +45,10 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 		Mounts:  []mount.Mount{{Type: mount.TypeVolume, Source: "assets", Target: "/data"}},
 	}
 
-	lines := formatServiceInspect(s, map[string]string{"netid1": "frontend-net"}, map[string]bool{"netid1": true})
+	lines := formatServiceInspect(s, map[string]string{"netid1": "frontend-net"}, map[string]bool{"netid1": true}, imageStatus{version: "1.2.3", newer: true, latestDigest: "sha256:abcdef0123456789"})
 	joined := joinInspLines(lines)
 
-	for _, want := range []string{"frontend-net", "tier=frontend", "assets -> /data", "db-pw", "nginx:1"} {
+	for _, want := range []string{"frontend-net", "tier=frontend", "assets -> /data", "db-pw", "nginx:1", "version behind :latest: 1.2.3", "newer version is available"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("formatted output missing %q:\n%s", want, joined)
 		}
@@ -58,6 +58,19 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 		if l.Kind == inspNet && l.Net == "frontend-net" && !l.Encrypted {
 			t.Errorf("network row not marked encrypted: %+v", l)
 		}
+	}
+	// A newer registry image produces an actionable upgrade row targeting the new digest.
+	var up *inspLine
+	for i := range lines {
+		if lines[i].Kind == inspUpgrade {
+			up = &lines[i]
+		}
+	}
+	if up == nil {
+		t.Fatal("expected an inspUpgrade row when a newer image is available")
+	}
+	if !strings.Contains(up.Upgrade, "@sha256:abcdef0123456789") {
+		t.Errorf("upgrade target = %q, want the new latest digest", up.Upgrade)
 	}
 	// Operator-first ordering: networks, labels, volumes, secrets — all before META.
 	iNet := headerIndex(lines, "NETWORKS")

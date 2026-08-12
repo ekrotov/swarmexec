@@ -100,13 +100,14 @@ type Candidate struct {
 // containers overview — which lists every service, including those with zero
 // running tasks (which Candidates omits).
 type Service struct {
-	Name    string
-	Running int
-	Desired int
-	Global  bool
-	Mode    string // replicated | global | replicated-job | global-job
-	Image   string // container image, digest stripped for display
-	Ports   string // published ports, e.g. "*:80->80/tcp"; "" if none
+	Name     string
+	Running  int
+	Desired  int
+	Global   bool
+	Mode     string // replicated | global | replicated-job | global-job
+	Image    string // container image, digest stripped for display
+	ImageRef string // full container image as pinned in the spec (digest kept)
+	Ports    string // published ports, e.g. "*:80->80/tcp"; "" if none
 }
 
 // AmbiguousError is returned when a bare service name has more than one running
@@ -437,11 +438,12 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 	out := make([]Service, 0, len(svcs))
 	for _, s := range svcs {
 		svc := Service{
-			Name:   s.Spec.Name,
-			Global: s.Spec.Mode.Global != nil,
-			Mode:   serviceMode(s.Spec.Mode),
-			Image:  serviceImage(s.Spec.TaskTemplate.ContainerSpec),
-			Ports:  servicePorts(servicePortConfigs(s)),
+			Name:     s.Spec.Name,
+			Global:   s.Spec.Mode.Global != nil,
+			Mode:     serviceMode(s.Spec.Mode),
+			Image:    serviceImage(s.Spec.TaskTemplate.ContainerSpec),
+			ImageRef: serviceImageRef(s.Spec.TaskTemplate.ContainerSpec),
+			Ports:    servicePorts(servicePortConfigs(s)),
 		}
 		if st := s.ServiceStatus; st != nil {
 			svc.Running = int(st.RunningTasks)
@@ -506,6 +508,16 @@ func serviceImage(cs *swarm.ContainerSpec) string {
 		img = img[:i]
 	}
 	return img
+}
+
+// serviceImageRef returns the service's container image exactly as pinned in the
+// spec — keeping any @sha256 digest (what the tasks actually run), so callers can
+// resolve a :latest tag back to its real version.
+func serviceImageRef(cs *swarm.ContainerSpec) string {
+	if cs == nil {
+		return ""
+	}
+	return cs.Image
 }
 
 // servicePortConfigs returns the service's published ports, preferring the

@@ -305,6 +305,26 @@ func forceUpdateService(ctx context.Context, dcli *client.Client, name string) e
 	return err
 }
 
+// updateServiceImage sets a service's image (read-modify-write ServiceUpdate,
+// rolling update). Used to move a :latest service onto the registry's current
+// digest — the caller passes the fully-qualified ref (repo:latest@sha256:…).
+func updateServiceImage(ctx context.Context, dcli *client.Client, name, image string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	if svc.Spec.TaskTemplate.ContainerSpec == nil {
+		return fmt.Errorf("service %q has no container spec", name)
+	}
+	spec := svc.Spec
+	spec.TaskTemplate.ContainerSpec.Image = image
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	return err
+}
+
 // currentServiceEnv returns a service's environment variables as "KEY=VALUE".
 func currentServiceEnv(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)

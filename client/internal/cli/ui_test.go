@@ -82,12 +82,16 @@ func TestServiceColor(t *testing.T) {
 func TestServiceRow(t *testing.T) {
 	cols := svcColumns{name: 6, mode: 10, repl: 3, image: 11}
 	web := resolve.Service{Name: "web", Mode: "replicated", Running: 1, Desired: 3, Image: "nginx:1.27", Ports: "*:80->80/tcp"}
-	if got, want := serviceRow(web, cols), "web     replicated  1/3  nginx:1.27   *:80->80/tcp"; got != want {
+	if got, want := serviceRow(web, cols, ""), "web     replicated  1/3  nginx:1.27   *:80->80/tcp"; got != want {
 		t.Errorf("serviceRow(web) = %q, want %q", got, want)
+	}
+	// The version/↑ annotation sits inside the image cell, right after the URI.
+	if got := serviceRow(web, cols, " (1.4.0) ↑"); !strings.Contains(got, "nginx:1.27 (1.4.0) ↑") {
+		t.Errorf("serviceRow(web, suffix) = %q, want image+suffix adjacent", got)
 	}
 	// No ports → the padded image column must not leave a trailing space.
 	db := resolve.Service{Name: "db", Mode: "global", Running: 2, Desired: 2, Image: "postgres:15"}
-	got := serviceRow(db, cols)
+	got := serviceRow(db, cols, "")
 	if strings.HasSuffix(got, " ") {
 		t.Errorf("serviceRow(db) has trailing space: %q", got)
 	}
@@ -97,7 +101,7 @@ func TestServiceRow(t *testing.T) {
 		}
 	}
 	// Zero image width drops the image column entirely.
-	bare := serviceRow(resolve.Service{Name: "x", Mode: "replicated"}, svcColumns{name: 1, mode: 10, repl: 3})
+	bare := serviceRow(resolve.Service{Name: "x", Mode: "replicated"}, svcColumns{name: 1, mode: 10, repl: 3}, "")
 	if strings.Contains(bare, "-") {
 		t.Errorf("serviceRow with no image column should not render a dash: %q", bare)
 	}

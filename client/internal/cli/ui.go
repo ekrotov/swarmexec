@@ -208,12 +208,21 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// just padding so the rows still line up.
 	svcByName := map[string]resolve.Service{}
 	svcCols := svcColumns{}
+	// regCache resolves the real version behind a service's :latest tag and whether
+	// the registry has a newer one; assigned just below. Its result is appended to
+	// the service row (e.g. "(1.2.3) ↑").
+	var regCache *registryCache
 	markService := func(n *tview.TreeNode) {
 		ref, ok := n.GetReference().(svcRef)
 		if !ok {
 			return
 		}
-		row := serviceRow(svcByName[ref.name], svcCols)
+		svc := svcByName[ref.name]
+		suffix := ""
+		if regCache != nil {
+			suffix = versionSuffix(regCache.status(ctx, svc.ImageRef))
+		}
+		row := serviceRow(svc, svcCols, suffix)
 		switch {
 		case len(n.GetChildren()) == 0:
 			n.SetText("  " + row)
@@ -223,6 +232,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			n.SetText("▸ " + row)
 		}
 	}
+	// When a background registry check completes, re-mark the service rows so the
+	// version / ↑ appears without a full tree reload.
+	regCache = newRegistryCache(func() {
+		app.QueueUpdateDraw(func() {
+			for _, sn := range croot.GetChildren() {
+				markService(sn)
+			}
+		})
+	})
 
 	renderContainers := func() {
 		// Remember the cursor (a leaf by container id, else a service by name)
@@ -304,7 +322,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				continue
 			}
 			// Collapsed by default (spec); keep a service the operator expanded.
-			svcNode := tview.NewTreeNode(serviceRow(s, svcCols)).
+			svcNode := tview.NewTreeNode(serviceRow(s, svcCols, "")).
 				SetColor(serviceColor(s.Running, s.Desired)).
 				SetReference(svcRef{name: s.Name}).
 				SetExpanded(wasExpanded[s.Name])
@@ -3742,6 +3760,35 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage("forceconfirm", confirm, true, true)
 		app.SetFocus(confirm)
 	}
+	// openImageUpgrade updates a :latest service onto the registry's current digest
+	// (target = repo:latest@sha256:…), after a confirm. Rolling update.
+	openImageUpgrade := func(svcName, target string, back tview.Primitive, after func()) {
+		confirm := tview.NewModal().
+			SetText(fmt.Sprintf("Update %q to the newer :latest image?\n\n%s\n\nThis triggers a rolling update onto the registry's current digest.", svcName, target)).
+			AddButtons([]string{"Update", "Cancel"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("upgradeconfirm")
+				app.SetFocus(back)
+				if lbl != "Update" {
+					return
+				}
+				go func() {
+					err := updateServiceImage(ctx, dcli, svcName, target)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("update failed: " + err.Error())
+							return
+						}
+						info(fmt.Sprintf("updating %q — rolling update started", svcName))
+						if after != nil {
+							after()
+						}
+					})
+				}()
+			})
+		pages.AddPage("upgradeconfirm", confirm, true, true)
+		app.SetFocus(confirm)
+	}
 	// openResourcesEditor sets/edits/clears the service's CPU and memory limits
 	// (and reservations) in a form. An empty field clears that limit; applying
 	// does one ServiceUpdate (rolling update).
@@ -3832,9 +3879,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		table.SetBorder(true)
 		var lines []inspLine
 		var rawJSON string
-		var plain []string            // plain text of each current row, for copy
-		rowNet := map[int]string{}    // table row -> network name, for collapsible net rows
-		expanded := map[string]bool{} // which networks are expanded
+		var plain []string             // plain text of each current row, for copy
+		rowNet := map[int]string{}     // table row -> network name, for collapsible net rows
+		rowUpgrade := map[int]string{} // table row -> target image ref, for the upgrade row
+		hasUpgrade := false            // an upgrade row is present (for the footer hint)
+		expanded := map[string]bool{}  // which networks are expanded
 		loaded := false
 		showRaw := false
 
@@ -3846,6 +3895,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
 				parts = append(parts, "[yellow]d[white] diff", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement")
+				if hasUpgrade {
+					parts = append(parts, "[yellow]u[white] update-to-latest")
+				}
 			}
 			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
@@ -3872,6 +3924,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			for k := range rowNet {
 				delete(rowNet, k)
 			}
+			for k := range rowUpgrade {
+				delete(rowUpgrade, k)
+			}
+			hasUpgrade = false
 			if !loaded {
 				table.SetCell(0, 0, tview.NewTableCell("loading…").SetSelectable(false))
 				plain = append(plain, "")
@@ -3924,6 +3980,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 								put("      "+c, tcell.ColorGray, false, true, c, "")
 							}
 						}
+					case inspUpgrade:
+						up := r // row index this line will occupy
+						put("  "+ln.Text, tcell.ColorYellow, true, true, ln.Text, "")
+						rowUpgrade[up] = ln.Upgrade
+						hasUpgrade = true
 					default: // inspField
 						put(ln.Text, tcell.ColorWhite, false, true, ln.Text, "")
 					}
@@ -4034,13 +4095,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				closeInspect()
 				return nil
 			case ev.Key() == tcell.KeyEnter:
-				// Enter on a collapsible network row toggles it; otherwise copies.
+				// Enter toggles a collapsible network row, triggers an upgrade row,
+				// otherwise copies the line.
 				r, _ := table.GetSelection()
 				if net, ok := rowNet[r]; ok {
 					expanded[net] = !expanded[net]
 					populate()
+				} else if target, ok := rowUpgrade[r]; ok && editSvc != "" {
+					openImageUpgrade(editSvc, target, table, reload)
 				} else {
 					copyLine()
+				}
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'u':
+				r, _ := table.GetSelection()
+				if target, ok := rowUpgrade[r]; ok {
+					openImageUpgrade(editSvc, target, table, reload)
 				}
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':
@@ -4127,7 +4197,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		if ref, ok := n.GetReference().(svcRef); ok {
 			showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service", ref.name,
-				func() ([]inspLine, string, error) { return serviceInspectViews(ctx, dcli, ref.name) })
+				func() ([]inspLine, string, error) { return serviceInspectViews(ctx, dcli, ref.name, regCache) })
 		}
 	}
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -4695,12 +4765,14 @@ type svcColumns struct {
 // "name  mode  running/desired  image  ports" — padded to the shared column
 // widths. Image and ports are appended only when present, and trailing padding
 // is trimmed so a selected row's highlight does not run past the text.
-func serviceRow(s resolve.Service, c svcColumns) string {
+func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%-*s  %-*s  %-*s",
 		c.name, orDash(s.Name), c.mode, orDash(s.Mode), c.repl, fmt.Sprintf("%d/%d", s.Running, s.Desired))
 	if c.image > 0 {
-		fmt.Fprintf(&b, "  %-*s", c.image, orDash(s.Image))
+		// The resolved-version / ↑ annotation sits inside the image cell so it
+		// reads right next to the image URI, not far off in the ports column.
+		fmt.Fprintf(&b, "  %-*s", c.image, orDash(s.Image)+imageSuffix)
 	}
 	if s.Ports != "" {
 		fmt.Fprintf(&b, "  %s", s.Ports)
