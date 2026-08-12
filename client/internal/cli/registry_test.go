@@ -85,11 +85,12 @@ func (f fakeResolver) versionLabel(_ context.Context, repo, digest string) (stri
 func TestCheckImageStatus(t *testing.T) {
 	res := fakeResolver{
 		latest: map[string]string{"nginx": "sha256:new"},
-		labels: map[string]string{"nginx@sha256:old": "1.0.0"},
+		labels: map[string]string{"nginx@sha256:old": "1.0.0", "nginx@sha256:new": "2.0.0"},
 	}
-	// Pinned to an old digest → newer available, version resolved.
+	// Pinned to an old digest → newer available, both the running and the newer
+	// version resolved.
 	st := checkImageStatus(context.Background(), res, "nginx:latest@sha256:old")
-	if !st.ok || !st.newer || st.version != "1.0.0" || st.latestDigest != "sha256:new" {
+	if !st.ok || !st.newer || st.version != "1.0.0" || st.latestDigest != "sha256:new" || st.latestVersion != "2.0.0" {
 		t.Errorf("stale status = %+v", st)
 	}
 	// Pinned to the current digest → not newer.
