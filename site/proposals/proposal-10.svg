@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 150" width="150" height="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <!-- Concept 10: mTLS lock + exec badge -->
+  <rect x="1" y="1" width="148" height="148" rx="34" fill="#0d1117" stroke="#30363d" stroke-width="2"/>
+  <!-- shackle -->
+  <path d="M56 68 v-10 a19 19 0 0 1 38 0 v10" fill="none" stroke="#39c5cf" stroke-width="8"/>
+  <!-- lock body -->
+  <rect x="46" y="66" width="58" height="46" rx="10" fill="#39c5cf"/>
+  <!-- prompt >_ inside body -->
+  <path d="M62 80 L74 89 L62 98" fill="none" stroke="#0d1117" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="78" y="93" width="16" height="5.5" rx="2.5" fill="#0d1117"/>
+</svg>

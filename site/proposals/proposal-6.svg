@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 150" width="150" height="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <!-- Concept 6: prompt-glyph app icon (>_) -->
+  <rect x="1" y="1" width="148" height="148" rx="34" fill="#0d1117" stroke="#30363d" stroke-width="2"/>
+  <path d="M50 50 L82 75 L50 100" fill="none" stroke="#39c5cf" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="82" y="90" width="34" height="11" rx="5.5" fill="#2f81f7">
+    <animate attributeName="opacity" values="1;1;0;0" dur="1.1s" repeatCount="indefinite"/>
+  </rect>
+</svg>
