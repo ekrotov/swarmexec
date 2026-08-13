@@ -2064,6 +2064,36 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			showSecretDetail(s)
 		}
 	})
+	// openDeleteSecret permanently removes a secret after a confirm. Docker refuses
+	// to remove a secret a service still references, so warn up front when in use.
+	openDeleteSecret := func(s swarmSecret) {
+		msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
+		if len(s.Services) > 0 {
+			msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
+		}
+		m := tview.NewModal().SetText(msg).AddButtons([]string{"Delete", "Cancel"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("secdelconfirm")
+				if lbl != "Delete" {
+					app.SetFocus(sectable)
+					return
+				}
+				go func() {
+					err := removeSecret(ctx, dcli, s.Name)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("remove failed: " + err.Error())
+							app.SetFocus(sectable)
+							return
+						}
+						loadSecrets()
+						flash(" [green]removed[white] secret " + s.Name)
+					})
+				}()
+			})
+		pages.AddPage("secdelconfirm", m, true, true)
+		app.SetFocus(m)
+	}
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx is this session's effective docker context (what the UI is
@@ -2721,7 +2751,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "networks":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  %s", kl(km.NetAttached), kl(km.NetNew), tail)
 		case "secrets":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  %s", tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] delete  %s", kl(km.SecDelete), tail)
 		case "contexts":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete  %s",
 				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete), tail)
@@ -3844,9 +3874,45 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage("forceconfirm", confirm, true, true)
 		app.SetFocus(confirm)
 	}
+	// promptDeleteOrphanSecrets asks whether to also delete secrets that the
+	// just-removed service was the only user of (nothing references them now).
+	promptDeleteOrphanSecrets := func(orphans []secretRef) {
+		names := make([]string, 0, len(orphans))
+		for _, o := range orphans {
+			names = append(names, o.Name)
+		}
+		m := tview.NewModal().
+			SetText(fmt.Sprintf("The removed service used %d secret(s) that no other service references:\n\n%s\n\nDelete them too?", len(orphans), strings.Join(names, ", "))).
+			AddButtons([]string{"Delete secrets", "Keep"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("orphansecrets")
+				app.SetFocus(ctree)
+				if lbl != "Delete secrets" {
+					return
+				}
+				go func() {
+					var failed []string
+					for _, o := range orphans {
+						if err := removeSecret(ctx, dcli, o.Name); err != nil {
+							failed = append(failed, o.Name+": "+err.Error())
+						}
+					}
+					app.QueueUpdateDraw(func() {
+						if len(failed) == 0 {
+							flash(fmt.Sprintf(" [green]deleted[white] %d orphaned secret(s)", len(orphans)))
+							return
+						}
+						info("some secrets could not be deleted:\n" + joinLines(failed))
+					})
+				}()
+			})
+		pages.AddPage("orphansecrets", m, true, true)
+		app.SetFocus(m)
+	}
 	// openRemoveService permanently deletes a service after a confirm. onRemoved is
 	// called on success (the caller closes the inspect overlay and refreshes the
-	// tree, since the service no longer exists).
+	// tree, since the service no longer exists). If the service was the sole user
+	// of any secret, it then offers to delete those now-orphaned secrets.
 	openRemoveService := func(svcName string, back tview.Primitive, onRemoved func()) {
 		confirm := tview.NewModal().
 			SetText(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName)).
@@ -3858,6 +3924,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				go func() {
+					// Compute orphaned secrets BEFORE removal (we need the service's
+					// spec and the other services' current usage).
+					orphans, _ := secretsOnlyUsedBy(ctx, dcli, svcName)
 					err := removeService(ctx, dcli, svcName)
 					app.QueueUpdateDraw(func() {
 						if err != nil {
@@ -3868,6 +3937,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						info(fmt.Sprintf("removed service %q", svcName))
 						if onRemoved != nil {
 							onRemoved()
+						}
+						if len(orphans) > 0 {
+							promptDeleteOrphanSecrets(orphans)
 						}
 					})
 				}()
@@ -4669,6 +4741,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return tabKeys(ev)
 	})
 	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecDelete {
+			if s, ok := selectedSecret(); ok {
+				openDeleteSecret(s)
+			}
+			return nil
+		}
 		return tabKeys(ev)
 	})
 	// On the contexts table: "n" creates, "d" removes, "u" (or Enter) activates.

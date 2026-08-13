@@ -836,7 +836,7 @@
           <tr><td><kbd>d</kbd></td><td>diff — shows a unified diff of the service's <em>current</em> spec against its <em>previous</em> one (what the last rolling update changed), using Swarm's <code>PreviousSpec</code>. Changed fields are listed grouped by field with <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span> lines (image, mode/replicas, env, labels, networks, aliases, secrets, mounts, ports, placement constraints, spread preferences, resource limits/reservations); unchanged fields are omitted. If the service has never been updated (no previous spec) it says so. Read-only overlay — <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> closes</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
           <tr><td><kbd>f</kbd></td><td>force-update — redeploys the service without changing its spec (the equivalent of <code>docker service update --force</code>: bumps <code>TaskTemplate.ForceUpdate</code>), after a confirm. Every task is restarted / rescheduled, which is how you unstick a service sitting in an <strong>incomplete state</strong> (e.g. <code>1/2</code> replicas). One <code>ServiceUpdate</code> (rolling update)</td></tr>
-          <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the container tree refreshes</td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the container tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>
           <tr><td><kbd>D</kbd></td><td>diagnose placement (capital <kbd>D</kbd>) — answers <em>why a service isn't running everywhere you expect</em> in one view, instead of chasing it through several <code>docker</code> commands. For a <strong>global</strong> service it lists every node with ✓ running or ✗ and the reason it is excluded (<strong>availability</strong> drain/pause, a <strong>down</strong> state, an unmet placement <strong>constraint</strong>, or a <strong>platform</strong> mismatch) — which is why a 3-node cluster can legitimately show <code>2/2</code> (the third node is not eligible). For a <strong>replicated</strong> service it lists each task that is <em>not</em> running with the scheduler's own message (constraints, insufficient resources, image-pull errors, …). Constraints that can't be checked client-side (<code>engine.labels.*</code>) are noted, not guessed. Read-only overlay</td></tr>
           <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code></td></tr>
           <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries</td></tr>
@@ -974,6 +974,7 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
+          <tr><td><kbd>d</kbd></td><td>on the secrets list: <strong>delete</strong> the selected secret — permanently removes it (one <code>SecretRemove</code>), behind a confirm; cannot be undone. Docker refuses to remove a secret still referenced by a service, so the confirm <strong>warns when it's in use</strong> and lists those services (detach it there first). Not to be confused with the <kbd>d</kbd> <em>inside</em> the detail view, which detaches the secret from a service</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
           <tr><td><kbd>d</kbd></td><td>in the detail view: detach the secret from a service — an autocomplete input (suggesting services that currently use it; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
@@ -1084,7 +1085,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l
+node_edit_labels: l    secret_delete: d
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two
