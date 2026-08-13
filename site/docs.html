@@ -91,11 +91,42 @@
       .toc ol { columns: 1; }
       body { padding: 1.25rem 1rem 3rem; }
     }
+    /* language switcher */
+    .langbar { position: fixed; top: .75rem; right: .75rem; display: flex; gap: .25rem; z-index: 10; font-size: .75rem; }
+    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
+    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
   </style>
+  <script>
+    // i18n: redirect to the browser language on first visit; the switcher stores the choice.
+    window.__i18n = { base: 'docs', baseLang: 'en' };
+    (function () {
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      try {
+        var w = localStorage.getItem('sx-lang');
+        if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
+        if (w !== P) { location.replace(w === I.baseLang ? I.base + '.html' : I.base + '.' + w + '.html'); return; }
+      } catch (e) { }
+      document.addEventListener('DOMContentLoaded', function () {
+        var bar = document.querySelector('.langbar'); if (!bar) return;
+        var c = bar.querySelector('a[data-lang="' + P + '"]'); if (c) c.setAttribute('aria-current', 'true');
+        bar.addEventListener('click', function (e) {
+          var a = e.target.closest('a[data-lang]');
+          if (a) { try { localStorage.setItem('sx-lang', a.getAttribute('data-lang')); } catch (_) { } }
+        });
+      });
+    })();
+  </script>
   <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
   <script defer src="https://stats.cloud-surfers.net/recorder.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>
+  <nav class="langbar" aria-label="Language">
+    <a data-lang="en" hreflang="en" href="docs.html">EN</a>
+    <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
+    <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
+    <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
+  </nav>
   <main>
     <div class="card">
       <a class="home" href="/">&larr; swarm-exec.logle.io</a>

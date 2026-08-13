@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<!--
+  Original privacy notice written for swarm-exec.logle.io. This is NOT a copy of
+  the cloud-surfers.com privacy policy (that one may derive from a licensed
+  generator bound to its own domain). It describes THIS site's actual processing
+  (own hosting + self-hosted Umami analytics and session recording). It is a
+  starting draft — have it
+  reviewed by whoever is responsible for data protection before relying on it.
+  It is not legal advice.
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confidentialité — swarmexec</title>
+  <meta name="description" content="Politique de confidentialité pour swarm-exec.logle.io.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #161b22; --border: #30363d;
+      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--fg);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      line-height: 1.6; padding: 2rem 1.5rem 4rem;
+    }
+    main { width: 100%; max-width: 760px; margin: 0 auto; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2.5rem;
+    }
+    a { color: var(--accent); }
+    .home { color: var(--muted); text-decoration: none; font-size: .85rem; }
+    .home:hover { color: var(--accent); }
+    h1 { margin: .5rem 0 .25rem; font-size: 1.7rem; letter-spacing: -.02em; }
+    h1 .cursor { color: var(--aqua); }
+    .tagline { color: var(--aqua); margin: 0 0 1.5rem; font-size: 1rem; }
+    h2 {
+      margin: 2rem 0 .6rem; font-size: 1.1rem; letter-spacing: -.01em;
+      border-bottom: 1px solid var(--border); padding-bottom: .35rem;
+    }
+    p { color: var(--fg); }
+    p.lead { color: var(--muted); }
+    ul { padding-left: 1.3rem; }
+    li { margin: .3rem 0; }
+    code {
+      background: #010409; border: 1px solid var(--border); border-radius: 4px;
+      padding: .08em .35em; font-size: .85em;
+    }
+    footer { color: var(--muted); font-size: .8rem; margin-top: 2.25rem; border-top: 1px solid var(--border); padding-top: 1.25rem; }
+    footer a { color: var(--muted); }
+    .legal { margin-top: .6rem; }
+    .legal a { text-decoration: underline; }
+    .legal a:hover { color: var(--accent); }
+    @media (max-width: 560px) { .card { padding: 1.5rem; } body { padding: 1.25rem 1rem 3rem; } }
+    /* language switcher */
+    .langbar { position: fixed; top: .75rem; right: .75rem; display: flex; gap: .25rem; z-index: 10; font-size: .75rem; }
+    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
+    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
+  </style>
+  <script>
+    // i18n: this privacy page's base language is German; redirect to the browser
+    // language on first visit; the switcher stores the choice.
+    window.__i18n = { base: 'datenschutz', baseLang: 'de' };
+    (function () {
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      try {
+        var w = localStorage.getItem('sx-lang');
+        if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
+        if (w !== P) { location.replace(w === I.baseLang ? I.base + '.html' : I.base + '.' + w + '.html'); return; }
+      } catch (e) { }
+      document.addEventListener('DOMContentLoaded', function () {
+        var bar = document.querySelector('.langbar'); if (!bar) return;
+        var c = bar.querySelector('a[data-lang="' + P + '"]'); if (c) c.setAttribute('aria-current', 'true');
+        bar.addEventListener('click', function (e) {
+          var a = e.target.closest('a[data-lang]');
+          if (a) { try { localStorage.setItem('sx-lang', a.getAttribute('data-lang')); } catch (_) { } }
+        });
+      });
+    })();
+  </script>
+</head>
+<body>
+  <nav class="langbar" aria-label="Language">
+    <a data-lang="en" hreflang="en" href="datenschutz.en.html">EN</a>
+    <a data-lang="de" hreflang="de" href="datenschutz.html">DE</a>
+    <a data-lang="es" hreflang="es" href="datenschutz.es.html">ES</a>
+    <a data-lang="fr" hreflang="fr" href="datenschutz.fr.html">FR</a>
+  </nav>
+  <main>
+    <div class="card">
+      <a class="home" href="/">&larr; swarm-exec.logle.io</a>
+      <h1>Confidentialité<span class="cursor">_</span></h1>
+      <p class="tagline">Politique de confidentialité de ce site web.</p>
+
+      <p class="lead">
+        La présente déclaration informe sur le traitement des données à caractère
+        personnel lors de la visite de <strong>swarm-exec.logle.io</strong>. Pour
+        les autres services de Cloud Surfers GmbH, les mentions liées sur ceux-ci
+        s'appliquent.
+      </p>
+
+      <h2>1. Responsable du traitement</h2>
+      <p>
+        Le responsable au sens du RGPD est Cloud Surfers GmbH. L'adresse et la
+        représentation figurent dans les
+        <a href="https://www.cloud-surfers.com/impressum/">mentions légales</a>.
+        Contact pour les questions relatives à la protection des données :
+        <a href="mailto:eugen.krotov@cloud-surfers.de">eugen.krotov@cloud-surfers.de</a>.
+      </p>
+
+      <h2>2. Hébergement et fichiers journaux du serveur</h2>
+      <p>
+        Le site web est exploité sur une infrastructure propre. Lors de l'accès,
+        le serveur web traite des données d'accès techniquement nécessaires, que
+        votre navigateur transmet :
+      </p>
+      <ul>
+        <li>l'adresse IP de l'appareil qui effectue la requête,</li>
+        <li>la date et l'heure de l'accès,</li>
+        <li>la ressource demandée et le code d'état HTTP,</li>
+        <li>le volume de données transféré,</li>
+        <li>la page de provenance (référent) ainsi que l'identifiant du navigateur et du système d'exploitation (User-Agent).</li>
+      </ul>
+      <p>
+        La finalité est la fourniture, la stabilité et la sécurité du service.
+        La base juridique est l'art. 6, par. 1, point f) du RGPD (intérêt légitime
+        à une exploitation sûre et fonctionnelle). Les données de journalisation ne
+        sont conservées que le temps nécessaire à ces finalités.
+      </p>
+
+      <h2>3. Mesure d'audience avec un outil auto-hébergé</h2>
+      <p>
+        Pour améliorer notre service, nous utilisons un <strong>outil d'analyse
+        propre, exploité en interne</strong> (Umami), qui fonctionne sur notre
+        propre infrastructure à l'adresse <code>stats.cloud-surfers.net</code>.
+        L'analyse est réalisée volontairement de manière économe en données :
+      </p>
+      <ul>
+        <li><strong>Aucun cookie</strong> n'est déposé et aucun profil
+          d'utilisateur inter-appareils n'est constitué.</li>
+        <li>Les données restent sur notre propre infrastructure ;
+          <strong>aucune transmission à des tiers</strong> ni aucun transfert vers
+          des pays tiers n'a lieu.</li>
+        <li>Les adresses IP ne sont pas conservées durablement.</li>
+        <li>Sont collectées des données d'utilisation agrégées telles que les pages
+          consultées, la page de provenance, la région d'origine approximative
+          ainsi que le type de navigateur et d'appareil.</li>
+      </ul>
+      <p>
+        La finalité est la compréhension de l'utilisation et le développement
+        continu du site web. La base juridique est l'art. 6, par. 1, point f) du
+        RGPD (intérêt légitime à une conception adaptée aux besoins). Comme aucun
+        cookie ni technique comparable n'est utilisé sur votre appareil, aucun
+        consentement n'est requis à cet effet.
+      </p>
+
+      <h2>4. Enregistrement de session (Session Replay)</h2>
+      <p>
+        En complément de la mesure d'audience, nous utilisons une fonction du même
+        outil auto-hébergé (Umami, <code>stats.cloud-surfers.net</code>) pour
+        <strong>enregistrer des sessions individuelles</strong>, afin de pouvoir
+        retracer le déroulement d'une visite et améliorer l'ergonomie des pages.
+        Sont notamment enregistrés :
+      </p>
+      <ul>
+        <li>les mouvements de souris et de pointeur, les clics ainsi que le comportement de défilement,</li>
+        <li>les changements de page et les contenus consultés au sein du site web,</li>
+        <li>des données techniques telles que la taille de la fenêtre et de l'écran, le navigateur et le type d'appareil.</li>
+      </ul>
+      <p>
+        Ce traitement a lui aussi lieu <strong>exclusivement sur notre propre
+        infrastructure</strong> ; aucune transmission à des tiers ni aucun transfert
+        vers des pays tiers n'a lieu, et aucun profil inter-appareils n'est
+        constitué. Ce site web se compose exclusivement de pages d'information
+        accessibles au public et ne contient aucun formulaire de saisie de données
+        à caractère personnel.
+      </p>
+      <p>
+        L'enregistrement de session va au-delà d'une simple mesure d'audience.
+        La base juridique est notre intérêt légitime à une conception compréhensible
+        et conviviale de notre service (art. 6, par. 1, point f) du RGPD). Vous
+        pouvez vous opposer à tout moment à ce traitement avec effet pour l'avenir
+        (art. 21 du RGPD) ; adressez-vous pour cela à l'adresse de contact indiquée
+        au point 1.
+      </p>
+
+      <h2>5. Liens externes</h2>
+      <p>
+        Le site web renvoie vers des services externes (notamment le dépôt GitLab
+        et Docker Hub). Lorsque vous cliquez sur un tel lien, vous quittez cette
+        page ; nous n'avons aucune influence sur le traitement qui y est effectué.
+        Pour Docker Hub (Docker, Inc., États-Unis), cela peut entraîner un transfert
+        vers un pays tiers. Les mentions relatives à la protection des données du
+        fournisseur concerné s'appliquent.
+      </p>
+
+      <h2>6. Vos droits</h2>
+      <p>
+        Dans les conditions prévues par la loi, vous disposez du droit d'accès
+        (art. 15), de rectification (art. 16), d'effacement (art. 17), de limitation
+        du traitement (art. 18), de portabilité des données (art. 20) ainsi que d'un
+        <strong>droit d'opposition</strong> aux traitements fondés sur des intérêts
+        légitimes (art. 21 du RGPD). Vous disposez en outre d'un droit de réclamation
+        auprès d'une autorité de contrôle en matière de protection des données. Pour
+        exercer ces droits, adressez-vous à l'adresse de contact indiquée ci-dessus.
+      </p>
+
+      <footer>
+        Version : juillet 2026 · s'applique à <strong>swarm-exec.logle.io</strong><br>
+        <a href="/">Accueil</a> ·
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">Dépôt</a>
+        <nav class="legal" aria-label="Rechtliches">
+          <a href="https://www.cloud-surfers.com/impressum/">Mentions légales</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Contact</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

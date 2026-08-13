@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec — cluster-wide docker exec for Docker Swarm</title>
-  <meta name="description" content="Cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal.">
+  <title>swarmexec — docker exec à l'échelle du cluster pour Docker Swarm</title>
+  <meta name="description" content="docker exec, logs et gestion des volumes à l'échelle du cluster pour Docker Swarm, depuis un seul terminal.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -99,47 +99,49 @@
   <main>
     <div class="card">
       <h1>swarmexec<span class="cursor">_</span></h1>
-      <p class="tagline">Cluster-wide <code>docker exec -it</code> for Docker Swarm.</p>
+      <p class="tagline"><code>docker exec -it</code> à l'échelle du cluster pour Docker Swarm.</p>
 
       <img class="demo" src="/demo.gif" width="860" height="470" loading="lazy"
-           alt="Instead of docker node ls, finding the node, ssh node-3 and docker exec, just run: swarmexec exec web -- sh">
+           alt="Au lieu de docker node ls, trouver le nœud, ssh node-3 et docker exec, il suffit d'exécuter : swarmexec exec web -- sh">
 
       <p class="lead">
-        Get an interactive shell (or run a one-off command) inside <strong>any</strong>
-        container in a Swarm — plus logs and swarm-wide volume management — from a
-        single terminal, without SSHing to the node that happens to run the task.
-        A small per-node agent, a scriptable CLI/TUI, mTLS auth and an audit log.
+        Obtenez un shell interactif (ou exécutez une commande ponctuelle) dans
+        <strong>n'importe quel</strong> conteneur d'un Swarm — plus les logs et la
+        gestion des volumes à l'échelle du swarm — depuis un seul terminal, sans
+        vous connecter en SSH au nœud qui exécute justement la tâche.
+        Un petit agent par nœud, une CLI/TUI scriptable, une authentification mTLS
+        et un journal d'audit.
       </p>
 
-      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># deploy the agent on every node</span>
-<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># shell into a task, any node</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interactive TUI</span></div>
+      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># déployer l'agent sur chaque nœud</span>
+<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># ouvrir un shell dans une tâche, n'importe quel nœud</span>
+<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># TUI interactive</span></div>
 
       <div class="links">
         <a class="btn" href="/docs">
           <span class="t">Documentation</span>
-          <span class="s">commands, flags, config &amp; the TUI</span>
+          <span class="s">commandes, options, config &amp; la TUI</span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec">
-          <span class="t">GitLab repository</span>
-          <span class="s">source &amp; issues</span>
+          <span class="t">Dépôt GitLab</span>
+          <span class="s">sources &amp; tickets</span>
         </a>
         <a class="btn" href="https://hub.docker.com/r/logleio/swarmexec-agent">
           <span class="t">Docker Hub</span>
           <span class="s">logleio/swarmexec-agent</span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest">
-          <span class="t">Latest release</span>
-          <span class="s">notes for <span id="ver">__VERSION__</span></span>
+          <span class="t">Dernière version</span>
+          <span class="s">notes pour <span id="ver">__VERSION__</span></span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64">
-          <span class="t">Download CLI</span>
-          <span class="s">latest linux/amd64 binary</span>
+          <span class="t">Télécharger la CLI</span>
+          <span class="s">dernier binaire linux/amd64</span>
         </a>
       </div>
 
       <div class="downloads">
-        More builds (always latest release):
+        Autres builds (toujours la dernière version) :
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-arm64">linux-arm64</a> ·
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-arm64">darwin-arm64</a> ·
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-amd64">darwin-amd64</a> ·
@@ -147,16 +149,16 @@
       </div>
 
       <footer>
-        <span id="verline">Current release: <strong>__VERSION__</strong></span> ·
-        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <span id="verline">Version actuelle : <strong>__VERSION__</strong></span> ·
+        récupérer l'agent : <code>docker pull logleio/swarmexec-agent:latest</code><br>
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io/cs-public/swarm-remote-exec</a><br>
-        Open source under the
-        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        Open source sous la
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">licence Apache 2.0</a>
         · © 2026 Cloud Surfers GmbH
         <nav class="legal" aria-label="Legal">
-          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
-          <a href="/datenschutz">Datenschutz</a> ·
-          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+          <a href="https://www.cloud-surfers.com/impressum/">Mentions légales</a> ·
+          <a href="/datenschutz">Confidentialité</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Contact</a>
         </nav>
       </footer>
     </div>
