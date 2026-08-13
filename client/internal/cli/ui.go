@@ -2094,6 +2094,44 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage("secdelconfirm", m, true, true)
 		app.SetFocus(m)
 	}
+	// showCreateSecret creates a new swarm secret from a name, a (multi-line)
+	// value and optional labels. The value is entered in a text area so certs and
+	// keys can be pasted as-is.
+	showCreateSecret := func() {
+		var name, value, labels string
+		form := tview.NewForm()
+		form.SetBorder(true).SetTitle(" new secret ")
+		form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
+		form.AddTextArea("Value", "", 40, 6, 0, func(t string) { value = t })
+		form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
+		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Esc", "cancel"))
+		closeForm := func() { restoreHelp(); pages.RemovePage("secform"); app.SetFocus(sectable) }
+		form.AddButton("Create", func() {
+			lbls, err := parseKVList(labels)
+			if err != nil {
+				info("invalid labels: " + err.Error())
+				return
+			}
+			nm := strings.TrimSpace(name)
+			if err := createSecret(ctx, dcli, nm, []byte(value), lbls); err != nil {
+				info("create failed: " + err.Error())
+				return
+			}
+			closeForm()
+			loadSecrets()
+			flash(" [green]created[white] secret " + nm)
+		})
+		form.AddButton("Cancel", closeForm)
+		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			if ev.Key() == tcell.KeyEscape {
+				closeForm()
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("secform", centered(form, 74, 18), true, true)
+		app.SetFocus(form)
+	}
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx is this session's effective docker context (what the UI is
@@ -2751,7 +2789,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "networks":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  %s", kl(km.NetAttached), kl(km.NetNew), tail)
 		case "secrets":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] delete  %s", kl(km.SecDelete), tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] new  [yellow]%s[white] delete  %s", kl(km.SecNew), kl(km.SecDelete), tail)
 		case "contexts":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete  %s",
 				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete), tail)
@@ -4741,6 +4779,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return tabKeys(ev)
 	})
 	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecNew {
+			showCreateSecret()
+			return nil
+		}
 		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecDelete {
 			if s, ok := selectedSecret(); ok {
 				openDeleteSecret(s)
