@@ -521,6 +521,35 @@ func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
 
 // listSecrets returns secret metadata (never the value — the API does not
 // expose it) with the services that use each secret resolved from service specs.
+// createSecret creates a new swarm secret with the given value and labels.
+// Docker secrets are write-only and immutable, so a name clash cannot be
+// "updated" — it is reported as an error the caller can surface. The name check
+// is best-effort (racy), but Docker also rejects a duplicate name server-side,
+// so correctness does not depend on it.
+func createSecret(ctx context.Context, dcli *client.Client, name string, data []byte, labels map[string]string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("value is required")
+	}
+	list, err := dcli.SecretList(ctx, types.SecretListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, s := range list {
+		if s.Spec.Name == name {
+			return fmt.Errorf("secret %q already exists (secrets are immutable — remove it first to replace)", name)
+		}
+	}
+	_, err = dcli.SecretCreate(ctx, swarm.SecretSpec{
+		Annotations: swarm.Annotations{Name: name, Labels: labels},
+		Data:        data,
+	})
+	return err
+}
+
 func listSecrets(ctx context.Context, dcli *client.Client) ([]swarmSecret, error) {
 	secs, err := dcli.SecretList(ctx, types.SecretListOptions{})
 	if err != nil {
