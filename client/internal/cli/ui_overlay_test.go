@@ -61,3 +61,36 @@ func TestCenteredDelegatesFocusAndInput(t *testing.T) {
 		t.Error("centered wrapper should expose the inner input handler")
 	}
 }
+
+// A left-click inside the overlay area but BESIDE the centred box must be
+// swallowed and keep focus on the dialog — not fall through to the page beneath
+// (which would steal focus and leave the dialog's buttons unresponsive).
+func TestCenteredBoxSwallowsOutsideClick(t *testing.T) {
+	scr := tcell.NewSimulationScreen("UTF-8")
+	if err := scr.Init(); err != nil {
+		t.Fatal(err)
+	}
+	scr.SetSize(100, 30)
+
+	pages := tview.NewPages()
+	main := tview.NewList().AddItem("item", "", 0, nil) // grabs focus on a click
+	pages.AddPage("main", main, true, true)
+	form := tview.NewForm().AddButton("OK", nil)
+	pages.AddPage("dlg", centered(form, 40, 7), true, true)
+
+	pages.SetRect(0, 0, 100, 30)
+	pages.Draw(scr) // sizes the pages (full-screen) and the inner centred box
+
+	focused := tview.Primitive(form)
+	setFocus := func(p tview.Primitive) { focused = p }
+	// (2,2): on-screen, well outside the 40x7 box centred around the middle.
+	ev := tcell.NewEventMouse(2, 2, tcell.Button1, 0)
+	consumed, _ := pages.MouseHandler()(tview.MouseLeftDown, ev, setFocus)
+
+	if !consumed {
+		t.Error("outside click was not consumed by the overlay (falls through to the page beneath)")
+	}
+	if focused == tview.Primitive(main) {
+		t.Error("outside click stole focus to the underlying page — the dialog would become unresponsive")
+	}
+}
