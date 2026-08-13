@@ -5191,7 +5191,17 @@ func (c *centeredBox) InputHandler() func(*tcell.EventKey, func(p tview.Primitiv
 	return c.inner.InputHandler()
 }
 func (c *centeredBox) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(p tview.Primitive)) (bool, tview.Primitive) {
-	return c.inner.MouseHandler()
+	return c.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
+		consumed, capture = c.inner.MouseHandler()(action, event, setFocus)
+		// A click inside the (full-screen) overlay but beside the centred box must
+		// not fall through to the page beneath — that would steal focus from the
+		// dialog. Swallow it and keep focus on the inner content, like tview.Modal.
+		if !consumed && action == tview.MouseLeftDown && c.InRect(event.Position()) {
+			setFocus(c.inner)
+			consumed = true
+		}
+		return
+	})
 }
 func (c *centeredBox) PasteHandler() func(string, func(p tview.Primitive)) {
 	return c.inner.PasteHandler()
