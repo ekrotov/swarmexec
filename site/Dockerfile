@@ -14,11 +14,13 @@ ARG VERSION=dev
 # Root only for the build steps; the base image drops back to the nginx user.
 USER root
 COPY site/nginx.conf /etc/nginx/conf.d/default.conf
-COPY site/index.html site/docs.html site/datenschutz.html site/robots.txt \
+# Glob covers every language variant (index.de.html, docs.fr.html, datenschutz.es.html, …).
+COPY site/index*.html site/docs*.html site/datenschutz*.html site/robots.txt \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png site/demo.gif /usr/share/nginx/html/
-# Only index.html and docs.html carry the __VERSION__ placeholder; datenschutz.html does not.
-RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html \
- && chown nginx:nginx /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html /usr/share/nginx/html/datenschutz.html /usr/share/nginx/html/robots.txt /usr/share/nginx/html/favicon.svg /usr/share/nginx/html/favicon.ico /usr/share/nginx/html/apple-touch-icon.png /usr/share/nginx/html/demo.gif /etc/nginx/conf.d/default.conf
+# index*.html and docs*.html carry the __VERSION__ placeholder (in every language); datenschutz*.html does not.
+RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index*.html /usr/share/nginx/html/docs*.html \
+ && chown -R nginx:nginx /usr/share/nginx/html \
+ && chown nginx:nginx /etc/nginx/conf.d/default.conf
 USER nginx
 
 EXPOSE 8080

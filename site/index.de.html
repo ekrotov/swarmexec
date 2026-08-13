@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec — cluster-wide docker exec for Docker Swarm</title>
-  <meta name="description" content="Cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal.">
+  <title>swarmexec — clusterweites docker exec für Docker Swarm</title>
+  <meta name="description" content="Clusterweites docker exec, Logs und Volume-Verwaltung für Docker Swarm, aus einem einzigen Terminal.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -99,47 +99,48 @@
   <main>
     <div class="card">
       <h1>swarmexec<span class="cursor">_</span></h1>
-      <p class="tagline">Cluster-wide <code>docker exec -it</code> for Docker Swarm.</p>
+      <p class="tagline">Clusterweites <code>docker exec -it</code> für Docker Swarm.</p>
 
       <img class="demo" src="/demo.gif" width="860" height="470" loading="lazy"
-           alt="Instead of docker node ls, finding the node, ssh node-3 and docker exec, just run: swarmexec exec web -- sh">
+           alt="Statt docker node ls, den Node zu suchen, ssh node-3 und docker exec, einfach: swarmexec exec web -- sh ausführen">
 
       <p class="lead">
-        Get an interactive shell (or run a one-off command) inside <strong>any</strong>
-        container in a Swarm — plus logs and swarm-wide volume management — from a
-        single terminal, without SSHing to the node that happens to run the task.
-        A small per-node agent, a scriptable CLI/TUI, mTLS auth and an audit log.
+        Öffne eine interaktive Shell (oder führe einen einmaligen Befehl aus) in
+        <strong>jedem</strong> Container eines Swarms — dazu Logs und
+        swarmweite Volume-Verwaltung — aus einem einzigen Terminal, ohne dich per
+        SSH auf den Node zu verbinden, der die Task gerade ausführt.
+        Ein kleiner Agent pro Node, eine skriptbare CLI/TUI, mTLS-Authentifizierung und ein Audit-Log.
       </p>
 
-      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># deploy the agent on every node</span>
-<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># shell into a task, any node</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interactive TUI</span></div>
+      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># Agent auf jedem Node ausrollen</span>
+<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># Shell in eine Task, beliebiger Node</span>
+<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interaktive TUI</span></div>
 
       <div class="links">
         <a class="btn" href="/docs">
-          <span class="t">Documentation</span>
-          <span class="s">commands, flags, config &amp; the TUI</span>
+          <span class="t">Dokumentation</span>
+          <span class="s">Befehle, Flags, Konfiguration &amp; die TUI</span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec">
-          <span class="t">GitLab repository</span>
-          <span class="s">source &amp; issues</span>
+          <span class="t">GitLab-Repository</span>
+          <span class="s">Quellcode &amp; Issues</span>
         </a>
         <a class="btn" href="https://hub.docker.com/r/logleio/swarmexec-agent">
           <span class="t">Docker Hub</span>
           <span class="s">logleio/swarmexec-agent</span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest">
-          <span class="t">Latest release</span>
-          <span class="s">notes for <span id="ver">__VERSION__</span></span>
+          <span class="t">Aktuelles Release</span>
+          <span class="s">Notes zu <span id="ver">__VERSION__</span></span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64">
-          <span class="t">Download CLI</span>
-          <span class="s">latest linux/amd64 binary</span>
+          <span class="t">CLI herunterladen</span>
+          <span class="s">aktuelles linux/amd64-Binary</span>
         </a>
       </div>
 
       <div class="downloads">
-        More builds (always latest release):
+        Weitere Builds (immer das aktuelle Release):
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-arm64">linux-arm64</a> ·
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-arm64">darwin-arm64</a> ·
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-amd64">darwin-amd64</a> ·
@@ -147,10 +148,10 @@
       </div>
 
       <footer>
-        <span id="verline">Current release: <strong>__VERSION__</strong></span> ·
-        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <span id="verline">Aktuelles Release: <strong>__VERSION__</strong></span> ·
+        Agent pullen: <code>docker pull logleio/swarmexec-agent:latest</code><br>
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io/cs-public/swarm-remote-exec</a><br>
-        Open source under the
+        Open Source unter der
         <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
         · © 2026 Cloud Surfers GmbH
         <nav class="legal" aria-label="Legal">
