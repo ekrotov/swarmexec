@@ -144,6 +144,15 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		fmt.Fprintln(out, "created")
 	} else {
 		fmt.Fprintln(out, "reusing existing")
+		if f.secret != "" {
+			// The existing secret is kept (Docker secrets are immutable), so the
+			// --secret value is NOT applied to the cluster — yet it IS written to the
+			// client config below. If it isn't the existing secret's actual value the
+			// agent will reject the client, so warn loudly.
+			fmt.Fprintf(out, "warning: secret %q already exists and is kept as-is — your --secret value was NOT applied to the cluster.\n"+
+				"         It will be written to the client config, so it must equal the existing secret's value or the agent will reject you.\n"+
+				"         To change the cluster secret, remove it first (no service may reference it) and re-run init.\n", agentSecretName)
+		}
 	}
 
 	// [2/3] agent service --------------------------------------------------------
