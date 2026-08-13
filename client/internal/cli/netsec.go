@@ -563,6 +563,63 @@ func secretServiceMembers(ctx context.Context, dcli *client.Client) map[string][
 	return serviceSecretMembership(svcs)
 }
 
+// secretRef identifies a secret by its id and name.
+type secretRef struct{ ID, Name string }
+
+// orphanSecrets returns the secrets referenced by target that NO other service
+// in all references — i.e. the ones that become unused if target is removed.
+// Pure, so it is unit-testable.
+func orphanSecrets(target swarm.Service, all []swarm.Service) []secretRef {
+	cs := target.Spec.TaskTemplate.ContainerSpec
+	if cs == nil || len(cs.Secrets) == 0 {
+		return nil
+	}
+	// Secrets referenced by any OTHER service (keyed by both id and name, since
+	// a reference may match on either).
+	usedElsewhere := map[string]bool{}
+	for _, s := range all {
+		if s.ID == target.ID && target.ID != "" || s.Spec.Name == target.Spec.Name {
+			continue
+		}
+		ocs := s.Spec.TaskTemplate.ContainerSpec
+		if ocs == nil {
+			continue
+		}
+		for _, r := range ocs.Secrets {
+			usedElsewhere[r.SecretID] = true
+			usedElsewhere[r.SecretName] = true
+		}
+	}
+	seen := map[string]bool{}
+	var out []secretRef
+	for _, r := range cs.Secrets {
+		key := r.SecretID + "\x00" + r.SecretName
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if !usedElsewhere[r.SecretID] && !usedElsewhere[r.SecretName] {
+			out = append(out, secretRef{ID: r.SecretID, Name: r.SecretName})
+		}
+	}
+	return out
+}
+
+// secretsOnlyUsedBy returns the secrets referenced only by the named service —
+// the ones orphaned if it is removed. Best-effort (empty on error/not found).
+func secretsOnlyUsedBy(ctx context.Context, dcli *client.Client, name string) ([]secretRef, error) {
+	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for i := range svcs {
+		if svcs[i].Spec.Name == name {
+			return orphanSecrets(svcs[i], svcs), nil
+		}
+	}
+	return nil, nil
+}
+
 // serviceSecretMembership is the pure core of secretServiceMembers.
 func serviceSecretMembership(svcs []swarm.Service) map[string][]string {
 	m := map[string][]string{}

@@ -273,3 +273,25 @@ func TestServicesExcluding(t *testing.T) {
 		t.Errorf("servicesExcluding(no exclude) = %v, want [a b]", all)
 	}
 }
+
+func TestOrphanSecrets(t *testing.T) {
+	web := secretSvc("web",
+		swarm.SecretReference{SecretID: "sid1", SecretName: "db-pw"},
+		swarm.SecretReference{SecretID: "sid2", SecretName: "shared"})
+	api := secretSvc("api", swarm.SecretReference{SecretID: "sid2", SecretName: "shared"})
+	all := []swarm.Service{web, api}
+
+	got := orphanSecrets(web, all)
+	// db-pw is used only by web → orphaned; shared is also used by api → not.
+	if len(got) != 1 || got[0].Name != "db-pw" {
+		t.Errorf("orphanSecrets(web) = %+v, want just db-pw", got)
+	}
+	// api's only secret is shared, still used by web → no orphans.
+	if o := orphanSecrets(api, all); len(o) != 0 {
+		t.Errorf("orphanSecrets(api) = %+v, want none", o)
+	}
+	// A service with no container spec / no secrets → no orphans.
+	if o := orphanSecrets(swarm.Service{Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "bare"}}}, all); len(o) != 0 {
+		t.Errorf("orphanSecrets(bare) = %+v, want none", o)
+	}
+}
