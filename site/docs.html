@@ -445,7 +445,7 @@
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>--image</code></td><td><code>docker.io/logleio/swarmexec-agent:latest</code></td><td>agent image to deploy</td></tr>
-          <tr><td><code>--secret</code></td><td>random</td><td>shared secret to use (default: generate a random one)</td></tr>
+          <tr><td><code>--secret</code></td><td>random</td><td>shared secret to use (default: generate a random one). Note: if the agent secret <strong>already exists</strong> it is kept as-is (Docker secrets are immutable), so <code>--secret</code> is <strong>not applied to the cluster</strong> — it is only written to your client config, and <code>init</code> warns about the mismatch risk. To change the cluster secret, remove it first (no service may reference it), then re-run <code>init</code></td></tr>
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>name for the agent service</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>host port the agent publishes</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>update the service if it already exists</td></tr>
