@@ -2064,6 +2064,36 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			showSecretDetail(s)
 		}
 	})
+	// openDeleteSecret permanently removes a secret after a confirm. Docker refuses
+	// to remove a secret a service still references, so warn up front when in use.
+	openDeleteSecret := func(s swarmSecret) {
+		msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
+		if len(s.Services) > 0 {
+			msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
+		}
+		m := tview.NewModal().SetText(msg).AddButtons([]string{"Delete", "Cancel"}).
+			SetDoneFunc(func(_ int, lbl string) {
+				pages.RemovePage("secdelconfirm")
+				if lbl != "Delete" {
+					app.SetFocus(sectable)
+					return
+				}
+				go func() {
+					err := removeSecret(ctx, dcli, s.Name)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("remove failed: " + err.Error())
+							app.SetFocus(sectable)
+							return
+						}
+						loadSecrets()
+						flash(" [green]removed[white] secret " + s.Name)
+					})
+				}()
+			})
+		pages.AddPage("secdelconfirm", m, true, true)
+		app.SetFocus(m)
+	}
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx is this session's effective docker context (what the UI is
@@ -2721,7 +2751,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "networks":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  %s", kl(km.NetAttached), kl(km.NetNew), tail)
 		case "secrets":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  %s", tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] delete  %s", kl(km.SecDelete), tail)
 		case "contexts":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete  %s",
 				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete), tail)
@@ -4669,6 +4699,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return tabKeys(ev)
 	})
 	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecDelete {
+			if s, ok := selectedSecret(); ok {
+				openDeleteSecret(s)
+			}
+			return nil
+		}
 		return tabKeys(ev)
 	})
 	// On the contexts table: "n" creates, "d" removes, "u" (or Enter) activates.

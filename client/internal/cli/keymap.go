@@ -30,6 +30,8 @@ type keybinds struct {
 	NetAttached, NetNew rune
 	// nodes
 	NodeLabels rune
+	// secrets
+	SecDelete rune
 	// contexts
 	CtxUse, CtxNew, CtxDelete rune
 	// forwards
@@ -67,6 +69,7 @@ var keyActions = []keyAction{
 	{"network_attached", []string{"networks"}, 'i', func(k *keybinds) *rune { return &k.NetAttached }},
 	{"network_new", []string{"networks"}, 'n', func(k *keybinds) *rune { return &k.NetNew }},
 	{"node_edit_labels", []string{"nodes"}, 'l', func(k *keybinds) *rune { return &k.NodeLabels }},
+	{"secret_delete", []string{"secrets"}, 'd', func(k *keybinds) *rune { return &k.SecDelete }},
 	{"context_use", []string{"contexts"}, 'u', func(k *keybinds) *rune { return &k.CtxUse }},
 	{"context_new", []string{"contexts"}, 'n', func(k *keybinds) *rune { return &k.CtxNew }},
 	{"context_delete", []string{"contexts"}, 'd', func(k *keybinds) *rune { return &k.CtxDelete }},

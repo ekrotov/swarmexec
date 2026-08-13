@@ -974,6 +974,7 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
+          <tr><td><kbd>d</kbd></td><td>on the secrets list: <strong>delete</strong> the selected secret — permanently removes it (one <code>SecretRemove</code>), behind a confirm; cannot be undone. Docker refuses to remove a secret still referenced by a service, so the confirm <strong>warns when it's in use</strong> and lists those services (detach it there first). Not to be confused with the <kbd>d</kbd> <em>inside</em> the detail view, which detaches the secret from a service</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
           <tr><td><kbd>d</kbd></td><td>in the detail view: detach the secret from a service — an autocomplete input (suggesting services that currently use it; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
@@ -1084,7 +1085,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l
+node_edit_labels: l    secret_delete: d
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two
