@@ -88,6 +88,55 @@ func TestBuildPlaceReport_GlobalConstraint(t *testing.T) {
 	}
 }
 
+// A global service whose node has only a retired (desired-shutdown) rejected
+// task must surface that task's error — not the vague "eligible but no task
+// scheduled" — and list the task in the docker-service-ps view.
+func TestBuildPlaceReport_GlobalRetiredFailedTask(t *testing.T) {
+	nodes := []swarm.Node{
+		mkNode("n1", "docker2v2", "worker", "active", "ready", false, nil),
+		mkNode("n2", "docker3v2", "worker", "active", "ready", false, nil),
+		mkNode("n3", "generic-node-1", "worker", "active", "ready", false, nil),
+	}
+	tasks := []swarm.Task{
+		task("n1", 0, swarm.TaskStateRunning, swarm.TaskStateRunning, ""),
+		task("n2", 0, swarm.TaskStateRunning, swarm.TaskStateRunning, ""),
+		// Repeatedly rejected on n3, so the scheduler retired it to shutdown.
+		task("n3", 0, swarm.TaskStateShutdown, swarm.TaskStateRejected, "No such image: cr.fluentbit.io/fluent/fluent-bit:latest"),
+		task("n3", 0, swarm.TaskStateShutdown, swarm.TaskStateRejected, "No such image: cr.fluentbit.io/fluent/fluent-bit:latest"),
+	}
+	rep := buildPlaceReport(globalSvc("fb_app"), nodes, tasks)
+
+	r, ok := rowFor(rep, "generic-node-1")
+	if !ok || r.OK {
+		t.Fatalf("generic-node-1 row = %+v, want a non-running row", r)
+	}
+	if strings.Contains(r.Detail, "no task scheduled") {
+		t.Errorf("generic-node-1 still shows the unhelpful message: %q", r.Detail)
+	}
+	if !strings.Contains(r.Detail, "No such image") {
+		t.Errorf("generic-node-1 detail should carry the task error, got %q", r.Detail)
+	}
+	if !strings.Contains(r.Detail, "2 attempts") {
+		t.Errorf("generic-node-1 detail should note the retry count, got %q", r.Detail)
+	}
+	// The docker-service-ps view lists every task, including the rejected ones.
+	if len(rep.Tasks) != len(tasks) {
+		t.Fatalf("Tasks = %d, want %d", len(rep.Tasks), len(tasks))
+	}
+	var sawRejected bool
+	for _, tp := range rep.Tasks {
+		if tp.Current == string(swarm.TaskStateRejected) && strings.Contains(tp.Err, "No such image") {
+			sawRejected = true
+			if tp.Node != "generic-node-1" {
+				t.Errorf("rejected task node = %q, want generic-node-1", tp.Node)
+			}
+		}
+	}
+	if !sawRejected {
+		t.Error("docker-service-ps view is missing the rejected task with its image error")
+	}
+}
+
 func TestBuildPlaceReport_ReplicatedPending(t *testing.T) {
 	nodes := []swarm.Node{mkNode("n1", "node-1", "worker", "active", "ready", false, nil)}
 	tasks := []swarm.Task{

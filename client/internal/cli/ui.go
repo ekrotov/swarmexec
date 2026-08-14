@@ -5004,6 +5004,7 @@ func renderPlaceReport(rep placeReport) string {
 	if len(rep.Unevaluated) > 0 {
 		fmt.Fprintf(&b, "\n  [gray]note: constraints not checkable client-side (assumed OK): %s[-]\n", tview.Escape(strings.Join(rep.Unevaluated, ", ")))
 	}
+	renderTaskPS(&b, rep.Tasks)
 	b.WriteString("\n")
 	if rep.Global {
 		b.WriteString("  [gray]global: \"desired\" = eligible nodes. A node is excluded by drain/pause,\n  a down state, an unmet placement constraint, or a platform mismatch.[-]\n")
@@ -5011,6 +5012,77 @@ func renderPlaceReport(rep placeReport) string {
 		b.WriteString("  [gray]replicated: rows are the tasks that are not running, with the\n  scheduler's own reason (constraints, resources, image pull, …).[-]\n")
 	}
 	return b.String()
+}
+
+// renderTaskPS appends the `docker service ps` equivalent: the recent tasks with
+// their node, desired/current state and last-change age, and — indented on its
+// own line so nothing is truncated — the scheduler/runtime error of any task
+// that failed. This is the detailed evidence behind the summary rows above.
+func renderTaskPS(b *strings.Builder, tasks []taskPS) {
+	if len(tasks) == 0 {
+		return
+	}
+	const maxRows = 15
+	nameW, nodeW := 4, 4
+	for i, t := range tasks {
+		if i >= maxRows {
+			break
+		}
+		if l := len(t.Name); l > nameW {
+			nameW = l
+		}
+		if l := len(t.Node); l > nodeW {
+			nodeW = l
+		}
+	}
+	if nameW > 30 {
+		nameW = 30
+	}
+	if nodeW > 20 {
+		nodeW = 20
+	}
+	fmt.Fprintf(b, "\n  [aqua]recent tasks[-] [gray](docker service ps)[-]\n")
+	for i, t := range tasks {
+		if i >= maxRows {
+			fmt.Fprintf(b, "  [gray]… and %d older task(s)[-]\n", len(tasks)-maxRows)
+			break
+		}
+		mark, col := taskStateStyle(t.Current)
+		when := volumeAge(t.When)
+		fmt.Fprintf(b, "  %s %-*s  [gray]%-*s[-]  %s%s[-]/%s%s[-]  [gray]%s[-]\n",
+			mark, nameW, tview.Escape(clip(t.Name, nameW)), nodeW, tview.Escape(clip(t.Node, nodeW)),
+			"[gray]", t.Desired, col, t.Current, when)
+		if t.Err != "" {
+			fmt.Fprintf(b, "      [red]↳ %s[-]\n", tview.Escape(t.Err))
+		}
+	}
+}
+
+// taskStateStyle returns a status glyph and colour tag for a task's current
+// state: running/complete are good, failed/rejected/orphaned are errors, the
+// rest are in-flight.
+func taskStateStyle(state string) (mark, color string) {
+	switch state {
+	case "running", "complete":
+		return "[green]✓[-]", "[green]"
+	case "failed", "rejected", "orphaned":
+		return "[red]✗[-]", "[red]"
+	default:
+		return "[yellow]•[-]", "[yellow]"
+	}
+}
+
+// clip truncates s to n runes with an ellipsis so wide names/nodes don't break
+// the task table's column alignment.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n <= 1 {
+		return string(r[:n])
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // nodeAvailColor colours a node's availability: active→green, drain→yellow,

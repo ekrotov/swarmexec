@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -36,7 +37,21 @@ type placeReport struct {
 	Running     int
 	Desired     int
 	Rows        []placeRow
+	Tasks       []taskPS // the `docker service ps` equivalent (recent tasks first)
 	Unevaluated []string // constraints we can't check client-side (engine.labels.*)
+}
+
+// taskPS is one row of the `docker service ps` equivalent: a task with its
+// target node, desired vs current state, when it last changed, and the
+// scheduler/runtime error if any. This is the authoritative detail behind a
+// vague "no task scheduled" — a failed/rejected task carries the real reason.
+type taskPS struct {
+	Name    string    // service.slot (replicated) or service.hostname (global)
+	Node    string    // node hostname, or "(unassigned)"
+	Desired string    // desired state (Running / Shutdown / …)
+	Current string    // current state (running / rejected / failed / …)
+	When    time.Time // Status.Timestamp of the last state change
+	Err     string    // Status.Err / Message when the state itself isn't self-explanatory
 }
 
 // diagnoseServicePlacement fetches the service, nodes and tasks and builds the
@@ -81,14 +96,14 @@ func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task)
 		}
 	}
 
-	// The most relevant live task per node (prefer a running one; ignore tasks
-	// the scheduler has already retired to shutdown).
+	// The most relevant task per node: a running one wins, else the most recent
+	// one — INCLUDING those already retired to shutdown, because a repeatedly
+	// failing/rejected task (which the scheduler sets to desired-shutdown) is
+	// exactly the reason a node has "no running task", and its error is the
+	// answer the operator is looking for.
 	nodeTask := map[string]swarm.Task{}
 	for _, t := range tasks {
-		if t.DesiredState == swarm.TaskStateShutdown {
-			continue
-		}
-		if cur, ok := nodeTask[t.NodeID]; !ok || taskRank(t) > taskRank(cur) {
+		if cur, ok := nodeTask[t.NodeID]; !ok || taskMoreRelevant(t, cur) {
 			nodeTask[t.NodeID] = t
 		}
 	}
@@ -109,7 +124,11 @@ func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task)
 				rep.Rows = append(rep.Rows, placeRow{host, true, "running"})
 				rep.Desired++
 			case has:
-				rep.Rows = append(rep.Rows, placeRow{host, false, taskDetail(t)})
+				detail := taskDetail(t)
+				if a := attemptsOnNode(tasks, n.ID); a > 1 {
+					detail += fmt.Sprintf(" (%d attempts)", a)
+				}
+				rep.Rows = append(rep.Rows, placeRow{host, false, detail})
 				rep.Desired++
 			default:
 				reason, excluded, un := nodeExclusionReason(n, constraints, platforms)
@@ -148,7 +167,53 @@ func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task)
 		rep.Unevaluated = append(rep.Unevaluated, c)
 	}
 	sort.Strings(rep.Unevaluated)
+	rep.Tasks = buildTaskPS(svc.Spec.Name, tasks, nodeByID)
 	return rep
+}
+
+// buildTaskPS renders the tasks as the `docker service ps` equivalent: most
+// recent state change first, each with its target node, desired/current state
+// and error. This is the detail the summary rows condense.
+func buildTaskPS(svcName string, tasks []swarm.Task, nodeByID map[string]swarm.Node) []taskPS {
+	out := make([]taskPS, 0, len(tasks))
+	for _, t := range tasks {
+		node := "(unassigned)"
+		if n, ok := nodeByID[t.NodeID]; ok && n.Description.Hostname != "" {
+			node = n.Description.Hostname
+		}
+		// Global tasks have slot 0; name them by node (like docker does), else by slot.
+		name := svcName + "." + node
+		if t.Slot > 0 {
+			name = fmt.Sprintf("%s.%d", svcName, t.Slot)
+		}
+		msg := t.Status.Err
+		if msg == "" && t.Status.Message != "" && t.Status.Message != string(t.Status.State) {
+			msg = t.Status.Message
+		}
+		out = append(out, taskPS{
+			Name:    name,
+			Node:    node,
+			Desired: string(t.DesiredState),
+			Current: string(t.Status.State),
+			When:    t.Status.Timestamp,
+			Err:     msg,
+		})
+	}
+	// Most recent state change first (zero timestamps sink to the bottom).
+	sort.SliceStable(out, func(i, j int) bool { return out[i].When.After(out[j].When) })
+	return out
+}
+
+// attemptsOnNode counts how many tasks the service has had on a node — a high
+// count signals a crash/reject loop rather than a one-off failure.
+func attemptsOnNode(tasks []swarm.Task, nodeID string) int {
+	n := 0
+	for _, t := range tasks {
+		if t.NodeID == nodeID {
+			n++
+		}
+	}
+	return n
 }
 
 // taskRank ranks a node's tasks so a running one wins over a pending/failed one.
@@ -160,6 +225,15 @@ func taskRank(t swarm.Task) int {
 		return 1
 	}
 	return 0
+}
+
+// taskMoreRelevant reports whether task a should represent a node over task b: a
+// higher rank wins (running > wanted-running > retired), ties break on recency.
+func taskMoreRelevant(a, b swarm.Task) bool {
+	if ra, rb := taskRank(a), taskRank(b); ra != rb {
+		return ra > rb
+	}
+	return a.Status.Timestamp.After(b.Status.Timestamp)
 }
 
 // taskDetail renders a non-running task's state plus the scheduler/runtime
