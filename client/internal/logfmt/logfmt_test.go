@@ -62,6 +62,69 @@ func TestGELFFormat(t *testing.T) {
 	}
 }
 
+func TestLogfmtFormat(t *testing.T) {
+	e := Logfmt.Parse(`level=info msg="started server" addr=:8080 ts=2026-08-17T10:00:00Z`)
+	if e.Level != LevelInfo {
+		t.Errorf("level = %v, want INFO", e.Level)
+	}
+	if e.Message != "started server" {
+		t.Errorf("message = %q, want %q", e.Message, "started server")
+	}
+	if e.Timestamp.IsZero() {
+		t.Error("ts=… should populate Timestamp")
+	}
+	// alternate keys + unquoted value
+	if e := Logfmt.Parse(`lvl=warn message=careful`); e.Level != LevelWarn || e.Message != "careful" {
+		t.Errorf("alt keys = %v/%q, want WARN/careful", e.Level, e.Message)
+	}
+	// a line with no key=value pairs keeps the raw line, level unknown
+	if e := Logfmt.Parse("just a plain sentence"); e.Level != LevelUnknown || e.Message != "just a plain sentence" {
+		t.Errorf("non-logfmt fallback = %v/%q", e.Level, e.Message)
+	}
+}
+
+func TestLeadingTimestampStructured(t *testing.T) {
+	// `docker logs --timestamps` prepends an RFC3339Nano stamp; structured
+	// formats must still parse the payload behind it (the bug this fixes).
+	line := `2026-08-17T10:00:00.123456789Z {"level":"error","msg":"boom"}`
+	e := JSON.Parse(line)
+	if e.Level != LevelError || e.Message != "boom" {
+		t.Errorf("json behind a -t stamp = %v/%q, want ERROR/boom", e.Level, e.Message)
+	}
+	if e.Timestamp.IsZero() || e.Timestamp.Year() != 2026 {
+		t.Errorf("leading -t stamp should populate Timestamp, got %v", e.Timestamp)
+	}
+	// logfmt behind a stamp, too
+	le := Logfmt.Parse(`2026-08-17T10:00:00Z level=warn msg=careful`)
+	if le.Level != LevelWarn || le.Message != "careful" || le.Timestamp.IsZero() {
+		t.Errorf("logfmt behind a -t stamp = %v/%q/%v", le.Level, le.Message, le.Timestamp)
+	}
+	// Raw remains the full, unmodified line.
+	if e.Raw != line {
+		t.Errorf("Raw should keep the original line, got %q", e.Raw)
+	}
+}
+
+func TestJSONTimestampField(t *testing.T) {
+	// string ts field
+	e := JSON.Parse(`{"ts":"2026-08-17T10:00:00Z","msg":"hi"}`)
+	if e.Timestamp.IsZero() {
+		t.Error("string ts field should populate Timestamp")
+	}
+	// numeric epoch (GELF-style / zerolog unix)
+	g := GELF.Parse(`{"short_message":"x","level":6,"timestamp":1755424800}`)
+	if g.Timestamp.IsZero() || g.Timestamp.Year() != 2025 && g.Timestamp.Year() != 2026 {
+		t.Errorf("numeric epoch timestamp not parsed: %v", g.Timestamp)
+	}
+}
+
+func TestLogfmtInFormats(t *testing.T) {
+	f, ok := ByName("logfmt")
+	if !ok || f.Name() != "logfmt" || !f.Structured() {
+		t.Errorf("logfmt should be a known structured format, got ok=%v", ok)
+	}
+}
+
 func TestFilterMatch(t *testing.T) {
 	f := Filter{MinLevel: LevelWarn}
 	if f.Match(Entry{Level: LevelInfo}) {

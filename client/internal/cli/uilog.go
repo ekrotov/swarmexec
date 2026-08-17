@@ -23,7 +23,7 @@ const logBufferCap = 5000
 // footer (not the border title) so the log shortcuts are discoverable in the
 // same place as every other tab's shortcuts, and each key spells out what it
 // does rather than using a one-word label.
-const logViewHelp = " [yellow]f[white] follow on/off  [yellow]F[white] cycle format (classic/json/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
+const logViewHelp = " [yellow]f[white] follow on/off  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
 
 type logRow struct {
 	prefix string // service view tag, e.g. "[slot 2] "; "" for a single container

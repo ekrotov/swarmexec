@@ -10,7 +10,9 @@ package logfmt
 import (
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Level is a normalized log severity.
@@ -83,9 +85,41 @@ func parseSyslogLevel(n int) Level {
 
 // Entry is a normalized log line.
 type Entry struct {
-	Level   Level
-	Message string // the human-readable message (the whole line for raw/classic)
-	Raw     string // the original line, unmodified
+	Level     Level
+	Message   string    // the human-readable message (the whole line for raw/classic)
+	Raw       string    // the original line, unmodified
+	Timestamp time.Time // the line's time, if one was found; zero otherwise
+}
+
+// stripLeadingTimestamp splits off a leading RFC3339(Nano) token — what
+// `docker logs --timestamps` prepends to every line — returning the parsed time
+// and the remainder. Without it, a structured format's `{` / key=value payload
+// hides behind the timestamp and parsing silently falls back to raw. If the line
+// has no such prefix it is returned unchanged with a zero time.
+func stripLeadingTimestamp(line string) (time.Time, string) {
+	i := strings.IndexByte(line, ' ')
+	if i <= 0 {
+		return time.Time{}, line
+	}
+	if t, ok := parseTimeString(line[:i]); ok {
+		return t, line[i+1:]
+	}
+	return time.Time{}, line
+}
+
+// parseTimeString parses a timestamp as RFC3339(Nano) or a unix epoch (seconds,
+// possibly fractional) — the forms container logs use.
+func parseTimeString(s string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil && f > 0 {
+		sec := int64(f)
+		return time.Unix(sec, int64((f-float64(sec))*1e9)), true
+	}
+	return time.Time{}, false
 }
 
 // Format parses a raw log line into an Entry.
@@ -116,9 +150,13 @@ var Raw Format = format{name: "raw", parse: func(line string) Entry {
 var classicLevelRe = regexp.MustCompile(`(?i)\b(trace|debug|info|warn(?:ing)?|error|err|fatal|critical|crit|panic)\b`)
 
 // Classic reads a plain-text line and extracts a level from a common word
-// (INFO/WARN/ERROR/…); the whole line stays as the message.
+// (INFO/WARN/ERROR/…); the whole line stays as the message. A leading
+// --timestamps prefix, if present, is captured but left in the displayed line.
 var Classic Format = format{name: "classic", parse: func(line string) Entry {
 	e := Entry{Message: line, Raw: line}
+	if ts, _ := stripLeadingTimestamp(line); !ts.IsZero() {
+		e.Timestamp = ts
+	}
 	if m := classicLevelRe.FindString(line); m != "" {
 		e.Level = ParseLevel(m)
 	}
@@ -126,10 +164,16 @@ var Classic Format = format{name: "classic", parse: func(line string) Entry {
 }}
 
 // JSON is the logstash-style structured format: a JSON object whose message is
-// message/msg/@message/log and level is level/severity/loglevel/lvl/@level.
+// message/msg/@message/log and level is level/severity/loglevel/lvl/@level. A
+// leading --timestamps prefix is stripped before decoding so `-t` and `json`
+// work together.
 var JSON Format = format{name: "json", structured: true, parse: func(line string) Entry {
 	e := Entry{Message: line, Raw: line}
-	m, ok := decodeObject(line)
+	ts, rest := stripLeadingTimestamp(line)
+	if !ts.IsZero() {
+		e.Timestamp = ts
+	}
+	m, ok := decodeObject(rest)
 	if !ok {
 		return e // not JSON — keep the raw line so nothing is lost
 	}
@@ -139,6 +183,9 @@ var JSON Format = format{name: "json", structured: true, parse: func(line string
 	if lvl, ok := firstString(m, "level", "severity", "loglevel", "lvl", "@level"); ok {
 		e.Level = ParseLevel(lvl)
 	}
+	if t, ok := firstTime(m, "ts", "time", "timestamp", "@timestamp", "@time"); ok {
+		e.Timestamp = t
+	}
 	return e
 }}
 
@@ -146,7 +193,11 @@ var JSON Format = format{name: "json", structured: true, parse: func(line string
 // level is a numeric syslog severity.
 var GELF Format = format{name: "gelf", structured: true, parse: func(line string) Entry {
 	e := Entry{Message: line, Raw: line}
-	m, ok := decodeObject(line)
+	ts, rest := stripLeadingTimestamp(line)
+	if !ts.IsZero() {
+		e.Timestamp = ts
+	}
+	m, ok := decodeObject(rest)
 	if !ok {
 		return e
 	}
@@ -159,8 +210,124 @@ var GELF Format = format{name: "gelf", structured: true, parse: func(line string
 			e.Level = parseSyslogLevel(n)
 		}
 	}
+	// GELF's timestamp field is a unix epoch (seconds, fractional allowed).
+	if t, ok := firstTime(m, "timestamp"); ok {
+		e.Timestamp = t
+	}
 	return e
 }}
+
+// Logfmt parses the key=value line format (level=info msg="…" ts=…) used by many
+// Go apps, the Docker daemon, HashiCorp tools and others. message is msg/message,
+// level is level/lvl/severity/loglevel, ts is ts/time/timestamp.
+var Logfmt Format = format{name: "logfmt", structured: true, parse: func(line string) Entry {
+	e := Entry{Message: line, Raw: line}
+	ts, rest := stripLeadingTimestamp(line)
+	if !ts.IsZero() {
+		e.Timestamp = ts
+	}
+	kv := parseLogfmtPairs(rest)
+	if len(kv) == 0 {
+		return e // no key=value pairs — keep the raw line
+	}
+	if msg, ok := firstKV(kv, "msg", "message"); ok {
+		e.Message = msg
+	}
+	if lvl, ok := firstKV(kv, "level", "lvl", "severity", "loglevel"); ok {
+		e.Level = ParseLevel(lvl)
+	}
+	if s, ok := firstKV(kv, "ts", "time", "timestamp"); ok {
+		if t, ok := parseTimeString(s); ok {
+			e.Timestamp = t
+		}
+	}
+	return e
+}}
+
+// parseLogfmtPairs scans a line of key=value pairs, honoring double-quoted values
+// (with backslash escapes) so `msg="hello world"` stays one value. Bare tokens
+// without an '=' are ignored. Best-effort: it never errors.
+func parseLogfmtPairs(s string) map[string]string {
+	out := map[string]string{}
+	i, n := 0, len(s)
+	for i < n {
+		for i < n && s[i] == ' ' {
+			i++
+		}
+		if i >= n {
+			break
+		}
+		ks := i
+		for i < n && s[i] != '=' && s[i] != ' ' {
+			i++
+		}
+		key := s[ks:i]
+		if i >= n || s[i] == ' ' {
+			continue // bare token, no value
+		}
+		i++ // consume '='
+		var val string
+		if i < n && s[i] == '"' {
+			i++
+			var b strings.Builder
+			for i < n && s[i] != '"' {
+				if s[i] == '\\' && i+1 < n {
+					i++
+				}
+				b.WriteByte(s[i])
+				i++
+			}
+			if i < n {
+				i++ // closing quote
+			}
+			val = b.String()
+		} else {
+			vs := i
+			for i < n && s[i] != ' ' {
+				i++
+			}
+			val = s[vs:i]
+		}
+		if key != "" {
+			out[key] = val
+		}
+	}
+	return out
+}
+
+// firstKV returns the first non-empty value among keys.
+func firstKV(m map[string]string, keys ...string) (string, bool) {
+	for _, k := range keys {
+		if v, ok := m[k]; ok && v != "" {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// firstTime returns the first parseable timestamp among keys. A value may be an
+// RFC3339 string or a numeric unix epoch.
+func firstTime(m map[string]json.RawMessage, keys ...string) (time.Time, bool) {
+	for _, k := range keys {
+		raw, ok := m[k]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(raw, &s) == nil && s != "" {
+			if t, ok := parseTimeString(s); ok {
+				return t, true
+			}
+			continue
+		}
+		var f float64
+		if json.Unmarshal(raw, &f) == nil && f > 0 {
+			sec := int64(f)
+			return time.Unix(sec, int64((f-float64(sec))*1e9)), true
+		}
+	}
+	return time.Time{}, false
+}
 
 func decodeObject(line string) (map[string]json.RawMessage, bool) {
 	s := strings.TrimSpace(line)
@@ -189,7 +356,7 @@ func firstString(m map[string]json.RawMessage, keys ...string) (string, bool) {
 }
 
 // formats is the built-in set, in menu order.
-var formats = []Format{Classic, JSON, GELF, Raw}
+var formats = []Format{Classic, JSON, Logfmt, GELF, Raw}
 
 // Formats returns the built-in formats (menu order).
 func Formats() []Format { return formats }
