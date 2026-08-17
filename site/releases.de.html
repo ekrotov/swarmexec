@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec — Versionshinweise</title>
+  <meta name="description" content="Jede Version von swarmexec, neueste zuerst — was sich geändert hat und wo du sie herunterlädst.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #161b22; --border: #30363d;
+      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      display: flex; align-items: center; justify-content: center; padding: 2rem;
+      line-height: 1.6;
+    }
+    main { width: 100%; max-width: 760px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2.5rem;
+    }
+    h1 { margin: 0 0 .25rem; font-size: 2rem; letter-spacing: -.02em; }
+    h1 .cursor { color: var(--aqua); }
+    .tagline { color: var(--aqua); margin: 0 0 1.5rem; font-size: 1.05rem; }
+    p { color: var(--fg); }
+    p.lead { color: var(--muted); }
+    .links { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; }
+    a.btn {
+      display: flex; flex-direction: column; gap: .15rem;
+      text-decoration: none; color: var(--fg);
+      background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+      padding: .85rem 1rem; transition: border-color .15s, transform .05s;
+    }
+    a.btn:hover { border-color: var(--accent); }
+    a.btn:active { transform: translateY(1px); }
+    a.btn .t { font-weight: 600; }
+    a.btn .t::before { content: "→ "; color: var(--accent); }
+    a.btn .s { color: var(--muted); font-size: .8rem; }
+    footer { color: var(--muted); font-size: .8rem; margin-top: 1.75rem; }
+    footer a { color: var(--muted); }
+    /* Impressum/Datenschutz are legally required and must stay legible. */
+    .legal { margin-top: .6rem; }
+    .legal a { text-decoration: underline; }
+    .legal a:hover { color: var(--accent); }
+    @media (max-width: 560px) { .links { grid-template-columns: 1fr; } .card { padding: 1.5rem; } }
+    /* language switcher */
+    .langbar { position: fixed; top: .75rem; right: .75rem; display: flex; gap: .25rem; z-index: 10; font-size: .75rem; }
+    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
+    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
+    /* release notes */
+    #releases .loading { color: var(--muted); }
+    .release { padding: 1.5rem 0; border-top: 1px solid var(--border); }
+    .release:first-child { padding-top: .5rem; border-top: none; }
+    .rel-head { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
+    h2.ver {
+      margin: 0; font-size: 1.1rem; color: var(--aqua);
+      background: #010409; border: 1px solid var(--border); border-radius: 6px;
+      padding: .1rem .55rem; letter-spacing: -.01em;
+    }
+    .rel-date { color: var(--muted); font-size: .85rem; }
+    .rel-notes { margin-top: .5rem; }
+    .rel-notes h3.section {
+      font-size: .8rem; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin: 1rem 0 .35rem; font-weight: 600;
+    }
+    .rel-notes ul { margin: .25rem 0 .5rem; padding-left: 1.2rem; }
+    .rel-notes li { margin: .15rem 0; }
+    .rel-notes p.cont { margin: .2rem 0; color: var(--muted); }
+    .rel-notes code {
+      background: #010409; border: 1px solid var(--border); border-radius: 4px;
+      padding: 0 .3em; font-size: .85em;
+    }
+    .dl-title {
+      font-size: .8rem; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin: 1.25rem 0 .35rem; font-weight: 600;
+    }
+    .rel-links { margin-top: .9rem; }
+    .gh-link { color: var(--accent); text-decoration: none; font-size: .85rem; }
+    .gh-link:hover { text-decoration: underline; }
+    .fallback { color: var(--muted); }
+    .fallback a { color: var(--accent); }
+  </style>
+  <script>
+    // i18n: on first visit redirect to the browser language (de/es/fr; en is the
+    // base); the switcher below stores the choice in localStorage.
+    window.__i18n = { base: 'releases', baseLang: 'en' };
+    (function () {
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      try {
+        var w = localStorage.getItem('sx-lang');
+        if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
+        if (w !== P) { location.replace(w === I.baseLang ? I.base + '.html' : I.base + '.' + w + '.html'); return; }
+      } catch (e) { }
+      document.addEventListener('DOMContentLoaded', function () {
+        var bar = document.querySelector('.langbar'); if (!bar) return;
+        var c = bar.querySelector('a[data-lang="' + P + '"]'); if (c) c.setAttribute('aria-current', 'true');
+        bar.addEventListener('click', function (e) {
+          var a = e.target.closest('a[data-lang]');
+          if (a) { try { localStorage.setItem('sx-lang', a.getAttribute('data-lang')); } catch (_) { } }
+        });
+      });
+    })();
+  </script>
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+  <script defer src="https://stats.cloud-surfers.net/recorder.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <nav class="langbar" aria-label="Language">
+    <a data-lang="en" hreflang="en" href="releases.html">EN</a>
+    <a data-lang="de" hreflang="de" href="releases.de.html">DE</a>
+    <a data-lang="es" hreflang="es" href="releases.es.html">ES</a>
+    <a data-lang="fr" hreflang="fr" href="releases.fr.html">FR</a>
+  </nav>
+  <main>
+    <div class="card">
+      <h1>Versionshinweise<span class="cursor">_</span></h1>
+      <p class="lead">Jede Version von swarmexec, neueste zuerst — was sich geändert hat und wo du sie herunterlädst.</p>
+      <div id="releases"><p class="loading">Versionshinweise werden geladen…</p></div>
+
+      <footer>
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io/cs-public/swarm-remote-exec</a><br>
+        Open Source unter der
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var LOCALE = 'de';
+      var STR = {
+        downloads: 'Downloads',
+        gitlab: 'Release auf GitLab ansehen →',
+        fallback: 'Die Versionshinweise findest du auf GitLab.'
+      };
+      var REPO = 'https://gitlab.logle.io/cs-public/swarm-remote-exec';
+      var DL_FILES = [
+        ['swarmexec-linux-amd64', 'Linux amd64'],
+        ['swarmexec-linux-arm64', 'Linux arm64'],
+        ['swarmexec-darwin-arm64', 'macOS arm64'],
+        ['swarmexec-darwin-amd64', 'macOS amd64'],
+        ['swarmexec-windows-amd64.exe', 'Windows amd64'],
+        ['SHA256SUMS', 'SHA256SUMS']
+      ];
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      // Inline `code` on already-escaped text. Backticks can't appear in escaped
+      // output except literally, so this is safe.
+      function inlineCode(s) {
+        return s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      }
+
+      // Convert the plain-text tag message into safe HTML. Everything is escaped
+      // first; only our own tags are ever emitted.
+      function renderNotes(msg) {
+        var lines = String(msg || '').split('\n');
+        if (lines.length && /^swarmexec /.test(lines[0])) lines.shift();
+        var out = [], inList = false, liBuf = null;
+        function flushLi() {
+          if (liBuf !== null) { out.push('<li>' + inlineCode(esc(liBuf)) + '</li>'); liBuf = null; }
+        }
+        function closeList() { flushLi(); if (inList) { out.push('</ul>'); inList = false; } }
+        for (var i = 0; i < lines.length; i++) {
+          var raw = lines[i], line = raw.replace(/\s+$/, '');
+          if (line.trim() === '') { closeList(); continue; }
+          var m = line.match(/^- (.*)$/);
+          if (m) {
+            flushLi();
+            if (!inList) { out.push('<ul>'); inList = true; }
+            liBuf = m[1];
+            continue;
+          }
+          if (/^\s{2,}\S/.test(raw)) {
+            if (inList && liBuf !== null) { liBuf += ' ' + line.trim(); continue; }
+            closeList();
+            out.push('<p class="cont">' + inlineCode(esc(line.trim())) + '</p>');
+            continue;
+          }
+          closeList();
+          out.push('<h3 class="section">' + inlineCode(esc(line.trim())) + '</h3>');
+        }
+        closeList();
+        return out.join('');
+      }
+
+      function fmtDate(d) {
+        try { return new Date(d).toLocaleDateString(LOCALE, { year: 'numeric', month: 'long', day: 'numeric' }); }
+        catch (e) { return esc(d); }
+      }
+
+      function downloadsHtml(version) {
+        var v = encodeURIComponent(version);
+        var html = '<div class="dl-title">' + esc(STR.downloads) + '</div><div class="links">';
+        for (var i = 0; i < DL_FILES.length; i++) {
+          var file = DL_FILES[i][0], label = DL_FILES[i][1];
+          var url = REPO + '/-/jobs/artifacts/' + v + '/raw/dist/' + encodeURIComponent(file) + '?job=build-cli';
+          html += '<a class="btn" href="' + url + '"><span class="t">' + esc(label) +
+                  '</span><span class="s">' + esc(file) + '</span></a>';
+        }
+        html += '</div>';
+        return html;
+      }
+
+      function releaseHtml(rel, isLatest) {
+        var ver = esc(rel.version);
+        var html = '<div class="release"><div class="rel-head">' +
+                   '<h2 class="ver">' + ver + '</h2>' +
+                   '<span class="rel-date">' + fmtDate(rel.date) + '</span></div>' +
+                   '<div class="rel-notes">' + renderNotes(rel.message) + '</div>';
+        if (isLatest) html += downloadsHtml(rel.version);
+        html += '<div class="rel-links"><a class="gh-link" href="' + REPO + '/-/releases/' +
+                encodeURIComponent(rel.version) + '">' + esc(STR.gitlab) + '</a></div></div>';
+        return html;
+      }
+
+      function fallback() {
+        var el = document.getElementById('releases');
+        el.innerHTML = '<p class="fallback">' + esc(STR.fallback) +
+          ' <a href="' + REPO + '/-/releases">' + REPO + '/-/releases</a></p>';
+      }
+
+      fetch('releases.json')
+        .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+        .then(function (data) {
+          if (!Array.isArray(data) || data.length === 0) { fallback(); return; }
+          data = data.slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+          var html = '';
+          for (var i = 0; i < data.length; i++) html += releaseHtml(data[i], i === 0);
+          document.getElementById('releases').innerHTML = html;
+        })
+        .catch(function () { fallback(); });
+    })();
+  </script>
+</body>
+</html>
