@@ -20,7 +20,7 @@ func buildLogFilter(formatName, minLevel, grep string) (logfmt.Format, logfmt.Fi
 	if formatName != "" {
 		f, ok := logfmt.ByName(formatName)
 		if !ok {
-			return nil, logfmt.Filter{}, fmt.Errorf("unknown log format %q (want: classic, json, gelf, raw)", formatName)
+			return nil, logfmt.Filter{}, fmt.Errorf("unknown log format %q (want: classic, json, logfmt, gelf, raw)", formatName)
 		}
 		format = f
 	}

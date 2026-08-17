@@ -78,7 +78,7 @@ type Config struct {
 
 // LogsConfig holds default log parsing/filtering for the log views.
 type LogsConfig struct {
-	// Format parses lines: classic | json | gelf | raw. Empty = classic.
+	// Format parses lines: classic | json | logfmt | gelf | raw. Empty = classic.
 	Format string `yaml:"format"`
 	// MinLevel hides lines below this level: trace..fatal. Empty = no filter.
 	MinLevel string `yaml:"min_level"`
