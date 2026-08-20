@@ -148,12 +148,12 @@
       };
       var REPO = 'https://gitlab.logle.io/cs-public/swarm-remote-exec';
       var DL_FILES = [
-        ['swarmexec-linux-amd64', 'Linux amd64'],
-        ['swarmexec-linux-arm64', 'Linux arm64'],
-        ['swarmexec-darwin-arm64', 'macOS arm64'],
-        ['swarmexec-darwin-amd64', 'macOS amd64'],
-        ['swarmexec-windows-amd64.exe', 'Windows amd64'],
-        ['SHA256SUMS', 'SHA256SUMS']
+        ['swarmexec-linux-amd64', 'Linux amd64', 'download-linux-amd64'],
+        ['swarmexec-linux-arm64', 'Linux arm64', 'download-linux-arm64'],
+        ['swarmexec-darwin-arm64', 'macOS arm64', 'download-darwin-arm64'],
+        ['swarmexec-darwin-amd64', 'macOS amd64', 'download-darwin-amd64'],
+        ['swarmexec-windows-amd64.exe', 'Windows amd64', 'download-windows-amd64'],
+        ['SHA256SUMS', 'SHA256SUMS', 'download-sha256sums']
       ];
 
       function esc(s) {
@@ -208,9 +208,9 @@
         var v = encodeURIComponent(version);
         var html = '<div class="dl-title">' + esc(STR.downloads) + '</div><div class="links">';
         for (var i = 0; i < DL_FILES.length; i++) {
-          var file = DL_FILES[i][0], label = DL_FILES[i][1];
+          var file = DL_FILES[i][0], label = DL_FILES[i][1], ev = DL_FILES[i][2];
           var url = REPO + '/-/jobs/artifacts/' + v + '/raw/dist/' + encodeURIComponent(file) + '?job=build-cli';
-          html += '<a class="btn" href="' + url + '"><span class="t">' + esc(label) +
+          html += '<a class="btn" href="' + url + '" data-umami-event="' + ev + '"><span class="t">' + esc(label) +
                   '</span><span class="s">' + esc(file) + '</span></a>';
         }
         html += '</div>';
