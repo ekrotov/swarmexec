@@ -65,7 +65,7 @@ func newTerminalView(app *tview.Application) *terminalView {
 
 // run dials the agent and runs the exec session, feeding output into the
 // emulator. onDone is invoked (off the UI goroutine) when the session ends.
-func (v *terminalView) run(ctx context.Context, cfg config.Config, ep resolve.Endpoint, command []string, tty bool, connectTimeout time.Duration, onDone func(int, error)) {
+func (v *terminalView) run(ctx context.Context, cfg config.Config, ep resolve.Endpoint, command []string, tty bool, user string, connectTimeout time.Duration, onDone func(int, error)) {
 	pr, pw := io.Pipe()
 	v.mu.Lock()
 	v.stdin = pw
@@ -95,6 +95,7 @@ func (v *terminalView) run(ctx context.Context, cfg config.Config, ep resolve.En
 				Tty:         tty,
 				Width:       uint32(cols),
 				Height:      uint32(rows),
+				User:        user,
 			},
 			Stdin:        pr,
 			Stdout:       vtSink{v},

@@ -448,11 +448,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, nil) })
 		}()
 	}
-	openTerminal := func(c resolve.Candidate, command []string, tty bool) {
+	openTerminal := func(c resolve.Candidate, command []string, tty bool, user string) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		tctx, tcancel := context.WithCancel(ctx)
 		tv := newTerminalView(app)
-		tv.SetTitle(fmt.Sprintf(" %v · %s · %s on %s — Ctrl-] detach ", command, orDash(c.Service), shortID(c.ContainerID), orDash(c.NodeName)))
+		asUser := ""
+		if user != "" {
+			asUser = " as " + user
+		}
+		tv.SetTitle(fmt.Sprintf(" %v%s · %s · %s on %s — Ctrl-] detach ", command, asUser, orDash(c.Service), shortID(c.ContainerID), orDash(c.NodeName)))
 		var once sync.Once
 		closeTerm := func() {
 			once.Do(func() {
@@ -463,7 +467,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}
 		tv.detach = closeTerm
-		tv.run(tctx, cfg, ep, command, tty, f.connectTimeout, func(code int, rerr error) {
+		tv.run(tctx, cfg, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
 			app.QueueUpdateDraw(func() {
 				switch {
 				case tctx.Err() != nil:
@@ -471,12 +475,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				case rerr != nil:
 					closeTerm()
 					info(enrichAgentError(ctx, dcli, rerr).Error())
-				case code != 0:
-					// The command failed (e.g. `bash` not in the image). Keep the
-					// pane up with its output so the error stays readable.
+				case code == 126 || code == 127:
+					// The shell could not start (127 = not found, 126 = not
+					// executable — e.g. no bash in the image). Keep the pane up so
+					// the error output stays readable. Any OTHER exit code means the
+					// shell ran and the user ended it (exit / Ctrl-D), possibly with
+					// a non-zero last-command status — so close the pane, don't make
+					// the user dismiss it a second time.
 					tv.showEnded(fmt.Sprintf("[swarmexec] %v exited with code %d — press any key to close", command, code))
 				default:
-					closeTerm() // clean exit
+					closeTerm() // shell exited (user typed exit / Ctrl-D) — close
 				}
 			})
 		})
@@ -755,6 +763,30 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		app.SetFocus(input)
 	}
 
+	// userPrompt asks which user/UID to exec as, then calls open with it. Mirrors
+	// the CLI's `exec -u`: a name, a UID, or UID:GID.
+	userPrompt := func(c resolve.Candidate, open func(user string)) {
+		input := tview.NewInputField().SetLabel(" user: ").SetFieldWidth(28)
+		input.SetBorder(true).SetTitle(fmt.Sprintf(" shell into %s on %s as… ", orDash(c.Service), orDash(c.NodeName)))
+		input.SetPlaceholder("  name or UID[:GID] — e.g. root, 1000, 1000:1000")
+		closePrompt := func() { pages.RemovePage("userprompt"); app.SetFocus(ctree) }
+		input.SetDoneFunc(func(key tcell.Key) {
+			if key != tcell.KeyEnter {
+				closePrompt()
+				return
+			}
+			u := strings.TrimSpace(input.GetText())
+			if u == "" {
+				input.SetTitle(" enter a username or UID (Esc to cancel) ")
+				return
+			}
+			closePrompt()
+			open(u)
+		})
+		pages.AddPage("userprompt", centered(input, 62, 3), true, true)
+		app.SetFocus(input)
+	}
+
 	containerMenu := func(c resolve.Candidate) {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		list := tview.NewList().ShowSecondaryText(false)
@@ -771,14 +803,26 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			list.AddItem(shellLabel("Bash", bashOK, probed), "", 0, func() {
 				if bashOK {
 					closeMenu()
-					openTerminal(c, []string{"bash"}, true)
+					openTerminal(c, []string{"bash"}, true, "")
 				}
 			})
 			list.AddItem(shellLabel("Sh", shOK, probed), "", 0, func() {
 				if shOK {
 					closeMenu()
-					openTerminal(c, []string{"sh"}, false)
+					openTerminal(c, []string{"sh"}, false, "")
 				}
+			})
+			// Shell in as a specific user/UID (docker exec -u), for images whose
+			// default user lacks the tools or permissions you need.
+			list.AddItem("Shell as user…", "", 0, func() {
+				closeMenu()
+				userPrompt(c, func(u string) {
+					if bashOK {
+						openTerminal(c, []string{"bash"}, true, u)
+					} else {
+						openTerminal(c, []string{"sh"}, false, u)
+					}
+				})
 			})
 			list.AddItem("Port forward", "", 0, func() { closeMenu(); portPrompt(c) })
 			list.AddItem("Cancel", "", 0, closeMenu)
@@ -804,16 +848,21 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 
-		// Height tracks the item count: 5 items plus the border.
-		pages.AddPage("menu", centered(list, 48, 7), true, true)
+		// Height tracks the item count: 6 items plus the border.
+		pages.AddPage("menu", centered(list, 48, 8), true, true)
 		app.SetFocus(list)
 	}
-	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
-		if ref, ok := node.GetReference().(resolve.Candidate); ok {
-			containerMenu(ref)
+	// showLogsForNode opens logs for the tree cursor: a container leaf shows that
+	// container's logs; a service node shows its containers' aggregated logs.
+	// Bound to the L key (Enter on a service toggles expand/collapse instead).
+	showLogsForNode := func(node *tview.TreeNode) {
+		if c, ok := node.GetReference().(resolve.Candidate); ok {
+			showLogs(c)
 			return
 		}
-		// Service node → aggregated logs of all its containers.
+		if !isServiceNode(node) {
+			return
+		}
 		var members []resolve.Candidate
 		for _, ch := range node.GetChildren() {
 			if c, ok := ch.GetReference().(resolve.Candidate); ok {
@@ -826,6 +875,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				title = ref.name // the row now carries mode/image/ports — log by name
 			}
 			showServiceLogs(title, members)
+		}
+	}
+	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
+		if ref, ok := node.GetReference().(resolve.Candidate); ok {
+			containerMenu(ref)
+			return
+		}
+		// Service node → toggle expand/collapse. Logs are on the L key.
+		if isServiceNode(node) {
+			node.SetExpanded(!node.IsExpanded())
+			markService(node)
 		}
 	})
 
@@ -2781,8 +2841,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			kl(km.Copy), kl(km.ToggleMouse), kl(km.Refresh), kl(km.Quit))
 		switch name {
 		case "containers":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]Enter[white] menu  [yellow]%s[white] forward  %s",
-				kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
+			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]%s[white] forward  %s",
+				kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
 		case "volumes":
 			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
 				kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
@@ -4478,6 +4538,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case km.ContainerInspect:
 				inspectCurrent()
+				return nil
+			case km.Logs:
+				if n := ctree.GetCurrentNode(); n != nil {
+					showLogsForNode(n)
+				}
 				return nil
 			case km.Fold:
 				// Collapse. tview's TreeView has no fold key — Left/Right only
