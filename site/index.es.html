@@ -8,6 +8,50 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/index.es.html">
+  <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/">
+  <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/index.de.html">
+  <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/index.es.html">
+  <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/index.fr.html">
+  <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec — docker exec para todo el clúster de Docker Swarm">
+  <meta property="og:description" content="docker exec, logs y gestión de volúmenes para todo un clúster de Docker Swarm, desde una sola terminal.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/index.es.html">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+  <meta property="og:image:width" content="860">
+  <meta property="og:image:height" content="470">
+  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="de_DE">
+  <meta property="og:locale:alternate" content="fr_FR">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec — docker exec para todo el clúster de Docker Swarm">
+  <meta name="twitter:description" content="docker exec, logs y gestión de volúmenes para todo un clúster de Docker Swarm, desde una sola terminal.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "swarmexec",
+    "description": "docker exec, logs y gestión de volúmenes para todo un clúster de Docker Swarm, desde una sola terminal.",
+    "url": "https://swarm-exec.cloud-surfers.net/",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "author": {
+      "@type": "Organization",
+      "name": "Cloud Surfers GmbH",
+      "url": "https://www.cloud-surfers.com/"
+    }
+  }
+  </script>
   <style>
     :root {
       --bg: #0d1117; --panel: #161b22; --border: #30363d;
@@ -36,6 +80,13 @@
       overflow-x: auto; white-space: pre; font-size: .9rem;
     }
     .prompt .c { color: var(--aqua); }
+    .dhbox {
+      margin-top: 1.25rem; padding: .7rem .95rem; font-size: .9rem;
+      background: rgba(47,129,247,.08); border: 1px solid var(--accent);
+      border-radius: 8px; color: var(--fg);
+    }
+    .dhbox a { color: var(--aqua); text-decoration: none; }
+    .dhbox a:hover { text-decoration: underline; }
     .demo { display: block; width: 100%; height: auto; margin: 1.5rem 0; border: 1px solid var(--border); border-radius: 10px; }
     .links { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1.75rem; }
     a.btn {
@@ -101,7 +152,7 @@
       <h1>swarmexec<span class="cursor">_</span></h1>
       <p class="tagline"><code>docker exec -it</code> para todo el clúster de Docker Swarm.</p>
 
-      <img class="demo" src="/demo.gif" width="860" height="470" loading="lazy"
+      <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
            alt="En lugar de docker node ls, encontrar el nodo, ssh node-3 y docker exec, basta con ejecutar: swarmexec exec web -- sh">
 
       <p class="lead">
@@ -117,6 +168,11 @@
 <span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># abre una shell en una tarea, en cualquier nodo</span>
 <span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># TUI interactiva</span></div>
 
+      <div class="dhbox">
+        El agente (por nodo) está en Docker Hub:
+        <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">logleio/swarmexec-agent</a>
+      </div>
+
       <div class="links">
         <a class="btn" href="/docs">
           <span class="t">Documentación</span>
@@ -126,7 +182,7 @@
           <span class="t">Repositorio en GitLab</span>
           <span class="s">código fuente e issues</span>
         </a>
-        <a class="btn" href="https://hub.docker.com/r/logleio/swarmexec-agent">
+        <a class="btn" href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">
           <span class="t">Docker Hub</span>
           <span class="s">logleio/swarmexec-agent</span>
         </a>

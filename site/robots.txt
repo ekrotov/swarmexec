@@ -1,3 +1,5 @@
 # swarmexec landing site — public marketing/docs pages, crawling welcome.
 User-agent: *
 Allow: /
+
+Sitemap: https://swarm-exec.cloud-surfers.net/sitemap.xml
