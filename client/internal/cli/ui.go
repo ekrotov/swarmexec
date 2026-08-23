@@ -146,6 +146,29 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		app.SetFocus(m)
 	}
 
+	// confirm shows a two-button confirmation modal (confirmLabel + "Cancel") and
+	// owns the modal, its page, and focus restoration — the two-button sibling of
+	// info. onConfirm runs only when the operator picks the confirm button; on
+	// cancel, focus returns to back. On confirm, onConfirm decides what happens
+	// next (open a progress overlay, start async work, restore focus itself, …),
+	// so it must handle its own focus. Only one confirm is ever open at a time, so
+	// a single shared page name is safe.
+	confirm := func(msg, confirmLabel string, back tview.Primitive, onConfirm func()) {
+		m := tview.NewModal().
+			SetText(msg).
+			AddButtons([]string{confirmLabel, "Cancel"}).
+			SetDoneFunc(func(_ int, label string) {
+				pages.RemovePage("confirm")
+				if label != confirmLabel {
+					app.SetFocus(back)
+					return
+				}
+				onConfirm()
+			})
+		pages.AddPage("confirm", m, true, true)
+		app.SetFocus(m)
+	}
+
 	// forwards is the UI's only persistent background resource: a port forward
 	// outlives the overlay that started it, unlike every stream here.
 	forwards := newForwardRegistry()
@@ -1182,19 +1205,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}()
 		}
 		confirmDelete := func(targets []resolve.Node) {
-			m := tview.NewModal().
-				SetText(fmt.Sprintf("Remove volume %q on %d node(s)?\n%s", v.Name, len(targets), joinNodes(targets))).
-				AddButtons([]string{"Delete", "Cancel"}).
-				SetDoneFunc(func(_ int, label string) {
-					pages.RemovePage("confirm")
-					if label == "Delete" {
-						runDelete(targets)
-					} else {
-						app.SetFocus(list)
-					}
-				})
-			pages.AddPage("confirm", m, true, true)
-			app.SetFocus(m)
+			confirm(fmt.Sprintf("Remove volume %q on %d node(s)?\n%s", v.Name, len(targets), joinNodes(targets)),
+				"Delete", list, func() { runDelete(targets) })
 		}
 
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -1402,76 +1414,68 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if extra > 0 {
 			body += fmt.Sprintf("\n(+%d more)", extra)
 		}
-		m := tview.NewModal().SetText(body).AddButtons([]string{"Delete", "Cancel"}).
-			SetDoneFunc(func(_ int, label string) {
-				pages.RemovePage("confirm")
-				if label != "Delete" {
-					app.SetFocus(vtable)
-					return
-				}
-				// Deleting runs per volume across every node it holds, which can
-				// take a while, so show a progress overlay instead of freezing.
-				prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
-				prog.SetBorder(true).SetTitle(" deleting volumes ")
-				prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
-				pages.AddPage("volprogress", centered(prog, 60, 5), true, true)
-				app.SetFocus(prog)
-				go func() {
-					// Delete volumes with bounded parallelism: each volume already
-					// fans out across its nodes, so a small volume-level pool keeps
-					// the total load on the agents in check. A mutex guards the
-					// shared counters and the progress overlay shows completions.
-					var (
-						mu      sync.Mutex
-						fails   []string
-						done    int
-						removed int
-					)
-					sem := make(chan struct{}, volumeDeleteFanout)
-					var wg sync.WaitGroup
-					for _, v := range targets {
-						wg.Add(1)
-						sem <- struct{}{}
-						go func(v swarmVolume) {
-							defer wg.Done()
-							defer func() { <-sem }()
-							ok := true
-							var vf []string
-							for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
-								if res.err != nil {
-									ok = false
-									vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.node.Name, res.err))
-								}
+		confirm(body, "Delete", vtable, func() {
+			// Deleting runs per volume across every node it holds, which can
+			// take a while, so show a progress overlay instead of freezing.
+			prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
+			prog.SetBorder(true).SetTitle(" deleting volumes ")
+			prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
+			pages.AddPage("volprogress", centered(prog, 60, 5), true, true)
+			app.SetFocus(prog)
+			go func() {
+				// Delete volumes with bounded parallelism: each volume already
+				// fans out across its nodes, so a small volume-level pool keeps
+				// the total load on the agents in check. A mutex guards the
+				// shared counters and the progress overlay shows completions.
+				var (
+					mu      sync.Mutex
+					fails   []string
+					done    int
+					removed int
+				)
+				sem := make(chan struct{}, volumeDeleteFanout)
+				var wg sync.WaitGroup
+				for _, v := range targets {
+					wg.Add(1)
+					sem <- struct{}{}
+					go func(v swarmVolume) {
+						defer wg.Done()
+						defer func() { <-sem }()
+						ok := true
+						var vf []string
+						for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
+							if res.err != nil {
+								ok = false
+								vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.node.Name, res.err))
 							}
-							mu.Lock()
-							done++
-							if ok {
-								removed++
-							}
-							fails = append(fails, vf...)
-							d := done
-							mu.Unlock()
-							app.QueueUpdateDraw(func() {
-								prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets)))
-							})
-						}(v)
-					}
-					wg.Wait()
-					app.QueueUpdateDraw(func() {
-						pages.RemovePage("volprogress")
-						selectedVols = map[string]bool{}
-						loadVolumes()
-						updateStatus()
-						summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
-						if len(fails) > 0 {
-							summary += ":\n" + joinLines(fails)
 						}
-						info(summary)
-					})
-				}()
-			})
-		pages.AddPage("confirm", m, true, true)
-		app.SetFocus(m)
+						mu.Lock()
+						done++
+						if ok {
+							removed++
+						}
+						fails = append(fails, vf...)
+						d := done
+						mu.Unlock()
+						app.QueueUpdateDraw(func() {
+							prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets)))
+						})
+					}(v)
+				}
+				wg.Wait()
+				app.QueueUpdateDraw(func() {
+					pages.RemovePage("volprogress")
+					selectedVols = map[string]bool{}
+					loadVolumes()
+					updateStatus()
+					summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
+					if len(fails) > 0 {
+						summary += ":\n" + joinLines(fails)
+					}
+					info(summary)
+				})
+			}()
+		})
 	}
 
 	// pruneVolumes deletes every volume that no running container mounts and no
@@ -1678,29 +1682,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return
 			}
 			pages.RemovePage("svcprompt")
-			confirm := tview.NewModal().
-				SetText(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name)).
-				AddButtons([]string{actionLabel, "Cancel"}).
-				SetDoneFunc(func(_ int, label string) {
-					pages.RemovePage("svcconfirm")
-					if label != actionLabel {
-						app.SetFocus(back)
-						return
-					}
-					go func() {
-						err := do(name)
-						app.QueueUpdateDraw(func() {
-							if err != nil {
-								info(strings.ToLower(actionLabel) + " failed: " + err.Error())
-								return
-							}
-							onDone()
-							info(fmt.Sprintf("%q updated — rolling update started", name))
-						})
-					}()
-				})
-			pages.AddPage("svcconfirm", confirm, true, true)
-			app.SetFocus(confirm)
+			confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
+				go func() {
+					err := do(name)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info(strings.ToLower(actionLabel) + " failed: " + err.Error())
+							return
+						}
+						onDone()
+						info(fmt.Sprintf("%q updated — rolling update started", name))
+					})
+				}()
+			})
 		})
 		in.SetBorder(true).SetTitle(" " + title + " ")
 		pages.AddPage("svcprompt", centered(in, 66, 3), true, true)
@@ -2131,28 +2125,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if len(s.Services) > 0 {
 			msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
 		}
-		m := tview.NewModal().SetText(msg).AddButtons([]string{"Delete", "Cancel"}).
-			SetDoneFunc(func(_ int, lbl string) {
-				pages.RemovePage("secdelconfirm")
-				if lbl != "Delete" {
-					app.SetFocus(sectable)
-					return
-				}
-				go func() {
-					err := removeSecret(ctx, dcli, s.Name)
-					app.QueueUpdateDraw(func() {
-						if err != nil {
-							info("remove failed: " + err.Error())
-							app.SetFocus(sectable)
-							return
-						}
-						loadSecrets()
-						flash(" [green]removed[white] secret " + s.Name)
-					})
-				}()
-			})
-		pages.AddPage("secdelconfirm", m, true, true)
-		app.SetFocus(m)
+		confirm(msg, "Delete", sectable, func() {
+			go func() {
+				err := removeSecret(ctx, dcli, s.Name)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						info("remove failed: " + err.Error())
+						app.SetFocus(sectable)
+						return
+					}
+					loadSecrets()
+					flash(" [green]removed[white] secret " + s.Name)
+				})
+			}()
+		})
 	}
 	// showCreateSecret creates a new swarm secret from a name, a (multi-line)
 	// value and optional labels. The value is entered in a text area so certs and
@@ -2387,22 +2373,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if force {
 			msg += "\n\nIt is the current context — its selection resets to \"default\"."
 		}
-		m := tview.NewModal().SetText(msg).AddButtons([]string{"Delete", "Cancel"}).
-			SetDoneFunc(func(_ int, label string) {
-				pages.RemovePage("confirm")
-				if label != "Delete" {
-					app.SetFocus(cxtable)
-					return
-				}
-				if err := dockerctx.Remove(c.Name, force); err != nil {
-					info("remove failed: " + err.Error())
-					return
-				}
-				loadContexts()
-				flash(" [green]removed[white] context " + c.Name)
-			})
-		pages.AddPage("confirm", m, true, true)
-		app.SetFocus(m)
+		confirm(msg, "Delete", cxtable, func() {
+			if err := dockerctx.Remove(c.Name, force); err != nil {
+				info("remove failed: " + err.Error())
+				return
+			}
+			loadContexts()
+			flash(" [green]removed[white] context " + c.Name)
+		})
 	}
 	// activateContext makes c the current docker context and restarts the UI so
 	// it reconnects to that cluster. Restarting (rather than swapping the client
@@ -2565,33 +2543,23 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				info(err.Error())
 				return
 			}
-			confirm := tview.NewModal().
-				SetText(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname)).
-				AddButtons([]string{"Apply", "Cancel"}).
-				SetDoneFunc(func(_ int, lbl string) {
-					pages.RemovePage("nodelabelconfirm")
-					if lbl != "Apply" {
-						app.SetFocus(list)
-						return
-					}
-					go func() {
-						err := setNodeLabels(ctx, dcli, n.ID, lbls)
-						app.QueueUpdateDraw(func() {
-							if err != nil {
-								info("update failed: " + err.Error())
-								app.SetFocus(list)
-								return
-							}
-							closeEd()
-							info(fmt.Sprintf("node %s labels updated", n.Hostname))
-							if after != nil {
-								after()
-							}
-						})
-					}()
-				})
-			pages.AddPage("nodelabelconfirm", confirm, true, true)
-			app.SetFocus(confirm)
+			confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
+				go func() {
+					err := setNodeLabels(ctx, dcli, n.ID, lbls)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("update failed: " + err.Error())
+							app.SetFocus(list)
+							return
+						}
+						closeEd()
+						info(fmt.Sprintf("node %s labels updated", n.Hostname))
+						if after != nil {
+							after()
+						}
+					})
+				}()
+			})
 		}
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -3353,34 +3321,24 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					text = note + "\n\n" + text
 				}
 			}
-			confirm := tview.NewModal().
-				SetText(text).
-				AddButtons([]string{"Apply", "Cancel"}).
-				SetDoneFunc(func(_ int, lbl string) {
-					pages.RemovePage("listeditconfirm")
-					if lbl != "Apply" {
-						app.SetFocus(list)
-						return
-					}
-					go func() {
-						err := onApply(cur)
-						app.QueueUpdateDraw(func() {
-							if err != nil {
-								info("update failed: " + err.Error())
-								app.SetFocus(list)
-								return
-							}
-							restoreHelp()
-							pages.RemovePage("listedit")
-							info("service updated — rolling update started")
-							if after != nil {
-								after()
-							}
-						})
-					}()
-				})
-			pages.AddPage("listeditconfirm", confirm, true, true)
-			app.SetFocus(confirm)
+			confirm(text, "Apply", list, func() {
+				go func() {
+					err := onApply(cur)
+					app.QueueUpdateDraw(func() {
+						if err != nil {
+							info("update failed: " + err.Error())
+							app.SetFocus(list)
+							return
+						}
+						restoreHelp()
+						pages.RemovePage("listedit")
+						info("service updated — rolling update started")
+						if after != nil {
+							after()
+						}
+					})
+				}()
+			})
 		}
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -3946,31 +3904,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// confirm — every task is restarted/rescheduled, which unsticks a service in
 	// an incomplete state (e.g. 1/2). No spec change beyond bumping ForceUpdate.
 	openForceUpdate := func(svcName string, back tview.Primitive, after func()) {
-		confirm := tview.NewModal().
-			SetText(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName)).
-			AddButtons([]string{"Force update", "Cancel"}).
-			SetDoneFunc(func(_ int, lbl string) {
-				pages.RemovePage("forceconfirm")
-				app.SetFocus(back)
-				if lbl != "Force update" {
-					return
-				}
-				go func() {
-					err := forceUpdateService(ctx, dcli, svcName)
-					app.QueueUpdateDraw(func() {
-						if err != nil {
-							info("force update failed: " + err.Error())
-							return
-						}
-						info(fmt.Sprintf("force-updating %q — reconciling", svcName))
-						if after != nil {
-							after()
-						}
-					})
-				}()
-			})
-		pages.AddPage("forceconfirm", confirm, true, true)
-		app.SetFocus(confirm)
+		confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
+			app.SetFocus(back)
+			go func() {
+				err := forceUpdateService(ctx, dcli, svcName)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						info("force update failed: " + err.Error())
+						return
+					}
+					info(fmt.Sprintf("force-updating %q — reconciling", svcName))
+					if after != nil {
+						after()
+					}
+				})
+			}()
+		})
 	}
 	// promptDeleteOrphanSecrets asks whether to also delete secrets that the
 	// just-removed service was the only user of (nothing references them now).
@@ -4012,67 +3961,48 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// tree, since the service no longer exists). If the service was the sole user
 	// of any secret, it then offers to delete those now-orphaned secrets.
 	openRemoveService := func(svcName string, back tview.Primitive, onRemoved func()) {
-		confirm := tview.NewModal().
-			SetText(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName)).
-			AddButtons([]string{"Remove", "Cancel"}).
-			SetDoneFunc(func(_ int, lbl string) {
-				pages.RemovePage("svcremoveconfirm")
-				if lbl != "Remove" {
-					app.SetFocus(back)
-					return
-				}
-				go func() {
-					// Compute orphaned secrets BEFORE removal (we need the service's
-					// spec and the other services' current usage).
-					orphans, _ := secretsOnlyUsedBy(ctx, dcli, svcName)
-					err := removeService(ctx, dcli, svcName)
-					app.QueueUpdateDraw(func() {
-						if err != nil {
-							info("remove failed: " + err.Error())
-							app.SetFocus(back)
-							return
-						}
-						info(fmt.Sprintf("removed service %q", svcName))
-						if onRemoved != nil {
-							onRemoved()
-						}
-						if len(orphans) > 0 {
-							promptDeleteOrphanSecrets(orphans)
-						}
-					})
-				}()
-			})
-		pages.AddPage("svcremoveconfirm", confirm, true, true)
-		app.SetFocus(confirm)
+		confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
+			go func() {
+				// Compute orphaned secrets BEFORE removal (we need the service's
+				// spec and the other services' current usage).
+				orphans, _ := secretsOnlyUsedBy(ctx, dcli, svcName)
+				err := removeService(ctx, dcli, svcName)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						info("remove failed: " + err.Error())
+						app.SetFocus(back)
+						return
+					}
+					info(fmt.Sprintf("removed service %q", svcName))
+					if onRemoved != nil {
+						onRemoved()
+					}
+					if len(orphans) > 0 {
+						promptDeleteOrphanSecrets(orphans)
+					}
+				})
+			}()
+		})
 	}
 	// openImageUpgrade updates a :latest service onto the registry's current digest
 	// (target = repo:latest@sha256:…), after a confirm. Rolling update.
 	openImageUpgrade := func(svcName, target string, back tview.Primitive, after func()) {
-		confirm := tview.NewModal().
-			SetText(fmt.Sprintf("Update %q to the newer :latest image?\n\n%s\n\nThis triggers a rolling update onto the registry's current digest.", svcName, target)).
-			AddButtons([]string{"Update", "Cancel"}).
-			SetDoneFunc(func(_ int, lbl string) {
-				pages.RemovePage("upgradeconfirm")
-				app.SetFocus(back)
-				if lbl != "Update" {
-					return
-				}
-				go func() {
-					err := updateServiceImage(ctx, dcli, svcName, target)
-					app.QueueUpdateDraw(func() {
-						if err != nil {
-							info("update failed: " + err.Error())
-							return
-						}
-						info(fmt.Sprintf("updating %q — rolling update started", svcName))
-						if after != nil {
-							after()
-						}
-					})
-				}()
-			})
-		pages.AddPage("upgradeconfirm", confirm, true, true)
-		app.SetFocus(confirm)
+		confirm(fmt.Sprintf("Update %q to the newer :latest image?\n\n%s\n\nThis triggers a rolling update onto the registry's current digest.", svcName, target), "Update", back, func() {
+			app.SetFocus(back)
+			go func() {
+				err := updateServiceImage(ctx, dcli, svcName, target)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						info("update failed: " + err.Error())
+						return
+					}
+					info(fmt.Sprintf("updating %q — rolling update started", svcName))
+					if after != nil {
+						after()
+					}
+				})
+			}()
+		})
 	}
 	// showPlacementDiagnosis explains why a service is not running everywhere it is
 	// expected to — per-node exclusion reasons for a global service, and the
@@ -4153,33 +4083,23 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						setTitle(" ⚠ memory reservation exceeds the limit ")
 						return
 					}
-					confirm := tview.NewModal().
-						SetText("Update resource limits for " + svcName + "?\n\nThis triggers a rolling update of the service.").
-						AddButtons([]string{"Apply", "Cancel"}).
-						SetDoneFunc(func(_ int, lbl string) {
-							pages.RemovePage("resconfirm")
-							if lbl != "Apply" {
-								app.SetFocus(form)
-								return
-							}
-							go func() {
-								aerr := setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
-								app.QueueUpdateDraw(func() {
-									if aerr != nil {
-										info("update failed: " + aerr.Error())
-										app.SetFocus(form)
-										return
-									}
-									closeForm()
-									info("service updated — rolling update started")
-									if after != nil {
-										after()
-									}
-								})
-							}()
-						})
-					pages.AddPage("resconfirm", confirm, true, true)
-					app.SetFocus(confirm)
+					confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
+						go func() {
+							aerr := setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
+							app.QueueUpdateDraw(func() {
+								if aerr != nil {
+									info("update failed: " + aerr.Error())
+									app.SetFocus(form)
+									return
+								}
+								closeForm()
+								info("service updated — rolling update started")
+								if after != nil {
+									after()
+								}
+							})
+						}()
+					})
 				}
 				form.AddFormItem(cpuL)
 				form.AddFormItem(memL)
