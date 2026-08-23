@@ -8,6 +8,28 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/releases">
+  <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/releases">
+  <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/releases.de.html">
+  <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/releases.es.html">
+  <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/releases.fr.html">
+  <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/releases">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec — release notes">
+  <meta property="og:description" content="Every release of swarmexec, newest first — what changed and where to download it.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/releases">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+  <meta property="og:image:width" content="860">
+  <meta property="og:image:height" content="470">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="de_DE">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="fr_FR">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec — release notes">
+  <meta name="twitter:description" content="Every release of swarmexec, newest first — what changed and where to download it.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
   <style>
     :root {
       --bg: #0d1117; --panel: #161b22; --border: #30363d;
@@ -86,6 +108,9 @@
     .gh-link:hover { text-decoration: underline; }
     .fallback { color: var(--muted); }
     .fallback a { color: var(--accent); }
+    .dh-hint { color: var(--muted); font-size: .9rem; margin: -.5rem 0 0; }
+    .dh-hint a { color: var(--aqua); text-decoration: none; }
+    .dh-hint a:hover { text-decoration: underline; }
   </style>
   <script>
     // i18n: on first visit redirect to the browser language (de/es/fr; en is the
@@ -122,6 +147,7 @@
     <div class="card">
       <h1>Release notes<span class="cursor">_</span></h1>
       <p class="lead">Every release of swarmexec, newest first — what changed and where to download it.</p>
+      <p class="dh-hint">The per-node agent ships on Docker Hub: <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">logleio/swarmexec-agent</a>.</p>
       <div id="releases"><p class="loading">Loading release notes…</p></div>
 
       <footer>
