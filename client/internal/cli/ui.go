@@ -2803,29 +2803,33 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 	// helpFor builds the footer key hints from the live keymap, so remapped keys
 	// show correctly. j/k, Enter and Tab/1-6 are fixed and stay literal.
+	// helpFor builds the per-tab footer. The two universal escape hatches — "?"
+	// (full-key help) and quit — are FRONT-LOADED, so on a terminal too narrow for
+	// the whole line it is the tab-specific tail that clips, never the way out or
+	// the pointer to every other key. The complete list (copy/mouse/tabs/refresh
+	// and each tab's keys) lives in the "?" overlay (showHelp).
 	helpFor := func(name string) string {
 		kl := keyLabel
-		tail := fmt.Sprintf("[yellow]%s[white] copy  [yellow]%s[white] mouse  [yellow]Tab/1-6[white] tabs  [yellow]%s[white] refresh  [yellow]%s[white] quit",
-			kl(km.Copy), kl(km.ToggleMouse), kl(km.Refresh), kl(km.Quit))
+		head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
 		switch name {
 		case "containers":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] search  [yellow]%s[white] forward  %s",
-				kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.Search), kl(km.Forward), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward",
+				kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward))
 		case "volumes":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort  %s",
-				kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
+				kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
 		case "networks":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  %s", kl(km.NetAttached), kl(km.NetNew), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", kl(km.NetAttached), kl(km.NetNew))
 		case "secrets":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] new  [yellow]%s[white] delete  %s", kl(km.SecNew), kl(km.SecDelete), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
 		case "contexts":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete  %s",
-				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete",
+				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 		case "nodes":
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] edit labels  %s", kl(km.NodeLabels), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
 		default:
-			return fmt.Sprintf(" [yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url  %s",
-				kl(km.FwdStop), kl(km.FwdCopyURL), tail)
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
+				kl(km.FwdStop), kl(km.FwdCopyURL))
 		}
 	}
 	// tabChrome renders the tab bar with one tab highlighted, so adding a tab is
@@ -2881,12 +2885,21 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	}
 
-	// flash briefly replaces the footer with a status message, then restores it.
+	// flash briefly replaces the footer with a status message, then restores the
+	// footer that was there BEFORE — which may be a tab footer or an overlay's own
+	// footer (pushOverlayHelp), so it must snapshot, not assume curHelp. The
+	// restore is guarded: if anything else changed the footer meanwhile (a tab
+	// switch, an opened overlay, a newer flash), that owner keeps it.
 	flash = func(msg string) {
+		prev := help.GetText(false)
 		help.SetText(msg)
 		go func() {
 			time.Sleep(1500 * time.Millisecond)
-			app.QueueUpdateDraw(func() { help.SetText(curHelp) })
+			app.QueueUpdateDraw(func() {
+				if help.GetText(false) == msg {
+					help.SetText(prev)
+				}
+			})
 		}()
 	}
 
@@ -3067,7 +3080,109 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	// tabOrder drives Tab cycling; every tab joins it.
 	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes"}
+	// showHelp opens a scrollable overlay listing every keybinding — the complete
+	// reference the single-row footer cannot hold. It is generated from the live
+	// keymap, so remapped keys show correctly. Bound to "?" on every tab.
+	showHelp := func() {
+		kl := keyLabel
+		var b strings.Builder
+		sec := func(title string) { fmt.Fprintf(&b, "\n[aqua]%s[-]\n", title) }
+		line := func(keys, desc string) { fmt.Fprintf(&b, "  [yellow]%-9s[white] %s\n", keys, desc) }
+
+		b.WriteString("[aqua]Global[-]\n")
+		line("?", "this help")
+		line(kl(km.Quit), "quit")
+		line(kl(km.Refresh), "refresh the current tab + cluster")
+		line(kl(km.Copy), "copy the current list to the clipboard")
+		line(kl(km.ToggleMouse), "toggle mouse on/off")
+		line("Tab", "next tab")
+		line("1–7", "jump to a tab by number")
+		line("`", "toggle the client log view")
+		line("Esc", "close the current overlay / dialog")
+
+		sec("Containers")
+		line("Enter", "expand a service · open a container's menu")
+		line(kl(km.Logs), "logs (service or container)")
+		line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
+		line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
+		line(kl(km.Forward), "port-forward the task under the cursor")
+		line(kl(km.Search), "search services / containers / nodes")
+
+		sec("Service inspect (" + kl(km.ContainerInspect) + ")")
+		line("a", "actions menu (all edits below, no Shift needed)")
+		line("t", "toggle raw JSON / table")
+		line("d / D", "diff spec · why (placement)")
+		line("s / f", "scale · force-update")
+		line("u", "update to a newer image")
+		line("p l e", "edit ports · labels · env")
+		line("n S v", "edit networks · secrets · mounts")
+		line("r P", "edit resources · placement")
+		line("X", "remove the service")
+
+		sec("Volumes")
+		line(kl(km.VolNew), "new volume")
+		line(kl(km.VolSelect)+"/"+kl(km.VolSelectAll), "select / select all")
+		line(kl(km.VolAttach), "attach to a service")
+		line(kl(km.VolDelete)+"/"+kl(km.VolPrune), "delete / prune unused")
+		line("Enter", "which nodes hold it")
+		line(kl(km.VolUsedBy), "used-by (containers / services)")
+		line(kl(km.VolSort)+"/"+kl(km.VolSortRev), "sort / reverse")
+		line(kl(km.Search), "search")
+
+		sec("Networks")
+		line("Enter/"+kl(km.NetAttached), "attached services")
+		line(kl(km.NetNew), "new network")
+
+		sec("Secrets")
+		line("Enter", "details")
+		line(kl(km.SecNew)+"/"+kl(km.SecDelete), "new / delete")
+
+		sec("Contexts")
+		line(kl(km.CtxUse), "use (switch cluster)")
+		line(kl(km.CtxNew)+"/"+kl(km.CtxDelete), "new / delete")
+
+		sec("Nodes")
+		line("Enter", "details")
+		line(kl(km.NodeLabels), "edit labels")
+
+		sec("Forwards")
+		line("Enter", "details")
+		line(kl(km.FwdStop), "stop")
+		line(kl(km.FwdCopyURL), "copy URL")
+
+		sec("Log view (`)")
+		line("f", "follow on/off")
+		line("F", "cycle format")
+		line("l", "cycle min level")
+		line("/", "filter message")
+		line("↑/↓", "scroll")
+
+		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
+		tv.SetText(strings.TrimLeft(b.String(), "\n"))
+		tv.SetBorder(true).SetTitle(" keybindings ")
+		prev := app.GetFocus()
+		_, restore := pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
+		closeHelp := func() { restore(); pages.RemovePage("help"); app.SetFocus(prev) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '?')):
+				closeHelp()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+			}
+			return ev
+		})
+		pages.AddPage("help", centered(tv, 60, 24), true, true)
+		app.SetFocus(tv)
+	}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == '?' {
+			showHelp()
+			return nil
+		}
 		if ev.Key() == tcell.KeyRune && ev.Rune() == '`' {
 			toggleLogView()
 			return nil
@@ -4134,14 +4249,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if showRaw {
 				toggle = "table"
 			}
-			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
+			// Front-load the escape hatches ("? help" and "Esc/q close") so that,
+			// when this dense line overflows a narrow terminal, it is the tail of
+			// actions that clips — never the way out or the pointer to the full key
+			// list. "?" opens the complete reference (showHelp).
+			parts := []string{"[yellow]?[white] help", "[yellow]Esc/q[white] close", "[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]d[white] diff", "[yellow]D[white] why/placement", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement", "[red]X[white] remove")
+				// The ~14 editor actions live behind the "a" menu (showActions);
+				// the footer stays short. X (destructive) stays a bare key.
+				parts = append(parts, "[yellow]a[white] actions", "[red]X[white] remove")
 				if hasUpgrade {
 					parts = append(parts, "[yellow]u[white] update-to-latest")
 				}
 			}
-			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
 		}
 		// The single bottom footer shows this overlay's keys; pushed on open below.
@@ -4330,11 +4450,53 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				})
 			}()
 		}
+		// showActions groups every service editor/action behind one menu (opened
+		// with "a"), so the footer needn't spell out ~14 case-sensitive keys
+		// (d/D, s/S, p/P …). The direct keys still work for power users and are
+		// listed under "?"; this is the discoverable, no-Shift path. Service-only.
+		showActions := func() {
+			list := tview.NewList().ShowSecondaryText(false)
+			list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", editSvc))
+			_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+			closeActions := func() { restoreHelp(); pages.RemovePage("inspectactions"); app.SetFocus(table) }
+			add := func(label string, fn func()) {
+				list.AddItem(label, "", 0, func() { closeActions(); fn() })
+			}
+			add("Diff spec (previous → current)", openDiff)
+			add("Why — placement diagnosis", func() { showPlacementDiagnosis(editSvc, table) })
+			add("Scale", func() { openScalePrompt(editSvc, table, reload) })
+			add("Force-update", func() { openForceUpdate(editSvc, table, reload) })
+			add("Edit ports", func() { openPortsEditor(editSvc, table, reload) })
+			add("Edit labels", func() { openLabelsEditor(editSvc, table, reload) })
+			add("Edit env", func() { openEnvEditor(editSvc, table, reload) })
+			add("Edit networks", func() { openNetworksEditor(editSvc, table, reload) })
+			add("Edit secrets", func() { openSecretsEditor(editSvc, table, reload) })
+			add("Edit mounts", func() { openMountsEditor(editSvc, table, reload) })
+			add("Edit resources", func() { openResourcesEditor(editSvc, table, reload) })
+			add("Edit placement", func() { openPlacementMenu(editSvc, table, reload) })
+			add("[red]Remove service[white]", func() { openRemoveService(editSvc, table, func() { closeInspect(); loadContainers() }) })
+			list.AddItem("Cancel", "", 0, closeActions)
+			list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+				if ev.Key() == tcell.KeyEscape {
+					closeActions()
+					return nil
+				}
+				return vimListKeys(ev)
+			})
+			pages.AddPage("inspectactions", centered(list, 54, 17), true, true)
+			app.SetFocus(list)
+		}
 		table.SetSelectionChangedFunc(func(int, int) { setFooter("") })
 		table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeInspect()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == '?':
+				showHelp() // overlays don't route through tabKeys, so wire "?" directly
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				showActions()
 				return nil
 			case ev.Key() == tcell.KeyEnter:
 				// Enter toggles a collapsible network row, triggers an upgrade row,
