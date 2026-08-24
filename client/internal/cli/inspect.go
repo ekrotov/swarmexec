@@ -305,15 +305,15 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	b.list(servicePortLines(svc))
 	b.section("IMAGE")
 	b.list(imageLines(cs, img))
-	if img.newer && img.latestDigest != "" && cs != nil {
-		target := stripDigest(cs.Image) + "@" + img.latestDigest
-		// Prefer the newer image's real version; fall back to a short digest only
-		// when the image carries no version label.
+	if img.newer && img.updateTarget != "" && cs != nil {
+		// Prefer the concrete newer version (the :latest image's label, or the
+		// newer tag); fall back to a short digest only for a :latest image with no
+		// version label.
 		label := img.latestVersion
 		if label == "" {
 			label = shortDigest(img.latestDigest)
 		}
-		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", target)
+		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", img.updateTarget)
 	}
 	b.section("MODE")
 	b.list([]string{serviceModeStr(svc)})
@@ -564,7 +564,9 @@ func imageLines(cs *swarm.ContainerSpec, st imageStatus) []string {
 	if out == nil {
 		return nil
 	}
-	if st.version != "" {
+	// Only meaningful for a :latest image (the digest hides the real version); a
+	// version-pinned tag is already shown verbatim in the image ref.
+	if st.currentTag == "latest" && st.version != "" {
 		out = append(out, "version behind :latest: "+st.version)
 	}
 	return out

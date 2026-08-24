@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,14 +24,18 @@ import (
 // version is really running behind `:latest`. Best-effort: any registry error
 // just leaves the service unannotated.
 
-// imageStatus is what a registry check yields for one pinned `:latest` image.
+// imageStatus is what a registry check yields for one image — either a pinned
+// `:latest` (digest drift) or a version-pinned tag (a newer semver tag exists).
 type imageStatus struct {
-	pinnedDigest  string // sha256:… the service is pinned to (from the spec)
-	version       string // org.opencontainers.image.version of the pinned image, "" if unknown
-	latestDigest  string // current digest of repo:latest in the registry
-	latestVersion string // version label of the registry's current :latest image, "" if unknown
-	newer         bool   // registry :latest differs from the pinned digest
-	ok            bool   // a registry lookup succeeded (latest digest fetched)
+	pinnedDigest  string // sha256:… the service is pinned to (:latest path)
+	version       string // running version: the image.version label (:latest) or the tag (version-pinned)
+	currentTag    string // the running tag: "latest" or e.g. "2.11.1"
+	latestDigest  string // current digest of repo:latest in the registry (:latest path)
+	latestVersion string // the available newer version: the :latest label, or the newer tag
+	newerTag      string // the newer semver tag found (version-pinned path only)
+	updateTarget  string // exact image ref to update to, when newer ("" otherwise)
+	newer         bool   // a newer image is available
+	ok            bool   // a registry lookup succeeded
 }
 
 // parsePinnedLatest splits a spec image ref into repo and pinned digest, but only
@@ -66,6 +71,125 @@ func computeNewer(pinned, latest string) bool {
 	return pinned != "" && latest != "" && latest != pinned
 }
 
+// parsePinnedVersion splits a spec image ref into repo and its NON-latest tag —
+// the version-pinned case (e.g. repo:2.11.1@sha256:… or repo:2.11.1). The
+// @digest is optional. Returns ok=false for a :latest tag (handled by
+// parsePinnedLatest), an untagged ref, or a digest-only ref.
+func parsePinnedVersion(ref string) (repo, tag string, ok bool) {
+	name := ref
+	if at := strings.IndexByte(ref, '@'); at >= 0 {
+		name = ref[:at]
+	}
+	colon := strings.LastIndexByte(name, ':')
+	if colon < 0 {
+		return "", "", false
+	}
+	// A registry-port colon (host:5000/repo) is before the last '/', not a tag.
+	if slash := strings.LastIndexByte(name, '/'); slash > colon {
+		return "", "", false
+	}
+	repo, tag = name[:colon], name[colon+1:]
+	if repo == "" || tag == "" || tag == "latest" {
+		return "", "", false
+	}
+	return repo, tag, true
+}
+
+// checkableRef reports whether a spec image ref is one the registry checker can
+// act on: a pinned :latest, or a version-pinned tag.
+func checkableRef(ref string) bool {
+	if _, _, ok := parsePinnedLatest(ref); ok {
+		return true
+	}
+	_, _, ok := parsePinnedVersion(ref)
+	return ok
+}
+
+// splitTag splits a docker image tag into its dotted-numeric version components
+// and the trailing suffix (a variant/pre-release like "-alpine"). A leading "v"
+// before a digit is ignored. "2.11.1" -> [2 11 1],""; "v1.2.3-alpine" ->
+// [1 2 3],"-alpine". ok=false when there is no leading numeric component (e.g.
+// "stable", "latest").
+func splitTag(tag string) (nums []int, suffix string, ok bool) {
+	s := tag
+	if len(s) > 1 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9' {
+		s = s[1:]
+	}
+	i := 0
+	for {
+		j := i
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j == i {
+			break // no digit run here
+		}
+		n, err := strconv.Atoi(s[i:j])
+		if err != nil {
+			break
+		}
+		nums = append(nums, n)
+		i = j
+		if i < len(s) && s[i] == '.' {
+			i++
+			continue
+		}
+		break
+	}
+	if len(nums) == 0 {
+		return nil, "", false
+	}
+	return nums, s[i:], true
+}
+
+// cmpNums compares two dotted-numeric versions component-by-component (missing
+// components count as 0): -1 if a<b, 0 if equal, 1 if a>b.
+func cmpNums(a, b []int) int {
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+// highestNewerTag returns the highest candidate tag that is a newer version than
+// current within the SAME variant family — identical trailing suffix AND the
+// same number of numeric components — or "" if none is newer. The conservative
+// family match avoids cross-variant (2.11.1 vs 2.11.1-alpine) and rolling-minor
+// (2.11.1 vs 2.12) false positives.
+func highestNewerTag(current string, candidates []string) string {
+	curNums, curSuffix, ok := splitTag(current)
+	if !ok {
+		return ""
+	}
+	best := ""
+	var bestNums []int
+	for _, c := range candidates {
+		nums, suffix, ok := splitTag(c)
+		if !ok || suffix != curSuffix || len(nums) != len(curNums) {
+			continue
+		}
+		if cmpNums(nums, curNums) <= 0 {
+			continue // same or older than what's running
+		}
+		if best == "" || cmpNums(nums, bestNums) > 0 {
+			best, bestNums = c, nums
+		}
+	}
+	return best
+}
+
 // versionFromConfig pulls the version out of an image config's labels, preferring
 // the OCI label and falling back to a plain "version" label.
 func versionFromConfig(labels map[string]string) string {
@@ -82,6 +206,7 @@ func versionFromConfig(labels map[string]string) string {
 type imageResolver interface {
 	latestDigest(ctx context.Context, repo string) (string, error)
 	versionLabel(ctx context.Context, repo, digest string) (string, error)
+	listTags(ctx context.Context, repo string) ([]string, error)
 }
 
 // craneResolver is the real resolver, using go-containerregistry with the
@@ -94,6 +219,10 @@ func (craneResolver) opts(ctx context.Context) []crane.Option {
 
 func (c craneResolver) latestDigest(ctx context.Context, repo string) (string, error) {
 	return crane.Digest(repo+":latest", c.opts(ctx)...)
+}
+
+func (c craneResolver) listTags(ctx context.Context, repo string) ([]string, error) {
+	return crane.ListTags(repo, c.opts(ctx)...)
 }
 
 func (c craneResolver) versionLabel(ctx context.Context, repo, digest string) (string, error) {
@@ -117,11 +246,19 @@ func (c craneResolver) versionLabel(ctx context.Context, repo, digest string) (s
 // image ref. Returns a zero status (with ok=false) for non-:latest images or on
 // any registry error.
 func checkImageStatus(ctx context.Context, resolver imageResolver, specRef string) imageStatus {
-	repo, digest, isLatest := parsePinnedLatest(specRef)
-	if !isLatest {
-		return imageStatus{}
+	if repo, digest, isLatest := parsePinnedLatest(specRef); isLatest {
+		return checkLatest(ctx, resolver, repo, digest)
 	}
-	st := imageStatus{pinnedDigest: digest}
+	if repo, tag, isVersion := parsePinnedVersion(specRef); isVersion {
+		return checkVersionTag(ctx, resolver, repo, tag)
+	}
+	return imageStatus{}
+}
+
+// checkLatest handles a pinned :latest image: a newer image is a different
+// current :latest digest than the one the service is pinned to.
+func checkLatest(ctx context.Context, resolver imageResolver, repo, digest string) imageStatus {
+	st := imageStatus{pinnedDigest: digest, currentTag: "latest"}
 	if latest, err := resolver.latestDigest(ctx, repo); err == nil {
 		st.latestDigest, st.newer, st.ok = latest, computeNewer(digest, latest), true
 	}
@@ -129,11 +266,28 @@ func checkImageStatus(ctx context.Context, resolver imageResolver, specRef strin
 		st.version = ver
 	}
 	// When a newer image exists, resolve ITS version too, so the UI can offer a
-	// concrete version rather than a bare digest.
+	// concrete version rather than a bare digest, and pin the update target.
 	if st.newer {
 		if ver, err := resolver.versionLabel(ctx, repo, st.latestDigest); err == nil {
 			st.latestVersion = ver
 		}
+		st.updateTarget = repo + ":latest@" + st.latestDigest
+	}
+	return st
+}
+
+// checkVersionTag handles a version-pinned image (repo:2.11.1): a newer image is
+// the highest registry tag in the same variant family that outranks the running
+// tag. The update target is that plain repo:tag — the manager re-pins the digest.
+func checkVersionTag(ctx context.Context, resolver imageResolver, repo, tag string) imageStatus {
+	tags, err := resolver.listTags(ctx, repo)
+	if err != nil {
+		return imageStatus{}
+	}
+	st := imageStatus{currentTag: tag, version: tag, ok: true}
+	if nt := highestNewerTag(tag, tags); nt != "" {
+		st.newer, st.newerTag, st.latestVersion = true, nt, nt
+		st.updateTarget = repo + ":" + nt
 	}
 	return st
 }
@@ -172,7 +326,7 @@ func newRegistryCache(onUpdate func()) *registryCache {
 // status meanwhile — the zero value if never fetched). Non-:latest refs return
 // the zero status without any registry call.
 func (c *registryCache) status(ctx context.Context, specRef string) imageStatus {
-	if _, _, ok := parsePinnedLatest(specRef); !ok {
+	if !checkableRef(specRef) {
 		return imageStatus{}
 	}
 	c.mu.Lock()
@@ -201,7 +355,7 @@ func (c *registryCache) status(ctx context.Context, specRef string) imageStatus 
 // the cached value when it's warm, otherwise a bounded synchronous fetch whose
 // result is also cached (so the tree benefits too). Non-:latest refs return zero.
 func (c *registryCache) statusNow(ctx context.Context, specRef string, timeout time.Duration) imageStatus {
-	if _, _, ok := parsePinnedLatest(specRef); !ok {
+	if !checkableRef(specRef) {
 		return imageStatus{}
 	}
 	c.mu.Lock()
@@ -242,6 +396,11 @@ func versionSuffix(st imageStatus) string {
 	}
 	if st.newer {
 		b.WriteString(" ↑")
+		// Label the arrow with the concrete target version when known, so the row
+		// says WHAT is available, not just that something is.
+		if st.latestVersion != "" {
+			b.WriteString(" " + st.latestVersion)
+		}
 	}
 	return b.String()
 }
