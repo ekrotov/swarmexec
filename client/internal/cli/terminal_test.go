@@ -9,7 +9,31 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/hinshun/vt10x"
+	"github.com/rivo/tview"
 )
+
+func TestCtrlCCapture(t *testing.T) {
+	ctrlC := tcell.NewEventKey(tcell.KeyCtrlC, 0, tcell.ModCtrl)
+	other := tcell.NewEventKey(tcell.KeyRune, 'x', tcell.ModNone)
+
+	// Shell focused: forwarded as a FRESH Ctrl-C event (a different pointer, so
+	// tview skips its Stop()), still Ctrl-C so encodeKey turns it into ^C.
+	if got := ctrlCCapture(ctrlC, &terminalView{}); got == nil || got == ctrlC || got.Key() != tcell.KeyCtrlC {
+		t.Errorf("in shell: want a fresh Ctrl-C event, got %v", got)
+	}
+	// Not in a shell: swallowed (nil → tview does not stop the app).
+	if got := ctrlCCapture(ctrlC, tview.NewBox()); got != nil {
+		t.Errorf("outside shell: want nil (swallowed), got %v", got)
+	}
+	// No focus at all is treated as "not a shell" → swallowed.
+	if got := ctrlCCapture(ctrlC, nil); got != nil {
+		t.Errorf("nil focus: want nil, got %v", got)
+	}
+	// Any non-Ctrl-C event passes through unchanged.
+	if got := ctrlCCapture(other, tview.NewBox()); got != other {
+		t.Errorf("non-ctrl-c should pass through unchanged, got %v", got)
+	}
+}
 
 func TestEncodeKey(t *testing.T) {
 	cases := []struct {
