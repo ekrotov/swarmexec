@@ -2885,12 +2885,21 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	}
 
-	// flash briefly replaces the footer with a status message, then restores it.
+	// flash briefly replaces the footer with a status message, then restores the
+	// footer that was there BEFORE — which may be a tab footer or an overlay's own
+	// footer (pushOverlayHelp), so it must snapshot, not assume curHelp. The
+	// restore is guarded: if anything else changed the footer meanwhile (a tab
+	// switch, an opened overlay, a newer flash), that owner keeps it.
 	flash = func(msg string) {
+		prev := help.GetText(false)
 		help.SetText(msg)
 		go func() {
 			time.Sleep(1500 * time.Millisecond)
-			app.QueueUpdateDraw(func() { help.SetText(curHelp) })
+			app.QueueUpdateDraw(func() {
+				if help.GetText(false) == msg {
+					help.SetText(prev)
+				}
+			})
 		}()
 	}
 
@@ -3098,6 +3107,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
 		line(kl(km.Forward), "port-forward the task under the cursor")
 		line(kl(km.Search), "search services / containers / nodes")
+
+		sec("Service inspect (" + kl(km.ContainerInspect) + ")")
+		line("t", "toggle raw JSON / table")
+		line("d / D", "diff spec · why (placement)")
+		line("s / f", "scale · force-update")
+		line("u", "update to a newer image")
+		line("p l e", "edit ports · labels · env")
+		line("n S v", "edit networks · secrets · mounts")
+		line("r P", "edit resources · placement")
+		line("X", "remove the service")
 
 		sec("Volumes")
 		line(kl(km.VolNew), "new volume")
@@ -4229,14 +4248,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if showRaw {
 				toggle = "table"
 			}
-			parts := []string{"[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
+			// Front-load the escape hatches ("? help" and "Esc/q close") so that,
+			// when this dense line overflows a narrow terminal, it is the tail of
+			// actions that clips — never the way out or the pointer to the full key
+			// list. "?" opens the complete reference (showHelp).
+			parts := []string{"[yellow]?[white] help", "[yellow]Esc/q[white] close", "[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
 				parts = append(parts, "[yellow]d[white] diff", "[yellow]D[white] why/placement", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement", "[red]X[white] remove")
 				if hasUpgrade {
 					parts = append(parts, "[yellow]u[white] update-to-latest")
 				}
 			}
-			parts = append(parts, "[yellow]Esc/q[white] close")
 			return " " + strings.Join(parts, "  ")
 		}
 		// The single bottom footer shows this overlay's keys; pushed on open below.
@@ -4430,6 +4452,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
 				closeInspect()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == '?':
+				showHelp() // overlays don't route through tabKeys, so wire "?" directly
 				return nil
 			case ev.Key() == tcell.KeyEnter:
 				// Enter toggles a collapsible network row, triggers an upgrade row,
