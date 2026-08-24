@@ -3109,6 +3109,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		line(kl(km.Search), "search services / containers / nodes")
 
 		sec("Service inspect (" + kl(km.ContainerInspect) + ")")
+		line("a", "actions menu (all edits below, no Shift needed)")
 		line("t", "toggle raw JSON / table")
 		line("d / D", "diff spec · why (placement)")
 		line("s / f", "scale · force-update")
@@ -4254,7 +4255,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			// list. "?" opens the complete reference (showHelp).
 			parts := []string{"[yellow]?[white] help", "[yellow]Esc/q[white] close", "[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
 			if editSvc != "" {
-				parts = append(parts, "[yellow]d[white] diff", "[yellow]D[white] why/placement", "[yellow]s[white] scale", "[yellow]f[white] force-update", "[yellow]p[white] ports", "[yellow]l[white] labels", "[yellow]e[white] env", "[yellow]n[white] networks", "[yellow]S[white] secrets", "[yellow]v[white] mounts", "[yellow]r[white] resources", "[yellow]P[white] placement", "[red]X[white] remove")
+				// The ~14 editor actions live behind the "a" menu (showActions);
+				// the footer stays short. X (destructive) stays a bare key.
+				parts = append(parts, "[yellow]a[white] actions", "[red]X[white] remove")
 				if hasUpgrade {
 					parts = append(parts, "[yellow]u[white] update-to-latest")
 				}
@@ -4447,6 +4450,42 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				})
 			}()
 		}
+		// showActions groups every service editor/action behind one menu (opened
+		// with "a"), so the footer needn't spell out ~14 case-sensitive keys
+		// (d/D, s/S, p/P …). The direct keys still work for power users and are
+		// listed under "?"; this is the discoverable, no-Shift path. Service-only.
+		showActions := func() {
+			list := tview.NewList().ShowSecondaryText(false)
+			list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", editSvc))
+			_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+			closeActions := func() { restoreHelp(); pages.RemovePage("inspectactions"); app.SetFocus(table) }
+			add := func(label string, fn func()) {
+				list.AddItem(label, "", 0, func() { closeActions(); fn() })
+			}
+			add("Diff spec (previous → current)", openDiff)
+			add("Why — placement diagnosis", func() { showPlacementDiagnosis(editSvc, table) })
+			add("Scale", func() { openScalePrompt(editSvc, table, reload) })
+			add("Force-update", func() { openForceUpdate(editSvc, table, reload) })
+			add("Edit ports", func() { openPortsEditor(editSvc, table, reload) })
+			add("Edit labels", func() { openLabelsEditor(editSvc, table, reload) })
+			add("Edit env", func() { openEnvEditor(editSvc, table, reload) })
+			add("Edit networks", func() { openNetworksEditor(editSvc, table, reload) })
+			add("Edit secrets", func() { openSecretsEditor(editSvc, table, reload) })
+			add("Edit mounts", func() { openMountsEditor(editSvc, table, reload) })
+			add("Edit resources", func() { openResourcesEditor(editSvc, table, reload) })
+			add("Edit placement", func() { openPlacementMenu(editSvc, table, reload) })
+			add("[red]Remove service[white]", func() { openRemoveService(editSvc, table, func() { closeInspect(); loadContainers() }) })
+			list.AddItem("Cancel", "", 0, closeActions)
+			list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+				if ev.Key() == tcell.KeyEscape {
+					closeActions()
+					return nil
+				}
+				return vimListKeys(ev)
+			})
+			pages.AddPage("inspectactions", centered(list, 54, 17), true, true)
+			app.SetFocus(list)
+		}
 		table.SetSelectionChangedFunc(func(int, int) { setFooter("") })
 		table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -4455,6 +4494,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == '?':
 				showHelp() // overlays don't route through tabKeys, so wire "?" directly
+				return nil
+			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+				showActions()
 				return nil
 			case ev.Key() == tcell.KeyEnter:
 				// Enter toggles a collapsible network row, triggers an upgrade row,
