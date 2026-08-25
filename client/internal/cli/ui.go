@@ -480,9 +480,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			asUser = " as " + user
 		}
 		tv.SetTitle(fmt.Sprintf(" %v%s · %s · %s on %s — Ctrl-] detach ", command, asUser, orDash(c.Service), shortID(c.ContainerID), orDash(c.NodeName)))
+		// While the shell is open, turn OFF tview's mouse capture so the local
+		// terminal emulator's native click-drag selection / copy works on the
+		// pane's output — tcell's mouse reporting otherwise suppresses it, and the
+		// pane forwards no mouse of its own. Restored to the operator's setting on
+		// close.
+		prevMouse := mouseEnabled
 		var once sync.Once
 		closeTerm := func() {
 			once.Do(func() {
+				app.EnableMouse(prevMouse)
 				tcancel()
 				pages.RemovePage("term")
 				app.SetFocus(ctree)
@@ -511,6 +518,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			})
 		})
+		app.EnableMouse(false) // hand the mouse to the terminal for native copy
 		pages.AddPage("term", tv, true, true)
 		app.SetFocus(tv)
 	}
