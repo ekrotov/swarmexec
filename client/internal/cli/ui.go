@@ -832,7 +832,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			list.AddItem(shellLabel("Sh", shOK, probed), "", 0, func() {
 				if shOK {
 					closeMenu()
-					openTerminal(c, []string{"sh"}, false, "")
+					// tty=true: an interactive sh needs a PTY so its line discipline
+					// turns ^C into SIGINT for the foreground process (and gives line
+					// editing / job control), same as bash.
+					openTerminal(c, []string{"sh"}, true, "")
 				}
 			})
 			// Shell in as a specific user/UID (docker exec -u), for images whose
@@ -843,7 +846,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					if bashOK {
 						openTerminal(c, []string{"bash"}, true, u)
 					} else {
-						openTerminal(c, []string{"sh"}, false, u)
+						openTerminal(c, []string{"sh"}, true, u) // PTY: ^C → SIGINT, line editing
 					}
 				})
 			})
@@ -5045,6 +5048,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	}
 	screen = scr
 	app.SetScreen(screen)
+
+	// Intercept tview's one hard-coded global key (Ctrl-C → Stop) so that inside
+	// a container shell Ctrl-C reaches the remote process instead of quitting the
+	// TUI; elsewhere it is swallowed (quit is on the `q` key). See ctrlCCapture.
+	app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		return ctrlCCapture(ev, app.GetFocus())
+	})
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}

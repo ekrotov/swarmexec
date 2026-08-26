@@ -229,6 +229,30 @@ func vtColor(c vt10x.Color) tcell.Color {
 	return tcell.ColorDefault
 }
 
+// ctrlCCapture decides what happens to a Ctrl-C key event, given the currently
+// focused primitive. It exists because tview's Application has ONE hard-coded
+// global key: Ctrl-C stops the app (application.go, "if event == originalEvent
+// && KeyCtrlC { Stop() }"), and that check runs BEFORE the event reaches any
+// primitive. So without an app-level input capture, Ctrl-C inside a container
+// shell would kill the whole TUI instead of interrupting the remote process.
+//
+//   - Shell focused (*terminalView): return a FRESH Ctrl-C event. Because it is
+//     no longer the original event pointer, tview skips its Stop() and delivers
+//     it down to the terminal view, which encodes it as ^C (0x03) into the
+//     remote PTY — so `tail -f` etc. get SIGINT, as in a normal terminal.
+//   - Anywhere else: return nil to SWALLOW it. Quitting is on the `q` key; a
+//     stray Ctrl-C must not tear down the whole session by accident.
+//   - Not Ctrl-C: pass through unchanged.
+func ctrlCCapture(ev *tcell.EventKey, focused tview.Primitive) *tcell.EventKey {
+	if ev.Key() != tcell.KeyCtrlC {
+		return ev
+	}
+	if _, ok := focused.(*terminalView); ok {
+		return tcell.NewEventKey(tcell.KeyCtrlC, 0, tcell.ModNone)
+	}
+	return nil
+}
+
 // encodeKey turns a tcell key event into the bytes a terminal would send.
 func encodeKey(ev *tcell.EventKey) []byte {
 	switch ev.Key() {
