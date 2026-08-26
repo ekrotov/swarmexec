@@ -2832,14 +2832,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		case "networks":
 			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", kl(km.NetAttached), kl(km.NetNew))
 		case "secrets":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
 		case "contexts":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] use  [yellow]%s[white] new  [yellow]%s[white] delete",
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] use  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
 				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 		case "nodes":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
 		default:
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
+			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
 				kl(km.FwdStop), kl(km.FwdCopyURL))
 		}
 	}
@@ -3145,19 +3145,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		line(kl(km.NetNew), "new network")
 
 		sec("Secrets")
-		line("Enter", "details")
+		line("Enter / i", "details")
 		line(kl(km.SecNew)+"/"+kl(km.SecDelete), "new / delete")
 
 		sec("Contexts")
-		line(kl(km.CtxUse), "use (switch cluster)")
+		line("Enter / "+kl(km.CtxUse), "use (switch cluster)")
+		line("i", "context details")
 		line(kl(km.CtxNew)+"/"+kl(km.CtxDelete), "new / delete")
 
 		sec("Nodes")
-		line("Enter", "details")
+		line("Enter / i", "details")
 		line(kl(km.NodeLabels), "edit labels")
 
 		sec("Forwards")
-		line("Enter", "details")
+		line("Enter / i", "details")
 		line(kl(km.FwdStop), "stop")
 		line(kl(km.FwdCopyURL), "copy URL")
 
@@ -4683,7 +4684,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	})
 	// Enter shows the full detail of a forward. The table truncates the state
 	// column, so this is where a failure reason is actually readable.
-	ftable.SetSelectedFunc(func(int, int) {
+	showForwardDetail := func() {
 		row, ok := selectedForward()
 		if !ok {
 			return
@@ -4741,11 +4742,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		lines := strings.Count(b.String(), "\n") + 1
 		pages.AddPage("fwddetail", centered(tv, 66, lines+2), true, true)
 		app.SetFocus(tv)
-	})
-	// On the forwards table: d stops the selected forward, o copies its URL.
+	}
+	ftable.SetSelectedFunc(func(int, int) { showForwardDetail() })
+	// On the forwards table: Enter/i details, d stops the forward, o copies its URL.
 	ftable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
+			case 'i':
+				showForwardDetail()
+				return nil
 			case km.FwdStop:
 				if e, ok := selectedForward(); ok {
 					forwards.remove(e.id)
@@ -4947,12 +4952,57 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return nil
 		}
+		// "i" opens the same detail as Enter — inspect means the same on every tab.
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+			if s, ok := selectedSecret(); ok {
+				showSecretDetail(s)
+			}
+			return nil
+		}
 		return tabKeys(ev)
 	})
-	// On the contexts table: "n" creates, "d" removes, "u" (or Enter) activates.
+	// showContextDetail is the read-only "i" view for a context, so inspect works
+	// on the contexts tab like every other tab. Enter/u still activate (switch).
+	showContextDetail := func(c dockerctx.Context) {
+		active := "no"
+		if c.Name == activeCtx {
+			active = "yes (this session)"
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "name:         %s\n", tview.Escape(c.Name))
+		fmt.Fprintf(&b, "docker host:  %s\n", tview.Escape(orDash(c.Host)))
+		fmt.Fprintf(&b, "active:       %s", active)
+		if c.Current {
+			b.WriteString("\n\n[gray]stored current docker context[-]")
+		}
+		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
+		tv.SetBorder(true).SetTitle(fmt.Sprintf(" context %s ", c.Name))
+		_, restore := pushOverlayHelp(footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
+		closeDetail := func() { restore(); pages.RemovePage("ctxdetail"); app.SetFocus(cxtable) }
+		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+			switch {
+			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+				closeDetail()
+				return nil
+			case ev.Key() == tcell.KeyRune && ev.Rune() == km.CtxUse:
+				closeDetail()
+				activateContext(c)
+				return nil
+			}
+			return ev
+		})
+		pages.AddPage("ctxdetail", centered(tv, 64, 8), true, true)
+		app.SetFocus(tv)
+	}
+	// On the contexts table: Enter/u activate (switch), i details, n creates, d removes.
 	cxtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
+			case 'i':
+				if c, ok := selectedContext(); ok {
+					showContextDetail(c)
+				}
+				return nil
 			case km.CtxNew:
 				showCreateContext()
 				return nil
