@@ -392,3 +392,25 @@ deploy-site:
         --form "variables[IMAGE]=$CI_REGISTRY_IMAGE/site" \
         --form "variables[VERSION]=$SEMVER" \
         "$CI_API_V4_URL/projects/infrastruktur%2Fswar-exec-site/trigger/pipeline"
+
+# ----------------------------------------------------------------------------
+# linkedin-announce — create a LinkedIn DRAFT of the release notes on a stable
+# semver tag (four-eyes: a page admin reviews & publishes it in LinkedIn).
+# Opt-in: the script skips (exit 0) unless LINKEDIN_AUTHOR_URN plus an auth
+# method are set (preferred: the refresh-token trio LINKEDIN_CLIENT_ID/SECRET/
+# REFRESH_TOKEN; fallback: LINKEDIN_ACCESS_TOKEN), and skips prereleases.
+# allow_failure so a LinkedIn outage never fails the release. LINKEDIN_DRY_RUN=1
+# previews without calling the API. See ci/linkedin-announce.sh for full setup.
+# ----------------------------------------------------------------------------
+linkedin-announce:
+  stage: deploy
+  image: alpine:3
+  needs:
+    - job: release-publish
+  rules:
+    - *semver-tag
+  before_script:
+    - apk add --no-cache curl jq >/dev/null
+  script:
+    - sh ci/linkedin-announce.sh
+  allow_failure: true
