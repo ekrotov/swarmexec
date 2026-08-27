@@ -22,8 +22,12 @@ import (
 // — read the current spec, mutate it, update. Each triggers a rolling update /
 // reconciliation of the service's tasks.
 
-// scaleService sets the replica count of a replicated service.
-func scaleService(ctx context.Context, dcli *client.Client, name string, replicas uint64) error {
+// updateServiceSpec fetches a service by name, applies mutate to its spec, and
+// pushes it back with a ServiceUpdate. It centralises the fetch, the single
+// "no service named" error, the version and the update call that every
+// mutating set*/scale*/updateService* function shares — so each caller is just
+// its spec mutation. mutate may return an error to abort before the update.
+func updateServiceSpec(ctx context.Context, dcli *client.Client, name string, mutate func(spec *swarm.ServiceSpec) error) error {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return err
@@ -31,47 +35,43 @@ func scaleService(ctx context.Context, dcli *client.Client, name string, replica
 	if svc == nil {
 		return fmt.Errorf("no service named %q", name)
 	}
-	if svc.Spec.Mode.Replicated == nil {
-		return fmt.Errorf("service %q is not replicated and cannot be scaled", name)
-	}
 	spec := svc.Spec
-	r := replicas
-	spec.Mode.Replicated = &swarm.ReplicatedService{Replicas: &r}
+	if err := mutate(&spec); err != nil {
+		return err
+	}
 	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
 	return err
+}
+
+// scaleService sets the replica count of a replicated service.
+func scaleService(ctx context.Context, dcli *client.Client, name string, replicas uint64) error {
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.Mode.Replicated == nil {
+			return fmt.Errorf("service %q is not replicated and cannot be scaled", name)
+		}
+		r := replicas
+		spec.Mode.Replicated = &swarm.ReplicatedService{Replicas: &r}
+		return nil
+	})
 }
 
 // setServicePorts replaces a service's published ports.
 func setServicePorts(ctx context.Context, dcli *client.Client, name string, ports []swarm.PortConfig) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	if spec.EndpointSpec == nil {
-		spec.EndpointSpec = &swarm.EndpointSpec{}
-	}
-	spec.EndpointSpec.Ports = ports
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.EndpointSpec == nil {
+			spec.EndpointSpec = &swarm.EndpointSpec{}
+		}
+		spec.EndpointSpec.Ports = ports
+		return nil
+	})
 }
 
 // setServiceLabels replaces a service's labels.
 func setServiceLabels(ctx context.Context, dcli *client.Client, name string, labels map[string]string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	spec.Labels = labels
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		spec.Labels = labels
+		return nil
+	})
 }
 
 // currentServicePorts returns a service's published ports as editable strings.
@@ -129,22 +129,15 @@ func currentServiceReplicas(ctx context.Context, dcli *client.Client, name strin
 // TaskTemplate.Networks and clears the deprecated Spec.Networks so it cannot
 // override.
 func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, targetIDs []string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	var nets []swarm.NetworkAttachmentConfig
-	for _, id := range targetIDs {
-		nets = append(nets, swarm.NetworkAttachmentConfig{Target: id})
-	}
-	spec.TaskTemplate.Networks = nets
-	spec.Networks = nil
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		var nets []swarm.NetworkAttachmentConfig
+		for _, id := range targetIDs {
+			nets = append(nets, swarm.NetworkAttachmentConfig{Target: id})
+		}
+		spec.TaskTemplate.Networks = nets
+		spec.Networks = nil
+		return nil
+	})
 }
 
 // listNetworkRefs returns name->ID and ID->name maps plus the sorted network
@@ -208,32 +201,25 @@ func serviceAttachedNetworks(ctx context.Context, dcli *client.Client, name stri
 // setNetworkAliases replaces the aliases of a service's attachment to one
 // network (read-modify-write ServiceUpdate, rolling update).
 func setNetworkAliases(ctx context.Context, dcli *client.Client, name, target string, aliases []string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	found := false
-	for i := range spec.TaskTemplate.Networks {
-		if spec.TaskTemplate.Networks[i].Target == target {
-			spec.TaskTemplate.Networks[i].Aliases = aliases
-			found = true
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		found := false
+		for i := range spec.TaskTemplate.Networks {
+			if spec.TaskTemplate.Networks[i].Target == target {
+				spec.TaskTemplate.Networks[i].Aliases = aliases
+				found = true
+			}
 		}
-	}
-	for i := range spec.Networks {
-		if spec.Networks[i].Target == target {
-			spec.Networks[i].Aliases = aliases
-			found = true
+		for i := range spec.Networks {
+			if spec.Networks[i].Target == target {
+				spec.Networks[i].Aliases = aliases
+				found = true
+			}
 		}
-	}
-	if !found {
-		return fmt.Errorf("service %q is not attached to network %q", name, target)
-	}
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+		if !found {
+			return fmt.Errorf("service %q is not attached to network %q", name, target)
+		}
+		return nil
+	})
 }
 
 // currentServiceNetworks returns the network names a service is attached to.
@@ -270,20 +256,13 @@ func currentServiceNetworks(ctx context.Context, dcli *client.Client, name strin
 // setServiceEnv replaces a service's environment variables ("KEY=VALUE").
 // Read-modify-write ServiceUpdate (rolling update).
 func setServiceEnv(ctx context.Context, dcli *client.Client, name string, env []string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	if svc.Spec.TaskTemplate.ContainerSpec == nil {
-		return fmt.Errorf("service %q has no container spec", name)
-	}
-	spec := svc.Spec
-	spec.TaskTemplate.ContainerSpec.Env = env
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.ContainerSpec == nil {
+			return fmt.Errorf("service %q has no container spec", name)
+		}
+		spec.TaskTemplate.ContainerSpec.Env = env
+		return nil
+	})
 }
 
 // forceUpdateService redeploys a service without changing its spec — the
@@ -292,17 +271,10 @@ func setServiceEnv(ctx context.Context, dcli *client.Client, name string, env []
 // a service sitting in an incomplete state (e.g. 1/2 replicas). Read-modify-write
 // ServiceUpdate; nothing else in the spec changes.
 func forceUpdateService(ctx context.Context, dcli *client.Client, name string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	spec.TaskTemplate.ForceUpdate++
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		spec.TaskTemplate.ForceUpdate++
+		return nil
+	})
 }
 
 // removeService permanently deletes a service (and stops all its tasks). This
@@ -322,20 +294,13 @@ func removeService(ctx context.Context, dcli *client.Client, name string) error 
 // rolling update). Used to move a :latest service onto the registry's current
 // digest — the caller passes the fully-qualified ref (repo:latest@sha256:…).
 func updateServiceImage(ctx context.Context, dcli *client.Client, name, image string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	if svc.Spec.TaskTemplate.ContainerSpec == nil {
-		return fmt.Errorf("service %q has no container spec", name)
-	}
-	spec := svc.Spec
-	spec.TaskTemplate.ContainerSpec.Image = image
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.ContainerSpec == nil {
+			return fmt.Errorf("service %q has no container spec", name)
+		}
+		spec.TaskTemplate.ContainerSpec.Image = image
+		return nil
+	})
 }
 
 // currentServiceEnv returns a service's environment variables as "KEY=VALUE".
@@ -390,39 +355,31 @@ func envFromStrings(items []string) ([]string, error) {
 // resolved to their IDs; each is mounted at /run/secrets/<name>. Read-modify-
 // write ServiceUpdate (rolling update).
 func setServiceSecrets(ctx context.Context, dcli *client.Client, name string, secretNames []string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	cs := svc.Spec.TaskTemplate.ContainerSpec
-	if cs == nil {
-		return fmt.Errorf("service %q has no container spec", name)
-	}
-	idByName := map[string]string{}
-	if secs, e := dcli.SecretList(ctx, types.SecretListOptions{}); e == nil {
-		for _, s := range secs {
-			idByName[s.Spec.Name] = s.ID
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.ContainerSpec == nil {
+			return fmt.Errorf("service %q has no container spec", name)
 		}
-	}
-	var refs []*swarm.SecretReference
-	for _, sn := range secretNames {
-		id := idByName[sn]
-		if id == "" {
-			return fmt.Errorf("unknown secret %q", sn)
+		idByName := map[string]string{}
+		if secs, e := dcli.SecretList(ctx, types.SecretListOptions{}); e == nil {
+			for _, s := range secs {
+				idByName[s.Spec.Name] = s.ID
+			}
 		}
-		refs = append(refs, &swarm.SecretReference{
-			SecretID:   id,
-			SecretName: sn,
-			File:       &swarm.SecretReferenceFileTarget{Name: sn, UID: "0", GID: "0", Mode: 0o444},
-		})
-	}
-	spec := svc.Spec
-	spec.TaskTemplate.ContainerSpec.Secrets = refs
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+		var refs []*swarm.SecretReference
+		for _, sn := range secretNames {
+			id := idByName[sn]
+			if id == "" {
+				return fmt.Errorf("unknown secret %q", sn)
+			}
+			refs = append(refs, &swarm.SecretReference{
+				SecretID:   id,
+				SecretName: sn,
+				File:       &swarm.SecretReferenceFileTarget{Name: sn, UID: "0", GID: "0", Mode: 0o444},
+			})
+		}
+		spec.TaskTemplate.ContainerSpec.Secrets = refs
+		return nil
+	})
 }
 
 // currentServiceSecrets returns the secret names a service references.
@@ -459,44 +416,30 @@ func secretNames(ctx context.Context, dcli *client.Client) []string {
 // setServiceMounts replaces a service's mounts (volumes/binds). Read-modify-
 // write ServiceUpdate (rolling update).
 func setServiceMounts(ctx context.Context, dcli *client.Client, name string, mounts []mount.Mount) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	if svc.Spec.TaskTemplate.ContainerSpec == nil {
-		return fmt.Errorf("service %q has no container spec", name)
-	}
-	spec := svc.Spec
-	spec.TaskTemplate.ContainerSpec.Mounts = mounts
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.ContainerSpec == nil {
+			return fmt.Errorf("service %q has no container spec", name)
+		}
+		spec.TaskTemplate.ContainerSpec.Mounts = mounts
+		return nil
+	})
 }
 
 // addServiceMount appends a single mount to a service (read-modify-write
 // ServiceUpdate). Errors if a mount already exists at the same target.
 func addServiceMount(ctx context.Context, dcli *client.Client, name string, m mount.Mount) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	if svc.Spec.TaskTemplate.ContainerSpec == nil {
-		return fmt.Errorf("service %q has no container spec", name)
-	}
-	for _, ex := range svc.Spec.TaskTemplate.ContainerSpec.Mounts {
-		if ex.Target == m.Target {
-			return fmt.Errorf("service %q already has a mount at %q", name, m.Target)
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.ContainerSpec == nil {
+			return fmt.Errorf("service %q has no container spec", name)
 		}
-	}
-	spec := svc.Spec
-	spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, m)
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+		for _, ex := range spec.TaskTemplate.ContainerSpec.Mounts {
+			if ex.Target == m.Target {
+				return fmt.Errorf("service %q already has a mount at %q", name, m.Target)
+			}
+		}
+		spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, m)
+		return nil
+	})
 }
 
 // currentServiceMountSpecs returns a service's mounts as editable strings.
@@ -691,20 +634,13 @@ func currentServicePlacement(ctx context.Context, dcli *client.Client, name stri
 // ServiceUpdate (read-modify-write; preferences and other placement fields are
 // preserved).
 func setServicePlacement(ctx context.Context, dcli *client.Client, name string, constraints []string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	if spec.TaskTemplate.Placement == nil {
-		spec.TaskTemplate.Placement = &swarm.Placement{}
-	}
-	spec.TaskTemplate.Placement.Constraints = constraints
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.Placement == nil {
+			spec.TaskTemplate.Placement = &swarm.Placement{}
+		}
+		spec.TaskTemplate.Placement.Constraints = constraints
+		return nil
+	})
 }
 
 // validatePlacementConstraint checks a single constraint and returns it in the
@@ -800,24 +736,17 @@ func currentServiceSpread(ctx context.Context, dcli *client.Client, name string)
 // given order) in one ServiceUpdate. Constraints and other placement fields are
 // preserved.
 func setServiceSpread(ctx context.Context, dcli *client.Client, name string, descriptors []string) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	if spec.TaskTemplate.Placement == nil {
-		spec.TaskTemplate.Placement = &swarm.Placement{}
-	}
-	prefs := make([]swarm.PlacementPreference, 0, len(descriptors))
-	for _, d := range descriptors {
-		prefs = append(prefs, swarm.PlacementPreference{Spread: &swarm.SpreadOver{SpreadDescriptor: d}})
-	}
-	spec.TaskTemplate.Placement.Preferences = prefs
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.Placement == nil {
+			spec.TaskTemplate.Placement = &swarm.Placement{}
+		}
+		prefs := make([]swarm.PlacementPreference, 0, len(descriptors))
+		for _, d := range descriptors {
+			prefs = append(prefs, swarm.PlacementPreference{Spread: &swarm.SpreadOver{SpreadDescriptor: d}})
+		}
+		spec.TaskTemplate.Placement.Preferences = prefs
+		return nil
+	})
 }
 
 // validateSpreadDescriptor checks a spread descriptor — a bare node attribute
@@ -902,30 +831,23 @@ func currentServiceResources(ctx context.Context, dcli *client.Client, name stri
 // one ServiceUpdate. A zero value clears that field (Swarm treats 0 as
 // unlimited). Pids limits and generic (device) reservations are preserved.
 func setServiceResources(ctx context.Context, dcli *client.Client, name string, cpuLimit, memLimit, cpuReservation, memReservation int64) error {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return err
-	}
-	if svc == nil {
-		return fmt.Errorf("no service named %q", name)
-	}
-	spec := svc.Spec
-	if spec.TaskTemplate.Resources == nil {
-		spec.TaskTemplate.Resources = &swarm.ResourceRequirements{}
-	}
-	res := spec.TaskTemplate.Resources
-	if res.Limits == nil {
-		res.Limits = &swarm.Limit{}
-	}
-	res.Limits.NanoCPUs = cpuLimit
-	res.Limits.MemoryBytes = memLimit
-	if res.Reservations == nil {
-		res.Reservations = &swarm.Resources{}
-	}
-	res.Reservations.NanoCPUs = cpuReservation
-	res.Reservations.MemoryBytes = memReservation
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
-	return err
+	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		if spec.TaskTemplate.Resources == nil {
+			spec.TaskTemplate.Resources = &swarm.ResourceRequirements{}
+		}
+		res := spec.TaskTemplate.Resources
+		if res.Limits == nil {
+			res.Limits = &swarm.Limit{}
+		}
+		res.Limits.NanoCPUs = cpuLimit
+		res.Limits.MemoryBytes = memLimit
+		if res.Reservations == nil {
+			res.Reservations = &swarm.Resources{}
+		}
+		res.Reservations.NanoCPUs = cpuReservation
+		res.Reservations.MemoryBytes = memReservation
+		return nil
+	})
 }
 
 // parseCPUCores parses a CPU amount in cores ("0.5", "2") into NanoCPUs. An
