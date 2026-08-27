@@ -89,6 +89,26 @@ type listEntryAction struct {
 	run   func(entry string)
 }
 
+// editListConfig is the (named) configuration for the editList staged list-editor
+// overlay. Most callers set only title/applyVerb/items/validate/onApply/back/
+// after; the rest default to their zero value (no autocomplete, single-line, no
+// confirm note, no per-entry action, the built-in text prompt).
+type editListConfig struct {
+	title       string
+	applyVerb   string
+	items       []string
+	validate    func(string) (string, error)
+	onApply     func([]string) error
+	suggest     func(string) []string
+	allowEdit   bool
+	multiline   bool
+	confirmNote func([]string) string
+	entryAction *listEntryAction
+	formPrompt  func(initial string, submit func(raw string) error, cancel func()) tview.Primitive
+	back        tview.Primitive
+	after       func()
+}
+
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
@@ -3281,7 +3301,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// a custom form: it receives the current entry (empty when adding), a submit
 	// callback that validates+stages+closes on success (returning an error to show
 	// otherwise), and a cancel callback; it returns the primitive to display.
-	editList := func(title, applyVerb string, items []string, validate func(string) (string, error), onApply func([]string) error, suggest func(string) []string, allowEdit, multiline bool, confirmNote func([]string) string, entryAction *listEntryAction, formPrompt func(initial string, submit func(raw string) error, cancel func()) tview.Primitive, back tview.Primitive, after func()) {
+	editList := func(cfg editListConfig) {
+		title, applyVerb, items := cfg.title, cfg.applyVerb, cfg.items
+		validate, onApply, suggest := cfg.validate, cfg.onApply, cfg.suggest
+		allowEdit, multiline := cfg.allowEdit, cfg.multiline
+		confirmNote, entryAction := cfg.confirmNote, cfg.entryAction
+		formPrompt, back, after := cfg.formPrompt, cfg.back, cfg.after
 		cur := append([]string{}, items...)
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
@@ -3547,21 +3572,28 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					info("cannot load ports: " + err.Error())
 					return
 				}
-				editList("ports of "+svcName, "Update the published ports", items,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "ports of " + svcName,
+					applyVerb: "Update the published ports",
+					items:     items,
+					validate: func(s string) (string, error) {
 						p, e := parseServicePort(s)
 						if e != nil {
 							return "", e
 						}
 						return formatServicePort(p), nil
 					},
-					func(list []string) error {
+					onApply: func(list []string) error {
 						ports, e := portsFromStrings(list)
 						if e != nil {
 							return e
 						}
 						return setServicePorts(ctx, dcli, svcName, ports)
-					}, nil, true, false, nil, nil, nil, back, after)
+					},
+					allowEdit: true,
+					back:      back,
+					after:     after,
+				})
 			})
 		}()
 	}
@@ -3573,21 +3605,28 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					info("cannot load labels: " + err.Error())
 					return
 				}
-				editList("labels of "+svcName, "Update the labels", items,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "labels of " + svcName,
+					applyVerb: "Update the labels",
+					items:     items,
+					validate: func(s string) (string, error) {
 						k, v, e := parseLabel(s)
 						if e != nil {
 							return "", e
 						}
 						return k + "=" + v, nil
 					},
-					func(list []string) error {
+					onApply: func(list []string) error {
 						labels, e := labelsFromStrings(list)
 						if e != nil {
 							return e
 						}
 						return setServiceLabels(ctx, dcli, svcName, labels)
-					}, nil, true, false, nil, nil, nil, back, after)
+					},
+					allowEdit: true,
+					back:      back,
+					after:     after,
+				})
 			})
 		}()
 	}
@@ -3614,16 +3653,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					info(fmt.Sprintf("service %q is not attached to network %q yet — apply the network first, then set aliases", svcName, netName))
 					return
 				}
-				editList("aliases of "+svcName+" on "+netName, "Update the aliases", aliases,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "aliases of " + svcName + " on " + netName,
+					applyVerb: "Update the aliases",
+					items:     aliases,
+					validate: func(s string) (string, error) {
 						s = strings.TrimSpace(s)
 						if s == "" {
 							return "", fmt.Errorf("alias must not be empty")
 						}
 						return s, nil
 					},
-					func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, target, list) },
-					nil, true, false, nil, nil, nil, back, after)
+					onApply:   func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, target, list) },
+					allowEdit: true,
+					back:      back,
+					after:     after,
+				})
 			})
 		}()
 	}
@@ -3643,8 +3688,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				for _, c := range current {
 					attached[c] = true
 				}
-				editList("networks of "+svcName, "Update the networks", current,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "networks of " + svcName,
+					applyVerb: "Update the networks",
+					items:     current,
+					validate: func(s string) (string, error) {
 						if _, ok := idByName[s]; ok {
 							return s, nil // known name
 						}
@@ -3653,7 +3701,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						}
 						return "", fmt.Errorf("unknown network %q", s)
 					},
-					func(list []string) error {
+					onApply: func(list []string) error {
 						ids := make([]string, 0, len(list))
 						for _, name := range list {
 							id := idByName[name]
@@ -3664,7 +3712,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						}
 						return setServiceNetworks(ctx, dcli, svcName, ids)
 					},
-					func(text string) []string {
+					suggest: func(text string) []string {
 						text = strings.ToLower(strings.TrimSpace(text))
 						var out []string
 						for _, n := range allNames {
@@ -3676,11 +3724,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, false, nil, &listEntryAction{
+					},
+					entryAction: &listEntryAction{
 						key:   'A',
 						label: "aliases",
 						run:   func(net string) { openAliasEditorForNet(svcName, net, idByName[net], back, after) },
-					}, nil, back, after)
+					},
+					back:  back,
+					after: after,
+				})
 			})
 		}()
 	}
@@ -3704,15 +3756,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				for _, c := range current {
 					attached[c] = true
 				}
-				editList("secrets of "+svcName, "Update the secrets", current,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "secrets of " + svcName,
+					applyVerb: "Update the secrets",
+					items:     current,
+					validate: func(s string) (string, error) {
 						if known[s] {
 							return s, nil
 						}
 						return "", fmt.Errorf("unknown secret %q", s)
 					},
-					func(list []string) error { return setServiceSecrets(ctx, dcli, svcName, list) },
-					func(text string) []string {
+					onApply: func(list []string) error { return setServiceSecrets(ctx, dcli, svcName, list) },
+					suggest: func(text string) []string {
 						text = strings.ToLower(strings.TrimSpace(text))
 						var out []string
 						for _, n := range all {
@@ -3724,7 +3779,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							}
 						}
 						return out
-					}, false, false, nil, nil, nil, back, after)
+					},
+					back:  back,
+					after: after,
+				})
 			})
 		}()
 	}
@@ -3742,21 +3800,29 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					info("cannot load env: " + err.Error())
 					return
 				}
-				editList("env of "+svcName, "Update the environment", items,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "env of " + svcName,
+					applyVerb: "Update the environment",
+					items:     items,
+					validate: func(s string) (string, error) {
 						k, v, e := parseEnv(s)
 						if e != nil {
 							return "", e
 						}
 						return k + "=" + v, nil
 					},
-					func(list []string) error {
+					onApply: func(list []string) error {
 						env, e := envFromStrings(list)
 						if e != nil {
 							return e
 						}
 						return setServiceEnv(ctx, dcli, svcName, env)
-					}, nil, true, true, nil, nil, nil, back, after)
+					},
+					allowEdit: true,
+					multiline: true,
+					back:      back,
+					after:     after,
+				})
 			})
 		}()
 	}
@@ -3768,8 +3834,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		for _, it := range items {
 			have[it] = true
 		}
-		editList(title, applyVerb, items, validate, apply,
-			func(text string) []string {
+		editList(editListConfig{
+			title:     title,
+			applyVerb: applyVerb,
+			items:     items,
+			validate:  validate,
+			onApply:   apply,
+			suggest: func(text string) []string {
 				text = strings.ToLower(strings.TrimSpace(text))
 				var out []string
 				for _, c := range cand {
@@ -3781,7 +3852,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 				return out
-			}, true, false, nil, nil, nil, back, after)
+			},
+			allowEdit: true,
+			back:      back,
+			after:     after,
+		})
 	}
 	// openPlacementConstraintsEditor edits the service's hard placement
 	// constraints (node.* / engine.* == / !=) with node-derived autocomplete.
@@ -3963,21 +4038,30 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 					return form
 				}
-				editList("mounts of "+svcName, "Update the mounts", items,
-					func(s string) (string, error) {
+				editList(editListConfig{
+					title:     "mounts of " + svcName,
+					applyVerb: "Update the mounts",
+					items:     items,
+					validate: func(s string) (string, error) {
 						m, e := parseServiceMount(s)
 						if e != nil {
 							return "", e
 						}
 						return formatServiceMount(m), nil
 					},
-					func(list []string) error {
+					onApply: func(list []string) error {
 						ms, e := mountsFromStrings(list)
 						if e != nil {
 							return e
 						}
 						return setServiceMounts(ctx, dcli, svcName, ms)
-					}, nil, true, false, confirmNote, nil, mountForm, back, after)
+					},
+					allowEdit:   true,
+					confirmNote: confirmNote,
+					formPrompt:  mountForm,
+					back:        back,
+					after:       after,
+				})
 			})
 		}()
 	}
