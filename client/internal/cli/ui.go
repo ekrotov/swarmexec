@@ -1183,14 +1183,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}()
 	}
-	selectedVolume := func() (swarmVolume, bool) {
-		row, _ := vtable.GetSelection()
-		i := row - 1
-		if i < 0 || i >= len(shownVols) {
-			return swarmVolume{}, false
-		}
-		return shownVols[i], true
-	}
+	selectedVolume := func() (swarmVolume, bool) { return selectedRow(vtable, shownVols) }
 
 	showVolumeNodes := func(v swarmVolume) {
 		list := tview.NewList().ShowSecondaryText(false)
@@ -1593,13 +1586,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	}
 	// selectedForward maps the cursor row back to a forward.
-	selectedForward := func() (forwardEntry, bool) {
-		row, _ := ftable.GetSelection()
-		if row < 1 || row > len(fRows) {
-			return forwardEntry{}, false
-		}
-		return fRows[row-1], true
-	}
+	selectedForward := func() (forwardEntry, bool) { return selectedRow(ftable, fRows) }
 
 	// ------------------------------------------------------------------ networks
 	nettable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
@@ -1667,14 +1654,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 	}
-	selectedNetwork := func() (swarmNetwork, bool) {
-		row, _ := nettable.GetSelection()
-		i := row - 1
-		if i < 0 || i >= len(nets) {
-			return swarmNetwork{}, false
-		}
-		return nets[i], true
-	}
+	selectedNetwork := func() (swarmNetwork, bool) { return selectedRow(nettable, nets) }
 	// serviceNamesFromCache returns the known service names (the containers-tab
 	// cache), used to seed the attach autocomplete. It is only a suggestion list —
 	// the actual attach resolves the name live, so a just-created service that is
@@ -2025,14 +2005,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 	}
-	selectedSecret := func() (swarmSecret, bool) {
-		row, _ := sectable.GetSelection()
-		i := row - 1
-		if i < 0 || i >= len(secs) {
-			return swarmSecret{}, false
-		}
-		return secs[i], true
-	}
+	selectedSecret := func() (swarmSecret, bool) { return selectedRow(sectable, secs) }
 	// showSecretDetail shows a secret's metadata and the services/containers that
 	// use it. The value is deliberately absent: the Docker API never returns it,
 	// and the overlay says so. Usage (services with their running containers)
@@ -2267,14 +2240,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		ctxs = list
 		renderContexts()
 	}
-	selectedContext := func() (dockerctx.Context, bool) {
-		row, _ := cxtable.GetSelection()
-		i := row - 1
-		if i < 0 || i >= len(ctxs) {
-			return dockerctx.Context{}, false
-		}
-		return ctxs[i], true
-	}
+	selectedContext := func() (dockerctx.Context, bool) { return selectedRow(cxtable, ctxs) }
 	// showCreateContext opens a guided form to add a docker context. The operator
 	// explicitly decides whether to connect over SSH and, if so, whether to go
 	// through a jump host — the relevant fields appear only when opted in. For SSH
@@ -2514,14 +2480,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 	}
-	selectedNode := func() (swarmNodeInfo, bool) {
-		row, _ := notable.GetSelection()
-		i := row - 1
-		if i < 0 || i >= len(nodeInfos) {
-			return swarmNodeInfo{}, false
-		}
-		return nodeInfos[i], true
-	}
+	selectedNode := func() (swarmNodeInfo, bool) { return selectedRow(notable, nodeInfos) }
 	// editNodeLabels is a compact staged editor (add/edit/delete/apply) over a
 	// node's labels, applied via NodeUpdate. Dedicated (not the service editList)
 	// because a node update is immediate — there is no rolling update.
@@ -5519,6 +5478,20 @@ func vimListKeys(ev *tcell.EventKey) *tcell.EventKey {
 
 func headerCell(text string) *tview.TableCell {
 	return tview.NewTableCell(text).SetTextColor(tcell.ColorYellow).SetAttributes(tcell.AttrBold).SetSelectable(false)
+}
+
+// selectedRow returns the item the operator has highlighted in a single-column
+// table whose row 0 is a header, mapping table row → rows[row-1], and false when
+// the header (or an empty area) is selected. One helper for every tab's
+// "which row is selected" getter, so the header-offset lives in one place.
+func selectedRow[T any](t *tview.Table, rows []T) (T, bool) {
+	row, _ := t.GetSelection()
+	i := row - 1
+	if i < 0 || i >= len(rows) {
+		var zero T
+		return zero, false
+	}
+	return rows[i], true
 }
 
 func joinNodes(nodes []resolve.Node) string {
