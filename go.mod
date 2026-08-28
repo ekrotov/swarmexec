@@ -1,6 +1,6 @@
 module swarmexec
 
-go 1.25.0
+go 1.27.0
 
 require (
 	github.com/docker/cli v29.6.0+incompatible
