@@ -69,28 +69,16 @@ func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
 		return status.Errorf(codes.InvalidArgument, "port %d out of range 1-65535", p)
 	}
 
-	// (2) Identify the authenticated client (mTLS cert CN or shared secret).
-	identity, err := s.identityFn(stream.Context())
-	if err != nil {
-		return status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-
-	// (3) Resolve the swarm service for authorization/audit context.
-	service := s.resolveService(stream.Context(), sf.GetContainerId())
-
-	// (4) Authorize. Forwarding is its own action: it moves an internal port
-	// onto the operator's machine, so a policy may deny it while allowing exec.
-	decision := s.authz.Authorize(stream.Context(), auth.Request{
+	// (2) Identity, service and authorization — the shared per-RPC gate.
+	// Forwarding is its own action: it moves an internal port onto the operator's
+	// machine, so a policy may deny it while allowing exec.
+	identity, service, err := s.authorize(stream.Context(), auth.Request{
 		Action:      "portforward",
-		Identity:    identity,
 		ContainerID: sf.GetContainerId(),
-		Service:     service,
 		Port:        sf.GetPort(),
 	})
-	s.audit.AuthDecision(identity, sf.GetContainerId(), service, decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if err != nil {
+		return err
 	}
 
 	return s.runForward(stream, sf, identity, service)

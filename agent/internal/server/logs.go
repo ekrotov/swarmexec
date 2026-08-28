@@ -31,22 +31,12 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	}
 	ctx := stream.Context()
 
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	service := s.resolveService(ctx, req.GetContainerId())
-
-	decision := s.authz.Authorize(ctx, auth.Request{
+	identity, service, err := s.authorize(ctx, auth.Request{
 		Action:      "logs",
-		Identity:    identity,
 		ContainerID: req.GetContainerId(),
-		Service:     service,
 	})
-	s.audit.AuthDecision(identity, req.GetContainerId(), service, decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if err != nil {
+		return err
 	}
 
 	// A TTY container's log stream is raw; a non-TTY one is stdcopy-multiplexed.
