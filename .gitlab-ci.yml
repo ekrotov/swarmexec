@@ -22,7 +22,7 @@ stages:
   - deploy
 
 variables:
-  GO_IMAGE: "golang:1.25"
+  GO_IMAGE: "golang:1.27"
   PROTO_VER: "swarmexec/v1"
   GOPATH: "$CI_PROJECT_DIR/.gocache"
 
@@ -88,7 +88,7 @@ test:
       fi
     - go test -race ./...
 
-# Code navigation index (SCIP) for this `go 1.25` module. scip-go is the
+# Code navigation index (SCIP) for this `go 1.27` module. scip-go is the
 # maintained Go indexer; the index is published as a downloadable artifact.
 # NOTE: this GitLab instance rejects the `reports: lsif` upload with a 500, so we
 # publish index.scip as a plain artifact instead of wiring it into the UI's code
