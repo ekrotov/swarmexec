@@ -109,6 +109,53 @@ type editListConfig struct {
 	after       func()
 }
 
+// Page names for the overlay Pages ("pages"). Each overlay only cleans up if its
+// RemovePage matches its AddPage exactly, and a typo leaks a stuck overlay with
+// no compile-time signal — so the names live here as constants and every
+// AddPage/RemovePage/HasPage references them.
+const (
+	pageMain             = "main"
+	pageInfo             = "info"
+	pageConfirm          = "confirm"
+	pageHelp             = "help"
+	pageMenu             = "menu"
+	pageTerm             = "term"
+	pageLogs             = "logs"
+	pageLogView          = "logview"
+	pageLogGrep          = "loggrep"
+	pageInspect          = "inspect"
+	pageInspectDiff      = "inspectdiff"
+	pageInspectActions   = "inspectactions"
+	pageListEdit         = "listedit"
+	pageListEditPrompt   = "listeditprompt"
+	pageListEditLeave    = "listeditleave"
+	pageScalePrompt      = "scaleprompt"
+	pagePlacementMenu    = "placementmenu"
+	pagePlaceDiag        = "placediag"
+	pageResEdit          = "resedit"
+	pageOrphanSecrets    = "orphansecrets"
+	pageSvcPrompt        = "svcprompt"
+	pageFwdPrompt        = "fwdprompt"
+	pageFwdDetail        = "fwddetail"
+	pageUserPrompt       = "userprompt"
+	pageVolForm          = "volform"
+	pageVolNodes         = "volnodes"
+	pageVolUsers         = "volusers"
+	pageVolProgress      = "volprogress"
+	pageVolAttach        = "volattach"
+	pageVolAttachTgt     = "volattachtgt"
+	pageVolAttachConfirm = "volattachconfirm"
+	pageNetForm          = "netform"
+	pageNetMembers       = "netmembers"
+	pageSecForm          = "secform"
+	pageSecDetail        = "secdetail"
+	pageCtxForm          = "ctxform"
+	pageCtxDetail        = "ctxdetail"
+	pageNodeLabels       = "nodelabels"
+	pageNodeLabelPrompt  = "nodelabelprompt"
+	pageNodeDetail       = "nodedetail"
+)
+
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
 	cfg, err := g.resolveConfig(cmd)
 	if err != nil {
@@ -161,8 +208,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	info := func(msg string) {
 		clientlog.L().Info("ui notice", "msg", msg)
 		m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
-			SetDoneFunc(func(int, string) { pages.RemovePage("info") })
-		pages.AddPage("info", m, true, true)
+			SetDoneFunc(func(int, string) { pages.RemovePage(pageInfo) })
+		pages.AddPage(pageInfo, m, true, true)
 		app.SetFocus(m)
 	}
 
@@ -178,14 +225,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			SetText(msg).
 			AddButtons([]string{confirmLabel, "Cancel"}).
 			SetDoneFunc(func(_ int, label string) {
-				pages.RemovePage("confirm")
+				pages.RemovePage(pageConfirm)
 				if label != confirmLabel {
 					app.SetFocus(back)
 					return
 				}
 				onConfirm()
 			})
-		pages.AddPage("confirm", m, true, true)
+		pages.AddPage(pageConfirm, m, true, true)
 		app.SetFocus(m)
 	}
 
@@ -511,7 +558,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			once.Do(func() {
 				app.EnableMouse(prevMouse)
 				tcancel()
-				pages.RemovePage("term")
+				pages.RemovePage(pageTerm)
 				app.SetFocus(ctree)
 				loadContainers()
 			})
@@ -539,7 +586,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		})
 		app.EnableMouse(false) // hand the mouse to the terminal for native copy
-		pages.AddPage("term", tv, true, true)
+		pages.AddPage(pageTerm, tv, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -557,7 +604,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		in := tview.NewInputField().SetLabel("grep: ").SetFieldWidth(44).
 			SetPlaceholder("regexp on the message — empty clears")
 		in.SetDoneFunc(func(key tcell.Key) {
-			pages.RemovePage("loggrep")
+			pages.RemovePage(pageLogGrep)
 			app.SetFocus(back)
 			if key == tcell.KeyEscape {
 				return
@@ -577,7 +624,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			after()
 		})
 		in.SetBorder(true).SetTitle(" filter logs ")
-		pages.AddPage("loggrep", centered(in, 64, 3), true, true)
+		pages.AddPage(pageLogGrep, centered(in, 64, 3), true, true)
 		app.SetFocus(in)
 	}
 	// logFooterText is the log view's footer hint. It appends the mouse state
@@ -658,7 +705,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		setTitle()
 		page, refreshHint := logPage(tv)
 		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
+		closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
 		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 		target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
 		go func() {
@@ -669,7 +716,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 			}
 		}()
-		pages.AddPage("logs", page, true, true)
+		pages.AddPage(pageLogs, page, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -693,7 +740,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		setTitle()
 		page, refreshHint := logPage(tv)
 		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage("logs"); app.SetFocus(ctree) }
+		closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
 		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 		for _, c := range members {
 			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
@@ -718,7 +765,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			}(ep, target, prefix)
 		}
-		pages.AddPage("logs", page, true, true)
+		pages.AddPage(pageLogs, page, true, true)
 		app.SetFocus(tv)
 	}
 
@@ -793,7 +840,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		hint := "  8080  or  9090:8080 (local:remote)"
 		input.SetPlaceholder(hint)
 
-		closePrompt := func() { pages.RemovePage("fwdprompt"); app.SetFocus(ctree) }
+		closePrompt := func() { pages.RemovePage(pageFwdPrompt); app.SetFocus(ctree) }
 		input.SetDoneFunc(func(key tcell.Key) {
 			if key != tcell.KeyEnter {
 				closePrompt()
@@ -810,7 +857,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			startForward(c, local, remote)
 			flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
 		})
-		pages.AddPage("fwdprompt", centered(input, 54, 3), true, true)
+		pages.AddPage(pageFwdPrompt, centered(input, 54, 3), true, true)
 		app.SetFocus(input)
 	}
 
@@ -820,7 +867,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		input := tview.NewInputField().SetLabel(" user: ").SetFieldWidth(28)
 		input.SetBorder(true).SetTitle(fmt.Sprintf(" shell into %s on %s as… ", orDash(c.Service), orDash(c.NodeName)))
 		input.SetPlaceholder("  name or UID[:GID] — e.g. root, 1000, 1000:1000")
-		closePrompt := func() { pages.RemovePage("userprompt"); app.SetFocus(ctree) }
+		closePrompt := func() { pages.RemovePage(pageUserPrompt); app.SetFocus(ctree) }
 		input.SetDoneFunc(func(key tcell.Key) {
 			if key != tcell.KeyEnter {
 				closePrompt()
@@ -834,7 +881,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			closePrompt()
 			open(u)
 		})
-		pages.AddPage("userprompt", centered(input, 62, 3), true, true)
+		pages.AddPage(pageUserPrompt, centered(input, 62, 3), true, true)
 		app.SetFocus(input)
 	}
 
@@ -843,7 +890,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
 		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-		closeMenu := func() { restoreHelp(); pages.RemovePage("menu"); app.SetFocus(ctree) }
+		closeMenu := func() { restoreHelp(); pages.RemovePage(pageMenu); app.SetFocus(ctree) }
 
 		// Optimistic until the shell probe returns; then unavailable shells grey.
 		bashOK, shOK, probed := true, true, false
@@ -903,7 +950,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}()
 
 		// Height tracks the item count: 6 items plus the border.
-		pages.AddPage("menu", centered(list, 48, 8), true, true)
+		pages.AddPage(pageMenu, centered(list, 48, 8), true, true)
 		app.SetFocus(list)
 	}
 	// showLogsForNode opens logs for the tree cursor: a container leaf shows that
@@ -1208,7 +1255,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		render()
-		closeNodes := func() { pages.RemovePage("volnodes"); app.SetFocus(vtable) }
+		closeNodes := func() { pages.RemovePage(pageVolNodes); app.SetFocus(vtable) }
 
 		runDelete := func(targets []resolve.Node) {
 			go func() {
@@ -1280,7 +1327,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			box.AddItem(lv, labelH, 0, false)
 		}
 		box.AddItem(list, 0, 1, true).AddItem(help, 1, 0, false)
-		pages.AddPage("volnodes", centered(box, 64, len(v.Nodes)+5+labelH), true, true)
+		pages.AddPage(pageVolNodes, centered(box, 64, len(v.Nodes)+5+labelH), true, true)
 		app.SetFocus(list)
 	}
 	vtable.SetSelectedFunc(func(int, int) {
@@ -1322,7 +1369,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		}()
 		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
-		closeForm := func() { restoreHelp(); pages.RemovePage("volform"); app.SetFocus(vtable) }
+		closeForm := func() { restoreHelp(); pages.RemovePage(pageVolForm); app.SetFocus(vtable) }
 		form.AddButton("Create", func() {
 			lbls, err := parseKVList(labels)
 			if err != nil {
@@ -1377,7 +1424,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("volform", centered(form, 66, 15), true, true)
+		pages.AddPage(pageVolForm, centered(form, 66, 15), true, true)
 		app.SetFocus(form)
 	}
 
@@ -1403,7 +1450,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Esc", "back"))
-		closeUsers := func() { restoreHelp(); pages.RemovePage("volusers"); app.SetFocus(vtable) }
+		closeUsers := func() { restoreHelp(); pages.RemovePage(pageVolUsers); app.SetFocus(vtable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
 				closeUsers()
@@ -1415,7 +1462,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if rows == 0 {
 			rows = 1
 		}
-		pages.AddPage("volusers", centered(list, 72, rows+4), true, true)
+		pages.AddPage(pageVolUsers, centered(list, 72, rows+4), true, true)
 		app.SetFocus(list)
 	}
 
@@ -1444,7 +1491,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 			prog.SetBorder(true).SetTitle(" deleting volumes ")
 			prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
-			pages.AddPage("volprogress", centered(prog, 60, 5), true, true)
+			pages.AddPage(pageVolProgress, centered(prog, 60, 5), true, true)
 			app.SetFocus(prog)
 			go func() {
 				// Delete volumes with bounded parallelism: each volume already
@@ -1488,7 +1535,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				wg.Wait()
 				app.QueueUpdateDraw(func() {
-					pages.RemovePage("volprogress")
+					pages.RemovePage(pageVolProgress)
 					selectedVols = map[string]bool{}
 					loadVolumes()
 					updateStatus()
@@ -1688,11 +1735,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		in.SetDoneFunc(func(key tcell.Key) {
 			name := strings.TrimSpace(in.GetText())
 			if key != tcell.KeyEnter || name == "" {
-				pages.RemovePage("svcprompt")
+				pages.RemovePage(pageSvcPrompt)
 				app.SetFocus(back)
 				return
 			}
-			pages.RemovePage("svcprompt")
+			pages.RemovePage(pageSvcPrompt)
 			confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
 				go func() {
 					err := do(name)
@@ -1708,7 +1755,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		})
 		in.SetBorder(true).SetTitle(" " + title + " ")
-		pages.AddPage("svcprompt", centered(in, 66, 3), true, true)
+		pages.AddPage(pageSvcPrompt, centered(in, 66, 3), true, true)
 		app.SetFocus(in)
 	}
 
@@ -1809,13 +1856,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		render()
 		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
-		closeMembers := func() { restoreHelp(); pages.RemovePage("netmembers"); app.SetFocus(nettable) }
+		closeMembers := func() { restoreHelp(); pages.RemovePage(pageNetMembers); app.SetFocus(nettable) }
 		reload := func() {
 			go func() {
 				m := networkMembers(ctx, dcli, n)
 				app.QueueUpdateDraw(func() {
 					// Only repaint if this overlay is still the one on screen.
-					if pages.HasPage("netmembers") {
+					if pages.HasPage(pageNetMembers) {
 						members, loaded = m, true
 						render()
 					}
@@ -1885,7 +1932,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if height > 22 {
 			height = 22
 		}
-		pages.AddPage("netmembers", centered(list, 78, height), true, true)
+		pages.AddPage(pageNetMembers, centered(list, 78, height), true, true)
 		app.SetFocus(list)
 		reload()
 	}
@@ -1913,7 +1960,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		form.AddInputField("Gateway (optional)", "", 22, nil, func(t string) { o.Gateway = t })
 		form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
 		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
-		closeForm := func() { restoreHelp(); pages.RemovePage("netform"); app.SetFocus(nettable) }
+		closeForm := func() { restoreHelp(); pages.RemovePage(pageNetForm); app.SetFocus(nettable) }
 		form.AddButton("Create", func() {
 			lbls, err := parseKVList(labels)
 			if err != nil {
@@ -1938,7 +1985,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("netform", centered(form, 74, 22), true, true)
+		pages.AddPage(pageNetForm, centered(form, 74, 22), true, true)
 		app.SetFocus(form)
 	}
 
@@ -2066,7 +2113,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		render(init, true)
 		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
-		closeSecret := func() { restoreHelp(); pages.RemovePage("secdetail"); app.SetFocus(sectable) }
+		closeSecret := func() { restoreHelp(); pages.RemovePage(pageSecDetail); app.SetFocus(sectable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -2106,12 +2153,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if height > 24 {
 			height = 24
 		}
-		pages.AddPage("secdetail", centered(tv, 72, height), true, true)
+		pages.AddPage(pageSecDetail, centered(tv, 72, height), true, true)
 		app.SetFocus(tv)
 		go func() {
 			members := secretMembers(ctx, dcli, s)
 			app.QueueUpdateDraw(func() {
-				if pages.HasPage("secdetail") {
+				if pages.HasPage(pageSecDetail) {
 					render(members, false)
 				}
 			})
@@ -2155,7 +2202,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		form.AddTextArea("Value", "", 40, 6, 0, func(t string) { value = t })
 		form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
 		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Esc", "cancel"))
-		closeForm := func() { restoreHelp(); pages.RemovePage("secform"); app.SetFocus(sectable) }
+		closeForm := func() { restoreHelp(); pages.RemovePage(pageSecForm); app.SetFocus(sectable) }
 		form.AddButton("Create", func() {
 			lbls, err := parseKVList(labels)
 			if err != nil {
@@ -2179,7 +2226,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("secform", centered(form, 74, 18), true, true)
+		pages.AddPage(pageSecForm, centered(form, 74, 18), true, true)
 		app.SetFocus(form)
 	}
 
@@ -2275,7 +2322,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		form.SetItemPadding(0) // compact: the SSH+jump form has many rows
 		form.SetBorder(true).SetTitle(" new context ")
 		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
-		closeForm := func() { restoreHelp(); pages.RemovePage("ctxform"); app.SetFocus(cxtable) }
+		closeForm := func() { restoreHelp(); pages.RemovePage(pageCtxForm); app.SetFocus(cxtable) }
 
 		var render func()
 		render = func() {
@@ -2355,7 +2402,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("ctxform", centered(form, 76, 22), true, true)
+		pages.AddPage(pageCtxForm, centered(form, 76, 22), true, true)
 		app.SetFocus(form)
 	}
 	// deleteContext removes the selected context behind a confirm. "default" is
@@ -2503,11 +2550,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		render()
 		_, restoreHelp := pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
-		closeEd := func() { restoreHelp(); pages.RemovePage("nodelabels"); app.SetFocus(notable) }
+		closeEd := func() { restoreHelp(); pages.RemovePage(pageNodeLabels); app.SetFocus(notable) }
 		promptLabel := func(initial string, done func(string)) {
 			in := tview.NewInputField().SetLabel("key=value: ").SetText(initial).SetFieldWidth(44)
 			in.SetDoneFunc(func(k tcell.Key) {
-				pages.RemovePage("nodelabelprompt")
+				pages.RemovePage(pageNodeLabelPrompt)
 				app.SetFocus(list)
 				if k != tcell.KeyEnter {
 					return
@@ -2524,7 +2571,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				render()
 			})
 			in.SetBorder(true)
-			pages.AddPage("nodelabelprompt", centered(in, 60, 3), true, true)
+			pages.AddPage(pageNodeLabelPrompt, centered(in, 60, 3), true, true)
 			app.SetFocus(in)
 		}
 		apply := func() {
@@ -2576,7 +2623,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return vimListKeys(ev)
 		})
-		pages.AddPage("nodelabels", centered(list, 70, 16), true, true)
+		pages.AddPage(pageNodeLabels, centered(list, 70, 16), true, true)
 		app.SetFocus(list)
 	}
 	showNodeDetail := func(n swarmNodeInfo) {
@@ -2614,7 +2661,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		tv.SetText(b.String())
 		_, restoreHelp := pushOverlayHelp(footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
-		closeDetail := func() { restoreHelp(); pages.RemovePage("nodedetail"); app.SetFocus(notable) }
+		closeDetail := func() { restoreHelp(); pages.RemovePage(pageNodeDetail); app.SetFocus(notable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -2631,7 +2678,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("nodedetail", centered(tv, 72, 24), true, true)
+		pages.AddPage(pageNodeDetail, centered(tv, 72, 24), true, true)
 		app.SetFocus(tv)
 	}
 	notable.SetSelectedFunc(func(int, int) {
@@ -2670,7 +2717,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		AddItem(content, 0, 1, true).
 		AddItem(search, 0, 0, false).
 		AddItem(footer, 2, 0, false)
-	pages.AddPage("main", root, true, true)
+	pages.AddPage(pageMain, root, true, true)
 
 	// savedHelp holds the footer help to restore when search closes. While the
 	// search field has focus the footer shows how to leave it — there is no
@@ -3007,7 +3054,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			logViewRestore()
 			logViewRestore = nil
 		}
-		pages.RemovePage("logview")
+		pages.RemovePage(pageLogView)
 		if logViewPrev != nil {
 			app.SetFocus(logViewPrev)
 		}
@@ -3043,7 +3090,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		})
 		stop := make(chan struct{})
 		logViewStop = stop
-		pages.AddPage("logview", tv, true, true)
+		pages.AddPage(pageLogView, tv, true, true)
 		app.SetFocus(tv)
 		go func() {
 			tk := time.NewTicker(700 * time.Millisecond)
@@ -3061,7 +3108,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}()
 	}
 	toggleLogView := func() {
-		if pages.HasPage("logview") {
+		if pages.HasPage(pageLogView) {
 			closeLogView()
 		} else {
 			openLogView()
@@ -3153,7 +3200,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv.SetBorder(true).SetTitle(" keybindings ")
 		prev := app.GetFocus()
 		_, restore := pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
-		closeHelp := func() { restore(); pages.RemovePage("help"); app.SetFocus(prev) }
+		closeHelp := func() { restore(); pages.RemovePage(pageHelp); app.SetFocus(prev) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '?')):
@@ -3166,7 +3213,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("help", centered(tv, 60, 24), true, true)
+		pages.AddPage(pageHelp, centered(tv, 60, 24), true, true)
 		app.SetFocus(tv)
 	}
 	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
@@ -3330,7 +3377,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			render()
 		}
 		setHelp, restoreHelp := pushOverlayHelp(footerKeys(keyPairs...))
-		closeEd := func() { restoreHelp(); pages.RemovePage("listedit"); app.SetFocus(back) }
+		closeEd := func() { restoreHelp(); pages.RemovePage(pageListEdit); app.SetFocus(back) }
 		// commit validates a typed entry and applies it via done.
 		commit := func(raw string, done func(string)) {
 			txt := strings.TrimSpace(raw)
@@ -3349,7 +3396,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if formPrompt != nil {
 				// Custom form: submit validates+stages+closes on success; the form
 				// keeps focus on failure (it surfaces the error itself).
-				cancel := func() { pages.RemovePage("listeditprompt"); app.SetFocus(list) }
+				cancel := func() { pages.RemovePage(pageListEditPrompt); app.SetFocus(list) }
 				submit := func(raw string) error {
 					norm, err := validate(strings.TrimSpace(raw))
 					if err != nil {
@@ -3357,12 +3404,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 					done(norm)
 					render()
-					pages.RemovePage("listeditprompt")
+					pages.RemovePage(pageListEditPrompt)
 					app.SetFocus(list)
 					return nil
 				}
 				form := formPrompt(initial, submit, cancel)
-				pages.AddPage("listeditprompt", centered(form, 78, 15), true, true)
+				pages.AddPage(pageListEditPrompt, centered(form, 78, 15), true, true)
 				app.SetFocus(form)
 				return
 			}
@@ -3378,19 +3425,19 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				ta.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 					switch ev.Key() {
 					case tcell.KeyEscape:
-						pages.RemovePage("listeditprompt")
+						pages.RemovePage(pageListEditPrompt)
 						app.SetFocus(list)
 						return nil
 					case tcell.KeyCtrlS:
 						txt := ta.GetText()
-						pages.RemovePage("listeditprompt")
+						pages.RemovePage(pageListEditPrompt)
 						app.SetFocus(list)
 						commit(txt, done)
 						return nil
 					}
 					return ev
 				})
-				pages.AddPage("listeditprompt", centered(ta, 96, 22), true, true)
+				pages.AddPage(pageListEditPrompt, centered(ta, 96, 22), true, true)
 				app.SetFocus(ta)
 				return
 			}
@@ -3399,7 +3446,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				in.SetAutocompleteFunc(suggest)
 			}
 			in.SetDoneFunc(func(k tcell.Key) {
-				pages.RemovePage("listeditprompt")
+				pages.RemovePage(pageListEditPrompt)
 				app.SetFocus(list)
 				if k != tcell.KeyEnter {
 					return
@@ -3407,7 +3454,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				commit(in.GetText(), done)
 			})
 			in.SetBorder(true)
-			pages.AddPage("listeditprompt", centered(in, 60, 3), true, true)
+			pages.AddPage(pageListEditPrompt, centered(in, 60, 3), true, true)
 			app.SetFocus(in)
 		}
 		// hasChanges reports whether anything is staged but not yet applied (cur
@@ -3442,7 +3489,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							return
 						}
 						restoreHelp()
-						pages.RemovePage("listedit")
+						pages.RemovePage(pageListEdit)
 						info("service updated — rolling update started")
 						if after != nil {
 							after()
@@ -3460,7 +3507,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						SetText("You have unapplied changes.\n\nApply them now, discard them, or keep editing?\n(Esc discards and leaves.)").
 						AddButtons([]string{"Apply", "Discard", "Keep editing"}).
 						SetDoneFunc(func(_ int, lbl string) {
-							pages.RemovePage("listeditleave")
+							pages.RemovePage(pageListEditLeave)
 							switch lbl {
 							case "Apply":
 								applyFlow()
@@ -3475,7 +3522,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 								closeEd()
 							}
 						})
-					pages.AddPage("listeditleave", leave, true, true)
+					pages.AddPage(pageListEditLeave, leave, true, true)
 					app.SetFocus(leave)
 					return nil
 				}
@@ -3518,7 +3565,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return vimListKeys(ev)
 		})
-		pages.AddPage("listedit", centered(list, 72, 18), true, true)
+		pages.AddPage(pageListEdit, centered(list, 72, 18), true, true)
 		app.SetFocus(list)
 	}
 	// openPortsEditor / openLabelsEditor fetch the service's current ports/labels
@@ -3867,7 +3914,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			SetText("Edit placement for " + svcName).
 			AddButtons([]string{"Constraints", "Spread preferences", "Cancel"}).
 			SetDoneFunc(func(_ int, lbl string) {
-				pages.RemovePage("placementmenu")
+				pages.RemovePage(pagePlacementMenu)
 				switch lbl {
 				case "Constraints":
 					openPlacementConstraintsEditor(svcName, back, after)
@@ -3877,7 +3924,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					app.SetFocus(back)
 				}
 			})
-		pages.AddPage("placementmenu", m, true, true)
+		pages.AddPage(pagePlacementMenu, m, true, true)
 		app.SetFocus(m)
 	}
 	openMountsEditor := func(svcName string, back tview.Primitive, after func()) {
@@ -4040,7 +4087,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				in := tview.NewInputField().SetLabel("replicas: ").SetText(fmt.Sprintf("%d", cur)).
 					SetFieldWidth(8).SetAcceptanceFunc(tview.InputFieldInteger)
 				in.SetDoneFunc(func(k tcell.Key) {
-					pages.RemovePage("scaleprompt")
+					pages.RemovePage(pageScalePrompt)
 					app.SetFocus(back)
 					if k != tcell.KeyEnter {
 						return
@@ -4065,7 +4112,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}()
 				})
 				in.SetBorder(true).SetTitle(" scale service ")
-				pages.AddPage("scaleprompt", centered(in, 50, 3), true, true)
+				pages.AddPage(pageScalePrompt, centered(in, 50, 3), true, true)
 				app.SetFocus(in)
 			})
 		}()
@@ -4102,7 +4149,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			SetText(fmt.Sprintf("The removed service used %d secret(s) that no other service references:\n\n%s\n\nDelete them too?", len(orphans), strings.Join(names, ", "))).
 			AddButtons([]string{"Delete secrets", "Keep"}).
 			SetDoneFunc(func(_ int, lbl string) {
-				pages.RemovePage("orphansecrets")
+				pages.RemovePage(pageOrphanSecrets)
 				app.SetFocus(ctree)
 				if lbl != "Delete secrets" {
 					return
@@ -4123,7 +4170,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					})
 				}()
 			})
-		pages.AddPage("orphansecrets", m, true, true)
+		pages.AddPage(pageOrphanSecrets, m, true, true)
 		app.SetFocus(m)
 	}
 	// openRemoveService permanently deletes a service after a confirm. onRemoved is
@@ -4182,7 +4229,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv.SetBorder(true).SetTitle(fmt.Sprintf(" why? — placement of %s ", svcName))
 		tv.SetText("  [gray]diagnosing…[-]")
 		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
-		closeDiag := func() { restoreHelp(); pages.RemovePage("placediag"); app.SetFocus(back) }
+		closeDiag := func() { restoreHelp(); pages.RemovePage(pagePlaceDiag); app.SetFocus(back) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -4195,12 +4242,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("placediag", centered(tv, 90, 24), true, true)
+		pages.AddPage(pagePlaceDiag, centered(tv, 90, 24), true, true)
 		app.SetFocus(tv)
 		go func() {
 			rep, err := diagnoseServicePlacement(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
-				if !pages.HasPage("placediag") {
+				if !pages.HasPage(pagePlaceDiag) {
 					return
 				}
 				if err != nil {
@@ -4231,7 +4278,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
 				closeForm := func() {
 					restoreHelp()
-					pages.RemovePage("resedit")
+					pages.RemovePage(pageResEdit)
 					app.SetFocus(back)
 				}
 				apply := func() {
@@ -4280,7 +4327,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				form.SetCancelFunc(closeForm)
 				form.SetBorder(true)
 				setTitle(" resource limits of " + svcName + " — empty clears a limit ")
-				pages.AddPage("resedit", centered(form, 70, 15), true, true)
+				pages.AddPage(pageResEdit, centered(form, 70, 15), true, true)
 				app.SetFocus(form)
 			})
 		}()
@@ -4435,7 +4482,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			if restoreHelp != nil {
 				restoreHelp()
 			}
-			pages.RemovePage("inspect")
+			pages.RemovePage(pageInspect)
 			app.SetFocus(ctree)
 		}
 		// reload re-fetches the inspect (after an edit) and refreshes the tree.
@@ -4444,7 +4491,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			go func() {
 				f, raw, err := fetch()
 				app.QueueUpdateDraw(func() {
-					if err != nil || !pages.HasPage("inspect") {
+					if err != nil || !pages.HasPage(pageInspect) {
 						return
 					}
 					lines, rawJSON, loaded = f, raw, true
@@ -4460,7 +4507,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			_, restoreDiff := pushOverlayHelp(footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
 			closeDiff := func() {
 				restoreDiff()
-				pages.RemovePage("inspectdiff")
+				pages.RemovePage(pageInspectDiff)
 				app.SetFocus(table)
 			}
 			tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -4471,12 +4518,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return ev
 			})
 			tv.SetText("loading…")
-			pages.AddPage("inspectdiff", centered(tv, 100, 32), true, true)
+			pages.AddPage(pageInspectDiff, centered(tv, 100, 32), true, true)
 			app.SetFocus(tv)
 			go func() {
 				lines, hasPrev, derr := serviceDiffLines(ctx, dcli, editSvc)
 				app.QueueUpdateDraw(func() {
-					if !pages.HasPage("inspectdiff") {
+					if !pages.HasPage(pageInspectDiff) {
 						return
 					}
 					switch {
@@ -4513,7 +4560,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			list := tview.NewList().ShowSecondaryText(false)
 			list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", editSvc))
 			_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-			closeActions := func() { restoreHelp(); pages.RemovePage("inspectactions"); app.SetFocus(table) }
+			closeActions := func() { restoreHelp(); pages.RemovePage(pageInspectActions); app.SetFocus(table) }
 			add := func(label string, fn func()) {
 				list.AddItem(label, "", 0, func() { closeActions(); fn() })
 			}
@@ -4538,7 +4585,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 				return vimListKeys(ev)
 			})
-			pages.AddPage("inspectactions", centered(list, 54, 17), true, true)
+			pages.AddPage(pageInspectActions, centered(list, 54, 17), true, true)
 			app.SetFocus(list)
 		}
 		table.SetSelectionChangedFunc(func(int, int) { setFooter("") })
@@ -4629,14 +4676,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		})
 		setHelp, restoreHelp = pushOverlayHelp(keysText())
 		populate() // shows "loading…"
-		pages.AddPage("inspect", centered(table, 110, 40), true, true)
+		pages.AddPage(pageInspect, centered(table, 110, 40), true, true)
 		app.SetFocus(table)
 		go func() {
 			start := time.Now()
 			f, raw, err := fetch()
 			clientlog.Timed(op, start, err)
 			app.QueueUpdateDraw(func() {
-				if !pages.HasPage("inspect") {
+				if !pages.HasPage(pageInspect) {
 					return
 				}
 				if err != nil {
@@ -4760,7 +4807,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 		tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
-		closeDetail := func() { pages.RemovePage("fwddetail"); app.SetFocus(ftable) }
+		closeDetail := func() { pages.RemovePage(pageFwdDetail); app.SetFocus(ftable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape, ev.Key() == tcell.KeyEnter:
@@ -4783,7 +4830,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		// Height tracks the content so a short forward gets a snug box and a
 		// failed one grows to fit its reason.
 		lines := strings.Count(b.String(), "\n") + 1
-		pages.AddPage("fwddetail", centered(tv, 66, lines+2), true, true)
+		pages.AddPage(pageFwdDetail, centered(tv, 66, lines+2), true, true)
 		app.SetFocus(tv)
 	}
 	ftable.SetSelectedFunc(func(int, int) { showForwardDetail() })
@@ -4837,7 +4884,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		})
 		in.SetDoneFunc(func(key tcell.Key) {
 			svc := strings.TrimSpace(in.GetText())
-			pages.RemovePage("volattach")
+			pages.RemovePage(pageVolAttach)
 			if key != tcell.KeyEnter || svc == "" {
 				app.SetFocus(vtable)
 				return
@@ -4845,7 +4892,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			tin := tview.NewInputField().SetLabel("target path: ").SetFieldWidth(42).SetPlaceholder("/data")
 			tin.SetDoneFunc(func(k tcell.Key) {
 				target := strings.TrimSpace(tin.GetText())
-				pages.RemovePage("volattachtgt")
+				pages.RemovePage(pageVolAttachTgt)
 				if k != tcell.KeyEnter || target == "" {
 					app.SetFocus(vtable)
 					return
@@ -4858,7 +4905,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					SetText(fmt.Sprintf("Attach volume %q to service %q at %s?\n\nThis triggers a rolling update of the service.", volName, svc, target)).
 					AddButtons([]string{"Attach", "Attach read-only", "Cancel"}).
 					SetDoneFunc(func(_ int, lbl string) {
-						pages.RemovePage("volattachconfirm")
+						pages.RemovePage(pageVolAttachConfirm)
 						if lbl == "Cancel" || lbl == "" {
 							app.SetFocus(vtable)
 							return
@@ -4877,15 +4924,15 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							})
 						}()
 					})
-				pages.AddPage("volattachconfirm", m, true, true)
+				pages.AddPage(pageVolAttachConfirm, m, true, true)
 				app.SetFocus(m)
 			})
 			tin.SetBorder(true).SetTitle(fmt.Sprintf(" attach %s → %s ", volName, svc))
-			pages.AddPage("volattachtgt", centered(tin, 64, 3), true, true)
+			pages.AddPage(pageVolAttachTgt, centered(tin, 64, 3), true, true)
 			app.SetFocus(tin)
 		})
 		in.SetBorder(true).SetTitle(fmt.Sprintf(" attach volume %q to service ", volName))
-		pages.AddPage("volattach", centered(in, 64, 3), true, true)
+		pages.AddPage(pageVolAttach, centered(in, 64, 3), true, true)
 		app.SetFocus(in)
 	}
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -5021,7 +5068,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 		tv.SetBorder(true).SetTitle(fmt.Sprintf(" context %s ", c.Name))
 		_, restore := pushOverlayHelp(footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
-		closeDetail := func() { restore(); pages.RemovePage("ctxdetail"); app.SetFocus(cxtable) }
+		closeDetail := func() { restore(); pages.RemovePage(pageCtxDetail); app.SetFocus(cxtable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
 			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -5034,7 +5081,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage("ctxdetail", centered(tv, 64, 8), true, true)
+		pages.AddPage(pageCtxDetail, centered(tv, 64, 8), true, true)
 		app.SetFocus(tv)
 	}
 	// On the contexts table: Enter/u activate (switch), i details, n creates, d removes.
