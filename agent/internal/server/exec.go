@@ -48,29 +48,17 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 		return status.Error(codes.InvalidArgument, "StartExec requires container_id and cmd")
 	}
 
-	// (2) Identify the authenticated client (mTLS cert CN).
-	identity, err := s.identityFn(stream.Context())
-	if err != nil {
-		return status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-
-	// (3) Resolve the swarm service name for authorization/audit context.
-	service := s.resolveService(stream.Context(), se.GetContainerId())
-
-	// (4) Authorize before creating the exec (REQUIREMENTS §5).
-	decision := s.authz.Authorize(stream.Context(), auth.Request{
+	// (2) Identity, service and authorization — the shared per-RPC gate. Deny
+	// before creating the exec (REQUIREMENTS §5).
+	identity, service, err := s.authorize(stream.Context(), auth.Request{
 		Action:      "exec",
-		Identity:    identity,
 		ContainerID: se.GetContainerId(),
-		Service:     service,
 		Cmd:         se.GetCmd(),
 		User:        se.GetUser(),
 		TTY:         se.GetTty(),
 	})
-	s.audit.AuthDecision(identity, se.GetContainerId(), service, decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if err != nil {
+		return err
 	}
 
 	return s.runSession(stream, se, identity, service)

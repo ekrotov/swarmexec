@@ -170,6 +170,31 @@ func (s *Server) resolveService(ctx context.Context, containerID string) string 
 	return info.Config.Labels[swarmServiceLabel]
 }
 
+// authorize is the per-RPC security gate shared by the streaming handlers
+// (Exec/Logs/PortForward): resolve the mTLS identity and the swarm service,
+// authorize req — whose action-specific fields (Action, ContainerID, and any of
+// Cmd/User/TTY/Port) the caller has already set — audit the decision, and count a
+// denial. It fills req.Identity and req.Service. On failure it returns a ready
+// gRPC status error (with empty identity/service) so callers just `return err`.
+// Keeping the sequence in one place stops the drain/authorize/audit/deny order —
+// and the audit of denied requests — from drifting between handlers.
+func (s *Server) authorize(ctx context.Context, req auth.Request) (identity, service string, err error) {
+	identity, err = s.identityFn(ctx)
+	if err != nil {
+		return "", "", status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+	}
+	service = s.resolveService(ctx, req.ContainerID)
+	req.Identity = identity
+	req.Service = service
+	decision := s.authz.Authorize(ctx, req)
+	s.audit.AuthDecision(identity, req.ContainerID, service, decision.Allow, decision.Reason)
+	if !decision.Allow {
+		s.metrics.AuthDenied()
+		return "", "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	}
+	return identity, service, nil
+}
+
 // StartDrain marks the server as draining so new Exec sessions are refused with
 // Unavailable. Existing sessions continue until they end or are forcibly stopped.
 func (s *Server) StartDrain() {
