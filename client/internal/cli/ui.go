@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +22,6 @@ import (
 
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/dockerctx"
-	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -200,63 +198,42 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	selStyle := tcell.StyleDefault.Background(tcell.ColorTeal).Foreground(tcell.ColorWhite)
 
-	// generic info modal. Every message is also logged (with context) so the log
-	// viewer / file has a record of what the operator was shown.
-	info := func(msg string) {
-		clientlog.L().Info("ui notice", "msg", msg)
-		m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
-			SetDoneFunc(func(int, string) { pages.RemovePage(pageInfo) })
-		pages.AddPage(pageInfo, m, true, true)
-		app.SetFocus(m)
+	u := &ui{
+		app: app, pages: pages, content: content,
+		dcli: dcli, r: r, cfg: cfg, km: km,
+		f: f, g: g, ctx: ctx, cancelRun: cancelRun,
+		ctxOverride: ctxOverride, service: service, switchTo: switchTo,
+		selStyle: selStyle,
 	}
+	return u.run(keyWarnings)
+}
 
-	// confirm shows a two-button confirmation modal (confirmLabel + "Cancel") and
-	// owns the modal, its page, and focus restoration — the two-button sibling of
-	// info. onConfirm runs only when the operator picks the confirm button; on
-	// cancel, focus returns to back. On confirm, onConfirm decides what happens
-	// next (open a progress overlay, start async work, restore focus itself, …),
-	// so it must handle its own focus. Only one confirm is ever open at a time, so
-	// a single shared page name is safe.
-	confirm := func(msg, confirmLabel string, back tview.Primitive, onConfirm func()) {
-		m := tview.NewModal().
-			SetText(msg).
-			AddButtons([]string{confirmLabel, "Cancel"}).
-			SetDoneFunc(func(_ int, label string) {
-				pages.RemovePage(pageConfirm)
-				if label != confirmLabel {
-					app.SetFocus(back)
-					return
-				}
-				onConfirm()
-			})
-		pages.AddPage(pageConfirm, m, true, true)
-		app.SetFocus(m)
-	}
+// run drives one UI session over the infrastructure runUI prepared on u. The
+// per-tab closures still live here (they will move to their own files in later
+// stages); the shared infra closures are now methods on *ui. The aliases below
+// keep those closure bodies referring to app/pages/… unchanged.
+func (u *ui) run(keyWarnings []string) (string, error) {
+	app, pages, content := u.app, u.pages, u.content
+	r, cfg, km := u.r, u.cfg, u.km
+	dcli := u.dcli
+	f, g, ctx := u.f, u.g, u.ctx
+	ctxOverride, service := u.ctxOverride, u.service
+	selStyle := u.selStyle
 
 	// forwards is the UI's only persistent background resource: a port forward
 	// outlives the overlay that started it, unlike every stream here.
 	forwards := newForwardRegistry()
+	u.forwards = forwards
 	defer forwards.stopAll()
 
-	// Set below, once the widgets they touch exist. They are declared up here
-	// because starting a forward has to refresh the tree, the forwards table and
-	// the footer, and those are all built further down.
+	// autoRefreshBusy / overlayDepth (the latter now u.overlayDepth) gate the
+	// background tree refresh. openAliasEditorForNet is forward-declared here
+	// because the network-members overlay (defined earlier than the inspect
+	// editors) reuses it; it is assigned further down.
 	var (
-		refreshForwardViews func()
-		flash               func(string)
-		updateStatus        func()       // recomposes the footer status line
-		toggleMouse         func()       // flips tview's mouse capture (defined below)
-		mouseEnabled        bool         // mirrors app.EnableMouse; toggled by 'm'
-		overlayDepth        atomic.Int32 // number of open overlays (pauses the tree auto-refresh)
-		autoRefreshBusy     atomic.Bool  // guards against overlapping tree refreshes
-		// pushOverlayHelp overrides the single bottom footer with an overlay's own
-		// keys, returning a setter (to update it while the overlay is open) and a
-		// restore func (call on close). Nesting-safe: each call saves the current
-		// footer text. Assigned once the footer widget exists.
-		pushOverlayHelp func(string) (set func(string), restore func())
+		autoRefreshBusy atomic.Bool // guards against overlapping tree refreshes
 		// openAliasEditorForNet opens the staged DNS-alias editor for a service on
-		// one network. Declared up here so the network-members overlay (defined
-		// earlier than the inspect editors) can reuse it; assigned further down.
+		// one network.
 		openAliasEditorForNet func(svcName, netName, target string, back tview.Primitive, after func())
 	)
 
@@ -270,6 +247,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// id or node (case-insensitive). It starts from the optional `ui [service]`
 	// argument so `swarmexec ui web` opens pre-narrowed to matching services.
 	filter := service
+	u.filter = filter
 	matchesFilter := func(c resolve.Candidate) bool {
 		if filter == "" {
 			return true
@@ -495,7 +473,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		lastSvcs = svcs
 		lastCands = cands
-		renderContainers()
+		u.renderContainers()
 	}
 	// loadContainersSync fetches and applies on the caller's goroutine — used at
 	// startup, before app.Run, where QueueUpdateDraw would deadlock.
@@ -523,13 +501,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// overlay (laggy input) — and never overlaps itself (a slow probe over ssh can
 	// outlast the tick).
 	autoRefreshContainers := func() {
-		if overlayDepth.Load() > 0 || !autoRefreshBusy.CompareAndSwap(false, true) {
+		if u.overlayDepth.Load() > 0 || !autoRefreshBusy.CompareAndSwap(false, true) {
 			return
 		}
 		go func() {
 			defer autoRefreshBusy.Store(false)
 			svcs, cands, err := fetchContainers()
-			if err != nil || ctx.Err() != nil || overlayDepth.Load() > 0 {
+			if err != nil || ctx.Err() != nil || u.overlayDepth.Load() > 0 {
 				return // transient error, run ending, or an overlay opened meanwhile
 			}
 			app.QueueUpdateDraw(func() { applyContainers(svcs, cands, nil) })
@@ -549,7 +527,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		// pane's output — tcell's mouse reporting otherwise suppresses it, and the
 		// pane forwards no mouse of its own. Restored to the operator's setting on
 		// close.
-		prevMouse := mouseEnabled
+		prevMouse := u.mouseEnabled
 		var once sync.Once
 		closeTerm := func() {
 			once.Do(func() {
@@ -568,7 +546,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					closeTerm() // user detached (Ctrl-]) — just close
 				case rerr != nil:
 					closeTerm()
-					info(enrichAgentError(ctx, dcli, rerr).Error())
+					u.info(enrichAgentError(ctx, dcli, rerr).Error())
 				case code == 126 || code == 127:
 					// The shell could not start (127 = not found, 126 = not
 					// executable — e.g. no bash in the image). Keep the pane up so
@@ -587,185 +565,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		app.SetFocus(tv)
 	}
 
-	// logDefaults resolves the log view's initial format+filter from config,
-	// falling back to sane defaults when the config values are invalid.
-	logDefaults := func() (logfmt.Format, logfmt.Filter) {
-		format, filter, err := buildLogFilter(cfg.Logs.Format, cfg.Logs.MinLevel, "")
-		if err != nil {
-			return logfmt.DefaultFormat(), logfmt.Filter{}
-		}
-		return format, filter
-	}
-	// logGrepPrompt asks for a message regexp and applies it to a log view.
-	logGrepPrompt := func(lv *logViewer, back tview.Primitive, after func()) {
-		in := tview.NewInputField().SetLabel("grep: ").SetFieldWidth(44).
-			SetPlaceholder("regexp on the message — empty clears")
-		in.SetDoneFunc(func(key tcell.Key) {
-			pages.RemovePage(pageLogGrep)
-			app.SetFocus(back)
-			if key == tcell.KeyEscape {
-				return
-			}
-			txt := strings.TrimSpace(in.GetText())
-			if txt == "" {
-				lv.setGrep(nil)
-				after()
-				return
-			}
-			re, err := regexp.Compile(txt)
-			if err != nil {
-				info("invalid grep regexp: " + err.Error())
-				return
-			}
-			lv.setGrep(re)
-			after()
-		})
-		in.SetBorder(true).SetTitle(" filter logs ")
-		pages.AddPage(pageLogGrep, centeredPrompt(in, 64), true, true)
-		app.SetFocus(in)
-	}
-	// logFooterText is the log view's footer hint. It appends the mouse state
-	// because that is what decides whether terminal text-selection works: while
-	// the app captures the mouse (the default), tview grabs drags for scrolling
-	// and the terminal cannot select/copy — press m to hand the mouse back.
-	logFooterText := func() string {
-		m := " [yellow]m[white] mouse: app — press to select/copy in terminal"
-		if !mouseEnabled {
-			m = " [yellow]m[white] mouse: off — select & copy with your terminal"
-		}
-		return logViewHelp + "  " + m
-	}
-	// logViewKeys is the shared input capture for a log view: close, follow,
-	// cycle format (F) / min-level (l), grep (/) and mouse capture (m).
-	logViewKeys := func(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
-		return func(ev *tcell.EventKey) *tcell.EventKey {
-			switch {
-			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
-				closeLogs()
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
-				follow.Store(!follow.Load())
-				if follow.Load() {
-					tv.ScrollToEnd() // re-enabling: jump to the newest line
-				}
-				setTitle()
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'F':
-				lv.cycleFormat()
-				setTitle()
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
-				lv.cycleLevel()
-				setTitle()
-			case ev.Key() == tcell.KeyRune && ev.Rune() == '/':
-				logGrepPrompt(lv, tv, setTitle)
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'm':
-				// Same mouse toggle as the tabs, but the tabs' flash lands on the
-				// footer hidden behind this overlay, so reflect the state in the
-				// log footer instead.
-				if toggleMouse != nil {
-					toggleMouse()
-				}
-				refreshHint()
-			default:
-				return ev
-			}
-			return nil
-		}
-	}
-
-	// logPage wraps a log TextView with a footer key-hint line — the same place
-	// every tab shows its shortcuts — so the log view's keys are consistent and
-	// spelled out, instead of being crammed into the border title. It returns the
-	// page and a closure that repaints the hint (used when the mouse state flips).
-	logPage := func(tv *tview.TextView) (tview.Primitive, func()) {
-		hint := tview.NewTextView().SetDynamicColors(true).SetText(logFooterText())
-		page := tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(tv, 0, 1, true).
-			AddItem(hint, 1, 0, false)
-		return page, func() { hint.SetText(logFooterText()) }
-	}
-
-	showLogs := func(c resolve.Candidate) {
-		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
-		follow := &atomic.Bool{}
-		follow.Store(true)
-		format, filter := logDefaults()
-		lv := newLogViewer(app, tv, follow, format, filter)
-		setTitle := func() {
-			state := "on"
-			if !follow.Load() {
-				state = "off"
-			}
-			tv.SetTitle(fmt.Sprintf(" logs %s on %s — follow:%s · %s ",
-				shortID(c.ContainerID), orDash(c.NodeName), state, lv.status()))
-		}
-		tv.SetBorder(true)
-		setTitle()
-		page, refreshHint := logPage(tv)
-		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
-		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
-		target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
-		go func() {
-			lerr := streamServiceLogs(lctx, cfg, r, target, ep,
-				logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
-				&logIngest{v: lv}, &logIngest{v: lv, stderr: true}, lv.addNote)
-			if lerr != nil && lctx.Err() == nil {
-				app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
-			}
-		}()
-		pages.AddPage(pageLogs, page, true, true)
-		app.SetFocus(tv)
-	}
-
-	// showServiceLogs streams the logs of every container of a service into one
-	// viewer, each line prefixed with [container@node].
-	showServiceLogs := func(serviceName string, members []resolve.Candidate) {
-		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
-		follow := &atomic.Bool{}
-		follow.Store(true)
-		format, filter := logDefaults()
-		lv := newLogViewer(app, tv, follow, format, filter)
-		setTitle := func() {
-			state := "on"
-			if !follow.Load() {
-				state = "off"
-			}
-			tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — follow:%s · %s ",
-				serviceName, len(members), state, lv.status()))
-		}
-		tv.SetBorder(true)
-		setTitle()
-		page, refreshHint := logPage(tv)
-		lctx, lcancel := context.WithCancel(ctx)
-		closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
-		tv.SetInputCapture(logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
-		for _, c := range members {
-			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-			target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
-			// A slot (or node, for a global service) tag stays valid across
-			// replacements, unlike the container id — the reconnect notice reports
-			// the new container/node.
-			prefix := fmt.Sprintf("[slot %d] ", c.Slot)
-			if c.Slot == 0 {
-				prefix = fmt.Sprintf("[%s] ", orDash(c.NodeName))
-			}
-			go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
-				lerr := streamServiceLogs(lctx, cfg, r, target, ep,
-					logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
-					&logIngest{v: lv, prefix: prefix},
-					&logIngest{v: lv, prefix: prefix, stderr: true},
-					func(msg string) { lv.addNote(prefix + msg) })
-				if lerr != nil && lctx.Err() == nil {
-					app.QueueUpdateDraw(func() {
-						fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))
-					})
-				}
-			}(ep, target, prefix)
-		}
-		pages.AddPage(pageLogs, page, true, true)
-		app.SetFocus(tv)
-	}
-
 	// startForward brings a forward up off the UI goroutine: dialling the agent
 	// can take up to the connect timeout, and blocking the UI for that would
 	// freeze the whole app. The entry is registered immediately in the starting
@@ -774,7 +573,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		fctx, fcancel := context.WithCancel(ctx)
 		var once sync.Once
 		entry := forwards.add(c, local, remote, func() { once.Do(fcancel) })
-		refreshForwardViews()
+		u.refreshForwardViews()
 
 		go func() {
 			ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
@@ -786,7 +585,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 			if ferr != nil {
 				forwards.markFailed(entry.id, ferr)
-				app.QueueUpdateDraw(func() { refreshForwardViews() })
+				app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 				return
 			}
 			addr := fw.LocalAddr().String()
@@ -799,7 +598,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			}
 			forwards.markActive(entry.id, addr)
-			app.QueueUpdateDraw(func() { refreshForwardViews() })
+			app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 
 			serr := fw.Serve(fctx, func(cerr error) {
 				// Announce the first failure only: against an outdated agent
@@ -813,8 +612,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				app.QueueUpdateDraw(func() {
-					refreshForwardViews()
-					flash(fmt.Sprintf(" [red]forward %d[white]: %v", boundPort, cerr))
+					u.refreshForwardViews()
+					u.flash(fmt.Sprintf(" [red]forward %d[white]: %v", boundPort, cerr))
 				})
 			})
 			fw.Close()
@@ -822,7 +621,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			// real failure the operator needs to see in the table.
 			if serr != nil && fctx.Err() == nil {
 				forwards.markFailed(entry.id, serr)
-				app.QueueUpdateDraw(func() { refreshForwardViews() })
+				app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 			}
 		}()
 	}
@@ -852,7 +651,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			closePrompt()
 			startForward(c, local, remote)
-			flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
+			u.flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
 		})
 		pages.AddPage(pageFwdPrompt, centeredPrompt(input, 54), true, true)
 		app.SetFocus(input)
@@ -886,7 +685,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		list := tview.NewList().ShowSecondaryText(false)
 		list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
-		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
 		closeMenu := func() { restoreHelp(); pages.RemovePage(pageMenu); app.SetFocus(ctree) }
 
 		// Optimistic until the shell probe returns; then unavailable shells grey.
@@ -894,7 +693,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		render := func() {
 			cur := list.GetCurrentItem()
 			list.Clear()
-			list.AddItem("Logs", "", 0, func() { closeMenu(); showLogs(c) })
+			list.AddItem("Logs", "", 0, func() { closeMenu(); u.showLogs(c) })
 			list.AddItem(shellLabel("Bash", bashOK, probed), "", 0, func() {
 				if bashOK {
 					closeMenu()
@@ -950,31 +749,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		pages.AddPage(pageMenu, centered(list, 48, 8), true, true)
 		app.SetFocus(list)
 	}
-	// showLogsForNode opens logs for the tree cursor: a container leaf shows that
-	// container's logs; a service node shows its containers' aggregated logs.
-	// Bound to the L key (Enter on a service toggles expand/collapse instead).
-	showLogsForNode := func(node *tview.TreeNode) {
-		if c, ok := node.GetReference().(resolve.Candidate); ok {
-			showLogs(c)
-			return
-		}
-		if !isServiceNode(node) {
-			return
-		}
-		var members []resolve.Candidate
-		for _, ch := range node.GetChildren() {
-			if c, ok := ch.GetReference().(resolve.Candidate); ok {
-				members = append(members, c)
-			}
-		}
-		if len(members) > 0 {
-			title := trimFoldMarker(node.GetText())
-			if ref, ok := node.GetReference().(svcRef); ok {
-				title = ref.name // the row now carries mode/image/ports — log by name
-			}
-			showServiceLogs(title, members)
-		}
-	}
 	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
 		if ref, ok := node.GetReference().(resolve.Candidate); ok {
 			containerMenu(ref)
@@ -1007,6 +781,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// selectedVols holds the volumes marked with space for a bulk delete, keyed
 	// by name so the selection survives sorting and re-render.
 	selectedVols := map[string]bool{}
+	u.selectedVols = selectedVols
 	// shownVols is the filtered + sorted subset currently displayed; it is what
 	// selectedVolume() and "select all" index. volFilter is the "/" search query.
 	var shownVols []swarmVolume
@@ -1111,6 +886,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		sortVolumes(shownVols)
+		u.shownVols = shownVols
 		selRow := 1
 		for i, v := range shownVols {
 			used := len(volUsage[v.Name])
@@ -1171,6 +947,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			clientlog.Timed("ui.loadVolumes", start, nerr, "nodes", len(nodes), "vols", len(vs))
 			app.QueueUpdateDraw(func() {
 				vols, volUsage, volErrs, volSizes = vs, usage, errs, nil
+				u.volUsage, u.volSizes = volUsage, volSizes
 				if nerr != nil {
 					vtable.Clear()
 					for c, h := range vHeaders {
@@ -1222,6 +999,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				app.QueueUpdateDraw(func() {
 					volSizesLoading = false
 					volSizes = sz
+					u.volSizes = volSizes
 					renderVolumeTable()
 				})
 			}
@@ -1259,7 +1037,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				results := removeOnNodes(ctx, cfg, targets, v.Name, false, f.connectTimeout)
 				app.QueueUpdateDraw(func() {
 					closeNodes()
-					loadVolumes()
+					u.loadVolumes()
 					var b []string
 					for _, res := range results {
 						if res.err != nil {
@@ -1268,12 +1046,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							b = append(b, fmt.Sprintf("%s: removed", res.node.Name))
 						}
 					}
-					info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(b)))
+					u.info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(b)))
 				})
 			}()
 		}
 		confirmDelete := func(targets []resolve.Node) {
-			confirm(fmt.Sprintf("Remove volume %q on %d node(s)?\n%s", v.Name, len(targets), joinNodes(targets)),
+			u.confirm(fmt.Sprintf("Remove volume %q on %d node(s)?\n%s", v.Name, len(targets), joinNodes(targets)),
 				"Delete", list, func() { runDelete(targets) })
 		}
 
@@ -1365,37 +1143,37 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				}
 			})
 		}()
-		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 		closeForm := func() { restoreHelp(); pages.RemovePage(pageVolForm); app.SetFocus(vtable) }
 		form.AddButton("Create", func() {
 			lbls, err := parseKVList(labels)
 			if err != nil {
-				info("invalid labels: " + err.Error())
+				u.info("invalid labels: " + err.Error())
 				return
 			}
 			o.Labels = lbls
 			req, err := buildVolumeCreateReq(o)
 			if err != nil {
-				info(err.Error())
+				u.info(err.Error())
 				return
 			}
 			targets := allNodes
 			if s := strings.TrimSpace(nodeSel); s != "" {
 				targets = filterNodes(allNodes, []string{s})
 				if len(targets) == 0 {
-					info(fmt.Sprintf("no node named %q", s))
+					u.info(fmt.Sprintf("no node named %q", s))
 					return
 				}
 			}
 			if len(targets) == 0 {
-				info("no nodes available")
+				u.info("no nodes available")
 				return
 			}
 			go func() {
 				results := createVolumeOnNodes(ctx, cfg, targets, req, f.connectTimeout)
 				app.QueueUpdateDraw(func() {
 					closeForm()
-					loadVolumes()
+					u.loadVolumes()
 					ok := 0
 					var failed []string
 					for _, res := range results {
@@ -1406,10 +1184,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						}
 					}
 					if len(failed) == 0 {
-						flash(fmt.Sprintf(" [green]created[white] volume %s on %d node(s)", req.Name, ok))
+						u.flash(fmt.Sprintf(" [green]created[white] volume %s on %d node(s)", req.Name, ok))
 						return
 					}
-					info(fmt.Sprintf("volume %q: %d ok, %d failed\n%s", req.Name, ok, len(failed), joinLines(failed)))
+					u.info(fmt.Sprintf("volume %q: %d ok, %d failed\n%s", req.Name, ok, len(failed), joinLines(failed)))
 				})
 			}()
 		})
@@ -1446,7 +1224,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, orDash(c.Service), contW, orDash(c.Container), orDash(c.Node)), "", 0, nil)
 			}
 		}
-		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Esc", "back"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Esc", "back"))
 		closeUsers := func() { restoreHelp(); pages.RemovePage(pageVolUsers); app.SetFocus(vtable) }
 		list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
@@ -1482,7 +1260,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if extra > 0 {
 			body += fmt.Sprintf("\n(+%d more)", extra)
 		}
-		confirm(body, "Delete", vtable, func() {
+		u.confirm(body, "Delete", vtable, func() {
 			// Deleting runs per volume across every node it holds, which can
 			// take a while, so show a progress overlay instead of freezing.
 			prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
@@ -1534,13 +1312,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				app.QueueUpdateDraw(func() {
 					pages.RemovePage(pageVolProgress)
 					selectedVols = map[string]bool{}
-					loadVolumes()
-					updateStatus()
+					u.selectedVols = selectedVols
+					u.loadVolumes()
+					u.updateStatus()
 					summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
 					if len(fails) > 0 {
 						summary += ":\n" + joinLines(fails)
 					}
-					info(summary)
+					u.info(summary)
 				})
 			}()
 		})
@@ -1560,7 +1339,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 				if len(targets) == 0 {
-					info("no unused volumes to prune (all are in use or declared by a service)")
+					u.info("no unused volumes to prune (all are in use or declared by a service)")
 					return
 				}
 				deleteVolumes(targets, fmt.Sprintf("Prune %d unused volume(s)? This cannot be undone.", len(targets)))
@@ -1694,6 +1473,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				nets = list
+				u.nets = nets
 				renderNetworks()
 			})
 		}()
@@ -1737,16 +1517,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return
 			}
 			pages.RemovePage(pageSvcPrompt)
-			confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
+			u.confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
 				go func() {
 					err := do(name)
 					app.QueueUpdateDraw(func() {
 						if err != nil {
-							info(strings.ToLower(actionLabel) + " failed: " + err.Error())
+							u.info(strings.ToLower(actionLabel) + " failed: " + err.Error())
 							return
 						}
 						onDone()
-						info(fmt.Sprintf("%q updated — rolling update started", name))
+						u.info(fmt.Sprintf("%q updated — rolling update started", name))
 					})
 				}()
 			})
@@ -1852,7 +1632,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			members = append(members, netService{Name: s})
 		}
 		render()
-		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
 		closeMembers := func() { restoreHelp(); pages.RemovePage(pageNetMembers); app.SetFocus(nettable) }
 		reload := func() {
 			go func() {
@@ -1892,7 +1672,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return nil
 				}
 				if !loaded {
-					info("still loading — try again in a moment")
+					u.info("still loading — try again in a moment")
 					return nil
 				}
 				// Same staged alias editor as the inspect view; applies via
@@ -1906,12 +1686,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
 					suggestions, list,
 					func(svc string) error { return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name) },
-					func() { closeMembers(); loadNetworks() },
+					func() { closeMembers(); u.loadNetworks() },
 				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
 				if len(n.Services) == 0 {
-					info("no services are attached to this network")
+					u.info("no services are attached to this network")
 					return nil
 				}
 				servicePrompt(
@@ -1919,7 +1699,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
 					n.Services, list,
 					func(svc string) error { return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name) },
-					func() { closeMembers(); loadNetworks() },
+					func() { closeMembers(); u.loadNetworks() },
 				)
 				return nil
 			}
@@ -1956,23 +1736,23 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		form.AddInputField("Subnet (optional, e.g. 10.10.0.0/24)", "", 22, nil, func(t string) { o.Subnet = t })
 		form.AddInputField("Gateway (optional)", "", 22, nil, func(t string) { o.Gateway = t })
 		form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
-		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 		closeForm := func() { restoreHelp(); pages.RemovePage(pageNetForm); app.SetFocus(nettable) }
 		form.AddButton("Create", func() {
 			lbls, err := parseKVList(labels)
 			if err != nil {
-				info("invalid labels: " + err.Error())
+				u.info("invalid labels: " + err.Error())
 				return
 			}
 			o.Labels = lbls
 			if err := createNetwork(ctx, dcli, o); err != nil {
-				info("create failed: " + err.Error())
+				u.info("create failed: " + err.Error())
 				return
 			}
 			name := strings.TrimSpace(o.Name)
 			closeForm()
-			loadNetworks()
-			flash(" [green]created[white] network " + name)
+			u.loadNetworks()
+			u.flash(" [green]created[white] network " + name)
 		})
 		form.AddButton("Cancel", closeForm)
 		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -2045,6 +1825,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				secs = list
+				u.secs = secs
 				renderSecrets()
 			})
 		}()
@@ -2109,7 +1890,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			init = append(init, netService{Name: name})
 		}
 		render(init, true)
-		_, restoreHelp := pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
 		closeSecret := func() { restoreHelp(); pages.RemovePage(pageSecDetail); app.SetFocus(sectable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -2123,12 +1904,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
 					suggestions, tv,
 					func(svc string) error { return attachSecretToService(ctx, dcli, svc, s.ID, s.Name) },
-					func() { closeSecret(); loadSecrets() },
+					func() { closeSecret(); u.loadSecrets() },
 				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
 				if len(s.Services) == 0 {
-					info("no services use this secret")
+					u.info("no services use this secret")
 					return nil
 				}
 				servicePrompt(
@@ -2136,7 +1917,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
 					s.Services, tv,
 					func(svc string) error { return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name) },
-					func() { closeSecret(); loadSecrets() },
+					func() { closeSecret(); u.loadSecrets() },
 				)
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
@@ -2173,17 +1954,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if len(s.Services) > 0 {
 			msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
 		}
-		confirm(msg, "Delete", sectable, func() {
+		u.confirm(msg, "Delete", sectable, func() {
 			go func() {
 				err := removeSecret(ctx, dcli, s.Name)
 				app.QueueUpdateDraw(func() {
 					if err != nil {
-						info("remove failed: " + err.Error())
+						u.info("remove failed: " + err.Error())
 						app.SetFocus(sectable)
 						return
 					}
-					loadSecrets()
-					flash(" [green]removed[white] secret " + s.Name)
+					u.loadSecrets()
+					u.flash(" [green]removed[white] secret " + s.Name)
 				})
 			}()
 		})
@@ -2198,22 +1979,22 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
 		form.AddTextArea("Value", "", 40, 6, 0, func(t string) { value = t })
 		form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
-		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "next field", "Esc", "cancel"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "next field", "Esc", "cancel"))
 		closeForm := func() { restoreHelp(); pages.RemovePage(pageSecForm); app.SetFocus(sectable) }
 		form.AddButton("Create", func() {
 			lbls, err := parseKVList(labels)
 			if err != nil {
-				info("invalid labels: " + err.Error())
+				u.info("invalid labels: " + err.Error())
 				return
 			}
 			nm := strings.TrimSpace(name)
 			if err := createSecret(ctx, dcli, nm, []byte(value), lbls); err != nil {
-				info("create failed: " + err.Error())
+				u.info("create failed: " + err.Error())
 				return
 			}
 			closeForm()
-			loadSecrets()
-			flash(" [green]created[white] secret " + nm)
+			u.loadSecrets()
+			u.flash(" [green]created[white] secret " + nm)
 		})
 		form.AddButton("Cancel", closeForm)
 		form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -2239,6 +2020,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	if activeCtx == "" {
 		activeCtx = "default"
 	}
+	u.activeCtx = activeCtx
 	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	cxtable.SetSelectedStyle(selStyle)
 	cxHeaders := []string{"CONTEXT", "DOCKER HOST"}
@@ -2282,6 +2064,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			return
 		}
 		ctxs = list
+		u.ctxs = ctxs
 		renderContexts()
 	}
 	selectedContext := func() (dockerctx.Context, bool) { return selectedRow(cxtable, ctxs) }
@@ -2318,7 +2101,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		form := tview.NewForm()
 		form.SetItemPadding(0) // compact: the SSH+jump form has many rows
 		form.SetBorder(true).SetTitle(" new context ")
-		_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
 		closeForm := func() { restoreHelp(); pages.RemovePage(pageCtxForm); app.SetFocus(cxtable) }
 
 		var render func()
@@ -2359,35 +2142,35 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			form.AddButton("Test", func() {
 				host, err := assembleHost()
 				if err != nil {
-					info(err.Error())
+					u.info(err.Error())
 					return
 				}
 				pj := proxyJump()
-				flash(" [gray]testing " + host + " …[white]")
+				u.flash(" [gray]testing " + host + " …[white]")
 				go func() {
 					terr := pingDockerHost(ctx, host, pj)
 					app.QueueUpdateDraw(func() {
 						if terr != nil {
-							info("test failed: " + terr.Error())
+							u.info("test failed: " + terr.Error())
 							return
 						}
-						flash(" [green]✓ connection ok[white] — " + host)
+						u.flash(" [green]✓ connection ok[white] — " + host)
 					})
 				}()
 			})
 			form.AddButton("Create", func() {
 				host, err := assembleHost()
 				if err != nil {
-					info(err.Error())
+					u.info(err.Error())
 					return
 				}
 				if err := dockerctx.Create(dockerctx.CreateOptions{Name: strings.TrimSpace(name), Host: host, Description: strings.TrimSpace(desc), ProxyJump: proxyJump()}); err != nil {
-					info("create failed: " + err.Error())
+					u.info("create failed: " + err.Error())
 					return
 				}
 				closeForm()
-				loadContexts()
-				flash(" [green]created[white] context " + strings.TrimSpace(name))
+				u.loadContexts()
+				u.flash(" [green]created[white] context " + strings.TrimSpace(name))
 			})
 			form.AddButton("Cancel", closeForm)
 		}
@@ -2406,7 +2189,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// protected; removing the current one resets the selection to default.
 	deleteContext := func(c dockerctx.Context) {
 		if c.Name == "default" {
-			info("the built-in \"default\" context cannot be removed")
+			u.info("the built-in \"default\" context cannot be removed")
 			return
 		}
 		force := c.Name == dockerctx.Current()
@@ -2414,13 +2197,13 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if force {
 			msg += "\n\nIt is the current context — its selection resets to \"default\"."
 		}
-		confirm(msg, "Delete", cxtable, func() {
+		u.confirm(msg, "Delete", cxtable, func() {
 			if err := dockerctx.Remove(c.Name, force); err != nil {
-				info("remove failed: " + err.Error())
+				u.info("remove failed: " + err.Error())
 				return
 			}
-			loadContexts()
-			flash(" [green]removed[white] context " + c.Name)
+			u.loadContexts()
+			u.flash(" [green]removed[white] context " + c.Name)
 		})
 	}
 	// activateContext makes c the current docker context and restarts the UI so
@@ -2428,14 +2211,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// live) avoids racing the in-flight background loads.
 	activateContext := func(c dockerctx.Context) {
 		if c.Name == activeCtx {
-			flash(" [gray]already on[white] context " + c.Name)
+			u.flash(" [gray]already on[white] context " + c.Name)
 			return
 		}
 		if err := dockerctx.Use(c.Name); err != nil {
-			info("switch failed: " + err.Error())
+			u.info("switch failed: " + err.Error())
 			return
 		}
-		switchTo = c.Name
+		u.switchTo = c.Name
 		app.Stop() // the caller restarts against switchTo
 	}
 
@@ -2546,7 +2329,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 		}
 		render()
-		_, restoreHelp := pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
 		closeEd := func() { restoreHelp(); pages.RemovePage(pageNodeLabels); app.SetFocus(notable) }
 		promptLabel := func(initial string, done func(string)) {
 			in := tview.NewInputField().SetLabel("key=value: ").SetText(initial).SetFieldWidth(44)
@@ -2561,7 +2344,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				if _, _, err := parseLabel(txt); err != nil {
-					info(err.Error())
+					u.info(err.Error())
 					return
 				}
 				done(txt)
@@ -2574,20 +2357,20 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		apply := func() {
 			lbls, err := labelsFromStrings(cur)
 			if err != nil {
-				info(err.Error())
+				u.info(err.Error())
 				return
 			}
-			confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
+			u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
 				go func() {
 					err := setNodeLabels(ctx, dcli, n.ID, lbls)
 					app.QueueUpdateDraw(func() {
 						if err != nil {
-							info("update failed: " + err.Error())
+							u.info("update failed: " + err.Error())
 							app.SetFocus(list)
 							return
 						}
 						closeEd()
-						info(fmt.Sprintf("node %s labels updated", n.Hostname))
+						u.info(fmt.Sprintf("node %s labels updated", n.Hostname))
 						if after != nil {
 							after()
 						}
@@ -2657,7 +2440,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			b.WriteString("    [gray](none)[-]\n")
 		}
 		tv.SetText(b.String())
-		_, restoreHelp := pushOverlayHelp(footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
 		closeDetail := func() { restoreHelp(); pages.RemovePage(pageNodeDetail); app.SetFocus(notable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -2696,12 +2479,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
 	// Two-line footer: the per-tab key hints on top, then one consolidated status
 	// line — active context · live cluster summary · forward count · (on the
-	// volumes tab) selection count. updateStatus() composes the status line; the
+	// volumes tab) selection count. u.updateStatus() composes the status line; the
 	// async cluster/forward refreshers feed it. clusterText holds the last cluster
 	// probe result so a forward or selection change can recompose without re-probing.
 	help := tview.NewTextView().SetDynamicColors(true)
 	status := tview.NewTextView().SetDynamicColors(true)
-	clusterText := "[gray]cluster: …[white]"
+	u.clusterText = "[gray]cluster: …[white]"
 	footer := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(help, 1, 0, false).
 		AddItem(status, 1, 0, false)
@@ -2716,44 +2499,39 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		AddItem(footer, 2, 0, false)
 	pages.AddPage(pageMain, root, true, true)
 
-	// savedHelp holds the footer help to restore when search closes. While the
-	// search field has focus the footer shows how to leave it — there is no
-	// other on-screen hint, which is what made "how do I exit search?" a real
-	// snag. (Not curHelp: that is declared further down, out of scope here.)
-	var savedHelp string
-	// searchMode selects what the shared "/" search bar filters: the container
-	// tree ("containers") or the volumes table ("volumes").
-	var searchMode string
-	startSearch := func(mode string) {
-		searchMode = mode
-		root.ResizeItem(search, 1, 0)
-		savedHelp = help.GetText(false)
-		help.SetText(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
-		if mode == "volumes" {
-			search.SetPlaceholder("filter volumes / driver / node")
-			search.SetText(volFilter)
-		} else {
-			search.SetPlaceholder("filter services / containers / nodes")
-			search.SetText(filter)
-		}
-		app.SetFocus(search)
-	}
+	// Promote the shared widgets and per-tab entry points onto u so the infra
+	// methods (updateStatus, setTab, refreshForwardViews, …) can reach them. All
+	// exist by now; the closures below keep using the locals unchanged.
+	u.ctree, u.croot = ctree, croot
+	u.vtable, u.ftable, u.nettable = vtable, ftable, nettable
+	u.sectable, u.cxtable, u.notable = sectable, cxtable, notable
+	u.tabBar, u.help, u.status = tabBar, help, status
+	u.footer, u.root, u.search = footer, root, search
+	u.renderContainers, u.renderForwards = renderContainers, renderForwards
+	u.loadContainers = loadContainers
+	u.loadVolumes, u.loadNetworks, u.loadSecrets = loadVolumes, loadNetworks, loadSecrets
+	u.loadContexts, u.loadNodes = loadContexts, loadNodes
+
+	// u.savedHelp holds the footer help to restore when search closes; u.searchMode
+	// selects what the shared "/" bar filters (container tree vs. volumes table).
 	search.SetChangedFunc(func(text string) {
 		// Filter locally against the cached data — no docker call per keystroke.
 		t := strings.TrimSpace(text)
-		if searchMode == "volumes" {
+		if u.searchMode == "volumes" {
 			volFilter = t
+			u.volFilter = volFilter
 			renderVolumeTable()
 		} else {
 			filter = t
-			renderContainers()
+			u.filter = filter
+			u.renderContainers()
 		}
 	})
 	search.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape {
 			search.SetText("") // clears the active filter via SetChangedFunc
 		}
-		isVol := searchMode == "volumes"
+		isVol := u.searchMode == "volumes"
 		empty := filter == ""
 		if isVol {
 			empty = volFilter == ""
@@ -2761,7 +2539,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if empty {
 			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
 		}
-		help.SetText(savedHelp) // restore the tab help
+		help.SetText(u.savedHelp) // restore the tab help
 		if isVol {
 			app.SetFocus(vtable) // Enter keeps the filter; the bar stays as an indicator
 		} else {
@@ -2769,527 +2547,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 	})
 
-	// refreshCluster probes the swarm in the background and updates the footer
-	// summary. The agent probe (a Version RPC per node) can be slow, so it runs
-	// off the UI goroutine and pushes the result back via QueueUpdateDraw.
-	refreshCluster := func() {
-		go func() {
-			nodes, err := r.Nodes(ctx)
-			if err != nil {
-				app.QueueUpdateDraw(func() {
-					clusterText = "[red]cluster: unreachable[white]"
-					if updateStatus != nil {
-						updateStatus()
-					}
-				})
-				return
-			}
-			agents := 0
-			for _, h := range checkNodes(ctx, cfg, nodes, f.connectTimeout) {
-				if h.err == nil {
-					agents++
-				}
-			}
-			app.QueueUpdateDraw(func() {
-				clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", len(nodes), agents, len(nodes))
-				if updateStatus != nil {
-					updateStatus()
-				}
-			})
-		}()
-	}
-
-	// refreshForwardViews repaints everything a forward's state feeds: the
-	// footer counter, the forwards table, and the tree annotations. Must run on
-	// the UI goroutine.
-	refreshForwardViews = func() {
-		if updateStatus != nil {
-			updateStatus()
-		}
-		renderForwards()
-		renderContainers()
-	}
-
-	active := "containers"
-	mouseEnabled = true
+	u.active = "containers"
+	u.mouseEnabled = true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
-	curHelp := ""
-	// updateStatus composes the footer status line from the active context, the
-	// last cluster probe, the forward count and (on the volumes tab) the number
-	// of selected volumes. Assigned here — after `active` exists — and called by
-	// the refreshers, setTab and the volume-selection toggle.
-	updateStatus = func() {
-		parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", activeCtx)}
-		if clusterText != "" {
-			parts = append(parts, clusterText)
-		}
-		if total, act := forwards.counts(); total > 0 {
-			if act == total {
-				parts = append(parts, fmt.Sprintf("[aqua]%d[white] fwd", total))
-			} else {
-				parts = append(parts, fmt.Sprintf("[aqua]%d[white]/%d fwd", act, total))
-			}
-		}
-		if active == "volumes" && len(selectedVols) > 0 {
-			parts = append(parts, fmt.Sprintf("[yellow]▣ %d selected[white]", len(selectedVols)))
-		}
-		status.SetText(" " + strings.Join(parts, "  ·  "))
-	}
-	// helpFor builds the footer key hints from the live keymap, so remapped keys
-	// show correctly. j/k, Enter and Tab/1-6 are fixed and stay literal.
-	// helpFor builds the per-tab footer. The two universal escape hatches — "?"
-	// (full-key help) and quit — are FRONT-LOADED, so on a terminal too narrow for
-	// the whole line it is the tab-specific tail that clips, never the way out or
-	// the pointer to every other key. The complete list (copy/mouse/tabs/refresh
-	// and each tab's keys) lives in the "?" overlay (showHelp).
-	helpFor := func(name string) string {
-		kl := keyLabel
-		head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
-		switch name {
-		case "containers":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward",
-				kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward))
-		case "volumes":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
-				kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
-		case "networks":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", kl(km.NetAttached), kl(km.NetNew))
-		case "secrets":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
-		case "contexts":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] use  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
-				kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
-		case "nodes":
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
-		default:
-			return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
-				kl(km.FwdStop), kl(km.FwdCopyURL))
-		}
-	}
-	// tabChrome renders the tab bar with one tab highlighted, so adding a tab is
-	// a single list entry instead of five hand-aligned strings.
-	tabList := []struct{ key, label string }{
-		{"containers", "Containers (1)"},
-		{"volumes", "Volumes (2)"},
-		{"forwards", "Forwards (3)"},
-		{"networks", "Networks (4)"},
-		{"secrets", "Secrets (5)"},
-		{"contexts", "Contexts (6)"},
-		{"nodes", "Nodes (7)"},
-	}
-	renderTabBar := func(active string) {
-		var b strings.Builder
-		for _, t := range tabList {
-			if t.key == active {
-				fmt.Fprintf(&b, " [black:teal] %s [-:-]  ", t.label)
-			} else {
-				fmt.Fprintf(&b, " %s  ", t.label)
-			}
-		}
-		tabBar.SetText(b.String())
-	}
-	setTab := func(name string) {
-		active = name
-		content.SwitchToPage(name)
-		curHelp = helpFor(name)
-		help.SetText(curHelp)
-		renderTabBar(name)
-		updateStatus() // the selection count shows only on the volumes tab
-		switch name {
-		case "containers":
-			app.SetFocus(ctree)
-		case "volumes":
-			app.SetFocus(vtable)
-			loadVolumes()
-		case "forwards":
-			app.SetFocus(ftable)
-			renderForwards()
-		case "networks":
-			app.SetFocus(nettable)
-			loadNetworks()
-		case "secrets":
-			app.SetFocus(sectable)
-			loadSecrets()
-		case "contexts":
-			app.SetFocus(cxtable)
-			loadContexts()
-		case "nodes":
-			app.SetFocus(notable)
-			loadNodes()
-		}
-	}
 
-	// flash briefly replaces the footer with a status message, then restores the
-	// footer that was there BEFORE — which may be a tab footer or an overlay's own
-	// footer (pushOverlayHelp), so it must snapshot, not assume curHelp. The
-	// restore is guarded: if anything else changed the footer meanwhile (a tab
-	// switch, an opened overlay, a newer flash), that owner keeps it.
-	flash = func(msg string) {
-		prev := help.GetText(false)
-		help.SetText(msg)
-		go func() {
-			time.Sleep(1500 * time.Millisecond)
-			app.QueueUpdateDraw(func() {
-				if help.GetText(false) == msg {
-					help.SetText(prev)
-				}
-			})
-		}()
-	}
-
-	// pushOverlayHelp points the single bottom footer at an overlay's keys. It
-	// saves the current footer text and returns a setter (to update while open)
-	// and a restore (to call on close). Because each call captures the then-
-	// current text, nested overlays restore correctly. It also tracks how many
-	// overlays are open (overlayDepth) so the background tree refresh can pause —
-	// otherwise its periodic renderContainers on the UI goroutine competes with
-	// keystrokes in an overlay and makes them feel laggy.
-	pushOverlayHelp = func(markup string) (func(string), func()) {
-		prev := help.GetText(false)
-		help.SetText(markup)
-		overlayDepth.Add(1)
-		var once sync.Once
-		restore := func() {
-			once.Do(func() {
-				overlayDepth.Add(-1)
-				help.SetText(prev)
-			})
-		}
-		return func(m string) { help.SetText(m) }, restore
-	}
-
-	// yankCurrent copies the active tab's list to the system clipboard via the
-	// terminal (OSC52), so it also works over ssh when the terminal supports it.
-	yankCurrent := func() {
-		if screen == nil {
-			return
-		}
-		var b strings.Builder
-		switch active {
-		case "containers":
-			for _, svc := range croot.GetChildren() {
-				fmt.Fprintln(&b, trimFoldMarker(svc.GetText()))
-				for _, c := range svc.GetChildren() {
-					fmt.Fprintf(&b, "  %s\n", c.GetText())
-				}
-			}
-		case "forwards":
-			fmt.Fprintln(&b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
-			for _, e := range forwards.list() {
-				local := "-"
-				if p := e.boundPort(); p > 0 {
-					local = fmt.Sprintf("127.0.0.1:%d", p)
-				}
-				fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%s\t%s\n",
-					local, e.remote, shortID(e.cand.ContainerID),
-					orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
-			}
-		case "networks":
-			fmt.Fprintln(&b, "NETWORK\tDRIVER\tSCOPE\tTYPE\tSERVICES\tAGE")
-			for _, n := range nets {
-				fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%d\t%s\n",
-					n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
-			}
-		case "secrets":
-			fmt.Fprintln(&b, "SECRET\tUSED BY\tAGE\tUPDATED\tLABELS")
-			for _, s := range secs {
-				fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
-			}
-		case "contexts":
-			fmt.Fprintln(&b, "CONTEXT\tDOCKER HOST\tACTIVE")
-			for _, c := range ctxs {
-				mark := ""
-				if c.Name == activeCtx {
-					mark = "*"
-				}
-				fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
-			}
-		default:
-			// Copy the displayed (filtered + sorted) volumes.
-			fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
-			for _, v := range shownVols {
-				used := "-"
-				if n := len(volUsage[v.Name]); n > 0 {
-					used = fmt.Sprintf("%d", n)
-				}
-				size := int64(-1)
-				if s, ok := volSizes[v.Name]; ok {
-					size = s
-				}
-				fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), humanBytes(size))
-			}
-		}
-		screen.SetClipboard([]byte(b.String()))
-		flash(" [green]✓ copied to clipboard[white]")
-	}
-
-	// toggleMouse flips tview's mouse capture. With it off, the terminal's own
-	// text selection / copy works again (tview otherwise grabs the mouse).
-	toggleMouse = func() {
-		mouseEnabled = !mouseEnabled
-		app.EnableMouse(mouseEnabled)
-		if mouseEnabled {
-			flash(" [green]mouse ON[white] — app handles the mouse")
-		} else {
-			flash(" [green]mouse OFF[white] — select & copy with your terminal (m to re-enable)")
-		}
-	}
-
-	// Toggleable log viewer: an overlay showing the in-memory log ring, refreshed
-	// live while open. Opened/closed with the backtick key from any tab.
-	var (
-		logViewStop    chan struct{}
-		logViewPrev    tview.Primitive
-		logViewRestore func()
-	)
-	closeLogView := func() {
-		if logViewStop != nil {
-			close(logViewStop)
-			logViewStop = nil
-		}
-		if logViewRestore != nil {
-			logViewRestore()
-			logViewRestore = nil
-		}
-		pages.RemovePage(pageLogView)
-		if logViewPrev != nil {
-			app.SetFocus(logViewPrev)
-		}
-	}
-	openLogView := func() {
-		logViewPrev = app.GetFocus()
-		_, logViewRestore = pushOverlayHelp(footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
-		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
-		tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
-		refresh := func() {
-			r := clientlog.RingBuffer()
-			var b strings.Builder
-			if r == nil {
-				b.WriteString("[gray]logging is disabled (--log-level off)[-]")
-			} else if lines := r.Lines(); len(lines) == 0 {
-				b.WriteString("[gray](no log records yet)[-]")
-			} else {
-				for _, line := range lines {
-					b.WriteString(colorLogLine(line))
-					b.WriteByte('\n')
-				}
-			}
-			tv.SetText(b.String())
-			tv.ScrollToEnd()
-		}
-		refresh()
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == 'q')) {
-				closeLogView()
-				return nil
-			}
-			return ev
-		})
-		stop := make(chan struct{})
-		logViewStop = stop
-		pages.AddPage(pageLogView, tv, true, true)
-		app.SetFocus(tv)
-		go func() {
-			tk := time.NewTicker(700 * time.Millisecond)
-			defer tk.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-stop:
-					return
-				case <-tk.C:
-					app.QueueUpdateDraw(refresh)
-				}
-			}
-		}()
-	}
-	toggleLogView := func() {
-		if pages.HasPage(pageLogView) {
-			closeLogView()
-		} else {
-			openLogView()
-		}
-	}
-
-	// tabOrder drives Tab cycling; every tab joins it.
-	tabOrder := []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes"}
-	// showHelp opens a scrollable overlay listing every keybinding — the complete
-	// reference the single-row footer cannot hold. It is generated from the live
-	// keymap, so remapped keys show correctly. Bound to "?" on every tab.
-	showHelp := func() {
-		kl := keyLabel
-		var b strings.Builder
-		sec := func(title string) { fmt.Fprintf(&b, "\n[aqua]%s[-]\n", title) }
-		line := func(keys, desc string) { fmt.Fprintf(&b, "  [yellow]%-9s[white] %s\n", keys, desc) }
-
-		b.WriteString("[aqua]Global[-]\n")
-		line("?", "this help")
-		line(kl(km.Quit), "quit")
-		line(kl(km.Refresh), "refresh the current tab + cluster")
-		line(kl(km.Copy), "copy the current list to the clipboard")
-		line(kl(km.ToggleMouse), "toggle mouse on/off")
-		line("Tab", "next tab")
-		line("1–7", "jump to a tab by number")
-		line("`", "toggle the client log view")
-		line("Esc", "close the current overlay / dialog")
-
-		sec("Containers")
-		line("Enter", "expand a service · open a container's menu")
-		line(kl(km.Logs), "logs (service or container)")
-		line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
-		line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
-		line(kl(km.Forward), "port-forward the task under the cursor")
-		line(kl(km.Search), "search services / containers / nodes")
-
-		sec("Service inspect (" + kl(km.ContainerInspect) + ")")
-		line("a", "actions menu (all edits below, no Shift needed)")
-		line("t", "toggle raw JSON / table")
-		line("d / D", "diff spec · why (placement)")
-		line("s / f", "scale · force-update")
-		line("u", "update to a newer image")
-		line("p l e", "edit ports · labels · env")
-		line("n S v", "edit networks · secrets · mounts")
-		line("r P", "edit resources · placement")
-		line("X", "remove the service")
-
-		sec("Volumes")
-		line(kl(km.VolNew), "new volume")
-		line(kl(km.VolSelect)+"/"+kl(km.VolSelectAll), "select / select all")
-		line(kl(km.VolAttach), "attach to a service")
-		line(kl(km.VolDelete)+"/"+kl(km.VolPrune), "delete / prune unused")
-		line("Enter", "which nodes hold it")
-		line(kl(km.VolUsedBy), "used-by (containers / services)")
-		line(kl(km.VolSort)+"/"+kl(km.VolSortRev), "sort / reverse")
-		line(kl(km.Search), "search")
-
-		sec("Networks")
-		line("Enter/"+kl(km.NetAttached), "attached services")
-		line(kl(km.NetNew), "new network")
-
-		sec("Secrets")
-		line("Enter / i", "details")
-		line(kl(km.SecNew)+"/"+kl(km.SecDelete), "new / delete")
-
-		sec("Contexts")
-		line("Enter / "+kl(km.CtxUse), "use (switch cluster)")
-		line("i", "context details")
-		line(kl(km.CtxNew)+"/"+kl(km.CtxDelete), "new / delete")
-
-		sec("Nodes")
-		line("Enter / i", "details")
-		line(kl(km.NodeLabels), "edit labels")
-
-		sec("Forwards")
-		line("Enter / i", "details")
-		line(kl(km.FwdStop), "stop")
-		line(kl(km.FwdCopyURL), "copy URL")
-
-		sec("Log view (`)")
-		line("f", "follow on/off")
-		line("F", "cycle format")
-		line("l", "cycle min level")
-		line("/", "filter message")
-		line("↑/↓", "scroll")
-
-		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-		tv.SetText(strings.TrimLeft(b.String(), "\n"))
-		tv.SetBorder(true).SetTitle(" keybindings ")
-		prev := app.GetFocus()
-		_, restore := pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
-		closeHelp := func() { restore(); pages.RemovePage(pageHelp); app.SetFocus(prev) }
-		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-			switch {
-			case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '?')):
-				closeHelp()
-				return nil
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
-				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-			case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
-				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-			}
-			return ev
-		})
-		pages.AddPage(pageHelp, centered(tv, 60, 24), true, true)
-		app.SetFocus(tv)
-	}
-	tabKeys := func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == '?' {
-			showHelp()
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == '`' {
-			toggleLogView()
-			return nil
-		}
-		if ev.Key() == tcell.KeyTab {
-			for i, name := range tabOrder {
-				if name == active {
-					setTab(tabOrder[(i+1)%len(tabOrder)])
-					break
-				}
-			}
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune {
-			switch ev.Rune() {
-			case '1':
-				setTab("containers")
-				return nil
-			case '2':
-				setTab("volumes")
-				return nil
-			case '3':
-				setTab("forwards")
-				return nil
-			case '4':
-				setTab("networks")
-				return nil
-			case '5':
-				setTab("secrets")
-				return nil
-			case '6':
-				setTab("contexts")
-				return nil
-			case '7':
-				setTab("nodes")
-				return nil
-			case km.Quit:
-				app.Stop()
-				return nil
-			case km.Refresh:
-				switch active {
-				case "containers":
-					loadContainers()
-				case "volumes":
-					loadVolumes()
-				case "networks":
-					loadNetworks()
-				case "secrets":
-					loadSecrets()
-				case "contexts":
-					loadContexts()
-				case "nodes":
-					loadNodes()
-				default:
-					renderForwards()
-				}
-				refreshCluster()
-				return nil
-			case km.Copy:
-				yankCurrent()
-				return nil
-			case km.ToggleMouse:
-				toggleMouse()
-				return nil
-			case 'j':
-				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-			case 'k':
-				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-			}
-		}
-		return ev
-	}
 	// On the tree, "/" opens search; h/l collapse/expand the service under the
 	// cursor; j/k stay down/up via the shared keys.
 	// showInspect renders an inspect in a scrollable overlay with two views: a
@@ -3373,7 +2634,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			history = history[:len(history)-1]
 			render()
 		}
-		setHelp, restoreHelp := pushOverlayHelp(footerKeys(keyPairs...))
+		setHelp, restoreHelp := u.pushOverlayHelp(footerKeys(keyPairs...))
 		closeEd := func() { restoreHelp(); pages.RemovePage(pageListEdit); app.SetFocus(back) }
 		// commit validates a typed entry and applies it via done.
 		commit := func(raw string, done func(string)) {
@@ -3383,7 +2644,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			norm, err := validate(txt)
 			if err != nil {
-				info(err.Error())
+				u.info(err.Error())
 				return
 			}
 			done(norm)
@@ -3476,18 +2737,18 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					text = note + "\n\n" + text
 				}
 			}
-			confirm(text, "Apply", list, func() {
+			u.confirm(text, "Apply", list, func() {
 				go func() {
 					err := onApply(cur)
 					app.QueueUpdateDraw(func() {
 						if err != nil {
-							info("update failed: " + err.Error())
+							u.info("update failed: " + err.Error())
 							app.SetFocus(list)
 							return
 						}
 						restoreHelp()
 						pages.RemovePage(pageListEdit)
-						info("service updated — rolling update started")
+						u.info("service updated — rolling update started")
 						if after != nil {
 							after()
 						}
@@ -3572,7 +2833,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			items, err := currentServicePorts(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load ports: " + err.Error())
+					u.info("cannot load ports: " + err.Error())
 					return
 				}
 				editList(editListConfig{
@@ -3605,7 +2866,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			items, err := currentServiceLabels(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load labels: " + err.Error())
+					u.info("cannot load labels: " + err.Error())
 					return
 				}
 				editList(editListConfig{
@@ -3641,7 +2902,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			att, err := serviceAttachedNetworks(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load aliases: " + err.Error())
+					u.info("cannot load aliases: " + err.Error())
 					return
 				}
 				var aliases []string
@@ -3653,7 +2914,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 				if !found {
-					info(fmt.Sprintf("service %q is not attached to network %q yet — apply the network first, then set aliases", svcName, netName))
+					u.info(fmt.Sprintf("service %q is not attached to network %q yet — apply the network first, then set aliases", svcName, netName))
 					return
 				}
 				editList(editListConfig{
@@ -3684,7 +2945,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			current, err := currentServiceNetworks(ctx, dcli, svcName, idToName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load networks: " + err.Error())
+					u.info("cannot load networks: " + err.Error())
 					return
 				}
 				attached := map[string]bool{}
@@ -3748,7 +3009,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			current, err := currentServiceSecrets(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load secrets: " + err.Error())
+					u.info("cannot load secrets: " + err.Error())
 					return
 				}
 				known := map[string]bool{}
@@ -3800,7 +3061,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			items, err := currentServiceEnv(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load env: " + err.Error())
+					u.info("cannot load env: " + err.Error())
 					return
 				}
 				editList(editListConfig{
@@ -3869,7 +3130,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			cand, cerr := placementSuggestions(ctx, dcli)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load placement: " + err.Error())
+					u.info("cannot load placement: " + err.Error())
 					return
 				}
 				if cerr != nil {
@@ -3891,7 +3152,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			cand, cerr := spreadSuggestions(ctx, dcli)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load spread preferences: " + err.Error())
+					u.info("cannot load spread preferences: " + err.Error())
 					return
 				}
 				if cerr != nil {
@@ -3930,7 +3191,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			nodes, uneval, nerr := candidateNodesForService(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load mounts: " + err.Error())
+					u.info("cannot load mounts: " + err.Error())
 					return
 				}
 				confirmNote := func(list []string) string {
@@ -4074,11 +3335,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			cur, replicated, err := currentServiceReplicas(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load service: " + err.Error())
+					u.info("cannot load service: " + err.Error())
 					return
 				}
 				if !replicated {
-					info(fmt.Sprintf("service %q is not replicated and cannot be scaled", svcName))
+					u.info(fmt.Sprintf("service %q is not replicated and cannot be scaled", svcName))
 					return
 				}
 				in := tview.NewInputField().SetLabel("replicas: ").SetText(fmt.Sprintf("%d", cur)).
@@ -4091,17 +3352,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 					n, perr := strconv.ParseUint(strings.TrimSpace(in.GetText()), 10, 64)
 					if perr != nil {
-						info("invalid replica count")
+						u.info("invalid replica count")
 						return
 					}
 					go func() {
 						serr := scaleService(ctx, dcli, svcName, n)
 						app.QueueUpdateDraw(func() {
 							if serr != nil {
-								info("scale failed: " + serr.Error())
+								u.info("scale failed: " + serr.Error())
 								return
 							}
-							info(fmt.Sprintf("scaled %q to %d — reconciling", svcName, n))
+							u.info(fmt.Sprintf("scaled %q to %d — reconciling", svcName, n))
 							if after != nil {
 								after()
 							}
@@ -4118,16 +3379,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// confirm — every task is restarted/rescheduled, which unsticks a service in
 	// an incomplete state (e.g. 1/2). No spec change beyond bumping ForceUpdate.
 	openForceUpdate := func(svcName string, back tview.Primitive, after func()) {
-		confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
+		u.confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
 			app.SetFocus(back)
 			go func() {
 				err := forceUpdateService(ctx, dcli, svcName)
 				app.QueueUpdateDraw(func() {
 					if err != nil {
-						info("force update failed: " + err.Error())
+						u.info("force update failed: " + err.Error())
 						return
 					}
-					info(fmt.Sprintf("force-updating %q — reconciling", svcName))
+					u.info(fmt.Sprintf("force-updating %q — reconciling", svcName))
 					if after != nil {
 						after()
 					}
@@ -4160,10 +3421,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 					app.QueueUpdateDraw(func() {
 						if len(failed) == 0 {
-							flash(fmt.Sprintf(" [green]deleted[white] %d orphaned secret(s)", len(orphans)))
+							u.flash(fmt.Sprintf(" [green]deleted[white] %d orphaned secret(s)", len(orphans)))
 							return
 						}
-						info("some secrets could not be deleted:\n" + joinLines(failed))
+						u.info("some secrets could not be deleted:\n" + joinLines(failed))
 					})
 				}()
 			})
@@ -4175,7 +3436,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// tree, since the service no longer exists). If the service was the sole user
 	// of any secret, it then offers to delete those now-orphaned secrets.
 	openRemoveService := func(svcName string, back tview.Primitive, onRemoved func()) {
-		confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
+		u.confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
 			go func() {
 				// Compute orphaned secrets BEFORE removal (we need the service's
 				// spec and the other services' current usage).
@@ -4183,11 +3444,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				err := removeService(ctx, dcli, svcName)
 				app.QueueUpdateDraw(func() {
 					if err != nil {
-						info("remove failed: " + err.Error())
+						u.info("remove failed: " + err.Error())
 						app.SetFocus(back)
 						return
 					}
-					info(fmt.Sprintf("removed service %q", svcName))
+					u.info(fmt.Sprintf("removed service %q", svcName))
 					if onRemoved != nil {
 						onRemoved()
 					}
@@ -4201,16 +3462,16 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// openImageUpgrade updates a :latest service onto the registry's current digest
 	// (target = repo:latest@sha256:…), after a confirm. Rolling update.
 	openImageUpgrade := func(svcName, target string, back tview.Primitive, after func()) {
-		confirm(fmt.Sprintf("Update %q to the newer :latest image?\n\n%s\n\nThis triggers a rolling update onto the registry's current digest.", svcName, target), "Update", back, func() {
+		u.confirm(fmt.Sprintf("Update %q to the newer :latest image?\n\n%s\n\nThis triggers a rolling update onto the registry's current digest.", svcName, target), "Update", back, func() {
 			app.SetFocus(back)
 			go func() {
 				err := updateServiceImage(ctx, dcli, svcName, target)
 				app.QueueUpdateDraw(func() {
 					if err != nil {
-						info("update failed: " + err.Error())
+						u.info("update failed: " + err.Error())
 						return
 					}
-					info(fmt.Sprintf("updating %q — rolling update started", svcName))
+					u.info(fmt.Sprintf("updating %q — rolling update started", svcName))
 					if after != nil {
 						after()
 					}
@@ -4225,7 +3486,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 		tv.SetBorder(true).SetTitle(fmt.Sprintf(" why? — placement of %s ", svcName))
 		tv.SetText("  [gray]diagnosing…[-]")
-		_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
+		_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
 		closeDiag := func() { restoreHelp(); pages.RemovePage(pagePlaceDiag); app.SetFocus(back) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -4263,7 +3524,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			rc, err := currentServiceResources(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
 				if err != nil {
-					info("cannot load resources: " + err.Error())
+					u.info("cannot load resources: " + err.Error())
 					return
 				}
 				form := tview.NewForm()
@@ -4272,7 +3533,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				cpuR := tview.NewInputField().SetLabel("CPU reservation").SetText(rc.CPUReservation).SetFieldWidth(16).SetPlaceholder("optional")
 				memR := tview.NewInputField().SetLabel("Memory reservation").SetText(rc.MemReservation).SetFieldWidth(16).SetPlaceholder("optional")
 				setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
-				_, restoreHelp := pushOverlayHelp(footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
+				_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
 				closeForm := func() {
 					restoreHelp()
 					pages.RemovePage(pageResEdit)
@@ -4297,17 +3558,17 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						setTitle(" ⚠ memory reservation exceeds the limit ")
 						return
 					}
-					confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
+					u.confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
 						go func() {
 							aerr := setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
 							app.QueueUpdateDraw(func() {
 								if aerr != nil {
-									info("update failed: " + aerr.Error())
+									u.info("update failed: " + aerr.Error())
 									app.SetFocus(form)
 									return
 								}
 								closeForm()
-								info("service updated — rolling update started")
+								u.info("service updated — rolling update started")
 								if after != nil {
 									after()
 								}
@@ -4501,7 +3762,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		openDiff := func() {
 			tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 			tv.SetBorder(true).SetTitle(fmt.Sprintf(" diff %s — previous → current ", editSvc))
-			_, restoreDiff := pushOverlayHelp(footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
+			_, restoreDiff := u.pushOverlayHelp(footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
 			closeDiff := func() {
 				restoreDiff()
 				pages.RemovePage(pageInspectDiff)
@@ -4556,7 +3817,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		showActions := func() {
 			list := tview.NewList().ShowSecondaryText(false)
 			list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", editSvc))
-			_, restoreHelp := pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+			_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
 			closeActions := func() { restoreHelp(); pages.RemovePage(pageInspectActions); app.SetFocus(table) }
 			add := func(label string, fn func()) {
 				list.AddItem(label, "", 0, func() { closeActions(); fn() })
@@ -4592,7 +3853,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				closeInspect()
 				return nil
 			case ev.Key() == tcell.KeyRune && ev.Rune() == '?':
-				showHelp() // overlays don't route through tabKeys, so wire "?" directly
+				u.showHelp() // overlays don't route through tabKeys, so wire "?" directly
 				return nil
 			case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
 				showActions()
@@ -4671,7 +3932,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		setHelp, restoreHelp = pushOverlayHelp(keysText())
+		setHelp, restoreHelp = u.pushOverlayHelp(keysText())
 		populate() // shows "loading…"
 		pages.AddPage(pageInspect, centered(table, 110, 40), true, true)
 		app.SetFocus(table)
@@ -4715,14 +3976,14 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case km.Search:
-				startSearch("containers")
+				u.startSearch("containers")
 				return nil
 			case km.ContainerInspect:
 				inspectCurrent()
 				return nil
 			case km.Logs:
 				if n := ctree.GetCurrentNode(); n != nil {
-					showLogsForNode(n)
+					u.showLogsForNode(n)
 				}
 				return nil
 			case km.Fold:
@@ -4767,7 +4028,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			}
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 	// Enter shows the full detail of a forward. The table truncates the state
 	// column, so this is where a failure reason is actually readable.
@@ -4782,7 +4043,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if !ok {
 			return
 		}
-		// A left-aligned TextView, not the info() modal: tview.Modal centers
+		// A left-aligned TextView, not the u.info() modal: tview.Modal centers
 		// each line on its own, which shears a padded key/value block out of
 		// alignment. Values are escaped because dynamic colors are on and an
 		// error string can contain "[".
@@ -4818,8 +4079,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				// looking at what they are about to kill.
 				forwards.remove(e.id)
 				closeDetail()
-				refreshForwardViews()
-				flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+				u.refreshForwardViews()
+				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
 				return nil
 			}
 			return ev
@@ -4841,8 +4102,8 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			case km.FwdStop:
 				if e, ok := selectedForward(); ok {
 					forwards.remove(e.id)
-					refreshForwardViews()
-					flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+					u.refreshForwardViews()
+					u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
 				}
 				return nil
 			case km.FwdCopyURL:
@@ -4854,12 +4115,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					if screen != nil {
 						screen.SetClipboard([]byte(url))
 					}
-					flash(" [green]copied[white] " + url)
+					u.flash(" [green]copied[white] " + url)
 				}
 				return nil
 			}
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 	// On the volumes table, "i" shows which services/containers use the volume.
 	// attachVolumeToService mounts a volume into a service from the Volumes tab:
@@ -4895,7 +4156,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					return
 				}
 				if !strings.HasPrefix(target, "/") {
-					info("target must be an absolute path")
+					u.info("target must be an absolute path")
 					return
 				}
 				m := tview.NewModal().
@@ -4913,11 +4174,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 							app.QueueUpdateDraw(func() {
 								app.SetFocus(vtable)
 								if err != nil {
-									info("attach failed: " + err.Error())
+									u.info("attach failed: " + err.Error())
 									return
 								}
-								loadVolumes()
-								info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
+								u.loadVolumes()
+								u.info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
 							})
 						}()
 					})
@@ -4936,7 +4197,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case km.Search:
-				startSearch("volumes")
+				u.startSearch("volumes")
 				return nil
 			case km.VolNew:
 				showCreateVolume()
@@ -4955,7 +4216,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 						selectedVols[v.Name] = true
 					}
 					renderVolumeTable()
-					updateStatus()
+					u.updateStatus()
 				}
 				return nil
 			case km.VolSelectAll:
@@ -4975,7 +4236,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}
 				}
 				renderVolumeTable()
-				updateStatus()
+				u.updateStatus()
 				return nil
 			case km.VolDelete:
 				// Delete the selected volumes, or the one under the cursor.
@@ -5011,7 +4272,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			}
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 	// On the networks table, "i" (like the volumes tab) shows the attached
 	// services/containers; Enter does the same.
@@ -5026,7 +4287,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			showCreateNetwork()
 			return nil
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecNew {
@@ -5046,7 +4307,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return nil
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 	// showContextDetail is the read-only "i" view for a context, so inspect works
 	// on the contexts tab like every other tab. Enter/u still activate (switch).
@@ -5064,7 +4325,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		}
 		tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 		tv.SetBorder(true).SetTitle(fmt.Sprintf(" context %s ", c.Name))
-		_, restore := pushOverlayHelp(footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
+		_, restore := u.pushOverlayHelp(footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
 		closeDetail := func() { restore(); pages.RemovePage(pageCtxDetail); app.SetFocus(cxtable) }
 		tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 			switch {
@@ -5105,7 +4366,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				return nil
 			}
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 	cxtable.SetSelectedFunc(func(int, int) {
 		if c, ok := selectedContext(); ok {
@@ -5126,12 +4387,12 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return nil
 		}
-		return tabKeys(ev)
+		return u.tabKeys(ev)
 	})
 
 	loadContainersSync() // startup: before app.Run, so fetch+apply inline
-	setTab("containers")
-	refreshCluster()
+	u.setTab("containers")
+	u.refreshCluster()
 
 	// Poll the swarm so the container tree notices background changes (rolling
 	// updates, restarts, scaling) on its own. The client learns topology from the
@@ -5151,7 +4412,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 
 	// Surface any keys.yaml problems once, non-fatally, over the started UI.
 	if len(keyWarnings) > 0 {
-		info("keys.yaml:\n\n" + strings.Join(keyWarnings, "\n"))
+		u.info("keys.yaml:\n\n" + strings.Join(keyWarnings, "\n"))
 	}
 
 	// Responsiveness watchdog: time how long the event loop takes to service a
@@ -5192,6 +4453,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
 	}
 	screen = scr
+	u.screen = screen
 	app.SetScreen(screen)
 
 	// Intercept tview's one hard-coded global key (Ctrl-C → Stop) so that inside
@@ -5204,7 +4466,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
-	return switchTo, nil
+	return u.switchTo, nil
 }
 
 // svcRef marks a service (group) node and carries its name. It is deliberately
@@ -5662,4 +4924,585 @@ func footerKeys(pairs ...string) string {
 		fmt.Fprintf(&b, " [yellow]%s[white] %s ", pairs[i], pairs[i+1])
 	}
 	return b.String()
+}
+
+// generic info modal. Every message is also logged (with context) so the log
+// viewer / file has a record of what the operator was shown.
+func (u *ui) info(msg string) {
+	app, pages := u.app, u.pages
+	clientlog.L().Info("ui notice", "msg", msg)
+	m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
+		SetDoneFunc(func(int, string) { pages.RemovePage(pageInfo) })
+	pages.AddPage(pageInfo, m, true, true)
+	app.SetFocus(m)
+}
+
+// confirm shows a two-button confirmation modal (confirmLabel + "Cancel") and
+// owns the modal, its page, and focus restoration — the two-button sibling of
+// info. onConfirm runs only when the operator picks the confirm button; on
+// cancel, focus returns to back. On confirm, onConfirm decides what happens
+// next (open a progress overlay, start async work, restore focus itself, …),
+// so it must handle its own focus. Only one confirm is ever open at a time, so
+// a single shared page name is safe.
+func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm func()) {
+	app, pages := u.app, u.pages
+	m := tview.NewModal().
+		SetText(msg).
+		AddButtons([]string{confirmLabel, "Cancel"}).
+		SetDoneFunc(func(_ int, label string) {
+			pages.RemovePage(pageConfirm)
+			if label != confirmLabel {
+				app.SetFocus(back)
+				return
+			}
+			onConfirm()
+		})
+	pages.AddPage(pageConfirm, m, true, true)
+	app.SetFocus(m)
+}
+
+// flash briefly replaces the footer with a status message, then restores the
+// footer that was there BEFORE — which may be a tab footer or an overlay's own
+// footer (pushOverlayHelp), so it must snapshot, not assume curHelp. The
+// restore is guarded: if anything else changed the footer meanwhile (a tab
+// switch, an opened overlay, a newer flash), that owner keeps it.
+func (u *ui) flash(msg string) {
+	help, app := u.help, u.app
+	prev := help.GetText(false)
+	help.SetText(msg)
+	go func() {
+		time.Sleep(1500 * time.Millisecond)
+		app.QueueUpdateDraw(func() {
+			if help.GetText(false) == msg {
+				help.SetText(prev)
+			}
+		})
+	}()
+}
+
+// updateStatus composes the footer status line from the active context, the
+// last cluster probe, the forward count and (on the volumes tab) the number
+// of selected volumes. Assigned here — after `active` exists — and called by
+// the refreshers, setTab and the volume-selection toggle.
+func (u *ui) updateStatus() {
+	activeCtx, clusterText, active := u.activeCtx, u.clusterText, u.active
+	forwards := u.forwards
+	selectedVols := u.selectedVols
+	status := u.status
+	parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", activeCtx)}
+	if clusterText != "" {
+		parts = append(parts, clusterText)
+	}
+	if total, act := forwards.counts(); total > 0 {
+		if act == total {
+			parts = append(parts, fmt.Sprintf("[aqua]%d[white] fwd", total))
+		} else {
+			parts = append(parts, fmt.Sprintf("[aqua]%d[white]/%d fwd", act, total))
+		}
+	}
+	if active == "volumes" && len(selectedVols) > 0 {
+		parts = append(parts, fmt.Sprintf("[yellow]▣ %d selected[white]", len(selectedVols)))
+	}
+	status.SetText(" " + strings.Join(parts, "  ·  "))
+}
+
+// toggleMouse flips tview's mouse capture. With it off, the terminal's own
+// text selection / copy works again (tview otherwise grabs the mouse).
+func (u *ui) toggleMouse() {
+	app := u.app
+	u.mouseEnabled = !u.mouseEnabled
+	app.EnableMouse(u.mouseEnabled)
+	if u.mouseEnabled {
+		u.flash(" [green]mouse ON[white] — app handles the mouse")
+	} else {
+		u.flash(" [green]mouse OFF[white] — select & copy with your terminal (m to re-enable)")
+	}
+}
+
+// pushOverlayHelp points the single bottom footer at an overlay's keys. It
+// saves the current footer text and returns a setter (to update while open)
+// and a restore (to call on close). Because each call captures the then-
+// current text, nested overlays restore correctly. It also tracks how many
+// overlays are open (overlayDepth) so the background tree refresh can pause —
+// otherwise its periodic renderContainers on the UI goroutine competes with
+// keystrokes in an overlay and makes them feel laggy.
+func (u *ui) pushOverlayHelp(markup string) (func(string), func()) {
+	help := u.help
+	prev := help.GetText(false)
+	help.SetText(markup)
+	u.overlayDepth.Add(1)
+	var once sync.Once
+	restore := func() {
+		once.Do(func() {
+			u.overlayDepth.Add(-1)
+			help.SetText(prev)
+		})
+	}
+	return func(m string) { help.SetText(m) }, restore
+}
+
+// helpFor builds the footer key hints from the live keymap, so remapped keys
+// show correctly. j/k, Enter and Tab/1-6 are fixed and stay literal.
+// helpFor builds the per-tab footer. The two universal escape hatches — "?"
+// (full-key help) and quit — are FRONT-LOADED, so on a terminal too narrow for
+// the whole line it is the tab-specific tail that clips, never the way out or
+// the pointer to every other key. The complete list (copy/mouse/tabs/refresh
+// and each tab's keys) lives in the "?" overlay (showHelp).
+func (u *ui) helpFor(name string) string {
+	km := u.km
+	kl := keyLabel
+	head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
+	switch name {
+	case "containers":
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward",
+			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward))
+	case "volumes":
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
+			kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
+	case "networks":
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", kl(km.NetAttached), kl(km.NetNew))
+	case "secrets":
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
+	case "contexts":
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] use  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
+			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
+	case "nodes":
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
+	default:
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
+			kl(km.FwdStop), kl(km.FwdCopyURL))
+	}
+}
+
+// showHelp opens a scrollable overlay listing every keybinding — the complete
+// reference the single-row footer cannot hold. It is generated from the live
+// keymap, so remapped keys show correctly. Bound to "?" on every tab.
+func (u *ui) showHelp() {
+	km, app, pages := u.km, u.app, u.pages
+	kl := keyLabel
+	var b strings.Builder
+	sec := func(title string) { fmt.Fprintf(&b, "\n[aqua]%s[-]\n", title) }
+	line := func(keys, desc string) { fmt.Fprintf(&b, "  [yellow]%-9s[white] %s\n", keys, desc) }
+
+	b.WriteString("[aqua]Global[-]\n")
+	line("?", "this help")
+	line(kl(km.Quit), "quit")
+	line(kl(km.Refresh), "refresh the current tab + cluster")
+	line(kl(km.Copy), "copy the current list to the clipboard")
+	line(kl(km.ToggleMouse), "toggle mouse on/off")
+	line("Tab", "next tab")
+	line("1–7", "jump to a tab by number")
+	line("`", "toggle the client log view")
+	line("Esc", "close the current overlay / dialog")
+
+	sec("Containers")
+	line("Enter", "expand a service · open a container's menu")
+	line(kl(km.Logs), "logs (service or container)")
+	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
+	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
+	line(kl(km.Forward), "port-forward the task under the cursor")
+	line(kl(km.Search), "search services / containers / nodes")
+
+	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
+	line("a", "actions menu (all edits below, no Shift needed)")
+	line("t", "toggle raw JSON / table")
+	line("d / D", "diff spec · why (placement)")
+	line("s / f", "scale · force-update")
+	line("u", "update to a newer image")
+	line("p l e", "edit ports · labels · env")
+	line("n S v", "edit networks · secrets · mounts")
+	line("r P", "edit resources · placement")
+	line("X", "remove the service")
+
+	sec("Volumes")
+	line(kl(km.VolNew), "new volume")
+	line(kl(km.VolSelect)+"/"+kl(km.VolSelectAll), "select / select all")
+	line(kl(km.VolAttach), "attach to a service")
+	line(kl(km.VolDelete)+"/"+kl(km.VolPrune), "delete / prune unused")
+	line("Enter", "which nodes hold it")
+	line(kl(km.VolUsedBy), "used-by (containers / services)")
+	line(kl(km.VolSort)+"/"+kl(km.VolSortRev), "sort / reverse")
+	line(kl(km.Search), "search")
+
+	sec("Networks")
+	line("Enter/"+kl(km.NetAttached), "attached services")
+	line(kl(km.NetNew), "new network")
+
+	sec("Secrets")
+	line("Enter / i", "details")
+	line(kl(km.SecNew)+"/"+kl(km.SecDelete), "new / delete")
+
+	sec("Contexts")
+	line("Enter / "+kl(km.CtxUse), "use (switch cluster)")
+	line("i", "context details")
+	line(kl(km.CtxNew)+"/"+kl(km.CtxDelete), "new / delete")
+
+	sec("Nodes")
+	line("Enter / i", "details")
+	line(kl(km.NodeLabels), "edit labels")
+
+	sec("Forwards")
+	line("Enter / i", "details")
+	line(kl(km.FwdStop), "stop")
+	line(kl(km.FwdCopyURL), "copy URL")
+
+	sec("Log view (`)")
+	line("f", "follow on/off")
+	line("F", "cycle format")
+	line("l", "cycle min level")
+	line("/", "filter message")
+	line("↑/↓", "scroll")
+
+	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
+	tv.SetText(strings.TrimLeft(b.String(), "\n"))
+	tv.SetBorder(true).SetTitle(" keybindings ")
+	prev := app.GetFocus()
+	_, restore := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
+	closeHelp := func() { restore(); pages.RemovePage(pageHelp); app.SetFocus(prev) }
+	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		switch {
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '?')):
+			closeHelp()
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	})
+	pages.AddPage(pageHelp, centered(tv, 60, 24), true, true)
+	app.SetFocus(tv)
+}
+
+func (u *ui) renderTabBar(active string) {
+	tabBar := u.tabBar
+	var b strings.Builder
+	for _, t := range uiTabList {
+		if t.key == active {
+			fmt.Fprintf(&b, " [black:teal] %s [-:-]  ", t.label)
+		} else {
+			fmt.Fprintf(&b, " %s  ", t.label)
+		}
+	}
+	tabBar.SetText(b.String())
+}
+
+func (u *ui) setTab(name string) {
+	content, help, app := u.content, u.help, u.app
+	ctree, vtable, ftable := u.ctree, u.vtable, u.ftable
+	nettable, sectable := u.nettable, u.sectable
+	cxtable, notable := u.cxtable, u.notable
+	u.active = name
+	content.SwitchToPage(name)
+	u.curHelp = u.helpFor(name)
+	help.SetText(u.curHelp)
+	u.renderTabBar(name)
+	u.updateStatus() // the selection count shows only on the volumes tab
+	switch name {
+	case "containers":
+		app.SetFocus(ctree)
+	case "volumes":
+		app.SetFocus(vtable)
+		u.loadVolumes()
+	case "forwards":
+		app.SetFocus(ftable)
+		u.renderForwards()
+	case "networks":
+		app.SetFocus(nettable)
+		u.loadNetworks()
+	case "secrets":
+		app.SetFocus(sectable)
+		u.loadSecrets()
+	case "contexts":
+		app.SetFocus(cxtable)
+		u.loadContexts()
+	case "nodes":
+		app.SetFocus(notable)
+		u.loadNodes()
+	}
+}
+
+func (u *ui) startSearch(mode string) {
+	root, search, help, app := u.root, u.search, u.help, u.app
+	u.searchMode = mode
+	root.ResizeItem(search, 1, 0)
+	u.savedHelp = help.GetText(false)
+	help.SetText(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
+	if mode == "volumes" {
+		search.SetPlaceholder("filter volumes / driver / node")
+		search.SetText(u.volFilter)
+	} else {
+		search.SetPlaceholder("filter services / containers / nodes")
+		search.SetText(u.filter)
+	}
+	app.SetFocus(search)
+}
+
+// refreshCluster probes the swarm in the background and updates the footer
+// summary. The agent probe (a Version RPC per node) can be slow, so it runs
+// off the UI goroutine and pushes the result back via QueueUpdateDraw.
+func (u *ui) refreshCluster() {
+	r, ctx, app := u.r, u.ctx, u.app
+	cfg, f := u.cfg, u.f
+	go func() {
+		nodes, err := r.Nodes(ctx)
+		if err != nil {
+			app.QueueUpdateDraw(func() {
+				u.clusterText = "[red]cluster: unreachable[white]"
+				u.updateStatus()
+			})
+			return
+		}
+		agents := 0
+		for _, h := range checkNodes(ctx, cfg, nodes, f.connectTimeout) {
+			if h.err == nil {
+				agents++
+			}
+		}
+		app.QueueUpdateDraw(func() {
+			u.clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", len(nodes), agents, len(nodes))
+			u.updateStatus()
+		})
+	}()
+}
+
+// refreshForwardViews repaints everything a forward's state feeds: the
+// footer counter, the forwards table, and the tree annotations. Must run on
+// the UI goroutine.
+func (u *ui) refreshForwardViews() {
+	u.updateStatus()
+	u.renderForwards()
+	u.renderContainers()
+}
+
+// yankCurrent copies the active tab's list to the system clipboard via the
+// terminal (OSC52), so it also works over ssh when the terminal supports it.
+func (u *ui) yankCurrent() {
+	screen := u.screen
+	active, activeCtx := u.active, u.activeCtx
+	croot := u.croot
+	forwards := u.forwards
+	nets, secs, ctxs := u.nets, u.secs, u.ctxs
+	shownVols := u.shownVols
+	volUsage, volSizes := u.volUsage, u.volSizes
+	if screen == nil {
+		return
+	}
+	var b strings.Builder
+	switch active {
+	case "containers":
+		for _, svc := range croot.GetChildren() {
+			fmt.Fprintln(&b, trimFoldMarker(svc.GetText()))
+			for _, c := range svc.GetChildren() {
+				fmt.Fprintf(&b, "  %s\n", c.GetText())
+			}
+		}
+	case "forwards":
+		fmt.Fprintln(&b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
+		for _, e := range forwards.list() {
+			local := "-"
+			if p := e.boundPort(); p > 0 {
+				local = fmt.Sprintf("127.0.0.1:%d", p)
+			}
+			fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%s\t%s\n",
+				local, e.remote, shortID(e.cand.ContainerID),
+				orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
+		}
+	case "networks":
+		fmt.Fprintln(&b, "NETWORK\tDRIVER\tSCOPE\tTYPE\tSERVICES\tAGE")
+		for _, n := range nets {
+			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%d\t%s\n",
+				n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
+		}
+	case "secrets":
+		fmt.Fprintln(&b, "SECRET\tUSED BY\tAGE\tUPDATED\tLABELS")
+		for _, s := range secs {
+			fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
+		}
+	case "contexts":
+		fmt.Fprintln(&b, "CONTEXT\tDOCKER HOST\tACTIVE")
+		for _, c := range ctxs {
+			mark := ""
+			if c.Name == activeCtx {
+				mark = "*"
+			}
+			fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
+		}
+	default:
+		// Copy the displayed (filtered + sorted) volumes.
+		fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
+		for _, v := range shownVols {
+			used := "-"
+			if n := len(volUsage[v.Name]); n > 0 {
+				used = fmt.Sprintf("%d", n)
+			}
+			size := int64(-1)
+			if s, ok := volSizes[v.Name]; ok {
+				size = s
+			}
+			fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), humanBytes(size))
+		}
+	}
+	screen.SetClipboard([]byte(b.String()))
+	u.flash(" [green]✓ copied to clipboard[white]")
+}
+
+func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
+	app, km := u.app, u.km
+	active := u.active
+	if ev.Key() == tcell.KeyRune && ev.Rune() == '?' {
+		u.showHelp()
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == '`' {
+		u.toggleLogView()
+		return nil
+	}
+	if ev.Key() == tcell.KeyTab {
+		for i, name := range uiTabOrder {
+			if name == active {
+				u.setTab(uiTabOrder[(i+1)%len(uiTabOrder)])
+				break
+			}
+		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune {
+		switch ev.Rune() {
+		case '1':
+			u.setTab("containers")
+			return nil
+		case '2':
+			u.setTab("volumes")
+			return nil
+		case '3':
+			u.setTab("forwards")
+			return nil
+		case '4':
+			u.setTab("networks")
+			return nil
+		case '5':
+			u.setTab("secrets")
+			return nil
+		case '6':
+			u.setTab("contexts")
+			return nil
+		case '7':
+			u.setTab("nodes")
+			return nil
+		case km.Quit:
+			app.Stop()
+			return nil
+		case km.Refresh:
+			switch active {
+			case "containers":
+				u.loadContainers()
+			case "volumes":
+				u.loadVolumes()
+			case "networks":
+				u.loadNetworks()
+			case "secrets":
+				u.loadSecrets()
+			case "contexts":
+				u.loadContexts()
+			case "nodes":
+				u.loadNodes()
+			default:
+				u.renderForwards()
+			}
+			u.refreshCluster()
+			return nil
+		case km.Copy:
+			u.yankCurrent()
+			return nil
+		case km.ToggleMouse:
+			u.toggleMouse()
+			return nil
+		case 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+	}
+	return ev
+}
+
+// The toggleable log viewer (closeLogView/openLogView/toggleLogView) is an
+// overlay showing the in-memory log ring, refreshed live while open; it is
+// opened/closed with the backtick key from any tab. Its state (logViewStop /
+// logViewPrev / logViewRestore) lives on u.
+func (u *ui) closeLogView() {
+	pages, app := u.pages, u.app
+	if u.logViewStop != nil {
+		close(u.logViewStop)
+		u.logViewStop = nil
+	}
+	if u.logViewRestore != nil {
+		u.logViewRestore()
+		u.logViewRestore = nil
+	}
+	pages.RemovePage(pageLogView)
+	if u.logViewPrev != nil {
+		app.SetFocus(u.logViewPrev)
+	}
+}
+
+func (u *ui) openLogView() {
+	app, pages, ctx := u.app, u.pages, u.ctx
+	u.logViewPrev = app.GetFocus()
+	_, u.logViewRestore = u.pushOverlayHelp(footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
+	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
+	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
+	refresh := func() {
+		r := clientlog.RingBuffer()
+		var b strings.Builder
+		if r == nil {
+			b.WriteString("[gray]logging is disabled (--log-level off)[-]")
+		} else if lines := r.Lines(); len(lines) == 0 {
+			b.WriteString("[gray](no log records yet)[-]")
+		} else {
+			for _, line := range lines {
+				b.WriteString(colorLogLine(line))
+				b.WriteByte('\n')
+			}
+		}
+		tv.SetText(b.String())
+		tv.ScrollToEnd()
+	}
+	refresh()
+	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == 'q')) {
+			u.closeLogView()
+			return nil
+		}
+		return ev
+	})
+	stop := make(chan struct{})
+	u.logViewStop = stop
+	pages.AddPage(pageLogView, tv, true, true)
+	app.SetFocus(tv)
+	go func() {
+		tk := time.NewTicker(700 * time.Millisecond)
+		defer tk.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			case <-tk.C:
+				app.QueueUpdateDraw(refresh)
+			}
+		}
+	}()
+}
+
+func (u *ui) toggleLogView() {
+	pages := u.pages
+	if pages.HasPage(pageLogView) {
+		u.closeLogView()
+	} else {
+		u.openLogView()
+	}
 }
