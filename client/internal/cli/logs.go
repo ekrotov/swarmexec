@@ -77,10 +77,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		return &cliError{code: usageExitCode, err: err}
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 
 	dcli, err := newDockerClient(g.dockerContext)
 	if err != nil {

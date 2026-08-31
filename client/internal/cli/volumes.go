@@ -259,10 +259,7 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (config.Config, context.Con
 	if err := cfg.Validate(); err != nil {
 		return cfg, nil, nil, nil, &cliError{code: usageExitCode, err: err}
 	}
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 	dcli, err := newDockerClient(g.dockerContext)
 	if err != nil {
 		return cfg, ctx, nil, nil, &cliError{code: session.TransportFailure, err: err}

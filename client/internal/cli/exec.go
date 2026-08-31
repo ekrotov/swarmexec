@@ -66,10 +66,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 		return &cliError{code: usageExitCode, err: err}
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 
 	// Decide TTY: explicit -t wins; otherwise auto.
 	stdinIsTerm := cterm.IsTerminal(os.Stdin.Fd())

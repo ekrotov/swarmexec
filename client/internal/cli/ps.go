@@ -4,7 +4,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -44,10 +43,7 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 		return &cliError{code: usageExitCode, err: err}
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 
 	var service string
 	if len(args) == 1 {
