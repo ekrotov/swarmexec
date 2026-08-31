@@ -63,10 +63,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	if err := cfg.Validate(); err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
 
 	dcli, err := newDockerClient(g.dockerContext)

@@ -42,10 +42,7 @@ func newDownCmd(g *globalFlags) *cobra.Command {
 }
 
 func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
 
 	tctx, cerr := resolveContext(out, g)

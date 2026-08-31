@@ -168,10 +168,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return "", &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 	// Per-run context so background goroutines (the auto-refresh ticker, the
 	// responsiveness watchdog, the log-viewer refresher, open streams, forwards)
 	// stop when this run returns — e.g. on a Contexts-tab cluster switch, where
@@ -624,7 +621,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			after()
 		})
 		in.SetBorder(true).SetTitle(" filter logs ")
-		pages.AddPage(pageLogGrep, centered(in, 64, 3), true, true)
+		pages.AddPage(pageLogGrep, centeredPrompt(in, 64), true, true)
 		app.SetFocus(in)
 	}
 	// logFooterText is the log view's footer hint. It appends the mouse state
@@ -857,7 +854,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			startForward(c, local, remote)
 			flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
 		})
-		pages.AddPage(pageFwdPrompt, centered(input, 54, 3), true, true)
+		pages.AddPage(pageFwdPrompt, centeredPrompt(input, 54), true, true)
 		app.SetFocus(input)
 	}
 
@@ -881,7 +878,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			closePrompt()
 			open(u)
 		})
-		pages.AddPage(pageUserPrompt, centered(input, 62, 3), true, true)
+		pages.AddPage(pageUserPrompt, centeredPrompt(input, 62), true, true)
 		app.SetFocus(input)
 	}
 
@@ -1755,7 +1752,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			})
 		})
 		in.SetBorder(true).SetTitle(" " + title + " ")
-		pages.AddPage(pageSvcPrompt, centered(in, 66, 3), true, true)
+		pages.AddPage(pageSvcPrompt, centeredPrompt(in, 66), true, true)
 		app.SetFocus(in)
 	}
 
@@ -1985,7 +1982,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage(pageNetForm, centered(form, 74, 22), true, true)
+		pages.AddPage(pageNetForm, centered(form, formWidth, 22), true, true)
 		app.SetFocus(form)
 	}
 
@@ -2226,7 +2223,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 			}
 			return ev
 		})
-		pages.AddPage(pageSecForm, centered(form, 74, 18), true, true)
+		pages.AddPage(pageSecForm, centered(form, formWidth, 18), true, true)
 		app.SetFocus(form)
 	}
 
@@ -2571,7 +2568,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				render()
 			})
 			in.SetBorder(true)
-			pages.AddPage(pageNodeLabelPrompt, centered(in, 60, 3), true, true)
+			pages.AddPage(pageNodeLabelPrompt, centeredPrompt(in, 60), true, true)
 			app.SetFocus(in)
 		}
 		apply := func() {
@@ -3454,7 +3451,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				commit(in.GetText(), done)
 			})
 			in.SetBorder(true)
-			pages.AddPage(pageListEditPrompt, centered(in, 60, 3), true, true)
+			pages.AddPage(pageListEditPrompt, centeredPrompt(in, 60), true, true)
 			app.SetFocus(in)
 		}
 		// hasChanges reports whether anything is staged but not yet applied (cur
@@ -4112,7 +4109,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 					}()
 				})
 				in.SetBorder(true).SetTitle(" scale service ")
-				pages.AddPage(pageScalePrompt, centered(in, 50, 3), true, true)
+				pages.AddPage(pageScalePrompt, centeredPrompt(in, 50), true, true)
 				app.SetFocus(in)
 			})
 		}()
@@ -4928,11 +4925,11 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 				app.SetFocus(m)
 			})
 			tin.SetBorder(true).SetTitle(fmt.Sprintf(" attach %s → %s ", volName, svc))
-			pages.AddPage(pageVolAttachTgt, centered(tin, 64, 3), true, true)
+			pages.AddPage(pageVolAttachTgt, centeredPrompt(tin, 64), true, true)
 			app.SetFocus(tin)
 		})
 		in.SetBorder(true).SetTitle(fmt.Sprintf(" attach volume %q to service ", volName))
-		pages.AddPage(pageVolAttach, centered(in, 64, 3), true, true)
+		pages.AddPage(pageVolAttach, centeredPrompt(in, 64), true, true)
 		app.SetFocus(in)
 	}
 	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -5581,6 +5578,22 @@ const overlayFooterReserve = 2
 // footer survives.
 func centered(p tview.Primitive, width, height int) tview.Primitive {
 	return &centeredBox{Box: tview.NewBox(), inner: p, width: width, height: height}
+}
+
+// Recurring overlay dimensions. The widths still vary per overlay (a filename
+// prompt is narrower than a set-labels prompt), but the two shared intents —
+// "single-input prompt row" and "standard property form" — get a name so new
+// overlays inherit consistent heights instead of copying a stray literal.
+const (
+	// promptHeight fits a bordered single-line InputField (border + input + border).
+	promptHeight = 3
+	// formWidth is the standard width for a multi-field property form.
+	formWidth = 74
+)
+
+// centeredPrompt floats a single-input prompt of the given width at promptHeight.
+func centeredPrompt(p tview.Primitive, width int) tview.Primitive {
+	return centered(p, width, promptHeight)
 }
 
 // centeredBox is the size-aware layout backing centered(). It embeds Box only

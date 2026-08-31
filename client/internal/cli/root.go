@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -53,6 +54,16 @@ const contactEmail = "eugen.krotov@cloud-surfers.de"
 func infoText(v Version) string {
 	return fmt.Sprintf("swarmexec %s\n  protocol: %s\n  license:  %s\n  contact:  %s\n",
 		v.Binary, v.Proto, licenseName, contactEmail)
+}
+
+// cmdContext returns the command's context, falling back to context.Background()
+// when cobra did not attach one. In normal execution cmd.Context() is non-nil;
+// the fallback keeps every runX free of the copy-pasted nil guard.
+func cmdContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 // Execute builds and runs the root command, returning a process exit code.

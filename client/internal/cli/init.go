@@ -87,10 +87,7 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 }
 
 func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
 	tctx, cerr := resolveContext(out, g)
 	if cerr != nil {
