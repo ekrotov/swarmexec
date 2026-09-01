@@ -24,6 +24,7 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 	rowNet := map[int]string{}     // table row -> network name, for collapsible net rows
 	rowUpgrade := map[int]string{} // table row -> target image ref, for the upgrade row
 	hasUpgrade := false            // an upgrade row is present (for the footer hint)
+	var upInfo *upgradeInfo        // the upgrade's picker data, so "u" works from any row
 	expanded := map[string]bool{}  // which networks are expanded
 	loaded := false
 	showRaw := false
@@ -43,7 +44,7 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 			// the footer stays short. X (destructive) stays a bare key.
 			parts = append(parts, "[yellow]a[white] actions", "[red]X[white] remove")
 			if hasUpgrade {
-				parts = append(parts, "[yellow]u[white] update-to-latest")
+				parts = append(parts, "[yellow]u[white] update version")
 			}
 		}
 		return " " + strings.Join(parts, "  ")
@@ -74,6 +75,7 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 			delete(rowUpgrade, k)
 		}
 		hasUpgrade = false
+		upInfo = nil
 		if !loaded {
 			table.SetCell(0, 0, tview.NewTableCell("loading…").SetSelectable(false))
 			plain = append(plain, "")
@@ -131,6 +133,13 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 					put("  "+ln.Text, tcell.ColorYellow, true, true, ln.Text, "")
 					rowUpgrade[up] = ln.Upgrade
 					hasUpgrade = true
+					upInfo = &upgradeInfo{
+						repo:    ln.UpRepo,
+						current: ln.UpCurrent,
+						target:  ln.Upgrade,
+						newer:   ln.UpNewer,
+						all:     ln.UpAll,
+					}
 				default: // inspField
 					put(ln.Text, tcell.ColorWhite, false, true, ln.Text, "")
 				}
@@ -289,16 +298,17 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 			if net, ok := rowNet[r]; ok {
 				expanded[net] = !expanded[net]
 				populate()
-			} else if target, ok := rowUpgrade[r]; ok && editSvc != "" {
-				u.openImageUpgrade(editSvc, target, table, reload)
+			} else if _, ok := rowUpgrade[r]; ok && editSvc != "" && upInfo != nil {
+				u.openImageVersionPicker(editSvc, *upInfo, table, reload)
 			} else {
 				copyLine()
 			}
 			return nil
 		case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'u':
-			r, _ := table.GetSelection()
-			if target, ok := rowUpgrade[r]; ok {
-				u.openImageUpgrade(editSvc, target, table, reload)
+			// Available from any row, not just the (top) upgrade row — the hint
+			// sits at the top precisely so the operator never has to hunt for it.
+			if upInfo != nil {
+				u.openImageVersionPicker(editSvc, *upInfo, table, reload)
 			}
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':

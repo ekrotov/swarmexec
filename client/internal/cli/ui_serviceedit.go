@@ -5,6 +5,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -902,9 +903,84 @@ func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved f
 	})
 }
 
-func (u *ui) openImageUpgrade(svcName, target string, back tview.Primitive, after func()) {
+// upgradeInfo is the version-picker data captured from the inspect upgrade row:
+// the repo, the running tag, the newer same-family tags (autocomplete
+// suggestions) and every known repo tag (to validate a typed-in override). For a
+// :latest digest update newer/all are empty and only target is set.
+type upgradeInfo struct {
+	repo    string
+	current string
+	target  string   // default update target ref (repo:highest, or repo:latest@digest)
+	newer   []string // newer versions, highest first
+	all     []string // every tag the repo lists
+}
+
+// openImageVersionPicker drives an image update. For a version-pinned service
+// with discrete tags it opens a prompt whose autocomplete suggests the newer
+// versions (highest first) but whose field is freely editable — the operator can
+// type any existing tag, including an older one to pin a known-good release. A
+// typed tag is validated against the repo's tags, and a downgrade is confirmed
+// with a warning. For a :latest service (no discrete versions) it falls back to a
+// single confirm on the current-digest target.
+func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview.Primitive, after func()) {
+	// No discrete versions to choose from (a :latest digest bump): keep the old
+	// one-shot confirm.
+	if len(info.newer) == 0 && len(info.all) == 0 {
+		u.confirmImageUpdate(svcName, info.target, false, back, after)
+		return
+	}
+
+	app, pages := u.app, u.pages
+	in := tview.NewInputField().SetLabel("version: ").SetFieldWidth(24)
+	if len(info.newer) > 0 {
+		in.SetText(info.newer[0]) // default to the highest newer version
+	} else {
+		in.SetText(info.current)
+	}
+	// Suggest only the newer versions; the field itself stays free-text so an
+	// older tag can be typed in to override.
+	in.SetAutocompleteFunc(func(cur string) []string {
+		cur = strings.TrimSpace(cur)
+		var out []string
+		for _, v := range info.newer {
+			if cur == "" || strings.Contains(v, cur) {
+				out = append(out, v)
+			}
+		}
+		return out
+	})
+	in.SetDoneFunc(func(k tcell.Key) {
+		pages.RemovePage(pageImageVersion)
+		app.SetFocus(back)
+		if k != tcell.KeyEnter {
+			return
+		}
+		tag := strings.TrimSpace(in.GetText())
+		if tag == "" {
+			return
+		}
+		// Reject a tag the registry doesn't have, so a typo can't pin the service
+		// to an unpullable image. (knownTags is always populated on this path.)
+		if len(info.all) > 0 && !slices.Contains(info.all, tag) {
+			u.info(fmt.Sprintf("no such tag in %s: %q", info.repo, tag))
+			return
+		}
+		u.confirmImageUpdate(svcName, info.repo+":"+tag, isDowngrade(info.current, tag), back, after)
+	})
+	in.SetBorder(true).SetTitle(fmt.Sprintf(" update %s — running %s ", svcName, info.current))
+	pages.AddPage(pageImageVersion, centeredPrompt(in, 60), true, true)
+	app.SetFocus(in)
+}
+
+// confirmImageUpdate confirms and applies an image change (rolling update). When
+// downgrade is set the prompt warns that the target is older than what runs.
+func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
-	u.confirm(fmt.Sprintf("Update %q to the newer :latest image?\n\n%s\n\nThis triggers a rolling update onto the registry's current digest.", svcName, target), "Update", back, func() {
+	msg := fmt.Sprintf("Update %q to:\n\n%s\n\nThis triggers a rolling update.", svcName, target)
+	if downgrade {
+		msg = fmt.Sprintf("[yellow]⚠ This is a DOWNGRADE.[white]\n\nUpdate %q to:\n\n%s\n\nThis triggers a rolling update onto an older image.", svcName, target)
+	}
+	u.confirm(msg, "Update", back, func() {
 		app.SetFocus(back)
 		go func() {
 			err := updateServiceImage(ctx, dcli, svcName, target)

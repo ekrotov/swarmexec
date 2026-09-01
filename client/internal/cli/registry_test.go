@@ -201,3 +201,47 @@ func TestHighestNewerTag(t *testing.T) {
 		t.Errorf("highestNewerTag(stable) = %q, want empty", got)
 	}
 }
+
+func TestNewerTagsInFamily(t *testing.T) {
+	opensearch := []string{"2.11.1", "2.11.2", "2.12.0", "3.0.0", "2.13.0-alpine", "latest", "1.3.0", "2.12", "3.1"}
+	// Newer same-family (plain X.Y.Z) tags, highest first; alpine/latest/rolling
+	// minors/older excluded. This is the picker's suggestion list.
+	got := newerTagsInFamily("2.11.1", opensearch)
+	want := []string{"3.0.0", "2.12.0", "2.11.2"}
+	if len(got) != len(want) {
+		t.Fatalf("newerTagsInFamily = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("newerTagsInFamily = %v, want %v", got, want)
+		}
+	}
+	// Already on the newest → empty.
+	if got := newerTagsInFamily("3.0.0", opensearch); len(got) != 0 {
+		t.Errorf("newerTagsInFamily(3.0.0) = %v, want empty", got)
+	}
+	// Non-numeric running tag → empty.
+	if got := newerTagsInFamily("stable", []string{"1.0.0"}); len(got) != 0 {
+		t.Errorf("newerTagsInFamily(stable) = %v, want empty", got)
+	}
+}
+
+func TestIsDowngrade(t *testing.T) {
+	cases := []struct {
+		current, target string
+		want            bool
+	}{
+		{"2.11.1", "2.10.4", true},         // older same family
+		{"2.11.1", "2.11.0", true},         // older patch
+		{"2.11.1", "2.12.0", false},        // newer
+		{"2.11.1", "2.11.1", false},        // same
+		{"2.11.1", "2.11", false},          // different component count — unknown, not a downgrade
+		{"2.11.1", "2.10.0-alpine", false}, // different family — unknown
+		{"stable", "1.0.0", false},         // non-numeric current — unknown
+	}
+	for _, c := range cases {
+		if got := isDowngrade(c.current, c.target); got != c.want {
+			t.Errorf("isDowngrade(%q, %q) = %v, want %v", c.current, c.target, got, c.want)
+		}
+	}
+}

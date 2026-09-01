@@ -48,7 +48,15 @@ type inspLine struct {
 	Count     int
 	Children  []string
 	Encrypted bool   // inspNet: network has overlay data-plane encryption on
-	Upgrade   string // inspUpgrade: the image ref to update the service to
+	Upgrade   string // inspUpgrade: the image ref to update the service to (default target)
+
+	// inspUpgrade picker data (version-pinned services): the repo, the running
+	// tag, the newer same-family tags (suggestions) and every known repo tag (to
+	// validate a typed-in override). Empty for a :latest digest update.
+	UpRepo    string
+	UpCurrent string
+	UpNewer   []string
+	UpAll     []string
 }
 
 type inspBuilder struct{ lines []inspLine }
@@ -65,9 +73,14 @@ func (b *inspBuilder) net(name string, dnsCount int, children []string, encrypte
 	b.lines = append(b.lines, inspLine{Kind: inspNet, Text: name, Net: name, Count: dnsCount, Children: children, Encrypted: encrypted})
 }
 
-// upgrade adds an actionable row offering to update the service to target.
-func (b *inspBuilder) upgrade(text, target string) {
-	b.lines = append(b.lines, inspLine{Kind: inspUpgrade, Text: text, Upgrade: target})
+// upgrade adds an actionable row offering to update the service's image. It
+// carries st's picker data (repo, running tag, newer tags, all tags) so the
+// overlay can open the version picker; target is the default (highest) ref.
+func (b *inspBuilder) upgrade(text, target string, st imageStatus) {
+	b.lines = append(b.lines, inspLine{
+		Kind: inspUpgrade, Text: text, Upgrade: target,
+		UpRepo: st.repo, UpCurrent: st.currentTag, UpNewer: st.newerVersions, UpAll: st.knownTags,
+	})
 }
 
 func (b *inspBuilder) kv(k, v string) {
@@ -283,6 +296,20 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	b.title("SERVICE  " + svc.Spec.Name)
 
+	// The upgrade hint sits directly under the title so it is the first thing the
+	// operator sees and can act on ("u") without scrolling down to the IMAGE
+	// section. Only shown when a newer image is actually available.
+	if img.newer && img.updateTarget != "" && cs != nil {
+		// Prefer the concrete newer version (the :latest image's label, or the
+		// newer tag); fall back to a short digest only for a :latest image with no
+		// version label.
+		label := img.latestVersion
+		if label == "" {
+			label = shortDigest(img.latestDigest)
+		}
+		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", img.updateTarget, img)
+	}
+
 	b.section("NETWORKS")
 	nets := serviceNetDNS(svc, netNames, netEncrypted)
 	if len(nets) == 0 {
@@ -305,16 +332,6 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	b.list(servicePortLines(svc))
 	b.section("IMAGE")
 	b.list(imageLines(cs, img))
-	if img.newer && img.updateTarget != "" && cs != nil {
-		// Prefer the concrete newer version (the :latest image's label, or the
-		// newer tag); fall back to a short digest only for a :latest image with no
-		// version label.
-		label := img.latestVersion
-		if label == "" {
-			label = shortDigest(img.latestDigest)
-		}
-		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", img.updateTarget)
-	}
 	b.section("MODE")
 	b.list([]string{serviceModeStr(svc)})
 	if cs != nil && len(cs.Env) > 0 {

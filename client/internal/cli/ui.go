@@ -123,6 +123,7 @@ const (
 	pageListEditPrompt   = "listeditprompt"
 	pageListEditLeave    = "listeditleave"
 	pageScalePrompt      = "scaleprompt"
+	pageImageVersion     = "imageversion"
 	pagePlacementMenu    = "placementmenu"
 	pagePlaceDiag        = "placediag"
 	pageResEdit          = "resedit"
@@ -545,8 +546,10 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	// called on success (the caller closes the inspect overlay and refreshes the
 	// tree, since the service no longer exists). If the service was the sole user
 	// of any secret, it then offers to delete those now-orphaned secrets.
-	// openImageUpgrade updates a :latest service onto the registry's current digest
-	// (target = repo:latest@sha256:…), after a confirm. Rolling update.
+	// openImageVersionPicker updates a service's image after a confirm: for a
+	// version-pinned service it prompts for a target version (newer ones suggested,
+	// any existing tag typeable, downgrades warned); for a :latest service it
+	// confirms the current-digest target. Rolling update.
 	// showPlacementDiagnosis explains why a service is not running everywhere it is
 	// expected to — per-node exclusion reasons for a global service, and the
 	// scheduler's own message on each non-running task for a replicated one.
