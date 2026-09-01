@@ -31,6 +31,29 @@ var uiTabList = []struct{ key, label string }{
 // uiTabOrder drives Tab cycling; every tab joins it.
 var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes"}
 
+// Column headers for the per-tab tables — constant data shared by each tab's
+// render/load methods, so they live at package scope rather than as run() locals.
+var (
+	vHeaders  = []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
+	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "AGE", "STATE"}
+	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
+	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
+	cxHeaders = []string{"CONTEXT", "DOCKER HOST"}
+	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
+)
+
+// Volume sort fields and the header column each annotates with ▲/▼.
+const (
+	volSortName = iota
+	volSortNodes
+	volSortUsed
+	volSortAge
+	volSortSize
+)
+
+// volSortCol maps a sort field to the header column it annotates with ▲/▼.
+var volSortCol = map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, volSortAge: 4, volSortSize: 5}
+
 // ui holds one UI session's ambient state: the run-wide infrastructure, the
 // shared widgets and the per-tab caches that the (formerly closure) methods
 // capture. runUI builds it and hands off to (*ui).run; the closures still living
@@ -62,15 +85,13 @@ type ui struct {
 	footer, root                                         *tview.Flex
 	search                                               *tview.InputField
 
-	// per-tab entry points (closures in run(); called from the infra methods)
-	renderContainers func()
-	loadContainers   func()
-	renderForwards   func()
-	loadVolumes      func()
-	loadNetworks     func()
-	loadSecrets      func()
-	loadContexts     func()
-	loadNodes        func()
+	// containers tab caches
+	lastCands       []resolve.Candidate        // most recent candidate fetch (leaves)
+	lastSvcs        []resolve.Service          // most recent service fetch (tree rows)
+	svcByName       map[string]resolve.Service // current services, for fold re-marking
+	svcCols         svcColumns                 // service-row column widths
+	regCache        *registryCache             // :latest version / newer-tag resolver
+	autoRefreshBusy atomic.Bool                // guards against overlapping tree refreshes
 
 	// shared tab state / caches
 	active       string       // the selected tab
@@ -86,15 +107,28 @@ type ui struct {
 	overlayDepth atomic.Int32 // open overlays (pauses the tree auto-refresh)
 
 	// volumes tab caches
-	selectedVols map[string]bool
-	shownVols    []swarmVolume
-	volUsage     map[string][]volumeConsumer
-	volSizes     map[string]int64
+	selectedVols    map[string]bool
+	shownVols       []swarmVolume
+	vols            []swarmVolume
+	volUsage        map[string][]volumeConsumer
+	volSizes        map[string]int64
+	volErrs         map[string]error
+	volSizesLoading bool
+	sortField       int
+	sortDesc        bool
+
+	// forwards tab cache: fRows mirrors the rendered table so a row maps to a forward.
+	fRows []forwardEntry
 
 	// networks / secrets / contexts tab caches
 	nets []swarmNetwork
 	secs []swarmSecret
 	ctxs []dockerctx.Context
+
+	// nodes tab caches
+	nodeInfos      []swarmNodeInfo
+	nodeVolCounts  map[string]int
+	nodeVolsLoaded bool
 
 	// toggleable client-log overlay
 	logViewStop    chan struct{}
