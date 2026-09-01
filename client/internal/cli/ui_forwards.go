@@ -1,0 +1,250 @@
+// Copyright 2026 Cloud Surfers GmbH
+// SPDX-License-Identifier: Apache-2.0
+
+package cli
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"swarmexec/client/internal/resolve"
+	"sync"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+)
+
+func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
+	app, cfg, f, ctx, forwards := u.app, u.cfg, u.f, u.ctx, u.forwards
+	fctx, fcancel := context.WithCancel(ctx)
+	var once sync.Once
+	entry := forwards.add(c, local, remote, func() { once.Do(fcancel) })
+	u.refreshForwardViews()
+
+	go func() {
+		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
+		fw, ferr := startForwarder(fctx, cfg, ep, forwardParams{
+			address:        "127.0.0.1", // loopback: do not re-expose an internal port to the local network
+			localPort:      local,
+			remotePort:     remote,
+			connectTimeout: f.connectTimeout,
+		})
+		if ferr != nil {
+			forwards.markFailed(entry.id, ferr)
+			app.QueueUpdateDraw(func() { u.refreshForwardViews() })
+			return
+		}
+		addr := fw.LocalAddr().String()
+		// Kept as a local: reading entry.localAddr later would race with
+		// the registry's own writers.
+		boundPort := local
+		if _, ps, perr := net.SplitHostPort(addr); perr == nil {
+			if n, cerr := strconv.ParseUint(ps, 10, 32); cerr == nil {
+				boundPort = uint32(n)
+			}
+		}
+		forwards.markActive(entry.id, addr)
+		app.QueueUpdateDraw(func() { u.refreshForwardViews() })
+
+		serr := fw.Serve(fctx, func(cerr error) {
+			// Announce the first failure only: against an outdated agent
+			// every connection fails, and flashing each one would hide the
+			// footer behind a stutter of identical messages.
+			// Only the first failure changes anything visible (the ⚠
+			// marker). Redrawing on every one would rebuild the whole
+			// container tree per rejected connection — a browser hammering
+			// a broken forward would turn that into a redraw storm.
+			if !forwards.noteConnError(entry.id, cerr) {
+				return
+			}
+			app.QueueUpdateDraw(func() {
+				u.refreshForwardViews()
+				u.flash(fmt.Sprintf(" [red]forward %d[white]: %v", boundPort, cerr))
+			})
+		})
+		fw.Close()
+		// A cancelled forward was stopped on purpose; anything else is a
+		// real failure the operator needs to see in the table.
+		if serr != nil && fctx.Err() == nil {
+			forwards.markFailed(entry.id, serr)
+			app.QueueUpdateDraw(func() { u.refreshForwardViews() })
+		}
+	}()
+}
+
+func (u *ui) portPrompt(c resolve.Candidate) {
+	app, pages, ctree := u.app, u.pages, u.ctree
+	input := tview.NewInputField().SetLabel(" port: ").SetFieldWidth(20)
+	input.SetBorder(true).SetTitle(fmt.Sprintf(" forward %s on %s ", orDash(c.Service), orDash(c.NodeName)))
+	hint := "  8080  or  9090:8080 (local:remote)"
+	input.SetPlaceholder(hint)
+
+	closePrompt := func() { pages.RemovePage(pageFwdPrompt); app.SetFocus(ctree) }
+	input.SetDoneFunc(func(key tcell.Key) {
+		if key != tcell.KeyEnter {
+			closePrompt()
+			return
+		}
+		local, remote, perr := parsePortSpec(strings.TrimSpace(input.GetText()))
+		if perr != nil {
+			// Keep the prompt open so the operator can correct the typo
+			// instead of retyping the whole thing.
+			input.SetTitle(fmt.Sprintf(" %v ", perr))
+			return
+		}
+		closePrompt()
+		u.startForward(c, local, remote)
+		u.flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
+	})
+	pages.AddPage(pageFwdPrompt, centeredPrompt(input, 54), true, true)
+	app.SetFocus(input)
+}
+
+func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
+	app, pages, ctree := u.app, u.pages, u.ctree
+	input := tview.NewInputField().SetLabel(" user: ").SetFieldWidth(28)
+	input.SetBorder(true).SetTitle(fmt.Sprintf(" shell into %s on %s as… ", orDash(c.Service), orDash(c.NodeName)))
+	input.SetPlaceholder("  name or UID[:GID] — e.g. root, 1000, 1000:1000")
+	closePrompt := func() { pages.RemovePage(pageUserPrompt); app.SetFocus(ctree) }
+	input.SetDoneFunc(func(key tcell.Key) {
+		if key != tcell.KeyEnter {
+			closePrompt()
+			return
+		}
+		usr := strings.TrimSpace(input.GetText())
+		if usr == "" {
+			input.SetTitle(" enter a username or UID (Esc to cancel) ")
+			return
+		}
+		closePrompt()
+		open(usr)
+	})
+	pages.AddPage(pageUserPrompt, centeredPrompt(input, 62), true, true)
+	app.SetFocus(input)
+}
+
+func (u *ui) renderForwards() {
+	forwards, ftable := u.forwards, u.ftable
+	prev, _ := ftable.GetSelection()
+	ftable.Clear()
+	for i, h := range fHeaders {
+		ftable.SetCell(0, i, headerCell(h))
+	}
+	u.fRows = forwards.list()
+	for i, e := range u.fRows {
+		row := i + 1
+		local := "-"
+		if p := e.boundPort(); p > 0 {
+			local = fmt.Sprintf("127.0.0.1:%d", p)
+		}
+		state := e.state.String()
+		color := tcell.ColorWhite
+		switch e.state {
+		case forwardActive:
+			color = tcell.ColorGreen
+			if e.connErr != nil {
+				// Listening, but connections are failing — the operator
+				// needs to see that, not a reassuring green "active". Kept
+				// to a marker because the column truncates; Enter shows the
+				// reason in full, and it is flashed once when it happens.
+				color = tcell.ColorYellow
+				state = "active ⚠"
+			}
+		case forwardStarting:
+			color = tcell.ColorYellow
+		case forwardFailed:
+			color = tcell.ColorRed
+			if e.err != nil {
+				// The reason matters more than the word "failed": it is the
+				// only place the operator can learn what went wrong.
+				state = "failed: " + e.err.Error()
+			}
+		}
+		ftable.SetCell(row, 0, tview.NewTableCell(local))
+		ftable.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", e.remote)))
+		ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.cand.ContainerID)))
+		ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.cand.Service)))
+		ftable.SetCell(row, 4, tview.NewTableCell(orDash(e.cand.NodeName)))
+		ftable.SetCell(row, 5, tview.NewTableCell(uptime(time.Since(e.started))))
+		ftable.SetCell(row, 6, tview.NewTableCell(state).SetTextColor(color))
+	}
+	if len(u.fRows) == 0 {
+		ftable.SetCell(1, 0, tview.NewTableCell("(no forwards — press p on a container)").
+			SetTextColor(tcell.ColorGray).SetSelectable(false))
+		return
+	}
+	if prev > 0 && prev <= len(u.fRows) {
+		ftable.Select(prev, 0)
+	} else {
+		ftable.Select(1, 0)
+	}
+}
+
+func (u *ui) selectedForward() (forwardEntry, bool) {
+	ftable := u.ftable
+	return selectedRow(ftable, u.fRows)
+}
+
+func (u *ui) showForwardDetail() {
+	app, pages, forwards, ftable := u.app, u.pages, u.forwards, u.ftable
+	row, ok := u.selectedForward()
+	if !ok {
+		return
+	}
+	// Re-read from the registry: the rendered row's connErr is only as
+	// fresh as the last redraw, and redraws are deliberately rare.
+	e, ok := forwards.get(row.id)
+	if !ok {
+		return
+	}
+	// A left-aligned TextView, not the u.info() modal: tview.Modal centers
+	// each line on its own, which shears a padded key/value block out of
+	// alignment. Values are escaped because dynamic colors are on and an
+	// error string can contain "[".
+	esc := tview.Escape
+	var b strings.Builder
+	fmt.Fprintf(&b, "local:      127.0.0.1:%d\n", e.boundPort())
+	fmt.Fprintf(&b, "remote:     %d\n", e.remote)
+	fmt.Fprintf(&b, "container:  %s\n", esc(shortID(e.cand.ContainerID)))
+	fmt.Fprintf(&b, "service:    %s\n", esc(orDash(e.cand.Service)))
+	fmt.Fprintf(&b, "node:       %s\n", esc(orDash(e.cand.NodeName)))
+	fmt.Fprintf(&b, "state:      %s", esc(e.state.String()))
+	if e.err != nil {
+		fmt.Fprintf(&b, "\n\n[red]failed:[-] %s", esc(e.err.Error()))
+	}
+	if e.connErr != nil {
+		fmt.Fprintf(&b, "\n\n[yellow]last connection failed:[-]\n%s", esc(e.connErr.Error()))
+	}
+	b.WriteString("\n\n[gray]d[-] stop   [gray]Esc[-] close")
+
+	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
+	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
+	closeDetail := func() { pages.RemovePage(pageFwdDetail); app.SetFocus(ftable) }
+	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		switch {
+		case ev.Key() == tcell.KeyEscape, ev.Key() == tcell.KeyEnter:
+			closeDetail()
+			return nil
+		case ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i'):
+			closeDetail()
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+			// Stop straight from the detail view — the operator is already
+			// looking at what they are about to kill.
+			forwards.remove(e.id)
+			closeDetail()
+			u.refreshForwardViews()
+			u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+			return nil
+		}
+		return ev
+	})
+	// Height tracks the content so a short forward gets a snug box and a
+	// failed one grows to fit its reason.
+	lines := strings.Count(b.String(), "\n") + 1
+	pages.AddPage(pageFwdDetail, centered(tv, 66, lines+2), true, true)
+	app.SetFocus(tv)
+}
