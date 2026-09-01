@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,7 +36,13 @@ type imageStatus struct {
 	newerTag      string // the newer semver tag found (version-pinned path only)
 	updateTarget  string // exact image ref to update to, when newer ("" otherwise)
 	newer         bool   // a newer image is available
-	ok            bool   // a registry lookup succeeded
+
+	// The following support the interactive version picker (version-pinned path).
+	repo          string   // the image repo, to build a repo:tag ref for a chosen version
+	newerVersions []string // newer same-family tags, highest first (picker suggestions)
+	knownTags     []string // every tag the repo lists, to validate a typed-in override
+
+	ok bool // a registry lookup succeeded
 }
 
 // parsePinnedLatest splits a spec image ref into repo and pinned digest, but only
@@ -169,12 +176,27 @@ func cmpNums(a, b []int) int {
 // family match avoids cross-variant (2.11.1 vs 2.11.1-alpine) and rolling-minor
 // (2.11.1 vs 2.12) false positives.
 func highestNewerTag(current string, candidates []string) string {
+	if newer := newerTagsInFamily(current, candidates); len(newer) > 0 {
+		return newer[0]
+	}
+	return ""
+}
+
+// newerTagsInFamily returns every candidate that is a newer version than current
+// within the SAME variant family (identical trailing suffix AND the same number
+// of numeric components), sorted highest first. Empty if current is not a
+// parseable version tag or nothing outranks it. Same family rules as
+// highestNewerTag — this is the list form that feeds the version picker.
+func newerTagsInFamily(current string, candidates []string) []string {
 	curNums, curSuffix, ok := splitTag(current)
 	if !ok {
-		return ""
+		return nil
 	}
-	best := ""
-	var bestNums []int
+	type tagNums struct {
+		tag  string
+		nums []int
+	}
+	var newer []tagNums
 	for _, c := range candidates {
 		nums, suffix, ok := splitTag(c)
 		if !ok || suffix != curSuffix || len(nums) != len(curNums) {
@@ -183,11 +205,29 @@ func highestNewerTag(current string, candidates []string) string {
 		if cmpNums(nums, curNums) <= 0 {
 			continue // same or older than what's running
 		}
-		if best == "" || cmpNums(nums, bestNums) > 0 {
-			best, bestNums = c, nums
-		}
+		newer = append(newer, tagNums{tag: c, nums: nums})
 	}
-	return best
+	sort.Slice(newer, func(i, j int) bool { return cmpNums(newer[i].nums, newer[j].nums) > 0 })
+	out := make([]string, len(newer))
+	for i, t := range newer {
+		out[i] = t.tag
+	}
+	return out
+}
+
+// isDowngrade reports whether target is an older version than current within the
+// same variant family. A tag that is not a parseable same-family version (or is
+// newer/equal) is not a downgrade — the picker only warns when it is certain.
+func isDowngrade(current, target string) bool {
+	curNums, curSuffix, ok := splitTag(current)
+	if !ok {
+		return false
+	}
+	tgtNums, tgtSuffix, ok := splitTag(target)
+	if !ok || tgtSuffix != curSuffix || len(tgtNums) != len(curNums) {
+		return false
+	}
+	return cmpNums(tgtNums, curNums) < 0
 }
 
 // versionFromConfig pulls the version out of an image config's labels, preferring
@@ -284,8 +324,10 @@ func checkVersionTag(ctx context.Context, resolver imageResolver, repo, tag stri
 	if err != nil {
 		return imageStatus{}
 	}
-	st := imageStatus{currentTag: tag, version: tag, ok: true}
-	if nt := highestNewerTag(tag, tags); nt != "" {
+	st := imageStatus{currentTag: tag, version: tag, ok: true, repo: repo, knownTags: tags}
+	st.newerVersions = newerTagsInFamily(tag, tags)
+	if len(st.newerVersions) > 0 {
+		nt := st.newerVersions[0]
 		st.newer, st.newerTag, st.latestVersion = true, nt, nt
 		st.updateTarget = repo + ":" + nt
 	}
