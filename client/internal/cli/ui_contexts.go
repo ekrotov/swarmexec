@@ -87,7 +87,7 @@ func (u *ui) showCreateContext() {
 		return ""
 	}
 	form := tview.NewForm()
-	form.SetItemPadding(0) // compact: the SSH+jump form has many rows
+	form.SetItemPadding(1) // one blank row between fields (the overlay has ample height)
 	form.SetBorder(true).SetTitle(" new context ")
 	_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
 	closeForm := func() { restoreHelp(); pages.RemovePage(pageCtxForm); app.SetFocus(cxtable) }
