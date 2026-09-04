@@ -231,7 +231,7 @@ func (u *ui) editList(cfg editListConfig) {
 							closeEd()
 						}
 					})
-				pages.AddPage(pageListEditLeave, leave, true, true)
+				pages.AddPage(pageListEditLeave, newScrim(leave), true, true)
 				app.SetFocus(leave)
 				return nil
 			}
@@ -625,7 +625,7 @@ func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func(
 				app.SetFocus(back)
 			}
 		})
-	pages.AddPage(pagePlacementMenu, m, true, true)
+	pages.AddPage(pagePlacementMenu, newScrim(m), true, true)
 	app.SetFocus(m)
 }
 
@@ -873,7 +873,7 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 				})
 			}()
 		})
-	pages.AddPage(pageOrphanSecrets, m, true, true)
+	pages.AddPage(pageOrphanSecrets, newScrim(m), true, true)
 	app.SetFocus(m)
 }
 

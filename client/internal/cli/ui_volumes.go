@@ -623,7 +623,7 @@ func (u *ui) attachVolumeToService(volName string) {
 						})
 					}()
 				})
-			pages.AddPage(pageVolAttachConfirm, m, true, true)
+			pages.AddPage(pageVolAttachConfirm, newScrim(m), true, true)
 			app.SetFocus(m)
 		})
 		tin.SetBorder(true).SetTitle(fmt.Sprintf(" attach %s → %s ", volName, svc))
