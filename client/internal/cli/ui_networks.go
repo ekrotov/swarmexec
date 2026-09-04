@@ -132,8 +132,24 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 	app.SetFocus(in)
 }
 
+// netMembersView is the "attached services" overlay for one network: a
+// collapsible list of services (with their containers and aliases) plus attach/
+// detach/alias actions. Its state was formerly locals shared by the closures
+// inside showNetworkMembers; promoting them onto a struct splits the render
+// (build) half from handleKey (input), mirroring inspectView.
+type netMembersView struct {
+	u        *ui
+	n        swarmNetwork
+	list     *tview.List
+	members  []netService
+	rowSvc   []string // list row -> service it belongs to (for Enter/A)
+	expanded map[string]bool
+	loaded   bool
+
+	restoreHelp func()
+}
+
 func (u *ui) showNetworkMembers(n swarmNetwork) {
-	app, pages, dcli, ctx, nettable := u.app, u.pages, u.dcli, u.ctx, u.nettable
 	list := tview.NewList().ShowSecondaryText(false)
 	badge := ""
 	if n.Encrypted {
@@ -143,168 +159,184 @@ func (u *ui) showNetworkMembers(n swarmNetwork) {
 		badge += " · mtu " + n.MTU
 	}
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s%s — attached services ", n.Name, badge))
-	// members/expanded drive the collapsible view; rowSvc maps each list row
-	// back to the service it belongs to (for Enter = toggle aliases and
-	// A = add alias). loaded flips once the task/spec lookup returns.
-	var members []netService
-	var rowSvc []string
-	expanded := map[string]bool{}
-	loaded := false
-	render := func() {
-		cur := list.GetCurrentItem()
-		list.Clear()
-		rowSvc = rowSvc[:0]
-		meta := func(svc string) { rowSvc = append(rowSvc, svc) }
-		// The network's own labels (read-only) at the top — Docker has no
-		// network-update API, so they can't be edited here.
-		if lbls := kvPairs(n.Labels); len(lbls) > 0 {
-			list.AddItem("[gray]labels[-]", "", 0, nil)
-			meta("")
-			for _, l := range lbls {
-				list.AddItem("    "+tview.Escape(l), "", 0, nil)
-				meta("")
-			}
-			list.AddItem("", "", 0, nil)
-			meta("")
-		}
-		if len(members) == 0 {
-			if loaded {
-				list.AddItem("(no services attached)", "", 0, nil)
-			} else {
-				list.AddItem("loading…", "", 0, nil)
-			}
+	v := &netMembersView{u: u, n: n, list: list, expanded: map[string]bool{}}
+	// Seed with the services already known from the list; containers/aliases
+	// fill in once the task/spec lookup returns.
+	v.members = make([]netService, 0, len(n.Services))
+	for _, s := range n.Services {
+		v.members = append(v.members, netService{Name: s})
+	}
+	v.open()
+}
+
+// render rebuilds the list from the current members/expanded state and the
+// row→service map — the view half of the overlay.
+func (v *netMembersView) render() {
+	list, n := v.list, v.n
+	cur := list.GetCurrentItem()
+	list.Clear()
+	v.rowSvc = v.rowSvc[:0]
+	meta := func(svc string) { v.rowSvc = append(v.rowSvc, svc) }
+	// The network's own labels (read-only) at the top — Docker has no
+	// network-update API, so they can't be edited here.
+	if lbls := kvPairs(n.Labels); len(lbls) > 0 {
+		list.AddItem("[gray]labels[-]", "", 0, nil)
+		meta("")
+		for _, l := range lbls {
+			list.AddItem("    "+tview.Escape(l), "", 0, nil)
 			meta("")
 		}
-		// Pad the id/node columns to the widest across every service so the
-		// node and IP columns line up down the whole list, not just per row.
-		idW, nodeW := 0, 0
-		for _, s := range members {
-			for _, c := range s.Containers {
-				if w := len(c.ID); w > idW {
-					idW = w
-				}
-				if w := len(orDash(c.Node)); w > nodeW {
-					nodeW = w
-				}
+		list.AddItem("", "", 0, nil)
+		meta("")
+	}
+	if len(v.members) == 0 {
+		if v.loaded {
+			list.AddItem("(no services attached)", "", 0, nil)
+		} else {
+			list.AddItem("loading…", "", 0, nil)
+		}
+		meta("")
+	}
+	// Pad the id/node columns to the widest across every service so the
+	// node and IP columns line up down the whole list, not just per row.
+	idW, nodeW := 0, 0
+	for _, s := range v.members {
+		for _, c := range s.Containers {
+			if w := len(c.ID); w > idW {
+				idW = w
+			}
+			if w := len(orDash(c.Node)); w > nodeW {
+				nodeW = w
 			}
 		}
-		for _, s := range members {
-			head := tview.Escape(s.Name) + " …"
-			if loaded {
-				head = fmt.Sprintf("%s (%d)", tview.Escape(s.Name), len(s.Containers))
-				switch {
-				case len(s.Aliases) == 0:
-					head += "  [gray]no aliases[-]"
-				case expanded[s.Name]:
-					head += fmt.Sprintf("  [aqua]- %d aliases[-]", len(s.Aliases))
-				default:
-					head += fmt.Sprintf("  [aqua]+ %d aliases[-]", len(s.Aliases))
-				}
+	}
+	for _, s := range v.members {
+		head := tview.Escape(s.Name) + " …"
+		if v.loaded {
+			head = fmt.Sprintf("%s (%d)", tview.Escape(s.Name), len(s.Containers))
+			switch {
+			case len(s.Aliases) == 0:
+				head += "  [gray]no aliases[-]"
+			case v.expanded[s.Name]:
+				head += fmt.Sprintf("  [aqua]- %d aliases[-]", len(s.Aliases))
+			default:
+				head += fmt.Sprintf("  [aqua]+ %d aliases[-]", len(s.Aliases))
 			}
-			list.AddItem(head, "", 0, nil)
-			meta(s.Name)
-			if loaded && expanded[s.Name] {
-				for _, a := range s.Aliases {
-					list.AddItem("        [gray]alias:[-] "+tview.Escape(a), "", 0, nil)
-					meta(s.Name)
-				}
-			}
-			for _, c := range s.Containers {
-				list.AddItem(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
+		}
+		list.AddItem(head, "", 0, nil)
+		meta(s.Name)
+		if v.loaded && v.expanded[s.Name] {
+			for _, a := range s.Aliases {
+				list.AddItem("        [gray]alias:[-] "+tview.Escape(a), "", 0, nil)
 				meta(s.Name)
 			}
 		}
-		if cur < list.GetItemCount() {
-			list.SetCurrentItem(cur)
+		for _, c := range s.Containers {
+			list.AddItem(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
+			meta(s.Name)
 		}
 	}
-	// Seed with the services already known from the list; containers/aliases
-	// fill in once the task/spec lookup returns.
-	members = make([]netService, 0, len(n.Services))
-	for _, s := range n.Services {
-		members = append(members, netService{Name: s})
+	if cur < list.GetItemCount() {
+		list.SetCurrentItem(cur)
 	}
-	render()
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
-	closeMembers := func() { restoreHelp(); pages.RemovePage(pageNetMembers); app.SetFocus(nettable) }
-	reload := func() {
-		go func() {
-			m := networkMembers(ctx, dcli, n)
-			app.QueueUpdateDraw(func() {
-				// Only repaint if this overlay is still the one on screen.
-				if pages.HasPage(pageNetMembers) {
-					members, loaded = m, true
-					render()
-				}
-			})
-		}()
+}
+
+func (v *netMembersView) close() {
+	v.restoreHelp()
+	v.u.pages.RemovePage(pageNetMembers)
+	v.u.app.SetFocus(v.u.nettable)
+}
+
+func (v *netMembersView) reload() {
+	u := v.u
+	go func() {
+		m := networkMembers(u.ctx, u.dcli, v.n)
+		u.app.QueueUpdateDraw(func() {
+			// Only repaint if this overlay is still the one on screen.
+			if u.pages.HasPage(pageNetMembers) {
+				v.members, v.loaded = m, true
+				v.render()
+			}
+		})
+	}()
+}
+
+func (v *netMembersView) curSvc() string {
+	i := v.list.GetCurrentItem()
+	if i < 0 || i >= len(v.rowSvc) {
+		return ""
 	}
-	curSvc := func() string {
-		i := list.GetCurrentItem()
-		if i < 0 || i >= len(rowSvc) {
-			return ""
+	return v.rowSvc[i]
+}
+
+// handleKey is the list's input capture — the input half of the overlay.
+func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
+	u, n, list := v.u, v.n, v.list
+	switch {
+	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+		v.close()
+		return nil
+	case ev.Key() == tcell.KeyEnter:
+		// Toggle the current row's service, so Enter anywhere in a service's
+		// block expands/collapses its aliases.
+		if svc := v.curSvc(); svc != "" {
+			v.expanded[svc] = !v.expanded[svc]
+			v.render()
 		}
-		return rowSvc[i]
-	}
-	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
-			closeMembers()
-			return nil
-		case ev.Key() == tcell.KeyEnter:
-			// Toggle the current row's service, so Enter anywhere in a service's
-			// block expands/collapses its aliases.
-			if svc := curSvc(); svc != "" {
-				expanded[svc] = !expanded[svc]
-				render()
-			}
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'A':
-			svc := curSvc()
-			if svc == "" {
-				return nil
-			}
-			if !loaded {
-				u.info("still loading — try again in a moment")
-				return nil
-			}
-			// Same staged alias editor as the inspect view; applies via
-			// setNetworkAliases, then reloads this view to show the new aliases.
-			u.openAliasEditorForNet(svc, n.Name, n.ID, list, reload)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-			suggestions := servicesExcluding(u.serviceNamesFromCache(), n.Services)
-			u.servicePrompt(
-				fmt.Sprintf("attach a service to network %q", n.Name),
-				fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
-				suggestions, list,
-				func(svc string) error { return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name) },
-				func() { closeMembers(); u.loadNetworks() },
-			)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
-			if len(n.Services) == 0 {
-				u.info("no services are attached to this network")
-				return nil
-			}
-			u.servicePrompt(
-				fmt.Sprintf("detach a service from network %q", n.Name),
-				fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
-				n.Services, list,
-				func(svc string) error { return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name) },
-				func() { closeMembers(); u.loadNetworks() },
-			)
+		return nil
+	case ev.Key() == tcell.KeyRune && ev.Rune() == 'A':
+		svc := v.curSvc()
+		if svc == "" {
 			return nil
 		}
-		return vimListKeys(ev)
-	})
+		if !v.loaded {
+			u.info("still loading — try again in a moment")
+			return nil
+		}
+		// Same staged alias editor as the inspect view; applies via
+		// setNetworkAliases, then reloads this view to show the new aliases.
+		u.openAliasEditorForNet(svc, n.Name, n.ID, list, v.reload)
+		return nil
+	case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+		suggestions := servicesExcluding(u.serviceNamesFromCache(), n.Services)
+		u.servicePrompt(
+			fmt.Sprintf("attach a service to network %q", n.Name),
+			fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
+			suggestions, list,
+			func(svc string) error { return attachServiceToNetwork(u.ctx, u.dcli, svc, n.ID, n.Name) },
+			func() { v.close(); u.loadNetworks() },
+		)
+		return nil
+	case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+		if len(n.Services) == 0 {
+			u.info("no services are attached to this network")
+			return nil
+		}
+		u.servicePrompt(
+			fmt.Sprintf("detach a service from network %q", n.Name),
+			fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
+			n.Services, list,
+			func(svc string) error { return detachServiceFromNetwork(u.ctx, u.dcli, svc, n.ID, n.Name) },
+			func() { v.close(); u.loadNetworks() },
+		)
+		return nil
+	}
+	return vimListKeys(ev)
+}
+
+// open wires the list to its input/footer and kicks off the initial fetch.
+func (v *netMembersView) open() {
+	u, n, list := v.u, v.n, v.list
+	v.render()
+	_, v.restoreHelp = u.pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
+	list.SetInputCapture(v.handleKey)
 	height := len(n.Services) + 6
 	if height > 22 {
 		height = 22
 	}
-	pages.AddPage(pageNetMembers, centered(list, 78, height), true, true)
-	app.SetFocus(list)
-	reload()
+	u.pages.AddPage(pageNetMembers, centered(list, 78, height), true, true)
+	u.app.SetFocus(list)
+	v.reload()
 }
 
 func (u *ui) showCreateNetwork() {
