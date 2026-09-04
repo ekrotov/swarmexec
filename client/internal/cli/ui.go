@@ -162,6 +162,10 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		return "", &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
 	}
 
+	// Install the global theme before any primitive is constructed: tview reads
+	// its palette at construction time and its border glyphs at draw time.
+	applyTheme(cfg.UI.Dim)
+
 	ctx := cmdContext(cmd)
 	// Per-run context so background goroutines (the auto-refresh ticker, the
 	// responsiveness watchdog, the log-viewer refresher, open streams, forwards)
@@ -427,7 +431,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	content.AddPage("contexts", cxtable, true, false)
 	content.AddPage("nodes", notable, true, false)
 
-	tabBar := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	tabBar := newTabStrip(uiTabList, func(key string) { u.setTab(key) })
 	// Two-line footer: the per-tab key hints on top, then one consolidated status
 	// line — active context · live cluster summary · forward count · (on the
 	// volumes tab) selection count. u.updateStatus() composes the status line; the
@@ -444,7 +448,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
 		SetPlaceholder("filter services / containers / nodes")
 	root := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(tabBar, 1, 0, false).
+		AddItem(tabBar, 2, 0, false). // labels row + active-tab underline indicator
 		AddItem(content, 0, 1, true).
 		AddItem(search, 0, 0, false).
 		AddItem(footer, 2, 0, false)
@@ -1157,7 +1161,41 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	if s.Ports != "" {
 		fmt.Fprintf(&b, "  %s", s.Ports)
 	}
-	return strings.TrimRight(b.String(), " ")
+	// The update badge is appended last (after the padded columns are trimmed) so
+	// its colour tags never disturb the column alignment.
+	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState)
+}
+
+// updateStatusLabel maps a swarm rolling-update state to a short glyph+label and
+// whether an update is actually in flight. Finished ("completed" /
+// "rollback_completed") and absent states report active=false. The colour name
+// is the accompanying severity tint (yellow = normal, orange/red = attention).
+// Shared by the tree badge and the inspect UPDATE line so both stay in sync.
+func updateStatusLabel(state string) (label, color string, active bool) {
+	switch state {
+	case "updating":
+		return "⟳ updating", "yellow", true
+	case "paused":
+		return "⏸ update paused", "orange", true
+	case "rollback_started":
+		return "↺ rolling back", "orange", true
+	case "rollback_paused":
+		return "⏸ rollback paused", "red", true
+	default: // completed, rollback_completed, or none
+		return "", "", false
+	}
+}
+
+// updateBadge renders a coloured in-progress marker for a service whose rolling
+// update (or rollback) is still running, so a mid-update service is visible at a
+// glance in the tree. The colour tags render because the tree draws node text
+// through tview's tag-aware printer.
+func updateBadge(state string) string {
+	label, color, active := updateStatusLabel(state)
+	if !active {
+		return ""
+	}
+	return "  [" + color + "]" + label + "[-]"
 }
 
 // shortVolume abbreviates long anonymous-volume hashes (64-char hex) for display
@@ -1307,6 +1345,9 @@ func (c *centeredBox) Draw(screen tcell.Screen) {
 	if avail < 1 {
 		avail = h // terminal shorter than the footer itself: don't vanish
 	}
+	// Recede the backdrop so the dialog stands out; keep the footer rows crisp,
+	// they carry this overlay's own shortcuts.
+	dimBehind(screen, x, y, w, avail)
 	bw, bh := c.width, c.height
 	if bw > w {
 		bw = w
@@ -1369,6 +1410,12 @@ func newScrim(inner tview.Primitive) *scrim {
 }
 
 func (s *scrim) Draw(screen tcell.Screen) {
+	x, y, w, h := s.GetRect()
+	avail := h - overlayFooterReserve
+	if avail < 1 {
+		avail = h
+	}
+	dimBehind(screen, x, y, w, avail) // recede the backdrop; keep the footer crisp
 	s.inner.SetRect(s.GetRect())
 	s.inner.Draw(screen)
 }
@@ -1647,16 +1694,7 @@ func (u *ui) showHelp() {
 }
 
 func (u *ui) renderTabBar(active string) {
-	tabBar := u.tabBar
-	var b strings.Builder
-	for _, t := range uiTabList {
-		if t.key == active {
-			fmt.Fprintf(&b, " [black:teal] %s [-:-]  ", t.label)
-		} else {
-			fmt.Fprintf(&b, " %s  ", t.label)
-		}
-	}
-	tabBar.SetText(b.String())
+	u.tabBar.setActive(active)
 }
 
 func (u *ui) setTab(name string) {

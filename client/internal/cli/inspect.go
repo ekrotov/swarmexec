@@ -36,6 +36,7 @@ const (
 	inspBlank                   // spacer
 	inspNet                     // a collapsible network row: "+ name (N dns names)"
 	inspUpgrade                 // an actionable "newer version available" row
+	inspUpdate                  // a rolling-update-in-progress status line
 )
 
 // inspLine is one line of the tabular inspect view. For inspNet rows, Net is the
@@ -57,6 +58,10 @@ type inspLine struct {
 	UpCurrent string
 	UpNewer   []string
 	UpAll     []string
+
+	// inspUpdate: the raw swarm update state ("updating", "paused", …), so the
+	// view can tint the line by severity.
+	UpdateState string
 }
 
 type inspBuilder struct{ lines []inspLine }
@@ -81,6 +86,17 @@ func (b *inspBuilder) upgrade(text, target string, st imageStatus) {
 		Kind: inspUpgrade, Text: text, Upgrade: target,
 		UpRepo: st.repo, UpCurrent: st.currentTag, UpNewer: st.newerVersions, UpAll: st.knownTags,
 	})
+}
+
+// updateStatus adds a rolling-update-in-progress line (tinted by severity in the
+// view). detail is an optional message from the manager (e.g. a failure reason).
+func (b *inspBuilder) updateStatus(state, detail string) {
+	label, _, _ := updateStatusLabel(state)
+	text := label
+	if detail != "" {
+		text += " — " + detail
+	}
+	b.lines = append(b.lines, inspLine{Kind: inspUpdate, Text: text, UpdateState: state})
 }
 
 func (b *inspBuilder) kv(k, v string) {
@@ -308,6 +324,14 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 			label = shortDigest(img.latestDigest)
 		}
 		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", img.updateTarget, img)
+	}
+
+	// A rolling update in flight is surfaced right under the title too, so it is
+	// obvious the service is mid-update without reading task states.
+	if us := svc.UpdateStatus; us != nil {
+		if _, _, active := updateStatusLabel(string(us.State)); active {
+			b.updateStatus(string(us.State), strings.TrimSpace(us.Message))
+		}
 	}
 
 	b.section("NETWORKS")

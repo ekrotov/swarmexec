@@ -67,6 +67,9 @@ type Config struct {
 	// view (flags override these).
 	Logs LogsConfig `yaml:"logs"`
 
+	// UI holds appearance settings for the `ui` TUI.
+	UI UIConfig `yaml:"ui"`
+
 	// ProxyDialer, when set, establishes the TCP connection to the agent
 	// instead of dialing the node directly. It is wired at runtime (never from
 	// YAML) when the Docker context is an ssh:// endpoint, so agent traffic
@@ -84,11 +87,24 @@ type LogsConfig struct {
 	MinLevel string `yaml:"min_level"`
 }
 
+// DefaultUIDim is how far the backdrop behind an open overlay is faded toward
+// the theme background (0 = no dimming, 1 = flat background).
+const DefaultUIDim = 0.6
+
+// UIConfig holds appearance settings for the interactive TUI.
+type UIConfig struct {
+	// Dim is the backdrop fade behind an open overlay, in [0,1]. 0 disables it;
+	// higher values make windows behind the focused dialog recede further.
+	// Out-of-range values are clamped when the theme is applied.
+	Dim float64 `yaml:"dim"`
+}
+
 // Default returns the built-in defaults.
 func Default() Config {
 	return Config{
 		Port:     DefaultPort,
 		AddrMode: AddrModeHostname,
+		UI:       UIConfig{Dim: DefaultUIDim},
 	}
 }
 
@@ -206,6 +222,11 @@ func overlayEnv(cfg *Config) {
 			cfg.Insecure = true
 		case "0", "false", "no", "off":
 			cfg.Insecure = false
+		}
+	}
+	if v := os.Getenv("SWARMEXEC_UI_DIM"); v != "" {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			cfg.UI.Dim = f
 		}
 	}
 }

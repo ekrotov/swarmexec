@@ -17,15 +17,16 @@ import (
 )
 
 // uiTabList drives the tab bar: one list entry per tab instead of five
-// hand-aligned strings, so adding a tab is a single edit.
+// hand-aligned strings, so adding a tab is a single edit. The 1-based shortcut
+// digit is derived from position by the tab bar, not baked into the label.
 var uiTabList = []struct{ key, label string }{
-	{"containers", "Containers (1)"},
-	{"volumes", "Volumes (2)"},
-	{"forwards", "Forwards (3)"},
-	{"networks", "Networks (4)"},
-	{"secrets", "Secrets (5)"},
-	{"contexts", "Contexts (6)"},
-	{"nodes", "Nodes (7)"},
+	{"containers", "Containers"},
+	{"volumes", "Volumes"},
+	{"forwards", "Forwards"},
+	{"networks", "Networks"},
+	{"secrets", "Secrets"},
+	{"contexts", "Contexts"},
+	{"nodes", "Nodes"},
 }
 
 // uiTabOrder drives Tab cycling; every tab joins it.
@@ -81,7 +82,8 @@ type ui struct {
 	ctree                                                *tview.TreeView
 	croot                                                *tview.TreeNode
 	vtable, ftable, nettable, sectable, cxtable, notable *tview.Table
-	tabBar, help, status                                 *tview.TextView
+	tabBar                                               *tabStrip
+	help, status                                         *tview.TextView
 	footer, root                                         *tview.Flex
 	search                                               *tview.InputField
 
