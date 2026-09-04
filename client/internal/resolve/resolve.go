@@ -108,6 +108,12 @@ type Service struct {
 	Image    string // container image, digest stripped for display
 	ImageRef string // full container image as pinned in the spec (digest kept)
 	Ports    string // published ports, e.g. "*:80->80/tcp"; "" if none
+
+	// UpdateState is the swarm rolling-update state, e.g. "updating", "paused",
+	// "rollback_started". Empty when no update is in flight; "completed" /
+	// "rollback_completed" once one finished. Lets the UI flag a service that is
+	// mid-update.
+	UpdateState string
 }
 
 // AmbiguousError is returned when a bare service name has more than one running
@@ -450,6 +456,9 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 			svc.Desired = int(st.DesiredTasks)
 		} else {
 			svc.Running, svc.Desired = r.serviceCounts(ctx, s)
+		}
+		if us := s.UpdateStatus; us != nil {
+			svc.UpdateState = string(us.State)
 		}
 		out = append(out, svc)
 	}

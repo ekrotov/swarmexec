@@ -33,6 +33,46 @@ func headerIndex(lines []inspLine, header string) int {
 	return -1
 }
 
+func hasKind(lines []inspLine, k inspKind) *inspLine {
+	for i := range lines {
+		if lines[i].Kind == k {
+			return &lines[i]
+		}
+	}
+	return nil
+}
+
+func TestFormatServiceInspect_UpdateStatus(t *testing.T) {
+	base := func() swarm.Service {
+		var s swarm.Service
+		s.Spec.Name = "web"
+		s.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{Image: "nginx:1"}
+		return s
+	}
+
+	// A rolling update in flight yields an inspUpdate line carrying its state.
+	s := base()
+	s.UpdateStatus = &swarm.UpdateStatus{State: swarm.UpdateStateUpdating, Message: "update in progress"}
+	lines := formatServiceInspect(s, nil, nil, imageStatus{})
+	up := hasKind(lines, inspUpdate)
+	if up == nil {
+		t.Fatal("expected an inspUpdate line while the service is updating")
+	}
+	if up.UpdateState != "updating" {
+		t.Errorf("inspUpdate state = %q, want updating", up.UpdateState)
+	}
+	if !strings.Contains(up.Text, "updating") || !strings.Contains(up.Text, "update in progress") {
+		t.Errorf("inspUpdate text = %q, want the label and message", up.Text)
+	}
+
+	// A finished update produces no status line.
+	s = base()
+	s.UpdateStatus = &swarm.UpdateStatus{State: swarm.UpdateStateCompleted}
+	if hasKind(formatServiceInspect(s, nil, nil, imageStatus{}), inspUpdate) != nil {
+		t.Error("a completed update should not produce an inspUpdate line")
+	}
+}
+
 func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 	var s swarm.Service
 	s.ID = "svc123"

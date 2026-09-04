@@ -17,6 +17,41 @@ func TestDefaults(t *testing.T) {
 	if c.AddrMode != AddrModeHostname {
 		t.Errorf("addr-mode = %q, want %q", c.AddrMode, AddrModeHostname)
 	}
+	if c.UI.Dim != DefaultUIDim {
+		t.Errorf("ui.dim = %v, want %v", c.UI.Dim, DefaultUIDim)
+	}
+}
+
+func TestUIDimFileEnvAndDefault(t *testing.T) {
+	dir := t.TempDir()
+
+	// A config file with no ui block keeps the default.
+	noUI := filepath.Join(dir, "no-ui.yaml")
+	if err := os.WriteFile(noUI, []byte("port: 7000\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := Load(noUI); err != nil {
+		t.Fatal(err)
+	} else if c.UI.Dim != DefaultUIDim {
+		t.Errorf("absent ui.dim = %v, want default %v", c.UI.Dim, DefaultUIDim)
+	}
+
+	// The file sets it; the env overrides it.
+	withUI := filepath.Join(dir, "ui.yaml")
+	if err := os.WriteFile(withUI, []byte("ui:\n  dim: 0.3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := Load(withUI); err != nil {
+		t.Fatal(err)
+	} else if c.UI.Dim != 0.3 {
+		t.Errorf("file ui.dim = %v, want 0.3", c.UI.Dim)
+	}
+	t.Setenv("SWARMEXEC_UI_DIM", "0")
+	if c, err := Load(withUI); err != nil {
+		t.Fatal(err)
+	} else if c.UI.Dim != 0 {
+		t.Errorf("env ui.dim = %v, want 0 (env over file)", c.UI.Dim)
+	}
 }
 
 func TestLoadFileThenEnv(t *testing.T) {

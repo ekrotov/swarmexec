@@ -59,6 +59,7 @@ flags**.
 | Agent port  | `--port`      | `SWARMEXEC_PORT`       | `port`        |
 | Address mode| `--addr-mode` | `SWARMEXEC_ADDR_MODE`  | `addr_mode`   |
 | TLS server name | `--server-name` | `SWARMEXEC_SERVER_NAME` | `server_name` |
+| Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
 
 Config file (default `~/.config/swarmexec/config.yaml`, override with `--config`
 or `SWARMEXEC_CONFIG`):
@@ -69,7 +70,18 @@ cert: /etc/swarmexec/alice.pem
 key:  /etc/swarmexec/alice-key.pem
 port: 9443
 addr_mode: hostname
+
+ui:
+  dim: 0.6   # fade behind an open overlay: 0 = off, 1 = flat background
 ```
+
+### TUI appearance
+
+When an overlay is open (inspect, an editor, a confirm dialog), the `ui` view
+fades everything behind it toward the background so the focused window stands
+out. `ui.dim` (default **0.6**) controls how strong that fade is, on a `0`–`1`
+scale — `0` disables it entirely, higher values push the backdrop further back.
+Values outside `0`–`1` are clamped.
 
 With a config file in place, the common case is just `swarmexec exec myservice`.
 

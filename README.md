@@ -303,10 +303,13 @@ key:  /home/me/certs/operator.key
 port: 9443           # default
 addr_mode: hostname  # or "ip"
 # server_name: node1 # optional: override TLS SNI (e.g. when dialing by IP)
+# ui:
+#   dim: 0.6         # TUI: fade behind an open overlay (0 = off, 1 = flat bg)
 ```
 
 Env equivalents: `SWARMEXEC_CA`, `SWARMEXEC_CERT`, `SWARMEXEC_KEY`,
-`SWARMEXEC_PORT`, `SWARMEXEC_ADDR_MODE`, `SWARMEXEC_SERVER_NAME`.
+`SWARMEXEC_PORT`, `SWARMEXEC_ADDR_MODE`, `SWARMEXEC_SERVER_NAME`,
+`SWARMEXEC_UI_DIM`.
 
 ### Step 4.4 — List what you can exec into
 
