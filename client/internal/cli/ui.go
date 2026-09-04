@@ -1329,20 +1329,61 @@ func (c *centeredBox) InputHandler() func(*tcell.EventKey, func(p tview.Primitiv
 	return c.inner.InputHandler()
 }
 func (c *centeredBox) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(p tview.Primitive)) (bool, tview.Primitive) {
-	return c.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
-		consumed, capture = c.inner.MouseHandler()(action, event, setFocus)
-		// A click inside the (full-screen) overlay but beside the centred box must
-		// not fall through to the page beneath — that would steal focus from the
-		// dialog. Swallow it and keep focus on the inner content, like tview.Modal.
-		if !consumed && action == tview.MouseLeftDown && c.InRect(event.Position()) {
-			setFocus(c.inner)
-			consumed = true
-		}
-		return
+	return c.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		return swallowBackgroundMouse(c.Box, c.inner, action, event, setFocus)
 	})
 }
 func (c *centeredBox) PasteHandler() func(string, func(p tview.Primitive)) {
 	return c.inner.PasteHandler()
+}
+
+// swallowBackgroundMouse makes an overlay modal for the mouse: it forwards the
+// event to the inner dialog, and if the dialog did not consume it but it landed
+// inside the overlay's (full-screen) rect, it swallows the event here instead of
+// letting it fall through. Without this, tview.Pages routes any unconsumed event
+// down to the next visible page — the main view — so scrolling or clicking in the
+// transparent margin around a dialog would still drive the window beneath it. A
+// left-press also (re)focuses the dialog, so a stray click can't strand focus.
+func swallowBackgroundMouse(box *tview.Box, inner tview.Primitive, action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+	consumed, capture := inner.MouseHandler()(action, event, setFocus)
+	if !consumed && box.InRect(event.Position()) {
+		if action == tview.MouseLeftDown {
+			setFocus(inner)
+		}
+		consumed = true
+	}
+	return consumed, capture
+}
+
+// scrim wraps a self-centering overlay (e.g. tview.Modal, which positions itself
+// within the rect it is given) so the mouse can't fall through to the page
+// beneath — the same guard centeredBox applies to the primitives it positions.
+// Wrap a modal in newScrim before adding it as a page.
+type scrim struct {
+	*tview.Box
+	inner tview.Primitive
+}
+
+func newScrim(inner tview.Primitive) *scrim {
+	return &scrim{Box: tview.NewBox(), inner: inner}
+}
+
+func (s *scrim) Draw(screen tcell.Screen) {
+	s.inner.SetRect(s.GetRect())
+	s.inner.Draw(screen)
+}
+func (s *scrim) Focus(delegate func(p tview.Primitive)) { delegate(s.inner) }
+func (s *scrim) HasFocus() bool                         { return s.inner.HasFocus() }
+func (s *scrim) InputHandler() func(*tcell.EventKey, func(p tview.Primitive)) {
+	return s.inner.InputHandler()
+}
+func (s *scrim) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(p tview.Primitive)) (bool, tview.Primitive) {
+	return s.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		return swallowBackgroundMouse(s.Box, s.inner, action, event, setFocus)
+	})
+}
+func (s *scrim) PasteHandler() func(string, func(p tview.Primitive)) {
+	return s.inner.PasteHandler()
 }
 
 // footerKeys builds the markup for the bottom footer from key,description pairs
@@ -1363,7 +1404,7 @@ func (u *ui) info(msg string) {
 	clientlog.L().Info("ui notice", "msg", msg)
 	m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
 		SetDoneFunc(func(int, string) { pages.RemovePage(pageInfo) })
-	pages.AddPage(pageInfo, m, true, true)
+	pages.AddPage(pageInfo, newScrim(m), true, true)
 	app.SetFocus(m)
 }
 
@@ -1387,7 +1428,7 @@ func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm f
 			}
 			onConfirm()
 		})
-	pages.AddPage(pageConfirm, m, true, true)
+	pages.AddPage(pageConfirm, newScrim(m), true, true)
 	app.SetFocus(m)
 }
 

@@ -94,3 +94,73 @@ func TestCenteredBoxSwallowsOutsideClick(t *testing.T) {
 		t.Error("outside click stole focus to the underlying page — the dialog would become unresponsive")
 	}
 }
+
+// A modal overlay must swallow EVERY mouse action that lands in its (full-screen)
+// area but misses the dialog — not just the left-press — or scrolling/clicking in
+// the margin drives the main view beneath it (tview.Pages routes any unconsumed
+// event down to the next visible page). Covers both overlay wrappers.
+func TestOverlaySwallowsAllMouseActions(t *testing.T) {
+	scr := tcell.NewSimulationScreen("UTF-8")
+	if err := scr.Init(); err != nil {
+		t.Fatal(err)
+	}
+	scr.SetSize(100, 30)
+
+	overlays := []struct {
+		name string
+		make func() tview.Primitive
+	}{
+		{"centered", func() tview.Primitive { return centered(tview.NewForm().AddButton("OK", nil), 40, 7) }},
+		{"scrim", func() tview.Primitive {
+			return newScrim(tview.NewModal().SetText("confirm?").AddButtons([]string{"OK", "Cancel"}))
+		}},
+	}
+	actions := []struct {
+		name   string
+		action tview.MouseAction
+	}{
+		{"scroll-up", tview.MouseScrollUp},
+		{"scroll-down", tview.MouseScrollDown},
+		{"left-click", tview.MouseLeftClick},
+		{"right-down", tview.MouseRightDown},
+		{"move", tview.MouseMove},
+	}
+
+	for _, ov := range overlays {
+		for _, act := range actions {
+			t.Run(ov.name+"/"+act.name, func(t *testing.T) {
+				pages := tview.NewPages()
+				// A recorder as the main page: it flags any mouse event that
+				// reaches it. If the overlay is properly modal, it never does.
+				main := &touchRecorder{Box: tview.NewBox()}
+				pages.AddPage("main", main, true, true)
+				pages.AddPage("dlg", ov.make(), true, true)
+				pages.SetRect(0, 0, 100, 30)
+				pages.Draw(scr) // full-screen the pages and position the inner box
+
+				setFocus := func(p tview.Primitive) {}
+				// (2,2): on-screen, in the margin outside any centred dialog box.
+				ev := tcell.NewEventMouse(2, 2, tcell.Button1, 0)
+				pages.MouseHandler()(act.action, ev, setFocus)
+				if main.touched {
+					t.Errorf("%s/%s: event fell through to the main view beneath the modal", ov.name, act.name)
+				}
+			})
+		}
+	}
+}
+
+// touchRecorder is a stand-in main page that records whether any mouse event
+// reached it — i.e. fell through the overlay above it. It "consumes" so routing
+// stops here, exactly as a real focused main view would.
+type touchRecorder struct {
+	*tview.Box
+	touched bool
+}
+
+func (r *touchRecorder) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(p tview.Primitive)) (bool, tview.Primitive) {
+	return func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		r.touched = true
+		return true, nil
+	}
+}
