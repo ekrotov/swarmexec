@@ -134,6 +134,21 @@ build-cli:
       done
     - (cd dist && sha256sum swarmexec-* > SHA256SUMS)
     - ls -la dist
+    # On a release tag, publish the binaries to the generic Package Registry —
+    # permanent and (on this public project) publicly downloadable, unlike job
+    # artifacts (member-only + expire_in). The Release links below point here.
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        echo "uploading binaries to generic package swarmexec/$CI_COMMIT_TAG"
+        for f in dist/*; do
+          name="$(basename "$f")"
+          echo "  -> $name"
+          curl --fail --silent --show-error \
+            --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+            --upload-file "$f" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/swarmexec/${CI_COMMIT_TAG}/${name}"
+        done
+      fi
   artifacts:
     name: "swarmexec-cli-${CI_COMMIT_REF_SLUG}"
     paths:
@@ -279,27 +294,29 @@ release-publish:
       Container image: `$CI_REGISTRY_IMAGE/agent:$CI_COMMIT_TAG`
       (stable releases are also tagged `:latest`). cli binaries are attached below.
     assets:
-      # filepath gives each asset a stable vanity path, enabling "always latest"
-      # permalinks: <project>/-/releases/permalink/latest/downloads/bin/<name>
-      # (used by the swarm-exec.logle.io landing page).
+      # Links point at the generic Package Registry (uploaded by build-cli):
+      # permanent and publicly downloadable on this public project, unlike job
+      # artifacts. filepath gives each asset a stable vanity path, enabling the
+      # "always latest" permalinks used by the swarm-exec.logle.io landing page:
+      # <project>/-/releases/permalink/latest/downloads/bin/<name>.
       links:
         - name: swarmexec-linux-amd64
-          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-linux-amd64?job=build-cli"
+          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-linux-amd64"
           filepath: /bin/swarmexec-linux-amd64
         - name: swarmexec-linux-arm64
-          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-linux-arm64?job=build-cli"
+          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-linux-arm64"
           filepath: /bin/swarmexec-linux-arm64
         - name: swarmexec-darwin-amd64
-          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-darwin-amd64?job=build-cli"
+          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-darwin-amd64"
           filepath: /bin/swarmexec-darwin-amd64
         - name: swarmexec-darwin-arm64
-          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-darwin-arm64?job=build-cli"
+          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-darwin-arm64"
           filepath: /bin/swarmexec-darwin-arm64
         - name: swarmexec-windows-amd64.exe
-          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/swarmexec-windows-amd64.exe?job=build-cli"
+          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-windows-amd64.exe"
           filepath: /bin/swarmexec-windows-amd64.exe
         - name: SHA256SUMS
-          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/dist/SHA256SUMS?job=build-cli"
+          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/SHA256SUMS"
           filepath: /bin/SHA256SUMS
   rules:
     - *semver-tag
