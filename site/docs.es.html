@@ -311,6 +311,7 @@
           <tr><td><code>operator</code></td><td>string</td><td>identidad de auditoría cuando no se usa certificado de cliente (por defecto: usuario del SO)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>formato de log por defecto para <code>logs</code> y la TUI: <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (vacío = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>nivel mínimo por defecto: <code>trace</code>..<code>fatal</code> (omítelo para no filtrar por nivel)</td></tr>
+          <tr><td><code>ui.dim</code></td><td>float</td><td>cuánto se atenúa el fondo detrás de un overlay abierto, una fracción <code>0</code>–<code>1</code> (por defecto <code>0.6</code>; <code>0</code> = sin atenuación)</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -347,6 +348,7 @@
           <tr><td><code>SWARMEXEC_AGENT_SECRET</code> / <code>_FILE</code></td><td>secreto compartido / archivo del secreto</td></tr>
           <tr><td><code>SWARMEXEC_INSECURE</code></td><td>omite la verificación (<code>1/true/yes/on</code>)</td></tr>
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>identidad de auditoría</td></tr>
+          <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>atenuación del fondo del overlay (<code>ui.dim</code>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>contexto de Docker para la API del manager</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base para la ruta de configuración por defecto</td></tr>
         </tbody>
@@ -758,7 +760,7 @@
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
           <tr><td><kbd>Tab</kbd></td><td>pasa a la siguiente pestaña</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>6</kbd></td><td>salta a Containers / Volumes / Forwards / Networks / Secrets / Contexts</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>salta a Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>mueve abajo / arriba (también <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>refresca la pestaña activa y el resumen del clúster</td></tr>
           <tr><td><kbd>y</kbd></td><td>copia la lista actual al portapapeles (OSC52)</td></tr>
@@ -782,9 +784,17 @@
         Es de mejor esfuerzo y se cachea: los errores de registro simplemente dejan la fila sin anotar. La
         sección <code>IMAGE</code> del overlay de inspección muestra la misma versión y, cuando existe una
         imagen más nueva, una fila seleccionable <em>nueva&nbsp;versión&nbsp;disponible</em> — muévete sobre
-        ella y pulsa <kbd>u</kbd> (o <kbd>Enter</kbd>) para <strong>actualizar el servicio</strong> al digest
-        <code>:latest</code> actual del registro (un <code>ServiceUpdate</code> / actualización progresiva,
-        tras una confirmación).
+        ella y pulsa <kbd>u</kbd> (o <kbd>Enter</kbd>) para <strong>actualizar el servicio</strong>.
+        En un servicio <strong>fijado a una versión</strong> esto abre un <strong>selector de
+        versión</strong>: un campo que <strong>autocompleta los tags más nuevos de la misma
+        familia</strong> (el más alto primero, con el más nuevo por defecto) pero que sigue siendo
+        de texto libre — puedes <strong>escribir cualquier tag existente, incluido uno más antiguo
+        para fijarlo o revertir</strong> a una versión conocida buena. El tag se valida contra los
+        tags del repositorio (uno que no aparezca se rechaza), y elegir un tag más antiguo muestra
+        una <strong>advertencia de degradación</strong> antes de aplicarlo. En un servicio
+        <code>:latest</code> (sin versiones discretas) sigue siendo una única confirmación sobre el
+        digest <code>:latest</code> actual del registro. En cualquier caso es un
+        <code>ServiceUpdate</code> / actualización progresiva, tras una confirmación.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
@@ -802,7 +812,12 @@
         imagen y puertos publicados— y coloreada según la salud (aqua = todas las tareas
         arriba, naranja = parcial, rojo = caído, gris = escalado a cero). Un marcador
         <code>▸</code>/<code>▾</code> indica si un servicio está colapsado o expandido; sus
-        contenedores en ejecución se anidan debajo.
+        contenedores en ejecución se anidan debajo. Un servicio <strong>en medio de una
+        actualización progresiva</strong> lleva una insignia de color en su fila del árbol —
+        <span style="color:#f2cc60">⟳&nbsp;updating</span>,
+        <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> o un estado
+        <span style="color:#db6d28">⏸&nbsp;paused</span>— y el mismo estado aparece en el overlay
+        de inspección del servicio; desaparece en cuanto la actualización se completa.
       </p>
       <p>
         El menú de acciones ofrece <strong>Logs</strong>, <strong>Bash</strong>,
@@ -1119,7 +1134,7 @@
         (junto a <code>config.yaml</code>; cambia la ruta con <code>$SWARMEXEC_KEYS</code>).
         Cada valor es una única tecla, o la palabra <code>space</code>. Las teclas
         estructurales — <kbd>Enter</kbd>, <kbd>Esc</kbd>, <kbd>Tab</kbd>, las flechas, las
-        teclas numéricas de pestaña <kbd>1</kbd>–<kbd>6</kbd> y los alias vim
+        teclas numéricas de pestaña <kbd>1</kbd>–<kbd>7</kbd> y los alias vim
         <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — son fijas. El pie siempre muestra
         tus teclas reales.
       </p>
