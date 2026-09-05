@@ -317,6 +317,7 @@
           <tr><td><code>operator</code></td><td>string</td><td>identité d'audit lorsqu'aucun certificat client n'est utilisé (par défaut : nom d'utilisateur du système)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>format de log par défaut pour <code>logs</code> et la TUI : <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (vide = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>niveau minimum par défaut : <code>trace</code>..<code>fatal</code> (omettez pour aucun filtre de niveau)</td></tr>
+          <tr><td><code>ui.dim</code></td><td>float</td><td>à quel point l'arrière-plan derrière un overlay ouvert est assombri, une fraction <code>0</code>–<code>1</code> (par défaut <code>0.6</code> ; <code>0</code> = aucun assombrissement)</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -354,6 +355,7 @@
           <tr><td><code>SWARMEXEC_AGENT_SECRET</code> / <code>_FILE</code></td><td>secret partagé / fichier de secret</td></tr>
           <tr><td><code>SWARMEXEC_INSECURE</code></td><td>ignore la vérification (<code>1/true/yes/on</code>)</td></tr>
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>identité d'audit</td></tr>
+          <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>assombrissement du fond de l'overlay (<code>ui.dim</code>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>contexte Docker pour l'API du manager</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base du chemin de configuration par défaut</td></tr>
         </tbody>
@@ -777,7 +779,7 @@
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Tab</kbd></td><td>passe à l'onglet suivant</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>6</kbd></td><td>saute à Containers / Volumes / Forwards / Networks / Secrets / Contexts</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>saute à Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>descend / monte (aussi <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>rafraîchit l'onglet actif et le résumé du cluster</td></tr>
           <tr><td><kbd>y</kbd></td><td>copie la liste courante dans le presse-papiers (OSC52)</td></tr>
@@ -804,9 +806,18 @@
         version et, lorsqu'une image plus récente existe, une ligne sélectionnable
         <em>nouvelle&nbsp;version&nbsp;disponible</em> — déplacez-vous dessus et
         appuyez sur <kbd>u</kbd> (ou <kbd>Enter</kbd>) pour <strong>mettre à jour le
-        service</strong> vers le digest <code>:latest</code> actuel du registre (un
-        seul <code>ServiceUpdate</code> / mise à jour progressive, derrière une
-        confirmation).
+        service</strong>. Pour un service <strong>épinglé à une version</strong>, cela
+        ouvre un <strong>sélecteur de version</strong> : un champ qui
+        <strong>autocomplète les tags plus récents de la même famille</strong> (le plus
+        élevé en premier, avec le plus récent par défaut) mais qui reste en texte libre —
+        vous pouvez <strong>saisir n'importe quel tag existant, y compris un plus ancien
+        pour l'épingler ou revenir en arrière</strong> vers une version éprouvée. Le tag
+        est validé contre les tags du dépôt (un tag qu'il ne liste pas est rejeté), et
+        choisir un tag plus ancien affiche un <strong>avertissement de rétrogradation</strong>
+        avant de l'appliquer. Pour un service <code>:latest</code> (sans versions discrètes),
+        cela reste une simple confirmation sur le digest <code>:latest</code> actuel du
+        registre. Dans tous les cas, c'est un seul <code>ServiceUpdate</code> / mise à jour
+        progressive, derrière une confirmation.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
@@ -825,7 +836,12 @@
         (aqua = toutes les tâches actives, orange = partiel, rouge = arrêté, gris =
         mis à l'échelle à zéro). Un marqueur <code>▸</code>/<code>▾</code> indique si
         un service est replié ou déplié ; ses conteneurs en cours d'exécution
-        s'imbriquent en dessous.
+        s'imbriquent en dessous. Un service <strong>en cours de mise à jour
+        progressive</strong> porte un badge coloré sur sa ligne d'arbre —
+        <span style="color:#f2cc60">⟳&nbsp;updating</span>,
+        <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> ou un état
+        <span style="color:#db6d28">⏸&nbsp;paused</span> — et le même statut apparaît dans
+        l'overlay d'inspection du service ; il disparaît dès que la mise à jour est terminée.
       </p>
       <p>
         Le menu d'actions propose <strong>Logs</strong>, <strong>Bash</strong>,
@@ -1165,7 +1181,7 @@
         <code>$SWARMEXEC_KEYS</code>). Chaque valeur est une seule touche, ou le mot
         <code>space</code>. Les touches structurelles — <kbd>Enter</kbd>,
         <kbd>Esc</kbd>, <kbd>Tab</kbd>, les flèches, les touches de numéro d'onglet
-        <kbd>1</kbd>–<kbd>6</kbd> et les alias vim
+        <kbd>1</kbd>–<kbd>7</kbd> et les alias vim
         <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — sont fixes. Le pied de
         page affiche toujours vos touches réelles.
       </p>
