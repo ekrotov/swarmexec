@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Static landing page for swarmexec (swarm-exec.logle.io), served by nginx as a
+# Static landing page for swarmexec (swarm-exec.cloud-surfers.net), served by nginx as a
 # NON-ROOT user (nginxinc/nginx-unprivileged: runs as uid 101, listens on 8080).
 # Build from the repo root:
 #   docker build -f site/Dockerfile --build-arg VERSION=v1.2.3 -t swarmexec-site .

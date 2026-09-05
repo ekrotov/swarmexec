@@ -1,4 +1,4 @@
-# swarmexec landing page — served at https://swarm-exec.logle.io
+# swarmexec landing page — served at https://swarm-exec.cloud-surfers.net
 #
 # Deploy (on a manager, with the image built & pushed by CI):
 #   docker stack deploy -c site/deploy/site-stack.yml swarmexec-site
@@ -43,13 +43,13 @@ services:
         # serves on 8080.
         - "traefik.enable=true"
         - "traefik.http.routers.swarmexec-site.entrypoints=https"
-        - "traefik.http.routers.swarmexec-site.rule=Host(`swarm-exec.logle.io`)"
+        - "traefik.http.routers.swarmexec-site.rule=Host(`swarm-exec.cloud-surfers.net`)"
         - "traefik.http.routers.swarmexec-site.tls=true"
         - "traefik.http.routers.swarmexec-site.tls.certresolver=letsencrypt"
         - "traefik.http.services.swarmexec-site.loadbalancer.server.port=8080"
         # Redirect plain HTTP to HTTPS.
         - "traefik.http.routers.swarmexec-site-http.entrypoints=http"
-        - "traefik.http.routers.swarmexec-site-http.rule=Host(`swarm-exec.logle.io`)"
+        - "traefik.http.routers.swarmexec-site-http.rule=Host(`swarm-exec.cloud-surfers.net`)"
         - "traefik.http.routers.swarmexec-site-http.middlewares=swarmexec-site-redirect"
         - "traefik.http.middlewares.swarmexec-site-redirect.redirectscheme.scheme=https"
 
