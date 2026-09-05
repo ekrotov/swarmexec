@@ -226,7 +226,7 @@ agent-image:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   # dev: :<sha> + :main
 
 # ----------------------------------------------------------------------------
-# site-image — build the swarm-exec.logle.io landing page image (nginx). The
+# site-image — build the swarm-exec.cloud-surfers.net landing page image (nginx). The
 # deployed service tracks :latest (Watchtower auto-updates it). :latest is
 # refreshed both on a release (version baked in) and when site/ changes on the
 # default branch (version shown as "latest"; the release/download links are
@@ -297,7 +297,7 @@ release-publish:
       # Links point at the generic Package Registry (uploaded by build-cli):
       # permanent and publicly downloadable on this public project, unlike job
       # artifacts. filepath gives each asset a stable vanity path, enabling the
-      # "always latest" permalinks used by the swarm-exec.logle.io landing page:
+      # "always latest" permalinks used by the swarm-exec.cloud-surfers.net landing page:
       # <project>/-/releases/permalink/latest/downloads/bin/<name>.
       links:
         - name: swarmexec-linux-amd64

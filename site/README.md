@@ -1,6 +1,6 @@
 # swarmexec landing page
 
-A tiny static site for the project, served at **https://swarm-exec.logle.io**.
+A tiny static site for the project, served at **https://swarm-exec.cloud-surfers.net**.
 
 It shows the project description and four links:
 
@@ -42,7 +42,7 @@ Routing/TLS is handled by the shared Traefik on the external `gateway` network
 docker stack deploy -c site/deploy/site-stack.yml swarmexec-site
 ```
 
-Point a DNS record for `swarm-exec.logle.io` at the swarm ingress; Traefik
+Point a DNS record for `swarm-exec.cloud-surfers.net` at the swarm ingress; Traefik
 requests the certificate via the `letsencrypt` resolver on first request.
 
 ## Hardening
