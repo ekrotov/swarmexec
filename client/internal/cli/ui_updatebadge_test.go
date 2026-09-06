@@ -13,9 +13,11 @@ func TestUpdateBadge(t *testing.T) {
 		want  string // substring expected, or "" for no badge
 	}{
 		{"updating", "⟳ updating"},
-		{"paused", "⏸ update paused"},
 		{"rollback_started", "↺ rolling back"},
-		{"rollback_paused", "⏸ rollback paused"},
+		// paused/rollback_paused are sticky historical states (default
+		// failure_action=pause) — not an ongoing update, so no badge.
+		{"paused", ""},
+		{"rollback_paused", ""},
 		{"completed", ""},
 		{"rollback_completed", ""},
 		{"", ""},

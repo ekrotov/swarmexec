@@ -181,12 +181,9 @@ func (iv *inspectView) populate() {
 					all:     ln.UpAll,
 				}
 			case inspUpdate:
-				color := tcell.ColorYellow
-				switch ln.UpdateState {
-				case "paused", "rollback_started":
+				color := tcell.ColorYellow // updating
+				if ln.UpdateState == "rollback_started" {
 					color = tcell.ColorOrange
-				case "rollback_paused":
-					color = tcell.ColorRed
 				}
 				put("  "+ln.Text, color, true, false, ln.Text, "")
 			default: // inspField
