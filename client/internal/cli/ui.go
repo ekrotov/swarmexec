@@ -1175,13 +1175,14 @@ func updateStatusLabel(state string) (label, color string, active bool) {
 	switch state {
 	case "updating":
 		return "⟳ updating", "yellow", true
-	case "paused":
-		return "⏸ update paused", "orange", true
 	case "rollback_started":
 		return "↺ rolling back", "orange", true
-	case "rollback_paused":
-		return "⏸ rollback paused", "red", true
-	default: // completed, rollback_completed, or none
+	default:
+		// Only the actively-converging states above are badged. Swarm keeps
+		// UpdateStatus.State indefinitely, and the default failure_action is
+		// "pause", so a single failed task in some past deploy pins a service at
+		// "paused" for weeks — a stale, misleading signal, not an ongoing update.
+		// "paused"/"rollback_paused" (and completed/none) therefore get no badge.
 		return "", "", false
 	}
 }
