@@ -87,7 +87,24 @@
     }
     .dhbox a { color: var(--aqua); text-decoration: none; }
     .dhbox a:hover { text-decoration: underline; }
-    .demo { display: block; width: 100%; height: auto; margin: 1.5rem 0; border: 1px solid var(--border); border-radius: 10px; }
+.demo { display: block; width: 100%; height: auto; margin: 1.5rem 0; border: 1px solid var(--border); border-radius: 10px; }
+    /* demo slideshow: dependency-free, keyboard-navigable, respects reduced motion */
+    .slideshow { margin: 1.5rem 0; }
+    .slideshow:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+    .slides { position: relative; }
+    .slide { margin: 0; }
+    .slide[hidden] { display: none; }
+    .slide .demo { margin: 0; }
+    .slide figcaption { text-align: center; color: var(--muted); font-size: .85rem; margin-top: .6rem; }
+    .slide figcaption b { color: var(--aqua); font-weight: 600; }
+    .slide-nav { display: flex; align-items: center; justify-content: center; gap: .75rem; margin-top: .6rem; }
+    .slide-nav button { font-family: inherit; cursor: pointer; background: #0d1117; color: var(--fg); border: 1px solid var(--border); border-radius: 8px; transition: border-color .15s; }
+    .slide-nav button:hover { border-color: var(--accent); }
+    .slide-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .slide-nav .arrow { width: 2rem; height: 2rem; line-height: 1; font-size: 1.15rem; padding: 0; }
+    .dots { display: flex; gap: .5rem; }
+    .dot { width: .7rem; height: .7rem; padding: 0; border-radius: 50%; }
+    .dot[aria-current="true"] { background: var(--aqua); border-color: var(--aqua); }
     .links { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1.75rem; }
     a.btn {
       display: flex; flex-direction: column; gap: .15rem;
@@ -152,8 +169,28 @@
       <h1>swarmexec<span class="cursor">_</span></h1>
       <p class="tagline"><code>docker exec -it</code> para todo el clúster de Docker Swarm.</p>
 
-      <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
-           alt="En lugar de docker node ls, encontrar el nodo, ssh node-3 y docker exec, basta con ejecutar: swarmexec exec web -- sh">
+      <div class="slideshow" role="group" aria-roledescription="carrusel" aria-label="Demos de funciones" tabindex="0">
+        <div class="slides">
+          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="1 / 2">
+            <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
+                 alt="En lugar de docker node ls, encontrar el nodo, ssh node-3 y docker exec, basta con ejecutar: swarmexec exec web -- sh">
+            <figcaption><b>exec en todo el clúster</b> — shell en cualquier tarea, desde una terminal</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="2 / 2" hidden>
+            <img class="demo" src="/portforward.gif" width="860" height="470" loading="lazy"
+                 alt="swarmexec port-forward web 9090:8080 abre un reenvío a una tarea en node-3 y luego curl localhost:9090 responde — sin SSH y sin puerto publicado">
+            <figcaption><b>port-forward desde tu portátil</b> — alcanza el puerto de una tarea, sin SSH, sin ingress</figcaption>
+          </figure>
+        </div>
+        <div class="slide-nav">
+          <button class="arrow sl-prev" type="button" aria-label="Diapositiva anterior">&#8249;</button>
+          <div class="dots" role="group" aria-label="Elegir diapositiva">
+            <button class="dot" type="button" aria-label="Mostrar demo de exec en el clúster" aria-current="true"></button>
+            <button class="dot" type="button" aria-label="Mostrar demo de port-forward" aria-current="false"></button>
+          </div>
+          <button class="arrow sl-next" type="button" aria-label="Diapositiva siguiente">&#8250;</button>
+        </div>
+      </div>
 
       <p class="lead">
         Obtén una shell interactiva (o ejecuta un comando puntual) dentro de
@@ -223,5 +260,43 @@
       </footer>
     </div>
   </main>
+  <script>
+    // Demo slideshow: vanilla, no deps. Keyboard: arrows on the group; buttons
+    // are natively focusable. Gentle auto-advance, paused on hover/focus and
+    // disabled entirely under prefers-reduced-motion.
+    (function () {
+      var root = document.querySelector('.slideshow');
+      if (!root) return;
+      var slides = Array.prototype.slice.call(root.querySelectorAll('.slide'));
+      var dots = Array.prototype.slice.call(root.querySelectorAll('.dot'));
+      var i = 0, timer = null;
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      function show(n) {
+        i = (n + slides.length) % slides.length;
+        slides.forEach(function (s, k) {
+          var on = k === i;
+          s.hidden = !on;
+          dots[k].setAttribute('aria-current', on ? 'true' : 'false');
+        });
+      }
+      function next() { show(i + 1); }
+      function prev() { show(i - 1); }
+      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function start() { if (!reduce && !timer) timer = setInterval(next, 6000); }
+      function restart() { stop(); start(); }
+      root.querySelector('.sl-next').addEventListener('click', function () { next(); restart(); });
+      root.querySelector('.sl-prev').addEventListener('click', function () { prev(); restart(); });
+      dots.forEach(function (d, k) { d.addEventListener('click', function () { show(k); restart(); }); });
+      root.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight') { next(); restart(); e.preventDefault(); }
+        else if (e.key === 'ArrowLeft') { prev(); restart(); e.preventDefault(); }
+      });
+      root.addEventListener('mouseenter', stop);
+      root.addEventListener('mouseleave', start);
+      root.addEventListener('focusin', stop);
+      root.addEventListener('focusout', start);
+      show(0); start();
+    })();
+  </script>
 </body>
 </html>
