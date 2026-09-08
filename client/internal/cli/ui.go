@@ -1156,6 +1156,11 @@ type svcColumns struct {
 // is trimmed so a selected row's highlight does not run past the text.
 func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	var b strings.Builder
+	// The security marker leads the row, in a fixed-width slot every service
+	// occupies, so the shields form a vertical scan column and the name column
+	// still lines up. Leading it also keeps it visible when a long image ref or
+	// port list pushes the end of the row past the right edge.
+	b.WriteString(securityBadge(s.Risks))
 	fmt.Fprintf(&b, "%-*s  %-*s  %-*s",
 		c.name, orDash(s.Name), c.mode, orDash(s.Mode), c.repl, fmt.Sprintf("%d/%d", s.Running, s.Desired))
 	if c.image > 0 {
@@ -1166,22 +1171,29 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	if s.Ports != "" {
 		fmt.Fprintf(&b, "  %s", s.Ports)
 	}
-	// The update and security badges are appended last (after the padded columns
-	// are trimmed) so their glyphs/tags never disturb the column alignment.
-	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState) + securityBadge(s.Risks)
+	// The update badge is appended last (after the padded columns are trimmed) so
+	// its tags never disturb the column alignment.
+	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState)
 }
 
-// securityBadge returns a shield marker when the service has an actionable
-// security-scan finding, so a risky service is visible at a glance in the tree.
-// Informational (low) findings do not badge — they hold for nearly every service
-// and would mark every row. It is a single "risk present" indicator (🛡 is an
-// emoji; terminals ignore its foreground colour) — the per-finding severity is
-// shown in the security-risks overlay (!).
+// securityBadgeWidth is the fixed leading slot every service row reserves for
+// the security marker, so flagged and clean rows keep the same name column.
+const securityBadgeWidth = 2
+
+// securityBadge returns the leading shield marker for a service with an
+// actionable security-scan finding, padded to securityBadgeWidth; a clean
+// service gets the same width in spaces. Informational (low) findings do not
+// badge — they hold for nearly every service and would mark every row. It is a
+// single "risk present" indicator (🛡 is an emoji; terminals ignore its
+// foreground colour) — the per-finding severity is shown in the overlay (!).
+//
+// The bare shield (no variation selector) is deliberate: tview measures U+1F6E1
+// as one cell, so "🛡 " and "  " are the same width to the layout.
 func securityBadge(risks []secscan.Finding) string {
 	if !secscan.Actionable(risks) {
-		return ""
+		return strings.Repeat(" ", securityBadgeWidth)
 	}
-	return "  🛡"
+	return "🛡 "
 }
 
 // updateStatusLabel maps a swarm rolling-update state to a short glyph+label and
@@ -1591,8 +1603,8 @@ func (u *ui) helpFor(name string) string {
 	head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
 	switch name {
 	case "containers":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward",
-			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks",
+			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks))
 	case "volumes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
 			kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))

@@ -82,7 +82,9 @@ func TestServiceColor(t *testing.T) {
 func TestServiceRow(t *testing.T) {
 	cols := svcColumns{name: 6, mode: 10, repl: 3, image: 11}
 	web := resolve.Service{Name: "web", Mode: "replicated", Running: 1, Desired: 3, Image: "nginx:1.27", Ports: "*:80->80/tcp"}
-	if got, want := serviceRow(web, cols, ""), "web     replicated  1/3  nginx:1.27   *:80->80/tcp"; got != want {
+	// Every row opens with the fixed security-marker slot (blank when clean).
+	blank := strings.Repeat(" ", securityBadgeWidth)
+	if got, want := serviceRow(web, cols, ""), blank+"web     replicated  1/3  nginx:1.27   *:80->80/tcp"; got != want {
 		t.Errorf("serviceRow(web) = %q, want %q", got, want)
 	}
 	// The version/↑ annotation sits inside the image cell, right after the URI.
