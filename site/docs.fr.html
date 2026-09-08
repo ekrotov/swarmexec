@@ -315,7 +315,7 @@
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>lit le secret depuis ce fichier (prioritaire sur <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>ignore la vérification du certificat serveur de l'agent (agents auto-signés)</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>identité d'audit lorsqu'aucun certificat client n'est utilisé (par défaut : nom d'utilisateur du système)</td></tr>
-          <tr><td><code>logs.format</code></td><td>string</td><td>format de log par défaut pour <code>logs</code> et la TUI : <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (vide = <code>classic</code>)</td></tr>
+          <tr><td><code>logs.format</code></td><td>string</td><td>format de log par défaut pour <code>logs</code> et la TUI : <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (vide = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>niveau minimum par défaut : <code>trace</code>..<code>fatal</code> (omettez pour aucun filtre de niveau)</td></tr>
           <tr><td><code>ui.dim</code></td><td>float</td><td>à quel point l'arrière-plan derrière un overlay ouvert est assombri, une fraction <code>0</code>–<code>1</code> (par défaut <code>0.6</code> ; <code>0</code> = aucun assombrissement)</td></tr>
         </tbody>
@@ -327,7 +327,7 @@
         <code>logs</code> les remplacent :
       </p>
       <div class="cmd">logs:
-  format: json        <span class="k"># classic | json | gelf | raw</span>
+  format: json        <span class="k"># classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal ; omettez pour aucun filtre de niveau</span></div>
       <p>Inspectez la configuration effective et fusionnée (secret masqué) avec :</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># ou : --json</span></div>
@@ -356,6 +356,7 @@
           <tr><td><code>SWARMEXEC_INSECURE</code></td><td>ignore la vérification (<code>1/true/yes/on</code>)</td></tr>
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>identité d'audit</td></tr>
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>assombrissement du fond de l'overlay (<code>ui.dim</code>)</td></tr>
+          <tr><td><code>SWARMEXEC_KEYS</code></td><td>chemin du fichier de raccourcis de la TUI (par défaut <code>keys.yaml</code> à côté de la configuration)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>contexte Docker pour l'API du manager</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base du chemin de configuration par défaut</td></tr>
         </tbody>
@@ -592,7 +593,7 @@
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>lignes depuis la fin pour commencer (<code>0</code> = toutes)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>préfixe chaque ligne d'un horodatage</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>uniquement les logs plus récents que ceci (p. ex. <code>10m</code>, <code>1h</code>)</td></tr>
-          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>analyse les lignes comme <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (par défaut depuis la config, sinon <code>classic</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>analyse les lignes comme <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (par défaut depuis la config, sinon <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>n'affiche que ce niveau et au-dessus : <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>n'affiche que les lignes dont le message (analysé) correspond à cette regexp Go</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>indice/remplacement de nœud pour les cibles container-id</td></tr>
@@ -605,7 +606,11 @@
         qu'il puisse en extraire un <em>niveau</em> et un <em>message</em> :
         <code>classic</code> extrait un niveau d'une ligne de texte brut,
         <code>json</code> analyse du JSON de style logstash (champs
-        <code>level</code>/<code>message</code>), <code>gelf</code> analyse du JSON
+        <code>level</code>/<code>message</code>), <code>logfmt</code> analyse le style
+        <code>clé=valeur</code> utilisé par de nombreuses applications Go, le démon Docker
+        et les outils HashiCorp (<code>msg</code>/<code>message</code>,
+        <code>level</code>/<code>lvl</code>/<code>severity</code>, <code>ts</code>/<code>time</code>),
+        <code>gelf</code> analyse du JSON
         GELF Graylog (niveau syslog numérique), et <code>raw</code> laisse passer les
         lignes inchangées. <code>--min-level</code> écarte alors tout ce qui est en
         dessous du niveau choisi, et <code>--grep</code> ne conserve que les lignes
@@ -681,7 +686,7 @@
         <thead><tr><th>Option</th><th>Défaut</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>--size</code></td><td><code>false</code></td><td>calcule aussi la taille sur disque de chaque volume (plus lent : du par volume)</td></tr>
-          <tr><td><code>--sort</code></td><td><code>name</code></td><td>trie par : <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code></td></tr>
+          <tr><td><code>--sort</code></td><td><code>name</code></td><td>trie par : <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code> (<code>size</code> implique <code>--size</code>)</td></tr>
           <tr><td><code>--reverse</code></td><td><code>false</code></td><td>inverse le sens du tri</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>délai de connexion par nœud</td></tr>
           <tr><td><code>--json</code></td><td><code>false</code></td><td>affiche du JSON au lieu d'un tableau</td></tr>
@@ -740,6 +745,7 @@
         <tbody>
           <tr><td><code>--docker-host</code></td><td>—</td><td>requis — point d'accès du démon docker : <code>ssh://</code> | <code>tcp://</code> | <code>unix://</code> | <code>npipe://</code></td></tr>
           <tr><td><code>--description</code></td><td>—</td><td>description facultative</td></tr>
+          <tr><td><code>--ssh-jump</code></td><td>—</td><td>hôte(s) de rebond SSH pour un contexte <code>ssh://</code>, séparés par des virgules (<code>ProxyJump</code> / <code>-J</code> multi-sauts) ; injectés à la fois dans la connexion à l'API Docker et dans le tunnel vers l'agent</td></tr>
           <tr><td><code>--use</code></td><td><code>false</code></td><td>en fait aussi le contexte courant</td></tr>
         </tbody>
       </table></div>
@@ -778,6 +784,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>?</kbd></td><td>ouvre la surcouche des raccourcis — la référence complète et vivante des touches (elle est générée à partir de votre keymap, donc les touches réaffectées s'affichent correctement) ; le pied de page d'une seule ligne n'a de place que pour les touches les plus utilisées</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>passe à l'onglet suivant</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>saute à Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>descend / monte (aussi <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -824,7 +831,9 @@
         <tbody>
           <tr><td><kbd>/</kbd></td><td>ouvre la barre de recherche (filtre par service / conteneur / nœud)</td></tr>
           <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>replie / déplie un service</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>sur un conteneur : ouvre le menu d'actions ; sur un service : logs agrégés de toutes ses tâches</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>sur un conteneur : ouvre le menu d'actions ; sur un service : le replie / déplie</td></tr>
+          <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> majuscule) — sur un conteneur ses propres logs, sur un service les logs agrégés de toutes ses tâches</td></tr>
+          <tr><td><kbd>!</kbd></td><td>ouvre la surcouche des risques de sécurité pour toute la liste des services (voir ci-dessous)</td></tr>
           <tr><td><kbd>p</kbd></td><td>redirige le port de la tâche sous le curseur</td></tr>
           <tr><td><kbd>i</kbd></td><td>inspecte le nœud sous le curseur — une surcouche navigable avec un résumé tabulaire ; déplacez la sélection avec <kbd>↑</kbd>/<kbd>↓</kbd> ou <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copie la ligne sélectionnée, <kbd>t</kbd> bascule le JSON brut du démon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> ferme). Sur un <strong>service</strong> la surcouche l'édite aussi : <kbd>s</kbd> mise à l'échelle, <kbd>f</kbd> mise à jour forcée, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> réseaux, <kbd>S</kbd> secrets, <kbd>v</kbd> montages, <kbd>A</kbd> alias ; <kbd>D</kbd> diagnostique <em>pourquoi</em> il ne s'exécute pas partout ; <kbd>X</kbd> le supprime</td></tr>
         </tbody>
@@ -844,11 +853,77 @@
       </p>
       <p>
         Le menu d'actions propose <strong>Logs</strong>, <strong>Bash</strong>,
-        <strong>Sh</strong> et <strong>Port forward</strong> (les shells indisponibles
+        <strong>Sh</strong>, <strong>Shell as user…</strong> (demande un utilisateur/UID,
+        comme <code>docker exec -u</code>, pour les images dont l'utilisateur par défaut
+        n'a pas les outils ou les droits nécessaires) et
+        <strong>Port forward</strong> (les shells indisponibles
         sont grisés après un sondage). Dans la barre de recherche, <kbd>Enter</kbd>
         conserve le filtre et revient à la liste ; <kbd>Esc</kbd> efface le filtre et
         ferme la barre.
       </p>
+
+      <p>
+        <strong>Risques de sécurité (<kbd>!</kbd>).</strong>
+        À chaque récupération de la liste des services, swarmexec exécute un ensemble de
+        petits <strong>analyseurs statiques sur la spec de chaque service</strong> — la
+        même spec que le manager a déjà renvoyée : il n'y a donc aucun appel d'API
+        supplémentaire, l'agent n'intervient pas et rien n'est exécuté à l'intérieur de vos
+        conteneurs. Un service porteur d'un constat qui mérite une action est marqué d'un
+        <strong>🛡</strong> en tête de sa ligne dans l'arbre des conteneurs, dans un
+        emplacement de largeur fixe devant le nom, de sorte que les boucliers forment une
+        colonne verticale de lecture. Appuyez sur <kbd>!</kbd> pour ouvrir la
+        <strong>surcouche des risques de sécurité</strong>.
+      </p>
+      <p>Les contrôles livrés à ce jour :</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Contrôle</th><th>Sévérité</th><th>Ce qu'il signale</th></tr></thead>
+        <tbody>
+          <tr><td><code>root-user</code> — « runs as root »</td><td><span style="color:#f85149">high</span></td><td>la spec fixe le conteneur sur <strong>root explicitement</strong> — <code>User=root</code> ou l'UID <code>0</code> (les formes numériques comme <code>00</code> ou <code>+0</code> sont aussi détectées ; seule la partie utilisateur de <code>user:group</code> est examinée)</td></tr>
+          <tr><td><code>root-user</code> — « no user set »</td><td>low</td><td><strong>aucun</strong> utilisateur n'est défini : le conteneur s'exécute donc sous l'utilisateur par défaut de l'image, souvent root. C'est <strong>purement informatif et ne marque pas le service</strong> : un utilisateur non défini est la valeur par défaut de Swarm sur presque tous les services, et savoir s'il s'agit réellement de root dépend du <code>USER</code> de l'image, que la spec du manager ne révèle pas — le badger mettrait un bouclier sur presque chaque ligne et détruirait le signal en un coup d'œil</td></tr>
+          <tr><td><code>secret-in-env</code> — « secret in environment variable »</td><td><span style="color:#f85149">high</span></td><td>une clé d'environnement qui ressemble à un identifiant contient une <strong>valeur littérale dans la spec du service</strong>, lisible par quiconque peut lire la spec. Utilisez plutôt un secret Docker ou la convention <code>*_FILE</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        <strong>Aucune valeur de secret n'est jamais affichée.</strong> Le constat
+        <code>secret-in-env</code> ne nomme que la <strong>clé</strong> de la variable
+        d'environnement ; sa valeur n'est jamais lue dans le constat, jamais rendue et
+        jamais copiée. Le contrôle est également conçu pour rester discret : il compare des
+        jetons entiers délimités par <code>_</code> (<code>PASSWORD</code>,
+        <code>PASSWD</code>, <code>PASS</code>, <code>PASSPHRASE</code>,
+        <code>SECRET</code>, <code>TOKEN</code>, <code>APIKEY</code>,
+        <code>CREDENTIAL(S)</code>, <code>PRIVATEKEY</code>, ainsi que les paires
+        <code>API_KEY</code>, <code>ACCESS_KEY</code>, <code>PRIVATE_KEY</code>,
+        <code>SECRET_KEY</code>, <code>CLIENT_SECRET</code>, <code>AUTH_TOKEN</code>), si
+        bien que <code>COMPASS</code>, <code>PASSENGER_PORT</code> ou
+        <code>BYPASS_AUTH</code> ne sont pas signalés. Les clés qui ne font que
+        <em>référencer</em> un identifiant sont exemptées (<code>_FILE</code>,
+        <code>_PATH</code>, <code>_URL</code>, <code>_URI</code>, <code>_NAME</code>,
+        <code>_ID</code>, <code>_TYPE</code>, <code>_ENABLED</code>,
+        <code>_REQUIRED</code>, <code>_LENGTH</code>, <code>_TIMEOUT</code>,
+        <code>_TTL</code>, <code>_EXPIRY</code>, <code>_ALGORITHM</code>), tout comme les
+        valeurs qui ne peuvent manifestement pas être un identifiant : un chemin absolu, un
+        booléen, un nombre.
+      </div>
+      <p>
+        La surcouche liste <strong>chaque service marqué</strong> (« N of M service(s)
+        flagged »), groupé par service, chaque constat sur sa propre ligne avec une pastille
+        de sévérité — <span style="color:#f85149">● high</span>,
+        <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
+        un titre court et une explication d'une ligne. Les constats sont triés du plus grave
+        au moins grave. Dès qu'un service est marqué pour quelque chose d'actionnable, ses
+        constats informatifs de niveau low sont listés eux aussi. Si le service sous le
+        curseur en fait partie, il est présélectionné et amené à l'écran. Quand rien n'est
+        marqué, la surcouche le dit explicitement ; si la liste des services n'est pas
+        encore chargée, elle indique que <em>rien n'a encore été analysé</em> plutôt que de
+        donner un faux feu vert. <kbd>j</kbd>/<kbd>k</kbd> font défiler, <kbd>Esc</kbd> (ou
+        <kbd>q</kbd>, ou <kbd>!</kbd> à nouveau) ferme.
+      </p>
+      <div class="note">
+        L'analyse est un <strong>registre extensible</strong> d'analyseurs, pas une liste
+        figée : un nouveau contrôle apparaît automatiquement à la fois dans le marqueur de
+        l'arbre et dans la surcouche. La touche est réaffectable sous le nom
+        <code>security_risks</code> dans <a href="#tui">keys.yaml</a>.
+      </div>
       <p>
         <kbd>i</kbd> ouvre une <strong>surcouche d'inspection</strong> pour le nœud
         sous le curseur — sur un <strong>service</strong> elle affiche
@@ -1131,7 +1206,7 @@
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>f</kbd></td><td>bascule le suivi</td></tr>
-          <tr><td><kbd>F</kbd></td><td>fait défiler le format de log (classic → json → gelf → raw)</td></tr>
+          <tr><td><kbd>F</kbd></td><td>fait défiler le format de log (classic → json → logfmt → gelf → raw)</td></tr>
           <tr><td><kbd>l</kbd></td><td>fait défiler le filtre de niveau minimum (off → trace → … → fatal → off)</td></tr>
           <tr><td><kbd>/</kbd></td><td>saisit une regexp grep sur le message (vide l'efface)</td></tr>
           <tr><td><kbd>m</kbd></td><td>bascule la capture de la souris (off = la sélection/copie propre de votre terminal)</td></tr>
@@ -1182,18 +1257,19 @@
         <kbd>Esc</kbd>, <kbd>Tab</kbd>, les flèches, les touches de numéro d'onglet
         <kbd>1</kbd>–<kbd>7</kbd> et les alias vim
         <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — sont fixes. Le pied de
-        page affiche toujours vos touches réelles.
+        page affiche toujours vos touches réelles, et la surcouche <kbd>?</kbd> les liste
+        toutes.
       </p>
       <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — omit any line to keep its default</span>
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
-container_inspect: i
+container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" doit être entre guillemets — YAML</span>
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l
+node_edit_labels: l    secret_delete: d          secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Le chargement n'échoue jamais : une touche invalide ou réservée, une action
