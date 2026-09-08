@@ -308,7 +308,7 @@
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>read the secret from this file (takes precedence over <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>skip agent server-cert verification (self-signed agents)</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>audit identity when no client cert is used (default: OS username)</td></tr>
-          <tr><td><code>logs.format</code></td><td>string</td><td>default log format for <code>logs</code> and the TUI: <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (empty = <code>classic</code>)</td></tr>
+          <tr><td><code>logs.format</code></td><td>string</td><td>default log format for <code>logs</code> and the TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (empty = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>default minimum level: <code>trace</code>..<code>fatal</code> (omit for no level filter)</td></tr>
           <tr><td><code>ui.dim</code></td><td>float</td><td>how far the backdrop behind an open overlay is faded, a fraction <code>0</code>–<code>1</code> (default <code>0.6</code>; <code>0</code> = no dimming)</td></tr>
         </tbody>
@@ -319,7 +319,7 @@
         <code>--min-level</code> flags override them:
       </p>
       <div class="cmd">logs:
-  format: json        <span class="k"># classic | json | gelf | raw</span>
+  format: json        <span class="k"># classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
       <p>Inspect the effective, merged configuration (secret masked) with:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
@@ -347,6 +347,7 @@
           <tr><td><code>SWARMEXEC_INSECURE</code></td><td>skip verification (<code>1/true/yes/on</code>)</td></tr>
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>audit identity</td></tr>
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>overlay backdrop dim (<code>ui.dim</code>)</td></tr>
+          <tr><td><code>SWARMEXEC_KEYS</code></td><td>path to the TUI keymap file (default <code>keys.yaml</code> next to the config)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>Docker context for the manager API</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base for the default config path</td></tr>
         </tbody>
@@ -565,7 +566,7 @@
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>lines from the end to start with (<code>0</code> = all)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
-          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>classic</code> | <code>json</code> | <code>gelf</code> | <code>raw</code> (default from config, else <code>classic</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (default from config, else <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
@@ -577,7 +578,10 @@
         tells the client how to read each line so it can pull out a <em>level</em> and a
         <em>message</em>: <code>classic</code> extracts a level from a plain text line,
         <code>json</code> parses logstash-style JSON (<code>level</code>/<code>message</code>
-        fields), <code>gelf</code> parses Graylog GELF JSON (numeric syslog level), and
+        fields), <code>logfmt</code> parses the <code>key=value</code> style used by many Go
+        apps, the Docker daemon and HashiCorp tools (<code>msg</code>/<code>message</code>,
+        <code>level</code>/<code>lvl</code>/<code>severity</code>, <code>ts</code>/<code>time</code>),
+        <code>gelf</code> parses Graylog GELF JSON (numeric syslog level), and
         <code>raw</code> passes lines through unchanged. <code>--min-level</code> then
         drops anything below the chosen level, and <code>--grep</code> keeps only lines
         whose parsed message matches the regexp.
@@ -646,7 +650,7 @@
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>--size</code></td><td><code>false</code></td><td>also compute each volume's on-disk size (slower: du per volume)</td></tr>
-          <tr><td><code>--sort</code></td><td><code>name</code></td><td>sort by: <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code></td></tr>
+          <tr><td><code>--sort</code></td><td><code>name</code></td><td>sort by: <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code> (<code>size</code> implies <code>--size</code>)</td></tr>
           <tr><td><code>--reverse</code></td><td><code>false</code></td><td>reverse the sort direction</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
           <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
@@ -704,6 +708,7 @@
         <tbody>
           <tr><td><code>--docker-host</code></td><td>—</td><td>required — docker daemon endpoint: <code>ssh://</code> | <code>tcp://</code> | <code>unix://</code> | <code>npipe://</code></td></tr>
           <tr><td><code>--description</code></td><td>—</td><td>optional description</td></tr>
+          <tr><td><code>--ssh-jump</code></td><td>—</td><td>ssh jump host(s) for an <code>ssh://</code> context, comma-separated (multi-hop <code>ProxyJump</code> / <code>-J</code>); injected into both the Docker-API and the agent-tunnel connections</td></tr>
           <tr><td><code>--use</code></td><td><code>false</code></td><td>also make it the current context</td></tr>
         </tbody>
       </table></div>
@@ -742,6 +747,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the one-line footer only has room for the most used keys</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -783,7 +789,9 @@
         <tbody>
           <tr><td><kbd>/</kbd></td><td>open the search bar (filters by service / container / node)</td></tr>
           <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>collapse / expand a service</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: aggregated logs of all its tasks</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: expand / collapse it</td></tr>
+          <tr><td><kbd>L</kbd></td><td>logs (capital <kbd>L</kbd>) — on a container its own logs, on a service the aggregated logs of all its tasks</td></tr>
+          <tr><td><kbd>!</kbd></td><td>open the security-risks overlay for the whole service list (see below)</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
           <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
         </tbody>
@@ -801,10 +809,69 @@
       </p>
       <p>
         The action menu offers <strong>Logs</strong>, <strong>Bash</strong>,
-        <strong>Sh</strong> and <strong>Port forward</strong> (unavailable shells are
+        <strong>Sh</strong>, <strong>Shell as user…</strong> (prompts for a user/UID,
+        like <code>docker exec -u</code>, for images whose default user lacks the tools
+        or permissions you need) and <strong>Port forward</strong> (unavailable shells are
         greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
         and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
       </p>
+
+      <p>
+        <strong>Security risks (<kbd>!</kbd>).</strong>
+        Every time the service list is fetched, swarmexec runs a set of small
+        <strong>static analyzers over each service's spec</strong> — the same spec the
+        manager already returned, so there is no extra API call, no agent involvement and
+        nothing is executed inside your containers. A service with a finding worth acting
+        on is marked with a leading <strong>🛡</strong> in the containers tree, in a
+        fixed-width slot ahead of the name, so the shields line up as a vertical scan
+        column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>.
+      </p>
+      <p>The checks that ship today:</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Severity</th><th>What it flags</th></tr></thead>
+        <tbody>
+          <tr><td><code>root-user</code> — “runs as root”</td><td><span style="color:#f85149">high</span></td><td>the spec pins the container to <strong>root explicitly</strong> — <code>User=root</code> or uid <code>0</code> (numeric forms like <code>00</code> or <code>+0</code> are caught too; only the user part of <code>user:group</code> is looked at)</td></tr>
+          <tr><td><code>root-user</code> — “no user set”</td><td>low</td><td><strong>no</strong> user is set at all, so the container runs as the image's own default user, which is often root. This is <strong>informational only and does not mark the service</strong>: an unset user is the Swarm default on nearly every service, and whether it really is root depends on the image's <code>USER</code>, which the manager spec doesn't reveal — badging it would put a shield on almost every row and destroy the at-a-glance signal</td></tr>
+          <tr><td><code>secret-in-env</code> — “secret in environment variable”</td><td><span style="color:#f85149">high</span></td><td>a credential-looking env key holds a <strong>literal value in the service spec</strong>, readable by anyone who can read the spec. Use a Docker secret or the <code>*_FILE</code> convention instead</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        <strong>No secret value is ever displayed.</strong> The <code>secret-in-env</code>
+        finding names only the env var's <strong>key</strong>; its value is never read into
+        the finding, never rendered and never copied. The check is also written to stay
+        quiet: it matches whole <code>_</code>-delimited tokens
+        (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
+        <code>PASSPHRASE</code>, <code>SECRET</code>, <code>TOKEN</code>,
+        <code>APIKEY</code>, <code>CREDENTIAL(S)</code>, <code>PRIVATEKEY</code>, and the
+        pairs <code>API_KEY</code>, <code>ACCESS_KEY</code>, <code>PRIVATE_KEY</code>,
+        <code>SECRET_KEY</code>, <code>CLIENT_SECRET</code>, <code>AUTH_TOKEN</code>), so
+        <code>COMPASS</code>, <code>PASSENGER_PORT</code> or <code>BYPASS_AUTH</code> are
+        not reported. Keys that merely <em>reference</em> a credential are exempt
+        (<code>_FILE</code>, <code>_PATH</code>, <code>_URL</code>, <code>_URI</code>,
+        <code>_NAME</code>, <code>_ID</code>, <code>_TYPE</code>, <code>_ENABLED</code>,
+        <code>_REQUIRED</code>, <code>_LENGTH</code>, <code>_TIMEOUT</code>,
+        <code>_TTL</code>, <code>_EXPIRY</code>, <code>_ALGORITHM</code>), and so are
+        values that plainly aren't a credential — an absolute path, a boolean, a number.
+      </div>
+      <p>
+        The overlay lists <strong>every flagged service</strong> (“N of M service(s)
+        flagged”), grouped by service, each finding on its own line with a severity dot —
+        <span style="color:#f85149">● high</span>,
+        <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
+        a short title and a one-line explanation. Findings are ordered worst-first. Once a
+        service is flagged for something actionable, its informational low findings are
+        listed too. If the service under the cursor is among them it is pre-highlighted and
+        scrolled into view. When nothing is flagged the overlay says so explicitly; when the
+        service list hasn't loaded yet it says <em>nothing has been scanned</em> rather than
+        giving a false all-clear. <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> (or
+        <kbd>q</kbd>, or <kbd>!</kbd> again) closes.
+      </p>
+      <div class="note">
+        The scan is an <strong>extensible registry</strong> of analyzers, not a fixed list:
+        a new check surfaces in both the tree marker and the overlay automatically. The key
+        is remappable as <code>security_risks</code> in
+        <a href="#tui">keys.yaml</a>.
+      </div>
       <p>
         <kbd>i</kbd> opens an <strong>inspect overlay</strong> for the node under the
         cursor — on a <strong>service</strong> it shows <code>docker service inspect</code>,
@@ -1064,7 +1131,7 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>f</kbd></td><td>toggle follow</td></tr>
-          <tr><td><kbd>F</kbd></td><td>cycle log format (classic → json → gelf → raw)</td></tr>
+          <tr><td><kbd>F</kbd></td><td>cycle log format (classic → json → logfmt → gelf → raw)</td></tr>
           <tr><td><kbd>l</kbd></td><td>cycle minimum level filter (off → trace → … → fatal → off)</td></tr>
           <tr><td><kbd>/</kbd></td><td>enter a grep regexp on the message (empty clears it)</td></tr>
           <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>
@@ -1108,18 +1175,19 @@
         <code>space</code>. The structural keys — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
         <kbd>Tab</kbd>, the arrows, the tab-number keys <kbd>1</kbd>–<kbd>7</kbd> and the
         vim aliases <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — are fixed. The
-        footer always shows your actual keys.
+        footer always shows your actual keys, and the <kbd>?</kbd> overlay lists all of
+        them.
       </p>
       <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — omit any line to keep its default</span>
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
-container_inspect: i
+container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    secret_delete: d
+node_edit_labels: l    secret_delete: d          secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two
