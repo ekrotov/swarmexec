@@ -177,7 +177,7 @@
             <figcaption><b>Cluster-weites exec</b> — Shell in jeden Task, aus einem Terminal</figcaption>
           </figure>
           <figure class="slide" role="group" aria-roledescription="Folie" aria-label="2 / 2" hidden>
-            <img class="demo" src="/portforward.gif" width="860" height="470" loading="lazy"
+            <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 startet einen Forward zu einem Task auf node-3, dann liefert curl localhost:9090 eine Antwort — ohne SSH und ohne veröffentlichten Port">
             <figcaption><b>Port-Forward vom Laptop</b> — den Port eines Tasks erreichen, ohne SSH, ohne Ingress</figcaption>
           </figure>
@@ -261,15 +261,20 @@
   </main>
   <script>
     // Demo slideshow: vanilla, no deps. Keyboard: arrows on the group; buttons
-    // are natively focusable. Gentle auto-advance, paused on hover/focus and
-    // disabled entirely under prefers-reduced-motion.
+    // are natively focusable. Gentle auto-advance, held while hovered/focused,
+    // and disabled entirely under prefers-reduced-motion or on touch.
     (function () {
       var root = document.querySelector('.slideshow');
       if (!root) return;
       var slides = Array.prototype.slice.call(root.querySelectorAll('.slide'));
       var dots = Array.prototype.slice.call(root.querySelectorAll('.dot'));
-      var i = 0, timer = null;
-      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var i = 0, timer = null, paused = 0;
+      var mm = window.matchMedia;
+      var reduce = mm && mm('(prefers-reduced-motion: reduce)').matches;
+      // On a coarse pointer (touch) there is no hover and the nav buttons only
+      // take focus on tap, so an auto-advancing carousel could not be stopped
+      // (WCAG 2.2.2). Leave it on manual control there.
+      var auto = mm && mm('(pointer: coarse)').matches;
       function show(n) {
         i = (n + slides.length) % slides.length;
         slides.forEach(function (s, k) {
@@ -281,8 +286,13 @@
       function next() { show(i + 1); }
       function prev() { show(i - 1); }
       function stop() { if (timer) { clearInterval(timer); timer = null; } }
-      function start() { if (!reduce && !timer) timer = setInterval(next, 6000); }
+      // paused counts the independent reasons to hold (hover, focus). start()
+      // honours it, so restarting the timer after a click/arrow key cannot
+      // resume auto-advance while the pointer or focus is still on the carousel.
+      function start() { if (!reduce && !auto && !paused && !timer) timer = setInterval(next, 6000); }
       function restart() { stop(); start(); }
+      function hold() { paused++; stop(); }
+      function release() { paused = Math.max(0, paused - 1); start(); }
       root.querySelector('.sl-next').addEventListener('click', function () { next(); restart(); });
       root.querySelector('.sl-prev').addEventListener('click', function () { prev(); restart(); });
       dots.forEach(function (d, k) { d.addEventListener('click', function () { show(k); restart(); }); });
@@ -290,10 +300,10 @@
         if (e.key === 'ArrowRight') { next(); restart(); e.preventDefault(); }
         else if (e.key === 'ArrowLeft') { prev(); restart(); e.preventDefault(); }
       });
-      root.addEventListener('mouseenter', stop);
-      root.addEventListener('mouseleave', start);
-      root.addEventListener('focusin', stop);
-      root.addEventListener('focusout', start);
+      root.addEventListener('mouseenter', hold);
+      root.addEventListener('mouseleave', release);
+      root.addEventListener('focusin', hold);
+      root.addEventListener('focusout', release);
       show(0); start();
     })();
   </script>

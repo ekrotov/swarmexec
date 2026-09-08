@@ -24,7 +24,7 @@ func (u *ui) showSecurityRisks() {
 
 	var flagged []resolve.Service
 	for _, s := range u.lastSvcs {
-		if len(s.Risks) > 0 {
+		if secscan.Actionable(s.Risks) {
 			flagged = append(flagged, s)
 		}
 	}
@@ -32,17 +32,28 @@ func (u *ui) showSecurityRisks() {
 	tv := tview.NewTextView().SetDynamicColors(true).SetRegions(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" security risks ")
 
-	if len(flagged) == 0 {
-		tv.SetText("\n  [green]No security risks identified.[-]\n\n" +
-			"  [gray]Checks: containers running as root, secrets in environment variables.[-]")
-	} else {
+	switch {
+	case len(u.lastSvcs) == 0:
+		// No service list yet (first fetch pending, or it failed). Saying "no
+		// risks" here would be a false all-clear — we simply have no data.
+		tv.SetText("\n  [yellow]No services loaded — nothing has been scanned yet.[-]\n\n" +
+			"  [gray]Refresh the containers tab (r) once the manager is reachable.[-]")
+	case len(flagged) == 0:
+		tv.SetText(fmt.Sprintf("\n  [green]No security risks identified[-] [gray]across %d service(s).[-]\n\n"+
+			"  [gray]Checks: containers running as root, secrets in environment variables.[-]", len(u.lastSvcs)))
+	default:
 		var b strings.Builder
-		fmt.Fprintf(&b, "  [gray]%d service(s) with findings — checks: root user, secret in env[-]\n", len(flagged))
+		fmt.Fprintf(&b, "  [gray]%d of %d service(s) flagged — checks: root user, secret in env[-]\n",
+			len(flagged), len(u.lastSvcs))
 		for i, s := range flagged {
 			// Region id (index-based, so odd service names can't break the tag).
-			fmt.Fprintf(&b, "\n[\"s%d\"][aqua]%s[-]  %s[\"\"]\n", i, s.Name, sevMarker(secscan.MaxSeverity(s.Risks)))
+			// Every spec-derived string is escaped: Docker does not restrict env
+			// key or User characters, so a "[" run would otherwise be parsed as a
+			// colour tag and swallow the rest of the overlay.
+			fmt.Fprintf(&b, "\n[\"s%d\"][aqua]%s[-]  %s[\"\"]\n", i, tview.Escape(s.Name), sevMarker(secscan.MaxSeverity(s.Risks)))
 			for _, f := range s.Risks {
-				fmt.Fprintf(&b, "  %s  [white]%s[-] — [gray]%s[-]\n", sevMarker(f.Severity), f.Title, f.Detail)
+				fmt.Fprintf(&b, "  %s  [white]%s[-] — [gray]%s[-]\n",
+					sevMarker(f.Severity), tview.Escape(f.Title), tview.Escape(f.Detail))
 			}
 		}
 		tv.SetText(strings.TrimLeft(b.String(), "\n"))
@@ -63,7 +74,11 @@ func (u *ui) showSecurityRisks() {
 	closeIt := func() { restore(); pages.RemovePage(pageSecurity); app.SetFocus(prev) }
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '!')):
+		// Close on Esc, on the configured quit key, and on the same key that
+		// opened the overlay — both are remappable, so read them from the keymap
+		// rather than hardcoding 'q' / '!'.
+		case ev.Key() == tcell.KeyEscape ||
+			(ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == u.km.SecurityRisks)):
 			closeIt()
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':

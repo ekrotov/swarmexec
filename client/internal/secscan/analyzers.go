@@ -4,16 +4,18 @@
 package secscan
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/swarm"
 )
 
 // rootUserAnalyzer flags services whose container is not pinned to a non-root
-// user. An explicit root (User=0/root) is high; an unset user is medium, since
-// whether it actually runs as root then depends on the image's own USER, which
-// the manager spec does not reveal — we flag the missing guardrail, not a
-// certainty.
+// user. An explicit root (User=0/root) is high. An unset user is only SevLow:
+// it is the Swarm default on nearly every service, and whether it actually runs
+// as root then depends on the image's own USER, which the manager spec does not
+// reveal — badging it would put a marker on almost every row and destroy the
+// at-a-glance signal (see Actionable).
 type rootUserAnalyzer struct{}
 
 func (rootUserAnalyzer) Analyze(svc swarm.Service) []Finding {
@@ -21,17 +23,21 @@ func (rootUserAnalyzer) Analyze(svc swarm.Service) []Finding {
 	if cs == nil {
 		return nil
 	}
-	// User is "name[:group]" or "uid[:gid]"; only the user part matters.
-	name := strings.TrimSpace(cs.User)
+	raw := strings.TrimSpace(cs.User)
+	// User is "name[:group]" or "uid[:gid]"; only the user part matters. Trim
+	// each part: Docker tolerates "root : root" and passes the user through.
+	name := raw
 	if i := strings.IndexByte(name, ':'); i >= 0 {
 		name = name[:i]
 	}
+	name = strings.TrimSpace(name)
+
 	switch {
-	case name == "0" || strings.EqualFold(name, "root"):
+	case isRootUser(name):
 		return []Finding{{
 			Rule:     "root-user",
 			Title:    "runs as root",
-			Detail:   "the service explicitly runs its container as root (User=" + strings.TrimSpace(cs.User) + ")",
+			Detail:   "the service explicitly runs its container as root (User=" + raw + ")",
 			Severity: SevHigh,
 		}}
 	case name == "":
@@ -39,27 +45,53 @@ func (rootUserAnalyzer) Analyze(svc swarm.Service) []Finding {
 			Rule:     "root-user",
 			Title:    "no user set",
 			Detail:   "no non-root user is set; the container runs as the image's default user, which is often root",
-			Severity: SevMedium,
+			Severity: SevLow,
 		}}
 	default:
 		return nil // an explicit non-root user — good
 	}
 }
 
-// secretKeyHints are substrings (upper-case) of an env var NAME that suggest it
-// carries a credential. Kept deliberately broad-but-not-generic: "PASS" catches
-// PASSWORD/PASSWD/PASSPHRASE/DB_PASS; bare "KEY" is excluded (too many benign
-// LICENSE_KEY/PUBLIC_KEY names) in favour of the specific *_KEY forms.
-var secretKeyHints = []string{
-	"PASS", "SECRET", "TOKEN", "APIKEY", "API_KEY",
-	"ACCESS_KEY", "PRIVATE_KEY", "CREDENTIAL",
+// isRootUser reports whether a user part means uid 0. It parses numerically so
+// padded/signed forms ("00", "+0", "0000") are caught, not just the literal "0".
+func isRootUser(name string) bool {
+	if strings.EqualFold(name, "root") {
+		return true
+	}
+	if n, err := strconv.ParseInt(name, 10, 64); err == nil {
+		return n == 0
+	}
+	return false
+}
+
+// credentialWords are "_"-delimited key tokens that name a credential. Matching
+// whole tokens (not substrings) is what keeps COMPASS / SURPASS / PASSENGER_PORT
+// / BYPASS_AUTH from being reported as secrets.
+var credentialWords = map[string]bool{
+	"PASSWORD": true, "PASSWD": true, "PASS": true, "PASSPHRASE": true,
+	"SECRET": true, "SECRETS": true, "TOKEN": true, "APIKEY": true,
+	"CREDENTIAL": true, "CREDENTIALS": true, "PRIVATEKEY": true,
+}
+
+// credentialPairs are two-token sequences that together name a credential.
+// "KEY" alone is far too common (LICENSE_KEY, PUBLIC_KEY, SORT_KEY) to match.
+var credentialPairs = [][2]string{
+	{"API", "KEY"}, {"ACCESS", "KEY"}, {"PRIVATE", "KEY"},
+	{"SECRET", "KEY"}, {"CLIENT", "SECRET"}, {"AUTH", "TOKEN"},
+}
+
+// nonSecretSuffixes end a key that references or describes a credential rather
+// than holding one: a path, a URL, an identifier or a knob about it.
+var nonSecretSuffixes = []string{
+	"_FILE", "_PATH", "_URL", "_URI", "_NAME", "_ID", "_TYPE",
+	"_ENABLED", "_REQUIRED", "_LENGTH", "_TIMEOUT", "_TTL", "_EXPIRY", "_ALGORITHM",
 }
 
 // secretEnvAnalyzer flags a literal credential embedded in an environment
 // variable in the service spec (readable by anyone who can read the spec). It
-// exempts the *_FILE convention (a path to a mounted secret, not the value) and
-// does not look at Docker secrets (ContainerSpec.Secrets), which are the right
-// way to do this. The value itself is never read into a finding.
+// exempts the *_FILE convention and its relatives, and values that are plainly
+// not a secret (a path, a boolean, a number). The value itself is never read
+// into a finding — only the key name.
 type secretEnvAnalyzer struct{}
 
 func (secretEnvAnalyzer) Analyze(svc swarm.Service) []Finding {
@@ -71,14 +103,14 @@ func (secretEnvAnalyzer) Analyze(svc swarm.Service) []Finding {
 	seen := map[string]bool{}
 	for _, kv := range cs.Env {
 		key, val, ok := splitEnv(kv)
-		if !ok || strings.TrimSpace(val) == "" {
-			continue // no "=", or empty value: nothing embedded
+		if !ok {
+			continue // no "=": nothing embedded
 		}
-		up := strings.ToUpper(key)
-		if strings.HasSuffix(up, "_FILE") { // *_FILE points at a secret file — good practice
+		val = strings.TrimSpace(val)
+		if val == "" || seen[key] {
 			continue
 		}
-		if !matchesSecretHint(up) || seen[key] {
+		if !isCredentialKey(strings.ToUpper(strings.TrimSpace(key))) || !looksSecret(val) {
 			continue
 		}
 		seen[key] = true
@@ -92,6 +124,46 @@ func (secretEnvAnalyzer) Analyze(svc swarm.Service) []Finding {
 	return out
 }
 
+// isCredentialKey reports whether an upper-cased env key names a credential.
+func isCredentialKey(key string) bool {
+	for _, suf := range nonSecretSuffixes {
+		if strings.HasSuffix(key, suf) {
+			return false // a reference to, or a setting about, a credential
+		}
+	}
+	tokens := strings.FieldsFunc(key, func(r rune) bool { return r == '_' || r == '-' || r == '.' })
+	for _, t := range tokens {
+		if credentialWords[t] {
+			return true
+		}
+	}
+	for i := 0; i+1 < len(tokens); i++ {
+		for _, p := range credentialPairs {
+			if tokens[i] == p[0] && tokens[i+1] == p[1] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// looksSecret rejects values that cannot be a credential: an absolute path (the
+// *_FILE pattern spelled differently), a boolean, or a bare number (a length, a
+// count, a flag). Anything else is treated as a literal secret.
+func looksSecret(val string) bool {
+	if strings.HasPrefix(val, "/") {
+		return false // a path — the secret lives in a file, not here
+	}
+	switch strings.ToLower(val) {
+	case "true", "false", "yes", "no", "on", "off":
+		return false
+	}
+	if _, err := strconv.ParseFloat(val, 64); err == nil {
+		return false // a number: a length/count/flag, not a credential
+	}
+	return true
+}
+
 // splitEnv splits a "KEY=VALUE" entry. ok is false when there is no "=".
 func splitEnv(kv string) (key, val string, ok bool) {
 	i := strings.IndexByte(kv, '=')
@@ -99,13 +171,4 @@ func splitEnv(kv string) (key, val string, ok bool) {
 		return "", "", false
 	}
 	return kv[:i], kv[i+1:], true
-}
-
-func matchesSecretHint(upperKey string) bool {
-	for _, h := range secretKeyHints {
-		if strings.Contains(upperKey, h) {
-			return true
-		}
-	}
-	return false
 }

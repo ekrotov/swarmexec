@@ -90,6 +90,15 @@ func MaxSeverity(fs []Finding) Severity {
 	return m
 }
 
+// Actionable reports whether findings warrant flagging the service in the UI:
+// at least one finding above SevLow. Low findings are informational and hold
+// for nearly every service (an unset User is the Swarm default), so badging
+// them would mark almost every row and destroy the at-a-glance signal. They are
+// still returned by Scan and listed once a service is flagged for another reason.
+func Actionable(fs []Finding) bool {
+	return MaxSeverity(fs) > SevLow
+}
+
 // containerSpec is the (possibly nil) container spec of a service's task.
 func containerSpec(svc swarm.Service) *swarm.ContainerSpec {
 	return svc.Spec.TaskTemplate.ContainerSpec

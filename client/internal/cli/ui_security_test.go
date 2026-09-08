@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/docker/docker/api/types/swarm"
+	"github.com/rivo/tview"
+
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 )
@@ -11,6 +14,12 @@ import (
 func TestSecurityBadge(t *testing.T) {
 	if got := securityBadge(nil); got != "" {
 		t.Errorf("no risks: badge = %q, want empty", got)
+	}
+	// A low-only finding (an unset User — the Swarm default) must NOT badge, or
+	// nearly every row gets a shield and the signal is worthless.
+	low := []secscan.Finding{{Rule: "root-user", Severity: secscan.SevLow}}
+	if got := securityBadge(low); got != "" {
+		t.Errorf("low-only risks: badge = %q, want empty", got)
 	}
 	risks := []secscan.Finding{{Rule: "root-user", Severity: secscan.SevHigh}}
 	if got := securityBadge(risks); !strings.Contains(got, "🛡") {
@@ -37,5 +46,39 @@ func TestServiceRowSecurityBadge(t *testing.T) {
 	}
 	if got := strings.SplitN(row, "🛡", 2)[0]; !strings.HasPrefix(got, clean) {
 		t.Errorf("shield altered the leading columns:\n clean: %q\n risky: %q", clean, row)
+	}
+}
+
+// Docker does not restrict env-var key or User characters, so a finding's text
+// can contain tview colour tags. The overlay renders with dynamic colours and
+// regions, so every spec-derived string must be escaped or an injected tag
+// swallows/recolours the rest of the overlay (and can break the region tags).
+func TestSecurityOverlayEscapesSpecMarkup(t *testing.T) {
+	svc := swarm.Service{}
+	svc.Spec.Name = "web"
+	svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{
+		User: "1000",
+		Env:  []string{`[:white]DB_PASSWORD=hunter2`},
+	}
+	fs := secscan.Scan(svc)
+	if len(fs) == 0 {
+		t.Fatal("expected a secret-in-env finding for the injected key")
+	}
+	raw := fs[0].Detail
+	if !strings.Contains(raw, "[:white]") {
+		t.Fatalf("test premise broken: finding detail should carry the raw key: %q", raw)
+	}
+	// The value must never be in the finding, escaped or not.
+	if strings.Contains(raw, "hunter2") {
+		t.Errorf("finding leaks the secret value: %q", raw)
+	}
+	// Escaped, the tag is inert: tview renders it literally instead of parsing it.
+	esc := tview.Escape(raw)
+	if strings.Contains(esc, "[:white]") {
+		t.Errorf("escaping left an active colour tag: %q", esc)
+	}
+	if tview.TaggedStringWidth(esc) <= tview.TaggedStringWidth(raw) {
+		t.Errorf("escaped text should render wider (tag shown literally): esc=%d raw=%d",
+			tview.TaggedStringWidth(esc), tview.TaggedStringWidth(raw))
 	}
 }
