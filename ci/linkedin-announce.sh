@@ -21,7 +21,8 @@
 # Optional:
 #   LINKEDIN_LIFECYCLE     DRAFT (default) or PUBLISHED (skip the human gate).
 #   LINKEDIN_API_VERSION   LinkedIn-Version header, YYYYMM (default 202401).
-#   SITE_URL               link in the post (default swarm-exec.cloud-surfers.net).
+#   SITE_URL               link in the post (default swarm-exec.cloud-surfers.net);
+#                          utm_* tracking parameters are appended to it.
 #   LINKEDIN_DRY_RUN=1     compose and print the post + payload, do NOT call the API.
 #
 # Scopes: w_organization_social (company page) or w_member_social (personal).
@@ -68,6 +69,18 @@ LIFECYCLE="${LINKEDIN_LIFECYCLE:-DRAFT}"
 SITE_URL="${SITE_URL:-https://swarm-exec.cloud-surfers.net}"
 RELEASE_URL="$CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG"
 
+# Tag the site link for Umami. Referrer alone undercounts LinkedIn badly — its
+# in-app browser strips it — but utm_* travels in the URL itself, so the visit is
+# still attributed. utm_content carries the version (dots to dashes, since a
+# tidier value reads better in reports). The release link stays untagged: it goes
+# to GitLab, which Umami does not measure.
+utm_content=$(printf '%s' "$CI_COMMIT_TAG" | tr '.' '-')
+utm="utm_source=linkedin&utm_medium=social&utm_campaign=release&utm_content=${utm_content}"
+case "$SITE_URL" in
+	*\?*) SITE_LINK="${SITE_URL}&${utm}" ;; # an overridden SITE_URL may carry a query
+	*) SITE_LINK="${SITE_URL}?${utm}" ;;
+esac
+
 # Mint a fresh access token from the refresh token when available; otherwise use
 # the static one. (Not needed for a dry run.)
 access_token="${LINKEDIN_ACCESS_TOKEN:-}"
@@ -105,7 +118,7 @@ commentary=$(printf '%s\n\n%s\n\nRelease notes: %s\nDocs & downloads: %s\n\n#Doc
 	"🚀 swarmexec $CI_COMMIT_TAG is out — cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal." \
 	"$notes" \
 	"$RELEASE_URL" \
-	"$SITE_URL")
+	"$SITE_LINK")
 
 max=2900
 if [ "$(printf '%s' "$commentary" | wc -m)" -gt "$max" ]; then
