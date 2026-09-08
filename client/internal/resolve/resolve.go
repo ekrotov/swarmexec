@@ -24,6 +24,8 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/api/types/system"
+
+	"swarmexec/client/internal/secscan"
 )
 
 // DockerClient is the subset of the Docker SDK the resolver needs. The real
@@ -114,6 +116,11 @@ type Service struct {
 	// "rollback_completed" once one finished. Lets the UI flag a service that is
 	// mid-update.
 	UpdateState string
+
+	// Risks holds the static security-scan findings for this service (empty when
+	// none). Computed from the spec during the list fetch, so the UI can mark a
+	// risky service and list its findings without a second call.
+	Risks []secscan.Finding
 }
 
 // AmbiguousError is returned when a bare service name has more than one running
@@ -460,6 +467,7 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 		if us := s.UpdateStatus; us != nil {
 			svc.UpdateState = string(us.State)
 		}
+		svc.Risks = secscan.Scan(s)
 		out = append(out, svc)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

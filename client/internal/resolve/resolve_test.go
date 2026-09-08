@@ -6,6 +6,7 @@ package resolve
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -433,7 +434,7 @@ func TestServicesUsesServiceStatus(t *testing.T) {
 		t.Fatalf("got %d services, want %d: %+v", len(got), len(want), got)
 	}
 	for i, w := range want {
-		if got[i] != w {
+		if !reflect.DeepEqual(got[i], w) {
 			t.Errorf("service[%d] = %+v, want %+v", i, got[i], w)
 		}
 	}

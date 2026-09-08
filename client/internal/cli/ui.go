@@ -18,6 +18,7 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
 )
@@ -111,6 +112,7 @@ const (
 	pageInfo             = "info"
 	pageConfirm          = "confirm"
 	pageHelp             = "help"
+	pageSecurity         = "security"
 	pageMenu             = "menu"
 	pageTerm             = "term"
 	pageLogs             = "logs"
@@ -576,6 +578,9 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 				if n := ctree.GetCurrentNode(); n != nil {
 					u.showLogsForNode(n)
 				}
+				return nil
+			case km.SecurityRisks:
+				u.showSecurityRisks()
 				return nil
 			case km.Fold:
 				// Collapse. tview's TreeView has no fold key — Left/Right only
@@ -1161,9 +1166,20 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	if s.Ports != "" {
 		fmt.Fprintf(&b, "  %s", s.Ports)
 	}
-	// The update badge is appended last (after the padded columns are trimmed) so
-	// its colour tags never disturb the column alignment.
-	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState)
+	// The update and security badges are appended last (after the padded columns
+	// are trimmed) so their glyphs/tags never disturb the column alignment.
+	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState) + securityBadge(s.Risks)
+}
+
+// securityBadge returns a shield marker when the service has any security-scan
+// finding, so a risky service is visible at a glance in the tree. It is a single
+// "risk present" indicator (🛡 is an emoji; terminals ignore its foreground
+// colour) — the per-finding severity is shown in the security-risks overlay (!).
+func securityBadge(risks []secscan.Finding) string {
+	if len(risks) == 0 {
+		return ""
+	}
+	return "  🛡"
 }
 
 // updateStatusLabel maps a swarm rolling-update state to a short glyph+label and
@@ -1620,6 +1636,7 @@ func (u *ui) showHelp() {
 	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
 	line(kl(km.Forward), "port-forward the task under the cursor")
+	line(kl(km.SecurityRisks), "security-risks overlay (root user, secrets in env)")
 	line(kl(km.Search), "search services / containers / nodes")
 
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
