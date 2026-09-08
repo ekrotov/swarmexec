@@ -1171,12 +1171,14 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState) + securityBadge(s.Risks)
 }
 
-// securityBadge returns a shield marker when the service has any security-scan
-// finding, so a risky service is visible at a glance in the tree. It is a single
-// "risk present" indicator (🛡 is an emoji; terminals ignore its foreground
-// colour) — the per-finding severity is shown in the security-risks overlay (!).
+// securityBadge returns a shield marker when the service has an actionable
+// security-scan finding, so a risky service is visible at a glance in the tree.
+// Informational (low) findings do not badge — they hold for nearly every service
+// and would mark every row. It is a single "risk present" indicator (🛡 is an
+// emoji; terminals ignore its foreground colour) — the per-finding severity is
+// shown in the security-risks overlay (!).
 func securityBadge(risks []secscan.Finding) string {
-	if len(risks) == 0 {
+	if !secscan.Actionable(risks) {
 		return ""
 	}
 	return "  🛡"
