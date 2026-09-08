@@ -12,18 +12,26 @@ import (
 )
 
 func TestSecurityBadge(t *testing.T) {
-	if got := securityBadge(nil); got != "" {
-		t.Errorf("no risks: badge = %q, want empty", got)
+	// A clean service still occupies the slot, so the name column lines up.
+	blank := strings.Repeat(" ", securityBadgeWidth)
+	if got := securityBadge(nil); got != blank {
+		t.Errorf("no risks: badge = %q, want %q", got, blank)
 	}
 	// A low-only finding (an unset User — the Swarm default) must NOT badge, or
 	// nearly every row gets a shield and the signal is worthless.
 	low := []secscan.Finding{{Rule: "root-user", Severity: secscan.SevLow}}
-	if got := securityBadge(low); got != "" {
-		t.Errorf("low-only risks: badge = %q, want empty", got)
+	if got := securityBadge(low); got != blank {
+		t.Errorf("low-only risks: badge = %q, want %q", got, blank)
 	}
 	risks := []secscan.Finding{{Rule: "root-user", Severity: secscan.SevHigh}}
-	if got := securityBadge(risks); !strings.Contains(got, "🛡") {
+	got := securityBadge(risks)
+	if !strings.Contains(got, "🛡") {
 		t.Errorf("with risks: badge = %q, want a shield", got)
+	}
+	// Both variants must occupy the same rendered width, or flagged rows shift
+	// the whole table sideways.
+	if w, bw := tview.TaggedStringWidth(got), tview.TaggedStringWidth(blank); w != bw {
+		t.Errorf("badge width %d != blank width %d — the name column would not line up", w, bw)
 	}
 }
 
@@ -44,8 +52,13 @@ func TestServiceRowSecurityBadge(t *testing.T) {
 	if !strings.Contains(row, "🛡") {
 		t.Errorf("risky service missing shield: %q", row)
 	}
-	if got := strings.SplitN(row, "🛡", 2)[0]; !strings.HasPrefix(got, clean) {
-		t.Errorf("shield altered the leading columns:\n clean: %q\n risky: %q", clean, row)
+	// The shield leads the row, and everything after it must be identical to the
+	// clean row — same columns, same offsets.
+	if strings.TrimPrefix(row, "🛡 ") != strings.TrimPrefix(clean, strings.Repeat(" ", securityBadgeWidth)) {
+		t.Errorf("shield changed the row body:\n clean: %q\n risky: %q", clean, row)
+	}
+	if w, cw := tview.TaggedStringWidth(row), tview.TaggedStringWidth(clean); w != cw {
+		t.Errorf("row widths differ (%d vs %d) — columns would not line up", w, cw)
 	}
 }
 
