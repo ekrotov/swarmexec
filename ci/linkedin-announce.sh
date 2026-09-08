@@ -47,7 +47,23 @@ if [ -z "${LINKEDIN_AUTHOR_URN:-}" ] || { [ -z "$have_refresh" ] && [ -z "${LINK
 	exit 0
 fi
 
-API_VERSION="${LINKEDIN_API_VERSION:-202401}"
+# LinkedIn-Version is a YYYYMM stamp and only a narrow window of them stays
+# active — a pinned default rots (the old 202401 did, and even a three-month-old
+# 202506 was rejected with 426 NONEXISTENT_VERSION). Track the current month, so
+# the job keeps working without anyone maintaining a constant. Right after a
+# month rolls over the new stamp may not be live yet; the post retries once with
+# the previous month in that case. Override with LINKEDIN_API_VERSION if needed.
+API_VERSION="${LINKEDIN_API_VERSION:-$(date -u +%Y%m)}"
+# Previous month, computed arithmetically: this job runs on alpine, whose busybox
+# date supports neither GNU's -d "… -1 month" nor BSD's -v-1m.
+_y=$(date -u +%Y)
+_m=$(date -u +%m)
+_m=${_m#0} # 09 -> 9, so it isn't read as octal
+if [ "$_m" = "1" ]; then
+	API_VERSION_PREV=$(printf '%04d12' $((_y - 1)))
+else
+	API_VERSION_PREV=$(printf '%04d%02d' "$_y" $((_m - 1)))
+fi
 LIFECYCLE="${LINKEDIN_LIFECYCLE:-DRAFT}"
 SITE_URL="${SITE_URL:-https://swarm-exec.cloud-surfers.net}"
 RELEASE_URL="$CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG"
@@ -74,11 +90,14 @@ tag_json=$(curl -sS --fail -H "JOB-TOKEN: $CI_JOB_TOKEN" \
 	echo "could not read tag $CI_COMMIT_TAG from the API" >&2; exit 1; }
 message=$(printf '%s' "$tag_json" | jq -r '.message // ""')
 
-# Drop the leading "swarmexec vX.Y.Z" title line (the headline restates it) and
-# the blank lines that follow it.
+# Drop the tag message's title line and the blank lines after it — the headline
+# below already states the version. Both conventions are stripped: the old
+# "swarmexec vX.Y.Z …" form and the current "vX.Y.Z — summary" one (previously
+# only the former matched, so every post repeated its own title).
 notes=$(printf '%s\n' "$message" | awk '
-	NR==1 && /^swarmexec /       {next}
-	!started && /^[[:space:]]*$/ {next}
+	NR==1 && /^swarmexec /               {next}
+	NR==1 && /^v?[0-9]+\.[0-9]+\.[0-9]+/ {next}
+	!started && /^[[:space:]]*$/         {next}
 	{started=1; print}
 ')
 
@@ -113,14 +132,25 @@ if [ "${LINKEDIN_DRY_RUN:-}" = "1" ]; then
 	exit 0
 fi
 
-echo "creating swarmexec $CI_COMMIT_TAG on LinkedIn ($LIFECYCLE) as $LINKEDIN_AUTHOR_URN…"
-code=$(curl -sS -D /tmp/li_hdr -o /tmp/li_resp.json -w '%{http_code}' -X POST \
-	"https://api.linkedin.com/rest/posts" \
-	-H "Authorization: Bearer $access_token" \
-	-H "Content-Type: application/json" \
-	-H "LinkedIn-Version: $API_VERSION" \
-	-H "X-Restli-Protocol-Version: 2.0.0" \
-	--data "$payload")
+post_with_version() {
+	curl -sS -D /tmp/li_hdr -o /tmp/li_resp.json -w '%{http_code}' -X POST \
+		"https://api.linkedin.com/rest/posts" \
+		-H "Authorization: Bearer $access_token" \
+		-H "Content-Type: application/json" \
+		-H "LinkedIn-Version: $1" \
+		-H "X-Restli-Protocol-Version: 2.0.0" \
+		--data "$payload"
+}
+
+echo "creating swarmexec $CI_COMMIT_TAG on LinkedIn ($LIFECYCLE) as $LINKEDIN_AUTHOR_URN (version $API_VERSION)…"
+code=$(post_with_version "$API_VERSION")
+
+# 426 NONEXISTENT_VERSION: this month's stamp isn't live yet — fall back once.
+if [ "$code" = "426" ] && [ -n "$API_VERSION_PREV" ] && [ "$API_VERSION_PREV" != "$API_VERSION" ] \
+	&& grep -q NONEXISTENT_VERSION /tmp/li_resp.json 2>/dev/null; then
+	echo "version $API_VERSION not active — retrying with $API_VERSION_PREV"
+	code=$(post_with_version "$API_VERSION_PREV")
+fi
 
 echo "LinkedIn HTTP $code"
 post_id=$(awk 'tolower($1)=="x-restli-id:"{print $2}' /tmp/li_hdr 2>/dev/null | tr -d '\r')
