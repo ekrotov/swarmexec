@@ -88,6 +88,89 @@ test:
       fi
     - go test -race ./...
 
+# ----------------------------------------------------------------------------
+# vulncheck — CVE analysis with govulncheck (the official Go vulnerability
+# scanner). It reports only vulnerabilities whose affected symbols our code can
+# actually REACH, so it is far less noisy than a plain dependency-version diff.
+#
+# Gating: fails the pipeline on a reachable vulnerability that has a fix
+# available, so a release can't ship a CVE we could simply have upgraded away.
+# Advisories with no fixed version in our dependency line (currently the two
+# Moby daemon-side ones — we only import the docker client SDK) are reported but
+# do not fail; VULNCHECK_ALLOW lists those GO-IDs, with a comment saying why.
+# Clear an entry from that list once its module ships a fix in a line we use.
+#
+# The JSON output is kept as an artifact so a release can be audited later.
+# ----------------------------------------------------------------------------
+vulncheck:
+  stage: test
+  image: $GO_IMAGE
+  <<: *go-cache
+  variables:
+    # GO-ID: reason. Reachable-but-unfixable in our dependency line.
+    #   GO-2026-4887 / GO-2026-4883 — Moby daemon AuthZ-plugin + plugin-privilege
+    #   issues. Fixed only in github.com/moby/moby/v2; the docker/docker line we
+    #   use as a CLIENT SDK has no fix, and we import no daemon-side package.
+    VULNCHECK_ALLOW: "GO-2026-4887 GO-2026-4883"
+  script:
+    - go install golang.org/x/vuln/cmd/govulncheck@latest
+    - "$(go env GOPATH)/bin/govulncheck -format json ./... > govulncheck.json || true"
+    - "$(go env GOPATH)/bin/govulncheck ./... || true"   # human-readable log
+    - |
+      # Fail only on a reachable vulnerability that HAS a fix and is not allowlisted.
+      python3 - "$VULNCHECK_ALLOW" <<'PY'
+      import json, sys
+      allow = set(sys.argv[1].split()) if len(sys.argv) > 1 else set()
+      osv, called, fixed = {}, set(), {}
+      # govulncheck -format json emits CONCATENATED (multi-line) JSON objects,
+      # not one per line — stream them with raw_decode.
+      def messages(path):
+          data = open(path).read()
+          dec, i = json.JSONDecoder(), 0
+          while i < len(data):
+              while i < len(data) and data[i].isspace():
+                  i += 1
+              if i >= len(data):
+                  return
+              obj, i = dec.raw_decode(data, i)
+              if isinstance(obj, dict):
+                  yield obj
+      for msg in messages("govulncheck.json"):
+          if "osv" in msg:
+              o = msg["osv"]
+              osv[o["id"]] = o
+              for a in o.get("affected", []):
+                  for r in a.get("ranges", []):
+                      for ev in r.get("events", []):
+                          if ev.get("fixed"):
+                              fixed[o["id"]] = ev["fixed"]
+          f = msg.get("finding")
+          # A finding with a symbol-level trace frame is reachable from our code.
+          if f and any(t.get("function") for t in (f.get("trace") or [])):
+              called.add(f["osv"])
+      blocking = []
+      for vid in sorted(called):
+          if vid in allow:
+              print(f"allowlisted (no fix in our line): {vid}")
+              continue
+          if vid in fixed:
+              blocking.append((vid, fixed[vid]))
+          else:
+              print(f"reachable, no fixed version available: {vid}")
+      for vid, fx in blocking:
+          aliases = ",".join(osv.get(vid, {}).get("aliases", []))
+          print(f"BLOCKING: {vid} ({aliases}) — fix available: {fx}")
+      if blocking:
+          print(f"\n{len(blocking)} reachable vulnerability(ies) with an available fix — upgrade the dependency.")
+          sys.exit(1)
+      print("\nNo blocking vulnerabilities.")
+      PY
+  artifacts:
+    when: always
+    paths:
+      - govulncheck.json
+    expire_in: 4 weeks
+
 # Code navigation index (SCIP) for this `go 1.27` module. scip-go is the
 # maintained Go indexer; the index is published as a downloadable artifact.
 # NOTE: this GitLab instance rejects the `reports: lsif` upload with a 500, so we
