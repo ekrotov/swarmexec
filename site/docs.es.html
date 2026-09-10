@@ -756,10 +756,11 @@
       <!-- 10 -->
       <h2 id="tui">10. La TUI</h2>
       <p>
-        <code>swarmexec ui</code> tiene siete pestañas — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> tiene ocho pestañas — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — y un pie de dos líneas: arriba las
+        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
+        <strong>Configs&nbsp;(8)</strong> — y un pie de dos líneas: arriba las
         indicaciones de teclas por pestaña, y luego una línea de estado con el contexto de docker activo
         (<code>ctx&nbsp;&lt;name&gt;</code>, para que siempre quede claro en qué clúster
         estás), un resumen del clúster en vivo, el recuento de reenvíos y —en la pestaña Volumes— cuántos
@@ -767,19 +768,20 @@
       </p>
       <p>
         La barra de pestañas es <strong>adaptable</strong>. Los nombres completos necesitan
-        94 columnas; en un terminal más estrecho la barra cambia a etiquetas cortas —
+        106 columnas; en un terminal más estrecho la barra cambia a etiquetas cortas —
         <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
         <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong>— para que las siete pestañas sigan visibles en lugar de que
-        las últimas queden recortadas. Los dígitos de atajo y las zonas de clic del ratón no
-        cambian.
+        <strong>Node</strong>, <strong>Cfg</strong>— para que las ocho pestañas sigan
+        visibles en lugar de que las últimas queden recortadas. (<strong>Cfg</strong> es
+        Configs; <strong>Ctx</strong> es Contexts.) Los dígitos de atajo y las zonas de clic
+        del ratón no cambian.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>abre el overlay de atajos — la referencia de teclas completa y viva (se genera a partir de tu mapa de teclas, así que los atajos remapeados aparecen correctamente); el pie de una sola línea solo tiene sitio para las teclas más usadas</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>pasa a la siguiente pestaña</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>salta a Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>salta a Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>mueve abajo / arriba (también <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>refresca la pestaña activa y el resumen del clúster</td></tr>
           <tr><td><kbd>y</kbd></td><td>copia la lista actual al portapapeles (OSC52)</td></tr>
@@ -1330,6 +1332,51 @@
         swarm las conserva en la lista de tareas como historial).
       </div>
 
+      <h3>Pestaña Configs</h3>
+      <p>
+        Pestaña&nbsp;<kbd>8</kbd> — la gemela de la pestaña Secrets para el otro objeto que el
+        swarm entrega a los contenedores, con una diferencia decisiva: <strong>el contenido de
+        un config sí se puede leer</strong>. La pestaña Secrets nunca puede mostrar un valor
+        (la API de Docker no lo devuelve); el detalle de un config muestra el
+        <strong>contenido real</strong>, así que ves lo que un servicio recibe de verdad sin
+        recurrir a <code>docker config inspect</code>. Ese es el sentido de esta pestaña.
+      </p>
+      <p>
+        La lista es de solo lectura: <code>CONFIG</code> (nombre), <code>USED BY</code>
+        (cuántos servicios lo montan), <code>SIZE</code>, <code>AGE</code>,
+        <code>UPDATED</code> y <code>LABELS</code> (recuento).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>abre la vista de detalle: nombre, id, tamaño, creación, actualización, los servicios que lo montan, sus etiquetas — y el contenido del config</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd> / <kbd>g</kbd> <kbd>G</kbd></td><td>en la vista de detalle: desplazarse · ir al principio / al final (<kbd>Esc</kbd> cierra)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        El contenido se obtiene <strong>bajo demanda</strong>, al abrir el detalle — no junto
+        con la lista — porque un config puede ser un <code>nginx.conf</code> entero; hasta que
+        llega se lee <em>loading…</em>, y un config vacío indica <em>(empty)</em>. Lo que se
+        muestra es una <strong>vista previa</strong>, limitada <strong>a la vez</strong> a
+        <strong>64&nbsp;KiB</strong> y a <strong>500 líneas</strong>. Ambos límites hacen
+        falta: acotar solo los bytes todavía deja que un archivo de líneas muy cortas se
+        convierta en decenas de miles de líneas renderizadas —cada una con su sangría—, que es
+        lo que de verdad hace que la vista se arrastre. El truncado siempre se
+        <strong>anuncia</strong> («… truncated at 500 lines», o en el límite de bytes), nunca
+        se corta en silencio, y el <strong>contenido binario se informa, no se vuelca</strong>
+        («(binary content, N — not shown)», detectado buscando bytes NUL en la cabecera de los
+        datos). El config completo está a un <code>docker config inspect</code> de distancia.
+      </p>
+      <p>
+        <strong>USED BY</strong> se deriva igual que en la pestaña Secrets: el swarm no
+        mantiene <strong>ningún índice inverso</strong> de un config a quienes lo usan, así
+        que swarmexec lee las especificaciones de los servicios (un <code>ServiceList</code>)
+        y reconoce una referencia por <strong>ID o por nombre</strong> del config — una
+        especificación puede llevar cualquiera de las dos formas, así que se consultan y se
+        fusionan ambas. Con el mejor esfuerzo: si no se puede leer la lista de servicios, los
+        configs se muestran igual, solo que sin esa correspondencia.
+      </p>
+
       <h3>Shell y logs embebidos</h3>
       <p>
         En una shell embebida, <kbd>Ctrl-]</kbd> se desconecta (sin terminar el proceso). La
@@ -1384,7 +1431,7 @@
         (junto a <code>config.yaml</code>; cambia la ruta con <code>$SWARMEXEC_KEYS</code>).
         Cada valor es una única tecla, o la palabra <code>space</code>. Las teclas
         estructurales — <kbd>Enter</kbd>, <kbd>Esc</kbd>, <kbd>Tab</kbd>, las flechas, las
-        teclas numéricas de pestaña <kbd>1</kbd>–<kbd>7</kbd> y los alias vim
+        teclas numéricas de pestaña <kbd>1</kbd>–<kbd>8</kbd> y los alias vim
         <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — son fijas. El pie siempre muestra
         tus teclas reales, y el overlay <kbd>?</kbd> las lista todas.
       </p>

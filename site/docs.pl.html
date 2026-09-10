@@ -748,10 +748,11 @@
       <!-- 10 -->
       <h2 id="tui">10. TUI</h2>
       <p>
-        <code>swarmexec ui</code> ma siedem zakładek — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> ma osiem zakładek — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — oraz dwuliniową
+        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
+        <strong>Configs&nbsp;(8)</strong> — oraz dwuliniową
         stopkę: na górze podpowiedzi klawiszy dla danej zakładki, a pod nimi linia statusu
         z aktywnym kontekstem dockera (<code>ctx&nbsp;&lt;name&gt;</code>, żeby zawsze było
         jasne, na którym klastrze jesteś), podsumowaniem klastra na żywo, liczbą przekierowań
@@ -759,19 +760,21 @@
         działają na każdej zakładce:
       </p>
       <p>
-        Pasek zakładek jest <strong>responsywny</strong>. Pełne nazwy potrzebują 94 kolumn;
+        Pasek zakładek jest <strong>responsywny</strong>. Pełne nazwy potrzebują 106 kolumn;
         na węższym terminalu pasek przełącza się na krótkie etykiety —
         <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
         <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong> — dzięki czemu wszystkie siedem zakładek pozostaje widocznych
-        zamiast obcinania ostatnich. Cyfry skrótów i obszary klikalne myszą pozostają bez zmian.
+        <strong>Node</strong>, <strong>Cfg</strong> — dzięki czemu wszystkie osiem zakładek
+        pozostaje widocznych zamiast obcinania ostatnich. (<strong>Cfg</strong> to Configs,
+        <strong>Ctx</strong> to Contexts.) Cyfry skrótów i obszary klikalne myszą pozostają
+        bez zmian.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>otwórz nakładkę ze skrótami klawiszowymi — kompletny, aktualny spis klawiszy (generowany z twojego mapowania, więc przemapowane klawisze pokazują się poprawnie); jednoliniowa stopka mieści tylko najczęściej używane klawisze</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>przejdź do następnej zakładki</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>przeskocz do Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>przeskocz do Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>w dół / w górę (także <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>odśwież aktywną zakładkę i podsumowanie klastra</td></tr>
           <tr><td><kbd>y</kbd></td><td>skopiuj bieżącą listę do schowka (OSC52)</td></tr>
@@ -1318,6 +1321,50 @@
         nie (swarm trzyma je na liście zadań jako historię).
       </div>
 
+      <h3>Zakładka Configs</h3>
+      <p>
+        Zakładka&nbsp;<kbd>8</kbd> — bliźniaczka zakładki Secrets dla drugiego obiektu, który
+        swarm podaje kontenerom, z jedną decydującą różnicą: <strong>treść configu da się
+        odczytać</strong>. Zakładka Secrets nigdy nie pokaże wartości (API Dockera jej nie
+        zwraca); widok szczegółów configu pokazuje <strong>rzeczywistą treść</strong>, więc
+        widzisz, co usługa naprawdę dostaje, bez schodzenia do <code>docker config
+        inspect</code>. Po to właśnie jest ta zakładka.
+      </p>
+      <p>
+        Lista jest tylko do odczytu: <code>CONFIG</code> (nazwa), <code>USED BY</code> (ile
+        usług go montuje), <code>SIZE</code>, <code>AGE</code>, <code>UPDATED</code> oraz
+        <code>LABELS</code> (liczba).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>otwórz widok szczegółów: nazwa, id, rozmiar, utworzenie, aktualizacja, usługi, które go montują, jego etykiety — i treść configu</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd> / <kbd>g</kbd> <kbd>G</kbd></td><td>w widoku szczegółów: przewijanie · skok na początek / koniec (<kbd>Esc</kbd> zamyka)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Treść pobierana jest <strong>na żądanie</strong>, przy otwarciu szczegółów — nie razem
+        z listą — bo config może być całym plikiem <code>nginx.conf</code>; do tego czasu widać
+        <em>loading…</em>, a pusty config melduje <em>(empty)</em>. Pokazywany jest
+        <strong>podgląd</strong>, ograniczony <strong>jednocześnie</strong> do
+        <strong>64&nbsp;KiB</strong> i do <strong>500 wierszy</strong>. Oba limity są
+        potrzebne: ograniczenie samych bajtów wciąż pozwala, by plik z bardzo krótkimi
+        wierszami zamienił się w dziesiątki tysięcy renderowanych wierszy — każdy jeszcze
+        wcięty — a to właśnie zamula widok. Skrócenie zawsze jest <strong>zaznaczone</strong>
+        („… truncated at 500 lines” albo na limicie bajtów), nigdy nie jest cichym ucięciem, a
+        <strong>treść binarna jest zgłaszana, nie wysypywana</strong> („(binary content, N —
+        not shown)”, rozpoznawana po bajtach NUL na początku danych). Pełny config jest o
+        jedno <code>docker config inspect</code> stąd.
+      </p>
+      <p>
+        <strong>USED BY</strong> wyprowadzane jest dokładnie tak samo jak w zakładce Secrets:
+        swarm nie prowadzi <strong>żadnego odwrotnego indeksu</strong> od configu do jego
+        odbiorców, więc swarmexec czyta specyfikacje usług (jedno <code>ServiceList</code>) i
+        rozpoznaje odwołanie po <strong>ID albo nazwie</strong> configu — specyfikacja może
+        nieść dowolną z tych form, więc obie są sprawdzane i scalane. Best effort: jeśli listy
+        usług nie da się odczytać, configi i tak się wyświetlą, tylko bez tego przypisania.
+      </p>
+
       <h3>Wbudowany shell &amp; logi</h3>
       <p>
         We wbudowanym shellu <kbd>Ctrl-]</kbd> odłącza się (bez kończenia procesu). Widok
@@ -1370,7 +1417,7 @@
         (obok <code>config.yaml</code>; ścieżkę nadpiszesz przez
         <code>$SWARMEXEC_KEYS</code>). Każda wartość to pojedynczy klawisz albo słowo
         <code>space</code>. Klawisze strukturalne — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
-        <kbd>Tab</kbd>, strzałki, cyfry zakładek <kbd>1</kbd>–<kbd>7</kbd> oraz aliasy z vima
+        <kbd>Tab</kbd>, strzałki, cyfry zakładek <kbd>1</kbd>–<kbd>8</kbd> oraz aliasy z vima
         <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — są stałe. Stopka zawsze pokazuje
         twoje faktyczne klawisze, a nakładka <kbd>?</kbd> wypisuje je wszystkie.
       </p>

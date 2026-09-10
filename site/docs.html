@@ -738,29 +738,32 @@
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
       <p>
-        <code>swarmexec ui</code> has seven tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> has eight tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — and a two-line footer: the per-tab key
+        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
+        <strong>Configs&nbsp;(8)</strong> — and a two-line footer: the per-tab key
         hints on top, then a status line with the active docker context
         (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster you're
         on), a live cluster summary, the forward count and — on the Volumes tab — how
         many volumes you have selected. These keys work on every tab:
       </p>
       <p>
-        The tab bar is <strong>responsive</strong>. The full names need 94 columns; on a
+        The tab bar is <strong>responsive</strong>. The full names need 106 columns; on a
         narrower terminal the bar switches to short labels —
         <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
         <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong> — so all seven tabs stay visible instead of the last ones
-        being clipped. The shortcut digits and the mouse hit-boxes are unaffected.
+        <strong>Node</strong>, <strong>Cfg</strong> — so all eight tabs stay visible instead
+        of the last ones being clipped. (<strong>Cfg</strong> is Configs;
+        <strong>Ctx</strong> is Contexts.) The shortcut digits and the mouse hit-boxes are
+        unaffected.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the one-line footer only has room for the most used keys</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>jump to Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>refresh the active tab and the cluster summary</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
@@ -1286,6 +1289,50 @@
         rejected ones do not (swarm keeps those in the task list as history).
       </div>
 
+      <h3>Configs tab</h3>
+      <p>
+        Tab&nbsp;<kbd>8</kbd> — the Secrets tab's twin for the other object swarm hands to
+        containers, with one decisive difference: <strong>a config's content is
+        readable</strong>. The Secrets tab can never show a value (the Docker API does not
+        return it); the config detail shows the <strong>actual content</strong>, so you can
+        see what a service really receives without dropping to <code>docker config
+        inspect</code>. That is the point of this tab.
+      </p>
+      <p>
+        The list is read-only: <code>CONFIG</code> (name), <code>USED BY</code> (how many
+        services mount it), <code>SIZE</code>, <code>AGE</code>, <code>UPDATED</code> and
+        <code>LABELS</code> (count).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>open the detail overlay: name, id, size, created, updated, the services that mount it, its labels — and the config's content</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd> / <kbd>g</kbd> <kbd>G</kbd></td><td>in the detail overlay: scroll · jump to top / bottom (<kbd>Esc</kbd> closes)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The content is fetched <strong>on demand</strong>, when the overlay opens — not
+        together with the list — because a config can be a whole <code>nginx.conf</code>; the
+        overlay shows <em>loading…</em> until it arrives, and an empty config says
+        <em>(empty)</em>. What you get is a <strong>preview</strong>, capped at
+        <strong>both</strong> <strong>64&nbsp;KiB</strong> and <strong>500 lines</strong>.
+        Both caps are needed: bounding only the bytes still lets a file of very short lines
+        become tens of thousands of rendered rows — each indented — which is what actually
+        makes the view crawl. Truncation is always <strong>stated</strong> (“… truncated at
+        500 lines”, or at the byte cap), never a silent cut, and <strong>binary content is
+        reported, not dumped</strong> (“(binary content, N — not shown)”, decided by looking
+        for NUL bytes in the head of the payload). The whole config is one <code>docker config
+        inspect</code> away.
+      </p>
+      <p>
+        <strong>USED BY</strong> is derived exactly the way the Secrets tab derives it: swarm
+        keeps <strong>no reverse index</strong> from a config to its consumers, so swarmexec
+        reads the service specs (one <code>ServiceList</code>) and matches a reference by
+        config <strong>ID or name</strong> — a spec may carry either form, so both are looked
+        up and merged. Best-effort: if the service list can't be read, the configs still
+        render, just without membership.
+      </p>
+
       <h3>Embedded shell &amp; logs</h3>
       <p>
         In an embedded shell, <kbd>Ctrl-]</kbd> detaches (without ending the process). The
@@ -1338,7 +1385,7 @@
         (next to <code>config.yaml</code>; override the path with
         <code>$SWARMEXEC_KEYS</code>). Each value is a single key, or the word
         <code>space</code>. The structural keys — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
-        <kbd>Tab</kbd>, the arrows, the tab-number keys <kbd>1</kbd>–<kbd>7</kbd> and the
+        <kbd>Tab</kbd>, the arrows, the tab-number keys <kbd>1</kbd>–<kbd>8</kbd> and the
         vim aliases <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — are fixed. The
         footer always shows your actual keys, and the <kbd>?</kbd> overlay lists all of
         them.

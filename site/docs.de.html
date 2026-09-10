@@ -767,10 +767,11 @@
       <!-- 10 -->
       <h2 id="tui">10. Die TUI</h2>
       <p>
-        <code>swarmexec ui</code> hat sieben Tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> hat acht Tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — und einen
+        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
+        <strong>Configs&nbsp;(8)</strong> — und einen
         zweizeiligen Footer: oben die Tastenhinweise pro Tab, dann eine Statuszeile mit dem
         aktiven Docker-Context
         (<code>ctx&nbsp;&lt;name&gt;</code>, sodass immer klar ist, auf welchem Cluster du
@@ -779,20 +780,21 @@
         jedem Tab:
       </p>
       <p>
-        Die Tab-Leiste ist <strong>responsiv</strong>. Die vollen Namen brauchen 94 Spalten;
+        Die Tab-Leiste ist <strong>responsiv</strong>. Die vollen Namen brauchen 106 Spalten;
         in einem schmaleren Terminal wechselt die Leiste auf Kurzlabels —
         <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
         <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong> — damit alle sieben Tabs sichtbar bleiben, statt dass die
-        letzten abgeschnitten werden. Die Zifferntasten und die Maus-Klickflächen bleiben
-        unverändert.
+        <strong>Node</strong>, <strong>Cfg</strong> — damit alle acht Tabs sichtbar bleiben,
+        statt dass die letzten abgeschnitten werden. (<strong>Cfg</strong> ist Configs,
+        <strong>Ctx</strong> ist Contexts.) Die Zifferntasten und die Maus-Klickflächen
+        bleiben unverändert.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>das Tastenbelegungs-Overlay öffnen — die vollständige, lebende Tastenreferenz (sie wird aus deiner Tastenbelegung erzeugt, umbelegte Tasten erscheinen also korrekt); die einzeilige Fußzeile hat nur Platz für die meistgenutzten Tasten</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>zum nächsten Tab wechseln</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>zu Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes springen</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>zu Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes / Configs springen</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>runter / hoch (auch <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>den aktiven Tab und die Cluster-Zusammenfassung aktualisieren</td></tr>
           <tr><td><kbd>y</kbd></td><td>die aktuelle Liste in die Zwischenablage kopieren (OSC52)</td></tr>
@@ -1354,6 +1356,53 @@
         der Task-Liste).
       </div>
 
+      <h3>Configs-Tab</h3>
+      <p>
+        Tab&nbsp;<kbd>8</kbd> — das Gegenstück zum Secrets-Tab für das andere Objekt, das der
+        Swarm in Container reicht, mit einem entscheidenden Unterschied: <strong>der Inhalt
+        eines Configs ist lesbar</strong>. Der Secrets-Tab kann einen Wert nie zeigen (die
+        Docker-API gibt ihn nicht heraus); die Config-Detailansicht zeigt den
+        <strong>tatsächlichen Inhalt</strong>, sodass du siehst, was ein Service wirklich
+        bekommt, ohne auf <code>docker config inspect</code> auszuweichen. Genau darum geht
+        es in diesem Tab.
+      </p>
+      <p>
+        Die Liste ist schreibgeschützt: <code>CONFIG</code> (Name), <code>USED BY</code> (wie
+        viele Services es einhängen), <code>SIZE</code>, <code>AGE</code>,
+        <code>UPDATED</code> und <code>LABELS</code> (Anzahl).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>die Detailansicht öffnen: Name, ID, Größe, erstellt, aktualisiert, die Services, die das Config einhängen, seine Labels — und den Inhalt des Configs</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd> / <kbd>g</kbd> <kbd>G</kbd></td><td>in der Detailansicht: scrollen · an den Anfang / ans Ende springen (<kbd>Esc</kbd> schließt)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Der Inhalt wird <strong>bei Bedarf</strong> geholt, wenn die Detailansicht aufgeht —
+        nicht zusammen mit der Liste — denn ein Config kann eine ganze
+        <code>nginx.conf</code> sein; bis dahin steht dort <em>loading…</em>, ein leeres
+        Config meldet <em>(empty)</em>. Gezeigt wird eine <strong>Vorschau</strong>, begrenzt
+        <strong>sowohl</strong> auf <strong>64&nbsp;KiB</strong> <strong>als auch</strong> auf
+        <strong>500 Zeilen</strong>. Beide Grenzen sind nötig: Begrenzt man nur die Bytes,
+        kann eine Datei aus sehr kurzen Zeilen immer noch zu Zehntausenden gerenderten Zeilen
+        werden — jede zusätzlich eingerückt — und genau das lässt die Ansicht kriechen. Eine
+        Kürzung wird immer <strong>benannt</strong> („… truncated at 500 lines“ bzw. an der
+        Byte-Grenze), nie still abgeschnitten, und <strong>binärer Inhalt wird gemeldet, nicht
+        ausgekippt</strong> („(binary content, N — not shown)“, erkannt an NUL-Bytes im Kopf
+        der Daten). Das vollständige Config ist ein <code>docker config inspect</code>
+        entfernt.
+      </p>
+      <p>
+        <strong>USED BY</strong> wird genauso hergeleitet wie im Secrets-Tab: Der Swarm führt
+        <strong>keinen Rückwärtsindex</strong> von einem Config zu seinen Nutzern, also liest
+        swarmexec die Service-Specs (ein <code>ServiceList</code>) und erkennt eine Referenz
+        an der <strong>ID oder am Namen</strong> des Configs — eine Spec kann beide Formen
+        enthalten, deshalb werden beide nachgeschlagen und zusammengeführt. Best effort:
+        Lässt sich die Service-Liste nicht lesen, erscheinen die Configs trotzdem, nur ohne
+        Zuordnung.
+      </p>
+
       <h3>Eingebettete Shell &amp; Logs</h3>
       <p>
         In einer eingebetteten Shell löst <kbd>Ctrl-]</kbd> ab (ohne den Prozess zu
@@ -1409,7 +1458,7 @@
         (neben <code>config.yaml</code>; überschreibe den Pfad mit
         <code>$SWARMEXEC_KEYS</code>). Jeder Wert ist eine einzelne Taste oder das Wort
         <code>space</code>. Die strukturellen Tasten — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
-        <kbd>Tab</kbd>, die Pfeile, die Tab-Nummerntasten <kbd>1</kbd>–<kbd>7</kbd> und die
+        <kbd>Tab</kbd>, die Pfeile, die Tab-Nummerntasten <kbd>1</kbd>–<kbd>8</kbd> und die
         vim-Aliase <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — sind fest. Der
         Footer zeigt immer deine tatsächlichen Tasten, und das <kbd>?</kbd>-Overlay listet
         sie alle auf.
