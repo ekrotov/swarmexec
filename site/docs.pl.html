@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec — dokumentacja klienta</title>
+  <meta name="description" content="Jak używać klienta swarmexec: polecenia, flagi, konfiguracja, uwierzytelnianie i interaktywna TUI.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs.pl.html">
+  <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/docs">
+  <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/docs.de.html">
+  <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/docs.es.html">
+  <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/docs.fr.html">
+  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/docs.pl.html">
+  <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/docs">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec — dokumentacja klienta">
+  <meta property="og:description" content="Jak używać klienta swarmexec: polecenia, flagi, konfiguracja, uwierzytelnianie i interaktywna TUI.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs.pl.html">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+  <meta property="og:image:width" content="860">
+  <meta property="og:image:height" content="470">
+  <meta property="og:locale" content="pl_PL">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="de_DE">
+  <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="fr_FR">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec — dokumentacja klienta">
+  <meta name="twitter:description" content="Jak używać klienta swarmexec: polecenia, flagi, konfiguracja, uwierzytelnianie i interaktywna TUI.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #161b22; --border: #30363d;
+      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
+      --danger: #f85149; --comment: #484f58;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--fg);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      line-height: 1.6; padding: 2rem 1.5rem 4rem;
+    }
+    main { width: 100%; max-width: 900px; margin: 0 auto; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2.5rem;
+    }
+    a { color: var(--accent); }
+    .home { color: var(--muted); text-decoration: none; font-size: .85rem; }
+    .home:hover { color: var(--accent); }
+    h1 { margin: .5rem 0 .25rem; font-size: 2rem; letter-spacing: -.02em; }
+    h1 .cursor { color: var(--aqua); }
+    .tagline { color: var(--aqua); margin: 0 0 1.25rem; font-size: 1.05rem; }
+    p { color: var(--fg); }
+    p.lead { color: var(--muted); }
+    h2 {
+      margin: 2.75rem 0 .85rem; font-size: 1.35rem; letter-spacing: -.01em;
+      border-bottom: 1px solid var(--border); padding-bottom: .4rem; scroll-margin-top: 1rem;
+    }
+    h3 { margin: 1.9rem 0 .5rem; font-size: 1.05rem; color: var(--aqua); scroll-margin-top: 1rem; }
+    h3 code { color: var(--aqua); background: none; border: 0; padding: 0; }
+    code {
+      background: #010409; border: 1px solid var(--border); border-radius: 4px;
+      padding: .08em .35em; font-size: .85em;
+    }
+    .prompt, .cmd {
+      background: #010409; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.15rem; margin: 1.1rem 0; color: var(--muted);
+      overflow-x: auto; white-space: pre; font-size: .85rem; line-height: 1.7;
+    }
+    .prompt code, .cmd code { background: none; border: 0; padding: 0; font-size: 1em; }
+    .prompt .c { color: var(--aqua); }
+    .prompt .o { color: var(--comment); }
+    .cmd { color: var(--fg); }
+    .cmd .k { color: var(--aqua); }
+    .tablewrap { overflow-x: auto; margin: 1rem 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+    th { background: #010409; color: var(--aqua); font-weight: 600; white-space: nowrap; }
+    td code { white-space: nowrap; }
+    tbody tr:nth-child(even) { background: rgba(255,255,255,.02); }
+    kbd {
+      background: #0d1117; border: 1px solid var(--border); border-bottom-width: 2px;
+      border-radius: 5px; padding: .05em .5em; font-size: .78em; color: var(--fg);
+      white-space: nowrap;
+    }
+    ul, ol { padding-left: 1.3rem; }
+    li { margin: .3rem 0; }
+    .note, .warn {
+      border-left: 3px solid var(--aqua); background: #010409;
+      padding: .7rem 1rem; margin: 1.1rem 0; color: var(--muted); border-radius: 0 6px 6px 0;
+    }
+    .warn { border-left-color: var(--danger); }
+    .note strong, .warn strong { color: var(--fg); }
+    .toc {
+      background: #010409; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1.2rem 1.4rem; margin: 1.75rem 0 1rem;
+    }
+    .toc .th { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 .7rem; }
+    .toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 2rem; }
+    .toc li { margin: .2rem 0; break-inside: avoid; }
+    .toc a { text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    footer { color: var(--muted); font-size: .8rem; margin-top: 2.5rem; border-top: 1px solid var(--border); padding-top: 1.25rem; }
+    footer a { color: var(--muted); }
+    .legal { margin-top: .6rem; }
+    .legal a { text-decoration: underline; }
+    .legal a:hover { color: var(--accent); }
+    @media (max-width: 620px) {
+      .card { padding: 1.5rem; }
+      .toc ol { columns: 1; }
+      body { padding: 1.25rem 1rem 3rem; }
+    }
+    /* language switcher */
+    .langbar { position: fixed; top: .75rem; right: .75rem; display: flex; gap: .25rem; z-index: 10; font-size: .75rem; }
+    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
+    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
+  </style>
+  <script>
+    // i18n: redirect to the browser language on first visit; the switcher stores the choice.
+    window.__i18n = { base: 'docs', baseLang: 'en' };
+    (function () {
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
+      try {
+        var w = localStorage.getItem('sx-lang');
+        if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
+        if (w !== P) { location.replace(w === I.baseLang ? I.base + '.html' : I.base + '.' + w + '.html'); return; }
+      } catch (e) { }
+      document.addEventListener('DOMContentLoaded', function () {
+        var bar = document.querySelector('.langbar'); if (!bar) return;
+        var c = bar.querySelector('a[data-lang="' + P + '"]'); if (c) c.setAttribute('aria-current', 'true');
+        bar.addEventListener('click', function (e) {
+          var a = e.target.closest('a[data-lang]');
+          if (a) { try { localStorage.setItem('sx-lang', a.getAttribute('data-lang')); } catch (_) { } }
+        });
+      });
+    })();
+  </script>
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+  <script defer src="https://stats.cloud-surfers.net/recorder.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <nav class="langbar" aria-label="Language">
+    <a data-lang="en" hreflang="en" href="docs.html">EN</a>
+    <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
+    <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
+    <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
+    <a data-lang="pl" hreflang="pl" href="docs.pl.html">PL</a>
+  </nav>
+  <main>
+    <div class="card">
+      <a class="home" href="/">&larr; swarm-exec.cloud-surfers.net</a>
+      <h1>swarmexec<span class="cursor">_</span> dokumentacja</h1>
+      <p class="tagline">Obsługa klienta — polecenia, flagi, konfiguracja &amp; TUI.</p>
+
+      <p class="lead">
+        swarmexec daje ci <code>docker exec -it</code>, logi, przekierowanie portów i
+        zarządzanie wolumenami dla <strong>dowolnego</strong> kontenera w Docker Swarm,
+        z jednego terminala. Mały <strong>agent</strong> na każdym węźle (globalna usługa
+        Swarma) wykonuje pracę na swoim węźle; <strong>klient</strong> pyta menedżera
+        Swarma, który węzeł uruchamia twój cel, a potem łączy się bezpośrednio z agentem
+        na tym węźle przez mTLS. Ta strona dokumentuje klienta.
+      </p>
+
+      <div class="toc">
+        <p class="th">Spis treści</p>
+        <ol>
+          <li><a href="#model">1. Jak to działa</a></li>
+          <li><a href="#install">2. Instalacja</a></li>
+          <li><a href="#quickstart">3. Szybki start</a></li>
+          <li><a href="#targets">4. Selektory celu</a></li>
+          <li><a href="#config">5. Konfiguracja</a></li>
+          <li><a href="#auth">6. Uwierzytelnianie</a></li>
+          <li><a href="#context">7. Docker context &amp; SSH</a></li>
+          <li><a href="#global">8. Flagi globalne</a></li>
+          <li><a href="#commands">9. Polecenia</a></li>
+          <li><a href="#tui">10. TUI</a></li>
+          <li><a href="#exit">11. Kody wyjścia</a></li>
+        </ol>
+      </div>
+
+      <!-- 1 -->
+      <h2 id="model">1. Jak to działa</h2>
+      <p class="lead">
+        Dwa pliki binarne, jeden protokół transmisji:
+      </p>
+      <ul>
+        <li><strong>agent</strong> — działa jako usługa Swarma w trybie <code>global</code>
+          (jedno zadanie na węzeł), montuje gniazdo Dockera tego węzła i udostępnia wąskie
+          API gRPC, które przekazuje exec / logi / przekierowanie portów do kontenerów
+          <em>na swoim własnym węźle</em>. Wdrażasz go raz poleceniem
+          <code>swarmexec init</code>.</li>
+        <li><strong>klient</strong> (to CLI) — działa na twojej stacji roboczej. Rozmawia
+          z <strong>API menedżera</strong> Swarma, żeby ustalić, który węzeł uruchamia twój
+          cel i jakie jest id kontenera, a potem łączy się bezpośrednio z agentem tego węzła
+          na porcie <code>9443</code>. Nie ma żadnej siatki połączeń agent-agent.</li>
+      </ul>
+      <div class="prompt">operator terminal ──gRPC/mTLS──&gt; agent(nodeN) ──docker.sock──&gt; container
+        <span class="o">│</span>
+        <span class="o">└── Docker manager API (resolve node + container id)</span></div>
+      <p>
+        Połączenie z menedżerem korzysta z twojego kontekstu Docker CLI (respektuje więc
+        <code>--context</code>, bastiony <code>ssh://</code>, mTLS itd.). Połączenie
+        z agentem jest uwierzytelniane wzajemnym TLS albo współdzielonym sekretem wobec
+        agenta z certyfikatem samopodpisanym — zobacz <a href="#auth">Uwierzytelnianie</a>.
+      </p>
+
+      <!-- 2 -->
+      <h2 id="install">2. Instalacja</h2>
+      <p>Klient to pojedynczy statyczny plik binarny. Pobierz najnowszą wersję dla swojej platformy:</p>
+      <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
+    https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64
+<span class="c">$</span> chmod +x swarmexec &amp;&amp; sudo mv swarmexec /usr/local/bin/
+<span class="c">$</span> swarmexec --version</div>
+      <p class="lead">
+        Kompilacje: <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64">linux-amd64</a>,
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-arm64">linux-arm64</a>,
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-arm64">darwin-arm64</a>,
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-amd64">darwin-amd64</a>,
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-windows-amd64.exe">windows-amd64</a>.
+        Obraz agenta jest publicznie dostępny na Docker Hubie jako
+        <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><code>logleio/swarmexec-agent</code></a>.
+      </p>
+
+      <!-- 3 -->
+      <h2 id="quickstart">3. Szybki start</h2>
+      <p>
+        Ustaw swój kontekst Dockera na menedżera Swarma, a potem raz zaprowizjonuj agentów.
+        <code>init</code> tworzy współdzielony sekret, wdraża agenta na każdym węźle w trybie
+        z certyfikatem samopodpisanym i zapisuje pasującą konfigurację klienta — dzięki temu
+        pozostałe polecenia działają od razu.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec --context my-swarm init      <span class="o"># wdróż agentów na każdym węźle (raz)</span>
+<span class="c">$</span> swarmexec ps                            <span class="o"># wypisz zadania i węzeł, na którym działa każde z nich</span>
+<span class="c">$</span> swarmexec exec web -- sh                <span class="o"># shell w usłudze "web", dowolny węzeł</span>
+<span class="c">$</span> swarmexec logs -f web                   <span class="o"># śledź logi usługi</span>
+<span class="c">$</span> swarmexec port-forward db 5432          <span class="o"># localhost:5432 → container:5432</span>
+<span class="c">$</span> swarmexec ui                            <span class="o"># interaktywna TUI</span></div>
+      <p>
+        Agentów usuniesz z powrotem poleceniem <code>swarmexec down</code> (twoja
+        konfiguracja klienta pozostaje nietknięta).
+      </p>
+
+      <!-- 4 -->
+      <h2 id="targets">4. Selektory celu</h2>
+      <p>
+        <code>exec</code>, <code>logs</code> i <code>port-forward</code> przyjmują
+        <strong>cel</strong> jako pierwszy argument. Jest on rozwiązywany w tej kolejności:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Postać</th><th>Przykład</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td><code>service</code></td><td><code>web</code></td><td>Działające zadanie usługi. Jeśli ma więcej niż jedną replikę, jest to niejednoznaczne — zobacz niżej.</td></tr>
+          <tr><td><code>service.slot</code></td><td><code>web.2</code></td><td>Konkretny slot repliki. Podczas aktualizacji kroczącej wygrywa najnowsze zadanie w danym slocie.</td></tr>
+          <tr><td><code>task-id</code></td><td><code>xxh8k1…</code></td><td>ID zadania Swarma.</td></tr>
+          <tr><td><code>container-id</code></td><td><code>3f9a2b…</code></td><td>Prefiks ID kontenera. Wymaga węzła: podaj <code>--node</code> albo zostanie znaleziony przez przeskanowanie działających zadań.</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Niejednoznaczność.</strong> Sama nazwa usługi z kilkoma replikami nie da się
+        sprowadzić do jednego zadania. <code>exec</code> uruchomiony interaktywnie prosi cię
+        o wybór z numerowanej listy; <code>logs</code> i <code>port-forward</code> nigdy nie
+        pytają — wypisują listę kandydatów i kończą działanie. Doprecyzuj cel slotem
+        (<code>web.0</code>, <code>web.1</code>, …).
+      </p>
+      <div class="note">
+        <strong>--node</strong> jest brane pod uwagę tylko dla celów typu <em>container-id</em>
+        i może być nazwą hosta, adresem IP albo ID węzła. Cele typu usługa / slot / zadanie są
+        lokalizowane przez API menedżera, więc nigdy go nie potrzebują.
+      </div>
+
+      <!-- 5 -->
+      <h2 id="config">5. Konfiguracja</h2>
+      <p>
+        Ustawienia pochodzą z czterech warstw, z których każda nadpisuje poprzednią:
+      </p>
+      <div class="cmd">wbudowane domyślne  <span class="k">→</span>  plik konfiguracyjny  <span class="k">→</span>  środowisko  <span class="k">→</span>  flagi wiersza poleceń</div>
+      <p>
+        Flaga nadpisuje wartość tylko wtedy, gdy faktycznie ją podasz, więc wartość z pliku
+        albo ze środowiska zostaje zachowana, o ile nie nadpiszesz jej jawnie.
+      </p>
+
+      <h3>Plik konfiguracyjny</h3>
+      <p>Domyślna ścieżka to pierwsza z tych, która jest ustawiona:</p>
+      <ol>
+        <li><code>$SWARMEXEC_CONFIG</code></li>
+        <li><code>$XDG_CONFIG_HOME/swarmexec/config.yaml</code></li>
+        <li><code>~/.config/swarmexec/config.yaml</code></li>
+      </ol>
+      <p>
+        Nadpiszesz ją przez <code>--config &lt;path&gt;</code>. Plik jest w formacie YAML;
+        brakujący plik jest w porządku, źle sformułowany to błąd. Zapisywany jest z prawami
+        <code>0600</code> (może zawierać współdzielony sekret). Plik logu leży domyślnie obok
+        niego — <code>~/.config/swarmexec/swarmexec.log</code> — chyba że ustawisz
+        <code>--log-file</code>. Klucze:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klucz</th><th>Typ</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td><code>ca</code></td><td>string</td><td>certyfikat CA weryfikujący certyfikat serwera agenta (mTLS)</td></tr>
+          <tr><td><code>cert</code></td><td>string</td><td>certyfikat klienta — jego CN jest twoją tożsamością operatora</td></tr>
+          <tr><td><code>key</code></td><td>string</td><td>klucz prywatny klienta</td></tr>
+          <tr><td><code>port</code></td><td>int</td><td>port agenta (domyślnie <code>9443</code>)</td></tr>
+          <tr><td><code>addr_mode</code></td><td>string</td><td><code>hostname</code> (domyślnie) albo <code>ip</code> — jak łączyć się z węzłem</td></tr>
+          <tr><td><code>server_name</code></td><td>string</td><td>nadpisuje nazwę serwera TLS używaną do weryfikacji agenta</td></tr>
+          <tr><td><code>agent_secret</code></td><td>string</td><td>współdzielony sekret dla agenta z certyfikatem samopodpisanym</td></tr>
+          <tr><td><code>agent_secret_file</code></td><td>string</td><td>wczytaj sekret z tego pliku (ma pierwszeństwo przed <code>agent_secret</code>)</td></tr>
+          <tr><td><code>insecure</code></td><td>bool</td><td>pomiń weryfikację certyfikatu serwera agenta (agenci z certyfikatem samopodpisanym)</td></tr>
+          <tr><td><code>operator</code></td><td>string</td><td>tożsamość w audycie, gdy nie używasz certyfikatu klienta (domyślnie: nazwa użytkownika systemu)</td></tr>
+          <tr><td><code>logs.format</code></td><td>string</td><td>domyślny format logów dla <code>logs</code> i TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (puste = <code>classic</code>)</td></tr>
+          <tr><td><code>logs.min_level</code></td><td>string</td><td>domyślny minimalny poziom: <code>trace</code>..<code>fatal</code> (pomiń, żeby nie filtrować po poziomie)</td></tr>
+          <tr><td><code>ui.dim</code></td><td>float</td><td>jak mocno przyciemniane jest tło pod otwartą nakładką, ułamek <code>0</code>–<code>1</code> (domyślnie <code>0.6</code>; <code>0</code> = bez przyciemniania)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Sekcja <code>logs:</code> ustawia domyślne wartości dla parsowania i filtrowania logów
+        świadomego formatu; flagi <code>--log-format</code> / <code>--min-level</code>
+        polecenia <code>logs</code> je nadpisują:
+      </p>
+      <div class="cmd">logs:
+  format: json        <span class="k"># classic | json | logfmt | gelf | raw</span>
+  min_level: warn     <span class="k"># trace..fatal; pomiń, żeby nie filtrować po poziomie</span></div>
+      <p>Obowiązującą, scaloną konfigurację (z zamaskowanym sekretem) obejrzysz przez:</p>
+      <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># albo: --json</span></div>
+
+      <h3>addr-mode</h3>
+      <p>
+        <code>hostname</code> (domyślnie) łączy się z nazwą hosta zgłoszoną przez węzeł;
+        <code>ip</code> łączy się z jego rozgłaszanym adresem. Użyj <code>ip</code>, gdy nazwy
+        hostów węzłów nie są rozwiązywalne z twojej stacji roboczej — właśnie dlatego
+        <code>init</code> wpisuje <code>addr_mode: ip</code> do wygenerowanej konfiguracji.
+        Lider swarma zgłasza dla siebie <code>0.0.0.0</code>; klient automatycznie odzyskuje
+        jego prawdziwy adres z listy peerów raft.
+      </p>
+
+      <h3>Zmienne środowiskowe</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Zmienna</th><th>Ustawia</th></tr></thead>
+        <tbody>
+          <tr><td><code>SWARMEXEC_CONFIG</code></td><td>ścieżkę pliku konfiguracyjnego</td></tr>
+          <tr><td><code>SWARMEXEC_CA</code> / <code>_CERT</code> / <code>_KEY</code></td><td>materiał mTLS</td></tr>
+          <tr><td><code>SWARMEXEC_PORT</code></td><td>port agenta</td></tr>
+          <tr><td><code>SWARMEXEC_ADDR_MODE</code></td><td><code>hostname</code> / <code>ip</code></td></tr>
+          <tr><td><code>SWARMEXEC_SERVER_NAME</code></td><td>nazwę serwera TLS</td></tr>
+          <tr><td><code>SWARMEXEC_AGENT_SECRET</code> / <code>_FILE</code></td><td>współdzielony sekret / plik z sekretem</td></tr>
+          <tr><td><code>SWARMEXEC_INSECURE</code></td><td>pominięcie weryfikacji (<code>1/true/yes/on</code>)</td></tr>
+          <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>tożsamość w audycie</td></tr>
+          <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>przyciemnienie tła pod nakładką (<code>ui.dim</code>)</td></tr>
+          <tr><td><code>SWARMEXEC_KEYS</code></td><td>ścieżkę do pliku mapowania klawiszy TUI (domyślnie <code>keys.yaml</code> obok konfiguracji)</td></tr>
+          <tr><td><code>DOCKER_CONTEXT</code></td><td>kontekst Dockera dla API menedżera</td></tr>
+          <tr><td><code>XDG_CONFIG_HOME</code></td><td>bazę domyślnej ścieżki konfiguracji</td></tr>
+        </tbody>
+      </table></div>
+
+      <!-- 6 -->
+      <h2 id="auth">6. Uwierzytelnianie</h2>
+      <p>Klient uwierzytelnia się wobec agenta w jednym z dwóch trybów.</p>
+
+      <h3>Tryb A — wzajemny TLS (domyślny)</h3>
+      <p>
+        Ustaw <code>ca</code>, <code>cert</code> i <code>key</code> (wszystkie trzy są
+        wymagane). Klient weryfikuje agenta wobec twojego CA i przedstawia swój certyfikat;
+        agent autoryzuje cię i zapisuje w audycie po <strong>CN</strong> z certyfikatu. To
+        jest ustawienie domyślne i zalecane.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec --ca ca.crt --cert me.crt --key me.key ps</div>
+
+      <h3>Tryb B — agent z certyfikatem samopodpisanym + współdzielony sekret</h3>
+      <p>
+        Prostszy w uruchomieniu (jeden sekret, żadnego PKI) — to właśnie konfiguruje
+        <code>init</code>. Ustaw <code>agent_secret</code> (albo
+        <code>agent_secret_file</code>) oraz albo <code>ca</code> do weryfikacji agenta,
+        <em>albo</em> <code>insecure: true</code>, żeby pominąć weryfikację. Certyfikat
+        klienta jest opcjonalny (ale <code>cert</code> i <code>key</code> muszą być ustawione
+        razem albo oba puste). Twoją tożsamością w audycie jest wartość
+        <code>operator</code> (domyślnie: twoja nazwa użytkownika systemu).
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec --agent-secret "$SECRET" --insecure ps</div>
+      <div class="warn">
+        <strong>insecure</strong> pomija sprawdzenie certyfikatu serwera agenta: zaufanie
+        opiera się wtedy na współdzielonym sekrecie i na twojej ścieżce sieciowej. Kiedy
+        tylko możesz, wybierz <code>ca</code> i trzymaj sekret poza historią powłoki (użyj
+        <code>agent_secret_file</code> albo pliku konfiguracyjnego).
+      </div>
+
+      <!-- 7 -->
+      <h2 id="context">7. Docker context &amp; SSH</h2>
+      <p>
+        <code>--context</code> wybiera kontekst Docker CLI używany dla API menedżera.
+        Kolejność rozwiązywania: <code>--context</code> → <code>$DOCKER_CONTEXT</code> →
+        <code>$DOCKER_HOST</code> → aktywny kontekst w <code>~/.docker/config.json</code>
+        → lokalne gniazdo <code>unix:///var/run/docker.sock</code>.
+      </p>
+      <div class="note">
+        <strong>Lokalny Docker nie jest potrzebny.</strong> Klient nigdy nie uruchamia
+        binarki <code>docker</code> — linkuje SDK Dockera dla Go i mówi bezpośrednio do API
+        menedżera, sam czytając metadane kontekstów z plików. Wszystko, czego potrzebuje, to
+        osiągalny punkt końcowy <strong>menedżera</strong> Swarma (wywołania rozwiązujące
+        węzeł działają tylko wobec menedżera):
+        <ul>
+          <li><code>$DOCKER_HOST</code> wskazujący na zdalnego menedżera po
+            <code>tcp://</code> (mTLS) — wtedy na twojej stacji roboczej nie ma w ogóle
+            zainstalowanego Dockera;</li>
+          <li>kontekst <code>ssh://</code> — wymaga klienta <code>ssh</code> (nie dockera);
+            ruch do menedżera i do agenta tuneluje się przez niego;</li>
+          <li>lokalne gniazdo <code>unix:///var/run/docker.sock</code> — tylko domyślny
+            wariant awaryjny i jedyna opcja, która zakłada lokalnego demona.</li>
+        </ul>
+        Samo CLI <code>docker</code> jest potrzebne wyłącznie do <em>tworzenia</em> nazwanych
+        kontekstów (<code>docker context create</code>) — albo utwórz je przez
+        <code>swarmexec context create &lt;name&gt; --docker-host …</code>, dzięki czemu CLI
+        dockera nie jest potrzebne nawet do tego; użyj <code>$DOCKER_HOST</code>, żeby
+        całkowicie pominąć nazwane konteksty. (<code>init</code> czyta lokalne poświadczenia
+        <code>docker login</code> tylko dla <em>prywatnego</em> obrazu agenta — nie dla
+        publicznego, domyślnego.)
+      </div>
+      <p>
+        <strong>Bastion SSH.</strong> Jeśli host kontekstu jest punktem końcowym
+        <code>ssh://</code>, API menedżera jest tunelowane przez SSH — i tak samo połączenie
+        z agentem: ponieważ punkty końcowe węzłów <code>node:9443</code> zwykle nie są
+        routowalne z twojej stacji roboczej, klient automatycznie tuneluje ruch gRPC agenta
+        przez ten sam host SSH. Żadne dodatkowe flagi nie są potrzebne.
+      </p>
+      <div class="prompt"><span class="c">$</span> docker context create swarm --docker host=ssh://ops@manager.example.com
+<span class="c">$</span> swarmexec --context swarm exec web -- sh</div>
+
+      <!-- 8 -->
+      <h2 id="global">8. Flagi globalne</h2>
+      <p>Te trwałe flagi dotyczą każdego polecenia:</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--config</code></td><td>—</td><td>ścieżka pliku konfiguracyjnego (domyślnie <code>~/.config/swarmexec/config.yaml</code>)</td></tr>
+          <tr><td><code>--context</code></td><td>—</td><td>kontekst dockera dla API menedżera; obsługuje <code>ssh://</code> (także <code>$DOCKER_CONTEXT</code>)</td></tr>
+          <tr><td><code>--port</code></td><td><code>9443</code></td><td>port agenta</td></tr>
+          <tr><td><code>--addr-mode</code></td><td><code>hostname</code></td><td>adres, pod którym łączymy się z węzłem: <code>hostname</code> | <code>ip</code></td></tr>
+          <tr><td><code>--ca</code></td><td>—</td><td>certyfikat CA do weryfikacji agenta (mTLS)</td></tr>
+          <tr><td><code>--cert</code></td><td>—</td><td>certyfikat klienta (mTLS; CN jest tożsamością operatora)</td></tr>
+          <tr><td><code>--key</code></td><td>—</td><td>klucz prywatny klienta (mTLS)</td></tr>
+          <tr><td><code>--server-name</code></td><td>—</td><td>nadpisuje nazwę serwera TLS przy weryfikacji agenta</td></tr>
+          <tr><td><code>--agent-secret</code></td><td>—</td><td>współdzielony sekret dla agenta z certyfikatem samopodpisanym</td></tr>
+          <tr><td><code>--agent-secret-file</code></td><td>—</td><td>plik, z którego wczytać współdzielony sekret</td></tr>
+          <tr><td><code>--insecure</code></td><td><code>false</code></td><td>pomiń weryfikację certyfikatu serwera agenta</td></tr>
+          <tr><td><code>--operator</code></td><td>nazwa użytkownika systemu</td><td>tożsamość operatora raportowana na potrzeby audytu</td></tr>
+          <tr><td><code>--log-level</code></td><td><code>info</code></td><td>szczegółowość logów: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> całkowicie wyłącza logowanie)</td></tr>
+          <tr><td><code>--log-file</code></td><td>—</td><td>ścieżka pliku logu (domyślnie <code>swarmexec.log</code> obok pliku konfiguracyjnego)</td></tr>
+          <tr><td><code>--info</code></td><td>—</td><td>pokaż wersję, licencję i dane kontaktowe</td></tr>
+          <tr><td><code>--version</code></td><td>—</td><td>wypisz wersję klienta i protokołu</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        <strong>Logowanie.</strong> swarmexec loguje w formie strukturalnej (Go
+        <code>slog</code>, format tekstowy) do pliku logu <em>oraz</em> do bufora cyklicznego
+        w pamięci. W TUI logi nigdy nie trafiają na terminal (zepsułyby ekran) — zamiast tego
+        bufor cykliczny zasila wbudowaną podglądarkę na żywo (zobacz <a href="#tui">TUI</a>).
+        <code>--log-level off</code> wyłącza logowanie całkowicie; plik logu, którego nie da
+        się otworzyć, nie jest błędem krytycznym (zostaje wtedy sam bufor cykliczny).
+      </div>
+
+      <!-- 9 -->
+      <h2 id="commands">9. Polecenia</h2>
+
+      <h3><code>init</code> — zaprowizjonuj agentów</h3>
+      <p>
+        Wdraża agenta jako globalną usługę Swarma przez API menedżera: tworzy sekret Dockera
+        ze współdzielonym sekretem, uruchamia agenta w trybie z certyfikatem samopodpisanym
+        na każdym węźle (port hosta 9443) i zapisuje pasującą konfigurację klienta. Uruchom
+        to raz na swarm.
+      </p>
+      <div class="cmd">swarmexec init</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--image</code></td><td><code>docker.io/logleio/swarmexec-agent:latest</code></td><td>obraz agenta do wdrożenia</td></tr>
+          <tr><td><code>--secret</code></td><td>losowy</td><td>współdzielony sekret do użycia (domyślnie: wygeneruj losowy). Uwaga: jeśli sekret agenta <strong>już istnieje</strong>, zostaje zachowany bez zmian (sekrety Dockera są niezmienne), więc <code>--secret</code> <strong>nie jest stosowany do klastra</strong> — trafia tylko do twojej konfiguracji klienta, a <code>init</code> ostrzega o ryzyku niezgodności. Żeby zmienić sekret klastra, usuń go najpierw (żadna usługa nie może się do niego odwoływać), a potem uruchom <code>init</code> ponownie</td></tr>
+          <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nazwa usługi agenta</td></tr>
+          <tr><td><code>--port</code></td><td><code>9443</code></td><td>port hosta publikowany przez agenta</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>zaktualizuj usługę, jeśli już istnieje</td></tr>
+          <tr><td><code>--save-config</code></td><td><code>true</code></td><td>zapisz konfigurację klienta</td></tr>
+          <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>przekaż lokalne poświadczenia rejestru, żeby węzły mogły pobrać prywatny obraz</td></tr>
+          <tr><td><code>--wait</code></td><td><code>true</code></td><td>poczekaj, aż agenci wstaną, i raportuj postęp</td></tr>
+          <tr><td><code>--rollout-timeout</code></td><td><code>90s</code></td><td>jak długo czekać na start agentów</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        Domyślny obraz agenta jest publiczny na Docker Hubie, więc logowanie do rejestru nie
+        jest potrzebne. Uruchom ponownie z <code>--force</code>, żeby wdrożyć nową wersję agenta.
+      </div>
+
+      <h3><code>down</code> — usuń agentów</h3>
+      <p>
+        Odwrotność <code>init</code>: usuwa globalną usługę agenta oraz, domyślnie, sekret
+        Dockera ze współdzielonym sekretem. <strong>Nie</strong> rusza twojej konfiguracji
+        klienta.
+      </p>
+      <div class="cmd">swarmexec down</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nazwa usługi agenta do usunięcia</td></tr>
+          <tr><td><code>--keep-secret</code></td><td><code>false</code></td><td>nie usuwaj sekretu Dockera ze współdzielonym sekretem</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nie pytaj o potwierdzenie</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3><code>doctor</code> — zdiagnozuj swarm</h3>
+      <p>
+        Sprawdza połączenie z menedżerem, to czy usługa agenta jest wdrożona, oraz odpytuje
+        agenta na każdym gotowym węźle pod kątem osiągalności i rozjazdu wersji. Wypisuje
+        tabelę per węzeł (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>);
+        kończy się kodem niezerowym, jeśli menedżer jest nieosiągalny albo któryś agent jest
+        niezdrowy.
+      </p>
+      <div class="cmd">swarmexec doctor</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia na węzeł</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>wypisz JSON zamiast tabeli</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3><code>ps</code> — wypisz zadania</h3>
+      <p>
+        Wypisuje kandydujące zadania/kontenery i węzeł, na którym każde działa. Przyjmuje
+        opcjonalny filtr usługi. Kolumny: <code>SERVICE&nbsp;&nbsp;SLOT&nbsp;&nbsp;CONTAINER&nbsp;&nbsp;NODE&nbsp;&nbsp;IP&nbsp;&nbsp;UPTIME</code>.
+        Rozmawia wyłącznie z API menedżera — działa nawet zanim agenci staną się osiągalni.
+      </p>
+      <div class="cmd">swarmexec ps [service]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>wypisz JSON zamiast tabeli</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3><code>exec</code> — uruchom polecenie / otwórz shell</h3>
+      <p>
+        Wejdź przez exec do kontenera działającego gdziekolwiek w swarmie. Bez podanego
+        polecenia otwiera <code>/bin/sh</code>. TTY jest przydzielane automatycznie, gdy
+        stdin jest terminalem i nie podałeś polecenia; wymusisz je przez <code>-t</code>.
+        Kod wyjścia zdalnego polecenia jest przekazywany dosłownie.
+      </p>
+      <div class="cmd">swarmexec exec [flags] <span class="k">&lt;target&gt;</span> [-- &lt;cmd&gt; [args...]]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>-i</code>, <code>--stdin</code></td><td><code>true</code></td><td>trzymaj stdin otwarte</td></tr>
+          <tr><td><code>-t</code>, <code>--tty</code></td><td>auto</td><td>przydziel TTY (auto: prawda wtedy i tylko wtedy, gdy stdin jest terminalem i nie ma polecenia)</td></tr>
+          <tr><td><code>-u</code>, <code>--user</code></td><td>—</td><td>nazwa użytkownika albo UID (np. <code>1000:1000</code>)</td></tr>
+          <tr><td><code>-w</code>, <code>--workdir</code></td><td>—</td><td>katalog roboczy wewnątrz kontenera</td></tr>
+          <tr><td><code>-e</code>, <code>--env</code></td><td>—</td><td>ustaw zmienne środowiskowe (<code>KEY=VALUE</code>, można powtarzać)</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>podpowiedź/nadpisanie węzła dla celów typu container-id</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia z agentem</td></tr>
+        </tbody>
+      </table></div>
+      <div class="prompt"><span class="c">$</span> swarmexec exec web -- sh
+<span class="c">$</span> swarmexec exec web.2 -- cat /etc/hostname       <span class="o"># konkretna replika</span>
+<span class="c">$</span> swarmexec exec -u root -w /app web -- ls -la
+<span class="c">$</span> swarmexec exec -e FOO=bar web -- env</div>
+
+      <h3><code>logs</code> — strumieniuj logi</h3>
+      <p>Strumieniuj logi kontenera z dowolnego miejsca w swarmie.</p>
+      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;</span></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f</code>, <code>--follow</code></td><td><code>false</code></td><td>strumieniuj dalej nowe linie logu</td></tr>
+          <tr><td><code>--tail</code></td><td><code>0</code></td><td>ile linii od końca pokazać na początek (<code>0</code> = wszystkie)</td></tr>
+          <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>poprzedź każdą linię znacznikiem czasu</td></tr>
+          <tr><td><code>--since</code></td><td><code>0</code></td><td>tylko logi nowsze niż to (np. <code>10m</code>, <code>1h</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parsuj linie jako <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (domyślnie z konfiguracji, inaczej <code>classic</code>)</td></tr>
+          <tr><td><code>--min-level</code></td><td>—</td><td>pokaż tylko ten poziom i wyższe: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
+          <tr><td><code>--grep</code></td><td>—</td><td>pokaż tylko linie, których (sparsowany) komunikat pasuje do tego wyrażenia regularnego Go</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>podpowiedź/nadpisanie węzła dla celów typu container-id</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia z agentem</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Parsowanie i filtrowanie świadome formatu.</strong> <code>--log-format</code>
+        mówi klientowi, jak czytać każdą linię, żeby mógł wyciągnąć z niej <em>poziom</em>
+        i <em>komunikat</em>: <code>classic</code> wyciąga poziom ze zwykłej linii tekstu,
+        <code>json</code> parsuje JSON w stylu logstash (pola
+        <code>level</code>/<code>message</code>), <code>logfmt</code> parsuje styl
+        <code>key=value</code> używany przez wiele aplikacji w Go, demona Dockera i narzędzia
+        HashiCorp (<code>msg</code>/<code>message</code>,
+        <code>level</code>/<code>lvl</code>/<code>severity</code>, <code>ts</code>/<code>time</code>),
+        <code>gelf</code> parsuje JSON GELF z Grayloga (numeryczny poziom syslog), a
+        <code>raw</code> przepuszcza linie bez zmian. <code>--min-level</code> odrzuca potem
+        wszystko poniżej wybranego poziomu, a <code>--grep</code> zostawia tylko linie,
+        których sparsowany komunikat pasuje do wyrażenia regularnego.
+      </p>
+      <div class="note">
+        Linie <strong>bez wykrywalnego poziomu</strong> zawsze przechodzą przez filtr
+        <code>--min-level</code>, więc wielolinijkowe ślady stosu nie giną. Te same wartości
+        domyślne można ustawić raz w <a href="#config">sekcji konfiguracji
+        <code>logs:</code></a> (flagi mają pierwszeństwo).
+      </div>
+      <p>
+        <strong>Śledzenie mimo wymiany kontenera.</strong> Z <code>-f</code> na celu typu
+        <em>usługa</em> albo <em>service.slot</em> <code>logs</code> śledzi dalej, gdy
+        kontener, z którego strumieniuje, zostanie zastąpiony przez aktualizację kroczącą,
+        restart albo przeplanowanie: ponownie rozwiązuje bieżący działający kontener usługi
+        (ten sam slot albo ten sam węzeł dla usługi <code>global</code>), łączy się
+        automatycznie ponownie — jak <code>docker service logs -f</code> — i wypisuje
+        przygaszoną linię z powiadomieniem
+        (<code>container replaced; reconnected to &lt;id&gt; on &lt;node&gt;</code>).
+        Czeka na zaplanowanie następcy do ok. 30 s, zanim się podda, i kończy czysto,
+        gdy usługa zostanie usunięta. Sam cel typu
+        <em>container-id</em> nie ma następcy, więc po prostu zatrzymuje się jak dawniej.
+      </p>
+      <div class="note">
+        Wykrywanie żyje w kliencie: uczy się topologii od menedżera swarma, z którym i tak
+        jest już połączony — agenci na węzłach są lokalni dla swojego węzła i nie widzą
+        wymian na poziomie swarma.
+      </div>
+      <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
+<span class="c">$</span> swarmexec logs --since 15m -t web
+<span class="c">$</span> swarmexec logs --log-format json --min-level warn web
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
+      <div class="note">
+        Na przyszłość: wybór formatu został zaprojektowany tak, by później obsłużyć
+        automatyczne wykrywanie formatu per usługa przez usługę online (jeszcze
+        niezaimplementowane).
+      </div>
+
+      <h3><code>port-forward</code> (alias <code>pf</code>) — przekieruj lokalny port</h3>
+      <p>
+        Zajmij lokalny port TCP i przekieruj go na port wewnątrz kontenera, bez publikowania
+        tego portu w klastrze. Port lokalny domyślnie równa się zdalnemu. Wskazanie usługi
+        przekierowuje do dokładnie <strong>jednego</strong> jej zadania (tego, do którego
+        rozwiązuje się cel), a nie do wszystkich replik. Domyślnie wiąże się z
+        <code>127.0.0.1</code>. Naciśnij <kbd>Ctrl-C</kbd>, żeby zatrzymać.
+      </p>
+      <div class="cmd">swarmexec port-forward [flags] <span class="k">&lt;target&gt;</span> [local:]remote</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--address</code></td><td><code>127.0.0.1</code></td><td>lokalny adres do zbindowania (pętla zwrotna trzyma port poza twoją siecią)</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>podpowiedź/nadpisanie węzła dla celów typu container-id</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia z agentem</td></tr>
+        </tbody>
+      </table></div>
+      <div class="prompt"><span class="c">$</span> swarmexec port-forward db 5432             <span class="o"># localhost:5432 → container:5432</span>
+<span class="c">$</span> swarmexec pf web 9090:8080                  <span class="o"># localhost:9090 → container:8080</span></div>
+
+      <h3><code>volume ls</code> — wypisz wolumeny</h3>
+      <p>
+        Wypisuje wolumeny ze wszystkich węzłów i to, które węzły trzymają każdy z nich.
+        Wolumeny w Swarmie są lokalne dla węzła, więc klient odpytuje każdy węzeł i agreguje
+        wyniki. Opcjonalny filtr nazwy po fragmencie. Kolumny:
+        <code>VOLUME&nbsp;&nbsp;DRIVER&nbsp;&nbsp;NODES&nbsp;&nbsp;USED&nbsp;BY&nbsp;&nbsp;AGE</code>
+        (plus <code>SIZE</code> z <code>--size</code>).
+      </p>
+      <div class="cmd">swarmexec volume ls [name-filter]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--size</code></td><td><code>false</code></td><td>policz też rozmiar każdego wolumenu na dysku (wolniejsze: du na wolumen)</td></tr>
+          <tr><td><code>--sort</code></td><td><code>name</code></td><td>sortuj po: <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code> (<code>size</code> włącza <code>--size</code>)</td></tr>
+          <tr><td><code>--reverse</code></td><td><code>false</code></td><td>odwróć kierunek sortowania</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia na węzeł</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>wypisz JSON zamiast tabeli</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3><code>volume rm</code> — usuń wolumen</h3>
+      <p>
+        Usuń wolumen na każdym węźle, który go trzyma (<code>--all</code>), albo na
+        wskazanych węzłach (<code>--node</code>, można powtarzać). Jedno z dwóch jest wymagane.
+      </p>
+      <div class="cmd">swarmexec volume rm <span class="k">&lt;name&gt;</span>  (--all | --node N …)</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--all</code></td><td><code>false</code></td><td>usuń na każdym węźle, który trzyma wolumen</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>usuń tylko na tych węzłach (można powtarzać)</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>przekaż flagę force dockera</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nie pytaj o potwierdzenie</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia na węzeł</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3><code>ui</code> — interaktywna TUI</h3>
+      <p>
+        Interaktywny widok kontenerów i wolumenów, z wbudowanym exekiem, logami
+        i przekierowaniem portów. Wymaga interaktywnego terminala. Klawisze znajdziesz
+        w rozdziale <a href="#tui">TUI</a>.
+      </p>
+      <div class="cmd">swarmexec ui [service]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia z agentem</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3><code>config show</code> — obejrzyj konfigurację</h3>
+      <p>Wypisuje obowiązującą, scaloną konfigurację klienta z zamaskowanym sekretem.</p>
+      <div class="cmd">swarmexec config show  [--json]</div>
+
+      <h3><code>context</code> (alias <code>ctx</code>) — zarządzaj kontekstami Dockera</h3>
+      <p>
+        Twórz konteksty Dockera, które <code>--context</code> (i
+        <code>$DOCKER_CONTEXT</code>) rozwiązują dla API menedżera, i zarządzaj nimi.
+        swarmexec zapisuje do własnego magazynu dockera na dysku, więc konteksty utworzone
+        tutaj są wymienne z tymi z CLI <code>docker</code> — i nie potrzebujesz już
+        zainstalowanego dockera nawet po to, żeby jakiś utworzyć. Wbudowanego kontekstu
+        <code>default</code> nie da się usunąć.
+      </p>
+
+      <p><code>context create &lt;name&gt;</code> — utwórz kontekst wskazujący na host menedżera (przyjmuje dokładnie jeden argument z nazwą):</p>
+      <div class="cmd">swarmexec context create <span class="k">&lt;name&gt;</span> --docker-host &lt;endpoint&gt;</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--docker-host</code></td><td>—</td><td>wymagane — punkt końcowy demona dockera: <code>ssh://</code> | <code>tcp://</code> | <code>unix://</code> | <code>npipe://</code></td></tr>
+          <tr><td><code>--description</code></td><td>—</td><td>opcjonalny opis</td></tr>
+          <tr><td><code>--ssh-jump</code></td><td>—</td><td>host(y) pośredniczące ssh dla kontekstu <code>ssh://</code>, rozdzielone przecinkami (wieloetapowy <code>ProxyJump</code> / <code>-J</code>); wstrzykiwane zarówno do połączenia z API Dockera, jak i do tunelu agenta</td></tr>
+          <tr><td><code>--use</code></td><td><code>false</code></td><td>ustaw go od razu jako bieżący kontekst</td></tr>
+        </tbody>
+      </table></div>
+
+      <p><code>context ls</code> (alias <code>list</code>) — wypisz konteksty; kolumny <code>NAME&nbsp;&nbsp;CURRENT&nbsp;&nbsp;DOCKER&nbsp;ENDPOINT</code> (aktywny oznaczony <code>*</code>):</p>
+      <div class="cmd">swarmexec context ls  [--json]</div>
+
+      <p><code>context use &lt;name&gt;</code> — ustaw bieżący kontekst:</p>
+      <div class="cmd">swarmexec context use <span class="k">&lt;name&gt;</span></div>
+
+      <p><code>context rm &lt;name&gt; [name...]</code> (alias <code>remove</code>) — usuń jeden lub więcej kontekstów:</p>
+      <div class="cmd">swarmexec context rm <span class="k">&lt;name&gt;</span> [name...]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f</code>, <code>--force</code></td><td><code>false</code></td><td>wymagane, żeby usunąć <em>bieżący</em> kontekst (wybór wraca wtedy na <code>default</code>)</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="prompt"><span class="c">$</span> swarmexec context create prod --docker-host ssh://ops@manager --use
+<span class="c">$</span> swarmexec context ls
+<span class="c">$</span> swarmexec --context prod ps</div>
+
+      <!-- 10 -->
+      <h2 id="tui">10. TUI</h2>
+      <p>
+        <code>swarmexec ui</code> ma siedem zakładek — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
+        <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
+        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — oraz dwuliniową
+        stopkę: na górze podpowiedzi klawiszy dla danej zakładki, a pod nimi linia statusu
+        z aktywnym kontekstem dockera (<code>ctx&nbsp;&lt;name&gt;</code>, żeby zawsze było
+        jasne, na którym klastrze jesteś), podsumowaniem klastra na żywo, liczbą przekierowań
+        oraz — na zakładce Volumes — liczbą zaznaczonych przez ciebie wolumenów. Te klawisze
+        działają na każdej zakładce:
+      </p>
+      <p>
+        Pasek zakładek jest <strong>responsywny</strong>. Pełne nazwy potrzebują 94 kolumn;
+        na węższym terminalu pasek przełącza się na krótkie etykiety —
+        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
+        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
+        <strong>Node</strong> — dzięki czemu wszystkie siedem zakładek pozostaje widocznych
+        zamiast obcinania ostatnich. Cyfry skrótów i obszary klikalne myszą pozostają bez zmian.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>?</kbd></td><td>otwórz nakładkę ze skrótami klawiszowymi — kompletny, aktualny spis klawiszy (generowany z twojego mapowania, więc przemapowane klawisze pokazują się poprawnie); jednoliniowa stopka mieści tylko najczęściej używane klawisze</td></tr>
+          <tr><td><kbd>Tab</kbd></td><td>przejdź do następnej zakładki</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>przeskocz do Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>w dół / w górę (także <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
+          <tr><td><kbd>r</kbd></td><td>odśwież aktywną zakładkę i podsumowanie klastra</td></tr>
+          <tr><td><kbd>y</kbd></td><td>skopiuj bieżącą listę do schowka (OSC52)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>przełącz przechwytywanie myszy (wyłączone = własne zaznaczanie/kopiowanie twojego terminala)</td></tr>
+          <tr><td><kbd>`</kbd></td><td>otwórz / zamknij podgląd logów na żywo (zobacz niżej)</td></tr>
+          <tr><td><kbd>q</kbd></td><td>wyjdź</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Zakładka Stacks/Services</h3>
+      <p>
+        Zakładka&nbsp;<kbd>1</kbd>, wcześniej nazywana <em>Containers</em>. To jedno drzewo,
+        <strong>stack&nbsp;→ usługa&nbsp;→ kontener</strong>, i to w nim mieszkają exec, logi,
+        przekierowanie portów, inspekcja i edytory usług.
+      </p>
+      <p>
+        <strong>Sprawdzanie wersji dla :latest.</strong> Swarm przypina <code>:latest</code>
+        do skrótu (digest) w chwili wdrożenia, więc usługa otagowana <code>:latest</code>
+        naprawdę uruchamia ustalony obraz. swarmexec rozwiązuje to wobec rejestru (używając
+        twoich lokalnych poświadczeń dockera) i opisuje wiersz usługi
+        <strong>zaraz za URI obrazu</strong>: podaje <strong>prawdziwą wersję</strong>
+        w nawiasach — odczytaną z etykiety obrazu
+        <code>org.opencontainers.image.version</code> — oraz
+        <strong>strzałkę w górę&nbsp;↑</strong>, gdy bieżący <code>:latest</code> w rejestrze
+        ma nowszy digest niż ten, do którego usługa jest przypięta (np.
+        <code>nginx:latest (1.4.0) ↑</code>).
+        Działa najlepiej jak się da i jest buforowane: błędy rejestru po prostu zostawiają
+        wiersz bez adnotacji. Sekcja <code>IMAGE</code> nakładki inspekcji pokazuje tę samą
+        wersję, a gdy istnieje nowszy obraz — wybieralny wiersz
+        <em>newer&nbsp;version&nbsp;available</em>; najedź na niego i naciśnij <kbd>u</kbd>
+        (albo <kbd>Enter</kbd>), żeby <strong>zaktualizować usługę</strong>.
+        Dla usługi <strong>przypiętej do konkretnej wersji</strong> otwiera to
+        <strong>wybierak tagów</strong>: pole, które <strong>autouzupełnia nowsze tagi z tej
+        samej rodziny</strong> (najwyższy pierwszy, domyślnie zaznaczony najnowszy), ale
+        pozostaje polem tekstowym, więc możesz <strong>wpisać dowolny istniejący tag — w tym
+        starszy, żeby przypiąć się do sprawdzonego wydania albo się do niego cofnąć</strong>.
+        Tag jest walidowany wobec repozytorium (tag, którego ono nie wymienia, zostaje
+        odrzucony), a wybranie starszego tagu pokazuje <strong>ostrzeżenie o downgrade</strong>
+        przed zastosowaniem. Dla usługi na <code>:latest</code> (bez wyodrębnionych wersji)
+        pozostaje to pojedynczym potwierdzeniem na bieżący digest <code>:latest</code>
+        z rejestru. Tak czy inaczej jest to jeden <code>ServiceUpdate</code> / jedna
+        aktualizacja krocząca, za potwierdzeniem.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>/</kbd></td><td>otwórz pasek wyszukiwania (filtruje po usłudze / kontenerze / węźle)</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>zwiń / rozwiń, przechodząc przez wszystkie trzy poziomy. <kbd>h</kbd> zwija wiersz pod kursorem — stack zwija całą grupę, rozwinięta usługa zwija swoje kontenery — a gdy nie ma już nic do zwinięcia, wychodzi <em>wyżej</em>, do rodzica, więc kolejne naciśnięcia wędrują w górę kontener&nbsp;→ usługa&nbsp;→ stack. <kbd>l</kbd> rozwija wiersz pod kursorem albo schodzi do jego pierwszego dziecka, jeśli jest już otwarty</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>na kontenerze: otwiera menu akcji; na usłudze albo stacku: rozwija / zwija go</td></tr>
+          <tr><td><kbd>s</kbd></td><td>przełącz grupowanie po stackach — drzewo z grupami ⟷ płaska lista usług (zobacz niżej)</td></tr>
+          <tr><td><kbd>L</kbd></td><td>logi (wielkie <kbd>L</kbd>) — na kontenerze jego własne logi, na usłudze zagregowane logi wszystkich jej zadań</td></tr>
+          <tr><td><kbd>!</kbd></td><td>otwórz nakładkę z ryzykami bezpieczeństwa dla całej listy usług (zobacz niżej)</td></tr>
+          <tr><td><kbd>p</kbd></td><td>przekieruj port zadania pod kursorem</td></tr>
+          <tr><td><kbd>i</kbd></td><td>zbadaj węzeł drzewa pod kursorem — nawigowalna nakładka z tabelarycznym podsumowaniem; zaznaczenie przesuwasz przez <kbd>↑</kbd>/<kbd>↓</kbd> albo <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiuje zaznaczoną linię, <kbd>t</kbd> przełącza surowy JSON demona (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> zamyka). Na <strong>usłudze</strong> nakładka pozwala też ją edytować: <kbd>s</kbd> skalowanie, <kbd>f</kbd> wymuszona aktualizacja, <kbd>p</kbd> porty, <kbd>l</kbd> etykiety, <kbd>e</kbd> zmienne środowiskowe, <kbd>n</kbd> sieci, <kbd>S</kbd> sekrety, <kbd>v</kbd> montowania, <kbd>A</kbd> aliasy; <kbd>D</kbd> diagnozuje, <em>dlaczego</em> usługa nie działa wszędzie; <kbd>X</kbd> ją usuwa</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Pokazywana jest każda usługa (nawet przeskalowana do zera), każdy wiersz wyrenderowany
+        jak linia <code>docker service ls</code> — nazwa, tryb, liczba działających/żądanych,
+        obraz i opublikowane porty — i pokolorowany według kondycji (turkusowy = wszystkie
+        zadania działają, pomarańczowy = częściowo, czerwony = leży, szary = przeskalowana do
+        zera). Znacznik <code>▸</code>/<code>▾</code> pokazuje, czy usługa jest zwinięta, czy
+        rozwinięta; jej działające kontenery zagnieżdżają się pod nią. Usługa
+        <strong>w trakcie aktualizacji kroczącej</strong> nosi kolorową plakietkę na swoim
+        wierszu drzewa — <span style="color:#f2cc60">⟳&nbsp;updating</span> albo
+        <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — a ten sam status pojawia
+        się w nakładce inspekcji usługi; znika po zakończeniu aktualizacji.
+      </p>
+
+      <p>
+        <strong>Grupowanie po stackach.</strong> <code>docker stack deploy</code> etykietuje
+        każdą tworzoną usługę etykietą <code>com.docker.stack.namespace</code>. swarmexec
+        odczytuje tę etykietę ze specyfikacji usługi, którą menedżer i tak już zwrócił —
+        Swarm nie ma obiektu stack, a to jedyne powiązanie — i zagnieżdża drzewo na trzech
+        poziomach: <strong>stack&nbsp;→ usługa&nbsp;→ kontener</strong>. Wiersz stacka pokazuje
+        nazwę stacka, ile usług się pod nim znajduje oraz <strong>zsumowaną</strong> liczbę
+        działających/żądanych zadań (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), pokolorowaną
+        według tej samej reguły kondycji co wiersz usługi. Za nim pojawiają się dwa zbiorcze
+        liczniki, gdy są niezerowe: <span style="color:#f2cc60">⟳&nbsp;n</span> — usługi w tym
+        stacku będące właśnie <strong>w trakcie aktualizacji kroczącej</strong> — oraz
+        <span style="color:#f85149">🛡&nbsp;n</span> — usługi z
+        <strong>ustaleniem bezpieczeństwa wymagającym działania</strong>, tą samą tarczą, którą
+        noszą wiersze usług. Dzięki temu zwinięty stack wciąż mówi ci, czy coś w środku
+        wymaga uwagi.
+      </p>
+      <p>
+        Usługi utworzone przez <code>docker service create</code> nie mają etykiety stacka;
+        zbierane są pod <strong><code>(no stack)</code></strong>, który zawsze sortuje się na
+        końcu, więc nigdy nie spycha prawdziwych stacków w dół listy.
+        <strong>Nic nie jest ukrywane</strong> — każda usługa nadal pojawia się dokładnie raz.
+        Stacki sortują się po nazwie i startują rozwinięte, więc drzewo z grupami pokazuje te
+        same usługi co płaskie; zwinięcia, których dokonasz, przeżywają automatyczne odświeżenie.
+      </p>
+      <p>
+        Grupowanie jest <strong>domyślnie włączone</strong>, ale działa tylko wtedy, gdy co
+        najmniej jedna usługa w klastrze faktycznie nosi etykietę stacka — na klastrze bez
+        stacków drzewo wygląda dokładnie tak, jak wyglądało zawsze, bez zbędnego rodzica
+        <code>(no stack)</code>. Naciśnij <kbd>s</kbd>, żeby przełączać się między drzewem
+        z grupami a płaską listą usług (stopka wymienia to jako <em>s stacks</em>); gdy nigdzie
+        nie ma etykiet stacków, program tak mówi, zamiast przerysowywać identyczne drzewo.
+        Klawisz jest przemapowywalny jako <code>stack_group</code> w
+        <a href="#tui">keys.yaml</a>.
+      </p>
+      <p>
+        Wyszukiwanie (<kbd>/</kbd>) działa bez zmian: filtr wciąż dopasowuje usługę, kontener
+        i węzeł. Stack, który filtr opróżni, znika z drzewa, a liczniki w każdym wierszu stacka
+        opisują to, co faktycznie pod nim zostało — liczby idą więc za filtrem, zamiast
+        reklamować usługi, które odfiltrowałeś.
+      </p>
+
+      <p>
+        Menu akcji oferuje <strong>Logs</strong>, <strong>Bash</strong>,
+        <strong>Sh</strong>, <strong>Shell as user…</strong> (pyta o użytkownika/UID, jak
+        <code>docker exec -u</code>, dla obrazów, których domyślny użytkownik nie ma
+        potrzebnych narzędzi albo uprawnień) oraz <strong>Port forward</strong> (niedostępne
+        powłoki są wyszarzane po sprawdzeniu). W pasku wyszukiwania <kbd>Enter</kbd> zachowuje
+        filtr i wraca do listy; <kbd>Esc</kbd> czyści filtr i zamyka pasek.
+      </p>
+
+      <p>
+        <strong>Ryzyka bezpieczeństwa (<kbd>!</kbd>).</strong>
+        Za każdym razem, gdy pobierana jest lista usług, swarmexec uruchamia zestaw małych
+        <strong>analizatorów statycznych na specyfikacji każdej usługi</strong> — tej samej
+        specyfikacji, którą menedżer i tak już zwrócił, więc nie ma dodatkowego wywołania API,
+        agent nie bierze w tym udziału i nic nie jest wykonywane wewnątrz twoich kontenerów.
+        Usługa z ustaleniem, na które warto zareagować, jest oznaczona wiodącą
+        <strong>🛡</strong> w drzewie usług, w polu o stałej szerokości przed nazwą, żeby
+        tarcze układały się w pionową kolumnę do przejrzenia. Naciśnij <kbd>!</kbd>, żeby
+        otworzyć <strong>nakładkę z ryzykami bezpieczeństwa</strong>.
+      </p>
+      <p>Kontrole dostępne dzisiaj:</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Kontrola</th><th>Waga</th><th>Co zgłasza</th></tr></thead>
+        <tbody>
+          <tr><td><code>root-user</code> — „działa jako root”</td><td><span style="color:#f85149">wysoka</span></td><td>specyfikacja przypina kontener do <strong>roota jawnie</strong> — <code>User=root</code> albo uid <code>0</code> (formy liczbowe takie jak <code>00</code> czy <code>+0</code> też są wyłapywane; brana pod uwagę jest tylko część użytkownika z <code>user:group</code>)</td></tr>
+          <tr><td><code>root-user</code> — „nie ustawiono użytkownika”</td><td>niska</td><td><strong>żaden</strong> użytkownik nie jest w ogóle ustawiony, więc kontener działa jako domyślny użytkownik samego obrazu, którym często jest root. To <strong>tylko informacja i nie oznacza usługi</strong>: nieustawiony użytkownik to domyślny stan Swarma w niemal każdej usłudze, a to, czy naprawdę jest to root, zależy od <code>USER</code> obrazu, czego specyfikacja z menedżera nie ujawnia — oznaczanie tego postawiłoby tarczę przy niemal każdym wierszu i zniszczyło sygnał widoczny na pierwszy rzut oka</td></tr>
+          <tr><td><code>secret-in-env</code> — „sekret w zmiennej środowiskowej”</td><td><span style="color:#f85149">wysoka</span></td><td>klucz zmiennej środowiskowej wyglądający na poświadczenie trzyma <strong>dosłowną wartość w specyfikacji usługi</strong>, czytelną dla każdego, kto może odczytać tę specyfikację. Użyj zamiast tego sekretu Dockera albo konwencji <code>*_FILE</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        <strong>Żadna wartość sekretu nigdy nie jest wyświetlana.</strong> Ustalenie
+        <code>secret-in-env</code> podaje tylko <strong>klucz</strong> zmiennej środowiskowej;
+        jej wartość nigdy nie jest wczytywana do ustalenia, nigdy renderowana i nigdy
+        kopiowana. Kontrola jest też napisana tak, żeby nie hałasować: dopasowuje całe tokeny
+        rozdzielone znakiem <code>_</code>
+        (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
+        <code>PASSPHRASE</code>, <code>SECRET</code>, <code>TOKEN</code>,
+        <code>APIKEY</code>, <code>CREDENTIAL(S)</code>, <code>PRIVATEKEY</code> oraz pary
+        <code>API_KEY</code>, <code>ACCESS_KEY</code>, <code>PRIVATE_KEY</code>,
+        <code>SECRET_KEY</code>, <code>CLIENT_SECRET</code>, <code>AUTH_TOKEN</code>), więc
+        <code>COMPASS</code>, <code>PASSENGER_PORT</code> czy <code>BYPASS_AUTH</code> nie są
+        zgłaszane. Klucze, które jedynie <em>wskazują</em> na poświadczenie, są wyłączone
+        (<code>_FILE</code>, <code>_PATH</code>, <code>_URL</code>, <code>_URI</code>,
+        <code>_NAME</code>, <code>_ID</code>, <code>_TYPE</code>, <code>_ENABLED</code>,
+        <code>_REQUIRED</code>, <code>_LENGTH</code>, <code>_TIMEOUT</code>,
+        <code>_TTL</code>, <code>_EXPIRY</code>, <code>_ALGORITHM</code>), podobnie jak
+        wartości, które ewidentnie nie są poświadczeniem — ścieżka bezwzględna, wartość
+        logiczna, liczba.
+      </div>
+      <p>
+        Nakładka wypisuje <strong>każdą oznaczoną usługę</strong> („N z M usług(i)
+        oznaczonych”), pogrupowaną po usługach, każde ustalenie w osobnej linii z kropką wagi —
+        <span style="color:#f85149">● wysoka</span>,
+        <span style="color:#f2cc60">● średnia</span>, <span style="color:#8b949e">● niska</span> —
+        krótkim tytułem i jednoliniowym wyjaśnieniem. Ustalenia są uporządkowane od
+        najgorszych. Gdy usługa zostanie już oznaczona za coś wymagającego działania,
+        wypisywane są też jej informacyjne ustalenia o niskiej wadze. Jeśli usługa pod
+        kursorem jest wśród nich, zostaje wstępnie podświetlona i przewinięta do widoku. Gdy
+        nic nie jest oznaczone, nakładka mówi to wprost; a gdy lista usług jeszcze się nie
+        wczytała, mówi, że <em>nic nie zostało przeskanowane</em>, zamiast fałszywie
+        ogłaszać, że wszystko jest w porządku. <kbd>j</kbd>/<kbd>k</kbd> przewijają,
+        <kbd>Esc</kbd> (albo <kbd>q</kbd>, albo ponownie <kbd>!</kbd>) zamyka.
+      </p>
+      <div class="note">
+        Skanowanie to <strong>rozszerzalny rejestr</strong> analizatorów, a nie sztywna lista:
+        nowa kontrola pojawia się automatycznie i w znaczniku w drzewie, i w nakładce. Klawisz
+        jest przemapowywalny jako <code>security_risks</code> w
+        <a href="#tui">keys.yaml</a>.
+      </div>
+      <p>
+        <kbd>i</kbd> otwiera <strong>nakładkę inspekcji</strong> dla węzła drzewa pod
+        kursorem — na <strong>usłudze</strong> pokazuje <code>docker service inspect</code>,
+        a na liściu <strong>kontenera</strong> <strong>inspekcję zadania Swarma</strong>
+        (spojrzenie menedżera na tę instancję: stan, slot, węzeł, id kontenera, specyfikacja
+        kontenera, zasoby i historia statusów). Oba pochodzą od menedżera swarma. Nakładka
+        otwiera się na <strong>tabelarycznym podsumowaniu pisanym pod operatora</strong>,
+        z sekcjami uporządkowanymi według znaczenia operacyjnego — najpierw sieci, etykiety,
+        wolumeny/montowania i sekrety (oraz configi), potem porty, obraz, tryb, zmienne
+        środowiskowe, zasoby, rozmieszczenie i polityka aktualizacji (plus stan, węzeł i id
+        kontenera dla kontenera/zadania), a identyfikatory i znaczniki czasu na końcu.
+        Naciśnij <kbd>t</kbd>, żeby przełączać między tym podsumowaniem a surowym JSON-em
+        demona. Pamiętaj, że jest to widok zadania z perspektywy menedżera, a nie pełne
+        lokalne <code>docker container inspect</code> działającego kontenera na węźle —
+        prawdziwa inspekcja kontenera przez agenta jest planowana.
+      </p>
+      <p>
+        Nakładka jest <strong>nawigowalna i wybieralna</strong>, a nie tylko zwykłym
+        przewijaniem: linie z danymi są pojedynczo wybieralne, a kursor przesuwasz linia po
+        linii przez <kbd>↑</kbd>/<kbd>↓</kbd> albo <kbd>j</kbd>/<kbd>k</kbd> (nagłówki sekcji
+        i puste linie są pomijane). <kbd>y</kbd> zawsze kopiuje zaznaczoną linię do schowka
+        przez OSC52 — tym samym mechanizmem yank, co wszędzie indziej — więc możesz wyciągnąć
+        pojedyncze id, montowanie albo adres bez zaznaczania tekstu ręcznie. <kbd>Enter</kbd>
+        też kopiuje, z wyjątkiem zwijalnego wiersza <strong>NETWORKS</strong>, gdzie zamiast
+        tego rozwija/zwija tę sieć (zobacz niżej). Oba widoki (podsumowanie tabelaryczne
+        i surowy JSON dostępny pod <kbd>t</kbd>) są wybieralne i kopiowalne linia po linii.
+        <strong>Stopka zawsze wymienia dostępne klawisze</strong>, więc od razu widać, co
+        możesz zrobić; dla usługi stopka pokazuje też klawisze edycji opisane niżej.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>przesuwaj zaznaczenie między liniami z danymi (nagłówki/puste pomijane)</td></tr>
+          <tr><td><kbd>y</kbd></td><td>skopiuj zaznaczoną linię do schowka (OSC52) — zawsze</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>na zwijalnym wierszu <strong>NETWORKS</strong> rozwija/zwija tę sieć; w każdej innej linii kopiuje ją (OSC52)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>przełącz między podsumowaniem tabelarycznym a surowym JSON-em demona (oba wybieralne)</td></tr>
+          <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edytuj usługę — skalowanie / wymuszona aktualizacja / porty / etykiety / zmienne środowiskowe / sieci / sekrety / montowania / aliasy (tylko usługa; <kbd>S</kbd> to wielka litera, Shift+s, żeby odróżnić ją od <kbd>s</kbd> skalowanie; <kbd>A</kbd> też jest wielkie; zobacz niżej)</td></tr>
+          <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>zamknij nakładkę</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Sekcja <strong>NETWORKS</strong> jest <strong>zwijalna</strong>: każda podłączona sieć
+        pokazuje się jako zwinięty wiersz <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>.
+        <strong>Ikona kłódki 🔒</strong> za nazwą sieci oznacza sieć overlay
+        <strong>szyfrowaną</strong> (szyfrowanie płaszczyzny danych,
+        <code>--opt encrypted</code>); jej brak oznacza brak szyfrowania. Najedź na ten wiersz
+        i naciśnij <kbd>Enter</kbd>, żeby go rozwinąć lub zwinąć. Rozwinięty wypisuje nazwy DNS,
+        które rozwiązują się na usługę/kontener w tej sieci — nazwę usługi,
+        <code>tasks.&lt;service&gt;</code>, wszelkie własne aliasy oraz (dla kontenera/zadania)
+        jego adres — dzięki czemu widzisz, pod jaką nazwą DNS usługa/kontener jest osiągalny
+        i jakie nosi aliasy, w każdej sieci z osobna. Na tych wierszach sieci <kbd>Enter</kbd>
+        przełącza; w każdej innej linii kopiuje (a <kbd>y</kbd> kopiuje zawsze).
+      </p>
+      <p>
+        Gdy badasz <strong>usługę</strong> (a nie liść kontenera/zadania, którego nakładka
+        pozostaje tylko do odczytu), tytuł nakładki udostępnia też kilka klawiszy edycji,
+        z których każdy jest wywołaniem <code>ServiceUpdate</code> w API menedżera
+        wyzwalającym aktualizację kroczącą / uzgodnienie zadań usługi:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>d</kbd></td><td>diff — pokazuje ujednolicony diff <em>bieżącej</em> specyfikacji usługi wobec <em>poprzedniej</em> (co zmieniła ostatnia aktualizacja krocząca), korzystając z <code>PreviousSpec</code> Swarma. Zmienione pola są wypisane w grupach, z liniami <span style="color:#f85149">- usunięte</span> / <span style="color:#3fb950">+ dodane</span> (obraz, tryb/repliki, zmienne środowiskowe, etykiety, sieci, aliasy, sekrety, montowania, porty, ograniczenia rozmieszczenia, preferencje rozproszenia, limity/rezerwacje zasobów); pola bez zmian są pomijane. Jeśli usługa nigdy nie była aktualizowana (brak poprzedniej specyfikacji), nakładka tak mówi. Nakładka tylko do odczytu — <kbd>j</kbd>/<kbd>k</kbd> przewijają, <kbd>Esc</kbd> zamyka</td></tr>
+          <tr><td><kbd>s</kbd></td><td>skalowanie — pyta o nową liczbę replik i ją stosuje (tylko usługi replikowane; usługa globalna zgłasza, że nie da się jej skalować)</td></tr>
+          <tr><td><kbd>f</kbd></td><td>wymuszona aktualizacja — wdraża usługę ponownie bez zmiany jej specyfikacji (odpowiednik <code>docker service update --force</code>: podbija <code>TaskTemplate.ForceUpdate</code>), po potwierdzeniu. Każde zadanie jest restartowane / przeplanowywane, i tak właśnie odblokowuje się usługę tkwiącą w <strong>niekompletnym stanie</strong> (np. <code>1/2</code> repliki). Jeden <code>ServiceUpdate</code> (aktualizacja krocząca)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>usuń usługę (wielkie <kbd>X</kbd>) — <strong>trwale ją kasuje</strong> i zatrzymuje wszystkie jej zadania, za potwierdzeniem; nie da się tego cofnąć. Jedno <code>ServiceRemove</code> w API menedżera; po powodzeniu nakładka inspekcji zamyka się, a drzewo usług się odświeża. Jeśli usługa była <strong>jedynym użytkownikiem jednego lub więcej sekretów</strong>, swarmexec pyta następnie, czy <strong>usunąć także te osierocone sekrety</strong> (sekrety wciąż używane przez inną usługę zostają nietknięte)</td></tr>
+          <tr><td><kbd>D</kbd></td><td>zdiagnozuj rozmieszczenie (wielkie <kbd>D</kbd>) — odpowiada w jednym widoku na pytanie, <em>dlaczego usługa nie działa wszędzie tam, gdzie się tego spodziewasz</em>, zamiast gonić za tym przez kilka poleceń <code>docker</code>. Dla usługi <strong>globalnej</strong> wypisuje każdy węzeł z ✓ działa albo ✗ i powodem wykluczenia (<strong>dostępność</strong> drain/pause, stan <strong>down</strong>, niespełnione <strong>ograniczenie</strong> rozmieszczenia albo niezgodność <strong>platformy</strong>) — dlatego trzywęzłowy klaster może całkiem legalnie pokazywać <code>2/2</code> (trzeci węzeł nie jest uprawniony). Dla usługi <strong>replikowanej</strong> wypisuje każde zadanie, które <em>nie</em> działa, wraz z własnym komunikatem schedulera (ograniczenia, za mało zasobów, błędy pobierania obrazu, …). Ograniczenia, których nie da się sprawdzić po stronie klienta (<code>engine.labels.*</code>), są odnotowywane, a nie zgadywane. Nakładka tylko do odczytu</td></tr>
+          <tr><td><kbd>p</kbd></td><td>edytuj opublikowane porty — otwiera buforowany edytor listy portów usługi, każdy w postaci <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, domyślnie <code>tcp</code>), np. <code>8080:80/tcp</code></td></tr>
+          <tr><td><kbd>l</kbd></td><td>edytuj etykiety — ten sam buforowany edytor listy nad wpisami <code>key=value</code></td></tr>
+          <tr><td><kbd>e</kbd></td><td>edytuj zmienne środowiskowe — ten sam buforowany edytor listy nad zmiennymi z <code>ContainerSpec</code>, każda wprowadzana jako <code>KEY=VALUE</code> (np. <code>LOG_LEVEL=debug</code>); klucz jest wymagany, wartość może być pusta i sama może zawierać <code>=</code>. Tak jak porty/etykiety/montowania ten edytor <strong>pozwala</strong> na edycję pod <kbd>e</kbd>, więc możesz poprawić wartość w miejscu. W odróżnieniu od pozostałych edytorów <kbd>e</kbd> otwiera tu wpis w przewijalnym <strong>wieloliniowym polu tekstowym</strong> (a nie w jednoliniowym), żeby długie wartości takie jak <code>GITLAB_OMNIBUS_CONFIG</code> dało się wygodnie edytować — pisz swobodnie (<kbd>Enter</kbd> wstawia nową linię), <kbd>Ctrl-S</kbd> zapisuje, <kbd>Esc</kbd> anuluje. Zastosowanie podmienia zmienne środowiskowe usługi w jednym <code>ServiceUpdate</code> (aktualizacja krocząca)</td></tr>
+          <tr><td><kbd>n</kbd></td><td>edytuj sieci — buforowany edytor listy nad podłączeniami sieciowymi usługi; skoro wpis to sama nazwa, jest to <strong>tylko dodawanie/usuwanie</strong> (bez edycji pod <kbd>e</kbd>). Pole dodawania <strong>autouzupełnia nazwy sieci</strong> (podpowiada sieci, do których usługa nie jest jeszcze podłączona, albo wpisz własną). Zastosowanie podmienia podłączenia w jednym <code>ServiceUpdate</code>. <strong>Aliasy DNS</strong> edytuje się również stąd: zaznacz sieć w tym edytorze i naciśnij <kbd>A</kbd>, żeby otworzyć buforowaną listę aliasów DNS usługi <em>w tej sieci</em> (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>y</kbd> kopiuj / <kbd>u</kbd> cofnij / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj); zastosowanie podmienia aliasy tej sieci w jednym <code>ServiceUpdate</code>. Działa nawet wtedy, gdy usługa nie ma jeszcze żadnych aliasów. (Nowo dodaną sieć musisz najpierw zastosować, zanim ustawisz jej aliasy.)</td></tr>
+          <tr><td><kbd>S</kbd></td><td>edytuj sekrety (wielkie <kbd>S</kbd>, czyli Shift+s, żeby odróżnić od <kbd>s</kbd> skalowanie) — ten sam buforowany edytor listy co przy sieciach, nad sekretami, do których usługa się odwołuje; wpis to sama nazwa, więc jest to <strong>tylko dodawanie/usuwanie</strong> (bez edycji pod <kbd>e</kbd>). Pole dodawania <strong>autouzupełnia nazwy sekretów</strong> (podpowiada sekrety, których usługa jeszcze nie używa, albo wpisz własną). Zastosowanie podmienia odwołania usługi do sekretów w jednym <code>ServiceUpdate</code> (aktualizacja krocząca); każdy sekret jest montowany w <code>/run/secrets/&lt;name&gt;</code>. Działa nawet wtedy, gdy usługa nie ma obecnie żadnych sekretów</td></tr>
+          <tr><td><kbd>v</kbd></td><td>edytuj montowania — buforowany edytor listy nad wolumenami i montowaniami bind usługi. Dodawanie (<kbd>a</kbd>) albo edycja (<kbd>e</kbd>) otwiera mały <strong>formularz</strong> zamiast pojedynczego pola tekstowego: pole wyboru <strong>bind mount</strong>, <strong>źródło</strong> (gdy pole jest odznaczone, jest to nazwa <em>wolumenu</em> z <strong>autouzupełnianiem</strong> istniejących wolumenów klastra; gdy zaznaczone — <em>ścieżka na hoście</em>), <strong>ścieżka w kontenerze</strong> oraz pole wyboru <strong>tylko do odczytu</strong>. (Pod spodem każdy wpis to nadal <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Źródła bindów i wszystkie cele muszą być ścieżkami bezwzględnymi. Zastosowanie podmienia montowania w jednym <code>ServiceUpdate</code> (aktualizacja krocząca). <strong>Zabezpieczenie przed bindami (miękkie):</strong> jeśli buforowana lista zawiera jakiekolwiek montowania bind, zastosowanie pokazuje najpierw ostrzeżenie z listą węzłów, na których usługa mogłaby zostać zaplanowana (wyliczonych z ograniczeń rozmieszczenia oraz roli/etykiet/dostępności węzłów), i przypomina, że każde źródło bindu musi <strong>już istnieć</strong> na wszystkich tych węzłach — swarmexec nie potrafi zweryfikować ścieżek hosta (agent nie ma dostępu do systemu plików hosta), więc ścieżki bindów nie są autouzupełniane ani sprawdzane pod kątem istnienia; to tylko podpowiedź</td></tr>
+          <tr><td><kbd>r</kbd></td><td>edytuj limity zasobów — mały formularz do ustawienia, zmiany albo wyczyszczenia limitów <strong>CPU</strong> i <strong>pamięci</strong> usługi (oraz, opcjonalnie, rezerwacji). CPU podaje się w rdzeniach (np. <code>0.5</code>, <code>2</code>); pamięć jako rozmiar czytelny dla człowieka (np. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Pozostawienie pola <strong>pustego czyści</strong> dany limit (Swarm traktuje go wtedy jako nieograniczony). Rezerwacja nie może przekraczać swojego limitu. Zastosowanie wykonuje jeden <code>ServiceUpdate</code> (aktualizacja krocząca); istniejące limity Pids oraz rezerwacje urządzeń/ogólne są zachowywane</td></tr>
+          <tr><td><kbd>P</kbd></td><td>edytuj rozmieszczenie (wielkie <kbd>P</kbd>, czyli Shift+p, żeby odróżnić od <kbd>p</kbd> porty) — otwiera małe menu z dwoma buforowanymi edytorami: <strong>Ograniczenia</strong> i <strong>Preferencje rozproszenia</strong>.
+            <ul>
+              <li><strong>Ograniczenia</strong> — twarde ograniczenia rozmieszczenia usługi (<code>node.role</code>, <code>node.hostname</code>, <code>node.id</code>, <code>node.platform.os</code>/<code>arch</code>, <code>node.labels.&lt;k&gt;</code>, <code>engine.labels.&lt;k&gt;</code>, każde z <code>==</code> albo <code>!=</code>, np. <code>node.role==manager</code>, <code>node.labels.zone!=eu</code>). Pole dodawania/edycji <strong>autouzupełnia</strong> gotowe kandydatury zbudowane z bieżącego klastra — role, nazwy hostów, platformy oraz etykiety węzłów i silników wszystkich węzłów — więc zwykle możesz ograniczenie wybrać zamiast je wpisywać (podpowiadana jest forma <code>==</code>; <code>!=</code> dla negacji wpisz ręcznie). Wynikowy zbiór węzłów zasila też zabezpieczenie przed bindami w edytorze montowań.</li>
+              <li><strong>Preferencje rozproszenia</strong> — miękkie strategie <code>--placement-pref spread=…</code>: buforowana, uporządkowana lista samych atrybutów węzła (np. <code>node.labels.zone</code>, <code>node.hostname</code>), po których Swarm równomiernie rozprasza zadania. Pole autouzupełnia klucze etykiet węzłów/silników oraz atrybuty węzłów z klastra (deskryptor to sam atrybut — bez operatora i wartości).</li>
+            </ul>
+            Zastosowanie każdego z nich podmienia tę część rozmieszczenia w jednym <code>ServiceUpdate</code> (aktualizacja krocząca); druga część zostaje zachowana.</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Te edytory <strong>buforują zmiany</strong>: <kbd>a</kbd> dodaje wpis, <kbd>d</kbd>
+        usuwa ten pod kursorem, <kbd>y</kbd> kopiuje zaznaczony wpis do schowka przez OSC52
+        (żebyś mógł wyciągnąć np. pojedynczą zmienną środowiskową podczas oglądania),
+        <kbd>u</kbd> cofa ostatnią zbuforowaną zmianę (dodanie / edycję / usunięcie), dopóki
+        jeszcze nie zastosowałeś zmian — naciskaj go wielokrotnie, żeby cofać się przez
+        historię buforowanych zmian — a <kbd>w</kbd> stosuje wszystkie zmiany naraz w jednym
+        <code>ServiceUpdate</code> (więc dodanie, powiedzmy, kilku wolumenów i naciśnięcie
+        <kbd>w</kbd> wyzwala <em>jedną</em> aktualizację kroczącą, a nie po jednej na wpis),
+        za potwierdzeniem. Jeśli naciśniesz <kbd>Esc</kbd>, gdy zmiany są jeszcze
+        zbuforowane, edytor nie porzuci ich po cichu — zapyta, czy
+        <strong>zastosować</strong>, <strong>odrzucić</strong>, czy
+        <strong>edytować dalej</strong>.
+        Dopóki zmiany są zbuforowane, są <strong>wyróżnione</strong>, żebyś dokładnie widział,
+        co się zmieni: dodane albo zedytowane wpisy pokazują się na
+        <span style="color:#3fb950;font-weight:600">zielono (nowe)</span>, a usunięte wpisy
+        zostają jako przygaszone <span style="color:#f85149">czerwone wiersze „removed”</span> —
+        wyróżnienie znika po zastosowaniu. Edytory
+        <strong>portów</strong>, <strong>etykiet</strong>, <strong>montowań</strong>,
+        <strong>zmiennych środowiskowych</strong> i <strong>aliasów</strong>
+        (aliasy dostępne z edytora sieci pod <kbd>A</kbd>)
+        mają też <kbd>e</kbd> do edycji wpisu pod kursorem; edytory
+        <strong>sieci</strong> i <strong>sekretów</strong> nie mają <kbd>e</kbd> —
+        wpis sieci albo sekretu to sama nazwa, więc jest tylko dodawanie (<kbd>a</kbd>) /
+        usuwanie (<kbd>d</kbd>). <kbd>e</kbd> w edytorze <strong>zmiennych
+        środowiskowych</strong> otwiera przewijalne wieloliniowe pole tekstowe
+        (<kbd>Ctrl-S</kbd> zapis / <kbd>Esc</kbd> anulowanie) dla długich wartości; pozostałe
+        edytory zachowują jednoliniowe pole z <kbd>Enter</kbd> do zatwierdzenia.
+      </p>
+      <p>
+        Drzewo odświeża się automatycznie co ok. 10 s, więc kontener zastąpiony albo usługa
+        przeskalowana w tle pojawiają się same z siebie — kursor i rozwinięte usługi są
+        zachowywane. <kbd>r</kbd> nadal wymusza natychmiastowe odświeżenie.
+      </p>
+
+      <h3>Zakładka Volumes</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>/</kbd></td><td>szukaj — filtruj listę po nazwie wolumenu, sterowniku albo węźle</td></tr>
+          <tr><td><kbd>n</kbd></td><td>utwórz wolumen — formularz z <strong>nazwą</strong>, <strong>sterownikiem</strong> (domyślnie <code>local</code>), <strong>etykietami</strong> (<code>k=v,k=v</code>) i docelowym <strong>węzłem</strong> (autouzupełnia nazwy węzłów; <strong>zostaw puste, żeby utworzyć na każdym węźle</strong>, bo wolumeny są lokalne dla węzła). Tworzy go przez agenta na każdym docelowym węźle i raportuje sukces/porażkę per węzeł. <kbd>Tab</kbd> przechodzi między polami, <kbd>Esc</kbd> anuluje</td></tr>
+          <tr><td><kbd>space</kbd></td><td>zaznacz / odznacz wolumen (oznaczony <code>▣</code>) do zbiorczego usunięcia</td></tr>
+          <tr><td><kbd>a</kbd></td><td>zaznacz / odznacz wszystkie aktualnie wyświetlane wolumeny</td></tr>
+          <tr><td><kbd>d</kbd></td><td>usuń zaznaczone wolumeny — albo ten pod kursorem — na każdym węźle, który je trzyma, za potwierdzeniem (z nakładką postępu; usuwanie działa z ograniczoną równoległością)</td></tr>
+          <tr><td><kbd>P</kbd></td><td>prune: usuń każdy wolumen, którego nie montuje żaden działający kontener <em>i</em> którego nie deklaruje żadna usługa, za potwierdzeniem</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>pokaż, które węzły trzymają wolumen; <strong>etykiety</strong> wolumenu są wypisane tylko do odczytu nad węzłami (Docker nie ma API aktualizacji wolumenu, więc etykiet nie da się edytować po utworzeniu — ustaw je przy tworzeniu wolumenu)</td></tr>
+          <tr><td><kbd>i</kbd></td><td>pokaż, które usługi/kontenery go używają</td></tr>
+          <tr><td><kbd>A</kbd></td><td>podłącz wolumen do usługi: wybierz usługę (autouzupełnianie nazw) → podaj docelową ścieżkę w kontenerze (bezwzględną) → wybierz <em>Attach</em> albo <em>Attach read-only</em>. Dodaje montowanie jednym <code>ServiceUpdate</code> (aktualizacja krocząca) — wolumenowy odpowiednik akcji podłączania sieci/sekretów; operacja odwrotna mieszka w edytorze montowań <kbd>v</kbd> w inspekcji usługi</td></tr>
+          <tr><td><kbd>s</kbd> <kbd>S</kbd></td><td>przełączaj pole sortowania (name → nodes → used → age → size) / odwróć</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Usuwanie jest świadome węzłów: wolumen jest usuwany na każdym węźle, który go trzyma.
+        Prune oszczędza wolumeny, które usługa <em>deklaruje</em>, nawet gdy żadne zadanie nie
+        działa, więc nie wymaże danych zatrzymanego stacka. Dla większej kontroli
+        <kbd>Enter</kbd> otwiera listę per węzeł, gdzie <kbd>space</kbd> zaznacza węzły,
+        <kbd>d</kbd> usuwa kopię z podświetlonego węzła, a <kbd>a</kbd> usuwa na wszystkich
+        węzłach — każde za potwierdzeniem.
+      </p>
+
+      <h3>Zakładka Forwards</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd></td><td>pokaż pełne szczegóły przekierowania (łącznie z ewentualnym błędem)</td></tr>
+          <tr><td><kbd>d</kbd></td><td>zatrzymaj zaznaczone przekierowanie</td></tr>
+          <tr><td><kbd>o</kbd></td><td>skopiuj URL przekierowania (<code>http://127.0.0.1:&lt;port&gt;</code>)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Działający kontener jest opisany w drzewie jako <code>local→remote</code>
+        (np. <code>9090→8080</code>). Przekierowania działają dalej po zamknięciu nakładki;
+        zatrzymują się pod <kbd>d</kbd> albo gdy wyjdziesz z UI.
+      </p>
+
+      <h3>Zakładka Networks</h3>
+      <p>
+        Lista sieci swarma — nazwa, sterownik, zasięg, typ
+        (ingress / internal / attachable), to czy sieć jest <strong>szyfrowana</strong>
+        i ile usług jest do każdej podłączonych. Kolumna
+        <code>TYPE</code> pokazuje <code>overlay</code> albo nazwę sterownika (np.
+        <code>bridge</code>) dla zwykłych sieci, zamiast myślnika. Kolumna <code>ENC</code>
+        pokazuje <span style="color:#3fb950">🔒&nbsp;yes</span>, gdy sieć overlay ma włączone
+        szyfrowanie płaszczyzny danych (utworzona z <code>--opt encrypted</code>), inaczej
+        myślnik. Nazwa każdej sieci
+        i jej komórka <code>TYPE</code> są kolorowane według rodzaju (najwyższy priorytet
+        pierwszy):
+      </p>
+      <ul>
+        <li><strong>attachable</strong> — zielony</li>
+        <li><strong>internal</strong> — żółty</li>
+        <li><strong>ingress</strong> — szary</li>
+        <li>inne overlay / o zasięgu swarma — turkusowy</li>
+        <li>lokalne (<code>bridge</code>, <code>host</code>, …) — przygaszony szary</li>
+      </ul>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>n</kbd></td><td>utwórz sieć — otwiera formularz (domyślny sterownik <code>overlay</code>) z typowymi opcjami swarma: <strong>attachable</strong> (pozwól dołączać samodzielnym kontenerom), <strong>encrypted</strong> (szyfrowanie płaszczyzny danych overlay), <strong>internal</strong> (bez routingu na zewnątrz), <strong>IPv6</strong>, opcjonalne <strong>MTU</strong>, opcjonalna <strong>podsieć</strong>/<strong>brama</strong> (IPAM) oraz <strong>etykiety</strong> (<code>k=v,k=v</code>). <kbd>Tab</kbd> przechodzi między polami, <kbd>Enter</kbd> na <em>Create</em> zatwierdza, <kbd>Esc</kbd> anuluje. Tworzy ją jednym <code>NetworkCreate</code> w API menedżera, a potem odświeża zakładkę</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>pokaż podłączone usługi, każdą z jej działającymi kontenerami zagnieżdżonymi pod spodem. <strong>Etykiety</strong> samej sieci są wypisane tylko do odczytu na górze (Docker nie ma API aktualizacji sieci, więc etykiet sieci nie da się edytować po utworzeniu — ustaw je przy tworzeniu sieci). Nagłówek każdej usługi pokazuje też, ile <strong>aliasów DNS</strong> ma ona w tej sieci (albo <em>no aliases</em>)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>w widoku członków: <strong>rozwiń / zwiń</strong> aliasy DNS zaznaczonej usługi (domyślnie zwinięte, żeby lista pozostała zwarta); aliasy pojawiają się z wcięciem pod nagłówkiem usługi</td></tr>
+          <tr><td><kbd>A</kbd></td><td>w widoku członków: <strong>dodaj / edytuj</strong> aliasy DNS zaznaczonej usługi w tej sieci — otwiera ten sam buforowany edytor aliasów co widok inspekcji (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj); zastosowanie podmienia aliasy tej sieci w jednym <code>ServiceUpdate</code> i odświeża widok. Działa nawet wtedy, gdy usługa nie ma jeszcze aliasów. (<kbd>A</kbd> to wielka litera, Shift+a, żeby odróżnić ją od <kbd>a</kbd> podłącz; samodzielne kontenery spoza swarma nie są edytowalne — aliasy to <code>ServiceUpdate</code> per usługa)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>w widoku członków: podłącz usługę do tej sieci — pole z autouzupełnianiem (podpowiada usługi jeszcze niepodłączone; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
+          <tr><td><kbd>d</kbd></td><td>w widoku członków: odłącz usługę od tej sieci — pole z autouzupełnianiem (podpowiada usługi obecnie podłączone; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Podłączenie albo odłączenie wykonuje aktualizację usługi, która dodaje lub usuwa sieć
+        w specyfikacji usługi, a potem odświeża zakładkę Networks. To operacja API menedżera
+        (<code>ServiceUpdate</code>) — tym samym kanałem klient pobiera topologię — i wyzwala
+        <strong>aktualizację kroczącą</strong>, która restartuje zadania usługi.
+      </p>
+
+      <h3>Zakładka Secrets</h3>
+      <p>
+        Lista sekretów swarma tylko do odczytu — nazwa, ile usług używa każdego z nich,
+        wiek, ostatnia aktualizacja i liczba etykiet. <strong>Wartości</strong> sekretów nigdy
+        nie są pokazywane: API Dockera ich nie udostępnia.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd></td><td>pokaż metadane sekretu oraz usługi/kontenery, które go używają</td></tr>
+          <tr><td><kbd>d</kbd></td><td>na liście sekretów: <strong>usuń</strong> zaznaczony sekret — trwale go kasuje (jedno <code>SecretRemove</code>), za potwierdzeniem; nie da się tego cofnąć. Docker odmawia usunięcia sekretu, do którego wciąż odwołuje się jakaś usługa, więc potwierdzenie <strong>ostrzega, gdy sekret jest w użyciu</strong> i wypisuje te usługi (odłącz go tam najpierw). Nie mylić z <kbd>d</kbd> <em>wewnątrz</em> widoku szczegółów, które odłącza sekret od usługi</td></tr>
+          <tr><td><kbd>a</kbd></td><td>w widoku szczegółów: podłącz sekret do usługi — pole z autouzupełnianiem (podpowiada usługi, które go jeszcze nie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
+          <tr><td><kbd>d</kbd></td><td>w widoku szczegółów: odłącz sekret od usługi — pole z autouzupełnianiem (podpowiada usługi, które go obecnie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Podłączenie dodaje sekret do usługi, montowany w
+        <code>/run/secrets/&lt;name&gt;</code> (jak <code>docker service update
+        --secret-add</code>); odłączenie usuwa odwołanie do sekretu. Potem zakładka Secrets
+        się odświeża. Tak jak przy podłączaniu/odłączaniu sieci, każda z tych operacji to
+        <code>ServiceUpdate</code> w API menedżera, które wyzwala
+        <strong>aktualizację kroczącą</strong> restartującą zadania usługi.
+      </p>
+
+      <h3>Zakładka Contexts</h3>
+      <p>
+        Wypisuje twoje konteksty Dockera (nazwa i punkt końcowy) z aktywnym oznaczonym
+        <code>▶</code> — tym samym kontekstem, który widać w stopce. Możesz nimi zarządzać bez
+        opuszczania UI; wbudowany kontekst <code>default</code> jest chroniony.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>aktywuj zaznaczony kontekst — czyni go bieżącym i restartuje UI wobec tamtego klastra (aktywne przekierowania portów się kończą)</td></tr>
+          <tr><td><kbd>n</kbd></td><td>utwórz kontekst — <strong>prowadzony</strong> formularz. Pole wyboru <strong>„Connect to Docker over SSH”</strong> decyduje o punkcie końcowym: gdy jest włączone, wypełniasz <strong>użytkownika / host / port</strong> SSH, a drugie pole wyboru <strong>„Use a jump host”</strong> odsłania pole <strong>host(y) pośredniczące</strong> (rozdzielone przecinkami, wieloetapowy <code>ProxyJump</code>) — swarmexec zapisuje je w kontekście i wstrzykuje <code>-J</code> w <em>oba</em> połączenia ssh: do API Dockera i do tunelu agenta, dzięki czemu bastiony działają bez edytowania <code>~/.ssh/config</code>. Gdy jest wyłączone, podajesz zwykły host <code>tcp://</code> / <code>unix://</code>. Formularz składa docker host za ciebie, a <strong>Test</strong> odpytuje złożony punkt końcowy, zanim zapiszesz. Także z CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
+          <tr><td><kbd>d</kbd></td><td>usuń zaznaczony kontekst (za potwierdzeniem); usunięcie bieżącego przywraca wybór na <code>default</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Zakładka Nodes</h3>
+      <p>
+        Wypisuje węzły swarma z ogólnymi informacjami i kilkoma agregacjami — <code>NODE</code>
+        (nazwa hosta; menedżerowie turkusowo, lider oznaczony <code>★</code>), <code>ROLE</code>
+        (manager / worker), <code>AVAIL</code> (active / pause / drain, kolorowane),
+        <code>STATE</code> (ready / down), wersja <code>ENGINE</code>, <code>TASKS</code>
+        (działające zadania zaplanowane na węźle), <code>VOLS</code> (wolumeny trzymane przez
+        węzeł — lokalne dla węzła, więc uzupełnia się chwilę po reszcie) i <code>LABELS</code>
+        (liczba).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, id, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, liczbą wolumenów i pełną listą etykiet</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edytuj <strong>etykiety</strong> zaznaczonego węzła — buforowany edytor listy (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj) nad wpisami <code>key=value</code>. Zastosowanie wykonuje jeden <code>NodeUpdate</code> — w odróżnieniu od usługi aktualizacja węzła <strong>działa natychmiast</strong> (bez aktualizacji kroczącej). Etykiety węzłów są zwykle używane jako cele ograniczeń rozmieszczenia (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Wbudowany shell &amp; logi</h3>
+      <p>
+        We wbudowanym shellu <kbd>Ctrl-]</kbd> odłącza się (bez kończenia procesu). Widok
+        logów — pojedynczego kontenera albo zagregowane logi usługi — obsługuje to samo
+        parsowanie i filtrowanie świadome formatu co polecenie <code>logs</code>:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>f</kbd></td><td>przełącz śledzenie</td></tr>
+          <tr><td><kbd>F</kbd></td><td>przełączaj format logów (classic → json → logfmt → gelf → raw)</td></tr>
+          <tr><td><kbd>l</kbd></td><td>przełączaj filtr minimalnego poziomu (off → trace → … → fatal → off)</td></tr>
+          <tr><td><kbd>/</kbd></td><td>wpisz wyrażenie regularne grep na komunikacie (puste je czyści)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>przełącz przechwytywanie myszy (wyłączone = własne zaznaczanie/kopiowanie twojego terminala)</td></tr>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>przewijaj</td></tr>
+          <tr><td><kbd>Esc</kbd> / <kbd>q</kbd></td><td>zamknij</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Widok renderuje zbuforowane linie na nowo w locie, gdy zmienisz format, poziom albo
+        grep, a pasek tytułu pokazuje aktywny status <code>fmt:… lvl:… grep:…</code>.
+      </p>
+      <p>
+        Podczas śledzenia widok logów łączy się ponownie po wymianie kontenera, tak samo jak
+        robi to polecenie <a href="#commands"><code>logs</code></a> — zarówno dla logów
+        pojedynczego kontenera, jak i dla zagregowanych logów usługi (każda replika śledzona
+        po slocie). Powiadomienia o ponownym połączeniu pojawiają się w widoku logów.
+      </p>
+
+      <h3>Podgląd logów</h3>
+      <p>
+        Naciśnij <kbd>`</kbd> (backtick) z dowolnej zakładki, żeby przełączyć nakładkę
+        z logami na żywo. Pokazuje ona najnowsze wpisy z bufora cyklicznego w pamięci —
+        najnowsze na dole — odświeżając się, gdy jest otwarta, i kolorując według poziomu
+        (czerwony = error, żółty = warn, szary = debug). <kbd>↑</kbd>/<kbd>↓</kbd> przewijają;
+        <kbd>Esc</kbd>, <kbd>q</kbd> albo <kbd>`</kbd> ją zamykają. To okno TUI na te same
+        logi, które trafiają do pliku logu, bo sam terminal nie może ich pokazać, gdy UI
+        rysuje po ekranie.
+      </p>
+      <div class="note">
+        <strong>Responsywność.</strong> Lista kontenerów odświeża się poza wątkiem UI
+        (jej dwa wywołania API menedżera działały kiedyś w linii i potrafiły na moment
+        zamrozić TUI), a działający w tle watchdog loguje ostrzeżenie, gdy pętla zdarzeń się
+        zatnie — przydatne do diagnozowania ociężałości z poziomu podglądu logów.
+      </div>
+
+      <h3>Własne klawisze</h3>
+      <p>
+        Klawisze skrótów można przemapować w <code>~/.config/swarmexec/keys.yaml</code>
+        (obok <code>config.yaml</code>; ścieżkę nadpiszesz przez
+        <code>$SWARMEXEC_KEYS</code>). Każda wartość to pojedynczy klawisz albo słowo
+        <code>space</code>. Klawisze strukturalne — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
+        <kbd>Tab</kbd>, strzałki, cyfry zakładek <kbd>1</kbd>–<kbd>7</kbd> oraz aliasy z vima
+        <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — są stałe. Stopka zawsze pokazuje
+        twoje faktyczne klawisze, a nakładka <kbd>?</kbd> wypisuje je wszystkie.
+      </p>
+      <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — pomiń dowolną linię, żeby zachować jej domyślną wartość</span>
+quit: q          refresh: r        copy: y            toggle_mouse: m
+search: /        fold: h           unfold: l          forward: p
+container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" musi być w cudzysłowie — YAML</span>
+stack_group: s
+volume_select: space               volume_select_all: a
+volume_delete: d volume_prune: P   volume_used_by: i
+volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
+network_attached: i    network_new: n
+context_use: u   context_new: n    context_delete: d
+node_edit_labels: l    secret_delete: d          secret_new: n
+forward_stop: d  forward_copy_url: o</div>
+      <p>
+        Wczytywanie nigdy się nie wywala: nieprawidłowy albo zarezerwowany klawisz, nieznana
+        akcja czy dwie akcje przypisane do tego samego klawisza na jednej zakładce — każde
+        z tych ustawień wraca do wartości domyślnej, a UI pokazuje ostrzeżenia raz przy
+        starcie.
+      </p>
+
+      <!-- 11 -->
+      <h2 id="exit">11. Kody wyjścia</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Kod</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td><code>0</code></td><td>sukces</td></tr>
+          <tr><td><code>2</code></td><td>błąd użycia / flagi / konfiguracji albo przerwany wybór interaktywny</td></tr>
+          <tr><td><code>125</code></td><td>awaria transportu — nieosiągalny menedżer albo agent, błąd połączenia/TLS, błąd strumienia, przerwane potwierdzenie (odzwierciedla <code>125</code> Dockera)</td></tr>
+          <tr><td><code>N</code></td><td>dla <code>exec</code> — niezerowy kod wyjścia zdalnego polecenia, przekazany dosłownie</td></tr>
+        </tbody>
+      </table></div>
+
+      <footer>
+        <span>Aktualne wydanie: <strong>__VERSION__</strong></span> ·
+        pobierz agenta: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io/cs-public/swarm-remote-exec</a>
+        · <a href="/">strona główna</a><br>
+        Open source na licencji
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Prywatność</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

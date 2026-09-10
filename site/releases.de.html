@@ -13,6 +13,7 @@
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/releases.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/releases.es.html">
   <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/releases.fr.html">
+  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/releases.pl.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/releases">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
@@ -26,6 +27,7 @@
   <meta property="og:locale:alternate" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
   <meta property="og:locale:alternate" content="fr_FR">
+  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec — Versionshinweise">
   <meta name="twitter:description" content="Jede Version von swarmexec, neueste zuerst — was sich geändert hat und wo du sie herunterlädst.">
@@ -113,11 +115,11 @@
     .dh-hint a:hover { text-decoration: underline; }
   </style>
   <script>
-    // i18n: on first visit redirect to the browser language (de/es/fr; en is the
+    // i18n: on first visit redirect to the browser language (de/es/fr/pl; en is the
     // base); the switcher below stores the choice in localStorage.
     window.__i18n = { base: 'releases', baseLang: 'en' };
     (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
       try {
         var w = localStorage.getItem('sx-lang');
         if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
@@ -142,6 +144,7 @@
     <a data-lang="de" hreflang="de" href="releases.de.html">DE</a>
     <a data-lang="es" hreflang="es" href="releases.es.html">ES</a>
     <a data-lang="fr" hreflang="fr" href="releases.fr.html">FR</a>
+    <a data-lang="pl" hreflang="pl" href="releases.pl.html">PL</a>
   </nav>
   <main>
     <div class="card">

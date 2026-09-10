@@ -511,3 +511,27 @@ func TestServicesFallbackWithoutStatus(t *testing.T) {
 		t.Errorf("fallback counts = %d/%d, want 1/2", got[0].Running, got[0].Desired)
 	}
 }
+
+// Services must carry the stack label so the UI can group by stack; a service
+// without the label reports an empty stack, not a made-up one.
+func TestServicesCarriesStackLabel(t *testing.T) {
+	f := newFake()
+	stacked := svcStatus("s-web", "web", 1, 1, false)
+	stacked.Spec.Labels = map[string]string{"com.docker.stack.namespace": "shop"}
+	f.services = []swarm.Service{stacked, svcStatus("s-lone", "lone", 1, 1, false)}
+
+	got, err := New(f, AddrHostname).Services(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]string{}
+	for _, s := range got {
+		by[s.Name] = s.Stack
+	}
+	if by["web"] != "shop" {
+		t.Errorf("web stack = %q, want shop", by["web"])
+	}
+	if by["lone"] != "" {
+		t.Errorf("lone stack = %q, want empty", by["lone"])
+	}
+}

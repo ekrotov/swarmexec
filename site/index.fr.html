@@ -13,6 +13,7 @@
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/index.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/index.es.html">
   <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/index.fr.html">
+  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/index.pl.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
@@ -26,6 +27,7 @@
   <meta property="og:locale:alternate" content="en_US">
   <meta property="og:locale:alternate" content="de_DE">
   <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec — docker exec à l'échelle du cluster pour Docker Swarm">
   <meta name="twitter:description" content="docker exec, logs et gestion des volumes à l'échelle du cluster pour Docker Swarm, depuis un seul terminal.">
@@ -134,11 +136,11 @@
     .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
   </style>
   <script>
-    // i18n: on first visit redirect to the browser language (de/es/fr; en is the
+    // i18n: on first visit redirect to the browser language (de/es/fr/pl; en is the
     // base); the switcher below stores the choice in localStorage.
     window.__i18n = { base: 'index', baseLang: 'en' };
     (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
       try {
         var w = localStorage.getItem('sx-lang');
         if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
@@ -163,6 +165,7 @@
     <a data-lang="de" hreflang="de" href="index.de.html">DE</a>
     <a data-lang="es" hreflang="es" href="index.es.html">ES</a>
     <a data-lang="fr" hreflang="fr" href="index.fr.html">FR</a>
+    <a data-lang="pl" hreflang="pl" href="index.pl.html">PL</a>
   </nav>
   <main>
     <div class="card">
@@ -171,15 +174,20 @@
 
       <div class="slideshow" role="group" aria-roledescription="carrousel" aria-label="Démos des fonctionnalités" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="1 / 2">
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="1 / 3">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="Au lieu de docker node ls, trouver le nœud, ssh node-3 et docker exec, il suffit d'exécuter : swarmexec exec web -- sh">
             <figcaption><b>exec à l'échelle du cluster</b> — un shell dans n'importe quelle tâche, depuis un seul terminal</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="2 / 2" hidden>
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="2 / 3" hidden>
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 ouvre un transfert vers une tâche sur node-3, puis curl localhost:9090 répond — sans SSH et sans port publié">
             <figcaption><b>port-forward depuis votre portable</b> — atteignez le port d'une tâche, sans SSH, sans ingress</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="3 / 3" hidden>
+            <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
+                 alt="swarmexec ui : une interface terminal qui montre le cluster sous forme d'arbre de stacks, services et conteneurs ; un service est déplié sur ses tâches réparties sur node-2, node-4 et node-5, et la fenêtre des risques de sécurité liste les services signalés">
+            <figcaption><b>une interface terminal pour tout le cluster</b> — stacks, services, conteneurs, logs et risques</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -187,6 +195,7 @@
           <div class="dots" role="group" aria-label="Choisir la diapositive">
             <button class="dot" type="button" aria-label="Afficher la démo exec du cluster" aria-current="true"></button>
             <button class="dot" type="button" aria-label="Afficher la démo port-forward" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Afficher la démo de l'interface terminal" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Diapositive suivante">&#8250;</button>
         </div>

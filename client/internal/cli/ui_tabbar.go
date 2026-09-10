@@ -20,7 +20,7 @@ import (
 // reads "Label N" where N is its 1-based shortcut digit, dimmed.
 type tabStrip struct {
 	*tview.Box
-	tabs     []struct{ key, label string }
+	tabs     []uiTab
 	active   string
 	onSelect func(key string)
 	spans    []tabSpan // per-tab click hit-boxes on the label row, recomputed each Draw
@@ -32,8 +32,43 @@ type tabSpan struct {
 	x0, x1 int
 }
 
-func newTabStrip(tabs []struct{ key, label string }, onSelect func(key string)) *tabStrip {
+func newTabStrip(tabs []uiTab, onSelect func(key string)) *tabStrip {
 	return &tabStrip{Box: tview.NewBox(), tabs: tabs, onSelect: onSelect}
+}
+
+// tabCellWidth is the chrome around a tab's text: a leading space, a space
+// before the shortcut digit, the digit, and a trailing space.
+const tabCellWidth = 4
+
+// stripWidth is the number of columns the strip needs to render labels in full,
+// including the leading inset and the gap between tabs. Measuring and drawing
+// share it so the fit test cannot drift from what Draw actually paints.
+func stripWidth(labels []string) int {
+	w := 1 // left inset
+	for _, l := range labels {
+		w += len(l) + tabCellWidth + 1 // + the gap that follows each tab
+	}
+	return w
+}
+
+// labelsFor picks the label set that fits the given width: the full names when
+// there is room, otherwise the short forms. The short set is used even when it
+// does not fit either — it is still the best available, and Draw clips.
+func (t *tabStrip) labelsFor(width int) []string {
+	full := make([]string, len(t.tabs))
+	short := make([]string, len(t.tabs))
+	for i, tab := range t.tabs {
+		full[i] = tab.label
+		s := tab.short
+		if s == "" {
+			s = tab.label
+		}
+		short[i] = s
+	}
+	if stripWidth(full) <= width {
+		return full
+	}
+	return short
 }
 
 // setActive marks which tab is current; the strip redraws with it highlighted.
@@ -65,6 +100,7 @@ func (t *tabStrip) Draw(screen tcell.Screen) {
 	}
 
 	t.spans = t.spans[:0]
+	labels := t.labelsFor(w)
 	col := x + 1 // small left inset
 	for i, tab := range t.tabs {
 		active := tab.key == t.active
@@ -74,7 +110,7 @@ func (t *tabStrip) Draw(screen tcell.Screen) {
 		}
 		start := col
 		col = drawRunes(screen, col, y, " ", base)
-		col = drawRunes(screen, col, y, tab.label, base.Foreground(lblFg).Bold(active))
+		col = drawRunes(screen, col, y, labels[i], base.Foreground(lblFg).Bold(active))
 		col = drawRunes(screen, col, y, " ", base)
 		col = drawRunes(screen, col, y, strconv.Itoa(i+1), base.Foreground(numFg))
 		col = drawRunes(screen, col, y, " ", base)
