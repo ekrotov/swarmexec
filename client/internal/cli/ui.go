@@ -1735,7 +1735,7 @@ func (u *ui) showHelp() {
 	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
 	line(kl(km.Forward), "port-forward the task under the cursor")
-	line(kl(km.SecurityRisks), "security-risks overlay (root user, secrets in env)")
+	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
 	line("X", "remove the service under the cursor (confirmed)")
 	line(kl(km.Search), "search services / containers / nodes")

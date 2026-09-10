@@ -52,13 +52,39 @@ type Analyzer interface {
 // registry is the ordered set of analyzers Scan runs. Extend it in analyzers.go
 // or at runtime via Register to add a new class of risk.
 var registry = []Analyzer{
+	// High-severity first only for readability; Scan sorts by severity anyway.
+	dockerSocketAnalyzer{},
+	capabilityAnalyzer{},
+	hostNetworkAnalyzer{},
+	confinementAnalyzer{},
 	rootUserAnalyzer{},
 	secretEnvAnalyzer{},
+	// Informational (SevLow): true of almost every service, so they never mark
+	// a row on their own — see Actionable.
+	resourceLimitAnalyzer{},
+	imagePinAnalyzer{},
 }
 
 // Register appends an analyzer to the registry, for extensions outside this
 // package. Not safe for concurrent use with Scan; call it during init/setup.
 func Register(a Analyzer) { registry = append(registry, a) }
+
+// Describer lets an analyzer say, in a few words, what it looks for. The UI
+// lists these so "no risks found" can state what was actually checked, and so
+// that list cannot drift from the registry the way a hardcoded one does.
+// Analyzers that do not implement it are simply left out of the list.
+type Describer interface{ Describe() string }
+
+// Checks returns what the registered analyzers look for, in registry order.
+func Checks() []string {
+	out := make([]string, 0, len(registry))
+	for _, a := range registry {
+		if d, ok := a.(Describer); ok {
+			out = append(out, d.Describe())
+		}
+	}
+	return out
+}
 
 // Scan runs every analyzer over svc and returns the findings, highest severity
 // first (stable within a severity, ordered by rule then title).

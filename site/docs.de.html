@@ -928,20 +928,41 @@
         Slot fester Breite vor dem Namen, sodass die Schilde eine senkrechte Scan-Spalte
         bilden. <kbd>!</kbd> öffnet das <strong>Sicherheitsrisiken-Overlay</strong>.
       </p>
-      <p>Die Prüfungen, die es heute gibt:</p>
+      <p>
+        Die acht Prüfungen, die es heute gibt. Zuerst die, die einen Service markieren
+        können, am Ende die rein informativen:
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Prüfung</th><th>Schweregrad</th><th>Was sie meldet</th></tr></thead>
         <tbody>
+          <tr><td><code>docker-socket</code> — „Docker socket mounted in“</td><td><span style="color:#f85149">high</span></td><td><strong>der schwerwiegendste Befund hier.</strong> Ein <strong>Bind-Mount</strong>, dessen Quelle der Socket des Docker-Daemons ist — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> oder jeder Quellpfad, der auf <code>/docker.sock</code> endet. Alles in diesem Container kann mit dem Socket sprechen, und wer mit dem Socket sprechen kann, kann auf diesem Node einen <strong>privilegierten Container starten</strong> — das ist faktisch <strong>root auf dem Host</strong>, ganz gleich, als wer der Container selbst läuft. <strong>Read-only entschärft das nicht</strong>: der Socket ist eine API, keine Datei, deren Inhalt zählt — der Befund sagt das bei einem Read-only-Mount auch selbst dazu. Genannt wird der Zielpfad, an dem der Socket eingehängt ist</td></tr>
+          <tr><td><code>added-capability</code> — „capability <em>NAME</em> added“</td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span></td><td>eine Linux-Capability, die der Service seinem Container zusätzlich gibt. Swarm kennt <strong>kein <code>--privileged</code></strong>, Capabilities sind also der Weg, über den ein Service zusätzliche Macht auf dem Host anfordert — deshalb lohnt der Blick auf die hinzugefügte Menge. Acht gelten als <strong>high</strong>, jeweils mit der Begründung, die der Befund mitführt: <code>ALL</code> (vergibt jede Capability), <code>SYS_ADMIN</code> (fast root: Mount-, Namespace- und cgroup-Kontrolle), <code>SYS_MODULE</code> (kann Kernel-Module laden), <code>SYS_PTRACE</code> (kann andere Prozesse einsehen und steuern), <code>SYS_RAWIO</code> (Raw-I/O-Zugriff auf Geräte), <code>DAC_READ_SEARCH</code> (umgeht Leserechte-Prüfungen im Dateisystem), <code>NET_ADMIN</code> (volle Kontrolle über das Netzwerk des Nodes), <code>NET_RAW</code> (kann Rohpakete fälschen und mitschneiden). <strong>Jede andere</strong> hinzugefügte Capability ist <strong>medium</strong> — ein Privileg über die Standardmenge hinaus. Ein Befund pro hinzugefügter Capability; beide Schreibweisen werden erkannt, in beliebiger Groß-/Kleinschreibung (<code>CAP_SYS_ADMIN</code> und <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — „runs on the host network“</td><td><span style="color:#f85149">high</span></td><td>der Service hängt am Netzwerk namens <code>host</code>: der Container teilt sich den <strong>Netzwerk-Stack des Nodes</strong>, es gibt also keine Netzwerk-Isolation, und das Published-Port-Mapping von Swarm greift nicht mehr. Er erreicht alles, was der Node erreicht — <strong>einschließlich Diensten, die nur auf localhost lauschen</strong> und die man üblicherweise für aus einem Container heraus unerreichbar hält</td></tr>
+          <tr><td><code>unconfined</code> — „seccomp disabled“ / „AppArmor disabled“</td><td><span style="color:#f85149">high</span></td><td>die Sandbox auf Kernel-Ebene ist für den Container abgeschaltet: <strong>seccomp steht auf <code>unconfined</code></strong> — der Container darf jeden Syscall absetzen, womit die wichtigste Hürde gegen Kernel-Exploits wegfällt — oder die <strong>AppArmor-Einschränkung ist deaktiviert</strong>. Beides wird getrennt gemeldet; ein Service, der beides abschaltet, bekommt zwei Befunde</td></tr>
           <tr><td><code>root-user</code> — „runs as root“</td><td><span style="color:#f85149">high</span></td><td>die Spec legt den Container <strong>ausdrücklich auf root</strong> fest — <code>User=root</code> oder UID <code>0</code> (auch numerische Formen wie <code>00</code> oder <code>+0</code> werden erkannt; betrachtet wird nur der Benutzerteil von <code>user:group</code>)</td></tr>
-          <tr><td><code>root-user</code> — „no user set“</td><td>low</td><td><strong>kein</strong> Benutzer ist gesetzt, der Container läuft also als der Standardbenutzer des Images — oft root. Das ist <strong>nur informativ und markiert den Service nicht</strong>: ein nicht gesetzter Benutzer ist bei fast jedem Service der Swarm-Standard, und ob es wirklich root ist, hängt vom <code>USER</code> des Images ab, das die Manager-Spec nicht preisgibt — ein Badge dafür würde fast jede Zeile mit einem Schild versehen und das Signal auf einen Blick zerstören</td></tr>
           <tr><td><code>secret-in-env</code> — „secret in environment variable“</td><td><span style="color:#f85149">high</span></td><td>ein nach einem Credential aussehender Env-Schlüssel enthält einen <strong>literalen Wert in der Service-Spec</strong>, lesbar für jeden, der die Spec lesen darf. Nutze stattdessen ein Docker-Secret oder die <code>*_FILE</code>-Konvention</td></tr>
+          <tr><td><code>root-user</code> — „no user set“</td><td>low</td><td><strong>kein</strong> Benutzer ist gesetzt, der Container läuft also als der Standardbenutzer des Images — oft root. <strong>Nur informativ, markiert den Service also nicht</strong>: ein nicht gesetzter Benutzer ist bei fast jedem Service der Swarm-Standard, und ob es wirklich root ist, hängt vom <code>USER</code> des Images ab, das die Manager-Spec nicht preisgibt</td></tr>
+          <tr><td><code>no-resource-limits</code> — „no resource limits“</td><td>low</td><td>der Task setzt <strong>weder ein CPU- noch ein Memory-Limit</strong>; ein außer Kontrolle geratener Container kann damit den ganzen Node aufbrauchen und alles andere darauf aushungern. <strong>Nur informativ</strong> — siehe unten</td></tr>
+          <tr><td><code>unpinned-image</code> — „image not pinned“</td><td>low</td><td>das Image ist auf <code>:latest</code> festgelegt oder trägt <strong>überhaupt kein Tag</strong> (was auf <code>:latest</code> hinausläuft) — die laufende Version kann sich ohne Spec-Änderung ändern, ein Deploy ist damit nicht reproduzierbar. Ein <strong>per Digest gepinntes</strong> Image (<code>…@sha256:…</code>) ist exakt reproduzierbar und wird nie gemeldet, und ein Doppelpunkt, der zum Port des Registry-Hosts gehört (<code>registry:5000/img</code>), wird nicht für ein Tag gehalten. <strong>Nur informativ</strong> — siehe unten</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Warum die informativen Prüfungen nie einen Service markieren.</strong> Erst
+        ein Befund oberhalb von <em>low</em> — high oder medium — macht einen Service
+        handlungsrelevant und setzt das <strong>🛡</strong> an seine Baumzeile. Die
+        Low-Befunde (<code>no-resource-limits</code>, <code>unpinned-image</code> und
+        „no user set“ aus <code>root-user</code>) treffen auf <strong>nahezu jeden Service in
+        einem echten Cluster</strong> zu: ein Badge dafür würde fast jede Zeile mit einem
+        Schild versehen und genau das Signal auf einen Blick zerstören, für das der Marker da
+        ist. Unter den Tisch fallen sie trotzdem nicht — sobald ein Service wegen etwas
+        anderem markiert ist, stehen seine Low-Befunde im Overlay bei den übrigen, also dort,
+        wo sie sich wirklich zu lesen lohnen.
+      </p>
       <div class="note">
-        <strong>Es wird nie ein Secret-Wert angezeigt.</strong> Der
-        <code>secret-in-env</code>-Befund nennt ausschließlich den
-        <strong>Schlüssel</strong> der Env-Variable; ihr Wert wird nie in den Befund
-        eingelesen, nie gerendert und nie kopiert. Die Prüfung ist außerdem auf Ruhe
+        <strong>Es wird nie ein Secret-Wert angezeigt.</strong> Von den acht Prüfungen schaut
+        nur <code>secret-in-env</code> überhaupt auf Umgebungsvariablen, und ihr Befund nennt
+        ausschließlich den <strong>Schlüssel</strong> der Env-Variable; der Wert wird nie in
+        den Befund eingelesen, nie gerendert und nie kopiert. Die Prüfung ist außerdem auf Ruhe
         ausgelegt: sie vergleicht ganze, durch <code>_</code> getrennte Tokens
         (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
         <code>PASSPHRASE</code>, <code>SECRET</code>, <code>TOKEN</code>,
@@ -959,23 +980,30 @@
       </div>
       <p>
         Das Overlay listet <strong>jeden markierten Service</strong> („N of M service(s)
-        flagged“), nach Service gruppiert, jeden Befund in einer eigenen Zeile mit einem
+        flagged · 8 checks“), nach Service gruppiert, jeden Befund in einer eigenen Zeile mit einem
         Schweregrad-Punkt — <span style="color:#f85149">● high</span>,
         <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
         einem kurzen Titel und einer einzeiligen Erklärung. Befunde stehen nach
         Schweregrad absteigend. Sobald ein Service wegen etwas Handlungsrelevantem markiert
         ist, werden auch seine rein informativen Low-Befunde aufgeführt. Ist der Service
         unter dem Cursor darunter, wird er vorab hervorgehoben und ins Bild gescrollt. Ist
-        nichts markiert, sagt das Overlay das ausdrücklich; ist die Service-Liste noch nicht
-        geladen, meldet es <em>es wurde noch nichts gescannt</em>, statt fälschlich
-        Entwarnung zu geben. <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> (oder
-        <kbd>q</kbd>, oder erneut <kbd>!</kbd>) schließt.
+        nichts markiert, sagt das Overlay das ausdrücklich <strong>und nennt jede Prüfung,
+        die gelaufen ist</strong> („Checked: Docker socket mounted in, added Linux
+        capabilities, host network, seccomp / AppArmor disabled, container user, secrets in
+        environment variables, missing resource limits, unpinned image.“) — so sagt die
+        Entwarnung auch, was sie abdeckt. Ist die Service-Liste noch nicht geladen, meldet es
+        <em>es wurde noch nichts gescannt</em>, statt fälschlich Entwarnung zu geben.
+        <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> (oder <kbd>q</kbd>, oder erneut
+        <kbd>!</kbd>) schließt.
       </p>
       <div class="note">
         Der Scan ist eine <strong>erweiterbare Registry</strong> von Analyzern, keine feste
         Liste: eine neue Prüfung erscheint automatisch sowohl im Baum-Marker als auch im
-        Overlay. Die Taste ist als <code>security_risks</code> in
-        <a href="#tui">keys.yaml</a> umbelegbar.
+        Overlay. Auch der Text des Overlays kommt aus dieser Registry — die Zahl der
+        Prüfungen in seiner Kopfzeile und die „Checked:“-Liste werden <strong>aus den
+        Analyzern selbst erzeugt</strong> und können deshalb nicht auseinanderlaufen mit dem,
+        was tatsächlich gelaufen ist, wie es eine fest verdrahtete Liste täte. Die Taste ist
+        als <code>security_risks</code> in <a href="#tui">keys.yaml</a> umbelegbar.
       </div>
       <p>
         <kbd>i</kbd> öffnet ein <strong>Inspect-Overlay</strong> für den Node unter dem

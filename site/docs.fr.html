@@ -938,18 +938,40 @@
         colonne verticale de lecture. Appuyez sur <kbd>!</kbd> pour ouvrir la
         <strong>surcouche des risques de sécurité</strong>.
       </p>
-      <p>Les contrôles livrés à ce jour :</p>
+      <p>
+        Les huit contrôles livrés à ce jour. D'abord ceux qui peuvent marquer un service,
+        puis, en fin de liste, les purement informatifs :
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Contrôle</th><th>Sévérité</th><th>Ce qu'il signale</th></tr></thead>
         <tbody>
+          <tr><td><code>docker-socket</code> — « Docker socket mounted in »</td><td><span style="color:#f85149">high</span></td><td><strong>le constat le plus grave de tous.</strong> Un <strong>bind mount</strong> dont la source est la socket du démon Docker — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> ou tout chemin source se terminant par <code>/docker.sock</code>. Tout ce qui tourne dans ce conteneur peut parler à la socket, et qui peut parler à la socket peut <strong>démarrer un conteneur privilégié sur ce nœud</strong> — c'est donc, de fait, <strong>root sur l'hôte</strong>, quel que soit l'utilisateur sous lequel tourne le conteneur lui-même. <strong>Le montage en lecture seule n'y change rien</strong> : la socket est une API, pas un fichier dont le contenu compte — le constat le précise lui-même lorsque le montage est en lecture seule. Il nomme le chemin cible où la socket est montée</td></tr>
+          <tr><td><code>added-capability</code> — « capability <em>NOM</em> added »</td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span></td><td>une capability Linux que le service ajoute à son conteneur. Swarm n'a <strong>pas de <code>--privileged</code></strong> : les capabilities sont donc la façon dont un service réclame davantage de pouvoir sur l'hôte — d'où l'intérêt de lire l'ensemble ajouté. Huit sont traitées comme <strong>high</strong>, chacune avec la raison que porte le constat : <code>ALL</code> (accorde toutes les capabilities), <code>SYS_ADMIN</code> (quasi root : contrôle des montages, des namespaces et des cgroups), <code>SYS_MODULE</code> (peut charger des modules noyau), <code>SYS_PTRACE</code> (peut inspecter et contrôler d'autres processus), <code>SYS_RAWIO</code> (accès d'E/S brut aux périphériques), <code>DAC_READ_SEARCH</code> (contourne les contrôles de permission en lecture), <code>NET_ADMIN</code> (contrôle total du réseau du nœud), <code>NET_RAW</code> (peut forger et capturer des paquets bruts). <strong>Toute autre</strong> capability ajoutée est <strong>medium</strong> — un privilège au-delà de l'ensemble par défaut. Un constat par capability ajoutée ; les deux écritures sont reconnues, quelle que soit la casse (<code>CAP_SYS_ADMIN</code> et <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — « runs on the host network »</td><td><span style="color:#f85149">high</span></td><td>le service est rattaché au réseau nommé <code>host</code> : le conteneur partage la <strong>pile réseau du nœud</strong>, il n'y a donc plus d'isolation réseau et la publication de ports de swarm ne s'applique plus. Il atteint tout ce que le nœud atteint — <strong>y compris les services écoutant sur localhost</strong>, que l'on suppose d'ordinaire hors de portée d'un conteneur</td></tr>
+          <tr><td><code>unconfined</code> — « seccomp disabled » / « AppArmor disabled »</td><td><span style="color:#f85149">high</span></td><td>le bac à sable au niveau du noyau a été désactivé pour le conteneur : <strong>seccomp réglé sur <code>unconfined</code></strong> — le conteneur peut effectuer n'importe quel appel système, ce qui supprime la principale barrière face aux exploits noyau — ou <strong>confinement AppArmor désactivé</strong>. Les deux sont signalés séparément : un service qui coupe les deux obtient deux constats</td></tr>
           <tr><td><code>root-user</code> — « runs as root »</td><td><span style="color:#f85149">high</span></td><td>la spec fixe le conteneur sur <strong>root explicitement</strong> — <code>User=root</code> ou l'UID <code>0</code> (les formes numériques comme <code>00</code> ou <code>+0</code> sont aussi détectées ; seule la partie utilisateur de <code>user:group</code> est examinée)</td></tr>
-          <tr><td><code>root-user</code> — « no user set »</td><td>low</td><td><strong>aucun</strong> utilisateur n'est défini : le conteneur s'exécute donc sous l'utilisateur par défaut de l'image, souvent root. C'est <strong>purement informatif et ne marque pas le service</strong> : un utilisateur non défini est la valeur par défaut de Swarm sur presque tous les services, et savoir s'il s'agit réellement de root dépend du <code>USER</code> de l'image, que la spec du manager ne révèle pas — le badger mettrait un bouclier sur presque chaque ligne et détruirait le signal en un coup d'œil</td></tr>
           <tr><td><code>secret-in-env</code> — « secret in environment variable »</td><td><span style="color:#f85149">high</span></td><td>une clé d'environnement qui ressemble à un identifiant contient une <strong>valeur littérale dans la spec du service</strong>, lisible par quiconque peut lire la spec. Utilisez plutôt un secret Docker ou la convention <code>*_FILE</code></td></tr>
+          <tr><td><code>root-user</code> — « no user set »</td><td>low</td><td><strong>aucun</strong> utilisateur n'est défini : le conteneur s'exécute donc sous l'utilisateur par défaut de l'image, souvent root. <strong>Purement informatif, et ne marque pas le service</strong> : un utilisateur non défini est la valeur par défaut de Swarm sur presque tous les services, et savoir s'il s'agit réellement de root dépend du <code>USER</code> de l'image, que la spec du manager ne révèle pas</td></tr>
+          <tr><td><code>no-resource-limits</code> — « no resource limits »</td><td>low</td><td>la tâche ne fixe <strong>ni limite CPU ni limite mémoire</strong> : un conteneur qui s'emballe peut consommer le nœud entier et affamer tout ce qui s'y trouve. <strong>Purement informatif</strong> — voir ci-dessous</td></tr>
+          <tr><td><code>unpinned-image</code> — « image not pinned »</td><td>low</td><td>l'image est épinglée sur <code>:latest</code>, ou ne porte <strong>aucun tag</strong> (ce qui revient à <code>:latest</code>) — la version qui tourne peut changer sans modification de la spec, un déploiement n'est donc pas reproductible. Une image <strong>épinglée par digest</strong> (<code>…@sha256:…</code>) est exactement reproductible et n'est jamais signalée, et un deux-points appartenant au port de l'hôte du registre (<code>registry:5000/img</code>) n'est pas pris pour un tag. <strong>Purement informatif</strong> — voir ci-dessous</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Pourquoi les contrôles informatifs ne marquent jamais un service.</strong>
+        Seul un constat au-dessus de <em>low</em> — high ou medium — rend un service
+        actionnable et pose le <strong>🛡</strong> sur sa ligne dans l'arbre. Les constats
+        low (<code>no-resource-limits</code>, <code>unpinned-image</code> et le « no user
+        set » de <code>root-user</code>) sont vrais de <strong>presque tous les services d'un
+        cluster réel</strong> : les badger mettrait un bouclier sur presque chaque ligne et
+        détruirait précisément le signal en un coup d'œil pour lequel le marqueur existe. Ils
+        ne sont pas pour autant escamotés — dès qu'un service est marqué pour autre chose,
+        ses constats low sont listés avec les autres dans la surcouche, c'est-à-dire là où
+        ils valent vraiment la peine d'être lus.
+      </p>
       <div class="note">
-        <strong>Aucune valeur de secret n'est jamais affichée.</strong> Le constat
-        <code>secret-in-env</code> ne nomme que la <strong>clé</strong> de la variable
+        <strong>Aucune valeur de secret n'est jamais affichée.</strong> Des huit contrôles,
+        seul <code>secret-in-env</code> regarde les variables d'environnement, et son constat
+        ne nomme que la <strong>clé</strong> de la variable
         d'environnement ; sa valeur n'est jamais lue dans le constat, jamais rendue et
         jamais copiée. Le contrôle est également conçu pour rester discret : il compare des
         jetons entiers délimités par <code>_</code> (<code>PASSWORD</code>,
@@ -970,14 +992,18 @@
       </div>
       <p>
         La surcouche liste <strong>chaque service marqué</strong> (« N of M service(s)
-        flagged »), groupé par service, chaque constat sur sa propre ligne avec une pastille
+        flagged · 8 checks »), groupé par service, chaque constat sur sa propre ligne avec une pastille
         de sévérité — <span style="color:#f85149">● high</span>,
         <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
         un titre court et une explication d'une ligne. Les constats sont triés du plus grave
         au moins grave. Dès qu'un service est marqué pour quelque chose d'actionnable, ses
         constats informatifs de niveau low sont listés eux aussi. Si le service sous le
         curseur en fait partie, il est présélectionné et amené à l'écran. Quand rien n'est
-        marqué, la surcouche le dit explicitement ; si la liste des services n'est pas
+        marqué, la surcouche le dit explicitement <strong>et nomme chaque contrôle qui a
+        tourné</strong> (« Checked: Docker socket mounted in, added Linux capabilities, host
+        network, seccomp / AppArmor disabled, container user, secrets in environment
+        variables, missing resource limits, unpinned image. »), de sorte que le feu vert dit
+        aussi ce qu'il couvre ; si la liste des services n'est pas
         encore chargée, elle indique que <em>rien n'a encore été analysé</em> plutôt que de
         donner un faux feu vert. <kbd>j</kbd>/<kbd>k</kbd> font défiler, <kbd>Esc</kbd> (ou
         <kbd>q</kbd>, ou <kbd>!</kbd> à nouveau) ferme.
@@ -985,7 +1011,11 @@
       <div class="note">
         L'analyse est un <strong>registre extensible</strong> d'analyseurs, pas une liste
         figée : un nouveau contrôle apparaît automatiquement à la fois dans le marqueur de
-        l'arbre et dans la surcouche. La touche est réaffectable sous le nom
+        l'arbre et dans la surcouche. Le texte même de la surcouche vient aussi de ce
+        registre : le nombre de contrôles dans son en-tête et la liste « Checked: » sont
+        <strong>générés à partir des analyseurs eux-mêmes</strong> et ne peuvent donc pas
+        diverger de ce qui a réellement tourné, contrairement à une liste écrite en dur. La
+        touche est réaffectable sous le nom
         <code>security_risks</code> dans <a href="#tui">keys.yaml</a>.
       </div>
       <p>

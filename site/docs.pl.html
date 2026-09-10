@@ -903,18 +903,41 @@
         tarcze układały się w pionową kolumnę do przejrzenia. Naciśnij <kbd>!</kbd>, żeby
         otworzyć <strong>nakładkę z ryzykami bezpieczeństwa</strong>.
       </p>
-      <p>Kontrole dostępne dzisiaj:</p>
+      <p>
+        Osiem kontroli dostępnych dzisiaj. Najpierw te, które mogą oznaczyć usługę, na końcu
+        te czysto informacyjne:
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Kontrola</th><th>Waga</th><th>Co zgłasza</th></tr></thead>
         <tbody>
+          <tr><td><code>docker-socket</code> — „zamontowany socket Dockera”</td><td><span style="color:#f85149">wysoka</span></td><td><strong>najpoważniejsze ustalenie z całej listy.</strong> <strong>Montowanie bind</strong>, którego źródłem jest socket demona Dockera — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> albo dowolna ścieżka źródłowa kończąca się na <code>/docker.sock</code>. Wszystko w takim kontenerze może rozmawiać z socketem, a kto może rozmawiać z socketem, może <strong>uruchomić na tym węźle kontener uprzywilejowany</strong> — czyli jest to w praktyce <strong>root na hoście</strong>, niezależnie od tego, jako kto działa sam kontener. <strong>Tryb tylko do odczytu tego nie łagodzi</strong>: socket to API, a nie plik, którego treść ma znaczenie — samo ustalenie mówi o tym wprost, gdy montowanie jest tylko do odczytu. Podawana jest ścieżka docelowa, pod którą socket jest zamontowany</td></tr>
+          <tr><td><code>added-capability</code> — „dodano capability <em>NAZWA</em>”</td><td><span style="color:#f85149">wysoka</span> / <span style="color:#f2cc60">średnia</span></td><td>uprawnienie (capability) Linuksa, które usługa dodaje swojemu kontenerowi. Swarm <strong>nie ma <code>--privileged</code></strong>, więc capabilities są tym, przez co usługa prosi o dodatkową władzę nad hostem — dlatego warto czytać, co zostało dodane. Osiem ma wagę <strong>wysoką</strong>, każde z uzasadnieniem, które niesie ustalenie: <code>ALL</code> (daje każde uprawnienie), <code>SYS_ADMIN</code> (niemal root: kontrola montowań, przestrzeni nazw i cgroup), <code>SYS_MODULE</code> (może ładować moduły jądra), <code>SYS_PTRACE</code> (może podglądać i sterować innymi procesami), <code>SYS_RAWIO</code> (surowy dostęp we/wy do urządzeń), <code>DAC_READ_SEARCH</code> (omija sprawdzanie praw do odczytu plików), <code>NET_ADMIN</code> (pełna kontrola nad siecią węzła), <code>NET_RAW</code> (może fałszować i podsłuchiwać surowe pakiety). <strong>Każde inne</strong> dodane uprawnienie ma wagę <strong>średnią</strong> — przywilej ponad domyślny zestaw. Jedno ustalenie na każde dodane uprawnienie; rozpoznawane są oba zapisy, w dowolnej wielkości liter (<code>CAP_SYS_ADMIN</code> i <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — „działa w sieci hosta”</td><td><span style="color:#f85149">wysoka</span></td><td>usługa jest podpięta do sieci o nazwie <code>host</code>: kontener dzieli <strong>stos sieciowy węzła</strong>, więc nie ma izolacji sieciowej, a mapowanie publikowanych portów Swarma przestaje obowiązywać. Dosięgnie wszystkiego, co dosięga węzeł — <strong>łącznie z usługami nasłuchującymi tylko na localhoście</strong>, które zwykle uznaje się za nieosiągalne z kontenera</td></tr>
+          <tr><td><code>unconfined</code> — „seccomp wyłączony” / „AppArmor wyłączony”</td><td><span style="color:#f85149">wysoka</span></td><td>piaskownica na poziomie jądra została dla kontenera wyłączona: <strong>seccomp ustawiony na <code>unconfined</code></strong> — kontener może wykonać dowolne wywołanie systemowe, co usuwa główną barierę przed exploitami jądra — albo <strong>wyłączone ograniczenie AppArmor</strong>. Zgłaszane są osobno, więc usługa, która wyłącza oba, dostaje dwa ustalenia</td></tr>
           <tr><td><code>root-user</code> — „działa jako root”</td><td><span style="color:#f85149">wysoka</span></td><td>specyfikacja przypina kontener do <strong>roota jawnie</strong> — <code>User=root</code> albo uid <code>0</code> (formy liczbowe takie jak <code>00</code> czy <code>+0</code> też są wyłapywane; brana pod uwagę jest tylko część użytkownika z <code>user:group</code>)</td></tr>
-          <tr><td><code>root-user</code> — „nie ustawiono użytkownika”</td><td>niska</td><td><strong>żaden</strong> użytkownik nie jest w ogóle ustawiony, więc kontener działa jako domyślny użytkownik samego obrazu, którym często jest root. To <strong>tylko informacja i nie oznacza usługi</strong>: nieustawiony użytkownik to domyślny stan Swarma w niemal każdej usłudze, a to, czy naprawdę jest to root, zależy od <code>USER</code> obrazu, czego specyfikacja z menedżera nie ujawnia — oznaczanie tego postawiłoby tarczę przy niemal każdym wierszu i zniszczyło sygnał widoczny na pierwszy rzut oka</td></tr>
           <tr><td><code>secret-in-env</code> — „sekret w zmiennej środowiskowej”</td><td><span style="color:#f85149">wysoka</span></td><td>klucz zmiennej środowiskowej wyglądający na poświadczenie trzyma <strong>dosłowną wartość w specyfikacji usługi</strong>, czytelną dla każdego, kto może odczytać tę specyfikację. Użyj zamiast tego sekretu Dockera albo konwencji <code>*_FILE</code></td></tr>
+          <tr><td><code>root-user</code> — „nie ustawiono użytkownika”</td><td>niska</td><td><strong>żaden</strong> użytkownik nie jest w ogóle ustawiony, więc kontener działa jako domyślny użytkownik samego obrazu, którym często jest root. <strong>Tylko informacja i nie oznacza usługi</strong>: nieustawiony użytkownik to domyślny stan Swarma w niemal każdej usłudze, a to, czy naprawdę jest to root, zależy od <code>USER</code> obrazu, czego specyfikacja z menedżera nie ujawnia</td></tr>
+          <tr><td><code>no-resource-limits</code> — „brak limitów zasobów”</td><td>niska</td><td>zadanie nie ustawia <strong>ani limitu CPU, ani limitu pamięci</strong>, więc rozbiegany kontener może zająć cały węzeł i zagłodzić wszystko inne, co na nim stoi. <strong>Tylko informacja</strong> — patrz niżej</td></tr>
+          <tr><td><code>unpinned-image</code> — „obraz nieprzypięty”</td><td>niska</td><td>obraz jest przypięty do <code>:latest</code> albo <strong>nie ma żadnego tagu</strong> (co i tak sprowadza się do <code>:latest</code>) — działająca wersja może się zmienić bez zmiany specyfikacji, więc wdrożenie nie jest powtarzalne. Obraz <strong>przypięty digestem</strong> (<code>…@sha256:…</code>) jest dokładnie powtarzalny i nigdy nie jest zgłaszany, a dwukropek należący do portu hosta rejestru (<code>registry:5000/img</code>) nie jest brany za tag. <strong>Tylko informacja</strong> — patrz niżej</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Dlaczego kontrole informacyjne nigdy nie oznaczają usługi.</strong> Dopiero
+        ustalenie powyżej wagi <em>niskiej</em> — wysokie albo średnie — czyni usługę
+        wymagającą działania i stawia <strong>🛡</strong> przy jej wierszu w drzewie.
+        Ustalenia o niskiej wadze (<code>no-resource-limits</code>,
+        <code>unpinned-image</code> oraz „nie ustawiono użytkownika” z <code>root-user</code>)
+        są prawdziwe dla <strong>niemal każdej usługi w prawdziwym klastrze</strong>:
+        oznaczanie ich postawiłoby tarczę przy niemal każdym wierszu i zniszczyło dokładnie
+        ten sygnał na pierwszy rzut oka, dla którego znacznik istnieje. Nie są jednak
+        zamiatane pod dywan — gdy usługa zostanie oznaczona z innego powodu, jej ustalenia o
+        niskiej wadze są wypisywane w nakładce razem z resztą, czyli tam, gdzie naprawdę
+        warto je przeczytać.
+      </p>
       <div class="note">
-        <strong>Żadna wartość sekretu nigdy nie jest wyświetlana.</strong> Ustalenie
-        <code>secret-in-env</code> podaje tylko <strong>klucz</strong> zmiennej środowiskowej;
+        <strong>Żadna wartość sekretu nigdy nie jest wyświetlana.</strong> Z ośmiu kontroli
+        tylko <code>secret-in-env</code> w ogóle zagląda do zmiennych środowiskowych, a jej
+        ustalenie podaje wyłącznie <strong>klucz</strong> zmiennej środowiskowej;
         jej wartość nigdy nie jest wczytywana do ustalenia, nigdy renderowana i nigdy
         kopiowana. Kontrola jest też napisana tak, żeby nie hałasować: dopasowuje całe tokeny
         rozdzielone znakiem <code>_</code>
@@ -934,22 +957,29 @@
       </div>
       <p>
         Nakładka wypisuje <strong>każdą oznaczoną usługę</strong> („N z M usług(i)
-        oznaczonych”), pogrupowaną po usługach, każde ustalenie w osobnej linii z kropką wagi —
+        oznaczonych · 8 kontroli”), pogrupowaną po usługach, każde ustalenie w osobnej linii z kropką wagi —
         <span style="color:#f85149">● wysoka</span>,
         <span style="color:#f2cc60">● średnia</span>, <span style="color:#8b949e">● niska</span> —
         krótkim tytułem i jednoliniowym wyjaśnieniem. Ustalenia są uporządkowane od
         najgorszych. Gdy usługa zostanie już oznaczona za coś wymagającego działania,
         wypisywane są też jej informacyjne ustalenia o niskiej wadze. Jeśli usługa pod
         kursorem jest wśród nich, zostaje wstępnie podświetlona i przewinięta do widoku. Gdy
-        nic nie jest oznaczone, nakładka mówi to wprost; a gdy lista usług jeszcze się nie
+        nic nie jest oznaczone, nakładka mówi to wprost <strong>i wymienia każdą kontrolę,
+        która się wykonała</strong> („Checked: Docker socket mounted in, added Linux
+        capabilities, host network, seccomp / AppArmor disabled, container user, secrets in
+        environment variables, missing resource limits, unpinned image.”), więc informacja
+        „czysto” mówi też, co obejmuje. A gdy lista usług jeszcze się nie
         wczytała, mówi, że <em>nic nie zostało przeskanowane</em>, zamiast fałszywie
         ogłaszać, że wszystko jest w porządku. <kbd>j</kbd>/<kbd>k</kbd> przewijają,
         <kbd>Esc</kbd> (albo <kbd>q</kbd>, albo ponownie <kbd>!</kbd>) zamyka.
       </p>
       <div class="note">
         Skanowanie to <strong>rozszerzalny rejestr</strong> analizatorów, a nie sztywna lista:
-        nowa kontrola pojawia się automatycznie i w znaczniku w drzewie, i w nakładce. Klawisz
-        jest przemapowywalny jako <code>security_risks</code> w
+        nowa kontrola pojawia się automatycznie i w znaczniku w drzewie, i w nakładce. Sam
+        tekst nakładki również pochodzi z tego rejestru — liczba kontroli w nagłówku i lista
+        „Checked:” są <strong>generowane z samych analizatorów</strong>, więc nie mogą się
+        rozjechać z tym, co faktycznie się wykonało, jak rozjechałaby się lista wpisana na
+        sztywno. Klawisz jest przemapowywalny jako <code>security_risks</code> w
         <a href="#tui">keys.yaml</a>.
       </div>
       <p>

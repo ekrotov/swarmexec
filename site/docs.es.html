@@ -913,19 +913,40 @@
         exploración. Pulsa <kbd>!</kbd> para abrir el
         <strong>overlay de riesgos de seguridad</strong>.
       </p>
-      <p>Las comprobaciones que existen hoy:</p>
+      <p>
+        Las ocho comprobaciones que existen hoy. Primero las que pueden marcar un servicio;
+        al final, las puramente informativas:
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Comprobación</th><th>Severidad</th><th>Qué señala</th></tr></thead>
         <tbody>
+          <tr><td><code>docker-socket</code> — «Docker socket mounted in»</td><td><span style="color:#f85149">high</span></td><td><strong>el hallazgo más grave de todos.</strong> Un <strong>bind mount</strong> cuyo origen es el socket del demonio Docker — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> o cualquier ruta de origen que termine en <code>/docker.sock</code>. Cualquier cosa dentro de ese contenedor puede hablar con el socket, y lo que puede hablar con el socket puede <strong>arrancar un contenedor privilegiado en ese nodo</strong>: es, en la práctica, <strong>root en el host</strong>, sea cual sea el usuario con el que corra el propio contenedor. <strong>Montarlo en solo lectura no lo mitiga</strong>: el socket es una API, no un fichero cuyo contenido importe — el propio hallazgo lo dice cuando el montaje es de solo lectura. Se nombra la ruta destino en la que está montado</td></tr>
+          <tr><td><code>added-capability</code> — «capability <em>NOMBRE</em> added»</td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span></td><td>una capability de Linux que el servicio añade a su contenedor. Swarm <strong>no tiene <code>--privileged</code></strong>, así que las capabilities son la vía por la que un servicio pide más poder sobre el host — de ahí que valga la pena mirar el conjunto añadido. Ocho se tratan como <strong>high</strong>, cada una con el motivo que lleva el hallazgo: <code>ALL</code> (concede todas las capabilities), <code>SYS_ADMIN</code> (casi root: control de montajes, namespaces y cgroups), <code>SYS_MODULE</code> (puede cargar módulos del kernel), <code>SYS_PTRACE</code> (puede inspeccionar y controlar otros procesos), <code>SYS_RAWIO</code> (acceso de E/S en crudo a dispositivos), <code>DAC_READ_SEARCH</code> (salta las comprobaciones de permisos de lectura), <code>NET_ADMIN</code> (control total de la red del nodo), <code>NET_RAW</code> (puede falsificar y capturar paquetes en crudo). <strong>Cualquier otra</strong> capability añadida es <strong>medium</strong>: un privilegio por encima del conjunto por defecto. Un hallazgo por cada capability añadida; se reconocen ambas grafías, en cualquier caja (<code>CAP_SYS_ADMIN</code> y <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — «runs on the host network»</td><td><span style="color:#f85149">high</span></td><td>el servicio está conectado a la red llamada <code>host</code>: el contenedor comparte la <strong>pila de red del nodo</strong>, así que no hay aislamiento de red y el mapeo de puertos publicados de swarm deja de aplicarse. Alcanza todo lo que alcanza el nodo — <strong>incluidos los servicios escuchando en localhost</strong>, que normalmente se dan por inalcanzables desde un contenedor</td></tr>
+          <tr><td><code>unconfined</code> — «seccomp disabled» / «AppArmor disabled»</td><td><span style="color:#f85149">high</span></td><td>el sandbox a nivel de kernel del contenedor está desactivado: <strong>seccomp puesto en <code>unconfined</code></strong> — el contenedor puede hacer cualquier syscall, lo que elimina la principal barrera frente a exploits del kernel — o el <strong>confinamiento de AppArmor deshabilitado</strong>. Se reportan por separado, así que un servicio que apague ambos obtiene dos hallazgos</td></tr>
           <tr><td><code>root-user</code> — «runs as root»</td><td><span style="color:#f85149">high</span></td><td>la spec fija el contenedor a <strong>root explícitamente</strong> — <code>User=root</code> o UID <code>0</code> (también se detectan formas numéricas como <code>00</code> o <code>+0</code>; solo se mira la parte de usuario de <code>user:group</code>)</td></tr>
-          <tr><td><code>root-user</code> — «no user set»</td><td>low</td><td><strong>no</strong> hay ningún usuario definido, así que el contenedor corre como el usuario por defecto de la imagen, que a menudo es root. Es <strong>solo informativo y no marca el servicio</strong>: un usuario sin definir es el valor por defecto de Swarm en casi todos los servicios, y si realmente es root depende del <code>USER</code> de la imagen, que la spec del manager no revela — marcarlo pondría un escudo en casi todas las filas y destruiría la señal de un vistazo</td></tr>
           <tr><td><code>secret-in-env</code> — «secret in environment variable»</td><td><span style="color:#f85149">high</span></td><td>una clave de entorno con pinta de credencial contiene un <strong>valor literal en la spec del servicio</strong>, legible por cualquiera que pueda leer la spec. Usa un secreto de Docker o la convención <code>*_FILE</code> en su lugar</td></tr>
+          <tr><td><code>root-user</code> — «no user set»</td><td>low</td><td><strong>no</strong> hay ningún usuario definido, así que el contenedor corre como el usuario por defecto de la imagen, que a menudo es root. <strong>Solo informativo, y no marca el servicio</strong>: un usuario sin definir es el valor por defecto de Swarm en casi todos los servicios, y si realmente es root depende del <code>USER</code> de la imagen, que la spec del manager no revela</td></tr>
+          <tr><td><code>no-resource-limits</code> — «no resource limits»</td><td>low</td><td>la tarea no fija <strong>ni un límite de CPU ni uno de memoria</strong>, así que un contenedor desbocado puede consumir el nodo entero y dejar sin recursos a todo lo demás. <strong>Solo informativo</strong> — véase más abajo</td></tr>
+          <tr><td><code>unpinned-image</code> — «image not pinned»</td><td>low</td><td>la imagen está fijada a <code>:latest</code>, o no lleva <strong>ninguna etiqueta</strong> (lo que resuelve a <code>:latest</code>): la versión en ejecución puede cambiar sin que cambie la spec, así que el despliegue no es reproducible. Una imagen <strong>fijada por digest</strong> (<code>…@sha256:…</code>) es exactamente reproducible y nunca se señala, y un signo de dos puntos que pertenece al puerto del host del registro (<code>registry:5000/img</code>) no se confunde con una etiqueta. <strong>Solo informativo</strong> — véase más abajo</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Por qué las comprobaciones informativas nunca marcan un servicio.</strong>
+        Solo un hallazgo por encima de <em>low</em> —high o medium— hace que un servicio sea
+        accionable y pone el <strong>🛡</strong> en su fila del árbol. Las de nivel low
+        (<code>no-resource-limits</code>, <code>unpinned-image</code> y el «no user set» de
+        <code>root-user</code>) se cumplen en <strong>casi todos los servicios de un clúster
+        real</strong>: marcarlas pondría un escudo en casi todas las filas y destruiría
+        justamente la señal de un vistazo para la que existe el marcador. Aun así no se
+        esconden: en cuanto un servicio queda marcado por otra cosa, sus hallazgos low se
+        listan junto al resto en el overlay, es decir, donde de verdad merece la pena leerlos.
+      </p>
       <div class="note">
-        <strong>Nunca se muestra el valor de un secreto.</strong> El hallazgo
-        <code>secret-in-env</code> nombra únicamente la <strong>clave</strong> de la
-        variable de entorno; su valor jamás se lee dentro del hallazgo, ni se renderiza, ni
+        <strong>Nunca se muestra el valor de un secreto.</strong> De las ocho comprobaciones,
+        solo <code>secret-in-env</code> mira siquiera las variables de entorno, y su hallazgo
+        nombra únicamente la <strong>clave</strong> de la variable; el valor jamás se lee
+        dentro del hallazgo, ni se renderiza, ni
         se copia. La comprobación también está pensada para no hacer ruido: compara tokens
         completos delimitados por <code>_</code> (<code>PASSWORD</code>,
         <code>PASSWD</code>, <code>PASS</code>, <code>PASSPHRASE</code>,
@@ -944,14 +965,18 @@
       </div>
       <p>
         El overlay lista <strong>todos los servicios marcados</strong> («N of M service(s)
-        flagged»), agrupados por servicio, cada hallazgo en su propia línea con un punto de
+        flagged · 8 checks»), agrupados por servicio, cada hallazgo en su propia línea con un punto de
         severidad — <span style="color:#f85149">● high</span>,
         <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
         un título corto y una explicación de una línea. Los hallazgos se ordenan de peor a
         mejor. Una vez que un servicio está marcado por algo accionable, también se listan
         sus hallazgos informativos de nivel low. Si el servicio bajo el cursor está entre
         ellos, se resalta de antemano y se desplaza hasta él. Cuando no hay nada marcado el
-        overlay lo dice explícitamente; si la lista de servicios aún no se ha cargado, dice
+        overlay lo dice explícitamente <strong>y nombra todas las comprobaciones que se
+        ejecutaron</strong> («Checked: Docker socket mounted in, added Linux capabilities,
+        host network, seccomp / AppArmor disabled, container user, secrets in environment
+        variables, missing resource limits, unpinned image.»), de modo que el «todo en orden»
+        también te dice qué abarca; si la lista de servicios aún no se ha cargado, dice
         que <em>todavía no se ha escaneado nada</em> en lugar de dar un falso «todo en
         orden». <kbd>j</kbd>/<kbd>k</kbd> desplazan, <kbd>Esc</kbd> (o <kbd>q</kbd>, o
         <kbd>!</kbd> de nuevo) cierra.
@@ -959,7 +984,11 @@
       <div class="note">
         El escaneo es un <strong>registro extensible</strong> de analizadores, no una lista
         fija: una comprobación nueva aparece automáticamente tanto en el marcador del árbol
-        como en el overlay. La tecla se puede remapear como <code>security_risks</code> en
+        como en el overlay. El propio texto del overlay sale también de ese registro: el
+        número de comprobaciones de su cabecera y la lista «Checked:» se
+        <strong>generan a partir de los propios analizadores</strong>, así que no pueden
+        desviarse de lo que realmente se ejecutó, como sí le pasaría a una lista fija en el
+        código. La tecla se puede remapear como <code>security_risks</code> en
         <a href="#tui">keys.yaml</a>.
       </div>
       <p>
