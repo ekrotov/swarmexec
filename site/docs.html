@@ -1198,10 +1198,33 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, volume count and the full label list</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong> block (see below), volume count and the full label list</td></tr>
           <tr><td><kbd>l</kbd></td><td>edit the selected node's <strong>labels</strong> — a staged list editor (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel) over <code>key=value</code> entries. Applying does one <code>NodeUpdate</code> — unlike a service, a node update <strong>applies immediately</strong> (no rolling update). Node labels are commonly used as placement-constraint targets (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>set the node's <strong>availability</strong> — a menu of <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> that marks the state the node is currently in. <em>Active</em> schedules tasks here normally; <em>Pause</em> keeps the running tasks and only stops <strong>new</strong> placements; <em>Drain</em> moves <strong>every</strong> task off the node. Active and Pause apply straight away; Drain goes through a confirm naming how many running tasks swarm will stop and reschedule elsewhere (services whose tasks can't be placed anywhere else go unschedulable). Like a label change it is one <code>NodeUpdate</code> (read-modify-write on the node spec) and <strong>applies immediately</strong> — nodes have no rolling update. Remappable as <code>node_availability</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Reserved resources.</strong> The node detail carries a
+        <em>reserved by tasks (scheduler's view)</em> block: for <strong>CPU</strong> and
+        <strong>memory</strong>, a bar plus <code>reserved / capacity</code> and how much is
+        free. The bar is green, turns yellow from 75% and red at 100% or above;
+        over-commitment is called out in words, and “free” never goes negative. A node that
+        reports no capacity says so instead of drawing a bar. The block costs no extra API
+        call — the nodes list already fetches the task list.
+      </p>
+      <div class="note">
+        <strong>These are reservations, not usage.</strong> The figures are the sum of the
+        tasks' declared <code>Reservations</code> — exactly the arithmetic the swarm
+        scheduler itself does when deciding whether a task fits on a node, and the usual
+        reason a service sits unschedulable. Live CPU/RAM consumption is node-local and is
+        <em>not</em> what this shows. Tasks that declare no reservation are
+        <strong>counted and reported separately</strong>: they book nothing here yet can
+        still consume the whole node, so a low percentage does not mean the node is idle —
+        and in most clusters few services set reservations at all. A task holds its
+        reservation from the moment it is assigned until it reaches a terminal state, so
+        tasks that are preparing or starting count, while shutdown / failed / complete /
+        rejected ones do not (swarm keeps those in the task list as history).
+      </div>
 
       <h3>Embedded shell &amp; logs</h3>
       <p>
@@ -1270,7 +1293,8 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    secret_delete: d          secret_new: n
+node_edit_labels: l    node_availability: a
+secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two

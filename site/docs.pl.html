@@ -1224,10 +1224,34 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, id, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, liczbą wolumenów i pełną listą etykiet</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, id, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, sekcją <strong>zarezerwowanych zasobów</strong> (patrz niżej), liczbą wolumenów i pełną listą etykiet</td></tr>
           <tr><td><kbd>l</kbd></td><td>edytuj <strong>etykiety</strong> zaznaczonego węzła — buforowany edytor listy (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj) nad wpisami <code>key=value</code>. Zastosowanie wykonuje jeden <code>NodeUpdate</code> — w odróżnieniu od usługi aktualizacja węzła <strong>działa natychmiast</strong> (bez aktualizacji kroczącej). Etykiety węzłów są zwykle używane jako cele ograniczeń rozmieszczenia (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>ustaw <strong>dostępność</strong> węzła — menu <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong>, które oznacza stan, w jakim węzeł jest obecnie. <em>Active</em> planuje tu zadania normalnie; <em>Pause</em> zachowuje działające zadania i blokuje tylko <strong>nowe</strong> rozmieszczenia; <em>Drain</em> przenosi <strong>wszystkie</strong> zadania z węzła. Active i Pause działają od razu; Drain przechodzi przez potwierdzenie, które podaje, ile działających zadań swarm zatrzyma i przeplanuje na innych węzłach (usługi, których zadań nie da się umieścić nigdzie indziej, staną się unschedulable). Tak jak zmiana etykiet jest to jeden <code>NodeUpdate</code> (odczyt-modyfikacja-zapis na specyfikacji węzła) i <strong>działa natychmiast</strong> — węzły nie mają aktualizacji kroczącej. Przemapowywalne jako <code>node_availability</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Zarezerwowane zasoby.</strong> Szczegóły węzła zawierają sekcję
+        <em>reserved by tasks (scheduler's view)</em>: dla <strong>CPU</strong> i
+        <strong>pamięci</strong> pasek plus <code>zarezerwowane / pojemność</code> oraz ile
+        zostaje wolne. Pasek jest zielony, od 75% robi się żółty, a przy 100% lub powyżej
+        czerwony; nadsubskrypcja jest wprost nazwana, a „wolne” nigdy nie schodzi poniżej
+        zera. Węzeł, który nie zgłasza pojemności, mówi o tym zamiast rysować pasek. Sekcja
+        nie kosztuje żadnego dodatkowego wywołania API — lista węzłów i tak pobiera listę
+        zadań.
+      </p>
+      <div class="note">
+        <strong>To są rezerwacje, nie zużycie.</strong> Liczby to suma zadeklarowanych przez
+        zadania <code>Reservations</code> — dokładnie ta arytmetyka, którą sam scheduler
+        swarma wykonuje, decydując, czy zadanie mieści się na węźle, i typowy powód, dla
+        którego usługa zostaje unschedulable. Rzeczywiste zużycie CPU/RAM jest lokalne dla
+        węzła i <em>nie</em> jest tym, co tu widać. Zadania, które nie deklarują żadnej
+        rezerwacji, są <strong>liczone i raportowane osobno</strong>: nic tu nie rezerwują,
+        a mimo to mogą zużyć cały węzeł — niski procent nie oznacza więc, że węzeł się nudzi,
+        a w większości klastrów mało która usługa w ogóle ustawia rezerwacje. Zadanie trzyma
+        swoją rezerwację od momentu przypisania do węzła aż do stanu końcowego: zadania w
+        preparing czy starting liczą się więc, a shutdown / failed / complete / rejected już
+        nie (swarm trzyma je na liście zadań jako historię).
+      </div>
 
       <h3>Wbudowany shell &amp; logi</h3>
       <p>
@@ -1295,7 +1319,8 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    secret_delete: d          secret_new: n
+node_edit_labels: l    node_availability: a
+secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Wczytywanie nigdy się nie wywala: nieprawidłowy albo zarezerwowany klawisz, nieznana

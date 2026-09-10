@@ -1236,10 +1236,35 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, recuento de volúmenes y la lista completa de etiquetas</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, el bloque de <strong>recursos reservados</strong> (véase más abajo), recuento de volúmenes y la lista completa de etiquetas</td></tr>
           <tr><td><kbd>l</kbd></td><td>edita las <strong>etiquetas</strong> del nodo seleccionado — un editor de lista por etapas (<kbd>a</kbd> añadir / <kbd>e</kbd> editar / <kbd>d</kbd> eliminar / <kbd>w</kbd> aplicar / <kbd>Esc</kbd> cancelar) sobre entradas <code>key=value</code>. Aplicar hace un <code>NodeUpdate</code> — a diferencia de un servicio, una actualización de nodo <strong>se aplica de inmediato</strong> (sin actualización progresiva). Las etiquetas de nodo se usan comúnmente como objetivos de restricción de colocación (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>fija la <strong>disponibilidad</strong> del nodo — un menú con <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> que marca el estado en el que está el nodo ahora mismo. <em>Active</em> programa tareas aquí con normalidad; <em>Pause</em> conserva las tareas en ejecución y solo impide colocaciones <strong>nuevas</strong>; <em>Drain</em> saca <strong>todas</strong> las tareas del nodo. Active y Pause se aplican al instante; Drain pasa por una confirmación que indica cuántas tareas en ejecución detendrá el swarm y reprogramará en otros nodos (los servicios cuyas tareas no puedan colocarse en ningún otro sitio quedarán unschedulable). Igual que un cambio de etiquetas, es un único <code>NodeUpdate</code> (lectura-modificación-escritura sobre la spec del nodo) y <strong>se aplica de inmediato</strong>: los nodos no tienen actualización progresiva. Reasignable como <code>node_availability</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Recursos reservados.</strong> Los detalles del nodo incluyen un bloque
+        <em>reserved by tasks (scheduler's view)</em>: para <strong>CPU</strong> y
+        <strong>memoria</strong>, una barra más <code>reservado / capacidad</code> y cuánto
+        queda libre. La barra es verde, pasa a amarillo a partir del 75 % y a rojo al 100 %
+        o por encima; la sobrerreserva se señala explícitamente y «libre» nunca se vuelve
+        negativo. Un nodo que no informa de capacidad lo dice en lugar de dibujar una barra.
+        El bloque no cuesta ninguna llamada de API adicional — la lista de nodos ya obtiene
+        la lista de tareas.
+      </p>
+      <div class="note">
+        <strong>Son reservas, no uso.</strong> Las cifras son la suma de las
+        <code>Reservations</code> declaradas por las tareas — exactamente la aritmética que
+        hace el propio planificador de swarm al decidir si una tarea cabe en un nodo, y el
+        motivo habitual de que un servicio quede unschedulable. El consumo real de CPU/RAM
+        es local al nodo y <em>no</em> es lo que se muestra aquí. Las tareas que no declaran
+        ninguna reserva se <strong>cuentan y se informan por separado</strong>: aquí no
+        reservan nada, pero pueden consumir el nodo entero, así que un porcentaje bajo no
+        significa que el nodo esté ocioso — y en la mayoría de los clústeres muy pocos
+        servicios definen reservas. Una tarea retiene su reserva desde el momento en que se
+        le asigna un nodo hasta que alcanza un estado terminal: por tanto, las tareas en
+        preparing o starting cuentan, y las shutdown / failed / complete / rejected no (el
+        swarm las conserva en la lista de tareas como historial).
+      </div>
 
       <h3>Shell y logs embebidos</h3>
       <p>
@@ -1309,7 +1334,8 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    secret_delete: d          secret_new: n
+node_edit_labels: l    node_availability: a
+secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         La carga nunca falla: una tecla inválida o reservada, una acción desconocida, o dos

@@ -36,6 +36,18 @@ type swarmNodeInfo struct {
 	Labels        map[string]string
 	Version       swarm.Version // for NodeUpdate (optimistic concurrency)
 	Tasks         int           // running tasks scheduled on this node
+
+	// Resources booked on this node by the tasks scheduled to it — the sum of
+	// their spec RESERVATIONS, which is what the swarm scheduler subtracts from
+	// a node's capacity when deciding where a task fits. This is not live usage
+	// (that is node-local and would need an agent RPC): a task with no
+	// reservation set books nothing here yet can still consume the whole node.
+	ReservedNanoCPUs    int64
+	ReservedMemoryBytes int64
+	// Tasks scheduled here that declare no reservation at all — they are
+	// invisible to the scheduler's arithmetic, so the booked figures understate
+	// reality by an unknown amount whenever this is non-zero.
+	TasksWithoutReservation int
 }
 
 // buildNodeInfos maps the manager's node list plus the task list into the tab's
@@ -43,10 +55,24 @@ type swarmNodeInfo struct {
 // unit-testable without a daemon.
 func buildNodeInfos(nodes []swarm.Node, tasks []swarm.Task) []swarmNodeInfo {
 	running := map[string]int{}
+	bookedCPU := map[string]int64{}
+	bookedMem := map[string]int64{}
+	unreserved := map[string]int{}
 	for _, t := range tasks {
 		if t.Status.State == swarm.TaskStateRunning {
 			running[t.NodeID]++
 		}
+		if t.NodeID == "" || !taskHoldsResources(t) {
+			continue
+		}
+		res := t.Spec.Resources
+		if res == nil || res.Reservations == nil ||
+			(res.Reservations.NanoCPUs == 0 && res.Reservations.MemoryBytes == 0) {
+			unreserved[t.NodeID]++
+			continue
+		}
+		bookedCPU[t.NodeID] += res.Reservations.NanoCPUs
+		bookedMem[t.NodeID] += res.Reservations.MemoryBytes
 	}
 	out := make([]swarmNodeInfo, 0, len(nodes))
 	for _, n := range nodes {
@@ -65,6 +91,10 @@ func buildNodeInfos(nodes []swarm.Node, tasks []swarm.Task) []swarmNodeInfo {
 			Labels:        n.Spec.Annotations.Labels,
 			Version:       n.Version,
 			Tasks:         running[n.ID],
+
+			ReservedNanoCPUs:        bookedCPU[n.ID],
+			ReservedMemoryBytes:     bookedMem[n.ID],
+			TasksWithoutReservation: unreserved[n.ID],
 		}
 		if n.ManagerStatus != nil {
 			info.Leader = n.ManagerStatus.Leader
@@ -80,6 +110,37 @@ func buildNodeInfos(nodes []swarm.Node, tasks []swarm.Task) []swarmNodeInfo {
 		return out[i].Hostname < out[j].Hostname
 	})
 	return out
+}
+
+// taskHoldsResources reports whether a task still occupies its node's capacity.
+// A task holds its reservation from the moment it is assigned until it reaches a
+// terminal state — so counting only "running" would understate a node that is
+// mid-deploy, and counting everything would double-count the shut-down tasks
+// swarm keeps in the task list as history.
+func taskHoldsResources(t swarm.Task) bool {
+	switch t.DesiredState {
+	case swarm.TaskStateShutdown, swarm.TaskStateRemove:
+		return false
+	}
+	switch t.Status.State {
+	case swarm.TaskStateComplete, swarm.TaskStateShutdown,
+		swarm.TaskStateFailed, swarm.TaskStateRejected, swarm.TaskStateRemove:
+		return false
+	}
+	return true
+}
+
+// setNodeAvailability moves a node between active / pause / drain. Read-modify-
+// write on the node spec like setNodeLabels; applies immediately (nodes have no
+// rolling update). Draining reschedules the node's tasks elsewhere.
+func setNodeAvailability(ctx context.Context, dcli *client.Client, nodeID string, availability swarm.NodeAvailability) error {
+	node, _, err := dcli.NodeInspectWithRaw(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	spec := node.Spec
+	spec.Availability = availability
+	return dcli.NodeUpdate(ctx, nodeID, node.Version, spec)
 }
 
 // listNodeInfos returns the cluster's nodes with their running-task counts.
