@@ -113,6 +113,7 @@ const (
 	pageConfirm          = "confirm"
 	pageHelp             = "help"
 	pageSecurity         = "security"
+	pageNodeAvail        = "nodeavail"
 	pageMenu             = "menu"
 	pageTerm             = "term"
 	pageLogs             = "logs"
@@ -854,6 +855,12 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	})
 	// On the nodes table: edit the selected node's labels; Enter/i opens details.
 	notable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeAvail {
+			if n, ok := u.selectedNode(); ok {
+				u.openNodeAvailability(n, notable, u.loadNodes)
+			}
+			return nil
+		}
 		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeLabels {
 			if n, ok := u.selectedNode(); ok {
 				u.editNodeLabels(n, u.loadNodes)
@@ -1693,7 +1700,7 @@ func (u *ui) helpFor(name string) string {
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] use  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
 			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 	case "nodes":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability", kl(km.NodeLabels), kl(km.NodeAvail))
 
 	default:
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
@@ -1771,6 +1778,7 @@ func (u *ui) showHelp() {
 	sec("Nodes")
 	line("Enter / i", "details")
 	line(kl(km.NodeLabels), "edit labels")
+	line(kl(km.NodeAvail), "availability: active / pause / drain")
 
 	sec("Forwards")
 	line("Enter / i", "details")

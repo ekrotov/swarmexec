@@ -1279,10 +1279,36 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, nombre de volumes et la liste complète des labels</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, le bloc <strong>ressources réservées</strong> (voir ci-dessous), nombre de volumes et la liste complète des labels</td></tr>
           <tr><td><kbd>l</kbd></td><td>édite les <strong>labels</strong> du nœud sélectionné — un éditeur de liste étagé (<kbd>a</kbd> ajouter / <kbd>e</kbd> éditer / <kbd>d</kbd> supprimer / <kbd>w</kbd> appliquer / <kbd>Esc</kbd> annuler) sur des entrées <code>key=value</code>. Appliquer effectue un seul <code>NodeUpdate</code> — contrairement à un service, une mise à jour de nœud <strong>s'applique immédiatement</strong> (pas de mise à jour progressive). Les labels de nœud sont couramment utilisés comme cibles de contraintes de placement (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>définit la <strong>disponibilité</strong> du nœud — un menu <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> qui signale l'état dans lequel le nœud se trouve actuellement. <em>Active</em> y planifie les tâches normalement ; <em>Pause</em> conserve les tâches en cours d'exécution et empêche seulement les <strong>nouveaux</strong> placements ; <em>Drain</em> déplace <strong>toutes</strong> les tâches hors du nœud. Active et Pause s'appliquent aussitôt ; Drain passe par une confirmation qui indique combien de tâches en cours d'exécution le swarm va arrêter et replanifier ailleurs (les services dont les tâches ne peuvent être placées nulle part ailleurs deviennent unschedulable). Comme un changement de labels, c'est un seul <code>NodeUpdate</code> (lecture-modification-écriture sur la spec du nœud) et cela <strong>s'applique immédiatement</strong> — les nœuds n'ont pas de mise à jour progressive. Remappable via <code>node_availability</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Ressources réservées.</strong> Les détails du nœud comportent un bloc
+        <em>reserved by tasks (scheduler's view)</em> : pour le <strong>CPU</strong> et la
+        <strong>mémoire</strong>, une barre plus <code>réservé / capacité</code> et ce qui
+        reste libre. La barre est verte, passe au jaune à partir de 75 % et au rouge à
+        100 % ou au-delà ; le surengagement est signalé explicitement, et « libre » ne
+        devient jamais négatif. Un nœud qui n'annonce aucune capacité le dit au lieu de
+        dessiner une barre. Le bloc ne coûte aucun appel d'API supplémentaire — la liste des
+        nœuds récupère déjà la liste des tâches.
+      </p>
+      <div class="note">
+        <strong>Ce sont des réservations, pas de l'utilisation.</strong> Les chiffres sont la
+        somme des <code>Reservations</code> déclarées par les tâches — exactement le calcul
+        que fait l'ordonnanceur du swarm lui-même lorsqu'il décide si une tâche tient sur un
+        nœud, et la raison habituelle pour laquelle un service reste unschedulable. La
+        consommation réelle de CPU/RAM est locale au nœud et n'est <em>pas</em> ce qui est
+        affiché ici. Les tâches qui ne déclarent aucune réservation sont
+        <strong>comptées et signalées séparément</strong> : elles ne réservent rien ici mais
+        peuvent tout de même consommer le nœud entier, donc un faible pourcentage ne
+        signifie pas que le nœud est inactif — et dans la plupart des clusters, peu de
+        services définissent des réservations. Une tâche conserve sa réservation depuis son
+        affectation jusqu'à ce qu'elle atteigne un état terminal : les tâches en preparing ou
+        starting comptent donc, tandis que shutdown / failed / complete / rejected ne
+        comptent pas (le swarm les garde dans la liste des tâches à titre d'historique).
+      </div>
 
       <h3>Shell &amp; logs intégrés</h3>
       <p>
@@ -1359,7 +1385,8 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    secret_delete: d          secret_new: n
+node_edit_labels: l    node_availability: a
+secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Le chargement n'échoue jamais : une touche invalide ou réservée, une action

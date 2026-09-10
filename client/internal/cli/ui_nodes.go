@@ -9,6 +9,7 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"time"
 
+	"github.com/docker/docker/api/types/swarm"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -197,6 +198,132 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 	app.SetFocus(list)
 }
 
+// openNodeAvailability offers the three availability states. One menu rather
+// than three keys: the states are mutually exclusive, the menu can show which
+// one is current, and it leaves the nodes tab's key space free.
+//
+// Draining is confirmed because it evicts the node's tasks; active and pause are
+// applied directly (pause only stops NEW placements, it does not move anything).
+func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after func()) {
+	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	list := tview.NewList().ShowSecondaryText(true)
+	list.SetBorder(true).SetTitle(fmt.Sprintf(" availability — %s ", n.Hostname))
+	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeMenu := func() { restoreHelp(); pages.RemovePage(pageNodeAvail); app.SetFocus(back) }
+
+	apply := func(to swarm.NodeAvailability) {
+		go func() {
+			err := setNodeAvailability(ctx, dcli, n.ID, to)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					u.info(fmt.Sprintf("could not set %s to %s: %v", n.Hostname, to, err))
+					return
+				}
+				u.flash(fmt.Sprintf(" [green]✓ %s is now %s[white]", n.Hostname, to))
+				if after != nil {
+					after()
+				}
+			})
+		}()
+	}
+	add := func(label, desc string, to swarm.NodeAvailability, confirmMsg string) {
+		if string(to) == n.Availability {
+			label += "   [gray](current)[-]"
+		}
+		list.AddItem(label, desc, 0, func() {
+			closeMenu()
+			if confirmMsg == "" {
+				apply(to)
+				return
+			}
+			u.confirm(confirmMsg, "Drain", back, func() { apply(to) })
+		})
+	}
+	add("Active", "schedule tasks here normally", swarm.NodeAvailabilityActive, "")
+	add("Pause", "keep running tasks, place no new ones", swarm.NodeAvailabilityPause, "")
+	add("[red]Drain[-]", "move every task off this node", swarm.NodeAvailabilityDrain,
+		fmt.Sprintf("Drain %q?\n\nSwarm will stop this node's %d running task(s) and reschedule them on other nodes. Services whose tasks cannot be placed elsewhere will go unschedulable.",
+			n.Hostname, n.Tasks))
+	list.AddItem("Cancel", "", 0, closeMenu)
+	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape {
+			closeMenu()
+			return nil
+		}
+		return vimListKeys(ev)
+	})
+	pages.AddPage(pageNodeAvail, centered(list, 62, 13), true, true)
+	app.SetFocus(list)
+}
+
+// nodeResourceSection renders what the scheduler has booked on a node against
+// its capacity — the arithmetic swarm itself does when placing a task, and the
+// usual reason a service sits unschedulable.
+//
+// Deliberately labelled "reserved", not "used": these are the tasks' declared
+// RESERVATIONS. A task without one books nothing here while still being free to
+// consume the whole node, so that count is called out rather than quietly
+// ignored — otherwise "0% reserved" would read as "idle" on a busy node.
+func nodeResourceSection(n swarmNodeInfo) string {
+	var b strings.Builder
+	b.WriteString("\n  [gray]reserved by tasks (scheduler's view)[-]\n")
+	if n.NanoCPUs == 0 && n.MemoryBytes == 0 {
+		b.WriteString("    [gray](node reports no capacity)[-]\n")
+		return b.String()
+	}
+	line := func(label string, booked, capacity int64, fmtVal func(int64) string) {
+		if capacity <= 0 {
+			fmt.Fprintf(&b, "    %-7s [gray]unknown capacity[-]\n", label)
+			return
+		}
+		free := capacity - booked
+		if free < 0 {
+			free = 0 // over-committed: report none free rather than a negative
+		}
+		pct := float64(booked) / float64(capacity) * 100
+		fmt.Fprintf(&b, "    %-7s %s  %s / %s  [gray](%s free)[-]\n",
+			label, resourceBar(booked, capacity), fmtVal(booked), fmtVal(capacity), fmtVal(free))
+		if pct > 100 {
+			b.WriteString("            [red]over-committed[-]\n")
+		}
+	}
+	line("cpu", n.ReservedNanoCPUs, n.NanoCPUs, formatCPUCores)
+	line("memory", n.ReservedMemoryBytes, n.MemoryBytes, formatMemBytes)
+	if n.TasksWithoutReservation > 0 {
+		fmt.Fprintf(&b, "    [gray]%d task(s) here declare no reservation — they are invisible\n"+
+			"            to this figure and to the scheduler's placement maths.[-]\n", n.TasksWithoutReservation)
+	}
+	return b.String()
+}
+
+// resourceBarWidth is the number of cells a reservation bar occupies.
+const resourceBarWidth = 20
+
+// resourceBar draws a proportional bar, coloured by how full the node is:
+// green under half, yellow past 75%, red once it is full or over-committed.
+func resourceBar(booked, capacity int64) string {
+	if capacity <= 0 {
+		return strings.Repeat("─", resourceBarWidth)
+	}
+	ratio := float64(booked) / float64(capacity)
+	filled := int(ratio*float64(resourceBarWidth) + 0.5)
+	if filled > resourceBarWidth {
+		filled = resourceBarWidth
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	color := "green"
+	switch {
+	case ratio >= 1:
+		color = "red"
+	case ratio >= 0.75:
+		color = "yellow"
+	}
+	return fmt.Sprintf("[%s]%s[-][gray]%s[-]",
+		color, strings.Repeat("█", filled), strings.Repeat("░", resourceBarWidth-filled))
+}
+
 func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	app, pages, notable := u.app, u.pages, u.notable
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
@@ -218,6 +345,7 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	kv("cpus", formatCPUCores(n.NanoCPUs))
 	kv("memory", formatMemBytes(n.MemoryBytes))
 	kv("tasks", fmt.Sprintf("%d running", n.Tasks))
+	b.WriteString(nodeResourceSection(n))
 	vol := "…"
 	if u.nodeVolsLoaded {
 		vol = fmt.Sprintf("%d", u.nodeVolCounts[n.Hostname])

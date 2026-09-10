@@ -1260,10 +1260,35 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, Volume-Anzahl und der vollständigen Label-Liste</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, dem Block <strong>reservierte Ressourcen</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
           <tr><td><kbd>l</kbd></td><td>die <strong>Labels</strong> des ausgewählten Nodes bearbeiten — ein gestagter Listeneditor (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen) über <code>key=value</code>-Einträge. Das Anwenden macht ein <code>NodeUpdate</code> — anders als bei einem Service <strong>greift ein Node-Update sofort</strong> (kein Rolling Update). Node-Labels werden häufig als Ziele von Placement-Constraints verwendet (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>Active</em> plant Tasks hier normal ein; <em>Pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>Drain</em> verschiebt <strong>jeden</strong> Task vom Node herunter. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umlegbar als <code>node_availability</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Reservierte Ressourcen.</strong> Die Node-Details enthalten einen Block
+        <em>reserved by tasks (scheduler's view)</em>: je für <strong>CPU</strong> und
+        <strong>Memory</strong> einen Balken plus <code>reserviert / Kapazität</code> und
+        wie viel frei ist. Der Balken ist grün, wird ab 75 % gelb und bei 100 % oder darüber
+        rot; eine Überbuchung wird ausdrücklich benannt, und „frei“ wird nie negativ. Ein
+        Node, der keine Kapazität meldet, sagt das, statt einen Balken zu zeichnen. Der Block
+        kostet keinen zusätzlichen API-Call — die Node-Liste holt die Task-Liste ohnehin.
+      </p>
+      <div class="note">
+        <strong>Das sind Reservierungen, keine Auslastung.</strong> Die Zahlen sind die Summe
+        der von den Tasks deklarierten <code>Reservations</code> — genau die Rechnung, die
+        der Swarm-Scheduler selbst anstellt, wenn er entscheidet, ob ein Task auf einen Node
+        passt, und der übliche Grund, warum ein Service unschedulable bleibt. Der
+        tatsächliche CPU-/RAM-Verbrauch ist node-lokal und <em>nicht</em>, was hier steht.
+        Tasks ohne deklarierte Reservierung werden <strong>gezählt und separat
+        ausgewiesen</strong>: Sie buchen hier nichts, können aber trotzdem den ganzen Node
+        auslasten — ein niedriger Prozentwert heißt also nicht, dass der Node im Leerlauf
+        ist, und in den meisten Clustern setzen ohnehin nur wenige Services überhaupt
+        Reservierungen. Ein Task hält seine Reservierung ab dem Moment der Zuweisung bis zu
+        einem Endzustand: Tasks in preparing oder starting zählen also mit, shutdown /
+        failed / complete / rejected dagegen nicht (der Swarm behält diese als Historie in
+        der Task-Liste).
+      </div>
 
       <h3>Eingebettete Shell &amp; Logs</h3>
       <p>
@@ -1335,7 +1360,8 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    secret_delete: d          secret_new: n
+node_edit_labels: l    node_availability: a
+secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
         Das Laden schlägt nie fehl: eine ungültige oder reservierte Taste, eine unbekannte
