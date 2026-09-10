@@ -13,6 +13,7 @@
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/docs.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/docs.es.html">
   <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/docs.fr.html">
+  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/docs.pl.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/docs">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
@@ -26,6 +27,7 @@
   <meta property="og:locale:alternate" content="de_DE">
   <meta property="og:locale:alternate" content="es_ES">
   <meta property="og:locale:alternate" content="fr_FR">
+  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec — client documentation">
   <meta name="twitter:description" content="How to use the swarmexec client: commands, flags, configuration, authentication and the interactive TUI.">
@@ -123,7 +125,7 @@
     // i18n: redirect to the browser language on first visit; the switcher stores the choice.
     window.__i18n = { base: 'docs', baseLang: 'en' };
     (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
       try {
         var w = localStorage.getItem('sx-lang');
         if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
@@ -148,6 +150,7 @@
     <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
     <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
     <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
+    <a data-lang="pl" hreflang="pl" href="docs.pl.html">PL</a>
   </nav>
   <main>
     <div class="card">
@@ -735,7 +738,7 @@
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
       <p>
-        <code>swarmexec ui</code> has seven tabs — <strong>Containers&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> has seven tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
         <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — and a two-line footer: the per-tab key
@@ -744,12 +747,20 @@
         on), a live cluster summary, the forward count and — on the Volumes tab — how
         many volumes you have selected. These keys work on every tab:
       </p>
+      <p>
+        The tab bar is <strong>responsive</strong>. The full names need 94 columns; on a
+        narrower terminal the bar switches to short labels —
+        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
+        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
+        <strong>Node</strong> — so all seven tabs stay visible instead of the last ones
+        being clipped. The shortcut digits and the mouse hit-boxes are unaffected.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the one-line footer only has room for the most used keys</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>refresh the active tab and the cluster summary</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
@@ -759,7 +770,12 @@
         </tbody>
       </table></div>
 
-      <h3>Containers tab</h3>
+      <h3>Stacks/Services tab</h3>
+      <p>
+        Tab&nbsp;<kbd>1</kbd>, formerly labelled <em>Containers</em>. It is one tree,
+        <strong>stack&nbsp;→ service&nbsp;→ container</strong>, and it is where exec,
+        logs, port-forwarding, inspect and the service editors live.
+      </p>
       <p>
         <strong>:latest version check.</strong> Swarm pins <code>:latest</code> to a digest at
         deploy time, so a service tagged <code>:latest</code> actually runs a fixed image.
@@ -788,8 +804,9 @@
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>/</kbd></td><td>open the search bar (filters by service / container / node)</td></tr>
-          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>collapse / expand a service</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service: expand / collapse it</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>fold / unfold, walking all three levels. <kbd>h</kbd> folds the row under the cursor — a stack folds the whole group, an expanded service folds its containers — and where there is nothing left to fold it steps <em>out</em> to the parent instead, so repeated presses walk up container&nbsp;→ service&nbsp;→ stack. <kbd>l</kbd> expands the row under the cursor, or descends to its first child when it is already open</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service or a stack: expand / collapse it</td></tr>
+          <tr><td><kbd>s</kbd></td><td>toggle stack grouping — grouped tree ⟷ flat service list (see below)</td></tr>
           <tr><td><kbd>L</kbd></td><td>logs (capital <kbd>L</kbd>) — on a container its own logs, on a service the aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>!</kbd></td><td>open the security-risks overlay for the whole service list (see below)</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
@@ -807,6 +824,46 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — and the same status appears
         in the service inspect overlay; it clears once the update completes.
       </p>
+
+      <p>
+        <strong>Grouped by stack.</strong> <code>docker stack deploy</code> labels every
+        service it creates with <code>com.docker.stack.namespace</code>. swarmexec reads
+        that label off the service spec the manager already returned — Swarm has no stack
+        object, and this is the only link — and nests the tree three levels deep:
+        <strong>stack&nbsp;→ service&nbsp;→ container</strong>. A stack row shows the stack
+        name, how many services are under it and the <strong>summed running/desired</strong>
+        task count (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloured by the same health
+        rule as a service row. Two roll-up counters follow it when they are non-zero:
+        <span style="color:#f2cc60">⟳&nbsp;n</span> — services in that stack currently
+        <strong>mid rolling-update</strong> — and <span style="color:#f85149">🛡&nbsp;n</span> —
+        services with an <strong>actionable security finding</strong>, the same shield the
+        service rows carry. So a folded stack still tells you whether anything inside it
+        needs attention.
+      </p>
+      <p>
+        Services created with <code>docker service create</code> carry no stack label; they
+        are collected under <strong><code>(no stack)</code></strong>, which always sorts
+        last so it never pushes real stacks down the list. <strong>Nothing is hidden</strong>
+        — every service still appears exactly once. Stacks sort by name and start expanded,
+        so the grouped tree shows the same services the flat one did; folds you make survive
+        the auto-refresh.
+      </p>
+      <p>
+        Grouping is <strong>on by default</strong> but only takes effect when at least one
+        service in the cluster actually carries a stack label — on a cluster without stacks
+        the tree looks exactly as it always did, with no pointless <code>(no stack)</code>
+        parent. Press <kbd>s</kbd> to switch between the grouped tree and the flat service
+        list (the footer lists it as <em>s stacks</em>); with no stack labels anywhere it
+        says so rather than redrawing an identical tree. The key is remappable as
+        <code>stack_group</code> in <a href="#tui">keys.yaml</a>.
+      </p>
+      <p>
+        Searching (<kbd>/</kbd>) is unchanged: the filter still matches service, container
+        and node. A stack the filter empties disappears from the tree, and each stack row's
+        counts describe what actually ended up under it — so the numbers follow the filter
+        instead of advertising services you filtered away.
+      </p>
+
       <p>
         The action menu offers <strong>Logs</strong>, <strong>Bash</strong>,
         <strong>Sh</strong>, <strong>Shell as user…</strong> (prompts for a user/UID,
@@ -822,7 +879,7 @@
         <strong>static analyzers over each service's spec</strong> — the same spec the
         manager already returned, so there is no extra API call, no agent involvement and
         nothing is executed inside your containers. A service with a finding worth acting
-        on is marked with a leading <strong>🛡</strong> in the containers tree, in a
+        on is marked with a leading <strong>🛡</strong> in the service tree, in a
         fixed-width slot ahead of the name, so the shields line up as a vertical scan
         column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>.
       </p>
@@ -937,7 +994,7 @@
           <tr><td><kbd>d</kbd></td><td>diff — shows a unified diff of the service's <em>current</em> spec against its <em>previous</em> one (what the last rolling update changed), using Swarm's <code>PreviousSpec</code>. Changed fields are listed grouped by field with <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span> lines (image, mode/replicas, env, labels, networks, aliases, secrets, mounts, ports, placement constraints, spread preferences, resource limits/reservations); unchanged fields are omitted. If the service has never been updated (no previous spec) it says so. Read-only overlay — <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> closes</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
           <tr><td><kbd>f</kbd></td><td>force-update — redeploys the service without changing its spec (the equivalent of <code>docker service update --force</code>: bumps <code>TaskTemplate.ForceUpdate</code>), after a confirm. Every task is restarted / rescheduled, which is how you unstick a service sitting in an <strong>incomplete state</strong> (e.g. <code>1/2</code> replicas). One <code>ServiceUpdate</code> (rolling update)</td></tr>
-          <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the container tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the service tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>
           <tr><td><kbd>D</kbd></td><td>diagnose placement (capital <kbd>D</kbd>) — answers <em>why a service isn't running everywhere you expect</em> in one view, instead of chasing it through several <code>docker</code> commands. For a <strong>global</strong> service it lists every node with ✓ running or ✗ and the reason it is excluded (<strong>availability</strong> drain/pause, a <strong>down</strong> state, an unmet placement <strong>constraint</strong>, or a <strong>platform</strong> mismatch) — which is why a 3-node cluster can legitimately show <code>2/2</code> (the third node is not eligible). For a <strong>replicated</strong> service it lists each task that is <em>not</em> running with the scheduler's own message (constraints, insufficient resources, image-pull errors, …). Constraints that can't be checked client-side (<code>engine.labels.*</code>) are noted, not guessed. Read-only overlay</td></tr>
           <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code></td></tr>
           <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries</td></tr>
@@ -1182,6 +1239,7 @@
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
+stack_group: s
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n

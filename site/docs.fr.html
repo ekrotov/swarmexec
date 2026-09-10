@@ -13,6 +13,7 @@
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/docs.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/docs.es.html">
   <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/docs.fr.html">
+  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/docs.pl.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/docs">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
@@ -26,6 +27,7 @@
   <meta property="og:locale:alternate" content="en_US">
   <meta property="og:locale:alternate" content="de_DE">
   <meta property="og:locale:alternate" content="es_ES">
+  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec — documentation du client">
   <meta name="twitter:description" content="Comment utiliser le client swarmexec : commandes, options, configuration, authentification et la TUI interactive.">
@@ -123,7 +125,7 @@
     // i18n: redirect to the browser language on first visit; the switcher stores the choice.
     window.__i18n = { base: 'docs', baseLang: 'en' };
     (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
       try {
         var w = localStorage.getItem('sx-lang');
         if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
@@ -148,6 +150,7 @@
     <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
     <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
     <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
+    <a data-lang="pl" hreflang="pl" href="docs.pl.html">PL</a>
   </nav>
   <main>
     <div class="card">
@@ -772,7 +775,7 @@
       <!-- 10 -->
       <h2 id="tui">10. La TUI</h2>
       <p>
-        <code>swarmexec ui</code> possède sept onglets — <strong>Containers&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> possède sept onglets — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
         <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — et un pied de page sur deux lignes : les
@@ -781,12 +784,21 @@
         êtes), un résumé en direct du cluster, le nombre de redirections et — sur l'onglet Volumes —
         combien de volumes vous avez sélectionnés. Ces touches fonctionnent sur chaque onglet :
       </p>
+      <p>
+        La barre d'onglets est <strong>adaptative</strong>. Les noms complets réclament
+        94 colonnes ; sur un terminal plus étroit la barre bascule sur des libellés courts —
+        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
+        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
+        <strong>Node</strong> — pour que les sept onglets restent visibles au lieu que les
+        derniers soient tronqués. Les chiffres de raccourci et les zones cliquables à la
+        souris ne changent pas.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>ouvre la surcouche des raccourcis — la référence complète et vivante des touches (elle est générée à partir de votre keymap, donc les touches réaffectées s'affichent correctement) ; le pied de page d'une seule ligne n'a de place que pour les touches les plus utilisées</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>passe à l'onglet suivant</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>saute à Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>saute à Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>descend / monte (aussi <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>rafraîchit l'onglet actif et le résumé du cluster</td></tr>
           <tr><td><kbd>y</kbd></td><td>copie la liste courante dans le presse-papiers (OSC52)</td></tr>
@@ -796,7 +808,13 @@
         </tbody>
       </table></div>
 
-      <h3>Onglet Containers</h3>
+      <h3>Onglet Stacks/Services</h3>
+      <p>
+        L'onglet&nbsp;<kbd>1</kbd>, autrefois intitulé <em>Containers</em>. C'est un seul
+        arbre, <strong>stack&nbsp;→ service&nbsp;→ conteneur</strong>, et c'est là que
+        vivent exec, les logs, la redirection de ports, l'inspection et les éditeurs de
+        service.
+      </p>
       <p>
         <strong>Vérification de version :latest.</strong> Swarm épingle
         <code>:latest</code> à un digest au moment du déploiement, donc un service
@@ -830,8 +848,9 @@
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>/</kbd></td><td>ouvre la barre de recherche (filtre par service / conteneur / nœud)</td></tr>
-          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>replie / déplie un service</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>sur un conteneur : ouvre le menu d'actions ; sur un service : le replie / déplie</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>replie / déplie sur les trois niveaux. <kbd>h</kbd> replie la ligne sous le curseur — un stack replie tout le groupe, un service déplié replie ses conteneurs — et là où il n'y a plus rien à replier, elle remonte <em>vers le parent</em>, si bien que des appuis successifs parcourent conteneur&nbsp;→ service&nbsp;→ stack. <kbd>l</kbd> déplie la ligne sous le curseur, ou descend vers son premier enfant si elle est déjà ouverte</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>sur un conteneur : ouvre le menu d'actions ; sur un service ou un stack : le replie / déplie</td></tr>
+          <tr><td><kbd>s</kbd></td><td>bascule le regroupement par stack — arbre groupé ⟷ liste plate de services (voir ci-dessous)</td></tr>
           <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> majuscule) — sur un conteneur ses propres logs, sur un service les logs agrégés de toutes ses tâches</td></tr>
           <tr><td><kbd>!</kbd></td><td>ouvre la surcouche des risques de sécurité pour toute la liste des services (voir ci-dessous)</td></tr>
           <tr><td><kbd>p</kbd></td><td>redirige le port de la tâche sous le curseur</td></tr>
@@ -851,6 +870,50 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — et le même statut apparaît dans
         l'overlay d'inspection du service ; il disparaît dès que la mise à jour est terminée.
       </p>
+
+      <p>
+        <strong>Regroupé par stack.</strong> <code>docker stack deploy</code> étiquette
+        chaque service qu'il crée avec <code>com.docker.stack.namespace</code>. swarmexec
+        lit ce label dans la spec du service que le manager a déjà renvoyée — Swarm n'a
+        aucun objet « stack », ce label est le seul lien — et imbrique l'arbre sur trois
+        niveaux : <strong>stack&nbsp;→ service&nbsp;→ conteneur</strong>. Une ligne de stack
+        affiche le nom du stack, combien de services en dépendent et le nombre de tâches
+        <strong>en cours d'exécution/souhaité cumulé</strong>
+        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloré selon la même règle de santé
+        qu'une ligne de service. Deux compteurs de synthèse la suivent lorsqu'ils ne sont pas
+        nuls : <span style="color:#f2cc60">⟳&nbsp;n</span> — les services de ce stack
+        <strong>en cours de mise à jour progressive</strong> — et
+        <span style="color:#f85149">🛡&nbsp;n</span> — les services présentant un
+        <strong>constat de sécurité qui mérite une action</strong>, le même bouclier que
+        portent les lignes de service. Même replié, un stack indique donc si quelque chose à
+        l'intérieur demande votre attention.
+      </p>
+      <p>
+        Les services créés avec <code>docker service create</code> ne portent pas de label
+        de stack ; ils sont regroupés sous <strong><code>(no stack)</code></strong>, qui est
+        toujours trié en dernier et ne repousse donc jamais les vrais stacks vers le bas.
+        <strong>Rien n'est masqué</strong> : chaque service apparaît toujours exactement une
+        fois. Les stacks sont triés par nom et démarrent dépliés, de sorte que l'arbre groupé
+        montre les mêmes services que l'arbre plat ; les replis que vous faites survivent au
+        rafraîchissement automatique.
+      </p>
+      <p>
+        Le regroupement est <strong>actif par défaut</strong>, mais il ne prend effet que
+        lorsqu'au moins un service du cluster porte réellement un label de stack — sur un
+        cluster sans stacks, l'arbre est exactement tel qu'il a toujours été, sans parent
+        <code>(no stack)</code> inutile. <kbd>s</kbd> bascule entre l'arbre groupé et la
+        liste plate de services (le pied de page l'indique comme <em>s stacks</em>) ; s'il
+        n'y a aucun label de stack, il le dit plutôt que de redessiner un arbre identique.
+        La touche est réaffectable via <code>stack_group</code> dans
+        <a href="#tui">keys.yaml</a>.
+      </p>
+      <p>
+        La recherche (<kbd>/</kbd>) ne change pas : le filtre porte toujours sur le service,
+        le conteneur et le nœud. Un stack que le filtre vide disparaît de l'arbre, et les
+        compteurs de chaque ligne de stack décrivent ce qui s'y trouve réellement — ils
+        suivent donc le filtre au lieu d'annoncer des services que vous avez filtrés.
+      </p>
+
       <p>
         Le menu d'actions propose <strong>Logs</strong>, <strong>Bash</strong>,
         <strong>Sh</strong>, <strong>Shell as user…</strong> (demande un utilisateur/UID,
@@ -869,7 +932,7 @@
         même spec que le manager a déjà renvoyée : il n'y a donc aucun appel d'API
         supplémentaire, l'agent n'intervient pas et rien n'est exécuté à l'intérieur de vos
         conteneurs. Un service porteur d'un constat qui mérite une action est marqué d'un
-        <strong>🛡</strong> en tête de sa ligne dans l'arbre des conteneurs, dans un
+        <strong>🛡</strong> en tête de sa ligne dans l'arbre des services, dans un
         emplacement de largeur fixe devant le nom, de sorte que les boucliers forment une
         colonne verticale de lecture. Appuyez sur <kbd>!</kbd> pour ouvrir la
         <strong>surcouche des risques de sécurité</strong>.
@@ -999,7 +1062,7 @@
           <tr><td><kbd>d</kbd></td><td>diff — affiche un diff unifié de la spécification <em>actuelle</em> du service par rapport à sa <em>précédente</em> (ce que la dernière mise à jour progressive a changé), en utilisant le <code>PreviousSpec</code> de Swarm. Les champs modifiés sont listés groupés par champ avec des lignes <span style="color:#f85149">- supprimé</span> / <span style="color:#3fb950">+ ajouté</span> (image, mode/répliques, env, labels, réseaux, alias, secrets, montages, ports, contraintes de placement, préférences de répartition, limites/réservations de ressources) ; les champs inchangés sont omis. Si le service n'a jamais été mis à jour (pas de spécification précédente) il l'indique. Surcouche en lecture seule — <kbd>j</kbd>/<kbd>k</kbd> défilent, <kbd>Esc</kbd> ferme</td></tr>
           <tr><td><kbd>s</kbd></td><td>mise à l'échelle — demande un nouveau nombre de répliques et l'applique (services répliqués uniquement ; un service global signale qu'il ne peut pas être mis à l'échelle)</td></tr>
           <tr><td><kbd>f</kbd></td><td>mise à jour forcée — redéploie le service sans changer sa spécification (l'équivalent de <code>docker service update --force</code> : incrémente <code>TaskTemplate.ForceUpdate</code>), après une confirmation. Chaque tâche est redémarrée / replanifiée, c'est ainsi que vous débloquez un service coincé dans un <strong>état incomplet</strong> (p. ex. <code>1/2</code> répliques). Un seul <code>ServiceUpdate</code> (mise à jour progressive)</td></tr>
-          <tr><td><kbd>X</kbd></td><td>supprime le service (<kbd>X</kbd> majuscule) — <strong>le supprime définitivement</strong> et arrête toutes ses tâches, derrière une confirmation ; irréversible. Un seul <code>ServiceRemove</code> de l'API du manager ; en cas de succès la surcouche d'inspection se ferme et l'arbre des conteneurs se rafraîchit</td></tr>
+          <tr><td><kbd>X</kbd></td><td>supprime le service (<kbd>X</kbd> majuscule) — <strong>le supprime définitivement</strong> et arrête toutes ses tâches, derrière une confirmation ; irréversible. Un seul <code>ServiceRemove</code> de l'API du manager ; en cas de succès la surcouche d'inspection se ferme et l'arbre des services se rafraîchit</td></tr>
           <tr><td><kbd>D</kbd></td><td>diagnostique le placement (<kbd>D</kbd> majuscule) — répond à <em>pourquoi un service ne s'exécute pas partout où vous l'attendez</em> en une seule vue, au lieu de le pourchasser à travers plusieurs commandes <code>docker</code>. Pour un service <strong>global</strong> il liste chaque nœud avec ✓ en cours d'exécution ou ✗ et la raison pour laquelle il est exclu (<strong>disponibilité</strong> drain/pause, un état <strong>down</strong>, une contrainte de placement <strong>non satisfaite</strong>, ou une <strong>plateforme</strong> non concordante) — c'est pourquoi un cluster de 3 nœuds peut légitimement afficher <code>2/2</code> (le troisième nœud n'est pas éligible). Pour un service <strong>répliqué</strong> il liste chaque tâche qui n'est <em>pas</em> en cours d'exécution avec le message propre au planificateur (contraintes, ressources insuffisantes, erreurs de récupération d'image, …). Les contraintes qui ne peuvent pas être vérifiées côté client (<code>engine.labels.*</code>) sont signalées, pas devinées. Surcouche en lecture seule</td></tr>
           <tr><td><kbd>p</kbd></td><td>édite les ports publiés — ouvre un éditeur de liste étagé des ports du service, chacun sous la forme <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, par défaut <code>tcp</code>), p. ex. <code>8080:80/tcp</code></td></tr>
           <tr><td><kbd>l</kbd></td><td>édite les labels — le même éditeur de liste étagé sur des entrées <code>key=value</code></td></tr>
@@ -1264,6 +1327,7 @@
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" doit être entre guillemets — YAML</span>
+stack_group: s
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n

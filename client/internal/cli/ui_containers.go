@@ -61,12 +61,29 @@ func (u *ui) renderContainers() {
 			prevSvc = ref.name
 		}
 	}
-	wasExpanded := map[string]bool{}
-	for _, sn := range croot.GetChildren() {
-		if ref, ok := sn.GetReference().(svcRef); ok {
-			wasExpanded[ref.name] = sn.IsExpanded()
+	prevStack := ""
+	if n := ctree.GetCurrentNode(); n != nil {
+		if ref, ok := n.GetReference().(stackRef); ok {
+			prevStack = ref.name
 		}
 	}
+	// Remember fold state for both levels. Stacks default to expanded (so the
+	// grouped tree shows the same services the flat one did), services stay
+	// collapsed by default as before.
+	wasExpanded := map[string]bool{}
+	stackExpanded := map[string]bool{}
+	seenStack := map[string]bool{}
+	croot.Walk(func(n, _ *tview.TreeNode) bool {
+		switch ref := n.GetReference().(type) {
+		case svcRef:
+			wasExpanded[ref.name] = n.IsExpanded()
+			return false
+		case stackRef:
+			stackExpanded[ref.name] = n.IsExpanded()
+			seenStack[ref.name] = true
+		}
+		return true
+	})
 	croot.ClearChildren()
 
 	// Group running containers by service for the leaves.
@@ -113,7 +130,45 @@ func (u *ui) renderContainers() {
 	}
 
 	q := strings.ToLower(strings.TrimSpace(u.filter))
-	var firstSvc, targetSvc, targetLeaf *tview.TreeNode
+	var firstSvc, targetSvc, targetLeaf, targetStack *tview.TreeNode
+
+	// Group by stack unless the operator turned it off, and only when at least
+	// one service actually carries a stack label — otherwise every row would
+	// hang under a single pointless "(no stack)" parent.
+	grouped := u.groupByStack && anyStacked(u.lastSvcs)
+	stackNodes := map[string]*tview.TreeNode{}
+	if grouped {
+		// Create the stack nodes up front in groupByStack's order (alphabetical,
+		// unstacked last) so the tree order does not depend on which service
+		// happened to be seen first. Stacks left empty by the filter are dropped
+		// again below.
+		for _, row := range groupByStack(u.lastSvcs) {
+			expanded := true // a stack the operator has not touched starts open
+			if seenStack[row.Name] {
+				expanded = stackExpanded[row.Name]
+			}
+			n := tview.NewTreeNode("").
+				SetReference(stackRef{name: row.Name}).
+				SetExpanded(expanded)
+			stackNodes[row.Name] = n
+			croot.AddChild(n)
+			if row.Name == prevStack {
+				targetStack = n
+			}
+		}
+	}
+	// parentFor returns the node a service hangs under: its stack node when
+	// grouped, else the root.
+	parentFor := func(s resolve.Service) *tview.TreeNode {
+		if !grouped {
+			return croot
+		}
+		if n, ok := stackNodes[stackNameOf(s)]; ok {
+			return n
+		}
+		return croot
+	}
+
 	for _, s := range u.lastSvcs {
 		nameMatch := q == "" || strings.Contains(strings.ToLower(s.Name), q)
 		// Which running containers to list: all when the service name matches,
@@ -134,7 +189,7 @@ func (u *ui) renderContainers() {
 			SetColor(serviceColor(s.Running, s.Desired)).
 			SetReference(svcRef{name: s.Name}).
 			SetExpanded(wasExpanded[s.Name])
-		croot.AddChild(svcNode)
+		parentFor(s).AddChild(svcNode)
 		if firstSvc == nil {
 			firstSvc = svcNode
 		}
@@ -159,6 +214,19 @@ func (u *ui) renderContainers() {
 		// once the leaves are attached.
 		u.markService(svcNode)
 	}
+	if grouped {
+		// Drop stacks the filter emptied, and label the rest — the summary counts
+		// what actually ended up under each, so it follows the filter.
+		kept := make([]*tview.TreeNode, 0, len(croot.GetChildren()))
+		for _, n := range croot.GetChildren() {
+			if isStackNode(n) && len(n.GetChildren()) == 0 {
+				continue
+			}
+			u.markStack(n)
+			kept = append(kept, n)
+		}
+		croot.SetChildren(kept)
+	}
 	if len(croot.GetChildren()) == 0 {
 		empty := "(no services)"
 		if q != "" {
@@ -171,9 +239,71 @@ func (u *ui) renderContainers() {
 		ctree.SetCurrentNode(targetLeaf)
 	case targetSvc != nil:
 		ctree.SetCurrentNode(targetSvc)
+	case targetStack != nil:
+		ctree.SetCurrentNode(targetStack)
 	case firstSvc != nil:
 		ctree.SetCurrentNode(firstSvc)
+	case len(croot.GetChildren()) > 0:
+		// Grouped and every stack collapsed: land on the first stack row.
+		ctree.SetCurrentNode(croot.GetChildren()[0])
 	}
+}
+
+// markStack (re)renders a stack group row from the services currently under it:
+// name, service count, aggregate tasks, and the update/risk counts. Called after
+// the children are attached and again on a fold, like markService.
+func (u *ui) markStack(n *tview.TreeNode) {
+	ref, ok := n.GetReference().(stackRef)
+	if !ok {
+		return
+	}
+	var members []resolve.Service
+	for _, child := range n.GetChildren() {
+		if sref, ok := child.GetReference().(svcRef); ok {
+			if s, found := u.svcByName[sref.name]; found {
+				members = append(members, s)
+			}
+		}
+	}
+	rows := groupByStack(members)
+	summary := stackRow{Name: ref.name}
+	if len(rows) > 0 {
+		summary = rows[0]
+		summary.Name = ref.name // members may be unstacked; keep the node's name
+	}
+
+	marker := "▾"
+	if !n.IsExpanded() {
+		marker = "▸"
+	}
+	var extra strings.Builder
+	if summary.Updating > 0 {
+		fmt.Fprintf(&extra, "  [yellow]⟳ %d[-]", summary.Updating)
+	}
+	if summary.Risky > 0 {
+		fmt.Fprintf(&extra, "  [red]🛡 %d[-]", summary.Risky)
+	}
+	n.SetText(fmt.Sprintf("%s %s  [gray](%d svc · %d/%d)[-]%s",
+		marker, ref.name, len(summary.Services), summary.Running, summary.Desired, extra.String()))
+	n.SetColor(serviceColor(summary.Running, summary.Desired))
+}
+
+// stackNameOf is a service's stack, or the unstacked bucket label.
+func stackNameOf(s resolve.Service) string {
+	if name := strings.TrimSpace(s.Stack); name != "" {
+		return name
+	}
+	return noStackLabel
+}
+
+// anyStacked reports whether at least one service carries a stack label.
+func anyStacked(svcs []resolve.Service) bool {
+	for _, s := range svcs {
+		if strings.TrimSpace(s.Stack) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (u *ui) sortCands(cands []resolve.Candidate) {

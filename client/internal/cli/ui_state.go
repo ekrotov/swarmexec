@@ -19,14 +19,23 @@ import (
 // uiTabList drives the tab bar: one list entry per tab instead of five
 // hand-aligned strings, so adding a tab is a single edit. The 1-based shortcut
 // digit is derived from position by the tab bar, not baked into the label.
-var uiTabList = []struct{ key, label string }{
-	{"containers", "Containers"},
-	{"volumes", "Volumes"},
-	{"forwards", "Forwards"},
-	{"networks", "Networks"},
-	{"secrets", "Secrets"},
-	{"contexts", "Contexts"},
-	{"nodes", "Nodes"},
+// uiTab is one tab: the internal key, the full label, and a short label the tab
+// bar falls back to when the terminal is too narrow for the full set. The short
+// forms are written out rather than derived, because initials collide
+// (Secrets/Stacks, Networks/Nodes).
+type uiTab struct{ key, label, short string }
+
+var uiTabList = []uiTab{
+	// The label names what the tree shows (stacks → services → containers); the
+	// key stays "containers" because it addresses the tab internally — keymap
+	// scopes, the search mode and the content page all key off it.
+	{"containers", "Stacks/Services", "St/Sv"},
+	{"volumes", "Volumes", "Vol"},
+	{"forwards", "Forwards", "Fwd"},
+	{"networks", "Networks", "Net"},
+	{"secrets", "Secrets", "Sec"},
+	{"contexts", "Contexts", "Ctx"},
+	{"nodes", "Nodes", "Node"},
 }
 
 // uiTabOrder drives Tab cycling; every tab joins it.
@@ -92,6 +101,7 @@ type ui struct {
 	lastSvcs        []resolve.Service          // most recent service fetch (tree rows)
 	svcByName       map[string]resolve.Service // current services, for fold re-marking
 	svcCols         svcColumns                 // service-row column widths
+	groupByStack    bool                       // nest services under their stack (toggled by the stack_group key)
 	regCache        *registryCache             // :latest version / newer-tag resolver
 	autoRefreshBusy atomic.Bool                // guards against overlapping tree refreshes
 

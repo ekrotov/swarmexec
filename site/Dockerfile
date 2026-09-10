@@ -28,7 +28,7 @@ COPY site/nginx.conf /etc/nginx/conf.d/default.conf
 # Glob covers every language variant (index.de.html, docs.fr.html, datenschutz.es.html, releases.fr.html, …).
 # releases.sample.json is a dev fixture and is deliberately NOT matched by any glob here.
 COPY site/index*.html site/docs*.html site/datenschutz*.html site/releases*.html site/robots.txt site/sitemap.xml \
-     site/favicon.svg site/favicon.ico site/apple-touch-icon.png site/demo.gif site/portforward.gif /usr/share/nginx/html/
+     site/favicon.svg site/favicon.ico site/apple-touch-icon.png site/demo.gif site/portforward.gif site/ui.gif /usr/share/nginx/html/
 # Build-time-generated release data (same-origin fetch target for releases*.html).
 COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
 # index*.html and docs*.html carry the __VERSION__ placeholder (in every language); datenschutz*.html and releases*.html do not.

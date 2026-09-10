@@ -23,7 +23,7 @@ type keybinds struct {
 	// containers + volumes
 	Search rune
 	// containers
-	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks rune
+	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup rune
 	// volumes
 	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach, VolNew rune
 	// networks
@@ -59,6 +59,7 @@ var keyActions = []keyAction{
 	{"container_inspect", []string{"containers"}, 'i', func(k *keybinds) *rune { return &k.ContainerInspect }},
 	{"logs", []string{"containers"}, 'L', func(k *keybinds) *rune { return &k.Logs }},
 	{"security_risks", []string{"containers"}, '!', func(k *keybinds) *rune { return &k.SecurityRisks }},
+	{"stack_group", []string{"containers"}, 's', func(k *keybinds) *rune { return &k.StackGroup }},
 	{"volume_select", []string{"volumes"}, ' ', func(k *keybinds) *rune { return &k.VolSelect }},
 	{"volume_select_all", []string{"volumes"}, 'a', func(k *keybinds) *rune { return &k.VolSelectAll }},
 	{"volume_delete", []string{"volumes"}, 'd', func(k *keybinds) *rune { return &k.VolDelete }},
@@ -82,9 +83,13 @@ var keyActions = []keyAction{
 
 // reservedRunes are the fixed structural keys a configurable binding must not
 // steal (the tab-number keys and the vim movement aliases).
+// Every digit a tab can occupy is reserved, not just the tabs that exist today:
+// tabKeys maps 1-9 to tab positions, so binding an action to a digit would be
+// shadowed the moment a tab is added.
 var reservedRunes = map[rune]bool{
 	'j': true, 'k': true, 'g': true, 'G': true,
-	'1': true, '2': true, '3': true, '4': true, '5': true, '6': true,
+	'1': true, '2': true, '3': true, '4': true, '5': true,
+	'6': true, '7': true, '8': true, '9': true,
 }
 
 // defaultKeybinds returns the built-in bindings.

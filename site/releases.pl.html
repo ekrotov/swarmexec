@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="pl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec — notas de versión</title>
-  <meta name="description" content="Cada versión de swarmexec, la más reciente primero: qué cambió y dónde descargarla.">
+  <title>swarmexec — informacje o wydaniach</title>
+  <meta name="description" content="Każde wydanie swarmexec, od najnowszego — co się zmieniło i skąd je pobrać.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/releases.es.html">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/releases.pl.html">
   <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/releases">
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/releases.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/releases.es.html">
@@ -17,20 +17,20 @@
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/releases">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
-  <meta property="og:title" content="swarmexec — notas de versión">
-  <meta property="og:description" content="Cada versión de swarmexec, la más reciente primero: qué cambió y dónde descargarla.">
-  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/releases.es.html">
+  <meta property="og:title" content="swarmexec — informacje o wydaniach">
+  <meta property="og:description" content="Każde wydanie swarmexec, od najnowszego — co się zmieniło i skąd je pobrać.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/releases.pl.html">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
   <meta property="og:image:width" content="860">
   <meta property="og:image:height" content="470">
-  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale" content="pl_PL">
   <meta property="og:locale:alternate" content="en_US">
   <meta property="og:locale:alternate" content="de_DE">
+  <meta property="og:locale:alternate" content="es_ES">
   <meta property="og:locale:alternate" content="fr_FR">
-  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="swarmexec — notas de versión">
-  <meta name="twitter:description" content="Cada versión de swarmexec, la más reciente primero: qué cambió y dónde descargarla.">
+  <meta name="twitter:title" content="swarmexec — informacje o wydaniach">
+  <meta name="twitter:description" content="Każde wydanie swarmexec, od najnowszego — co się zmieniło i skąd je pobrać.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
   <style>
     :root {
@@ -148,19 +148,19 @@
   </nav>
   <main>
     <div class="card">
-      <h1>Notas de versión<span class="cursor">_</span></h1>
-      <p class="lead">Cada versión de swarmexec, la más reciente primero: qué cambió y dónde descargarla.</p>
-      <p class="dh-hint">El agente (por nodo) está en Docker Hub: <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">logleio/swarmexec-agent</a>.</p>
-      <div id="releases"><p class="loading">Cargando las notas de versión…</p></div>
+      <h1>Informacje o wydaniach<span class="cursor">_</span></h1>
+      <p class="lead">Każde wydanie swarmexec, od najnowszego — co się zmieniło i skąd je pobrać.</p>
+      <p class="dh-hint">Agent działający na każdym węźle jest na Docker Hubie: <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">logleio/swarmexec-agent</a>.</p>
+      <div id="releases"><p class="loading">Wczytywanie informacji o wydaniach…</p></div>
 
       <footer>
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io/cs-public/swarm-remote-exec</a><br>
-        Código abierto bajo la
+        Open source na licencji
         <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
         · © 2026 Cloud Surfers GmbH
         <nav class="legal" aria-label="Legal">
           <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
-          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="/datenschutz">Prywatność</a> ·
           <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
         </nav>
       </footer>
@@ -169,11 +169,11 @@
 
   <script>
     (function () {
-      var LOCALE = 'es';
+      var LOCALE = 'pl';
       var STR = {
-        downloads: 'Descargas',
-        gitlab: 'Ver la versión en GitLab →',
-        fallback: 'Las notas de versión están disponibles en GitLab.'
+        downloads: 'Pliki do pobrania',
+        gitlab: 'Zobacz wydanie na GitLabie →',
+        fallback: 'Informacje o wydaniach są dostępne na GitLabie.'
       };
       var REPO = 'https://gitlab.logle.io/cs-public/swarm-remote-exec';
       var DL_FILES = [

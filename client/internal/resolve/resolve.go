@@ -111,6 +111,11 @@ type Service struct {
 	ImageRef string // full container image as pinned in the spec (digest kept)
 	Ports    string // published ports, e.g. "*:80->80/tcp"; "" if none
 
+	// Stack is the stack this service belongs to, from the
+	// com.docker.stack.namespace label `docker stack deploy` sets. Empty for a
+	// standalone service (one created with `docker service create`).
+	Stack string
+
 	// UpdateState is the swarm rolling-update state, e.g. "updating", "paused",
 	// "rollback_started". Empty when no update is in flight; "completed" /
 	// "rollback_completed" once one finished. Lets the UI flag a service that is
@@ -122,6 +127,11 @@ type Service struct {
 	// risky service and list its findings without a second call.
 	Risks []secscan.Finding
 }
+
+// stackNamespaceLabel is the label `docker stack deploy` stamps on every service
+// it creates, naming the stack. It is the only link between a service and its
+// stack — swarm has no stack object.
+const stackNamespaceLabel = "com.docker.stack.namespace"
 
 // AmbiguousError is returned when a bare service name has more than one running
 // task and the caller must disambiguate (slot or interactive pick).
@@ -457,6 +467,7 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 			Image:    serviceImage(s.Spec.TaskTemplate.ContainerSpec),
 			ImageRef: serviceImageRef(s.Spec.TaskTemplate.ContainerSpec),
 			Ports:    servicePorts(servicePortConfigs(s)),
+			Stack:    s.Spec.Labels[stackNamespaceLabel],
 		}
 		if st := s.ServiceStatus; st != nil {
 			svc.Running = int(st.RunningTasks)

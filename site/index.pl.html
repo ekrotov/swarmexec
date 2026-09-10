@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="pl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec — clusterweites docker exec für Docker Swarm</title>
-  <meta name="description" content="Clusterweites docker exec, Logs und Volume-Verwaltung für Docker Swarm, aus einem einzigen Terminal.">
+  <title>swarmexec — docker exec dla całego klastra Docker Swarm</title>
+  <meta name="description" content="docker exec w całym klastrze, logi i zarządzanie wolumenami dla Docker Swarm, z jednego terminala.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/index.de.html">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/index.pl.html">
   <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/">
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/index.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/index.es.html">
@@ -17,27 +17,27 @@
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
-  <meta property="og:title" content="swarmexec — clusterweites docker exec für Docker Swarm">
-  <meta property="og:description" content="Clusterweites docker exec, Logs und Volume-Verwaltung für Docker Swarm, aus einem einzigen Terminal.">
-  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/index.de.html">
+  <meta property="og:title" content="swarmexec — docker exec dla całego klastra Docker Swarm">
+  <meta property="og:description" content="docker exec w całym klastrze, logi i zarządzanie wolumenami dla Docker Swarm, z jednego terminala.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/index.pl.html">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
   <meta property="og:image:width" content="860">
   <meta property="og:image:height" content="470">
-  <meta property="og:locale" content="de_DE">
+  <meta property="og:locale" content="pl_PL">
   <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:locale:alternate" content="de_DE">
   <meta property="og:locale:alternate" content="es_ES">
   <meta property="og:locale:alternate" content="fr_FR">
-  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="swarmexec — clusterweites docker exec für Docker Swarm">
-  <meta name="twitter:description" content="Clusterweites docker exec, Logs und Volume-Verwaltung für Docker Swarm, aus einem einzigen Terminal.">
+  <meta name="twitter:title" content="swarmexec — docker exec dla całego klastra Docker Swarm">
+  <meta name="twitter:description" content="docker exec w całym klastrze, logi i zarządzanie wolumenami dla Docker Swarm, z jednego terminala.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "swarmexec",
-    "description": "Clusterweites docker exec, Logs und Volume-Verwaltung für Docker Swarm, aus einem einzigen Terminal.",
+    "description": "docker exec w całym klastrze, logi i zarządzanie wolumenami dla Docker Swarm, z jednego terminala.",
     "url": "https://swarm-exec.cloud-surfers.net/",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS, Windows",
@@ -170,83 +170,83 @@
   <main>
     <div class="card">
       <h1>swarmexec<span class="cursor">_</span></h1>
-      <p class="tagline">Clusterweites <code>docker exec -it</code> für Docker Swarm.</p>
+      <p class="tagline"><code>docker exec -it</code> dla całego klastra Docker Swarm.</p>
 
-      <div class="slideshow" role="group" aria-roledescription="Karussell" aria-label="Feature-Demos" tabindex="0">
+      <div class="slideshow" role="group" aria-roledescription="karuzela" aria-label="Demonstracje funkcji" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="Folie" aria-label="1 / 3">
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="1 / 3">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
-                 alt="Statt docker node ls, den Node zu suchen, ssh node-3 und docker exec, einfach: swarmexec exec web -- sh ausführen">
-            <figcaption><b>Cluster-weites exec</b> — Shell in jeden Task, aus einem Terminal</figcaption>
+                 alt="Zamiast docker node ls, szukania węzła, ssh node-3 i docker exec, wystarczy uruchomić: swarmexec exec web -- sh">
+            <figcaption><b>exec w całym klastrze</b> — shell w dowolnym zadaniu, z jednego terminala</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="Folie" aria-label="2 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="2 / 3" hidden>
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
-                 alt="swarmexec port-forward web 9090:8080 startet einen Forward zu einem Task auf node-3, dann liefert curl localhost:9090 eine Antwort — ohne SSH und ohne veröffentlichten Port">
-            <figcaption><b>Port-Forward vom Laptop</b> — den Port eines Tasks erreichen, ohne SSH, ohne Ingress</figcaption>
+                 alt="swarmexec port-forward web 9090:8080 zestawia przekierowanie do zadania na node-3, a potem curl localhost:9090 kończy się powodzeniem — bez SSH i bez publikowanego portu">
+            <figcaption><b>przekierowanie portu z laptopa</b> — dostań się do portu zadania, bez SSH, bez ingressu</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="Folie" aria-label="3 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="3 / 3" hidden>
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
-                 alt="swarmexec ui: ein Terminal-UI, das den Cluster als Baum aus Stacks, Services und Containern zeigt; ein Service ist zu seinen Tasks auf node-2, node-4 und node-5 aufgeklappt, und das Security-Risiken-Overlay listet die markierten Services">
-            <figcaption><b>Ein Terminal-UI für den ganzen Cluster</b> — Stacks, Services, Container, Logs und Risiken</figcaption>
+                 alt="swarmexec ui: TUI w terminalu pokazująca klaster jako drzewo stacków, usług i kontenerów; jedna usługa jest rozwinięta do swoich zadań na node-2, node-4 i node-5, a nakładka z ryzykami bezpieczeństwa wypisuje oznaczone usługi">
+            <figcaption><b>TUI dla całego klastra</b> — stacki, usługi, kontenery, logi i ryzyka</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
-          <button class="arrow sl-prev" type="button" aria-label="Vorherige Folie">&#8249;</button>
-          <div class="dots" role="group" aria-label="Folie wählen">
-            <button class="dot" type="button" aria-label="Demo: Cluster-weites exec anzeigen" aria-current="true"></button>
-            <button class="dot" type="button" aria-label="Demo: Port-Forward anzeigen" aria-current="false"></button>
-            <button class="dot" type="button" aria-label="Demo: Terminal-UI anzeigen" aria-current="false"></button>
+          <button class="arrow sl-prev" type="button" aria-label="Poprzedni slajd">&#8249;</button>
+          <div class="dots" role="group" aria-label="Wybierz slajd">
+            <button class="dot" type="button" aria-label="Pokaż demo: exec w całym klastrze" aria-current="true"></button>
+            <button class="dot" type="button" aria-label="Pokaż demo: przekierowanie portów" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Pokaż demo: TUI w terminalu" aria-current="false"></button>
           </div>
-          <button class="arrow sl-next" type="button" aria-label="Nächste Folie">&#8250;</button>
+          <button class="arrow sl-next" type="button" aria-label="Następny slajd">&#8250;</button>
         </div>
       </div>
 
       <p class="lead">
-        Öffne eine interaktive Shell (oder führe einen einmaligen Befehl aus) in
-        <strong>jedem</strong> Container eines Swarms — dazu Logs und
-        swarmweite Volume-Verwaltung — aus einem einzigen Terminal, ohne dich per
-        SSH auf den Node zu verbinden, der die Task gerade ausführt.
-        Ein kleiner Agent pro Node, eine skriptbare CLI/TUI, mTLS-Authentifizierung und ein Audit-Log.
+        Otwórz interaktywny shell (albo uruchom jednorazowe polecenie) w
+        <strong>dowolnym</strong> kontenerze w Swarmie — a do tego logi i zarządzanie
+        wolumenami w całym swarmie — z jednego terminala, bez logowania się po SSH na
+        węzeł, który akurat uruchamia dane zadanie.
+        Mały agent na każdym węźle, skryptowalne CLI/TUI, uwierzytelnianie mTLS i log audytu.
       </p>
 
-      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># Agent auf jedem Node ausrollen</span>
-<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># Shell in eine Task, beliebiger Node</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interaktive TUI</span></div>
+      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># wdróż agenta na każdym węźle</span>
+<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># shell w zadaniu, dowolny węzeł</span>
+<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interaktywna TUI</span></div>
 
       <div class="dhbox">
-        Der Agent (pro Node) liegt auf Docker Hub:
+        Agent działający na każdym węźle jest na Docker Hubie:
         <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">logleio/swarmexec-agent</a>
       </div>
 
       <div class="links">
         <a class="btn" href="/docs">
-          <span class="t">Dokumentation</span>
-          <span class="s">Befehle, Flags, Konfiguration &amp; die TUI</span>
+          <span class="t">Dokumentacja</span>
+          <span class="s">polecenia, flagi, konfiguracja &amp; TUI</span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">
-          <span class="t">GitLab-Repository</span>
-          <span class="s">Quellcode &amp; Issues</span>
+          <span class="t">Repozytorium GitLab</span>
+          <span class="s">kod źródłowy &amp; zgłoszenia</span>
         </a>
         <a class="btn" href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">
           <span class="t">Docker Hub</span>
           <span class="s">logleio/swarmexec-agent</span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest">
-          <span class="t">Aktuelles Release</span>
-          <span class="s">Notes zu <span id="ver">__VERSION__</span></span>
+          <span class="t">Najnowsze wydanie</span>
+          <span class="s">informacje o <span id="ver">__VERSION__</span></span>
         </a>
         <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64" data-umami-event="download-linux-amd64">
-          <span class="t">CLI herunterladen</span>
-          <span class="s">aktuelles linux/amd64-Binary</span>
+          <span class="t">Pobierz CLI</span>
+          <span class="s">najnowszy plik binarny linux/amd64</span>
         </a>
         <a class="btn" href="/releases">
-          <span class="t">Versionshinweise</span>
-          <span class="s">jede Version, was sich geändert hat</span>
+          <span class="t">Informacje o wydaniach</span>
+          <span class="s">każda wersja, co się zmieniło</span>
         </a>
       </div>
 
       <div class="downloads">
-        Weitere Builds (immer das aktuelle Release):
+        Więcej kompilacji (zawsze najnowsze wydanie):
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-arm64" data-umami-event="download-linux-arm64">linux-arm64</a> ·
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-arm64" data-umami-event="download-darwin-arm64">darwin-arm64</a> ·
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-amd64" data-umami-event="download-darwin-amd64">darwin-amd64</a> ·
@@ -254,15 +254,15 @@
       </div>
 
       <footer>
-        <span id="verline">Aktuelles Release: <strong>__VERSION__</strong></span> ·
-        Agent pullen: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <span id="verline">Aktualne wydanie: <strong>__VERSION__</strong></span> ·
+        pobierz agenta: <code>docker pull logleio/swarmexec-agent:latest</code><br>
         <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">gitlab.logle.io/cs-public/swarm-remote-exec</a><br>
-        Open Source unter der
+        Open source na licencji
         <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
         · © 2026 Cloud Surfers GmbH
         <nav class="legal" aria-label="Legal">
           <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
-          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="/datenschutz">Prywatność</a> ·
           <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
         </nav>
       </footer>

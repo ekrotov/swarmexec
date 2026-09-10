@@ -13,6 +13,7 @@
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/docs.de.html">
   <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/docs.es.html">
   <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/docs.fr.html">
+  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/docs.pl.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/docs">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="swarmexec">
@@ -26,6 +27,7 @@
   <meta property="og:locale:alternate" content="en_US">
   <meta property="og:locale:alternate" content="es_ES">
   <meta property="og:locale:alternate" content="fr_FR">
+  <meta property="og:locale:alternate" content="pl_PL">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec — Client-Dokumentation">
   <meta name="twitter:description" content="So verwendest du den swarmexec-Client: Befehle, Flags, Konfiguration, Authentifizierung und die interaktive TUI.">
@@ -123,7 +125,7 @@
     // i18n: redirect to the browser language on first visit; the switcher stores the choice.
     window.__i18n = { base: 'docs', baseLang: 'en' };
     (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr'], P = document.documentElement.lang || I.baseLang;
+      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
       try {
         var w = localStorage.getItem('sx-lang');
         if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
@@ -148,6 +150,7 @@
     <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
     <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
     <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
+    <a data-lang="pl" hreflang="pl" href="docs.pl.html">PL</a>
   </nav>
   <main>
     <div class="card">
@@ -764,7 +767,7 @@
       <!-- 10 -->
       <h2 id="tui">10. Die TUI</h2>
       <p>
-        <code>swarmexec ui</code> hat sieben Tabs — <strong>Containers&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> hat sieben Tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
         <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong> — und einen
@@ -775,12 +778,21 @@
         Volumes-Tab — wie viele Volumes du ausgewählt hast. Diese Tasten funktionieren auf
         jedem Tab:
       </p>
+      <p>
+        Die Tab-Leiste ist <strong>responsiv</strong>. Die vollen Namen brauchen 94 Spalten;
+        in einem schmaleren Terminal wechselt die Leiste auf Kurzlabels —
+        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
+        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
+        <strong>Node</strong> — damit alle sieben Tabs sichtbar bleiben, statt dass die
+        letzten abgeschnitten werden. Die Zifferntasten und die Maus-Klickflächen bleiben
+        unverändert.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>?</kbd></td><td>das Tastenbelegungs-Overlay öffnen — die vollständige, lebende Tastenreferenz (sie wird aus deiner Tastenbelegung erzeugt, umbelegte Tasten erscheinen also korrekt); die einzeilige Fußzeile hat nur Platz für die meistgenutzten Tasten</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>zum nächsten Tab wechseln</td></tr>
-          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>zu Containers / Volumes / Forwards / Networks / Secrets / Contexts / Nodes springen</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>zu Stacks/Services / Volumes / Forwards / Networks / Secrets / Contexts / Nodes springen</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>runter / hoch (auch <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>den aktiven Tab und die Cluster-Zusammenfassung aktualisieren</td></tr>
           <tr><td><kbd>y</kbd></td><td>die aktuelle Liste in die Zwischenablage kopieren (OSC52)</td></tr>
@@ -790,7 +802,12 @@
         </tbody>
       </table></div>
 
-      <h3>Containers-Tab</h3>
+      <h3>Stacks/Services-Tab</h3>
+      <p>
+        Tab&nbsp;<kbd>1</kbd>, früher <em>Containers</em>. Er ist ein Baum,
+        <strong>Stack&nbsp;→ Service&nbsp;→ Container</strong>, und darin stecken Exec,
+        Logs, Port-Forwarding, Inspect und die Service-Editoren.
+      </p>
       <p>
         <strong>:latest-Versionsprüfung.</strong> Swarm fixiert <code>:latest</code> zum
         Deploy-Zeitpunkt auf einen Digest, sodass ein mit <code>:latest</code> getaggter
@@ -822,8 +839,9 @@
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>/</kbd></td><td>die Suchleiste öffnen (filtert nach Service / Container / Node)</td></tr>
-          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>einen Service ein-/ausklappen</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>auf einem Container: das Aktionsmenü öffnen; auf einem Service: ihn ein-/ausklappen</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>ein-/ausklappen über alle drei Ebenen. <kbd>h</kbd> klappt die Zeile unter dem Cursor zu — ein Stack die ganze Gruppe, ein ausgeklappter Service seine Container — und wo nichts mehr zuzuklappen ist, springt es stattdessen <em>heraus</em> zum Elternknoten, sodass wiederholtes Drücken nach oben läuft: Container&nbsp;→ Service&nbsp;→ Stack. <kbd>l</kbd> klappt die Zeile unter dem Cursor auf oder steigt in ihr erstes Kind ab, wenn sie schon offen ist</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>auf einem Container: das Aktionsmenü öffnen; auf einem Service oder einem Stack: ihn ein-/ausklappen</td></tr>
+          <tr><td><kbd>s</kbd></td><td>Stack-Gruppierung umschalten — gruppierter Baum ⟷ flache Service-Liste (siehe unten)</td></tr>
           <tr><td><kbd>L</kbd></td><td>Logs (großes <kbd>L</kbd>) — auf einem Container dessen eigene Logs, auf einem Service die aggregierten Logs aller seiner Tasks</td></tr>
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
           <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor</td></tr>
@@ -842,6 +860,51 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — und derselbe Status erscheint
         im Service-Inspect-Overlay; es verschwindet, sobald das Update abgeschlossen ist.
       </p>
+
+      <p>
+        <strong>Nach Stack gruppiert.</strong> <code>docker stack deploy</code> versieht
+        jeden Service, den es anlegt, mit dem Label
+        <code>com.docker.stack.namespace</code>. swarmexec liest dieses Label aus der
+        Service-Spec, die der Manager ohnehin schon geliefert hat — Swarm kennt kein
+        Stack-Objekt, das Label ist die einzige Verbindung — und verschachtelt den Baum
+        drei Ebenen tief: <strong>Stack&nbsp;→ Service&nbsp;→ Container</strong>. Eine
+        Stack-Zeile zeigt den Stack-Namen, wie viele Services darunter hängen und die
+        <strong>summierte laufende/gewünschte</strong> Task-Anzahl
+        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), eingefärbt nach derselben
+        Gesundheitsregel wie eine Service-Zeile. Dahinter stehen zwei Sammelzähler, sobald
+        sie nicht null sind: <span style="color:#f2cc60">⟳&nbsp;n</span> — Services in
+        diesem Stack <strong>mitten in einem Rolling Update</strong> — und
+        <span style="color:#f85149">🛡&nbsp;n</span> — Services mit einem
+        <strong>handlungswürdigen Sicherheitsbefund</strong>, dasselbe Schild, das die
+        Service-Zeilen tragen. Auch ein zugeklappter Stack verrät so, ob darin etwas
+        Aufmerksamkeit braucht.
+      </p>
+      <p>
+        Services, die mit <code>docker service create</code> angelegt wurden, tragen kein
+        Stack-Label; sie landen gesammelt unter <strong><code>(no stack)</code></strong>,
+        das immer zuletzt einsortiert wird und damit nie echte Stacks nach unten drängt.
+        <strong>Nichts wird versteckt</strong> — jeder Service erscheint weiterhin genau
+        einmal. Stacks werden nach Namen sortiert und starten ausgeklappt, sodass der
+        gruppierte Baum dieselben Services zeigt wie der flache; von dir gesetzte Falten
+        überleben die Auto-Aktualisierung.
+      </p>
+      <p>
+        Die Gruppierung ist <strong>standardmäßig an</strong>, greift aber erst, wenn
+        mindestens ein Service im Cluster tatsächlich ein Stack-Label trägt — auf einem
+        Cluster ohne Stacks sieht der Baum genau aus wie bisher, ohne sinnlosen
+        <code>(no stack)</code>-Elternknoten. <kbd>s</kbd> schaltet zwischen gruppiertem
+        Baum und flacher Service-Liste um (die Fußzeile führt es als <em>s stacks</em>);
+        gibt es nirgends ein Stack-Label, sagt es das, statt einen identischen Baum neu zu
+        zeichnen. Die Taste ist als <code>stack_group</code> in
+        <a href="#tui">keys.yaml</a> umbelegbar.
+      </p>
+      <p>
+        Die Suche (<kbd>/</kbd>) bleibt unverändert: der Filter greift weiterhin auf
+        Service, Container und Node. Ein Stack, den der Filter leert, verschwindet aus dem
+        Baum, und die Zähler jeder Stack-Zeile beschreiben, was tatsächlich darunter
+        gelandet ist — sie folgen also dem Filter, statt weggefilterte Services anzupreisen.
+      </p>
+
       <p>
         Das Aktionsmenü bietet <strong>Logs</strong>, <strong>Bash</strong>,
         <strong>Sh</strong>, <strong>Shell as user…</strong> (fragt nach einem
@@ -860,7 +923,7 @@
         dieselbe Spec, die der Manager ohnehin schon geliefert hat. Es gibt also keinen
         zusätzlichen API-Aufruf, der Agent ist nicht beteiligt, und in deinen Containern
         wird nichts ausgeführt. Ein Service mit einem Befund, der Handlung verdient, wird
-        im Container-Baum mit einem vorangestellten <strong>🛡</strong> markiert — in einem
+        im Service-Baum mit einem vorangestellten <strong>🛡</strong> markiert — in einem
         Slot fester Breite vor dem Namen, sodass die Schilde eine senkrechte Scan-Spalte
         bilden. <kbd>!</kbd> öffnet das <strong>Sicherheitsrisiken-Overlay</strong>.
       </p>
@@ -985,7 +1048,7 @@
           <tr><td><kbd>d</kbd></td><td>diff — zeigt ein Unified-Diff der <em>aktuellen</em> Spec des Service gegen seine <em>vorherige</em> (was das letzte Rolling Update geändert hat), unter Verwendung von Swarms <code>PreviousSpec</code>. Geänderte Felder werden feldweise gruppiert mit <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span>-Zeilen aufgelistet (Image, Modus/Replicas, Env, Labels, Netzwerke, Aliase, Secrets, Mounts, Ports, Placement-Constraints, Spread-Präferenzen, Ressourcen-Limits/-Reservierungen); unveränderte Felder werden weggelassen. Wenn der Service nie aktualisiert wurde (keine vorherige Spec), sagt es das. Schreibgeschütztes Overlay — <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> schließt</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — fragt nach einer neuen Replica-Anzahl und wendet sie an (nur replizierte Services; ein globaler Service meldet, dass er nicht skaliert werden kann)</td></tr>
           <tr><td><kbd>f</kbd></td><td>force-update — deployt den Service neu, ohne seine Spec zu ändern (das Äquivalent zu <code>docker service update --force</code>: erhöht <code>TaskTemplate.ForceUpdate</code>), nach einer Bestätigung. Jede Task wird neu gestartet / neu geplant, womit du einen Service losbekommst, der in einem <strong>unvollständigen Zustand</strong> feststeckt (z. B. <code>1/2</code> Replicas). Ein <code>ServiceUpdate</code> (Rolling Update)</td></tr>
-          <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Container-Baum aktualisiert sich</td></tr>
+          <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Service-Baum aktualisiert sich</td></tr>
           <tr><td><kbd>D</kbd></td><td>Placement diagnostizieren (großes <kbd>D</kbd>) — beantwortet <em>warum ein Service nicht überall läuft, wo du es erwartest</em> in einer Ansicht, statt ihn über mehrere <code>docker</code>-Befehle zu verfolgen. Für einen <strong>globalen</strong> Service listet es jeden Node mit ✓ laufend oder ✗ und dem Grund, warum er ausgeschlossen ist (<strong>Verfügbarkeit</strong> drain/pause, ein <strong>down</strong>-Zustand, ein nicht erfüllter Placement-<strong>Constraint</strong> oder eine <strong>Plattform</strong>-Diskrepanz) — deshalb kann ein 3-Node-Cluster legitim <code>2/2</code> anzeigen (der dritte Node ist nicht geeignet). Für einen <strong>replizierten</strong> Service listet es jede Task, die <em>nicht</em> läuft, mit der eigenen Meldung des Schedulers (Constraints, unzureichende Ressourcen, Image-Pull-Fehler, …). Constraints, die client-seitig nicht geprüft werden können (<code>engine.labels.*</code>), werden vermerkt, nicht geraten. Schreibgeschütztes Overlay</td></tr>
           <tr><td><kbd>p</kbd></td><td>veröffentlichte Ports bearbeiten — öffnet einen gestagten Listeneditor der Ports des Service, jeder in der Form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, Standard <code>tcp</code>), z. B. <code>8080:80/tcp</code></td></tr>
           <tr><td><kbd>l</kbd></td><td>Labels bearbeiten — derselbe gestagte Listeneditor über <code>key=value</code>-Einträge</td></tr>
@@ -1240,6 +1303,7 @@
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" muss in Anführungszeichen — YAML</span>
+stack_group: s
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n

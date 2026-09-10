@@ -206,6 +206,9 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		f: f, g: g, ctx: ctx, cancelRun: cancelRun,
 		ctxOverride: ctxOverride, service: service, switchTo: switchTo,
 		selStyle: selStyle,
+		// Grouping is on by default; it only takes effect once something in the
+		// cluster actually carries a stack label (see anyStacked).
+		groupByStack: true,
 	}
 	return u.run(keyWarnings)
 }
@@ -254,9 +257,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	// version / ↑ appears without a full tree reload.
 	u.regCache = newRegistryCache(func() {
 		app.QueueUpdateDraw(func() {
-			for _, sn := range croot.GetChildren() {
-				u.markService(sn)
-			}
+			eachServiceNode(croot, u.markService)
 		})
 	})
 
@@ -302,6 +303,12 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 		if isServiceNode(node) {
 			node.SetExpanded(!node.IsExpanded())
 			u.markService(node)
+			return
+		}
+		// Stack node → toggle the whole group.
+		if isStackNode(node) {
+			node.SetExpanded(!node.IsExpanded())
+			u.markStack(node)
 		}
 	})
 
@@ -584,27 +591,54 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 				return nil
 			case km.Fold:
 				// Collapse. tview's TreeView has no fold key — Left/Right only
-				// move the cursor — so fold explicitly. On a container leaf,
-				// step out to its service (press h again to fold it).
+				// move the cursor — so fold explicitly. On a node that cannot
+				// fold (a container leaf, or an already-closed service inside a
+				// stack), step out to the parent instead, so repeated presses
+				// walk up: container → service → stack.
 				if n := ctree.GetCurrentNode(); n != nil {
-					if isServiceNode(n) {
+					switch {
+					case isStackNode(n):
+						n.SetExpanded(false)
+						u.markStack(n)
+					case isServiceNode(n) && n.IsExpanded():
 						n.SetExpanded(false)
 						u.markService(n)
-					} else if p := serviceParent(croot, n); p != nil {
-						ctree.SetCurrentNode(p)
+					default:
+						if p := parentOf(croot, n); p != nil && p != croot {
+							ctree.SetCurrentNode(p)
+						}
 					}
 				}
 				return nil
 			case km.Unfold:
-				// Expand the service under the cursor; if it is already open,
-				// descend to its first container.
-				if n := ctree.GetCurrentNode(); n != nil && isServiceNode(n) {
+				// Expand the node under the cursor; if it is already open,
+				// descend into it.
+				if n := ctree.GetCurrentNode(); n != nil && (isServiceNode(n) || isStackNode(n)) {
 					if n.IsExpanded() && len(n.GetChildren()) > 0 {
 						ctree.SetCurrentNode(n.GetChildren()[0])
 					} else {
 						n.SetExpanded(true)
-						u.markService(n)
+						if isStackNode(n) {
+							u.markStack(n)
+						} else {
+							u.markService(n)
+						}
 					}
+				}
+				return nil
+			case km.StackGroup:
+				// Toggle stack grouping. Only meaningful once something carries a
+				// stack label; say so rather than redrawing an identical tree.
+				if !anyStacked(u.lastSvcs) {
+					u.flash(" [gray]no service carries a stack label[white]")
+					return nil
+				}
+				u.groupByStack = !u.groupByStack
+				u.renderContainers()
+				if u.groupByStack {
+					u.flash(" [green]grouped by stack[white]")
+				} else {
+					u.flash(" [green]flat service list[white]")
 				}
 				return nil
 			case km.Forward:
@@ -914,11 +948,48 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 // only lets a re-render restore the cursor and expansion state by service name.
 type svcRef struct{ name string }
 
-// isServiceNode reports whether a tree node is a service (group) node rather
-// than a container leaf (containers carry a resolve.Candidate reference).
+// stackRef marks a stack group node. The tree nests container leaves under
+// service nodes under stack nodes, so node kind is decided by the reference
+// type, never by depth.
+type stackRef struct{ name string }
+
+// isServiceNode reports whether a tree node is a service (group) node — matched
+// on its reference, so a stack node is not mistaken for one.
 func isServiceNode(n *tview.TreeNode) bool {
-	_, ok := n.GetReference().(resolve.Candidate)
-	return !ok
+	_, ok := n.GetReference().(svcRef)
+	return ok
+}
+
+// isStackNode reports whether a tree node is a stack group node.
+func isStackNode(n *tview.TreeNode) bool {
+	_, ok := n.GetReference().(stackRef)
+	return ok
+}
+
+// eachServiceNode calls fn for every service node in the tree, at whatever
+// depth it sits (directly under the root when ungrouped, under a stack node
+// when grouped).
+func eachServiceNode(root *tview.TreeNode, fn func(*tview.TreeNode)) {
+	root.Walk(func(node, _ *tview.TreeNode) bool {
+		if isServiceNode(node) {
+			fn(node)
+			return false // services hold container leaves, not more services
+		}
+		return true
+	})
+}
+
+// parentOf returns a node's parent in the tree, or nil for the root.
+func parentOf(root, target *tview.TreeNode) *tview.TreeNode {
+	var found *tview.TreeNode
+	root.Walk(func(node, parent *tview.TreeNode) bool {
+		if node == target {
+			found = parent
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // trimFoldMarker strips the leading ▸/▾ fold marker (or its blank padding) from
@@ -1118,12 +1189,8 @@ func nodeStateColor(s string) tcell.Color {
 // serviceParent returns the service node that owns leaf, or nil. tview.TreeNode
 // exposes no parent pointer, so we scan the (shallow, two-level) tree.
 func serviceParent(root, leaf *tview.TreeNode) *tview.TreeNode {
-	for _, svc := range root.GetChildren() {
-		for _, c := range svc.GetChildren() {
-			if c == leaf {
-				return svc
-			}
-		}
+	if p := parentOf(root, leaf); p != nil && isServiceNode(p) {
+		return p
 	}
 	return nil
 }
@@ -1603,8 +1670,8 @@ func (u *ui) helpFor(name string) string {
 	head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
 	switch name {
 	case "containers":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks",
-			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks",
+			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup))
 	case "volumes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
 			kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
@@ -1617,6 +1684,7 @@ func (u *ui) helpFor(name string) string {
 			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 	case "nodes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels", kl(km.NodeLabels))
+
 	default:
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
 			kl(km.FwdStop), kl(km.FwdCopyURL))
@@ -1644,13 +1712,14 @@ func (u *ui) showHelp() {
 	line("`", "toggle the client log view")
 	line("Esc", "close the current overlay / dialog")
 
-	sec("Containers")
+	sec("Stacks/Services")
 	line("Enter", "expand a service · open a container's menu")
 	line(kl(km.Logs), "logs (service or container)")
 	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
 	line(kl(km.Forward), "port-forward the task under the cursor")
 	line(kl(km.SecurityRisks), "security-risks overlay (root user, secrets in env)")
+	line(kl(km.StackGroup), "group services by stack / flat list")
 	line(kl(km.Search), "search services / containers / nodes")
 
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
@@ -1833,10 +1902,15 @@ func (u *ui) yankCurrent() {
 	var b strings.Builder
 	switch active {
 	case "containers":
-		for _, svc := range croot.GetChildren() {
-			fmt.Fprintln(&b, trimFoldMarker(svc.GetText()))
-			for _, c := range svc.GetChildren() {
-				fmt.Fprintf(&b, "  %s\n", c.GetText())
+		// Copy the tree as displayed, indenting by depth so a stack-grouped tree
+		// copies as a grouped tree (and an ungrouped one is unchanged).
+		for _, stackOrSvc := range croot.GetChildren() {
+			fmt.Fprintln(&b, trimFoldMarker(stackOrSvc.GetText()))
+			for _, svc := range stackOrSvc.GetChildren() {
+				fmt.Fprintf(&b, "  %s\n", trimFoldMarker(svc.GetText()))
+				for _, c := range svc.GetChildren() {
+					fmt.Fprintf(&b, "    %s\n", c.GetText())
+				}
 			}
 		}
 	case "forwards":
@@ -1909,29 +1983,16 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 		return nil
 	}
+	// Tab-number keys, derived from the tab list rather than hardcoded — the tab
+	// bar labels its tabs from the same positions, so the two cannot drift.
+	if ev.Key() == tcell.KeyRune && ev.Rune() >= '1' && ev.Rune() <= '9' {
+		if i := int(ev.Rune() - '1'); i < len(uiTabList) {
+			u.setTab(uiTabList[i].key)
+			return nil
+		}
+	}
 	if ev.Key() == tcell.KeyRune {
 		switch ev.Rune() {
-		case '1':
-			u.setTab("containers")
-			return nil
-		case '2':
-			u.setTab("volumes")
-			return nil
-		case '3':
-			u.setTab("forwards")
-			return nil
-		case '4':
-			u.setTab("networks")
-			return nil
-		case '5':
-			u.setTab("secrets")
-			return nil
-		case '6':
-			u.setTab("contexts")
-			return nil
-		case '7':
-			u.setTab("nodes")
-			return nil
 		case km.Quit:
 			app.Stop()
 			return nil
