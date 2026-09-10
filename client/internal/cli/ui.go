@@ -114,6 +114,7 @@ const (
 	pageHelp             = "help"
 	pageSecurity         = "security"
 	pageNodeAvail        = "nodeavail"
+	pageConfigDetail     = "configdetail"
 	pageMenu             = "menu"
 	pageTerm             = "term"
 	pageLogs             = "logs"
@@ -432,6 +433,18 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 		}
 	})
 
+	// ------------------------------------------------------------------- configs
+	// The Secrets tab's twin, for the other object swarm distributes to
+	// containers — with the difference that a config's content is readable, so
+	// the detail overlay can show what a service actually receives.
+	cfgtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	cfgtable.SetSelectedStyle(selStyle)
+	cfgtable.SetSelectedFunc(func(int, int) {
+		if c, ok := u.selectedConfig(); ok {
+			u.showConfigDetail(c)
+		}
+	})
+
 	// ---------------------------------------------------------------- tabs/chrome
 	content.AddPage("containers", ctree, true, true)
 	content.AddPage("volumes", vtable, true, false)
@@ -440,6 +453,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	content.AddPage("secrets", sectable, true, false)
 	content.AddPage("contexts", cxtable, true, false)
 	content.AddPage("nodes", notable, true, false)
+	content.AddPage("configs", cfgtable, true, false)
 
 	tabBar := newTabStrip(uiTabList, func(key string) { u.setTab(key) })
 	// Two-line footer: the per-tab key hints on top, then one consolidated status
@@ -469,6 +483,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	u.ctree, u.croot = ctree, croot
 	u.vtable, u.ftable, u.nettable = vtable, ftable, nettable
 	u.sectable, u.cxtable, u.notable = sectable, cxtable, notable
+	u.cfgtable = cfgtable
 	u.tabBar, u.help, u.status = tabBar, help, status
 	u.footer, u.root, u.search = footer, root, search
 
@@ -853,7 +868,16 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 			u.activateContext(c)
 		}
 	})
-	// On the nodes table: edit the selected node's labels; Enter/i opens details.
+	cfgtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+			if c, ok := u.selectedConfig(); ok {
+				u.showConfigDetail(c)
+			}
+			return nil
+		}
+		return u.tabKeys(ev)
+	})
+
 	notable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeAvail {
 			if n, ok := u.selectedNode(); ok {
@@ -1701,6 +1725,8 @@ func (u *ui) helpFor(name string) string {
 			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 	case "nodes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability", kl(km.NodeLabels), kl(km.NodeAvail))
+	case "configs":
+		return head + "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
 
 	default:
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
@@ -1725,7 +1751,7 @@ func (u *ui) showHelp() {
 	line(kl(km.Copy), "copy the current list to the clipboard")
 	line(kl(km.ToggleMouse), "toggle mouse on/off")
 	line("Tab", "next tab")
-	line("1–7", "jump to a tab by number")
+	line("1–8", "jump to a tab by number")
 	line("`", "toggle the client log view")
 	line("Esc", "close the current overlay / dialog")
 
@@ -1779,6 +1805,9 @@ func (u *ui) showHelp() {
 	line("Enter / i", "details")
 	line(kl(km.NodeLabels), "edit labels")
 	line(kl(km.NodeAvail), "availability: active / pause / drain")
+
+	sec("Configs")
+	line("Enter / i", "details, including the config's content")
 
 	sec("Forwards")
 	line("Enter / i", "details")
@@ -1850,6 +1879,9 @@ func (u *ui) setTab(name string) {
 	case "nodes":
 		app.SetFocus(notable)
 		u.loadNodes()
+	case "configs":
+		app.SetFocus(u.cfgtable)
+		u.loadConfigs()
 	}
 }
 

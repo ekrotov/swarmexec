@@ -36,10 +36,11 @@ var uiTabList = []uiTab{
 	{"secrets", "Secrets", "Sec"},
 	{"contexts", "Contexts", "Ctx"},
 	{"nodes", "Nodes", "Node"},
+	{"configs", "Configs", "Cfg"},
 }
 
 // uiTabOrder drives Tab cycling; every tab joins it.
-var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes"}
+var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes", "configs"}
 
 // Column headers for the per-tab tables — constant data shared by each tab's
 // render/load methods, so they live at package scope rather than as run() locals.
@@ -48,6 +49,7 @@ var (
 	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "AGE", "STATE"}
 	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
+	cfHeaders = []string{"CONFIG", "USED BY", "SIZE", "AGE", "UPDATED", "LABELS"}
 	cxHeaders = []string{"CONTEXT", "DOCKER HOST"}
 	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
 )
@@ -91,6 +93,7 @@ type ui struct {
 	ctree                                                *tview.TreeView
 	croot                                                *tview.TreeNode
 	vtable, ftable, nettable, sectable, cxtable, notable *tview.Table
+	cfgtable                                             *tview.Table
 	tabBar                                               *tabStrip
 	help, status                                         *tview.TextView
 	footer, root                                         *tview.Flex
@@ -135,6 +138,7 @@ type ui struct {
 	// networks / secrets / contexts tab caches
 	nets []swarmNetwork
 	secs []swarmSecret
+	cfgs []swarmConfig
 	ctxs []dockerctx.Context
 
 	// nodes tab caches

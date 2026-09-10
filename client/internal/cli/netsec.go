@@ -769,3 +769,100 @@ func serviceVolumeMounts(svcs []swarm.Service) map[string]bool {
 	}
 	return m
 }
+
+// swarmConfig is a swarm config with the services that mount it. Unlike a
+// secret, a config's content is readable — Size is its length, and the detail
+// view can show the content itself.
+type swarmConfig struct {
+	ID       string
+	Name     string
+	Created  time.Time
+	Updated  time.Time
+	Size     int
+	Labels   map[string]string
+	Services []string // service names that mount the config
+}
+
+// listConfigs returns every config on the manager with service membership
+// resolved from service specs — the same derivation listSecrets does, since
+// swarm has no reverse index either way.
+func listConfigs(ctx context.Context, dcli *client.Client) ([]swarmConfig, error) {
+	cfgs, err := dcli.ConfigList(ctx, types.ConfigListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	members := configServiceMembers(ctx, dcli)
+	out := make([]swarmConfig, 0, len(cfgs))
+	for _, c := range cfgs {
+		// A reference may name the config by ID or name, so merge both buckets.
+		set := map[string]bool{}
+		var svcs []string
+		for _, name := range append(members[c.ID], members[c.Spec.Name]...) {
+			if !set[name] {
+				set[name] = true
+				svcs = append(svcs, name)
+			}
+		}
+		sort.Strings(svcs)
+		out = append(out, swarmConfig{
+			ID:       c.ID,
+			Name:     c.Spec.Name,
+			Created:  c.Meta.CreatedAt,
+			Updated:  c.Meta.UpdatedAt,
+			Size:     len(c.Spec.Data),
+			Labels:   c.Spec.Labels,
+			Services: svcs,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// configServiceMembers maps config id/name -> service names that mount it.
+func configServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
+	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return map[string][]string{}
+	}
+	return serviceConfigMembership(svcs)
+}
+
+// serviceConfigMembership derives config -> services from service specs, keyed
+// by both config id and name (a reference may match on either). Pure, so it is
+// unit-testable without a daemon.
+func serviceConfigMembership(svcs []swarm.Service) map[string][]string {
+	m := map[string][]string{}
+	for _, s := range svcs {
+		cs := s.Spec.TaskTemplate.ContainerSpec
+		if cs == nil {
+			continue
+		}
+		seen := map[string]bool{}
+		add := func(key string) {
+			if key == "" || seen[key] {
+				return
+			}
+			seen[key] = true
+			m[key] = append(m[key], s.Spec.Name)
+		}
+		for _, ref := range cs.Configs {
+			if ref == nil {
+				continue
+			}
+			add(ref.ConfigID)
+			add(ref.ConfigName)
+		}
+	}
+	return m
+}
+
+// configContent fetches a config's payload. Configs are readable (secrets are
+// not), so the detail view can show what a service actually receives. Fetched on
+// demand rather than with the list: a config can be a whole nginx.conf.
+func configContent(ctx context.Context, dcli *client.Client, id string) ([]byte, error) {
+	c, _, err := dcli.ConfigInspectWithRaw(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return c.Spec.Data, nil
+}
