@@ -809,16 +809,51 @@
         sección <code>IMAGE</code> del overlay de inspección muestra la misma versión y, cuando existe una
         imagen más nueva, una fila seleccionable <em>nueva&nbsp;versión&nbsp;disponible</em> — muévete sobre
         ella y pulsa <kbd>u</kbd> (o <kbd>Enter</kbd>) para <strong>actualizar el servicio</strong>.
-        En un servicio <strong>fijado a una versión</strong> esto abre un <strong>selector de
-        versión</strong>: un campo que <strong>autocompleta los tags más nuevos de la misma
-        familia</strong> (el más alto primero, con el más nuevo por defecto) pero que sigue siendo
-        de texto libre — puedes <strong>escribir cualquier tag existente, incluido uno más antiguo
-        para fijarlo o revertir</strong> a una versión conocida buena. El tag se valida contra los
-        tags del repositorio (uno que no aparezca se rechaza), y elegir un tag más antiguo muestra
-        una <strong>advertencia de degradación</strong> antes de aplicarlo. En un servicio
-        <code>:latest</code> (sin versiones discretas) sigue siendo una única confirmación sobre el
-        digest <code>:latest</code> actual del registro. En cualquier caso es un
-        <code>ServiceUpdate</code> / actualización progresiva, tras una confirmación.
+      </p>
+      <p>
+        <strong>Fijar una versión con <kbd>u</kbd>: no solo cuando existe una actualización.</strong>
+        <kbd>u</kbd> ya <strong>no depende de que se ofrezca una actualización</strong>. Está
+        disponible en <em>cualquier</em> inspección de servicio cuyos tags de imagen swarmexec haya
+        podido leer del registro —tanto en servicios fijados a una versión <em>como</em> en los que
+        van en <code>:latest</code>— y desde <em>cualquier</em> fila del overlay, así que nunca
+        tienes que buscar la pista. Volver a fijar la <strong>misma</strong> versión, <strong>fijar</strong> lo que
+        está corriendo o volver a un tag <strong>más antiguo</strong> son usos completamente
+        normales; no hace falta esperar a que exista una actualización. El <strong>texto del pie
+        te dice en qué situación estás</strong>: <code>u&nbsp;update&nbsp;version</code> cuando se
+        encontró una versión más nueva (entonces también está la fila
+        <em>nueva&nbsp;versión&nbsp;disponible</em>, que lleva un destino concreto) y
+        <code>u&nbsp;set&nbsp;version</code> cuando no.
+      </p>
+      <p>
+        Lo que abre <kbd>u</kbd> depende de lo que sepa el registro. En un servicio
+        <strong>fijado a una versión</strong> con una <strong>versión más nueva</strong> es el
+        <strong>selector de versión</strong>: un campo cuyo autocompletado sugiere los
+        <strong>tags más nuevos de la misma familia</strong>, el más alto primero y precargado con
+        el más alto. En uno que ya va por el <strong>tag más nuevo</strong> es el mismo selector,
+        solo que las sugerencias recurren a <strong>todos los tags que lista el
+        repositorio</strong> (precargado con el tag en ejecución) — así es como fijas o reviertes.
+        Un servicio en <code>:latest</code> también recibe el selector, con todos los tags
+        conocidos: elegir ahí una versión concreta es la manera de <strong>sacar un servicio
+        <code>:latest</code> del tag flotante y fijarlo</strong>, que es justo lo que pide el
+        hallazgo de riesgo <code>unpinned-image</code> (véase el overlay de riesgos de seguridad
+        más abajo). La única excepción es un servicio <code>:latest</code> con una
+        <strong>actualización de digest pendiente</strong>: ese sigue siendo la <strong>única
+        confirmación</strong> sobre el nuevo digest del registro que siempre fue, porque un
+        selector ahí invitaría a escribir <code>latest</code>, que resuelve al tag pelado y
+        descartaría en silencio precisamente la fijación por digest que la actualización viene a
+        refrescar.
+      </p>
+      <p>
+        En el selector la lista de sugerencias está limitada a <strong>25</strong> entradas (un
+        repositorio muy activo puede listar cientos) y el campo sigue siendo de <strong>texto
+        libre</strong>, así que puedes <strong>escribir cualquier tag existente, incluido uno más
+        antiguo para fijarlo o revertir</strong> a una versión conocida buena. Un tag escrito a
+        mano se valida contra los tags del repositorio (uno que no aparezca se rechaza), y elegir
+        uno más antiguo muestra una <strong>advertencia de degradación</strong> antes de aplicarlo.
+        En todos los casos el cambio es un <code>ServiceUpdate</code> / actualización progresiva,
+        tras una confirmación. Si el registro <strong>no devolvió ningún tag</strong> y tampoco hay
+        un destino concreto al que recurrir —un registro privado o inalcanzable, o un servicio
+        fijado por digest— recibes un <strong>aviso explicativo y no se cambia nada</strong>.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
@@ -1072,8 +1107,8 @@
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> saltan a la primera/última
         entrada), <kbd>Enter</kbd> selecciona; <kbd>Esc</kbd>, o la entrada <em>Cancel</em>,
         cierra el menú sin hacer nada. Solo el selector de versión de imagen (<kbd>u</kbd>)
-        queda fuera del menú, en la propia inspección junto al aviso de actualización. La
-        tecla directa de cada entrada:
+        queda fuera del menú, en la propia inspección — donde funciona desde cualquier fila,
+        haya o no una versión más nueva (ver más arriba). La tecla directa de cada entrada:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>

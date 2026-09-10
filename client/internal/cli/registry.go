@@ -298,7 +298,14 @@ func checkImageStatus(ctx context.Context, resolver imageResolver, specRef strin
 // checkLatest handles a pinned :latest image: a newer image is a different
 // current :latest digest than the one the service is pinned to.
 func checkLatest(ctx context.Context, resolver imageResolver, repo, digest string) imageStatus {
-	st := imageStatus{pinnedDigest: digest, currentTag: "latest"}
+	st := imageStatus{pinnedDigest: digest, currentTag: "latest", repo: repo}
+	// The repo's tags are fetched even though :latest has no "newer tag" notion:
+	// they are what lets the version picker offer concrete versions, so a service
+	// on :latest can be pinned to one — which is exactly what the unpinned-image
+	// finding asks for. Best-effort; the picker degrades to a notice without them.
+	if tags, err := resolver.listTags(ctx, repo); err == nil {
+		st.knownTags = tags
+	}
 	if latest, err := resolver.latestDigest(ctx, repo); err == nil {
 		st.latestDigest, st.newer, st.ok = latest, computeNewer(digest, latest), true
 	}

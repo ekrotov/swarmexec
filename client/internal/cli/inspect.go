@@ -37,6 +37,7 @@ const (
 	inspNet                     // a collapsible network row: "+ name (N dns names)"
 	inspUpgrade                 // an actionable "newer version available" row
 	inspUpdate                  // a rolling-update-in-progress status line
+	inspImage                   // the image ref; carries the version-picker data
 )
 
 // inspLine is one line of the tabular inspect view. For inspNet rows, Net is the
@@ -97,6 +98,24 @@ func (b *inspBuilder) updateStatus(state, detail string) {
 		text += " — " + detail
 	}
 	b.lines = append(b.lines, inspLine{Kind: inspUpdate, Text: text, UpdateState: state})
+}
+
+// image adds the image reference lines. The first carries the version-picker
+// data (repo, running tag, newer tags, every known tag) so "u" can set a version
+// whether or not a newer one exists — pinning or rolling back to a specific tag
+// is just as valid as taking the newest.
+func (b *inspBuilder) image(lines []string, st imageStatus) {
+	if len(lines) == 0 {
+		b.list(nil)
+		return
+	}
+	b.lines = append(b.lines, inspLine{
+		Kind: inspImage, Text: "  " + lines[0],
+		UpRepo: st.repo, UpCurrent: st.currentTag, UpNewer: st.newerVersions, UpAll: st.knownTags,
+	})
+	for _, l := range lines[1:] {
+		b.push(inspField, "  "+l)
+	}
 }
 
 func (b *inspBuilder) kv(k, v string) {
@@ -355,7 +374,7 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	b.section("PORTS")
 	b.list(servicePortLines(svc))
 	b.section("IMAGE")
-	b.list(imageLines(cs, img))
+	b.image(imageLines(cs, img), img)
 	b.section("MODE")
 	b.list([]string{serviceModeStr(svc)})
 	if cs != nil && len(cs.Env) > 0 {

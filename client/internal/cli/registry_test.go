@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -243,5 +244,49 @@ func TestIsDowngrade(t *testing.T) {
 		if got := isDowngrade(c.current, c.target); got != c.want {
 			t.Errorf("isDowngrade(%q, %q) = %v, want %v", c.current, c.target, got, c.want)
 		}
+	}
+}
+
+// A :latest service must also learn the repo's tags, so the version picker can
+// offer concrete versions to pin to — the action the unpinned-image finding
+// asks for. Previously only the version-pinned path fetched them.
+func TestCheckLatestCarriesRepoAndTags(t *testing.T) {
+	res := fakeResolver{
+		latest: map[string]string{"nginx": "sha256:new"},
+		labels: map[string]string{"nginx@sha256:old": "1.0.0"},
+		tags:   map[string][]string{"nginx": {"1.0.0", "2.0.0", "latest"}},
+	}
+	st := checkImageStatus(context.Background(), res, "nginx:latest@sha256:old")
+	if st.repo != "nginx" {
+		t.Errorf("repo = %q, want nginx", st.repo)
+	}
+	if len(st.knownTags) != 3 {
+		t.Errorf("knownTags = %v, want the repo's three tags", st.knownTags)
+	}
+	// The digest-bump target must survive — that is what the one-shot confirm
+	// applies, and it is what keeps the service digest-pinned.
+	if !strings.Contains(st.updateTarget, "@sha256:new") {
+		t.Errorf("updateTarget = %q, want the new digest", st.updateTarget)
+	}
+	// :latest has no "newer tag" notion; suggestions come from knownTags instead.
+	if len(st.newerVersions) != 0 {
+		t.Errorf("newerVersions = %v, want none for a :latest image", st.newerVersions)
+	}
+}
+
+// A registry that cannot list tags must not break the :latest check — the rest
+// of the status still resolves, the picker just has nothing to suggest.
+func TestCheckLatestToleratesTagListFailure(t *testing.T) {
+	res := fakeResolver{
+		latest: map[string]string{"nginx": "sha256:new"},
+		labels: map[string]string{"nginx@sha256:old": "1.0.0"},
+		// no tags entry → empty list
+	}
+	st := checkImageStatus(context.Background(), res, "nginx:latest@sha256:old")
+	if !st.ok || !st.newer {
+		t.Errorf("status should still resolve without a tag list: %+v", st)
+	}
+	if len(st.knownTags) != 0 {
+		t.Errorf("knownTags = %v, want empty", st.knownTags)
 	}
 }

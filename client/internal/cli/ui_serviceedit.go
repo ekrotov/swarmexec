@@ -931,10 +931,27 @@ type upgradeInfo struct {
 // typed tag is validated against the repo's tags, and a downgrade is confirmed
 // with a warning. For a :latest service (no discrete versions) it falls back to a
 // single confirm on the current-digest target.
+// versionSuggestionLimit caps the autocomplete dropdown: falling back to every
+// known tag can mean hundreds of entries on a busy repo.
+const versionSuggestionLimit = 25
+
 func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview.Primitive, after func()) {
-	// No discrete versions to choose from (a :latest digest bump): keep the old
-	// one-shot confirm.
+	// A :latest service with an update available has a digest-pinned target and
+	// no version to pick between — keep the one-shot confirm. Routing it through
+	// the picker would invite typing "latest", which resolves to the bare tag and
+	// silently drops the digest pinning the update is there to refresh.
+	if len(info.newer) == 0 && strings.Contains(info.target, "@sha256:") {
+		u.confirmImageUpdate(svcName, info.target, false, back, after)
+		return
+	}
+	// Nothing to offer: no newer version, and the registry returned no tags
+	// (private or unreachable registry, or a digest-only ref). Confirming the
+	// empty target here would set the service to an empty image.
 	if len(info.newer) == 0 && len(info.all) == 0 {
+		if info.target == "" {
+			u.info(fmt.Sprintf("No versions available for %q.\n\nThe registry did not return any tags for this image — it may be private, unreachable, or the service may be pinned by digest.", svcName))
+			return
+		}
 		u.confirmImageUpdate(svcName, info.target, false, back, after)
 		return
 	}
@@ -946,14 +963,24 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 	} else {
 		in.SetText(info.current)
 	}
-	// Suggest only the newer versions; the field itself stays free-text so an
-	// older tag can be typed in to override.
+	// Suggest the newer versions when there are any — that is the common intent
+	// and keeps the list short. With none (already newest, or pinning
+	// deliberately) fall back to every known tag, so the field is still
+	// browsable instead of silently offering nothing. Either way it stays
+	// free-text, so any existing tag can be typed in.
+	suggestFrom := info.newer
+	if len(suggestFrom) == 0 {
+		suggestFrom = info.all
+	}
 	in.SetAutocompleteFunc(func(cur string) []string {
 		cur = strings.TrimSpace(cur)
 		var out []string
-		for _, v := range info.newer {
+		for _, v := range suggestFrom {
 			if cur == "" || strings.Contains(v, cur) {
 				out = append(out, v)
+			}
+			if len(out) >= versionSuggestionLimit {
+				break // a big repo can list hundreds of tags
 			}
 		}
 		return out

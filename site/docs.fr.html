@@ -831,18 +831,55 @@
         version et, lorsqu'une image plus récente existe, une ligne sélectionnable
         <em>nouvelle&nbsp;version&nbsp;disponible</em> — déplacez-vous dessus et
         appuyez sur <kbd>u</kbd> (ou <kbd>Enter</kbd>) pour <strong>mettre à jour le
-        service</strong>. Pour un service <strong>épinglé à une version</strong>, cela
-        ouvre un <strong>sélecteur de version</strong> : un champ qui
-        <strong>autocomplète les tags plus récents de la même famille</strong> (le plus
-        élevé en premier, avec le plus récent par défaut) mais qui reste en texte libre —
-        vous pouvez <strong>saisir n'importe quel tag existant, y compris un plus ancien
-        pour l'épingler ou revenir en arrière</strong> vers une version éprouvée. Le tag
-        est validé contre les tags du dépôt (un tag qu'il ne liste pas est rejeté), et
+        service</strong>.
+      </p>
+      <p>
+        <strong>Définir une version avec <kbd>u</kbd> — pas seulement quand une mise à jour
+        existe.</strong> <kbd>u</kbd> ne dépend <strong>plus qu'une mise à niveau soit
+        proposée</strong>. La touche est disponible dans <em>toute</em> inspection de service
+        dont swarmexec a pu lire les tags d'image auprès du registre — aussi bien pour un
+        service épinglé à une version <em>que</em> pour un service sur <code>:latest</code> — et
+        depuis <em>n'importe quelle</em> ligne de la surcouche, si bien que vous n'avez jamais à
+        chercher l'indication. Redéfinir la <strong>même</strong> version, <strong>épingler</strong> ce
+        qui tourne actuellement ou revenir à un tag <strong>plus ancien</strong> sont des
+        usages tout à fait normaux ; inutile d'attendre qu'une mise à jour existe. Le
+        <strong>libellé du pied de page vous dit dans quelle situation vous êtes</strong> :
+        <code>u&nbsp;update&nbsp;version</code> lorsqu'une version plus récente a été trouvée
+        (la ligne <em>nouvelle&nbsp;version&nbsp;disponible</em> est alors là aussi, avec une
+        cible concrète), et <code>u&nbsp;set&nbsp;version</code> lorsqu'il n'y en a pas.
+      </p>
+      <p>
+        Ce que <kbd>u</kbd> ouvre dépend de ce que connaît le registre. Sur un service
+        <strong>épinglé à une version</strong> pour lequel une <strong>version plus
+        récente</strong> existe, c'est le <strong>sélecteur de version</strong> : un champ dont
+        l'autocomplétion propose les <strong>tags plus récents de la même famille</strong>, le
+        plus élevé en premier et prérempli avec celui-ci. Sur un service déjà sur le <strong>tag
+        le plus récent</strong>, c'est le même sélecteur, à ceci près que les suggestions se
+        rabattent sur <strong>tous les tags que liste le dépôt</strong> (prérempli avec le tag en
+        cours d'exécution) — c'est ainsi que l'on épingle ou que l'on revient en arrière. Un
+        service sur <code>:latest</code> obtient lui aussi le sélecteur, avec tous les tags
+        connus : y choisir une version concrète est la façon de <strong>sortir un service
+        <code>:latest</code> du tag flottant pour l'épingler</strong> — précisément ce que
+        réclame le constat de risque <code>unpinned-image</code> (voir la surcouche des risques
+        de sécurité plus bas). La seule exception est un service <code>:latest</code> dont une
+        <strong>mise à jour de digest est en attente</strong> : celui-là reste la
+        <strong>simple confirmation</strong> sur le nouveau digest du registre qu'il a toujours
+        été, car un sélecteur inviterait à y saisir <code>latest</code>, qui se résout au tag nu
+        et abandonnerait silencieusement l'épinglage par digest que la mise à jour est
+        justement là pour rafraîchir.
+      </p>
+      <p>
+        Dans le sélecteur, la liste de suggestions est plafonnée à <strong>25</strong> entrées
+        (un dépôt très actif peut en lister des centaines) et le champ reste en <strong>texte
+        libre</strong> : vous pouvez <strong>saisir n'importe quel tag existant, y compris un
+        plus ancien pour l'épingler ou revenir en arrière</strong> vers une version éprouvée. Un
+        tag saisi est validé contre les tags du dépôt (un tag qu'il ne liste pas est rejeté), et
         choisir un tag plus ancien affiche un <strong>avertissement de rétrogradation</strong>
-        avant de l'appliquer. Pour un service <code>:latest</code> (sans versions discrètes),
-        cela reste une simple confirmation sur le digest <code>:latest</code> actuel du
-        registre. Dans tous les cas, c'est un seul <code>ServiceUpdate</code> / mise à jour
-        progressive, derrière une confirmation.
+        avant de l'appliquer. Dans tous les cas, la modification est un seul
+        <code>ServiceUpdate</code> / mise à jour progressive, derrière une confirmation. Si le
+        registre n'a renvoyé <strong>aucun tag</strong> et qu'il n'y a pas non plus de cible
+        concrète — registre privé ou injoignable, ou service épinglé par digest — vous obtenez un
+        <strong>avis explicatif et rien n'est modifié</strong>.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
@@ -1108,8 +1145,9 @@
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> sautent à la première/dernière
         entrée), <kbd>Enter</kbd> sélectionne ; <kbd>Esc</kbd>, ou l'entrée <em>Cancel</em>,
         ferme le menu sans rien faire. Seul le sélecteur de version d'image (<kbd>u</kbd>)
-        reste hors du menu, sur l'inspection elle-même à côté de l'indication de mise à
-        niveau. La touche directe de chaque entrée :
+        reste hors du menu, sur l'inspection elle-même — où il fonctionne depuis n'importe
+        quelle ligne, qu'une version plus récente ait été trouvée ou non (voir plus haut).
+        La touche directe de chaque entrée :
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
