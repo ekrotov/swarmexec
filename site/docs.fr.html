@@ -855,6 +855,7 @@
           <tr><td><kbd>!</kbd></td><td>ouvre la surcouche des risques de sécurité pour toute la liste des services (voir ci-dessous)</td></tr>
           <tr><td><kbd>p</kbd></td><td>redirige le port de la tâche sous le curseur</td></tr>
           <tr><td><kbd>i</kbd></td><td>inspecte le nœud sous le curseur — une surcouche navigable avec un résumé tabulaire ; déplacez la sélection avec <kbd>↑</kbd>/<kbd>↓</kbd> ou <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copie la ligne sélectionnée, <kbd>t</kbd> bascule le JSON brut du démon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> ferme). Sur un <strong>service</strong> la surcouche l'édite aussi : <kbd>s</kbd> mise à l'échelle, <kbd>f</kbd> mise à jour forcée, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> réseaux, <kbd>S</kbd> secrets, <kbd>v</kbd> montages, <kbd>A</kbd> alias ; <kbd>D</kbd> diagnostique <em>pourquoi</em> il ne s'exécute pas partout ; <kbd>X</kbd> le supprime</td></tr>
+          <tr><td><kbd>X</kbd></td><td>supprime un service <strong>directement depuis l'arbre</strong> (<kbd>X</kbd> majuscule, c.-à-d. Shift+x) — sans détour par la surcouche d'inspection. Ce sur quoi elle agit dépend de la ligne sous le curseur : sur une ligne de <strong>service</strong> elle supprime ce service ; sur une ligne de <strong>conteneur</strong> elle supprime le <strong>service propriétaire</strong> du conteneur, car une tâche seule ne peut pas être supprimée — Swarm la replanifierait aussitôt ; sur une ligne de <strong>stack</strong> elle ne supprime rien et signale brièvement dans le pied de page que les services d'un stack se suppriment individuellement, ou avec <code>docker stack rm &lt;stack&gt;</code>. Elle passe par la <strong>même confirmation</strong> que le <kbd>X</kbd> de l'inspection ci-dessous — elle <strong>supprime définitivement</strong> le service et arrête toutes ses tâches ; irréversible. Touche majuscule fixe, pas une action de keymap réaffectable ; le pied de page l'indique en rouge comme <span style="color:#f85149"><em>X remove</em></span> et la surcouche <kbd>?</kbd> la liste aussi. Le <kbd>X</kbd> à l'intérieur de la surcouche d'inspection est inchangé</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1030,6 +1031,7 @@
           <tr><td><kbd>y</kbd></td><td>copie la ligne sélectionnée dans le presse-papiers (OSC52) — toujours</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>sur une ligne <strong>NETWORKS</strong> repliable, déplie/replie ce réseau ; sur toute autre ligne, la copie (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>bascule entre le résumé tabulaire et le JSON brut du démon (les deux sélectionnables)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>menu d'actions — tous les éditeurs et actions du service en une seule liste, sans Maj (services uniquement ; voir ci-dessous)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>édite le service — mise à l'échelle / mise à jour forcée / ports / labels / env / réseaux / secrets / montages / alias (service uniquement ; <kbd>S</kbd> est en majuscule, Maj+s, pour le distinguer de <kbd>s</kbd> mise à l'échelle ; <kbd>A</kbd> est aussi en majuscule ; voir ci-dessous)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>ferme la surcouche</td></tr>
         </tbody>
@@ -1054,12 +1056,36 @@
         conteneur/tâche, dont la surcouche reste en lecture seule), le titre de la
         surcouche expose aussi plusieurs touches d'édition, chacune un
         <code>ServiceUpdate</code> de l'API du manager qui déclenche une mise à jour
-        progressive / réconciliation des tâches du service :
+        progressive / réconciliation des tâches du service.
+      </p>
+      <p>
+        <strong>Commencez par <kbd>a</kbd> — le menu d'actions.</strong> Sur une inspection
+        de service (et là seulement), <kbd>a</kbd> ouvre une liste unique de tous les
+        éditeurs et actions que propose la surcouche, pour ne pas avoir à retenir ~14
+        touches sensibles à la casse (<kbd>d</kbd>/<kbd>D</kbd>, <kbd>s</kbd>/<kbd>f</kbd>,
+        <kbd>p</kbd>/<kbd>l</kbd>/<kbd>e</kbd>, <kbd>n</kbd>/<kbd>S</kbd>/<kbd>v</kbd>,
+        <kbd>r</kbd>/<kbd>P</kbd>, <kbd>R</kbd>, <kbd>X</kbd>). C'est le chemin
+        découvrable, <strong>sans Maj</strong> — et non un chemin réduit : choisir une
+        entrée ferme le menu et ouvre exactement ce qu'ouvre la touche directe ; les deux
+        sont donc <strong>équivalents</strong>, pas des variantes au comportement
+        différent. Les entrées, dans l'ordre :
+        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
+        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
+        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
+        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
+        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        — la destructive, signalée en rouge — et <em>Cancel</em>. On se déplace avec
+        <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> sautent à la première/dernière
+        entrée), <kbd>Enter</kbd> sélectionne ; <kbd>Esc</kbd>, ou l'entrée <em>Cancel</em>,
+        ferme le menu sans rien faire. Seul le sélecteur de version d'image (<kbd>u</kbd>)
+        reste hors du menu, sur l'inspection elle-même à côté de l'indication de mise à
+        niveau. La touche directe de chaque entrée :
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>d</kbd></td><td>diff — affiche un diff unifié de la spécification <em>actuelle</em> du service par rapport à sa <em>précédente</em> (ce que la dernière mise à jour progressive a changé), en utilisant le <code>PreviousSpec</code> de Swarm. Les champs modifiés sont listés groupés par champ avec des lignes <span style="color:#f85149">- supprimé</span> / <span style="color:#3fb950">+ ajouté</span> (image, mode/répliques, env, labels, réseaux, alias, secrets, montages, ports, contraintes de placement, préférences de répartition, limites/réservations de ressources) ; les champs inchangés sont omis. Si le service n'a jamais été mis à jour (pas de spécification précédente) il l'indique. Surcouche en lecture seule — <kbd>j</kbd>/<kbd>k</kbd> défilent, <kbd>Esc</kbd> ferme</td></tr>
+          <tr><td><kbd>R</kbd></td><td>revient à la version précédente (<kbd>R</kbd> majuscule, c.-à-d. Maj+r, pour le distinguer de <kbd>r</kbd> limites de ressources) — la contrepartie du diff <kbd>d</kbd> ci-dessus : il annule la dernière mise à jour progressive. La boîte de confirmation affiche <strong>ce même diff inversé</strong> sous « This will undo: », car c'est bien ce que le retour arrière va changer — une ligne que la mise à jour a <em>ajoutée</em> apparaît comme <span style="color:#f85149">- supprimé</span>, et une qu'elle a <em>supprimée</em> revient comme <span style="color:#3fb950">+ ajouté</span>. L'aperçu est plafonné à <strong>12</strong> entrées, suivies d'une note « … and N more » qui renvoie à <kbd>d</kbd> pour le diff complet (si seules les métadonnées ont changé, il indique qu'il n'y a aucune différence au niveau des champs). Confirmer déclenche un retour arrière <strong>côté serveur</strong> — un seul <code>ServiceUpdate</code> de l'API du manager avec <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>pas</em> une réapplication du <code>PreviousSpec</code> côté client — c'est donc le <strong>manager</strong> qui l'exécute, en respectant la <strong>configuration de retour arrière</strong> propre au service (parallélisme, délai, action en cas d'échec), et il rapporte la progression via l'état de mise à jour <code>rollback_started</code> : exactement le badge <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> décrit plus haut, sur la ligne de l'arbre et dans cette surcouche. Un service qui n'a <strong>jamais été mis à jour</strong> n'a pas de spécification précédente — vous obtenez un message explicatif, pas une erreur. Également accessible depuis le menu d'actions <kbd>a</kbd>. Comme <kbd>d</kbd>, <kbd>D</kbd> et <kbd>X</kbd>, c'est une touche fixe de l'inspection, pas une action remappable du keymap</td></tr>
           <tr><td><kbd>s</kbd></td><td>mise à l'échelle — demande un nouveau nombre de répliques et l'applique (services répliqués uniquement ; un service global signale qu'il ne peut pas être mis à l'échelle)</td></tr>
           <tr><td><kbd>f</kbd></td><td>mise à jour forcée — redéploie le service sans changer sa spécification (l'équivalent de <code>docker service update --force</code> : incrémente <code>TaskTemplate.ForceUpdate</code>), après une confirmation. Chaque tâche est redémarrée / replanifiée, c'est ainsi que vous débloquez un service coincé dans un <strong>état incomplet</strong> (p. ex. <code>1/2</code> répliques). Un seul <code>ServiceUpdate</code> (mise à jour progressive)</td></tr>
           <tr><td><kbd>X</kbd></td><td>supprime le service (<kbd>X</kbd> majuscule) — <strong>le supprime définitivement</strong> et arrête toutes ses tâches, derrière une confirmation ; irréversible. Un seul <code>ServiceRemove</code> de l'API du manager ; en cas de succès la surcouche d'inspection se ferme et l'arbre des services se rafraîchit</td></tr>
