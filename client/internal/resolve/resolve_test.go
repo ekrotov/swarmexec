@@ -434,8 +434,13 @@ func TestServicesUsesServiceStatus(t *testing.T) {
 		t.Fatalf("got %d services, want %d: %+v", len(got), len(want), got)
 	}
 	for i, w := range want {
-		if !reflect.DeepEqual(got[i], w) {
-			t.Errorf("service[%d] = %+v, want %+v", i, got[i], w)
+		// Risks are the security scan's business and have their own tests; the
+		// scan flags informational findings on almost any spec, so asserting on
+		// them here would make this test fail whenever a check is added.
+		g := got[i]
+		g.Risks = nil
+		if !reflect.DeepEqual(g, w) {
+			t.Errorf("service[%d] = %+v, want %+v", i, g, w)
 		}
 	}
 }

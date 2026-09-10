@@ -884,18 +884,39 @@
         fixed-width slot ahead of the name, so the shields line up as a vertical scan
         column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>.
       </p>
-      <p>The checks that ship today:</p>
+      <p>
+        The eight checks that ship today. The ones that can mark a service come first;
+        the purely informational ones are grouped at the end:
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Check</th><th>Severity</th><th>What it flags</th></tr></thead>
         <tbody>
+          <tr><td><code>docker-socket</code> — “Docker socket mounted in”</td><td><span style="color:#f85149">high</span></td><td><strong>the most serious finding here.</strong> A <strong>bind mount</strong> whose source is the Docker daemon socket — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> or any source path ending in <code>/docker.sock</code>. Anything in that container can talk to the socket, and anything that can talk to the socket can <strong>start a privileged container on that node</strong> — so it is effectively <strong>root on the host</strong>, whatever the container itself runs as. <strong>Read-only does not mitigate it</strong>: the socket is an API, not a file whose contents matter — the finding says so itself when the mount is read-only. It names the target path the socket is mounted at</td></tr>
+          <tr><td><code>added-capability</code> — “capability <em>NAME</em> added”</td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span></td><td>a Linux capability the service adds to its container. Swarm has <strong>no <code>--privileged</code></strong>, so capabilities are how a service asks for extra host power — which makes the added set worth reading. Eight are <strong>high</strong>, each reported with the reason it carries: <code>ALL</code> (grants every capability), <code>SYS_ADMIN</code> (near-root: mount, namespace and cgroup control), <code>SYS_MODULE</code> (can load kernel modules), <code>SYS_PTRACE</code> (can inspect and control other processes), <code>SYS_RAWIO</code> (raw I/O access to devices), <code>DAC_READ_SEARCH</code> (bypasses file read permission checks), <code>NET_ADMIN</code> (full control of the node's networking), <code>NET_RAW</code> (can forge and sniff raw packets). <strong>Any other</strong> added capability is <strong>medium</strong> — a privilege beyond the default set. One finding per added capability; both spellings are recognised, in any case (<code>CAP_SYS_ADMIN</code> and <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — “runs on the host network”</td><td><span style="color:#f85149">high</span></td><td>the service is attached to the network named <code>host</code>: the container shares the <strong>node's network stack</strong>, so there is no network isolation and swarm's published-port mapping no longer applies. It can reach anything the node can — <strong>including services bound to localhost</strong>, which are usually assumed to be out of a container's reach</td></tr>
+          <tr><td><code>unconfined</code> — “seccomp disabled” / “AppArmor disabled”</td><td><span style="color:#f85149">high</span></td><td>the container's kernel-level sandbox has been switched off: <strong>seccomp set to <code>unconfined</code></strong> — the container may make any syscall, which removes the main barrier to kernel exploits — or <strong>AppArmor confinement disabled</strong>. The two are reported separately, so a service that turns off both gets two findings</td></tr>
           <tr><td><code>root-user</code> — “runs as root”</td><td><span style="color:#f85149">high</span></td><td>the spec pins the container to <strong>root explicitly</strong> — <code>User=root</code> or uid <code>0</code> (numeric forms like <code>00</code> or <code>+0</code> are caught too; only the user part of <code>user:group</code> is looked at)</td></tr>
-          <tr><td><code>root-user</code> — “no user set”</td><td>low</td><td><strong>no</strong> user is set at all, so the container runs as the image's own default user, which is often root. This is <strong>informational only and does not mark the service</strong>: an unset user is the Swarm default on nearly every service, and whether it really is root depends on the image's <code>USER</code>, which the manager spec doesn't reveal — badging it would put a shield on almost every row and destroy the at-a-glance signal</td></tr>
           <tr><td><code>secret-in-env</code> — “secret in environment variable”</td><td><span style="color:#f85149">high</span></td><td>a credential-looking env key holds a <strong>literal value in the service spec</strong>, readable by anyone who can read the spec. Use a Docker secret or the <code>*_FILE</code> convention instead</td></tr>
+          <tr><td><code>root-user</code> — “no user set”</td><td>low</td><td><strong>no</strong> user is set at all, so the container runs as the image's own default user, which is often root. <strong>Informational only, and it does not mark the service</strong>: an unset user is the Swarm default on nearly every service, and whether it really is root depends on the image's <code>USER</code>, which the manager spec doesn't reveal</td></tr>
+          <tr><td><code>no-resource-limits</code> — “no resource limits”</td><td>low</td><td>the task sets <strong>neither a CPU nor a memory limit</strong>, so a runaway container can consume the whole node and starve everything else on it. <strong>Informational only</strong> — see below</td></tr>
+          <tr><td><code>unpinned-image</code> — “image not pinned”</td><td>low</td><td>the image is pinned to <code>:latest</code>, or carries <strong>no tag at all</strong> (which resolves to <code>:latest</code>) — the running version can change without a spec change, so a deploy is not reproducible. A <strong>digest-pinned</strong> image (<code>…@sha256:…</code>) is exactly reproducible and is never flagged, and a colon that belongs to a registry host's port (<code>registry:5000/img</code>) is not mistaken for a tag. <strong>Informational only</strong> — see below</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Why the informational checks never mark a service.</strong> Only a finding
+        above <em>low</em> — high or medium — makes a service actionable and puts the
+        <strong>🛡</strong> on its tree row. The low ones (<code>no-resource-limits</code>,
+        <code>unpinned-image</code> and <code>root-user</code>'s “no user set”) are true of
+        <strong>almost every service in a real cluster</strong>: badging them would put a
+        shield on nearly every row and destroy the at-a-glance signal the marker exists for.
+        They are not swept under the rug, though — once a service is flagged for something
+        else, its low findings are listed with the rest in the overlay, so you see them where
+        they are actually worth reading.
+      </p>
       <div class="note">
-        <strong>No secret value is ever displayed.</strong> The <code>secret-in-env</code>
-        finding names only the env var's <strong>key</strong>; its value is never read into
+        <strong>No secret value is ever displayed.</strong> Of the eight checks only
+        <code>secret-in-env</code> looks at environment variables at all, and its finding
+        names only the env var's <strong>key</strong>; the value is never read into
         the finding, never rendered and never copied. The check is also written to stay
         quiet: it matches whole <code>_</code>-delimited tokens
         (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
@@ -913,20 +934,27 @@
       </div>
       <p>
         The overlay lists <strong>every flagged service</strong> (“N of M service(s)
-        flagged”), grouped by service, each finding on its own line with a severity dot —
+        flagged · 8 checks”), grouped by service, each finding on its own line with a severity dot —
         <span style="color:#f85149">● high</span>,
         <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
         a short title and a one-line explanation. Findings are ordered worst-first. Once a
         service is flagged for something actionable, its informational low findings are
         listed too. If the service under the cursor is among them it is pre-highlighted and
-        scrolled into view. When nothing is flagged the overlay says so explicitly; when the
-        service list hasn't loaded yet it says <em>nothing has been scanned</em> rather than
-        giving a false all-clear. <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> (or
-        <kbd>q</kbd>, or <kbd>!</kbd> again) closes.
+        scrolled into view. When nothing is flagged the overlay says so explicitly
+        <strong>and names every check that ran</strong> (“Checked: Docker socket mounted in,
+        added Linux capabilities, host network, seccomp / AppArmor disabled, container user,
+        secrets in environment variables, missing resource limits, unpinned image.”), so an
+        all-clear tells you what it actually covers; when the service list hasn't loaded yet
+        it says <em>nothing has been scanned</em> rather than giving a false all-clear.
+        <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> (or <kbd>q</kbd>, or <kbd>!</kbd>
+        again) closes.
       </p>
       <div class="note">
         The scan is an <strong>extensible registry</strong> of analyzers, not a fixed list:
-        a new check surfaces in both the tree marker and the overlay automatically. The key
+        a new check surfaces in both the tree marker and the overlay automatically. The
+        overlay's own wording comes from that registry too — the check count in its header
+        and the “Checked:” list are <strong>generated from the analyzers themselves</strong>,
+        so they cannot drift from what actually ran the way a hardcoded list does. The key
         is remappable as <code>security_risks</code> in
         <a href="#tui">keys.yaml</a>.
       </div>

@@ -127,21 +127,37 @@ func TestSecretEnvAnalyzer(t *testing.T) {
 }
 
 func TestScanOrdersAndMaxSeverity(t *testing.T) {
-	// Root (high) + a secret (high) + but also an empty-user would be medium;
-	// here explicit root is high and the secret is high.
+	// Asserted by rule rather than by count: the analyzer set grows, and a
+	// total-findings assertion would break on every addition without saying
+	// anything about ordering, which is what this test is for.
 	s := svcWith("root", "MYSQL_PASSWORD=abc")
 	fs := Scan(s)
-	if len(fs) != 2 {
-		t.Fatalf("got %d findings, want 2: %+v", len(fs), fs)
+	for _, rule := range []string{"root-user", "secret-in-env"} {
+		if f := hasRule(fs, rule); f == nil {
+			t.Errorf("missing a %s finding: %+v", rule, fs)
+		} else if f.Severity != SevHigh {
+			t.Errorf("%s severity = %v, want high", rule, f.Severity)
+		}
 	}
 	if MaxSeverity(fs) != SevHigh {
 		t.Errorf("MaxSeverity = %v, want high", MaxSeverity(fs))
 	}
-	// Highest first: a low finding must sort after a high one.
+
+	// Severity order: the list must be sorted worst-first, with no severity
+	// increasing as the list goes on.
 	s2 := svcWith("", "MYSQL_PASSWORD=abc") // low (no user) + high (secret)
 	fs2 := Scan(s2)
-	if len(fs2) != 2 || fs2[0].Severity != SevHigh || fs2[1].Severity != SevLow {
-		t.Errorf("scan not ordered high-first: %+v", fs2)
+	if len(fs2) < 2 {
+		t.Fatalf("expected several findings, got %+v", fs2)
+	}
+	if fs2[0].Severity != SevHigh {
+		t.Errorf("first finding = %v, want the highest severity: %+v", fs2[0].Severity, fs2)
+	}
+	for i := 1; i < len(fs2); i++ {
+		if fs2[i].Severity > fs2[i-1].Severity {
+			t.Errorf("findings not sorted worst-first at %d: %+v", i, fs2)
+			break
+		}
 	}
 	if MaxSeverity(nil) != SevLow {
 		t.Errorf("MaxSeverity(nil) = %v, want low", MaxSeverity(nil))

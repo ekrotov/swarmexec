@@ -39,12 +39,15 @@ func (u *ui) showSecurityRisks() {
 		tv.SetText("\n  [yellow]No services loaded — nothing has been scanned yet.[-]\n\n" +
 			"  [gray]Refresh the containers tab (r) once the manager is reachable.[-]")
 	case len(flagged) == 0:
+		// Name what was actually checked, so "nothing found" is informative
+		// rather than a bare claim. The list comes from the analyzer registry,
+		// so it cannot drift as checks are added.
 		tv.SetText(fmt.Sprintf("\n  [green]No security risks identified[-] [gray]across %d service(s).[-]\n\n"+
-			"  [gray]Checks: containers running as root, secrets in environment variables.[-]", len(u.lastSvcs)))
+			"  [gray]Checked: %s.[-]", len(u.lastSvcs), strings.Join(secscan.Checks(), ", ")))
 	default:
 		var b strings.Builder
-		fmt.Fprintf(&b, "  [gray]%d of %d service(s) flagged — checks: root user, secret in env[-]\n",
-			len(flagged), len(u.lastSvcs))
+		fmt.Fprintf(&b, "  [gray]%d of %d service(s) flagged  ·  %d checks[-]\n",
+			len(flagged), len(u.lastSvcs), len(secscan.Checks()))
 		for i, s := range flagged {
 			// Region id (index-based, so odd service names can't break the tag).
 			// Every spec-derived string is escaped: Docker does not restrict env
