@@ -811,6 +811,7 @@
           <tr><td><kbd>!</kbd></td><td>open the security-risks overlay for the whole service list (see below)</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
           <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove a service <strong>straight from the tree</strong> (capital <kbd>X</kbd>, i.e. Shift+x) — no detour through the inspect overlay. What it acts on follows the row under the cursor: on a <strong>service</strong> row it removes that service; on a <strong>container</strong> row it removes that container's <strong>owning service</strong>, because a single task cannot be removed on its own — Swarm would immediately reschedule it; on a <strong>stack</strong> row it removes nothing and instead notes briefly in the footer that a stack's services have to be removed individually, or with <code>docker stack rm &lt;stack&gt;</code>. It goes through the <strong>same confirm</strong> as the inspect <kbd>X</kbd> below — it <strong>permanently deletes</strong> the service and stops all its tasks, cannot be undone, and afterwards offers to delete any now-orphaned secrets. A fixed capital key, not a remappable keymap action; the footer lists it in red as <span style="color:#f85149"><em>X remove</em></span> and the <kbd>?</kbd> overlay lists it too. The <kbd>X</kbd> inside the inspect overlay is unchanged</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -965,6 +966,7 @@
           <tr><td><kbd>y</kbd></td><td>copy the selected line to the clipboard (OSC52) — always</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that network; on any other line, copy it (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>toggle between the tabular summary and the raw daemon JSON (both selectable)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>actions menu — every service editor and action in one list, no Shift needed (service only; see below)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edit the service — scale / force-update / ports / labels / env / networks / secrets / mounts / aliases (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; <kbd>A</kbd> is capital too; see below)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>close the overlay</td></tr>
         </tbody>
@@ -986,12 +988,35 @@
         When you inspect a <strong>service</strong> (not a container/task leaf, whose
         overlay stays read-only), the overlay title also exposes several edit keys, each a
         manager-API <code>ServiceUpdate</code> that triggers a rolling update /
-        reconciliation of the service's tasks:
+        reconciliation of the service's tasks.
+      </p>
+      <p>
+        <strong>Start with <kbd>a</kbd> — the actions menu.</strong> On a service inspect
+        (service only), <kbd>a</kbd> opens a single list of every editor and action the
+        overlay offers, so you don't have to remember ~14 case-sensitive keys
+        (<kbd>d</kbd>/<kbd>D</kbd>, <kbd>s</kbd>/<kbd>f</kbd>,
+        <kbd>p</kbd>/<kbd>l</kbd>/<kbd>e</kbd>, <kbd>n</kbd>/<kbd>S</kbd>/<kbd>v</kbd>,
+        <kbd>r</kbd>/<kbd>P</kbd>, <kbd>R</kbd>, <kbd>X</kbd>). It is the discoverable,
+        <strong>no-Shift</strong> path — and not a reduced one: choosing an entry closes the
+        menu and opens exactly what the direct key opens, so the two are <strong>equivalent</strong>,
+        not variants with different behaviour. The entries, in order:
+        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
+        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
+        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
+        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
+        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        — the destructive one, marked in red — and <em>Cancel</em>. Move with
+        <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> jump to the first/last entry),
+        <kbd>Enter</kbd> selects; <kbd>Esc</kbd>, or the <em>Cancel</em> entry, closes the
+        menu without doing anything. Only the image-version picker (<kbd>u</kbd>) stays
+        outside the menu, on the inspect itself next to the upgrade hint. Each entry's
+        direct key:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>d</kbd></td><td>diff — shows a unified diff of the service's <em>current</em> spec against its <em>previous</em> one (what the last rolling update changed), using Swarm's <code>PreviousSpec</code>. Changed fields are listed grouped by field with <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span> lines (image, mode/replicas, env, labels, networks, aliases, secrets, mounts, ports, placement constraints, spread preferences, resource limits/reservations); unchanged fields are omitted. If the service has never been updated (no previous spec) it says so. Read-only overlay — <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> closes</td></tr>
+          <tr><td><kbd>R</kbd></td><td>roll back to the previous version (capital <kbd>R</kbd>, i.e. Shift+r, to distinguish it from <kbd>r</kbd> edit resources) — the counterpart of the <kbd>d</kbd> diff above: it undoes the last rolling update. The confirm dialog shows <strong>that same diff reversed</strong> under “This will undo:”, because that is what the rollback will actually change — a line the update <em>added</em> is listed as <span style="color:#f85149">- removed</span>, and one it <em>removed</em> comes back as <span style="color:#3fb950">+ added</span>. The preview is capped at <strong>12</strong> entries, followed by an “… and N more” note pointing back at <kbd>d</kbd> for the full diff (if only metadata changed it says there are no field-level differences). Confirming does a <strong>server-side</strong> rollback — one manager-API <code>ServiceUpdate</code> with <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>not</em> a client-side re-apply of <code>PreviousSpec</code> — so the <strong>manager</strong> drives it and honours the service's own <strong>rollback configuration</strong> (parallelism, delay, failure action), and reports progress as the update state <code>rollback_started</code>: exactly the <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> badge described above, on the tree row and in this overlay. A service that has <strong>never been updated</strong> has no previous spec — you get an explanatory notice, not an error. Also reachable from the <kbd>a</kbd> actions menu. Like <kbd>d</kbd>, <kbd>D</kbd> and <kbd>X</kbd> this is a fixed inspect key, not a remappable keymap action</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
           <tr><td><kbd>f</kbd></td><td>force-update — redeploys the service without changing its spec (the equivalent of <code>docker service update --force</code>: bumps <code>TaskTemplate.ForceUpdate</code>), after a confirm. Every task is restarted / rescheduled, which is how you unstick a service sitting in an <strong>incomplete state</strong> (e.g. <code>1/2</code> replicas). One <code>ServiceUpdate</code> (rolling update)</td></tr>
           <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the service tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>

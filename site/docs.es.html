@@ -831,6 +831,7 @@
           <tr><td><kbd>!</kbd></td><td>abre el overlay de riesgos de seguridad para toda la lista de servicios (ver más abajo)</td></tr>
           <tr><td><kbd>p</kbd></td><td>reenvía el puerto de la tarea bajo el cursor</td></tr>
           <tr><td><kbd>i</kbd></td><td>inspecciona el nodo bajo el cursor — un overlay navegable con un resumen tabular; mueve la selección con <kbd>↑</kbd>/<kbd>↓</kbd> o <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copia la línea seleccionada, <kbd>t</kbd> alterna el JSON crudo del daemon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> cierra). Sobre un <strong>servicio</strong> el overlay también lo edita: <kbd>s</kbd> escalar, <kbd>f</kbd> forzar actualización, <kbd>p</kbd> puertos, <kbd>l</kbd> etiquetas, <kbd>e</kbd> env, <kbd>n</kbd> redes, <kbd>S</kbd> secretos, <kbd>v</kbd> montajes, <kbd>A</kbd> alias; <kbd>D</kbd> diagnostica <em>por qué</em> no se ejecuta en todas partes; <kbd>X</kbd> lo elimina</td></tr>
+          <tr><td><kbd>X</kbd></td><td>elimina un servicio <strong>directamente desde el árbol</strong> (<kbd>X</kbd> mayúscula, es decir Shift+x) — sin pasar por el overlay de inspección. Sobre qué actúa depende de la fila bajo el cursor: en una fila de <strong>servicio</strong> elimina ese servicio; en una fila de <strong>contenedor</strong> elimina el <strong>servicio propietario</strong> del contenedor, porque una tarea suelta no puede eliminarse por sí sola — Swarm la volvería a planificar de inmediato; en una fila de <strong>stack</strong> no elimina nada y en su lugar avisa brevemente en el pie de que los servicios de un stack se eliminan individualmente, o con <code>docker stack rm &lt;stack&gt;</code>. Pasa por la <strong>misma confirmación</strong> que la <kbd>X</kbd> de la inspección más abajo — <strong>borra permanentemente</strong> el servicio y detiene todas sus tareas; no se puede deshacer. Tecla mayúscula fija, no una acción remapeable del keymap; el pie la lista en rojo como <span style="color:#f85149"><em>X remove</em></span> y el overlay <kbd>?</kbd> también la lista. La <kbd>X</kbd> dentro del overlay de inspección no cambia</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -998,6 +999,7 @@
           <tr><td><kbd>y</kbd></td><td>copia la línea seleccionada al portapapeles (OSC52) — siempre</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>en una fila colapsable de <strong>NETWORKS</strong>, expande/colapsa esa red; en cualquier otra línea, la copia (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>alterna entre el resumen tabular y el JSON crudo del daemon (ambos seleccionables)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>menú de acciones — todos los editores y acciones del servicio en una lista, sin Shift (solo servicios; ver abajo)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edita el servicio — escalar / forzar actualización / puertos / etiquetas / env / redes / secretos / montajes / alias (solo servicio; <kbd>S</kbd> es mayúscula, Shift+s, para distinguirla de <kbd>s</kbd> escalar; <kbd>A</kbd> también es mayúscula; véase más abajo)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>cierra el overlay</td></tr>
         </tbody>
@@ -1019,12 +1021,36 @@
         Cuando inspeccionas un <strong>servicio</strong> (no una hoja de contenedor/tarea,
         cuyo overlay permanece de solo lectura), el título del overlay expone además varias
         teclas de edición, cada una un <code>ServiceUpdate</code> de la API del manager que
-        dispara una actualización progresiva / reconciliación de las tareas del servicio:
+        dispara una actualización progresiva / reconciliación de las tareas del servicio.
+      </p>
+      <p>
+        <strong>Empieza por <kbd>a</kbd>: el menú de acciones.</strong> En la inspección de
+        un servicio (solo ahí), <kbd>a</kbd> abre una única lista con todos los editores y
+        acciones que ofrece el overlay, así no tienes que recordar ~14 teclas sensibles a
+        mayúsculas (<kbd>d</kbd>/<kbd>D</kbd>, <kbd>s</kbd>/<kbd>f</kbd>,
+        <kbd>p</kbd>/<kbd>l</kbd>/<kbd>e</kbd>, <kbd>n</kbd>/<kbd>S</kbd>/<kbd>v</kbd>,
+        <kbd>r</kbd>/<kbd>P</kbd>, <kbd>R</kbd>, <kbd>X</kbd>). Es el camino descubrible y
+        <strong>sin Shift</strong> — y no uno recortado: elegir una entrada cierra el menú y
+        abre exactamente lo mismo que la tecla directa, así que ambos son
+        <strong>equivalentes</strong>, no variantes con comportamientos distintos. Las
+        entradas, en orden:
+        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
+        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
+        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
+        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
+        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        — la destructiva, marcada en rojo — y <em>Cancel</em>. Te mueves con
+        <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> saltan a la primera/última
+        entrada), <kbd>Enter</kbd> selecciona; <kbd>Esc</kbd>, o la entrada <em>Cancel</em>,
+        cierra el menú sin hacer nada. Solo el selector de versión de imagen (<kbd>u</kbd>)
+        queda fuera del menú, en la propia inspección junto al aviso de actualización. La
+        tecla directa de cada entrada:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
           <tr><td><kbd>d</kbd></td><td>diff — muestra un diff unificado del spec <em>actual</em> del servicio frente al <em>anterior</em> (lo que cambió la última actualización progresiva), usando el <code>PreviousSpec</code> de Swarm. Los campos modificados se listan agrupados por campo con líneas <span style="color:#f85149">- eliminado</span> / <span style="color:#3fb950">+ añadido</span> (imagen, modo/réplicas, env, etiquetas, redes, alias, secretos, montajes, puertos, restricciones de colocación, preferencias de distribución, límites/reservas de recursos); los campos sin cambios se omiten. Si el servicio nunca se ha actualizado (sin spec anterior) lo indica. Overlay de solo lectura — <kbd>j</kbd>/<kbd>k</kbd> desplaza, <kbd>Esc</kbd> cierra</td></tr>
+          <tr><td><kbd>R</kbd></td><td>revertir a la versión anterior (<kbd>R</kbd> mayúscula, es decir Shift+r, para distinguirla de <kbd>r</kbd> límites de recursos) — la contraparte del diff <kbd>d</kbd> de arriba: deshace la última actualización progresiva. El diálogo de confirmación muestra <strong>ese mismo diff invertido</strong> bajo «This will undo:», porque eso es lo que la reversión va a cambiar realmente — una línea que la actualización <em>añadió</em> aparece como <span style="color:#f85149">- eliminado</span>, y una que <em>eliminó</em> vuelve como <span style="color:#3fb950">+ añadido</span>. La vista previa se limita a <strong>12</strong> entradas, seguidas de una nota «… and N more» que remite a <kbd>d</kbd> para el diff completo (si solo cambiaron metadatos indica que no hay diferencias a nivel de campo). Al confirmar se hace una reversión <strong>del lado del servidor</strong> — un <code>ServiceUpdate</code> de la API del manager con <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>no</em> una reaplicación del <code>PreviousSpec</code> desde el cliente — así que es el <strong>manager</strong> quien la ejecuta y respeta la <strong>configuración de reversión</strong> del propio servicio (paralelismo, retardo, acción ante fallo), y reporta el progreso como el estado de actualización <code>rollback_started</code>: exactamente la insignia <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> descrita arriba, en la fila del árbol y en este overlay. Un servicio que <strong>nunca se ha actualizado</strong> no tiene spec anterior — obtienes un aviso explicativo, no un error. También accesible desde el menú de acciones <kbd>a</kbd>. Como <kbd>d</kbd>, <kbd>D</kbd> y <kbd>X</kbd>, es una tecla fija de la inspección, no una acción remapeable del keymap</td></tr>
           <tr><td><kbd>s</kbd></td><td>escalar — pide un nuevo recuento de réplicas y lo aplica (solo servicios replicados; un servicio global informa de que no se puede escalar)</td></tr>
           <tr><td><kbd>f</kbd></td><td>forzar actualización — redespliega el servicio sin cambiar su spec (el equivalente de <code>docker service update --force</code>: incrementa <code>TaskTemplate.ForceUpdate</code>), tras una confirmación. Cada tarea se reinicia / reprograma, que es cómo desatascas un servicio que está en un <strong>estado incompleto</strong> (p. ej. <code>1/2</code> réplicas). Un <code>ServiceUpdate</code> (actualización progresiva)</td></tr>
           <tr><td><kbd>X</kbd></td><td>elimina el servicio (<kbd>X</kbd> mayúscula) — lo <strong>borra permanentemente</strong> y detiene todas sus tareas, tras una confirmación; no se puede deshacer. Un <code>ServiceRemove</code> de la API del manager; al tener éxito el overlay de inspección se cierra y el árbol de servicios se refresca</td></tr>

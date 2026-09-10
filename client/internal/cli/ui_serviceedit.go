@@ -886,18 +886,27 @@ func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved f
 			orphans, _ := secretsOnlyUsedBy(ctx, dcli, svcName)
 			err := removeService(ctx, dcli, svcName)
 			app.QueueUpdateDraw(func() {
+				// Order matters: whatever is shown LAST owns the focus. Both
+				// app.SetFocus(back) and onRemoved (which closes the inspect and
+				// refocuses the tree) used to run *after* u.info, leaving the
+				// notice on screen but unfocused — Esc/Enter went to the widget
+				// behind it and the dialog looked stuck.
 				if err != nil {
-					u.info("remove failed: " + err.Error())
 					app.SetFocus(back)
+					u.info("remove failed: " + err.Error())
 					return
 				}
-				u.info(fmt.Sprintf("removed service %q", svcName))
 				if onRemoved != nil {
 					onRemoved()
 				}
 				if len(orphans) > 0 {
+					// The orphan prompt is the actionable follow-up and its text
+					// already says the service was removed, so it replaces the
+					// notice rather than stacking on top of it.
 					u.promptDeleteOrphanSecrets(orphans)
+					return
 				}
+				u.info(fmt.Sprintf("removed service %q", svcName))
 			})
 		}()
 	})

@@ -290,6 +290,43 @@ func removeService(ctx context.Context, dcli *client.Client, name string) error 
 	return dcli.ServiceRemove(ctx, svc.ID)
 }
 
+// serviceHasPreviousSpec reports whether a service has a previous spec to roll
+// back to — false for one that has never been updated since it was created.
+func serviceHasPreviousSpec(ctx context.Context, dcli *client.Client, name string) (bool, error) {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return false, err
+	}
+	if svc == nil {
+		return false, fmt.Errorf("no service named %q", name)
+	}
+	return svc.PreviousSpec != nil, nil
+}
+
+// rollbackService asks the manager to roll a service back to its previous spec.
+//
+// This is a SERVER-side rollback (ServiceUpdateOptions.Rollback = "previous"),
+// not a read-modify-write of PreviousSpec: the daemon then honours the service's
+// own RollbackConfig (parallelism, delay, failure action) and reports progress
+// as UpdateStatus "rollback_started", which the tree's ↺ badge already renders.
+// The spec argument is required by the API but ignored when Rollback is set, so
+// the current spec is passed unchanged.
+func rollbackService(ctx context.Context, dcli *client.Client, name string) error {
+	svc, err := serviceByName(ctx, dcli, name)
+	if err != nil {
+		return err
+	}
+	if svc == nil {
+		return fmt.Errorf("no service named %q", name)
+	}
+	if svc.PreviousSpec == nil {
+		return fmt.Errorf("service %q has no previous version to roll back to", name)
+	}
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, svc.Spec,
+		types.ServiceUpdateOptions{Rollback: "previous"})
+	return err
+}
+
 // updateServiceImage sets a service's image (read-modify-write ServiceUpdate,
 // rolling update). Used to move a :latest service onto the registry's current
 // digest — the caller passes the fully-qualified ref (repo:latest@sha256:…).

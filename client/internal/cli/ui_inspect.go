@@ -297,6 +297,84 @@ func (iv *inspectView) openDiff() {
 	}()
 }
 
+// openRollback rolls the service back to its previous spec. The diff is shown
+// first, inside the confirm: "current → previous" is exactly the reverse of the
+// diff view, so the operator sees what will be undone before agreeing to it —
+// the reason to do this here rather than on the command line.
+func (iv *inspectView) openRollback() {
+	u := iv.u
+	app, dcli, ctx := u.app, u.dcli, u.ctx
+	svc := iv.editSvc
+
+	go func() {
+		lines, hasPrev, err := serviceDiffLines(ctx, dcli, svc)
+		app.QueueUpdateDraw(func() {
+			switch {
+			case err != nil:
+				u.info("rollback: " + err.Error())
+				return
+			case !hasPrev:
+				// Not an error: the service simply has never been updated.
+				u.info(fmt.Sprintf("%q has no previous version to roll back to —\nit has not been updated since it was created.", svc))
+				return
+			}
+
+			u.confirm(rollbackConfirmText(svc, lines), "Roll back", iv.table, func() {
+				go func() {
+					rerr := rollbackService(ctx, dcli, svc)
+					app.QueueUpdateDraw(func() {
+						if rerr != nil {
+							u.info("rollback failed: " + rerr.Error())
+							return
+						}
+						u.flash(fmt.Sprintf(" [green]✓ rolling back %q[white]", svc))
+						iv.reload()
+					})
+				}()
+			})
+		})
+	}()
+}
+
+// rollbackDiffPreviewLines caps the diff shown inside the confirm dialog; the
+// full diff stays one key away (d).
+const rollbackDiffPreviewLines = 12
+
+// rollbackConfirmText builds the confirm body for a rollback. diffLines come
+// from serviceDiffLines and read previous → current; a rollback reverses that,
+// so the markers are swapped: what the update ADDED will be removed, and what it
+// REMOVED will come back. Getting this the wrong way round would show the
+// operator the opposite of what is about to happen, so it is kept pure and
+// tested rather than inlined in the overlay.
+func rollbackConfirmText(svc string, diffLines []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Roll %q back to its previous version?\n\n", svc)
+	switch {
+	case len(diffLines) == 0:
+		b.WriteString("[gray]No field-level differences between the versions\n(only metadata changed).[white]\n")
+	default:
+		b.WriteString("This will undo:\n")
+		shown := 0
+		for _, l := range diffLines {
+			if shown >= rollbackDiffPreviewLines {
+				fmt.Fprintf(&b, "[gray]… and %d more (press d for the full diff)[white]\n", len(diffLines)-shown)
+				break
+			}
+			switch {
+			case strings.HasPrefix(l, "+ "): // added by the update → removed again
+				b.WriteString("[red]- " + tview.Escape(strings.TrimPrefix(l, "+ ")) + "[white]\n")
+			case strings.HasPrefix(l, "- "): // removed by the update → restored
+				b.WriteString("[green]+ " + tview.Escape(strings.TrimPrefix(l, "- ")) + "[white]\n")
+			default:
+				b.WriteString(tview.Escape(l) + "\n")
+			}
+			shown++
+		}
+	}
+	b.WriteString("\n[gray]The manager performs a rolling rollback using the\nservice's own rollback settings.[white]")
+	return b.String()
+}
+
 // showActions groups every service editor/action behind one menu (opened with
 // "a"), so the footer needn't spell out ~14 case-sensitive keys (d/D, s/S, p/P
 // …). The direct keys still work for power users and are listed under "?"; this
@@ -313,6 +391,7 @@ func (iv *inspectView) showActions() {
 		list.AddItem(label, "", 0, func() { closeActions(); fn() })
 	}
 	add("Diff spec (previous → current)", iv.openDiff)
+	add("Roll back to the previous version", iv.openRollback)
 	add("Why — placement diagnosis", func() { u.showPlacementDiagnosis(editSvc, table) })
 	add("Scale", func() { u.openScalePrompt(editSvc, table, iv.reload) })
 	add("Force-update", func() { u.openForceUpdate(editSvc, table, iv.reload) })
@@ -384,6 +463,9 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
 		iv.openDiff()
+		return nil
+	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'R':
+		iv.openRollback()
 		return nil
 	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'D':
 		u.showPlacementDiagnosis(editSvc, table)

@@ -589,6 +589,12 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 			case km.SecurityRisks:
 				u.showSecurityRisks()
 				return nil
+			case 'X':
+				// Remove the service under the cursor, without the detour through
+				// the inspect overlay. Destructive, so it is a fixed capital key
+				// (like X in the inspect) and always behind a confirm.
+				u.removeServiceUnderCursor()
+				return nil
 			case km.Fold:
 				// Collapse. tview's TreeView has no fold key — Left/Right only
 				// move the cursor — so fold explicitly. On a node that cannot
@@ -1670,7 +1676,11 @@ func (u *ui) helpFor(name string) string {
 	head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
 	switch name {
 	case "containers":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter[white] expand/menu  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks",
+		// This line is the widest footer and already fills a ~117-column
+		// terminal; anything past the edge wraps onto a hidden second row. So
+		// labels here are kept terse to make room for X (destructive, and it
+		// must not be the thing that silently falls off the end).
+		return head + fmt.Sprintf("[yellow]j/k[white] move  [yellow]Enter[white] open  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks  [red]X[white] remove",
 			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup))
 	case "volumes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
@@ -1720,12 +1730,14 @@ func (u *ui) showHelp() {
 	line(kl(km.Forward), "port-forward the task under the cursor")
 	line(kl(km.SecurityRisks), "security-risks overlay (root user, secrets in env)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
+	line("X", "remove the service under the cursor (confirmed)")
 	line(kl(km.Search), "search services / containers / nodes")
 
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
 	line("a", "actions menu (all edits below, no Shift needed)")
 	line("t", "toggle raw JSON / table")
 	line("d / D", "diff spec · why (placement)")
+	line("R", "roll back to the previous version")
 	line("s / f", "scale · force-update")
 	line("u", "update to a newer image")
 	line("p l e", "edit ports · labels · env")

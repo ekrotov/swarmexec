@@ -846,6 +846,7 @@
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
           <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor</td></tr>
           <tr><td><kbd>i</kbd></td><td>den Node unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, <kbd>t</kbd> schaltet das rohe Daemon-JSON um (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
+          <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird nichts entfernt, stattdessen weist eine kurze Notiz in der Fußzeile darauf hin, dass die Services eines Stacks einzeln entfernt werden müssen oder mit <code>docker stack rm &lt;stack&gt;</code>. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks; das kann nicht rückgängig gemacht werden. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span style="color:#f85149"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1016,6 +1017,7 @@
           <tr><td><kbd>y</kbd></td><td>die ausgewählte Zeile in die Zwischenablage kopieren (OSC52) — immer</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>auf einer einklappbaren <strong>NETWORKS</strong>-Zeile dieses Netzwerk aus-/einklappen; auf jeder anderen Zeile sie kopieren (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>zwischen der tabellarischen Zusammenfassung und dem rohen Daemon-JSON umschalten (beide auswählbar)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>Aktionsmenü — jeder Service-Editor und jede Aktion in einer Liste, ohne Shift (nur Service; siehe unten)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>den Service bearbeiten — Skalieren / Force-Update / Ports / Labels / Env / Netzwerke / Secrets / Mounts / Aliase (nur Service; <kbd>S</kbd> ist groß, Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden; <kbd>A</kbd> ist ebenfalls groß; siehe unten)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>das Overlay schließen</td></tr>
         </tbody>
@@ -1040,12 +1042,36 @@
         Wenn du einen <strong>Service</strong> inspizierst (nicht ein Container/Task-Blatt,
         dessen Overlay schreibgeschützt bleibt), stellt der Overlay-Titel auch mehrere
         Bearbeitungstasten bereit, jede ein Manager-API-<code>ServiceUpdate</code>, das ein
-        Rolling Update / eine Rekonziliation der Tasks des Service auslöst:
+        Rolling Update / eine Rekonziliation der Tasks des Service auslöst.
+      </p>
+      <p>
+        <strong>Fang mit <kbd>a</kbd> an — dem Aktionsmenü.</strong> Im Service-Inspect (nur
+        dort) öffnet <kbd>a</kbd> eine einzige Liste mit jedem Editor und jeder Aktion, die
+        das Overlay bietet — so musst du dir keine ~14 Tasten mit Groß-/Kleinschreibung
+        merken (<kbd>d</kbd>/<kbd>D</kbd>, <kbd>s</kbd>/<kbd>f</kbd>,
+        <kbd>p</kbd>/<kbd>l</kbd>/<kbd>e</kbd>, <kbd>n</kbd>/<kbd>S</kbd>/<kbd>v</kbd>,
+        <kbd>r</kbd>/<kbd>P</kbd>, <kbd>R</kbd>, <kbd>X</kbd>). Das ist der auffindbare Weg
+        <strong>ohne Shift</strong> — und kein abgespeckter: ein Eintrag schließt das Menü
+        und öffnet genau das, was auch die direkte Taste öffnet, beide sind also
+        <strong>gleichwertig</strong> und keine Varianten mit unterschiedlichem Verhalten.
+        Die Einträge in ihrer Reihenfolge:
+        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
+        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
+        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
+        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
+        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        — der destruktive, deshalb rot markiert — und <em>Cancel</em>. Navigiert wird mit
+        <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> springen zum ersten/letzten
+        Eintrag), <kbd>Enter</kbd> wählt aus; <kbd>Esc</kbd> — oder der Eintrag
+        <em>Cancel</em> — schließt das Menü, ohne etwas zu tun. Nur die Image-Versionsauswahl
+        (<kbd>u</kbd>) bleibt außerhalb des Menüs, im Inspect selbst neben dem
+        Upgrade-Hinweis. Die direkte Taste zu jedem Eintrag:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>d</kbd></td><td>diff — zeigt ein Unified-Diff der <em>aktuellen</em> Spec des Service gegen seine <em>vorherige</em> (was das letzte Rolling Update geändert hat), unter Verwendung von Swarms <code>PreviousSpec</code>. Geänderte Felder werden feldweise gruppiert mit <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span>-Zeilen aufgelistet (Image, Modus/Replicas, Env, Labels, Netzwerke, Aliase, Secrets, Mounts, Ports, Placement-Constraints, Spread-Präferenzen, Ressourcen-Limits/-Reservierungen); unveränderte Felder werden weggelassen. Wenn der Service nie aktualisiert wurde (keine vorherige Spec), sagt es das. Schreibgeschütztes Overlay — <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> schließt</td></tr>
+          <tr><td><kbd>R</kbd></td><td>auf die vorherige Version zurückrollen (großes <kbd>R</kbd>, also Shift+r, um es von <kbd>r</kbd> Ressourcen-Limits zu unterscheiden) — das Gegenstück zum <kbd>d</kbd>-Diff darüber: es macht das letzte Rolling Update rückgängig. Der Bestätigungsdialog zeigt <strong>genau dieses Diff umgekehrt</strong> unter „This will undo:“, denn das ist es, was der Rollback tatsächlich ändert — eine Zeile, die das Update <em>hinzugefügt</em> hat, steht dort als <span style="color:#f85149">- removed</span>, und eine, die es <em>entfernt</em> hat, kommt als <span style="color:#3fb950">+ added</span> zurück. Die Vorschau ist auf <strong>12</strong> Einträge begrenzt, gefolgt von einem Hinweis „… and N more“, der für das vollständige Diff auf <kbd>d</kbd> verweist (haben sich nur Metadaten geändert, meldet er, dass es keine feldweisen Unterschiede gibt). Beim Bestätigen läuft ein <strong>serverseitiger</strong> Rollback — ein Manager-API-<code>ServiceUpdate</code> mit <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>kein</em> clientseitiges Neuanwenden der <code>PreviousSpec</code> — der <strong>Manager</strong> führt ihn also selbst aus, beachtet dabei die <strong>Rollback-Konfiguration</strong> des Service (Parallelität, Verzögerung, Failure-Action) und meldet den Fortschritt als Update-Status <code>rollback_started</code>: genau das oben beschriebene Badge <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span>, auf der Baumzeile und in diesem Overlay. Ein Service, der <strong>nie aktualisiert</strong> wurde, hat keine vorherige Spec — du bekommst einen erklärenden Hinweis, keinen Fehler. Auch über das <kbd>a</kbd>-Aktionsmenü erreichbar. Wie <kbd>d</kbd>, <kbd>D</kbd> und <kbd>X</kbd> ist das eine feste Inspect-Taste, keine umbelegbare Keymap-Aktion</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — fragt nach einer neuen Replica-Anzahl und wendet sie an (nur replizierte Services; ein globaler Service meldet, dass er nicht skaliert werden kann)</td></tr>
           <tr><td><kbd>f</kbd></td><td>force-update — deployt den Service neu, ohne seine Spec zu ändern (das Äquivalent zu <code>docker service update --force</code>: erhöht <code>TaskTemplate.ForceUpdate</code>), nach einer Bestätigung. Jede Task wird neu gestartet / neu geplant, womit du einen Service losbekommst, der in einem <strong>unvollständigen Zustand</strong> feststeckt (z. B. <code>1/2</code> Replicas). Ein <code>ServiceUpdate</code> (Rolling Update)</td></tr>
           <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Service-Baum aktualisiert sich</td></tr>
