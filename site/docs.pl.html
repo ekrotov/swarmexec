@@ -803,17 +803,51 @@
         wersję, a gdy istnieje nowszy obraz — wybieralny wiersz
         <em>newer&nbsp;version&nbsp;available</em>; najedź na niego i naciśnij <kbd>u</kbd>
         (albo <kbd>Enter</kbd>), żeby <strong>zaktualizować usługę</strong>.
-        Dla usługi <strong>przypiętej do konkretnej wersji</strong> otwiera to
-        <strong>wybierak tagów</strong>: pole, które <strong>autouzupełnia nowsze tagi z tej
-        samej rodziny</strong> (najwyższy pierwszy, domyślnie zaznaczony najnowszy), ale
-        pozostaje polem tekstowym, więc możesz <strong>wpisać dowolny istniejący tag — w tym
-        starszy, żeby przypiąć się do sprawdzonego wydania albo się do niego cofnąć</strong>.
-        Tag jest walidowany wobec repozytorium (tag, którego ono nie wymienia, zostaje
-        odrzucony), a wybranie starszego tagu pokazuje <strong>ostrzeżenie o downgrade</strong>
-        przed zastosowaniem. Dla usługi na <code>:latest</code> (bez wyodrębnionych wersji)
-        pozostaje to pojedynczym potwierdzeniem na bieżący digest <code>:latest</code>
-        z rejestru. Tak czy inaczej jest to jeden <code>ServiceUpdate</code> / jedna
-        aktualizacja krocząca, za potwierdzeniem.
+      </p>
+      <p>
+        <strong>Ustawianie wersji klawiszem <kbd>u</kbd> — nie tylko wtedy, gdy jest
+        aktualizacja.</strong> <kbd>u</kbd> <strong>nie zależy już od tego, czy oferowana jest
+        aktualizacja</strong>. Działa w <em>każdej</em> inspekcji usługi, której tagi obrazu
+        swarmexec zdołał odczytać z rejestru — zarówno dla usług przypiętych do konkretnej wersji,
+        <em>jak i</em> dla tych na <code>:latest</code> — i to z <em>dowolnego</em> wiersza
+        nakładki, więc nigdy nie musisz szukać podpowiedzi. Ustawienie <strong>tej samej</strong>
+        wersji jeszcze raz, <strong>przypięcie</strong> tego, co aktualnie działa, albo powrót
+        do <strong>starszego</strong> tagu to zupełnie normalne zastosowania; nie musisz czekać,
+        aż pojawi się aktualizacja. <strong>Napis w stopce mówi ci, w której sytuacji
+        jesteś</strong>: <code>u&nbsp;update&nbsp;version</code>, gdy znaleziono nowszą wersję
+        (jest wtedy również wiersz <em>newer&nbsp;version&nbsp;available</em> z konkretnym
+        celem), oraz <code>u&nbsp;set&nbsp;version</code>, gdy jej nie ma.
+      </p>
+      <p>
+        To, co otworzy <kbd>u</kbd>, zależy od tego, co wie rejestr. Dla usługi
+        <strong>przypiętej do konkretnej wersji</strong>, dla której istnieje <strong>nowsza
+        wersja</strong>, jest to <strong>wybierak tagów</strong>: pole, którego autouzupełnianie
+        podpowiada <strong>nowsze tagi z tej samej rodziny</strong> — najwyższy pierwszy i
+        wstępnie wpisany. Dla usługi, która jest <strong>już na najnowszym</strong> tagu, jest to
+        ten sam wybierak, tyle że podpowiedzi sięgają po <strong>wszystkie tagi wymienione przez
+        repozytorium</strong> (wstępnie wpisany jest wtedy działający tag) — tak właśnie się
+        przypina albo cofa. Usługa na <code>:latest</code> również dostaje wybierak, ze wszystkimi
+        znanymi tagami: wybranie tam konkretnej wersji to sposób, żeby <strong>zdjąć usługę
+        <code>:latest</code> z ruchomego tagu i ją przypiąć</strong> — dokładnie o to prosi
+        ustalenie ryzyka <code>unpinned-image</code> (patrz nakładka ryzyk bezpieczeństwa niżej).
+        Jedyny wyjątek to usługa na <code>:latest</code> z <strong>oczekującą aktualizacją
+        digestu</strong>: ta pozostaje <strong>pojedynczym potwierdzeniem</strong> na nowy digest
+        z rejestru, którym była zawsze — wybierak kusiłby tam, żeby wpisać <code>latest</code>,
+        co rozwiązuje się do gołego tagu i po cichu porzuciłoby właśnie to przypięcie po digeście,
+        które ta aktualizacja ma odświeżyć.
+      </p>
+      <p>
+        W wybieraku lista podpowiedzi jest ograniczona do <strong>25</strong> pozycji (ruchliwe
+        repozytorium potrafi wymieniać setki), a samo pole pozostaje <strong>polem
+        tekstowym</strong>, więc możesz <strong>wpisać dowolny istniejący tag — w tym starszy,
+        żeby przypiąć się do sprawdzonego wydania albo się do niego cofnąć</strong>. Wpisany tag
+        jest walidowany wobec repozytorium (tag, którego ono nie wymienia, zostaje odrzucony),
+        a wybranie starszego tagu pokazuje <strong>ostrzeżenie o downgrade</strong> przed
+        zastosowaniem. W każdym przypadku zmiana to jeden <code>ServiceUpdate</code> / jedna
+        aktualizacja krocząca, za potwierdzeniem. Jeśli rejestr <strong>nie zwrócił żadnych
+        tagów</strong> i nie ma też konkretnego celu, na który można by się cofnąć — prywatny albo
+        nieosiągalny rejestr czy usługa przypięta po digeście — dostajesz wyjaśniający
+        <strong>komunikat i nic nie zostaje zmienione</strong>.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
@@ -1062,8 +1096,9 @@
         klawiszami <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> skaczą do
         pierwszej/ostatniej pozycji), <kbd>Enter</kbd> wybiera; <kbd>Esc</kbd> — albo
         pozycja <em>Cancel</em> — zamyka menu, nic nie robiąc. Poza menu zostaje tylko
-        wybór wersji obrazu (<kbd>u</kbd>), w samej inspekcji obok podpowiedzi o
-        aktualizacji. Klawisz bezpośredni dla każdej pozycji:
+        wybór wersji obrazu (<kbd>u</kbd>), w samej inspekcji — gdzie działa z dowolnego
+        wiersza, niezależnie od tego, czy znaleziono nowszą wersję (patrz wyżej).
+        Klawisz bezpośredni dla każdej pozycji:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>

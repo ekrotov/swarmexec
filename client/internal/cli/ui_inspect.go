@@ -80,8 +80,14 @@ func (iv *inspectView) keysText() string {
 		// The ~14 editor actions live behind the "a" menu (showActions);
 		// the footer stays short. X (destructive) stays a bare key.
 		parts = append(parts, "[yellow]a[white] actions", "[red]X[white] remove")
-		if iv.hasUpgrade {
+		// "u" is offered whenever a version can be set at all, not just when a
+		// newer one exists — pinning or rolling back to a specific tag is just
+		// as valid. The wording distinguishes the two.
+		switch {
+		case iv.hasUpgrade:
 			parts = append(parts, "[yellow]u[white] update version")
+		case iv.upInfo != nil:
+			parts = append(parts, "[yellow]u[white] set version")
 		}
 	}
 	return " " + strings.Join(parts, "  ")
@@ -179,6 +185,19 @@ func (iv *inspectView) populate() {
 					target:  ln.Upgrade,
 					newer:   ln.UpNewer,
 					all:     ln.UpAll,
+				}
+			case inspImage:
+				// Renders like any field, but it is what makes "u" available even
+				// when no newer version exists: pinning or rolling back to a
+				// specific tag is a normal thing to want.
+				put(ln.Text, tcell.ColorWhite, false, true, strings.TrimSpace(ln.Text), "")
+				if ln.UpRepo != "" && iv.upInfo == nil {
+					iv.upInfo = &upgradeInfo{
+						repo:    ln.UpRepo,
+						current: ln.UpCurrent,
+						newer:   ln.UpNewer,
+						all:     ln.UpAll,
+					}
 				}
 			case inspUpdate:
 				color := tcell.ColorYellow // updating

@@ -824,16 +824,51 @@
         wenn ein neueres Image existiert, eine auswählbare
         <em>newer&nbsp;version&nbsp;available</em>-Zeile — geh darauf und drücke
         <kbd>u</kbd> (oder <kbd>Enter</kbd>), um <strong>den Service zu aktualisieren</strong>.
-        Bei einem <strong>versionsgepinnten</strong> Service öffnet das eine
-        <strong>Versionsauswahl</strong>: ein Eingabefeld, das die <strong>neueren Tags derselben
-        Familie autovervollständigt</strong> (höchste zuerst, mit dem neuesten vorbelegt), aber
-        frei editierbar bleibt — du kannst <strong>jeden vorhandenen Tag eintippen, auch einen
-        älteren, um ihn zu pinnen oder zurückzurollen</strong> auf ein bewährtes Release. Der Tag
-        wird gegen die Repo-Tags geprüft (ein nicht gelisteter Tag wird abgelehnt), und die Auswahl
-        eines älteren Tags zeigt vor dem Anwenden eine <strong>Downgrade-Warnung</strong>. Bei einem
-        <code>:latest</code>-Service (keine diskreten Versionen) bleibt es eine einzelne Bestätigung
-        auf den aktuellen <code>:latest</code>-Digest der Registry. So oder so ist es ein
-        <code>ServiceUpdate</code> / Rolling Update, hinter einer Bestätigung.
+      </p>
+      <p>
+        <strong>Version setzen mit <kbd>u</kbd> — nicht nur, wenn es ein Update gibt.</strong>
+        <kbd>u</kbd> hängt <strong>nicht mehr davon ab, dass ein Upgrade angeboten wird</strong>.
+        Es steht in <em>jedem</em> Service-Inspect zur Verfügung, dessen Image-Tags swarmexec aus
+        der Registry lesen konnte — bei versionsgepinnten <em>und</em> bei
+        <code>:latest</code>-Services gleichermaßen — und aus <em>jeder</em> Zeile des Overlays,
+        sodass du den Hinweis nie suchen musst. <strong>Dieselbe</strong> Version erneut setzen, das aktuell Laufende
+        <strong>pinnen</strong> oder auf einen <strong>älteren</strong> Tag zurückgehen sind ganz
+        normale Anwendungsfälle; du musst nicht warten, bis es ein Update gibt. Der
+        <strong>Text in der Fußzeile zeigt dir, in welcher Situation du bist</strong>:
+        <code>u&nbsp;update&nbsp;version</code>, wenn eine neuere Version gefunden wurde (dann gibt
+        es auch die <em>newer&nbsp;version&nbsp;available</em>-Zeile mit einem konkreten Ziel), und
+        <code>u&nbsp;set&nbsp;version</code>, wenn nicht.
+      </p>
+      <p>
+        Was <kbd>u</kbd> öffnet, hängt davon ab, was die Registry weiß. Bei einem
+        <strong>versionsgepinnten</strong> Service mit einer <strong>neueren Version</strong> ist es
+        die <strong>Versionsauswahl</strong>: ein Eingabefeld, dessen Autovervollständigung die
+        <strong>neueren Tags derselben Familie</strong> vorschlägt, höchste zuerst und mit der
+        höchsten vorbelegt. Läuft der Service <strong>bereits auf dem neuesten</strong> Tag, ist es
+        dieselbe Auswahl, nur fallen die Vorschläge auf <strong>alle Tags des Repos</strong> zurück
+        (vorbelegt mit dem laufenden Tag) — so pinnst du oder rollst zurück. Ein Service auf
+        <code>:latest</code> bekommt die Auswahl ebenfalls, mit allen bekannten Tags: eine konkrete
+        Version dort zu wählen ist der Weg, einen <strong><code>:latest</code>-Service vom
+        gleitenden Tag weg zu pinnen</strong> — genau das, was der Risiko-Befund
+        <code>unpinned-image</code> (siehe das Sicherheits-Overlay weiter unten) verlangt. Die
+        einzige Ausnahme ist ein <code>:latest</code>-Service mit <strong>anstehendem
+        Digest-Update</strong>: Der bleibt bei der <strong>einzelnen Bestätigung</strong> auf den
+        neuen Digest der Registry, die er immer war — eine Auswahl würde dort dazu verleiten,
+        <code>latest</code> einzutippen, was auf das nackte Tag auflöst und damit still genau die
+        Digest-Pinnung wegwerfen würde, die das Update auffrischen soll.
+      </p>
+      <p>
+        In der Auswahl ist die Vorschlagsliste auf <strong>25</strong> Einträge begrenzt (ein viel
+        genutztes Repo listet leicht Hunderte), und das Feld bleibt <strong>frei
+        editierbar</strong>: du kannst <strong>jeden vorhandenen Tag eintippen, auch einen älteren,
+        um ihn zu pinnen oder zurückzurollen</strong> auf ein bewährtes Release. Ein eingetippter
+        Tag wird gegen die Repo-Tags geprüft (ein nicht gelisteter Tag wird abgelehnt), und die
+        Auswahl eines älteren Tags zeigt vor dem Anwenden eine <strong>Downgrade-Warnung</strong>.
+        In jedem Fall ist die Änderung ein <code>ServiceUpdate</code> / Rolling Update, hinter einer
+        Bestätigung. Liefert die Registry <strong>überhaupt keine Tags</strong> und gibt es auch kein
+        konkretes Ziel — eine private oder nicht erreichbare Registry oder ein per Digest gepinnter
+        Service —, bekommst du einen erklärenden <strong>Hinweis, und es wird nichts
+        geändert</strong>.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
@@ -1092,8 +1127,9 @@
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> springen zum ersten/letzten
         Eintrag), <kbd>Enter</kbd> wählt aus; <kbd>Esc</kbd> — oder der Eintrag
         <em>Cancel</em> — schließt das Menü, ohne etwas zu tun. Nur die Image-Versionsauswahl
-        (<kbd>u</kbd>) bleibt außerhalb des Menüs, im Inspect selbst neben dem
-        Upgrade-Hinweis. Die direkte Taste zu jedem Eintrag:
+        (<kbd>u</kbd>) bleibt außerhalb des Menüs, im Inspect selbst — dort funktioniert sie
+        aus jeder Zeile, egal ob eine neuere Version gefunden wurde oder nicht (siehe oben).
+        Die direkte Taste zu jedem Eintrag:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>

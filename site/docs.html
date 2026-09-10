@@ -790,15 +790,47 @@
         overlay's <code>IMAGE</code> section shows the same version and, when a newer image
         exists, a selectable <em>newer&nbsp;version&nbsp;available</em> row — move onto it and
         press <kbd>u</kbd> (or <kbd>Enter</kbd>) to <strong>update the service</strong>.
-        For a <strong>version-pinned</strong> service this opens a <strong>version picker</strong>:
-        an input that <strong>autocompletes the newer same-family tags</strong> (highest first,
-        defaulted to the newest) but stays free-text, so you can <strong>type any existing tag —
-        including an older one to pin or roll back</strong> to a known-good release. The tag is
-        validated against the repo (a tag it doesn't list is rejected), and picking an older tag
-        shows a <strong>downgrade warning</strong> before it applies. For a <code>:latest</code>
-        service (no discrete versions) it stays a single confirm on the registry's current
-        <code>:latest</code> digest. Either way it is one <code>ServiceUpdate</code> / rolling
-        update, behind a confirm.
+      </p>
+      <p>
+        <strong>Setting a version with <kbd>u</kbd> — not only when an update exists.</strong>
+        <kbd>u</kbd> is <strong>not gated on an upgrade being offered</strong>. It is available on
+        <em>any</em> service inspect whose image tags swarmexec could read from the registry —
+        version-pinned <em>and</em> <code>:latest</code> services alike — and from <em>any</em> row
+        of the overlay, so you never have to hunt for the hint. Setting the <strong>same</strong> version again,
+        <strong>pinning</strong> what is currently running, or going back to an
+        <strong>older</strong> tag are all normal uses; you don't have to wait for an upgrade to
+        exist. The <strong>footer wording tells you which situation you are in</strong>:
+        <code>u&nbsp;update&nbsp;version</code> when a newer version was found (the
+        <em>newer&nbsp;version&nbsp;available</em> row is there too, carrying a concrete target),
+        and <code>u&nbsp;set&nbsp;version</code> when it wasn't.
+      </p>
+      <p>
+        What <kbd>u</kbd> opens depends on what the registry knows. On a
+        <strong>version-pinned</strong> service with a <strong>newer version</strong> it is the
+        <strong>version picker</strong>: an input whose autocomplete suggests the <strong>newer
+        same-family tags</strong>, highest first and prefilled with the highest. On one that is
+        <strong>already on the newest</strong> tag it is the same picker, only the suggestions
+        fall back to <strong>every tag the repo lists</strong> (prefilled with the running tag) —
+        that is how you pin or roll back. A service on <code>:latest</code> gets the picker too,
+        with all known tags: choosing a concrete version there is how you <strong>pin a
+        <code>:latest</code> service off the floating tag</strong>, which is exactly the fix the
+        <code>unpinned-image</code> risk finding (see the security-risks overlay below) asks for.
+        The one exception is a <code>:latest</code> service with a <strong>digest update
+        pending</strong> — that stays the <strong>single confirm</strong> on the registry's new
+        digest it has always been, because a picker there would invite typing
+        <code>latest</code>, which resolves to the bare tag and would silently drop the very
+        digest pinning that the update exists to refresh.
+      </p>
+      <p>
+        In the picker the suggestion list is capped at <strong>25</strong> entries (a busy repo
+        can list hundreds) and the field stays <strong>free-text</strong>, so you can
+        <strong>type any existing tag — including an older one to pin or roll back</strong> to a
+        known-good release. A typed tag is validated against the repo (a tag it doesn't list is
+        rejected), and choosing an older one shows a <strong>downgrade warning</strong> before it
+        applies. In every case the change is one <code>ServiceUpdate</code> / rolling update,
+        behind a confirm. If the registry returned <strong>no tags at all</strong> and there is no
+        concrete target to fall back on — a private or unreachable registry, or a service pinned
+        by digest — you get an explanatory <strong>notice and nothing is changed</strong>.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
@@ -1037,8 +1069,8 @@
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> jump to the first/last entry),
         <kbd>Enter</kbd> selects; <kbd>Esc</kbd>, or the <em>Cancel</em> entry, closes the
         menu without doing anything. Only the image-version picker (<kbd>u</kbd>) stays
-        outside the menu, on the inspect itself next to the upgrade hint. Each entry's
-        direct key:
+        outside the menu, on the inspect itself — where it works from any row, whether or
+        not a newer version was found (see above). Each entry's direct key:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
