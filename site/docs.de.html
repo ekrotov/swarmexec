@@ -1068,7 +1068,7 @@
         Yank-Mechanismus, der auch anderswo verwendet wird — sodass du eine einzelne ID,
         einen Mount oder eine Adresse greifen kannst, ohne Text von Hand zu markieren.
         <kbd>Enter</kbd> kopiert ebenfalls, außer auf einer einklappbaren
-        <strong>NETWORKS</strong>-Zeile, wo es stattdessen dieses Netzwerk
+        <strong>NETWORKS</strong>-Zeile, wo es stattdessen diese Zeile
         aus-/einklappt (siehe unten). Beide Ansichten (die tabellarische Zusammenfassung
         und das mit <kbd>t</kbd> erreichte rohe JSON) sind Zeile für Zeile auswählbar und
         kopierbar. Ein <strong>Footer listet immer die verfügbaren Tasten</strong>, sodass
@@ -1080,7 +1080,7 @@
         <tbody>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>die Auswahl zwischen Datenzeilen bewegen (Überschriften/Leerzeilen übersprungen)</td></tr>
           <tr><td><kbd>y</kbd></td><td>die ausgewählte Zeile in die Zwischenablage kopieren (OSC52) — immer</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>auf einer einklappbaren <strong>NETWORKS</strong>-Zeile dieses Netzwerk aus-/einklappen; auf jeder anderen Zeile sie kopieren (OSC52)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>auf einer einklappbaren <strong>NETWORKS</strong>-Zeile diese Ebene aus-/einklappen — die Zeilen sind zwei Ebenen tief, ein Netzwerk und sein <code>N containers</code>-Drilldown; auf jeder anderen Zeile sie kopieren (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>zwischen der tabellarischen Zusammenfassung und dem rohen Daemon-JSON umschalten (beide auswählbar)</td></tr>
           <tr><td><kbd>a</kbd></td><td>Aktionsmenü — jeder Service-Editor und jede Aktion in einer Liste, ohne Shift (nur Service; siehe unten)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>den Service bearbeiten — Skalieren / Force-Update / Ports / Labels / Env / Netzwerke / Secrets / Mounts / Aliase (nur Service; <kbd>S</kbd> ist groß, Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden; <kbd>A</kbd> ist ebenfalls groß; siehe unten)</td></tr>
@@ -1088,18 +1088,61 @@
         </tbody>
       </table></div>
       <p>
-        Der <strong>NETWORKS</strong>-Abschnitt ist <strong>einklappbar</strong>: jedes
-        angeschlossene Netzwerk erscheint als eingeklappte Zeile
-        <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>. Ein
+        Der <strong>NETWORKS</strong>-Abschnitt ist <strong>einklappbar</strong> und
+        beantwortet schon eingeklappt die Frage „unter welcher Adresse ist das erreichbar“:
+        jedes angeschlossene Netzwerk erscheint als eingeklappte Zeile
+        <code>+ &lt;network&gt; 🔒 vip 10.0.5.2/24 (2 dns names)</code>. Ein
         <strong>🔒-Schlosssymbol</strong> nach dem Netzwerknamen markiert ein
         <strong>verschlüsseltes</strong> Overlay-Netzwerk (Data-Plane-Verschlüsselung,
-        <code>--opt encrypted</code>); sein Fehlen bedeutet unverschlüsselt. Geh auf diese
-        Zeile und drücke <kbd>Enter</kbd>, um sie aus- oder einzuklappen. Ausgeklappt
-        listet sie die DNS-Namen auf, die auf den Service/Container in diesem Netzwerk
-        auflösen — den Service-Namen, <code>tasks.&lt;service&gt;</code>, alle
-        benutzerdefinierten Aliase und (bei einem Container/einer Task) seine Adresse —
-        sodass du sehen kannst, unter welchem DNS-Namen der Service/Container erreicht wird
-        und welche Aliase er pro Netzwerk trägt. Auf diesen Netzwerkzeilen schaltet
+        <code>--opt encrypted</code>); sein Fehlen bedeutet unverschlüsselt. Bei einem
+        <strong>Service</strong>-Inspect heißt die Adresse <code>vip</code> — die virtuelle
+        IP des Service in diesem Netzwerk, die Adresse, auf der der Swarm-Load-Balancer
+        antwortet, gelesen aus dem <code>ServiceInspect</code> des Managers
+        (<code>Endpoint.VirtualIPs</code>). Bei einem
+        <strong>Container/Task</strong>-Inspect heißt sie <code>addr</code>: die eigene
+        Adresse dieses Containers dort. Ein Service im Endpoint-Modus <strong>dnsrr</strong>
+        hat überhaupt keine VIP — das ist so gewollt und kein fehlender Wert —, deshalb steht
+        statt einer Lücke im ausgeklappten Netzwerk die Zeile
+        <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>.
+        Das <strong>ingress</strong>-Netzwerk wird hier nicht aufgeführt: der Abschnitt zeigt
+        die Netzwerke, an die die Spec des Service selbst angeschlossen ist.
+      </p>
+      <p>
+        Geh auf eine Netzwerkzeile und drücke <kbd>Enter</kbd>, um sie aus- oder einzuklappen.
+        Ausgeklappt listet sie die DNS-Namen auf, die auf den Service/Container in diesem
+        Netzwerk auflösen — den Service-Namen, <code>tasks.&lt;service&gt;</code> und alle
+        benutzerdefinierten Aliase —, sodass du sehen kannst, unter welchem DNS-Namen er
+        erreicht wird und welche Aliase er pro Netzwerk trägt. Darunter steht eine zweite
+        einklappbare Zeile, <code>+ 2 containers</code> (im Singular
+        <code>+ 1 container</code>); <kbd>Enter</kbd> darauf öffnet die tiefste Ebene: eine
+        spaltenbündige Zeile pro Container, <code>web.1 10.0.1.5/24 host-a</code> — Task-Name,
+        seine Adresse in diesem Netzwerk und der Node, auf dem er läuft (replizierte Tasks
+        heißen <code>&lt;service&gt;.&lt;slot&gt;</code>, globale
+        <code>&lt;service&gt;.&lt;node&gt;</code>, da sie keinen Slot haben).
+      </p>
+      <p>
+        Gefiltert wird dabei über den <strong>Soll-Zustand</strong> (desired state) der Task,
+        nicht über ihren aktuellen: gelistet wird jede Task, die der Manager weiterhin laufen
+        lassen will — auch solche, die erst <code>preparing</code>, <code>assigned</code> oder
+        <code>starting</code> sind. Sie halten ihre Adresse bereits, und während eines Rolling
+        Updates sind das die meisten; ein Filter auf den aktuellen Zustand würde den Drilldown
+        also genau dann leeren, wenn er am interessantesten ist. Eine Task, die der Manager
+        aufgegeben hat — Soll-Zustand <code>shutdown</code>, also durch ein Rolling Update
+        ersetzt, weggeskaliert oder fehlgeschlagen —, erscheint nicht: ihre Adresse ist wieder
+        freigegeben und kann längst einem anderen Container gehören, sie zu zeigen wäre also
+        aktiv falsch. Eine Task, die noch keinen Traffic bedient, trägt ihren Zustand in
+        Klammern am Zeilenende, <code>web.1 10.0.1.5/24 host-a (starting)</code>; eine laufende
+        hat kein Suffix. Die Zeilen stammen aus einem <code>TaskList</code> der Manager-API,
+        gefiltert auf den Service, und sind Best-Effort — ein API-Fehler lässt den Drilldown
+        einfach leer. Die beiden Ebenen klappen unabhängig voneinander; klappst du das
+        Netzwerk ein, verschwindet die Container-Ebene mit.
+      </p>
+      <p>
+        Kopieren innerhalb von <strong>NETWORKS</strong> liefert die <strong>Adresse ohne
+        Maske</strong> — <code>10.0.5.2</code>, die Form, die du in ein <code>curl</code> oder
+        <code>ping</code> einfügst: auf einer Netzwerkzeile deren vip/addr, auf einer
+        Container-Zeile die Adresse dieses Containers. Eine Netzwerkzeile ohne Adresse (dnsrr)
+        kopiert wie bisher den Netzwerknamen. Auf beiden Arten einklappbarer Zeilen schaltet
         <kbd>Enter</kbd> um; auf jeder anderen Zeile kopiert es (und <kbd>y</kbd> kopiert
         immer).
       </p>

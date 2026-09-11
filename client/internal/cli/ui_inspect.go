@@ -160,18 +160,31 @@ func (iv *inspectView) populate() {
 			case inspBlank:
 				put("", tcell.ColorWhite, false, false, "", "")
 			case inspNet:
-				marker := "+"
-				if iv.expanded[ln.Net] {
-					marker = "-"
+				// Two drill-down levels: the network row expands to its DNS names,
+				// and below them a "N containers" row expands to the addresses of
+				// the containers behind the VIP.
+				head := fmt.Sprintf("  %s %s%s", expandMarker(iv.expanded[ln.Net]), ln.Text, lockIcon(ln.Encrypted))
+				if ln.Addr != "" {
+					head += fmt.Sprintf("  %s %s", ln.AddrLabel, ln.Addr)
 				}
-				lock := ""
-				if ln.Encrypted {
-					lock = " 🔒"
+				head += fmt.Sprintf("  (%d dns names)", ln.Count)
+				// Copying a network row yields the address rather than the name:
+				// it is the one value on the row you paste somewhere else.
+				put(head, tcell.ColorWhite, false, true, netRowCopy(ln), ln.Net)
+				if !iv.expanded[ln.Net] {
+					break
 				}
-				put(fmt.Sprintf("  %s %s%s (%d dns names)", marker, ln.Text, lock, ln.Count), tcell.ColorWhite, false, true, ln.Text, ln.Net)
-				if iv.expanded[ln.Net] {
-					for _, c := range ln.Children {
-						put("      "+c, tcell.ColorGray, false, true, c, "")
+				for _, c := range ln.Children {
+					put("      "+c, tcell.ColorGray, false, true, c, "")
+				}
+				if len(ln.Tasks) > 0 {
+					key := netTasksKey(ln.Net)
+					put(fmt.Sprintf("      %s %s", expandMarker(iv.expanded[key]), plural(len(ln.Tasks), "container")),
+						tcell.ColorWhite, false, true, "", key)
+					if iv.expanded[key] {
+						for _, t := range ln.Tasks {
+							put("          "+t.Text, tcell.ColorGray, false, true, t.Copy, "")
+						}
 					}
 				}
 			case inspUpgrade:
@@ -220,6 +233,43 @@ func (iv *inspectView) populate() {
 		table.Select(firstSel, 0)
 	}
 	iv.setFooter("")
+}
+
+// netTasksKey is the collapse key of a network's container drill-down, kept
+// distinct from the network's own key so the two levels toggle independently.
+// A NUL cannot occur in a Docker network name, so it can never collide.
+func netTasksKey(net string) string { return "\x00containers\x00" + net }
+
+// plural renders a count with its noun: "1 container", "3 containers".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+func expandMarker(expanded bool) string {
+	if expanded {
+		return "-"
+	}
+	return "+"
+}
+
+func lockIcon(encrypted bool) string {
+	if encrypted {
+		return " 🔒"
+	}
+	return ""
+}
+
+// netRowCopy is what y/Enter yields on a network row: its address without the
+// mask — the value an operator wants to paste — falling back to the network
+// name when the attachment has none.
+func netRowCopy(ln inspLine) string {
+	if ln.Addr != "" {
+		return stripMask(ln.Addr)
+	}
+	return ln.Text
 }
 
 func (iv *inspectView) copyLine() {

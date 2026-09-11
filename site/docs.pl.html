@@ -1043,7 +1043,7 @@
         przez OSC52 — tym samym mechanizmem yank, co wszędzie indziej — więc możesz wyciągnąć
         pojedyncze id, montowanie albo adres bez zaznaczania tekstu ręcznie. <kbd>Enter</kbd>
         też kopiuje, z wyjątkiem zwijalnego wiersza <strong>NETWORKS</strong>, gdzie zamiast
-        tego rozwija/zwija tę sieć (zobacz niżej). Oba widoki (podsumowanie tabelaryczne
+        tego rozwija/zwija ten wiersz (zobacz niżej). Oba widoki (podsumowanie tabelaryczne
         i surowy JSON dostępny pod <kbd>t</kbd>) są wybieralne i kopiowalne linia po linii.
         <strong>Stopka zawsze wymienia dostępne klawisze</strong>, więc od razu widać, co
         możesz zrobić; dla usługi stopka pokazuje też klawisze edycji opisane niżej.
@@ -1053,7 +1053,7 @@
         <tbody>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>przesuwaj zaznaczenie między liniami z danymi (nagłówki/puste pomijane)</td></tr>
           <tr><td><kbd>y</kbd></td><td>skopiuj zaznaczoną linię do schowka (OSC52) — zawsze</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>na zwijalnym wierszu <strong>NETWORKS</strong> rozwija/zwija tę sieć; w każdej innej linii kopiuje ją (OSC52)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>na zwijalnym wierszu <strong>NETWORKS</strong> rozwija/zwija ten poziom — wiersze są zagnieżdżone na dwóch poziomach, sieć i jej rozwinięcie <code>N containers</code>; w każdej innej linii kopiuje ją (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>przełącz między podsumowaniem tabelarycznym a surowym JSON-em demona (oba wybieralne)</td></tr>
           <tr><td><kbd>a</kbd></td><td>menu akcji — wszystkie edytory i akcje usługi na jednej liście, bez Shiftu (tylko usługi; patrz niżej)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edytuj usługę — skalowanie / wymuszona aktualizacja / porty / etykiety / zmienne środowiskowe / sieci / sekrety / montowania / aliasy (tylko usługa; <kbd>S</kbd> to wielka litera, Shift+s, żeby odróżnić ją od <kbd>s</kbd> skalowanie; <kbd>A</kbd> też jest wielkie; zobacz niżej)</td></tr>
@@ -1061,17 +1061,60 @@
         </tbody>
       </table></div>
       <p>
-        Sekcja <strong>NETWORKS</strong> jest <strong>zwijalna</strong>: każda podłączona sieć
-        pokazuje się jako zwinięty wiersz <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>.
+        Sekcja <strong>NETWORKS</strong> jest <strong>zwijalna</strong> i już w stanie zwiniętym
+        odpowiada na pytanie „pod jakim adresem to jest osiągalne”: każda podłączona sieć
+        pokazuje się jako zwinięty wiersz
+        <code>+ &lt;network&gt; 🔒 vip 10.0.5.2/24 (2 dns names)</code>.
         <strong>Ikona kłódki 🔒</strong> za nazwą sieci oznacza sieć overlay
         <strong>szyfrowaną</strong> (szyfrowanie płaszczyzny danych,
-        <code>--opt encrypted</code>); jej brak oznacza brak szyfrowania. Najedź na ten wiersz
-        i naciśnij <kbd>Enter</kbd>, żeby go rozwinąć lub zwinąć. Rozwinięty wypisuje nazwy DNS,
-        które rozwiązują się na usługę/kontener w tej sieci — nazwę usługi,
-        <code>tasks.&lt;service&gt;</code>, wszelkie własne aliasy oraz (dla kontenera/zadania)
-        jego adres — dzięki czemu widzisz, pod jaką nazwą DNS usługa/kontener jest osiągalny
-        i jakie nosi aliasy, w każdej sieci z osobna. Na tych wierszach sieci <kbd>Enter</kbd>
-        przełącza; w każdej innej linii kopiuje (a <kbd>y</kbd> kopiuje zawsze).
+        <code>--opt encrypted</code>); jej brak oznacza brak szyfrowania. Przy badaniu
+        <strong>usługi</strong> adres jest opisany jako <code>vip</code> — wirtualny IP usługi
+        w tej sieci, adres, pod którym odpowiada load balancer swarma, wzięty z
+        <code>ServiceInspect</code> menedżera (<code>Endpoint.VirtualIPs</code>). Przy badaniu
+        <strong>kontenera/zadania</strong> jest opisany jako <code>addr</code>: własny adres tego
+        kontenera w tej sieci. Usługa w trybie endpointu <strong>dnsrr</strong> nie ma żadnego
+        VIP-a — tak ma być, to nie brakujące dane — więc zamiast pustego miejsca rozwinięta sieć
+        pokazuje linię
+        <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. Sieć
+        <strong>ingress</strong> nie jest tu wymieniana: sekcja pokazuje sieci, do których
+        podłącza się własna spec usługi.
+      </p>
+      <p>
+        Najedź na wiersz sieci i naciśnij <kbd>Enter</kbd>, żeby go rozwinąć lub zwinąć.
+        Rozwinięty wypisuje nazwy DNS, które rozwiązują się na usługę/kontener w tej sieci —
+        nazwę usługi, <code>tasks.&lt;service&gt;</code> oraz wszelkie własne aliasy — dzięki
+        czemu widzisz, pod jaką nazwą DNS jest osiągalny i jakie nosi aliasy, w każdej sieci
+        z osobna. Pod nimi znajduje się drugi zwijalny wiersz, <code>+ 2 containers</code>
+        (w liczbie pojedynczej <code>+ 1 container</code>); <kbd>Enter</kbd> na <em>nim</em>
+        otwiera najgłębszy poziom: po jednym wierszu na kontener, wyrównanym w kolumnach,
+        <code>web.1 10.0.1.5/24 host-a</code> — nazwa zadania, jego adres w tej sieci i węzeł,
+        na którym działa (zadania replikowane nazywają się
+        <code>&lt;service&gt;.&lt;slot&gt;</code>, globalne
+        <code>&lt;service&gt;.&lt;node&gt;</code>, bo nie mają slotu).
+      </p>
+      <p>
+        Filtrem jest <strong>pożądany</strong> (desired) stan zadania, a nie jego bieżący:
+        wypisywane jest każde zadanie, które menedżer nadal chce mieć uruchomione — również te,
+        które są dopiero <code>preparing</code>, <code>assigned</code> albo <code>starting</code>.
+        One już trzymają swój adres, a podczas aktualizacji kroczącej stanowią większość, więc
+        filtrowanie po stanie bieżącym opróżniałoby to rozwinięcie dokładnie wtedy, gdy jest
+        najciekawsze. Zadanie, z którego menedżer zrezygnował — pożądany stan
+        <code>shutdown</code>, czyli zastąpione przez aktualizację kroczącą, usunięte przy
+        skalowaniu albo nieudane — nie jest wypisywane: jego adres został zwolniony i może już
+        należeć do innego kontenera, więc pokazanie go byłoby wprost błędne. Zadanie, które nie
+        obsługuje jeszcze ruchu, ma swój stan w nawiasie na końcu wiersza,
+        <code>web.1 10.0.1.5/24 host-a (starting)</code>; działające nie ma żadnego przyrostka.
+        Wiersze pochodzą z <code>TaskList</code> w API menedżera, przefiltrowanego po usłudze,
+        i są best effort: błąd API po prostu zostawia rozwinięcie puste. Oba poziomy zwijają się
+        niezależnie; zwinięcie sieci ukrywa razem z nią poziom kontenerów.
+      </p>
+      <p>
+        Kopiowanie wewnątrz <strong>NETWORKS</strong> daje <strong>adres bez maski</strong> —
+        <code>10.0.5.2</code>, w postaci, którą wklejasz do <code>curl</code> albo
+        <code>ping</code>: w wierszu sieci jej vip/addr, w wierszu kontenera adres tego
+        kontenera. Wiersz sieci bez adresu (dnsrr) kopiuje, tak jak dotąd, nazwę sieci. Na obu
+        rodzajach zwijalnych wierszy <kbd>Enter</kbd> przełącza; w każdej innej linii kopiuje
+        (a <kbd>y</kbd> kopiuje zawsze).
       </p>
       <p>
         Gdy badasz <strong>usługę</strong> (a nie liść kontenera/zadania, którego nakładka

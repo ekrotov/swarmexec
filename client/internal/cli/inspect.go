@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
@@ -40,6 +41,11 @@ const (
 	inspImage                   // the image ref; carries the version-picker data
 )
 
+// inspTaskRow is one container row in a network's drill-down: the column-aligned
+// text, and the value copying that row should yield (the bare address — what an
+// operator actually wants to paste).
+type inspTaskRow struct{ Text, Copy string }
+
 // inspLine is one line of the tabular inspect view. For inspNet rows, Net is the
 // network name (collapse key), Count the number of DNS names, and Children the
 // lines revealed when expanded (DNS names, then any extra like addresses).
@@ -51,6 +57,18 @@ type inspLine struct {
 	Children  []string
 	Encrypted bool   // inspNet: network has overlay data-plane encryption on
 	Upgrade   string // inspUpgrade: the image ref to update the service to (default target)
+
+	// inspNet: the address that identifies this attachment — a service's virtual
+	// IP or a task's own address — with the label to show it under ("vip" /
+	// "addr"). Shown in the collapsed row, because "what is its IP on this
+	// network" is the question the section is most often opened for.
+	Addr      string
+	AddrLabel string
+
+	// inspNet: the service's running containers on this network, revealed by a
+	// second expand level below the DNS names. Empty for a task inspect (a task
+	// is one container — its own address is in Addr).
+	Tasks []inspTaskRow
 
 	// inspUpgrade picker data (version-pinned services): the repo, the running
 	// tag, the newer same-family tags (suggestions) and every known repo tag (to
@@ -73,10 +91,21 @@ func (b *inspBuilder) push(k inspKind, s string) {
 func (b *inspBuilder) title(s string)   { b.push(inspTitle, s) }
 func (b *inspBuilder) section(s string) { b.push(inspBlank, ""); b.push(inspHeader, s) }
 
-// net adds a collapsible network row. dnsCount is shown in the header; children
-// are the lines shown when expanded; encrypted marks it with a lock icon.
-func (b *inspBuilder) net(name string, dnsCount int, children []string, encrypted bool) {
-	b.lines = append(b.lines, inspLine{Kind: inspNet, Text: name, Net: name, Count: dnsCount, Children: children, Encrypted: encrypted})
+// net adds a collapsible network row from a resolved attachment: the header
+// carries the DNS-name count, the lock icon and the address; the first expand
+// level shows the DNS names, the second the container addresses.
+func (b *inspBuilder) net(n netDNS) {
+	b.lines = append(b.lines, inspLine{
+		Kind:      inspNet,
+		Text:      n.Name,
+		Net:       n.Name,
+		Count:     len(n.DNS),
+		Children:  append(append([]string{}, n.DNS...), n.Extra...),
+		Encrypted: n.Encrypted,
+		Addr:      n.Addr,
+		AddrLabel: n.AddrLabel,
+		Tasks:     n.Tasks,
+	})
 }
 
 // upgrade adds an actionable row offering to update the service's image. It
@@ -142,12 +171,19 @@ func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, r
 	if err != nil {
 		return nil, "", err
 	}
-	names, enc := networkMaps(ctx, dcli)
+	info := networkInfo(ctx, dcli)
+	// The service's own tasks carry the container addresses shown under each
+	// network, and their node names. Both are best effort: an API error just
+	// leaves the drill-down empty rather than failing the whole inspect.
+	info.nodeNames = nodeHostnames(ctx, dcli)
+	info.tasks, _ = dcli.TaskList(ctx, types.TaskListOptions{
+		Filters: filters.NewArgs(filters.Arg("service", svc.ID)),
+	})
 	var img imageStatus
 	if reg != nil && svc.Spec.TaskTemplate.ContainerSpec != nil {
 		img = reg.statusNow(ctx, svc.Spec.TaskTemplate.ContainerSpec.Image, 5*time.Second)
 	}
-	return formatServiceInspect(svc, names, enc, img), prettyJSON(rawb), nil
+	return formatServiceInspect(svc, info, img), prettyJSON(rawb), nil
 }
 
 // taskInspectViews returns the formatted lines and raw-JSON view of a task
@@ -165,8 +201,9 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 			owning = &s
 		}
 	}
-	names, enc := networkMaps(ctx, dcli)
-	return formatTaskInspect(task, owning, names, enc, nodeHostnames(ctx, dcli)), prettyJSON(rawb), nil
+	info := networkInfo(ctx, dcli)
+	info.nodeNames = nodeHostnames(ctx, dcli)
+	return formatTaskInspect(task, owning, info), prettyJSON(rawb), nil
 }
 
 // serviceDiffLines inspects a service and returns a unified diff of its current
@@ -177,8 +214,7 @@ func serviceDiffLines(ctx context.Context, dcli *client.Client, ref string) (lin
 	if err != nil {
 		return nil, false, err
 	}
-	names, _ := networkMaps(ctx, dcli)
-	l, ok := serviceSpecDiff(svc, names)
+	l, ok := serviceSpecDiff(svc, networkInfo(ctx, dcli).names)
 	return l, ok, nil
 }
 
@@ -297,23 +333,33 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 	return out
 }
 
-// networkMaps returns, from one NetworkList: a network ID/name → name map (so
-// attachments that carry only an ID render readably) and an ID/name → encrypted
-// map (overlay data-plane encryption). Best effort; empty maps on error.
-func networkMaps(ctx context.Context, dcli *client.Client) (names map[string]string, encrypted map[string]bool) {
-	names, encrypted = map[string]string{}, map[string]bool{}
+// netInfo is the cluster context the NETWORKS section needs beyond the object
+// being inspected. Attachments reference a network by either id or name, so the
+// maps are keyed by both. tasks are the inspected service's own tasks — the
+// source of the per-container addresses; empty for a task inspect.
+type netInfo struct {
+	names     map[string]string // network id/name → name
+	encrypted map[string]bool   // network id/name → overlay data-plane encryption
+	nodeNames map[string]string // node id → hostname
+	tasks     []swarm.Task
+}
+
+// networkInfo fills the network half of a netInfo from one NetworkList. Best
+// effort; empty maps on error (the inspect still renders, just less readably).
+func networkInfo(ctx context.Context, dcli *client.Client) netInfo {
+	info := netInfo{names: map[string]string{}, encrypted: map[string]bool{}}
 	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
-		return names, encrypted
+		return info
 	}
 	for _, n := range nets {
-		names[n.ID] = n.Name
-		names[n.Name] = n.Name
+		info.names[n.ID] = n.Name
+		info.names[n.Name] = n.Name
 		enc := networkEncrypted(n.Options)
-		encrypted[n.ID] = enc
-		encrypted[n.Name] = enc
+		info.encrypted[n.ID] = enc
+		info.encrypted[n.Name] = enc
 	}
-	return names, encrypted
+	return info
 }
 
 func prettyJSON(raw []byte) string {
@@ -326,7 +372,7 @@ func prettyJSON(raw []byte) string {
 
 // --- tabular formatting -----------------------------------------------------
 
-func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncrypted map[string]bool, img imageStatus) []inspLine {
+func formatServiceInspect(svc swarm.Service, info netInfo, img imageStatus) []inspLine {
 	var b inspBuilder
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	b.title("SERVICE  " + svc.Spec.Name)
@@ -354,12 +400,12 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	}
 
 	b.section("NETWORKS")
-	nets := serviceNetDNS(svc, netNames, netEncrypted)
+	nets := serviceNetDNS(svc, info)
 	if len(nets) == 0 {
 		b.list(nil)
 	}
 	for _, n := range nets {
-		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...), n.Encrypted)
+		b.net(n)
 	}
 	b.section("LABELS")
 	b.list(kvPairs(svc.Spec.Labels))
@@ -405,18 +451,18 @@ func formatServiceInspect(svc swarm.Service, netNames map[string]string, netEncr
 	return b.lines
 }
 
-func formatTaskInspect(task swarm.Task, owning *swarm.Service, netNames map[string]string, netEncrypted map[string]bool, nodeNames map[string]string) []inspLine {
+func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []inspLine {
 	var b inspBuilder
 	cs := task.Spec.ContainerSpec
 	b.title(fmt.Sprintf("TASK  %s  (slot %d)", shortID(task.ID), task.Slot))
 
 	b.section("NETWORKS")
-	nets := taskNetDNS(task, owning, netNames, netEncrypted)
+	nets := taskNetDNS(task, owning, info)
 	if len(nets) == 0 {
 		b.list(nil)
 	}
 	for _, n := range nets {
-		b.net(n.Name, len(n.DNS), append(append([]string{}, n.DNS...), n.Extra...), n.Encrypted)
+		b.net(n)
 	}
 	b.section("LABELS")
 	if cs != nil {
@@ -443,7 +489,7 @@ func formatTaskInspect(task swarm.Task, owning *swarm.Service, netNames map[stri
 	b.kv("since", tstr(task.Status.Timestamp))
 
 	b.section("PLACEMENT")
-	node := nodeNames[task.NodeID]
+	node := info.nodeNames[task.NodeID]
 	if node == "" {
 		node = shortID(task.NodeID)
 	}
@@ -494,10 +540,19 @@ func kvPairs(m map[string]string) []string {
 
 // netDNS is a network a service/task is attached to, with the DNS names that
 // resolve to it there (the default service name, tasks.<name>, and any custom
-// aliases) and optional extra lines shown when expanded (e.g. task addresses).
+// aliases), the address it answers on, its containers, and optional extra lines
+// shown when expanded.
 type netDNS struct {
-	Name      string
-	DNS       []string
+	Name string
+	DNS  []string
+
+	// Addr is the address this attachment is reached at — a service's virtual IP
+	// or a task's own address — and AddrLabel says which ("vip" / "addr"). Both
+	// empty when there is none (e.g. a dnsrr service, which has no VIP).
+	Addr      string
+	AddrLabel string
+
+	Tasks     []inspTaskRow // the service's containers on this network
 	Extra     []string
 	Encrypted bool
 }
@@ -512,22 +567,47 @@ func dnsNames(svcName string, aliases []string) []string {
 	return append(out, aliases...)
 }
 
-// serviceNetDNS returns the service's networks with their DNS names/aliases and
-// whether each network is encrypted.
-func serviceNetDNS(svc swarm.Service, netNames map[string]string, netEncrypted map[string]bool) []netDNS {
+// serviceNetDNS returns the service's networks with their DNS names/aliases,
+// the service's virtual IP there, the containers behind that VIP, and whether
+// the network is encrypted.
+func serviceNetDNS(svc swarm.Service, info netInfo) []netDNS {
+	vips := serviceVIPs(svc, info)
+	addrs := serviceTaskAddrs(svc.Spec.Name, info)
+	dnsrr := svc.Spec.EndpointSpec != nil && svc.Spec.EndpointSpec.Mode == swarm.ResolutionModeDNSRR
+
 	var out []netDNS
 	seen := map[string]bool{}
 	add := func(a swarm.NetworkAttachmentConfig) {
-		if a.Target == "" || seen[a.Target] {
+		if a.Target == "" {
 			return
 		}
-		seen[a.Target] = true
-		name := netNames[a.Target]
+		name := info.names[a.Target]
 		if name == "" {
 			name = a.Target
 		}
-		out = append(out, netDNS{Name: name, DNS: dnsNames(svc.Spec.Name, a.Aliases), Encrypted: netEncrypted[a.Target]})
+		// Deduplicate on the resolved name, not on Target: the same network can
+		// appear once by id and once by name across the two attachment lists.
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		nd := netDNS{
+			Name:      name,
+			DNS:       dnsNames(svc.Spec.Name, a.Aliases),
+			Tasks:     taskAddrRows(pickAddrs(addrs, a.Target, name)),
+			Encrypted: info.encrypted[a.Target],
+		}
+		if vip := pickAddr(vips, a.Target, name); vip != "" {
+			nd.Addr, nd.AddrLabel = vip, "vip"
+		} else if dnsrr {
+			// Not a gap in the data: a dnsrr service deliberately has no VIP —
+			// its DNS name resolves straight to the container addresses below.
+			nd.Extra = []string{"no vip — dnsrr endpoint mode, the DNS name resolves to the containers"}
+		}
+		out = append(out, nd)
 	}
+	// TaskTemplate.Networks is current; Spec.Networks is the deprecated pre-v1.44
+	// location — read both so older services still show their attachments.
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a)
 	}
@@ -538,13 +618,13 @@ func serviceNetDNS(svc swarm.Service, netNames map[string]string, netEncrypted m
 }
 
 // taskNetDNS returns a task's networks with the DNS names/aliases it inherits
-// from its owning service (may be nil), plus the task's address on each network.
-func taskNetDNS(task swarm.Task, owning *swarm.Service, netNames map[string]string, netEncrypted map[string]bool) []netDNS {
+// from its owning service (may be nil), plus the task's own address on each.
+func taskNetDNS(task swarm.Task, owning *swarm.Service, info netInfo) []netDNS {
 	svcName, aliasByNet := "", map[string][]string{}
 	if owning != nil {
 		svcName = owning.Spec.Name
 		for _, a := range owning.Spec.TaskTemplate.Networks {
-			n := netNames[a.Target]
+			n := info.names[a.Target]
 			if n == "" {
 				n = a.Target
 			}
@@ -555,19 +635,196 @@ func taskNetDNS(task swarm.Task, owning *swarm.Service, netNames map[string]stri
 	for _, a := range task.NetworksAttachments {
 		name := a.Network.Spec.Name
 		if name == "" {
-			if n := netNames[a.Network.ID]; n != "" {
+			if n := info.names[a.Network.ID]; n != "" {
 				name = n
 			} else {
 				name = shortID(a.Network.ID)
 			}
 		}
-		nd := netDNS{Name: name, DNS: dnsNames(svcName, aliasByNet[name]), Encrypted: netEncrypted[a.Network.ID] || netEncrypted[name]}
-		if ips := strings.Join(a.Addresses, ", "); ips != "" {
-			nd.Extra = []string{"addr: " + ips}
+		nd := netDNS{
+			Name:      name,
+			DNS:       dnsNames(svcName, aliasByNet[name]),
+			Encrypted: info.encrypted[a.Network.ID] || info.encrypted[name],
+		}
+		if ip := firstIPv4(a.Addresses); ip != "" {
+			nd.Addr, nd.AddrLabel = ip, "addr"
+		}
+		// Any further addresses (IPv6, secondaries) still belong in the detail.
+		if len(a.Addresses) > 1 {
+			nd.Extra = []string{"addresses: " + strings.Join(a.Addresses, ", ")}
 		}
 		out = append(out, nd)
 	}
 	return out
+}
+
+// serviceVIPs maps a service's networks to the virtual IP the manager assigned
+// it there. The manager reports VIPs by network id while a spec attachment may
+// name the network instead, so the map is keyed by both. A service in dnsrr
+// endpoint mode has no VIPs at all.
+func serviceVIPs(svc swarm.Service, info netInfo) map[string]string {
+	m := map[string]string{}
+	for _, v := range svc.Endpoint.VirtualIPs {
+		if v.Addr == "" {
+			continue
+		}
+		m[v.NetworkID] = v.Addr
+		if n := info.names[v.NetworkID]; n != "" {
+			m[n] = v.Addr
+		}
+	}
+	return m
+}
+
+// netTaskAddr is one running container of a service on one network — the
+// deepest level of the NETWORKS drill-down.
+type netTaskAddr struct {
+	Name  string // "<service>.<slot>", or "<service>.<node>" for a global service
+	Addr  string // its address on this network, as the manager reports it (CIDR)
+	Node  string
+	State string // current task state, shown only when it is not yet "running"
+	Slot  int
+}
+
+// serviceTaskAddrs groups a service's current containers by the network they are
+// attached to, keyed by network id AND name — a spec attachment may name either.
+//
+// The filter is the task's DESIRED state, not its current one. A task the
+// manager has given up on (desired state shutdown) has had its address released
+// — it may already belong to a different container, so listing it would be
+// actively wrong. But a task that is only `preparing` or `starting` already
+// holds its address, and during a rolling update that is most of them: filtering
+// on the current state would empty the drill-down exactly when it is interesting.
+// Such a task is listed with its state, so a row that is not serving traffic yet
+// says so.
+func serviceTaskAddrs(svcName string, info netInfo) map[string][]netTaskAddr {
+	out := map[string][]netTaskAddr{}
+	for _, t := range info.tasks {
+		if t.DesiredState != swarm.TaskStateRunning {
+			continue
+		}
+		for _, a := range t.NetworksAttachments {
+			addr := firstIPv4(a.Addresses)
+			if addr == "" {
+				continue
+			}
+			ta := netTaskAddr{
+				Name: taskDisplayName(svcName, t),
+				Addr: addr,
+				Node: info.nodeNames[t.NodeID],
+				Slot: t.Slot,
+			}
+			if t.Status.State != swarm.TaskStateRunning {
+				ta.State = string(t.Status.State)
+			}
+			id := a.Network.ID
+			name := a.Network.Spec.Name
+			if name == "" {
+				name = info.names[id]
+			}
+			if id != "" {
+				out[id] = append(out[id], ta)
+			}
+			if name != "" && name != id {
+				out[name] = append(out[name], ta)
+			}
+		}
+	}
+	for k := range out {
+		rows := out[k]
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Slot != rows[j].Slot {
+				return rows[i].Slot < rows[j].Slot
+			}
+			return rows[i].Name < rows[j].Name
+		})
+	}
+	return out
+}
+
+// pickAddr / pickAddrs resolve a spec attachment's Target — which may be a
+// network id or a name — against a map keyed by both.
+func pickAddr(m map[string]string, target, name string) string {
+	if v := m[target]; v != "" {
+		return v
+	}
+	return m[name]
+}
+
+func pickAddrs(m map[string][]netTaskAddr, target, name string) []netTaskAddr {
+	if v := m[target]; len(v) > 0 {
+		return v
+	}
+	return m[name]
+}
+
+// taskDisplayName names a task the way Swarm does: <service>.<slot> for a
+// replicated service, <service>.<node> for a global one (which has no slot).
+func taskDisplayName(svcName string, t swarm.Task) string {
+	base := svcName
+	if base == "" {
+		base = shortID(t.ServiceID)
+	}
+	switch {
+	case t.Slot > 0:
+		return fmt.Sprintf("%s.%d", base, t.Slot)
+	case t.NodeID != "":
+		return base + "." + shortID(t.NodeID)
+	default:
+		return base + "." + shortID(t.ID)
+	}
+}
+
+// taskAddrRows renders the container rows of one network: column-aligned for
+// reading, each carrying the bare address as its copy value.
+func taskAddrRows(ts []netTaskAddr) []inspTaskRow {
+	nameW, addrW := 0, 0
+	for _, t := range ts {
+		if w := len(t.Name); w > nameW {
+			nameW = w
+		}
+		if w := len(t.Addr); w > addrW {
+			addrW = w
+		}
+	}
+	nodeW := 0
+	for _, t := range ts {
+		if t.State != "" && len(t.Node) > nodeW { // only padded when a state follows
+			nodeW = len(t.Node)
+		}
+	}
+	out := make([]inspTaskRow, 0, len(ts))
+	for _, t := range ts {
+		row := fmt.Sprintf("%-*s  %-*s", nameW, t.Name, addrW, t.Addr)
+		if t.Node != "" {
+			row += fmt.Sprintf("  %-*s", nodeW, t.Node)
+		}
+		if t.State != "" {
+			row += "  (" + t.State + ")"
+		}
+		out = append(out, inspTaskRow{Text: strings.TrimRight(row, " "), Copy: stripMask(t.Addr)})
+	}
+	return out
+}
+
+// firstIPv4 returns an attachment's first IPv4 address in the CIDR form the
+// manager reports ("10.0.1.5/24"); "" when it has only IPv6 or no address yet.
+func firstIPv4(addrs []string) string {
+	for _, a := range addrs {
+		if strings.Contains(stripMask(a), ".") {
+			return a
+		}
+	}
+	return ""
+}
+
+// stripMask turns "10.0.1.5/24" into "10.0.1.5" — the form that is useful to
+// paste into a curl or a ping.
+func stripMask(addr string) string {
+	if i := strings.IndexByte(addr, '/'); i >= 0 {
+		return addr[:i]
+	}
+	return addr
 }
 
 func specMounts(cs *swarm.ContainerSpec) []string {
