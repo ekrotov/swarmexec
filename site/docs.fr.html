@@ -507,7 +507,8 @@
       <div class="note">
         L'image d'agent par défaut est publique sur Docker Hub, aucune connexion à un
         registre n'est donc nécessaire. Relancez avec <code>--force</code> pour
-        déployer une nouvelle version de l'agent.
+        déployer une nouvelle version de l'agent — voir
+        <a href="#reroll">redéployer les agents sans changer le secret</a>.
       </div>
 
       <h3><code>down</code> — retirer les agents</h3>
@@ -533,7 +534,9 @@
         version. Affiche un tableau par nœud
         (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>) ; se
         termine avec un code non nul si le manager est injoignable ou si un agent est
-        en mauvaise santé.
+        en mauvaise santé. Un nœud signalé <code>too old (init --force)</code> exécute un
+        agent plus ancien que votre client — voir
+        <a href="#reroll">redéployer les agents sans changer le secret</a>.
       </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
@@ -543,6 +546,55 @@
           <tr><td><code>--json</code></td><td><code>false</code></td><td>affiche du JSON au lieu d'un tableau</td></tr>
         </tbody>
       </table></div>
+
+      <h3 id="reroll">Redéployer les agents sans changer le secret</h3>
+      <p>
+        Tôt ou tard, vous devrez redéployer les agents sur un swarm déjà provisionné :
+        un agent se bloque, <code>doctor</code> affiche un nœud en
+        <code>too old (init --force)</code>, une commande échoue avec <em>« agent is
+        older than this client (missing RPC) — update it with <code>swarmexec init
+        --force</code> »</em>, ou un nœud a été réinstallé et son agent n'est jamais
+        revenu. La solution consiste à relancer <code>init</code> avec
+        <code>--force</code>, dont c'est exactement le rôle : <em>mettre à jour le
+        service s'il existe déjà</em>. Sans cette option, lancer <code>init</code> sur un
+        service existant est une erreur d'utilisation qui vous demande d'ajouter
+        <code>--force</code> ; rien n'est modifié.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+      <p>
+        L'agent est alors redéployé sur chaque nœud et le secret partagé
+        <strong>reste inchangé</strong>. Les secrets Docker sont immuables :
+        <code>init</code> retrouve le <code>swarmexec_agent_secret</code> existant, le
+        signale comme <code>reusing existing</code> et conserve la valeur déjà présente
+        dans le cluster. Tout client qui fonctionnait avant continue de fonctionner — il
+        n'y a rien à redistribuer.
+      </p>
+      <div class="warn">
+        <strong>Ne passez pas <code>--secret</code> lors d'un redéploiement.</strong> Si
+        le secret existe déjà, il ne peut pas être écrasé : votre valeur n'est
+        <strong>pas appliquée au cluster</strong>, mais elle est <strong>tout de
+        même</strong> écrite dans votre configuration client. À moins qu'elle ne
+        corresponde à la valeur réelle du secret existant, les agents vous rejetteront à
+        partir de ce moment, et la panne n'apparaît que plus tard, sous les traits d'un
+        agent cassé plutôt que d'une configuration locale erronée. <code>init</code>
+        avertit précisément dans ce cas ; prenez cet avertissement au sérieux. Pour
+        changer réellement le secret du cluster, vous devez d'abord supprimer le secret
+        (aucun service ne doit le référencer) puis relancer <code>init</code>.
+      </div>
+      <p>
+        <code>--save-config</code> vaut <code>true</code> par défaut : un redéploiement
+        réécrit donc aussi <code>~/.config/swarmexec/config.yaml</code>. Passez
+        <code>--save-config=false</code> dès que la configuration client locale doit
+        rester intacte — par exemple lorsque vous redéployez les agents depuis une machine
+        dont la configuration est déjà correcte, ou depuis la CI.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force --save-config=false</div>
+      <p>
+        Vérifiez ensuite. <code>doctor</code> indique un état par nœud ;
+        <code>ok</code> sur tous les nœuds signifie que client, agent et secret sont de
+        nouveau cohérents.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
 
       <h3><code>ps</code> — lister les tâches</h3>
       <p>

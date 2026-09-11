@@ -485,7 +485,8 @@
       </table></div>
       <div class="note">
         The default agent image is public on Docker Hub, so no registry login is needed.
-        Re-run with <code>--force</code> to roll out a new agent version.
+        Re-run with <code>--force</code> to roll out a new agent version — see
+        <a href="#reroll">re-rolling the agents without changing the secret</a>.
       </div>
 
       <h3><code>down</code> — remove the agents</h3>
@@ -509,7 +510,9 @@
         Checks the manager connection, whether the agent service is deployed, and probes
         every ready node's agent for reachability and version skew. Prints a per-node
         table (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>); exits
-        non-zero if the manager is unreachable or any agent is unhealthy.
+        non-zero if the manager is unreachable or any agent is unhealthy. A node reported
+        as <code>too old (init --force)</code> runs an agent older than your client —
+        see <a href="#reroll">re-rolling the agents without changing the secret</a>.
       </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
@@ -519,6 +522,52 @@
           <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
         </tbody>
       </table></div>
+
+      <h3 id="reroll">Re-rolling the agents without changing the secret</h3>
+      <p>
+        Sooner or later you have to redeploy the agents on a swarm that is already
+        provisioned: an agent hangs, <code>doctor</code> shows a node as
+        <code>too old (init --force)</code>, a command fails with <em>“agent is older
+        than this client (missing RPC) — update it with <code>swarmexec init
+        --force</code>”</em>, or a node was rebuilt and its agent never came back. The
+        fix is to re-run <code>init</code> with <code>--force</code>, which tells it to
+        <em>update the service if it already exists</em>. Without the flag, running
+        <code>init</code> against an existing service is a usage error telling you to add
+        <code>--force</code> — nothing is changed.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+      <p>
+        This redeploys the agent on every node and <strong>leaves the shared secret
+        alone</strong>. Docker secrets are immutable, so <code>init</code> finds the
+        existing <code>swarmexec_agent_secret</code>, reports it as
+        <code>reusing existing</code>, and keeps the value that is already in the
+        cluster. Every client that worked before the re-roll keeps working — there is
+        nothing to redistribute.
+      </p>
+      <div class="warn">
+        <strong>Do not pass <code>--secret</code> on a re-roll.</strong> If the secret
+        already exists it cannot be overwritten, so your value is <strong>not applied to
+        the cluster</strong> — but it <strong>is</strong> still written into your client
+        config. Unless it happens to be the existing secret's real value, the agents will
+        reject you from that moment on, and the failure surfaces later as what looks like
+        a broken agent rather than a wrong local config. <code>init</code> warns about
+        exactly this when it happens; take the warning seriously. To genuinely change the
+        cluster secret you must remove the secret first (no service may reference it) and
+        re-run <code>init</code>.
+      </div>
+      <p>
+        <code>--save-config</code> defaults to <code>true</code>, so a re-roll also
+        rewrites <code>~/.config/swarmexec/config.yaml</code>. Pass
+        <code>--save-config=false</code> whenever the local client config must stay
+        untouched — for example when you re-roll the agents from a machine whose config
+        is already correct, or from CI.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force --save-config=false</div>
+      <p>
+        Then verify. <code>doctor</code> reports a status per node; <code>ok</code> on
+        every node means client, agent and secret line up again.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
 
       <h3><code>ps</code> — list tasks</h3>
       <p>

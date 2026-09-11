@@ -494,7 +494,8 @@
       <div class="note">
         La imagen de agente por defecto es pública en Docker Hub, así que no hace falta
         iniciar sesión en ningún registro. Vuelve a ejecutarlo con <code>--force</code> para
-        desplegar una nueva versión del agente.
+        desplegar una nueva versión del agente — véase
+        <a href="#reroll">volver a desplegar los agentes sin cambiar el secreto</a>.
       </div>
 
       <h3><code>down</code> — eliminar los agentes</h3>
@@ -520,6 +521,9 @@
         discrepancia de versiones. Imprime una tabla por nodo
         (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>); termina con
         código distinto de cero si el manager es inaccesible o algún agente no está sano.
+        Un nodo con el estado <code>too old (init --force)</code> ejecuta un agente más
+        antiguo que tu cliente — véase
+        <a href="#reroll">volver a desplegar los agentes sin cambiar el secreto</a>.
       </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
@@ -529,6 +533,53 @@
           <tr><td><code>--json</code></td><td><code>false</code></td><td>emite JSON en lugar de una tabla</td></tr>
         </tbody>
       </table></div>
+
+      <h3 id="reroll">Volver a desplegar los agentes sin cambiar el secreto</h3>
+      <p>
+        Tarde o temprano tendrás que volver a desplegar los agentes en un swarm ya
+        aprovisionado: un agente se queda colgado, <code>doctor</code> muestra un nodo
+        como <code>too old (init --force)</code>, un comando falla con <em>«agent is
+        older than this client (missing RPC) — update it with <code>swarmexec init
+        --force</code>»</em>, o un nodo se ha reinstalado y su agente nunca volvió. La
+        solución es volver a ejecutar <code>init</code> con <code>--force</code>, que
+        significa exactamente <em>actualizar el servicio si ya existe</em>. Sin ese flag,
+        ejecutar <code>init</code> sobre un servicio existente es un error de uso que te
+        pide añadir <code>--force</code>; no se cambia nada.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+      <p>
+        Esto vuelve a desplegar el agente en cada nodo y <strong>deja intacto el secreto
+        compartido</strong>. Los secretos de Docker son inmutables, así que
+        <code>init</code> encuentra el <code>swarmexec_agent_secret</code> existente, lo
+        informa como <code>reusing existing</code> y conserva el valor que ya está en el
+        clúster. Todo cliente que funcionaba antes sigue funcionando: no hay que
+        redistribuir nada.
+      </p>
+      <div class="warn">
+        <strong>No pases <code>--secret</code> al volver a desplegar.</strong> Si el
+        secreto ya existe no se puede sobrescribir, así que tu valor <strong>no se aplica
+        al clúster</strong>, pero <strong>sí</strong> se escribe en tu configuración de
+        cliente. A menos que coincida con el valor real del secreto existente, los agentes
+        te rechazarán a partir de ese momento, y el fallo aparece más tarde con la
+        apariencia de un agente roto en vez de una configuración local equivocada.
+        <code>init</code> avisa justo en ese caso; hazle caso. Para cambiar de verdad el
+        secreto del clúster tienes que eliminar primero el secreto (ningún servicio puede
+        referenciarlo) y volver a ejecutar <code>init</code>.
+      </div>
+      <p>
+        <code>--save-config</code> vale <code>true</code> por defecto, así que un
+        redespliegue también reescribe <code>~/.config/swarmexec/config.yaml</code>. Pasa
+        <code>--save-config=false</code> siempre que la configuración local del cliente
+        deba quedar intacta: por ejemplo, cuando vuelves a desplegar los agentes desde una
+        máquina cuya configuración ya es correcta, o desde CI.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force --save-config=false</div>
+      <p>
+        Después, comprueba el resultado. <code>doctor</code> informa de un estado por
+        nodo; <code>ok</code> en todos los nodos significa que cliente, agente y secreto
+        vuelven a estar alineados.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
 
       <h3><code>ps</code> — listar tareas</h3>
       <p>
