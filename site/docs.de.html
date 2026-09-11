@@ -476,7 +476,7 @@
       <!-- 9 -->
       <h2 id="commands">9. Befehle</h2>
 
-      <h3><code>init</code> — die Agents provisionieren</h3>
+      <h3 id="init"><code>init</code> — die Agents provisionieren</h3>
       <p>
         Rollt den Agent als globalen Swarm-Service über die Manager-API aus: erstellt ein
         Docker-Secret mit geteiltem Secret, führt den Agent im selbstsignierten Modus auf
@@ -935,7 +935,7 @@
           <tr><td><kbd>L</kbd></td><td>Logs (großes <kbd>L</kbd>) — auf einem Container dessen eigene Logs, auf einem Service die aggregierten Logs aller seiner Tasks</td></tr>
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
           <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>den Node unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, <kbd>t</kbd> schaltet das rohe Daemon-JSON um (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
+          <tr><td><kbd>i</kbd></td><td>den Node unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, <kbd>t</kbd> wechselt reihum Tabelle → Stats → rohes Daemon-JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
           <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird nichts entfernt, stattdessen weist eine kurze Notiz in der Fußzeile darauf hin, dass die Services eines Stacks einzeln entfernt werden müssen oder mit <code>docker stack rm &lt;stack&gt;</code>. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks; das kann nicht rückgängig gemacht werden. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span style="color:#f85149"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
         </tbody>
       </table></div>
@@ -951,6 +951,58 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — und derselbe Status erscheint
         im Service-Inspect-Overlay; es verschwindet, sobald das Update abgeschlossen ist.
       </p>
+      <p>
+        <strong>Marker für die tatsächliche CPU- und Memory-Nutzung.</strong> Neben diesen
+        Badges kann eine Zeile auch zeigen, was sie gerade wirklich <em>verbraucht</em> —
+        bisher konnte swarmexec nur anzeigen, was der Scheduler <em>gebucht</em> hat (siehe
+        den Nodes-Tab weiter unten). Überschreitet ein Container oder ein Service
+        <strong>70 %</strong>, bekommt er einen orangen Marker, ab <strong>90 %</strong>
+        einen roten — am Ende der Zeile, mit einem Glyph für die Ressource
+        (<code>⚡</code> für CPU, <code>▣</code> für Memory) und dem Prozentwert
+        (<span style="color:#f85149">⚡&nbsp;93 %</span>). Sind beide heiß, erscheinen
+        beide. Unter 70 % wird nichts gezeichnet, damit die Marker ein Signal bleiben und
+        keine Tapete. Eine <strong>Service</strong>-Zeile nimmt den
+        <strong>schlechtesten ihrer Replicas</strong>, nicht den Durchschnitt — ein
+        Durchschnitt verdeckt genau den einen Container, der gleich stirbt, und der ist der
+        interessante. (Der absolute Memory-Wert einer Service-Zeile ist die Summe über die
+        Replicas, der Prozentwert das Maximum.)
+      </p>
+      <p>
+        <strong>Wovon der Prozentwert ein Prozentwert ist.</strong> Gemessen wird gegen das,
+        was der Container tatsächlich nutzen darf: <strong>sein eigenes Limit, wenn er eins
+        hat, sonst die Kapazität des Nodes</strong>. Genau darauf kommt es an — 91 % eines
+        256-MB-Limits heißt, ein OOM-Kill steht bevor; 91 % eines 64-GB-Nodes ist eine
+        ganz andere Geschichte. Die <a href="#tui">Stats-Ansicht</a> des Inspect-Overlays
+        schreibt die Bezugsgröße pro Container in eine Zeile unter die Zahlen.
+      </p>
+      <div class="note">
+        <strong>Woher die Zahlen kommen — und warum sie verzögert eintreffen.</strong> Die
+        Auslastung steht nicht in der Manager-API: Container-Stats sind
+        <strong>node-lokal</strong>. Sie kommen aus einem node-lokalen Agent-RPC
+        (<code>Stats</code>); jeder Agent sampelt seine eigenen Container im Hintergrund und
+        antwortet aus dem Speicher, der Client fragt ihn also einfach im ohnehin
+        vorhandenen Refresh-Zyklus ab. Daraus folgen zwei Dinge. Ein
+        <strong>CPU-Prozentwert ist eine Differenz zwischen zwei Messungen</strong> und
+        existiert daher erst, wenn der Agent zwei genommen hat (ein paar Sekunden) —
+        solange zeigen die Ansichten <code>…</code>, nie <code>0 %</code>; Memory braucht
+        keine Differenz und ist ab der ersten Messung da. Und ein Agent sampelt nur,
+        <strong>solange auch jemand hinschaut</strong>: Rund eine Minute nach der letzten
+        Anfrage hört er auf und vergisst seine Messwerte, statt veraltete auszuliefern.
+        Deshalb brauchen die ersten Zahlen nach dem Öffnen der UI einen Moment. Das ist
+        Absicht — ein Agent, dem niemand zusieht, soll nichts kosten.
+      </div>
+      <div class="note">
+        <strong>Nirgendwo Marker? Prüfe die Agent-Version.</strong> Die Auslastung ist eine
+        Zugabe und fällt still aus: Ein Node, dessen Agent nicht erreichbar ist — oder
+        <strong>älter als dieses Release und damit ohne Kenntnis des
+        <code>Stats</code>-RPC</strong> —, liefert schlicht keine Messwerte. Die Marker
+        bleiben aus, der Node-Block fehlt, alles andere bleibt unberührt; der Client nimmt
+        so einen Node zudem für eine Weile aus dem Rennen, statt ihn bei jedem Refresh neu
+        anzufragen. Auf einem Cluster, das noch nicht neu ausgerollt wurde, gibt es deshalb
+        <strong>überhaupt keine Nutzungszahlen</strong>, bis die Agents aktualisiert sind —
+        ausrollen mit <a href="#init"><code>swarmexec init --force</code></a>. Das ist mit
+        Abstand der häufigste Grund, nichts zu sehen.
+      </div>
 
       <p>
         <strong>Nach Stack gruppiert.</strong> <code>docker stack deploy</code> versieht
@@ -1106,11 +1158,31 @@
         die nach operativer Relevanz geordnet sind — zuerst Netzwerke, Labels,
         Volumes/Mounts und Secrets (und Configs), dann Ports, Image, Modus, Env,
         Ressourcen, Placement und Update-Policy (plus State, Node und Container-ID bei
-        einem Container/einer Task), mit IDs und Zeitstempeln zuletzt. Drücke <kbd>t</kbd>,
-        um zwischen dieser Zusammenfassung und dem rohen Daemon-JSON umzuschalten. Beachte,
-        dass dies die Task-Sicht des Managers ist, nicht ein vollständiges node-lokales
-        <code>docker container inspect</code> des laufenden Containers — ein echtes
-        Container-Inspect über den Agent ist geplant.
+        einem Container/einer Task), mit IDs und Zeitstempeln zuletzt. <kbd>t</kbd> schaltet
+        reihum durch die <strong>drei</strong> Ansichten des Overlays —
+        <strong>Tabelle&nbsp;→ Stats&nbsp;→ rohes Daemon-JSON</strong> — und wieder zurück;
+        der Footer nennt jeweils die nächste, der Overlay-Titel die aktuelle. Beachte,
+        dass die tabellarische Ansicht die Task-Sicht des Managers ist, nicht ein
+        vollständiges node-lokales <code>docker container inspect</code> des laufenden
+        Containers — ein echtes Container-Inspect über den Agent ist geplant.
+      </p>
+      <p>
+        <strong>Die Stats-Ansicht.</strong> Die mittlere der drei zeigt die
+        <em>tatsächliche Ressourcennutzung</em> — dieselben Messwerte, die auch den Baum
+        markieren; das Öffnen kostet also keinen zusätzlichen Aufruf, und die Zahlen
+        aktualisieren sich weiter, solange die Ansicht offen ist. Sie listet jeden Container
+        des Service (oder den einen Container eines Task-Inspects), jeweils mit einem
+        proportionalen Balken, der <strong>CPU in Cores</strong> plus Prozentwert, dem
+        <strong>belegten Memory gegen sein Limit</strong> und der Zeile, die sagt, worauf
+        sich diese Prozente beziehen — das eigene Limit oder die Kapazität des Nodes. Bei
+        mehr als einem gemessenen Container kommt eine Zusammenfassung dazu:
+        <strong>Spitzenwert</strong> CPU, <strong>Spitzenwert</strong> Memory-Prozent und
+        <strong>Summe</strong> des Memory über die Replicas. Ein Container, den kein Agent
+        gemeldet hat — nicht erreichbarer Node, ein für den <code>Stats</code>-RPC zu alter
+        Agent oder ein erst seit der letzten Messung laufender Container —, sagt das in
+        seiner eigenen Zeile, statt Nullen zu zeigen. Der <kbd>t</kbd>-Eintrag im
+        <kbd>?</kbd>-Hilfe-Overlay lautet entsprechend
+        <em>cycle table / stats / raw JSON</em>.
       </p>
       <p>
         Das Overlay ist <strong>navigierbar und auswählbar</strong>, nicht nur ein
@@ -1122,9 +1194,9 @@
         einen Mount oder eine Adresse greifen kannst, ohne Text von Hand zu markieren.
         <kbd>Enter</kbd> kopiert ebenfalls, außer auf einer einklappbaren
         <strong>NETWORKS</strong>-Zeile, wo es stattdessen diese Zeile
-        aus-/einklappt (siehe unten). Beide Ansichten (die tabellarische Zusammenfassung
-        und das mit <kbd>t</kbd> erreichte rohe JSON) sind Zeile für Zeile auswählbar und
-        kopierbar. Ein <strong>Footer listet immer die verfügbaren Tasten</strong>, sodass
+        aus-/einklappt (siehe unten). Alle drei Ansichten (die tabellarische
+        Zusammenfassung, die Stats-Ansicht und das rohe JSON, mit <kbd>t</kbd> durchgewechselt)
+        sind Zeile für Zeile auswählbar und kopierbar. Ein <strong>Footer listet immer die verfügbaren Tasten</strong>, sodass
         auf einen Blick sichtbar ist, was du tun kannst; bei einem Service zeigt der
         Footer auch die untenstehenden Bearbeitungstasten.
       </p>
@@ -1134,7 +1206,7 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>die Auswahl zwischen Datenzeilen bewegen (Überschriften/Leerzeilen übersprungen)</td></tr>
           <tr><td><kbd>y</kbd></td><td>die ausgewählte Zeile in die Zwischenablage kopieren (OSC52) — immer</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>auf einer einklappbaren <strong>NETWORKS</strong>-Zeile diese Ebene aus-/einklappen — die Zeilen sind zwei Ebenen tief, ein Netzwerk und sein <code>N containers</code>-Drilldown; auf jeder anderen Zeile sie kopieren (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>zwischen der tabellarischen Zusammenfassung und dem rohen Daemon-JSON umschalten (beide auswählbar)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>reihum durch die drei Ansichten schalten — tabellarische Zusammenfassung → <strong>Stats</strong> (tatsächliche CPU-/Memory-Nutzung, siehe unten) → rohes Daemon-JSON → zurück; alle drei auswählbar, und der Footer nennt jeweils die nächste</td></tr>
           <tr><td><kbd>a</kbd></td><td>Aktionsmenü — jeder Service-Editor und jede Aktion in einer Liste, ohne Shift (nur Service; siehe unten)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>den Service bearbeiten — Skalieren / Force-Update / Ports / Labels / Env / Netzwerke / Secrets / Mounts / Aliase (nur Service; <kbd>S</kbd> ist groß, Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden; <kbd>A</kbd> ist ebenfalls groß; siehe unten)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>das Overlay schließen</td></tr>
@@ -1456,7 +1528,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, dem Block <strong>reservierte Ressourcen</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, den Blöcken <strong>reservierte Ressourcen</strong> und <strong>tatsächliche Nutzung</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
           <tr><td><kbd>l</kbd></td><td>die <strong>Labels</strong> des ausgewählten Nodes bearbeiten — ein gestagter Listeneditor (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen) über <code>key=value</code>-Einträge. Das Anwenden macht ein <code>NodeUpdate</code> — anders als bei einem Service <strong>greift ein Node-Update sofort</strong> (kein Rolling Update). Node-Labels werden häufig als Ziele von Placement-Constraints verwendet (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>Active</em> plant Tasks hier normal ein; <em>Pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>Drain</em> verschiebt <strong>jeden</strong> Task vom Node herunter. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umlegbar als <code>node_availability</code></td></tr>
         </tbody>
@@ -1475,7 +1547,8 @@
         der von den Tasks deklarierten <code>Reservations</code> — genau die Rechnung, die
         der Swarm-Scheduler selbst anstellt, wenn er entscheidet, ob ein Task auf einen Node
         passt, und der übliche Grund, warum ein Service unschedulable bleibt. Der
-        tatsächliche CPU-/RAM-Verbrauch ist node-lokal und <em>nicht</em>, was hier steht.
+        tatsächliche CPU-/RAM-Verbrauch ist node-lokal und <em>nicht</em>, was hier steht —
+        er hat direkt darunter einen eigenen Block.
         Tasks ohne deklarierte Reservierung werden <strong>gezählt und separat
         ausgewiesen</strong>: Sie buchen hier nichts, können aber trotzdem den ganzen Node
         auslasten — ein niedriger Prozentwert heißt also nicht, dass der Node im Leerlauf
@@ -1484,6 +1557,26 @@
         einem Endzustand: Tasks in preparing oder starting zählen also mit, shutdown /
         failed / complete / rejected dagegen nicht (der Swarm behält diese als Historie in
         der Task-Liste).
+      </div>
+      <p>
+        <strong>Tatsächlich von Containern genutzt.</strong> Darunter steht ein zweiter
+        Block — <em>in use by containers (measured on the node)</em> — mit denselben
+        proportionalen Balken: was die Container des Nodes gerade
+        <strong>wirklich</strong> verbrauchen, CPU in Cores und Memory, jeweils gegen die
+        Kapazität des Nodes. Die beiden Blöcke bleiben bewusst getrennt, denn sie
+        beantworten verschiedene Fragen und liegen regelmäßig weit auseinander: Ein Node
+        kann voll gebucht und trotzdem im Leerlauf sein — oder kaum gebucht und am Limit.
+        Die Zahlen kommen vom Agent dieses Nodes, derselben Quelle wie die
+        <a href="#tui">Nutzungsmarker im Service-Baum</a> — solange die CPU-Differenz noch
+        nicht vorliegt, steht dort <em>measuring…</em>, und ein Node, dessen Agent nicht
+        erreichbar oder zu alt ist, bekommt gar keinen Block statt einer Reihe Nullen, die
+        wie „im Leerlauf“ aussähe.
+      </p>
+      <div class="note">
+        <strong>Nur Container.</strong> Gezählt werden die <strong>Container</strong> des
+        Nodes — Kernel, Docker-Daemon und alles, was außerhalb von Docker läuft, stecken
+        <em>nicht</em> in dieser Zahl. Es ist nicht die Load des Nodes, und der Block sagt
+        das selbst dazu.
       </div>
 
       <h3>Configs-Tab</h3>

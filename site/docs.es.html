@@ -469,7 +469,7 @@
       <!-- 9 -->
       <h2 id="commands">9. Comandos</h2>
 
-      <h3><code>init</code> — aprovisionar los agentes</h3>
+      <h3 id="init"><code>init</code> — aprovisionar los agentes</h3>
       <p>
         Despliega el agente como un servicio global de Swarm a través de la API del manager:
         crea un secreto de Docker con el secreto compartido, ejecuta el agente en modo
@@ -918,7 +918,7 @@
           <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> mayúscula) — sobre un contenedor sus propios logs, sobre un servicio los logs agregados de todas sus tareas</td></tr>
           <tr><td><kbd>!</kbd></td><td>abre el overlay de riesgos de seguridad para toda la lista de servicios (ver más abajo)</td></tr>
           <tr><td><kbd>p</kbd></td><td>reenvía el puerto de la tarea bajo el cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspecciona el nodo bajo el cursor — un overlay navegable con un resumen tabular; mueve la selección con <kbd>↑</kbd>/<kbd>↓</kbd> o <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copia la línea seleccionada, <kbd>t</kbd> alterna el JSON crudo del daemon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> cierra). Sobre un <strong>servicio</strong> el overlay también lo edita: <kbd>s</kbd> escalar, <kbd>f</kbd> forzar actualización, <kbd>p</kbd> puertos, <kbd>l</kbd> etiquetas, <kbd>e</kbd> env, <kbd>n</kbd> redes, <kbd>S</kbd> secretos, <kbd>v</kbd> montajes, <kbd>A</kbd> alias; <kbd>D</kbd> diagnostica <em>por qué</em> no se ejecuta en todas partes; <kbd>X</kbd> lo elimina</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspecciona el nodo bajo el cursor — un overlay navegable con un resumen tabular; mueve la selección con <kbd>↑</kbd>/<kbd>↓</kbd> o <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copia la línea seleccionada, <kbd>t</kbd> rota entre tabla → stats → JSON crudo del daemon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> cierra). Sobre un <strong>servicio</strong> el overlay también lo edita: <kbd>s</kbd> escalar, <kbd>f</kbd> forzar actualización, <kbd>p</kbd> puertos, <kbd>l</kbd> etiquetas, <kbd>e</kbd> env, <kbd>n</kbd> redes, <kbd>S</kbd> secretos, <kbd>v</kbd> montajes, <kbd>A</kbd> alias; <kbd>D</kbd> diagnostica <em>por qué</em> no se ejecuta en todas partes; <kbd>X</kbd> lo elimina</td></tr>
           <tr><td><kbd>X</kbd></td><td>elimina un servicio <strong>directamente desde el árbol</strong> (<kbd>X</kbd> mayúscula, es decir Shift+x) — sin pasar por el overlay de inspección. Sobre qué actúa depende de la fila bajo el cursor: en una fila de <strong>servicio</strong> elimina ese servicio; en una fila de <strong>contenedor</strong> elimina el <strong>servicio propietario</strong> del contenedor, porque una tarea suelta no puede eliminarse por sí sola — Swarm la volvería a planificar de inmediato; en una fila de <strong>stack</strong> no elimina nada y en su lugar avisa brevemente en el pie de que los servicios de un stack se eliminan individualmente, o con <code>docker stack rm &lt;stack&gt;</code>. Pasa por la <strong>misma confirmación</strong> que la <kbd>X</kbd> de la inspección más abajo — <strong>borra permanentemente</strong> el servicio y detiene todas sus tareas; no se puede deshacer. Tecla mayúscula fija, no una acción remapeable del keymap; el pie la lista en rojo como <span style="color:#f85149"><em>X remove</em></span> y el overlay <kbd>?</kbd> también la lista. La <kbd>X</kbd> dentro del overlay de inspección no cambia</td></tr>
         </tbody>
       </table></div>
@@ -934,6 +934,58 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — y el mismo estado aparece en el overlay
         de inspección del servicio; desaparece en cuanto la actualización se completa.
       </p>
+      <p>
+        <strong>Marcadores de CPU y memoria en vivo.</strong> Junto a esas insignias una
+        fila puede mostrar además lo que está <em>usando</em> ahora mismo: hasta ahora
+        swarmexec solo podía enseñar lo que el planificador había <em>reservado</em> (véase
+        la pestaña Nodos más abajo). Un contenedor —o un servicio— cuyo uso supera el
+        <strong>70 %</strong> recibe un marcador naranja, y al <strong>90 %</strong> uno
+        rojo, al final de la fila: un glifo que nombra el recurso —<code>⚡</code> para la
+        CPU, <code>▣</code> para la memoria— seguido del porcentaje
+        (<span style="color:#f85149">⚡&nbsp;93 %</span>). Si ambos están calientes,
+        aparecen los dos. Por debajo del 70 % no se dibuja nada, para que los marcadores
+        sigan siendo una señal y no papel pintado. Una fila de <strong>servicio</strong>
+        toma <strong>la peor de sus réplicas</strong>, no la media: una media esconde
+        justamente el contenedor que está a punto de morir, que es el que interesa ver. (La
+        memoria absoluta de una fila de servicio es la suma entre réplicas; el porcentaje
+        es el pico.)
+      </p>
+      <p>
+        <strong>De qué son esos porcentajes.</strong> Cada uno se mide contra lo que ese
+        contenedor puede usar realmente: <strong>su propio límite cuando lo tiene, y la
+        capacidad del nodo cuando no</strong>. Ahí está la clave: el 91 % de un límite de
+        256&nbsp;MB significa que un OOM kill está cerca; el 91 % de un nodo de 64&nbsp;GB
+        es otra conversación. La <a href="#tui">vista de stats</a> del overlay de
+        inspección deja escrita la base por contenedor en una línea bajo las cifras.
+      </p>
+      <div class="note">
+        <strong>De dónde salen las cifras — y por qué tardan un poco.</strong> El uso no
+        está en la API del manager: las estadísticas de contenedor son <strong>locales a
+        cada nodo</strong>. Vienen de un RPC del agente local al nodo (<code>Stats</code>);
+        cada agente muestrea sus propios contenedores en segundo plano y responde desde
+        memoria, así que el cliente simplemente lo consulta en el ciclo de refresco que ya
+        tenía. Dos consecuencias. Un <strong>porcentaje de CPU es un delta entre dos
+        lecturas</strong>, así que no existe hasta que el agente ha tomado dos (unos pocos
+        segundos) — mientras tanto las vistas muestran <code>…</code>, nunca
+        <code>0 %</code>; la memoria no necesita delta y aparece desde la primera lectura.
+        Y un agente solo muestrea <strong>mientras alguien está mirando</strong>: se detiene
+        alrededor de un minuto después de la última petición y olvida sus lecturas en lugar
+        de servirlas caducadas. Por eso las primeras cifras tras abrir la UI tardan un
+        momento en llenarse. Es deliberado: un agente al que nadie mira no debe costar
+        nada.
+      </div>
+      <div class="note">
+        <strong>¿No ves ningún marcador? Revisa la versión del agente.</strong> El uso es
+        complementario y se degrada en silencio: un nodo cuyo agente no es alcanzable —o
+        <strong>más antiguo que esta release y por tanto ajeno al RPC
+        <code>Stats</code></strong>— sencillamente no aporta lecturas. Los marcadores no
+        salen, el bloque del nodo no aparece y todo lo demás queda intacto; además el
+        cliente deja en paz a ese nodo un rato en vez de sondearlo en cada refresco. Así
+        que en un clúster que todavía no se ha vuelto a desplegar <strong>no hay ninguna
+        cifra de uso</strong> hasta que se actualicen los agentes — despliégalos con
+        <a href="#init"><code>swarmexec init --force</code></a>. Este es, con diferencia,
+        el motivo más probable de no ver nada.
+      </div>
 
       <p>
         <strong>Agrupado por stack.</strong> <code>docker stack deploy</code> etiqueta cada
@@ -1090,10 +1142,28 @@
         etiquetas, volúmenes/montajes y secretos (y configs) primero, luego puertos, imagen,
         modo, env, recursos, colocación y política de actualización (más estado, nodo e id de
         contenedor para un contenedor/tarea), con los ids y las marcas de tiempo al final.
-        Pulsa <kbd>t</kbd> para alternar entre este resumen y el JSON crudo del daemon. Ten en
-        cuenta que esta es la vista de tarea del manager, no una
+        Pulsa <kbd>t</kbd> para rotar entre las <strong>tres</strong> vistas del overlay —
+        <strong>tabla&nbsp;→ stats&nbsp;→ JSON crudo del daemon</strong>— y volver; el pie
+        nombra siempre la siguiente y el título del overlay dice en cuál estás. Ten en
+        cuenta que la vista tabular es la vista de tarea del manager, no una
         <code>docker container inspect</code> completa y local del contenedor en ejecución —
         una inspección real de contenedor a través del agente está planificada.
+      </p>
+      <p>
+        <strong>La vista de stats.</strong> La del medio es el <em>uso de recursos en
+        vivo</em> — las mismas lecturas que marcan el árbol, así que abrirla no cuesta
+        ninguna llamada extra y las cifras se siguen refrescando mientras está abierta.
+        Lista cada contenedor del servicio (o el único contenedor de una inspección de
+        tarea), cada uno con una barra proporcional, la <strong>CPU en núcleos</strong> más
+        su porcentaje, la <strong>memoria usada frente a su límite</strong> y la línea que
+        indica de qué son esos porcentajes: de su propio límite o de la capacidad del nodo.
+        Con más de un contenedor medido añade un resumen: <strong>pico</strong> de CPU,
+        <strong>pico</strong> de porcentaje de memoria y <strong>total</strong> de memoria
+        entre las réplicas. Un contenedor del que ningún agente informó —nodo inalcanzable,
+        un agente demasiado antiguo para el RPC <code>Stats</code>, o uno arrancado después
+        de la última lectura— lo dice en su propia línea en vez de mostrar ceros. La
+        entrada <kbd>t</kbd> del overlay de ayuda <kbd>?</kbd> reza, en consecuencia,
+        <em>cycle table / stats / raw JSON</em>.
       </p>
       <p>
         El overlay es <strong>navegable y seleccionable</strong>, no un simple desplazamiento:
@@ -1104,8 +1174,8 @@
         lugares— para que puedas capturar un único id, montaje o dirección sin seleccionar
         texto a mano. <kbd>Enter</kbd> también copia, salvo en una fila colapsable de
         <strong>NETWORKS</strong>, donde en su lugar expande/colapsa esa fila (véase más abajo).
-        Ambas vistas (el resumen tabular y el JSON crudo al que se llega con <kbd>t</kbd>) son
-        seleccionables y copiables línea a línea. Un <strong>pie siempre lista las teclas
+        Las tres vistas (el resumen tabular, la vista de stats y el JSON crudo, que se rotan
+        con <kbd>t</kbd>) son seleccionables y copiables línea a línea. Un <strong>pie siempre lista las teclas
         disponibles</strong>, para que lo que puedes hacer sea visible de un vistazo; para un
         servicio el pie muestra además las teclas de edición de más abajo.
       </p>
@@ -1115,7 +1185,7 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>mueve la selección entre líneas de datos (se omiten encabezados/blancos)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copia la línea seleccionada al portapapeles (OSC52) — siempre</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>en una fila colapsable de <strong>NETWORKS</strong>, expande/colapsa ese nivel — las filas anidan en dos niveles, una red y su desglose <code>N containers</code>; en cualquier otra línea, la copia (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>alterna entre el resumen tabular y el JSON crudo del daemon (ambos seleccionables)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>rota entre las tres vistas — resumen tabular → <strong>stats</strong> (CPU/memoria en vivo, véase más abajo) → JSON crudo del daemon → vuelta; las tres seleccionables, y el pie nombra la siguiente</td></tr>
           <tr><td><kbd>a</kbd></td><td>menú de acciones — todos los editores y acciones del servicio en una lista, sin Shift (solo servicios; ver abajo)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edita el servicio — escalar / forzar actualización / puertos / etiquetas / env / redes / secretos / montajes / alias (solo servicio; <kbd>S</kbd> es mayúscula, Shift+s, para distinguirla de <kbd>s</kbd> escalar; <kbd>A</kbd> también es mayúscula; véase más abajo)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>cierra el overlay</td></tr>
@@ -1427,7 +1497,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, el bloque de <strong>recursos reservados</strong> (véase más abajo), recuento de volúmenes y la lista completa de etiquetas</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, los bloques de <strong>recursos reservados</strong> y de <strong>uso real</strong> (véase más abajo), recuento de volúmenes y la lista completa de etiquetas</td></tr>
           <tr><td><kbd>l</kbd></td><td>edita las <strong>etiquetas</strong> del nodo seleccionado — un editor de lista por etapas (<kbd>a</kbd> añadir / <kbd>e</kbd> editar / <kbd>d</kbd> eliminar / <kbd>w</kbd> aplicar / <kbd>Esc</kbd> cancelar) sobre entradas <code>key=value</code>. Aplicar hace un <code>NodeUpdate</code> — a diferencia de un servicio, una actualización de nodo <strong>se aplica de inmediato</strong> (sin actualización progresiva). Las etiquetas de nodo se usan comúnmente como objetivos de restricción de colocación (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>fija la <strong>disponibilidad</strong> del nodo — un menú con <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> que marca el estado en el que está el nodo ahora mismo. <em>Active</em> programa tareas aquí con normalidad; <em>Pause</em> conserva las tareas en ejecución y solo impide colocaciones <strong>nuevas</strong>; <em>Drain</em> saca <strong>todas</strong> las tareas del nodo. Active y Pause se aplican al instante; Drain pasa por una confirmación que indica cuántas tareas en ejecución detendrá el swarm y reprogramará en otros nodos (los servicios cuyas tareas no puedan colocarse en ningún otro sitio quedarán unschedulable). Igual que un cambio de etiquetas, es un único <code>NodeUpdate</code> (lectura-modificación-escritura sobre la spec del nodo) y <strong>se aplica de inmediato</strong>: los nodos no tienen actualización progresiva. Reasignable como <code>node_availability</code></td></tr>
         </tbody>
@@ -1447,7 +1517,8 @@
         <code>Reservations</code> declaradas por las tareas — exactamente la aritmética que
         hace el propio planificador de swarm al decidir si una tarea cabe en un nodo, y el
         motivo habitual de que un servicio quede unschedulable. El consumo real de CPU/RAM
-        es local al nodo y <em>no</em> es lo que se muestra aquí. Las tareas que no declaran
+        es local al nodo y <em>no</em> es lo que se muestra aquí: tiene un bloque propio
+        justo debajo. Las tareas que no declaran
         ninguna reserva se <strong>cuentan y se informan por separado</strong>: aquí no
         reservan nada, pero pueden consumir el nodo entero, así que un porcentaje bajo no
         significa que el nodo esté ocioso — y en la mayoría de los clústeres muy pocos
@@ -1455,6 +1526,26 @@
         le asigna un nodo hasta que alcanza un estado terminal: por tanto, las tareas en
         preparing o starting cuentan, y las shutdown / failed / complete / rejected no (el
         swarm las conserva en la lista de tareas como historial).
+      </div>
+      <p>
+        <strong>En uso por los contenedores.</strong> Debajo hay un segundo bloque —
+        <em>in use by containers (measured on the node)</em> — dibujado con las mismas
+        barras proporcionales: lo que los contenedores del nodo están usando
+        <strong>de verdad</strong> ahora mismo, CPU en núcleos y memoria, cada uno frente a
+        la capacidad del propio nodo. Los dos bloques se mantienen aparte a propósito,
+        porque responden a preguntas distintas y suelen estar muy lejos el uno del otro: un
+        nodo puede estar reservado del todo y ocioso, o apenas reservado y en llamas. Las
+        cifras vienen del agente de ese nodo, la misma fuente que los
+        <a href="#tui">marcadores de uso del árbol de servicios</a> — mientras el delta de
+        CPU no está listo la línea dice <em>measuring…</em>, y un nodo cuyo agente sea
+        inalcanzable o demasiado antiguo no recibe bloque alguno en lugar de una fila de
+        ceros que se leería como «ocioso».
+      </p>
+      <div class="note">
+        <strong>Solo contenedores.</strong> Aquí se cuentan los <strong>contenedores</strong>
+        del nodo — el kernel, el demonio de docker y cualquier cosa que corra fuera de
+        docker <em>no</em> entran en la cifra. No es la carga del nodo, y el propio bloque
+        lo dice.
       </div>
 
       <h3>Pestaña Configs</h3>

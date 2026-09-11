@@ -465,7 +465,7 @@
       <!-- 9 -->
       <h2 id="commands">9. Polecenia</h2>
 
-      <h3><code>init</code> — zaprowizjonuj agentów</h3>
+      <h3 id="init"><code>init</code> — zaprowizjonuj agentów</h3>
       <p>
         Wdraża agenta jako globalną usługę Swarma przez API menedżera: tworzy sekret Dockera
         ze współdzielonym sekretem, uruchamia agenta w trybie z certyfikatem samopodpisanym
@@ -913,7 +913,7 @@
           <tr><td><kbd>L</kbd></td><td>logi (wielkie <kbd>L</kbd>) — na kontenerze jego własne logi, na usłudze zagregowane logi wszystkich jej zadań</td></tr>
           <tr><td><kbd>!</kbd></td><td>otwórz nakładkę z ryzykami bezpieczeństwa dla całej listy usług (zobacz niżej)</td></tr>
           <tr><td><kbd>p</kbd></td><td>przekieruj port zadania pod kursorem</td></tr>
-          <tr><td><kbd>i</kbd></td><td>zbadaj węzeł drzewa pod kursorem — nawigowalna nakładka z tabelarycznym podsumowaniem; zaznaczenie przesuwasz przez <kbd>↑</kbd>/<kbd>↓</kbd> albo <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiuje zaznaczoną linię, <kbd>t</kbd> przełącza surowy JSON demona (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> zamyka). Na <strong>usłudze</strong> nakładka pozwala też ją edytować: <kbd>s</kbd> skalowanie, <kbd>f</kbd> wymuszona aktualizacja, <kbd>p</kbd> porty, <kbd>l</kbd> etykiety, <kbd>e</kbd> zmienne środowiskowe, <kbd>n</kbd> sieci, <kbd>S</kbd> sekrety, <kbd>v</kbd> montowania, <kbd>A</kbd> aliasy; <kbd>D</kbd> diagnozuje, <em>dlaczego</em> usługa nie działa wszędzie; <kbd>X</kbd> ją usuwa</td></tr>
+          <tr><td><kbd>i</kbd></td><td>zbadaj węzeł drzewa pod kursorem — nawigowalna nakładka z tabelarycznym podsumowaniem; zaznaczenie przesuwasz przez <kbd>↑</kbd>/<kbd>↓</kbd> albo <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiuje zaznaczoną linię, <kbd>t</kbd> przełącza po kolei tabelę → stats → surowy JSON demona (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> zamyka). Na <strong>usłudze</strong> nakładka pozwala też ją edytować: <kbd>s</kbd> skalowanie, <kbd>f</kbd> wymuszona aktualizacja, <kbd>p</kbd> porty, <kbd>l</kbd> etykiety, <kbd>e</kbd> zmienne środowiskowe, <kbd>n</kbd> sieci, <kbd>S</kbd> sekrety, <kbd>v</kbd> montowania, <kbd>A</kbd> aliasy; <kbd>D</kbd> diagnozuje, <em>dlaczego</em> usługa nie działa wszędzie; <kbd>X</kbd> ją usuwa</td></tr>
           <tr><td><kbd>X</kbd></td><td>usuń usługę <strong>prosto z drzewa</strong> (wielkie <kbd>X</kbd>, czyli Shift+x) — bez okrężnej drogi przez nakładkę inspekcji. To, na co działa, zależy od wiersza pod kursorem: na wierszu <strong>usługi</strong> usuwa tę usługę; na wierszu <strong>kontenera</strong> usuwa <strong>usługę właścicielską</strong> tego kontenera, bo pojedynczego zadania nie da się usunąć samego — Swarm natychmiast zaplanowałby je ponownie; na wierszu <strong>stacka</strong> nie usuwa niczego, a zamiast tego pokazuje krótką notkę w stopce, że usługi stacka trzeba usuwać pojedynczo albo poleceniem <code>docker stack rm &lt;stack&gt;</code>. Przechodzi przez <strong>to samo potwierdzenie</strong> co <kbd>X</kbd> w inspekcji niżej — <strong>trwale kasuje</strong> usługę i zatrzymuje wszystkie jej zadania, nie da się tego cofnąć, a potem proponuje usunięcie osieroconych sekretów. Stały klawisz z wielkiej litery, nie przemapowywalna akcja keymapy; stopka wymienia go na czerwono jako <span style="color:#f85149"><em>X remove</em></span>, a nakładka <kbd>?</kbd> również go wypisuje. <kbd>X</kbd> wewnątrz nakładki inspekcji pozostaje bez zmian</td></tr>
         </tbody>
       </table></div>
@@ -929,6 +929,56 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — a ten sam status pojawia
         się w nakładce inspekcji usługi; znika po zakończeniu aktualizacji.
       </p>
+      <p>
+        <strong>Znaczniki bieżącego zużycia CPU i pamięci.</strong> Obok tych plakietek
+        wiersz może nieść także to, co naprawdę <em>zużywa</em> w tej chwili — do tej pory
+        swarmexec potrafił pokazać tylko to, co scheduler <em>zarezerwował</em> (zobacz
+        zakładkę Nodes niżej). Kontener albo usługa, której zużycie przekroczy
+        <strong>70%</strong>, dostaje pomarańczowy znacznik, a przy <strong>90%</strong>
+        czerwony — na końcu wiersza: glif nazywający zasób (<code>⚡</code> dla CPU,
+        <code>▣</code> dla pamięci) i procent
+        (<span style="color:#f85149">⚡&nbsp;93%</span>). Jeśli gorąco jest na obu, pojawią
+        się oba. Poniżej 70% nie rysuje się nic, żeby znaczniki pozostały sygnałem, a nie
+        tapetą. Wiersz <strong>usługi</strong> bierze <strong>najgorszą ze swoich
+        replik</strong>, a nie średnią — średnia ukrywa dokładnie ten jeden kontener, który
+        zaraz padnie, czyli ten, który warto zobaczyć. (Bezwzględna pamięć w wierszu usługi
+        to suma po replikach; procent to wartość szczytowa.)
+      </p>
+      <p>
+        <strong>Czego te procenty są procentem.</strong> Każdy mierzy się względem tego, co
+        dany kontener naprawdę może zużyć: <strong>własnego limitu, jeśli go ma, a w
+        przeciwnym razie pojemności węzła</strong>. I to jest tu najważniejsze — 91%
+        limitu 256&nbsp;MB znaczy, że OOM kill jest blisko; 91% węzła o 64&nbsp;GB to
+        zupełnie inna rozmowa. <a href="#tui">Widok stats</a> w nakładce inspekcji wypisuje
+        podstawę dla każdego kontenera w linii pod liczbami.
+      </p>
+      <div class="note">
+        <strong>Skąd biorą się liczby — i dlaczego pojawiają się z opóźnieniem.</strong>
+        Zużycia nie ma w API menedżera: statystyki kontenerów są <strong>lokalne dla
+        węzła</strong>. Pochodzą z lokalnego dla węzła RPC agenta (<code>Stats</code>);
+        każdy agent próbkuje swoje kontenery w tle i odpowiada z pamięci, więc klient
+        odpytuje go po prostu w cyklu odświeżania, który i tak ma. Wynikają z tego dwie
+        rzeczy. <strong>Procent CPU to różnica między dwoma odczytami</strong>, więc nie
+        istnieje, dopóki agent nie wykona dwóch (kilka sekund) — do tego czasu widoki
+        pokazują <code>…</code>, nigdy <code>0%</code>; pamięć nie potrzebuje różnicy i
+        pojawia się już przy pierwszym odczycie. A agent próbkuje tylko,
+        <strong>dopóki ktoś faktycznie patrzy</strong>: po około minucie bez zapytań
+        przestaje i zapomina swoje odczyty, zamiast serwować nieświeże. Dlatego pierwsze
+        liczby po otwarciu UI potrzebują chwili, żeby się wypełnić. To celowe — agent,
+        na którego nikt nie patrzy, ma nic nie kosztować.
+      </div>
+      <div class="note">
+        <strong>Nigdzie nie ma znaczników? Sprawdź wersję agenta.</strong> Zużycie jest
+        dodatkiem i degraduje się po cichu: węzeł, którego agent jest nieosiągalny — albo
+        <strong>starszy niż to wydanie i przez to nieświadomy RPC <code>Stats</code></strong>
+        — po prostu nie dostarcza odczytów. Znaczniki się nie pojawiają, sekcji w
+        szczegółach węzła nie ma, a cała reszta działa bez zmian; klient dodatkowo na jakiś
+        czas odpuszcza taki węzeł, zamiast odpytywać go przy każdym odświeżeniu. Na
+        klastrze, który nie został jeszcze przetoczony, <strong>nie ma więc żadnych liczb
+        o zużyciu</strong>, dopóki agenty nie zostaną zaktualizowane — wdrożysz je przez
+        <a href="#init"><code>swarmexec init --force</code></a>. To zdecydowanie
+        najczęstszy powód, dla którego nic nie widać.
+      </div>
 
       <p>
         <strong>Grupowanie po stackach.</strong> <code>docker stack deploy</code> etykietuje
@@ -1081,10 +1131,28 @@
         wolumeny/montowania i sekrety (oraz configi), potem porty, obraz, tryb, zmienne
         środowiskowe, zasoby, rozmieszczenie i polityka aktualizacji (plus stan, węzeł i id
         kontenera dla kontenera/zadania), a identyfikatory i znaczniki czasu na końcu.
-        Naciśnij <kbd>t</kbd>, żeby przełączać między tym podsumowaniem a surowym JSON-em
-        demona. Pamiętaj, że jest to widok zadania z perspektywy menedżera, a nie pełne
-        lokalne <code>docker container inspect</code> działającego kontenera na węźle —
-        prawdziwa inspekcja kontenera przez agenta jest planowana.
+        Naciśnij <kbd>t</kbd>, żeby przełączać po kolei <strong>trzy</strong> widoki
+        nakładki — <strong>tabela&nbsp;→ stats&nbsp;→ surowy JSON demona</strong> — i z
+        powrotem; stopka nazywa zawsze ten następny, a tytuł nakładki ten bieżący.
+        Pamiętaj, że widok tabelaryczny to widok zadania z perspektywy menedżera, a nie
+        pełne lokalne <code>docker container inspect</code> działającego kontenera na węźle
+        — prawdziwa inspekcja kontenera przez agenta jest planowana.
+      </p>
+      <p>
+        <strong>Widok stats.</strong> Środkowy z trzech to <em>bieżące zużycie
+        zasobów</em> — te same odczyty, które znaczą drzewo, więc otwarcie go nie kosztuje
+        żadnego dodatkowego wywołania, a liczby odświeżają się dalej, dopóki widok jest
+        otwarty. Wypisuje każdy kontener usługi (albo jeden kontener przy inspekcji
+        zadania), każdy z proporcjonalnym paskiem, <strong>CPU w rdzeniach</strong> wraz z
+        procentem, <strong>zużytą pamięcią względem jej limitu</strong> i linią mówiącą,
+        czego te procenty są procentem: własnego limitu czy pojemności węzła. Przy więcej
+        niż jednym zmierzonym kontenerze dochodzi podsumowanie: <strong>szczyt</strong> CPU,
+        <strong>szczytowy</strong> procent pamięci i <strong>suma</strong> pamięci po
+        replikach. Kontener, którego żaden agent nie zgłosił — nieosiągalny węzeł, agent
+        zbyt stary na RPC <code>Stats</code> albo kontener uruchomiony po ostatnim odczycie
+        — mówi to w swojej własnej linii, zamiast pokazywać zera. Wpis <kbd>t</kbd> w
+        nakładce pomocy <kbd>?</kbd> brzmi odpowiednio
+        <em>cycle table / stats / raw JSON</em>.
       </p>
       <p>
         Nakładka jest <strong>nawigowalna i wybieralna</strong>, a nie tylko zwykłym
@@ -1094,8 +1162,9 @@
         przez OSC52 — tym samym mechanizmem yank, co wszędzie indziej — więc możesz wyciągnąć
         pojedyncze id, montowanie albo adres bez zaznaczania tekstu ręcznie. <kbd>Enter</kbd>
         też kopiuje, z wyjątkiem zwijalnego wiersza <strong>NETWORKS</strong>, gdzie zamiast
-        tego rozwija/zwija ten wiersz (zobacz niżej). Oba widoki (podsumowanie tabelaryczne
-        i surowy JSON dostępny pod <kbd>t</kbd>) są wybieralne i kopiowalne linia po linii.
+        tego rozwija/zwija ten wiersz (zobacz niżej). Wszystkie trzy widoki (podsumowanie
+        tabelaryczne, widok stats i surowy JSON, przełączane klawiszem <kbd>t</kbd>) są
+        wybieralne i kopiowalne linia po linii.
         <strong>Stopka zawsze wymienia dostępne klawisze</strong>, więc od razu widać, co
         możesz zrobić; dla usługi stopka pokazuje też klawisze edycji opisane niżej.
       </p>
@@ -1105,7 +1174,7 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>przesuwaj zaznaczenie między liniami z danymi (nagłówki/puste pomijane)</td></tr>
           <tr><td><kbd>y</kbd></td><td>skopiuj zaznaczoną linię do schowka (OSC52) — zawsze</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>na zwijalnym wierszu <strong>NETWORKS</strong> rozwija/zwija ten poziom — wiersze są zagnieżdżone na dwóch poziomach, sieć i jej rozwinięcie <code>N containers</code>; w każdej innej linii kopiuje ją (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>przełącz między podsumowaniem tabelarycznym a surowym JSON-em demona (oba wybieralne)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>przełączaj po kolei trzy widoki — podsumowanie tabelaryczne → <strong>stats</strong> (bieżące CPU / pamięć, patrz niżej) → surowy JSON demona → z powrotem; wszystkie trzy wybieralne, a stopka nazywa ten następny</td></tr>
           <tr><td><kbd>a</kbd></td><td>menu akcji — wszystkie edytory i akcje usługi na jednej liście, bez Shiftu (tylko usługi; patrz niżej)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edytuj usługę — skalowanie / wymuszona aktualizacja / porty / etykiety / zmienne środowiskowe / sieci / sekrety / montowania / aliasy (tylko usługa; <kbd>S</kbd> to wielka litera, Shift+s, żeby odróżnić ją od <kbd>s</kbd> skalowanie; <kbd>A</kbd> też jest wielkie; zobacz niżej)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>zamknij nakładkę</td></tr>
@@ -1418,7 +1487,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, id, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, sekcją <strong>zarezerwowanych zasobów</strong> (patrz niżej), liczbą wolumenów i pełną listą etykiet</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, id, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, sekcjami <strong>zarezerwowanych zasobów</strong> i <strong>rzeczywistego zużycia</strong> (patrz niżej), liczbą wolumenów i pełną listą etykiet</td></tr>
           <tr><td><kbd>l</kbd></td><td>edytuj <strong>etykiety</strong> zaznaczonego węzła — buforowany edytor listy (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj) nad wpisami <code>key=value</code>. Zastosowanie wykonuje jeden <code>NodeUpdate</code> — w odróżnieniu od usługi aktualizacja węzła <strong>działa natychmiast</strong> (bez aktualizacji kroczącej). Etykiety węzłów są zwykle używane jako cele ograniczeń rozmieszczenia (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>ustaw <strong>dostępność</strong> węzła — menu <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong>, które oznacza stan, w jakim węzeł jest obecnie. <em>Active</em> planuje tu zadania normalnie; <em>Pause</em> zachowuje działające zadania i blokuje tylko <strong>nowe</strong> rozmieszczenia; <em>Drain</em> przenosi <strong>wszystkie</strong> zadania z węzła. Active i Pause działają od razu; Drain przechodzi przez potwierdzenie, które podaje, ile działających zadań swarm zatrzyma i przeplanuje na innych węzłach (usługi, których zadań nie da się umieścić nigdzie indziej, staną się unschedulable). Tak jak zmiana etykiet jest to jeden <code>NodeUpdate</code> (odczyt-modyfikacja-zapis na specyfikacji węzła) i <strong>działa natychmiast</strong> — węzły nie mają aktualizacji kroczącej. Przemapowywalne jako <code>node_availability</code></td></tr>
         </tbody>
@@ -1438,13 +1507,33 @@
         zadania <code>Reservations</code> — dokładnie ta arytmetyka, którą sam scheduler
         swarma wykonuje, decydując, czy zadanie mieści się na węźle, i typowy powód, dla
         którego usługa zostaje unschedulable. Rzeczywiste zużycie CPU/RAM jest lokalne dla
-        węzła i <em>nie</em> jest tym, co tu widać. Zadania, które nie deklarują żadnej
+        węzła i <em>nie</em> jest tym, co tu widać — ma własną sekcję tuż poniżej.
+        Zadania, które nie deklarują żadnej
         rezerwacji, są <strong>liczone i raportowane osobno</strong>: nic tu nie rezerwują,
         a mimo to mogą zużyć cały węzeł — niski procent nie oznacza więc, że węzeł się nudzi,
         a w większości klastrów mało która usługa w ogóle ustawia rezerwacje. Zadanie trzyma
         swoją rezerwację od momentu przypisania do węzła aż do stanu końcowego: zadania w
         preparing czy starting liczą się więc, a shutdown / failed / complete / rejected już
         nie (swarm trzyma je na liście zadań jako historię).
+      </div>
+      <p>
+        <strong>Rzeczywiście zużywane przez kontenery.</strong> Pod spodem jest druga
+        sekcja — <em>in use by containers (measured on the node)</em> — narysowana tymi
+        samymi proporcjonalnymi paskami: to, co kontenery węzła zużywają
+        <strong>naprawdę</strong> w tej chwili, CPU w rdzeniach i pamięć, każde względem
+        pojemności samego węzła. Obie sekcje celowo trzymane są osobno, bo odpowiadają na
+        różne pytania i regularnie bywają bardzo daleko od siebie: węzeł może być w pełni
+        zarezerwowany i się nudzić albo ledwie zarezerwowany i płonąć. Liczby pochodzą od
+        agenta tego węzła, z tego samego źródła co
+        <a href="#tui">znaczniki zużycia w drzewie usług</a> — dopóki różnica CPU nie jest
+        gotowa, w linii stoi <em>measuring…</em>, a węzeł, którego agent jest nieosiągalny
+        albo zbyt stary, nie dostaje sekcji w ogóle, zamiast rzędu zer, który czytałoby się
+        jako „nic nie robi”.
+      </p>
+      <div class="note">
+        <strong>Tylko kontenery.</strong> Liczone są <strong>kontenery</strong> węzła —
+        jądro, demon dockera i cokolwiek działa poza dockerem <em>nie</em> wchodzą do tej
+        liczby. To nie jest obciążenie węzła i sama sekcja to mówi.
       </div>
 
       <h3>Zakładka Configs</h3>
