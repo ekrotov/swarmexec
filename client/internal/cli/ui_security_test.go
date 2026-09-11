@@ -41,14 +41,14 @@ func TestServiceRowSecurityBadge(t *testing.T) {
 	cols := svcColumns{name: 3, mode: 10, repl: 3, image: 5}
 	base := resolve.Service{Name: "web", Mode: "replicated", Running: 1, Desired: 1, Image: "nginx"}
 
-	clean := serviceRow(base, cols, "")
+	clean := serviceRow(base, cols, "", "")
 	if strings.Contains(clean, "🛡") {
 		t.Errorf("clean service unexpectedly shows a shield: %q", clean)
 	}
 
 	risky := base
 	risky.Risks = []secscan.Finding{{Rule: "root-user", Title: "runs as root", Severity: secscan.SevHigh}}
-	row := serviceRow(risky, cols, "")
+	row := serviceRow(risky, cols, "", "")
 	if !strings.Contains(row, "🛡") {
 		t.Errorf("risky service missing shield: %q", row)
 	}

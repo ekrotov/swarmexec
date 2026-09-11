@@ -482,7 +482,7 @@
       <!-- 9 -->
       <h2 id="commands">9. Commandes</h2>
 
-      <h3><code>init</code> — provisionner les agents</h3>
+      <h3 id="init"><code>init</code> — provisionner les agents</h3>
       <p>
         Déploie l'agent comme service Swarm global via l'API du manager : crée un
         secret Docker de secret partagé, exécute l'agent en mode auto-signé sur
@@ -945,7 +945,7 @@
           <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> majuscule) — sur un conteneur ses propres logs, sur un service les logs agrégés de toutes ses tâches</td></tr>
           <tr><td><kbd>!</kbd></td><td>ouvre la surcouche des risques de sécurité pour toute la liste des services (voir ci-dessous)</td></tr>
           <tr><td><kbd>p</kbd></td><td>redirige le port de la tâche sous le curseur</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspecte le nœud sous le curseur — une surcouche navigable avec un résumé tabulaire ; déplacez la sélection avec <kbd>↑</kbd>/<kbd>↓</kbd> ou <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copie la ligne sélectionnée, <kbd>t</kbd> bascule le JSON brut du démon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> ferme). Sur un <strong>service</strong> la surcouche l'édite aussi : <kbd>s</kbd> mise à l'échelle, <kbd>f</kbd> mise à jour forcée, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> réseaux, <kbd>S</kbd> secrets, <kbd>v</kbd> montages, <kbd>A</kbd> alias ; <kbd>D</kbd> diagnostique <em>pourquoi</em> il ne s'exécute pas partout ; <kbd>X</kbd> le supprime</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspecte le nœud sous le curseur — une surcouche navigable avec un résumé tabulaire ; déplacez la sélection avec <kbd>↑</kbd>/<kbd>↓</kbd> ou <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copie la ligne sélectionnée, <kbd>t</kbd> fait défiler tableau → stats → JSON brut du démon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> ferme). Sur un <strong>service</strong> la surcouche l'édite aussi : <kbd>s</kbd> mise à l'échelle, <kbd>f</kbd> mise à jour forcée, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> réseaux, <kbd>S</kbd> secrets, <kbd>v</kbd> montages, <kbd>A</kbd> alias ; <kbd>D</kbd> diagnostique <em>pourquoi</em> il ne s'exécute pas partout ; <kbd>X</kbd> le supprime</td></tr>
           <tr><td><kbd>X</kbd></td><td>supprime un service <strong>directement depuis l'arbre</strong> (<kbd>X</kbd> majuscule, c.-à-d. Shift+x) — sans détour par la surcouche d'inspection. Ce sur quoi elle agit dépend de la ligne sous le curseur : sur une ligne de <strong>service</strong> elle supprime ce service ; sur une ligne de <strong>conteneur</strong> elle supprime le <strong>service propriétaire</strong> du conteneur, car une tâche seule ne peut pas être supprimée — Swarm la replanifierait aussitôt ; sur une ligne de <strong>stack</strong> elle ne supprime rien et signale brièvement dans le pied de page que les services d'un stack se suppriment individuellement, ou avec <code>docker stack rm &lt;stack&gt;</code>. Elle passe par la <strong>même confirmation</strong> que le <kbd>X</kbd> de l'inspection ci-dessous — elle <strong>supprime définitivement</strong> le service et arrête toutes ses tâches ; irréversible. Touche majuscule fixe, pas une action de keymap réaffectable ; le pied de page l'indique en rouge comme <span style="color:#f85149"><em>X remove</em></span> et la surcouche <kbd>?</kbd> la liste aussi. Le <kbd>X</kbd> à l'intérieur de la surcouche d'inspection est inchangé</td></tr>
         </tbody>
       </table></div>
@@ -962,6 +962,61 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — et le même statut apparaît dans
         l'overlay d'inspection du service ; il disparaît dès que la mise à jour est terminée.
       </p>
+      <p>
+        <strong>Marqueurs CPU et mémoire en direct.</strong> À côté de ces badges, une
+        ligne peut aussi porter ce qu'elle <em>consomme</em> réellement à l'instant :
+        jusqu'ici swarmexec ne pouvait montrer que ce que l'ordonnanceur avait
+        <em>réservé</em> (voir l'onglet Nœuds plus bas). Un conteneur — ou un service —
+        dont l'utilisation dépasse <strong>70 %</strong> reçoit un marqueur orange, et
+        <strong>90 %</strong> un rouge, en fin de ligne : un glyphe qui nomme la ressource
+        (<code>⚡</code> pour le CPU, <code>▣</code> pour la mémoire) suivi du pourcentage
+        (<span style="color:#f85149">⚡&nbsp;93 %</span>). Si les deux chauffent, les deux
+        apparaissent. En dessous de 70 % rien n'est dessiné, pour que les marqueurs restent
+        un signal et non du papier peint. Une ligne de <strong>service</strong> prend
+        <strong>la pire de ses réplicas</strong>, pas la moyenne — une moyenne masque
+        précisément le conteneur qui est sur le point de mourir, celui qu'il faut voir.
+        (La mémoire absolue d'une ligne de service est la somme sur les réplicas ; le
+        pourcentage est le pic.)
+      </p>
+      <p>
+        <strong>De quoi ces pourcentages sont-ils le pourcentage ?</strong> Chacun est
+        mesuré par rapport à ce que ce conteneur a réellement le droit d'utiliser :
+        <strong>sa propre limite lorsqu'il en a une, la capacité du nœud sinon</strong>.
+        C'est là tout l'enjeu — 91 % d'une limite de 256&nbsp;Mo signifie qu'un OOM kill
+        est proche, 91 % d'un nœud de 64&nbsp;Go est une tout autre conversation. La
+        <a href="#tui">vue stats</a> de la surcouche d'inspection écrit la base par
+        conteneur sur une ligne sous les chiffres.
+      </p>
+      <div class="note">
+        <strong>D'où viennent les chiffres — et pourquoi ils arrivent en retard.</strong>
+        L'utilisation n'est pas dans l'API du manager : les statistiques de conteneur sont
+        <strong>locales au nœud</strong>. Elles proviennent d'un RPC de l'agent local au
+        nœud (<code>Stats</code>) ; chaque agent échantillonne ses propres conteneurs en
+        arrière-plan et répond depuis sa mémoire, si bien que le client l'interroge
+        simplement sur le cycle de rafraîchissement qu'il a déjà. Deux conséquences. Un
+        <strong>pourcentage de CPU est un delta entre deux relevés</strong> : il n'existe
+        donc pas tant que l'agent n'en a pas pris deux (quelques secondes) — pendant ce
+        temps les vues affichent <code>…</code>, jamais <code>0 %</code> ; la mémoire n'a
+        besoin d'aucun delta et apparaît dès le premier relevé. Et un agent n'échantillonne
+        que <strong>tant que quelqu'un regarde</strong> : il s'arrête environ une minute
+        après la dernière requête et oublie ses relevés plutôt que d'en servir de périmés.
+        C'est pourquoi les tout premiers chiffres après l'ouverture de l'interface mettent
+        un instant à se remplir. C'est délibéré — un agent que personne ne regarde ne doit
+        rien coûter.
+      </div>
+      <div class="note">
+        <strong>Aucun marqueur nulle part ? Vérifiez la version de l'agent.</strong>
+        L'utilisation est un supplément, et elle se dégrade sans bruit : un nœud dont
+        l'agent est injoignable — ou <strong>plus ancien que cette version et donc
+        ignorant du RPC <code>Stats</code></strong> — ne fournit tout simplement aucun
+        relevé. Les marqueurs restent éteints, le bloc du nœud reste absent et tout le
+        reste est intact ; le client met de plus ce nœud de côté un moment au lieu de le
+        sonder à chaque rafraîchissement. Sur un cluster qui n'a pas encore été redéployé,
+        il n'y a donc <strong>aucun chiffre d'utilisation</strong> tant que les agents ne
+        sont pas à jour — déployez-les avec
+        <a href="#reroll"><code>swarmexec init --force</code></a>. C'est de loin la raison la
+        plus probable de ne rien voir.
+      </div>
 
       <p>
         <strong>Regroupé par stack.</strong> <code>docker stack deploy</code> étiquette
@@ -1122,11 +1177,30 @@
         secrets (et configs) d'abord, puis ports, image, mode, env, ressources,
         placement et politique de mise à jour (plus l'état, le nœud et l'id du
         conteneur pour un conteneur/tâche), avec les ids et horodatages en dernier.
-        Appuyez sur <kbd>t</kbd> pour basculer entre ce résumé et le JSON brut du
-        démon. Notez qu'il s'agit de la vue de tâche du manager, pas d'un
-        <code>docker container inspect</code> complet et local au nœud du conteneur en
-        cours d'exécution — une véritable inspection de conteneur via l'agent est
-        prévue.
+        Appuyez sur <kbd>t</kbd> pour faire défiler les <strong>trois</strong> vues de la
+        surcouche — <strong>tableau&nbsp;→ stats&nbsp;→ JSON brut du démon</strong> — puis
+        revenir ; le pied de page nomme toujours la suivante, et le titre de la surcouche
+        indique celle où vous êtes. Notez que la vue tabulaire est la vue de tâche du
+        manager, pas d'un <code>docker container inspect</code> complet et local au nœud
+        du conteneur en cours d'exécution — une véritable inspection de conteneur via
+        l'agent est prévue.
+      </p>
+      <p>
+        <strong>La vue stats.</strong> Celle du milieu montre l'<em>utilisation des
+        ressources en direct</em> — les mêmes relevés que ceux qui marquent l'arbre :
+        l'ouvrir ne coûte aucun appel supplémentaire et les chiffres continuent de se
+        rafraîchir tant qu'elle est ouverte. Elle liste chaque conteneur du service (ou
+        l'unique conteneur d'une inspection de tâche), chacun avec une barre
+        proportionnelle, le <strong>CPU en cœurs</strong> et son pourcentage, la
+        <strong>mémoire utilisée face à sa limite</strong>, et la ligne qui dit de quoi ces
+        pourcentages sont le pourcentage : sa propre limite, ou la capacité du nœud. Avec
+        plus d'un conteneur mesuré, elle ajoute une synthèse : <strong>pic</strong> de CPU,
+        <strong>pic</strong> de pourcentage mémoire et <strong>total</strong> de mémoire
+        sur les réplicas. Un conteneur qu'aucun agent n'a rapporté — nœud injoignable,
+        agent trop ancien pour le RPC <code>Stats</code>, ou conteneur démarré depuis le
+        dernier relevé — le dit sur sa propre ligne au lieu d'afficher des zéros. L'entrée
+        <kbd>t</kbd> de la surcouche d'aide <kbd>?</kbd> indique en conséquence
+        <em>cycle table / stats / raw JSON</em>.
       </p>
       <p>
         La surcouche est <strong>navigable et sélectionnable</strong>, pas seulement
@@ -1138,9 +1212,9 @@
         utilisé ailleurs — pour que vous puissiez saisir un seul id, montage ou
         adresse sans sélectionner de texte à la main. <kbd>Enter</kbd> copie aussi,
         sauf sur une ligne <strong>NETWORKS</strong> repliable, où il déplie/replie
-        plutôt cette ligne (voir ci-dessous). Les deux vues (le résumé tabulaire et le
-        JSON brut atteint avec <kbd>t</kbd>) sont sélectionnables et copiables ligne
-        par ligne. Un <strong>pied de page liste toujours les touches
+        plutôt cette ligne (voir ci-dessous). Les trois vues (le résumé tabulaire, la vue
+        stats et le JSON brut, que <kbd>t</kbd> fait défiler) sont sélectionnables et
+        copiables ligne par ligne. Un <strong>pied de page liste toujours les touches
         disponibles</strong>, de sorte que ce que vous pouvez faire est visible d'un
         coup d'œil ; pour un service, le pied de page affiche aussi les touches
         d'édition ci-dessous.
@@ -1151,7 +1225,7 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>déplace la sélection entre les lignes de données (en-têtes/vides ignorés)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copie la ligne sélectionnée dans le presse-papiers (OSC52) — toujours</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>sur une ligne <strong>NETWORKS</strong> repliable, déplie/replie ce niveau — les lignes s'imbriquent sur deux niveaux, un réseau et son détail <code>N containers</code> ; sur toute autre ligne, la copie (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>bascule entre le résumé tabulaire et le JSON brut du démon (les deux sélectionnables)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>fait défiler les trois vues — résumé tabulaire → <strong>stats</strong> (CPU / mémoire en direct, voir ci-dessous) → JSON brut du démon → retour ; les trois sont sélectionnables, et le pied de page nomme la suivante</td></tr>
           <tr><td><kbd>a</kbd></td><td>menu d'actions — tous les éditeurs et actions du service en une seule liste, sans Maj (services uniquement ; voir ci-dessous)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>édite le service — mise à l'échelle / mise à jour forcée / ports / labels / env / réseaux / secrets / montages / alias (service uniquement ; <kbd>S</kbd> est en majuscule, Maj+s, pour le distinguer de <kbd>s</kbd> mise à l'échelle ; <kbd>A</kbd> est aussi en majuscule ; voir ci-dessous)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>ferme la surcouche</td></tr>
@@ -1483,7 +1557,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, le bloc <strong>ressources réservées</strong> (voir ci-dessous), nombre de volumes et la liste complète des labels</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, les blocs <strong>ressources réservées</strong> et <strong>utilisation réelle</strong> (voir ci-dessous), nombre de volumes et la liste complète des labels</td></tr>
           <tr><td><kbd>l</kbd></td><td>édite les <strong>labels</strong> du nœud sélectionné — un éditeur de liste étagé (<kbd>a</kbd> ajouter / <kbd>e</kbd> éditer / <kbd>d</kbd> supprimer / <kbd>w</kbd> appliquer / <kbd>Esc</kbd> annuler) sur des entrées <code>key=value</code>. Appliquer effectue un seul <code>NodeUpdate</code> — contrairement à un service, une mise à jour de nœud <strong>s'applique immédiatement</strong> (pas de mise à jour progressive). Les labels de nœud sont couramment utilisés comme cibles de contraintes de placement (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>définit la <strong>disponibilité</strong> du nœud — un menu <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> qui signale l'état dans lequel le nœud se trouve actuellement. <em>Active</em> y planifie les tâches normalement ; <em>Pause</em> conserve les tâches en cours d'exécution et empêche seulement les <strong>nouveaux</strong> placements ; <em>Drain</em> déplace <strong>toutes</strong> les tâches hors du nœud. Active et Pause s'appliquent aussitôt ; Drain passe par une confirmation qui indique combien de tâches en cours d'exécution le swarm va arrêter et replanifier ailleurs (les services dont les tâches ne peuvent être placées nulle part ailleurs deviennent unschedulable). Comme un changement de labels, c'est un seul <code>NodeUpdate</code> (lecture-modification-écriture sur la spec du nœud) et cela <strong>s'applique immédiatement</strong> — les nœuds n'ont pas de mise à jour progressive. Remappable via <code>node_availability</code></td></tr>
         </tbody>
@@ -1504,7 +1578,8 @@
         que fait l'ordonnanceur du swarm lui-même lorsqu'il décide si une tâche tient sur un
         nœud, et la raison habituelle pour laquelle un service reste unschedulable. La
         consommation réelle de CPU/RAM est locale au nœud et n'est <em>pas</em> ce qui est
-        affiché ici. Les tâches qui ne déclarent aucune réservation sont
+        affiché ici : elle a son propre bloc, juste en dessous. Les tâches qui ne déclarent
+        aucune réservation sont
         <strong>comptées et signalées séparément</strong> : elles ne réservent rien ici mais
         peuvent tout de même consommer le nœud entier, donc un faible pourcentage ne
         signifie pas que le nœud est inactif — et dans la plupart des clusters, peu de
@@ -1512,6 +1587,26 @@
         affectation jusqu'à ce qu'elle atteigne un état terminal : les tâches en preparing ou
         starting comptent donc, tandis que shutdown / failed / complete / rejected ne
         comptent pas (le swarm les garde dans la liste des tâches à titre d'historique).
+      </div>
+      <p>
+        <strong>Utilisé par les conteneurs.</strong> En dessous vient un second bloc —
+        <em>in use by containers (measured on the node)</em> — dessiné avec les mêmes
+        barres proportionnelles : ce que les conteneurs du nœud consomment
+        <strong>réellement</strong> à cet instant, le CPU en cœurs et la mémoire, chacun
+        face à la capacité du nœud. Les deux blocs sont délibérément séparés, car ils
+        répondent à des questions différentes et sont régulièrement très éloignés l'un de
+        l'autre : un nœud peut être entièrement réservé et inactif, ou à peine réservé et
+        en feu. Les chiffres viennent de l'agent de ce nœud, la même source que les
+        <a href="#tui">marqueurs d'utilisation de l'arbre des services</a> — tant que le
+        delta CPU n'est pas prêt, la ligne affiche <em>measuring…</em>, et un nœud dont
+        l'agent est injoignable ou trop ancien n'obtient aucun bloc plutôt qu'une rangée de
+        zéros qui se lirait comme « inactif ».
+      </p>
+      <div class="note">
+        <strong>Les conteneurs seulement.</strong> Ce sont les <strong>conteneurs</strong>
+        du nœud qui sont comptés — le noyau, le démon docker et tout ce qui tourne en
+        dehors de docker ne sont <em>pas</em> dans ce chiffre. Ce n'est pas la charge du
+        nœud, et le bloc le dit lui-même.
       </div>
 
       <h3>Onglet Configs</h3>

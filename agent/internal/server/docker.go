@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -37,6 +38,14 @@ type DockerClient interface {
 	VolumeCreate(ctx context.Context, options volume.CreateOptions) (volume.Volume, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
 	DiskUsage(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
+	// ContainerStatsOneShot takes a single resource reading of one container.
+	// One-shot rather than the streaming form on purpose: the stats cache keeps
+	// the previous reading itself, which is what a CPU percentage needs, and a
+	// stream per container would cost far more than it buys at our resolution.
+	ContainerStatsOneShot(ctx context.Context, containerID string) (container.StatsResponseReader, error)
+	// Info reports the node's own capacity (CPU count, total memory) — the
+	// denominator for "how loaded is this node".
+	Info(ctx context.Context) (system.Info, error)
 	// Events streams docker daemon events; the volume-size cache watches
 	// volume create/destroy to refresh reactively.
 	Events(ctx context.Context, options events.ListOptions) (<-chan events.Message, <-chan error)

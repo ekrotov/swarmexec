@@ -462,7 +462,7 @@
       <!-- 9 -->
       <h2 id="commands">9. Commands</h2>
 
-      <h3><code>init</code> — provision the agents</h3>
+      <h3 id="init"><code>init</code> — provision the agents</h3>
       <p>
         Deploys the agent as a global Swarm service via the manager API: creates a
         shared-secret Docker secret, runs the agent in self-signed mode on every node
@@ -894,7 +894,7 @@
           <tr><td><kbd>L</kbd></td><td>logs (capital <kbd>L</kbd>) — on a container its own logs, on a service the aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>!</kbd></td><td>open the security-risks overlay for the whole service list (see below)</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> toggles the raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> cycles table → stats → raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
           <tr><td><kbd>X</kbd></td><td>remove a service <strong>straight from the tree</strong> (capital <kbd>X</kbd>, i.e. Shift+x) — no detour through the inspect overlay. What it acts on follows the row under the cursor: on a <strong>service</strong> row it removes that service; on a <strong>container</strong> row it removes that container's <strong>owning service</strong>, because a single task cannot be removed on its own — Swarm would immediately reschedule it; on a <strong>stack</strong> row it removes nothing and instead notes briefly in the footer that a stack's services have to be removed individually, or with <code>docker stack rm &lt;stack&gt;</code>. It goes through the <strong>same confirm</strong> as the inspect <kbd>X</kbd> below — it <strong>permanently deletes</strong> the service and stops all its tasks, cannot be undone, and afterwards offers to delete any now-orphaned secrets. A fixed capital key, not a remappable keymap action; the footer lists it in red as <span style="color:#f85149"><em>X remove</em></span> and the <kbd>?</kbd> overlay lists it too. The <kbd>X</kbd> inside the inspect overlay is unchanged</td></tr>
         </tbody>
       </table></div>
@@ -909,6 +909,55 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — and the same status appears
         in the service inspect overlay; it clears once the update completes.
       </p>
+      <p>
+        <strong>Live CPU &amp; memory markers.</strong> Next to those badges a row can also
+        carry what it is actually <em>using</em> right now — until now swarmexec could only
+        show what the scheduler had <em>booked</em> (see the Nodes tab below). A container
+        or a service whose usage crosses <strong>70%</strong> gets an orange marker and
+        <strong>90%</strong> a red one, at the end of the row: a glyph naming the resource
+        — <code>⚡</code> for CPU, <code>▣</code> for memory — followed by the percentage
+        (<span style="color:#f85149">⚡&nbsp;93%</span>). Both appear when both are hot.
+        Below 70% nothing is drawn at all, so the markers stay a signal rather than
+        wallpaper. A <strong>service</strong> row takes the <strong>worst of its
+        replicas</strong>, not an average — an average hides the one container that is
+        about to die, which is exactly the one worth seeing. (Absolute memory on a service
+        row is the sum across replicas; the percentage is the peak.)
+      </p>
+      <p>
+        <strong>What the percentages are of.</strong> Each one is measured against what
+        that container may actually use: <strong>its own limit when it has one, the node's
+        capacity when it does not</strong>. That distinction is the whole point — 91% of a
+        256&nbsp;MB limit means an OOM kill is close, 91% of a 64&nbsp;GB node is a
+        different conversation. The inspect overlay's <a href="#tui">stats view</a> spells
+        out the basis per container in a line under the numbers.
+      </p>
+      <div class="note">
+        <strong>Where the numbers come from — and why they arrive late.</strong> Usage is
+        not in the manager API: container stats are <strong>per node</strong>. They come
+        from a node-local agent RPC (<code>Stats</code>); each agent samples its own
+        containers in the background and answers from memory, so the client just polls it
+        on the refresh cycle it already has. Two consequences worth knowing. A
+        <strong>CPU percentage is a delta between two readings</strong>, so it does not
+        exist until the agent has taken two (a few seconds) — while it isn't ready the
+        views show <code>…</code>, never <code>0%</code>; memory needs no delta and appears
+        from the first reading. And an agent only samples <strong>while someone is actually
+        looking</strong>: it stops about a minute after the last request, and forgets its
+        readings rather than serving stale ones. So the very first numbers after you open
+        the UI take a moment to fill in. That is deliberate — an agent nobody is watching
+        should cost nothing.
+      </div>
+      <div class="note">
+        <strong>No markers anywhere? Check the agent version.</strong> Usage is
+        supplementary, and it degrades quietly: a node whose agent is unreachable — or
+        <strong>older than this release and therefore unaware of the <code>Stats</code>
+        RPC</strong> — simply contributes no readings. The markers stay off, the node
+        block stays absent, and everything else is untouched; the client also backs off
+        from such a node rather than probing it every refresh. On a cluster that has not
+        been re-rolled yet there are therefore <strong>no usage numbers at all</strong>
+        until the agents are updated — roll them out with
+        <a href="#reroll"><code>swarmexec init --force</code></a>. This is by far the most
+        likely reason you see nothing.
+      </div>
 
       <p>
         <strong>Grouped by stack.</strong> <code>docker stack deploy</code> labels every
@@ -1052,10 +1101,27 @@
         by operational relevance — networks, labels, volumes/mounts and secrets (and
         configs) first, then ports, image, mode, env, resources, placement and update
         policy (plus state, node and container id for a container/task), with ids and
-        timestamps last. Press <kbd>t</kbd> to toggle between this summary and the raw
-        daemon JSON. Note this is the manager's task view, not a full node-local
+        timestamps last. Press <kbd>t</kbd> to cycle the overlay's <strong>three</strong>
+        views — <strong>table&nbsp;→ stats&nbsp;→ raw daemon JSON</strong> — and back; the
+        footer names whichever comes next, and the overlay title says which one you are in.
+        Note this tabular view is the manager's task view, not a full node-local
         <code>docker container inspect</code> of the running container — a real container
         inspect via the agent is planned.
+      </p>
+      <p>
+        <strong>The stats view.</strong> The middle of the three is <em>live resource
+        usage</em> — the same readings that mark the tree, so opening it costs no extra
+        call and the numbers keep refreshing while it is open. It lists every container of
+        the service (or the single container of a task inspect), each with a proportional
+        bar, the <strong>CPU in cores</strong> plus its percentage, <strong>memory used
+        against its limit</strong>, and the basis line saying what those percentages are
+        <em>of</em> — its own limit, or the node's capacity. With more than one measured
+        container it adds a roll-up: <strong>peak</strong> CPU, <strong>peak</strong>
+        memory percentage and <strong>total</strong> memory across the replicas. A
+        container no agent reported — unreachable node, an agent too old for the
+        <code>Stats</code> RPC, or one started since the last reading — says so on its own
+        line instead of showing zeros. The <kbd>?</kbd> help overlay's <kbd>t</kbd> entry
+        reads <em>cycle table / stats / raw JSON</em> accordingly.
       </p>
       <p>
         The overlay is <strong>navigable and selectable</strong>, not just a plain scroll:
@@ -1065,9 +1131,9 @@
         over OSC52 — the same yank mechanism used elsewhere — so you can grab a single id,
         mount or address without selecting text by hand. <kbd>Enter</kbd> also copies, except
         on a collapsible <strong>NETWORKS</strong> row, where it instead expands/collapses that
-        row (see below). Both views (the
-        tabular summary and the raw JSON reached with <kbd>t</kbd>) are selectable and
-        copyable line by line. A <strong>footer always lists the available keys</strong>,
+        row (see below). All three views
+        (the tabular summary, the stats view and the raw JSON, cycled with <kbd>t</kbd>)
+        are selectable and copyable line by line. A <strong>footer always lists the available keys</strong>,
         so what you can do is visible at a glance; for a service the footer also shows the
         edit keys below.
       </p>
@@ -1077,7 +1143,7 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>move the selection between data lines (headers/blanks skipped)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the selected line to the clipboard (OSC52) — always</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that level — the rows nest two deep, a network and its <code>N containers</code> drill-down; on any other line, copy it (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>toggle between the tabular summary and the raw daemon JSON (both selectable)</td></tr>
+          <tr><td><kbd>t</kbd></td><td>cycle the three views — tabular summary → <strong>stats</strong> (live CPU / memory, see below) → raw daemon JSON → back; all three selectable, and the footer names whichever comes next</td></tr>
           <tr><td><kbd>a</kbd></td><td>actions menu — every service editor and action in one list, no Shift needed (service only; see below)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edit the service — scale / force-update / ports / labels / env / networks / secrets / mounts / aliases (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; <kbd>A</kbd> is capital too; see below)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>close the overlay</td></tr>
@@ -1382,7 +1448,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong> block (see below), volume count and the full label list</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong> and <strong>in-use</strong> blocks (see below), volume count and the full label list</td></tr>
           <tr><td><kbd>l</kbd></td><td>edit the selected node's <strong>labels</strong> — a staged list editor (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel) over <code>key=value</code> entries. Applying does one <code>NodeUpdate</code> — unlike a service, a node update <strong>applies immediately</strong> (no rolling update). Node labels are commonly used as placement-constraint targets (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>set the node's <strong>availability</strong> — a menu of <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> that marks the state the node is currently in. <em>Active</em> schedules tasks here normally; <em>Pause</em> keeps the running tasks and only stops <strong>new</strong> placements; <em>Drain</em> moves <strong>every</strong> task off the node. Active and Pause apply straight away; Drain goes through a confirm naming how many running tasks swarm will stop and reschedule elsewhere (services whose tasks can't be placed anywhere else go unschedulable). Like a label change it is one <code>NodeUpdate</code> (read-modify-write on the node spec) and <strong>applies immediately</strong> — nodes have no rolling update. Remappable as <code>node_availability</code></td></tr>
         </tbody>
@@ -1401,13 +1467,33 @@
         tasks' declared <code>Reservations</code> — exactly the arithmetic the swarm
         scheduler itself does when deciding whether a task fits on a node, and the usual
         reason a service sits unschedulable. Live CPU/RAM consumption is node-local and is
-        <em>not</em> what this shows. Tasks that declare no reservation are
+        <em>not</em> what this shows — it has a block of its own, right below. Tasks that
+        declare no reservation are
         <strong>counted and reported separately</strong>: they book nothing here yet can
         still consume the whole node, so a low percentage does not mean the node is idle —
         and in most clusters few services set reservations at all. A task holds its
         reservation from the moment it is assigned until it reaches a terminal state, so
         tasks that are preparing or starting count, while shutdown / failed / complete /
         rejected ones do not (swarm keeps those in the task list as history).
+      </div>
+      <p>
+        <strong>In use by containers.</strong> Beneath that sits a second block —
+        <em>in use by containers (measured on the node)</em> — drawn with the same
+        proportional bars: what the node's containers are <strong>actually</strong> using
+        right now, CPU in cores and memory, each against the node's own capacity. The two
+        blocks are kept deliberately apart because they answer different questions and are
+        routinely far apart: a node can be fully booked and idle, or barely booked and on
+        fire. The figures come from that node's agent, the same source as the
+        <a href="#tui">usage markers in the service tree</a> — while the CPU delta isn't
+        ready yet the line reads <em>measuring…</em>, and a node whose agent is unreachable
+        or too old gets no block at all rather than a row of zeros that would read as
+        “idle”.
+      </p>
+      <div class="note">
+        <strong>Containers only.</strong> This counts the node's <strong>containers</strong>
+        — the kernel, the docker daemon and anything running outside docker are
+        <em>not</em> in the figure. It is not the node's load average, and the block says so
+        itself.
       </div>
 
       <h3>Configs tab</h3>

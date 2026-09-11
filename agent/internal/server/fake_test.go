@@ -5,7 +5,10 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -29,6 +33,13 @@ type fakeDocker struct {
 
 	containers []types.Container
 	inspect    map[string]types.ContainerJSON
+
+	inspects    int
+	statsFrames map[string][]container.StatsResponse
+	statsIdx    map[string]int
+	statsErr    error
+	info        system.Info
+	infoErr     error
 
 	listErr   error
 	createErr error
@@ -65,6 +76,14 @@ type fakeDocker struct {
 	removedContainers  []string
 }
 
+// inspectCalls reports how often ContainerInspect was called, so a test can
+// assert that per-container limits are read once and then cached.
+func (f *fakeDocker) inspectCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.inspects
+}
+
 func newFakeDocker() *fakeDocker {
 	return &fakeDocker{inspect: map[string]types.ContainerJSON{}, attachedCh: make(chan net.Conn, 1)}
 }
@@ -80,6 +99,9 @@ func (f *fakeDocker) ContainerList(_ context.Context, _ container.ListOptions) (
 }
 
 func (f *fakeDocker) ContainerInspect(_ context.Context, id string) (types.ContainerJSON, error) {
+	f.mu.Lock()
+	f.inspects++
+	f.mu.Unlock()
 	if c, ok := f.inspect[id]; ok {
 		return c, nil
 	}
@@ -193,6 +215,43 @@ func (f *fakeDocker) VolumeRemove(_ context.Context, name string, _ bool) error 
 	}
 	f.removedVols = append(f.removedVols, name)
 	return nil
+}
+
+// statsFrames are the docker stats JSON frames the fake serves, keyed by
+// container id, and statsIdx tracks which one each container is on — so a test
+// can hand out a second reading and exercise the CPU delta.
+func (f *fakeDocker) ContainerStatsOneShot(_ context.Context, id string) (container.StatsResponseReader, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.statsErr != nil {
+		return container.StatsResponseReader{}, f.statsErr
+	}
+	frames := f.statsFrames[id]
+	if len(frames) == 0 {
+		return container.StatsResponseReader{}, errors.New("no stats for " + id)
+	}
+	i := f.statsIdx[id]
+	if i >= len(frames) {
+		i = len(frames) - 1 // keep serving the last frame
+	}
+	if f.statsIdx == nil {
+		f.statsIdx = map[string]int{}
+	}
+	f.statsIdx[id] = i + 1
+	body, err := json.Marshal(frames[i])
+	if err != nil {
+		return container.StatsResponseReader{}, err
+	}
+	return container.StatsResponseReader{Body: io.NopCloser(bytes.NewReader(body))}, nil
+}
+
+func (f *fakeDocker) Info(_ context.Context) (system.Info, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.infoErr != nil {
+		return system.Info{}, f.infoErr
+	}
+	return f.info, nil
 }
 
 func (f *fakeDocker) DiskUsage(_ context.Context, _ types.DiskUsageOptions) (types.DiskUsage, error) {

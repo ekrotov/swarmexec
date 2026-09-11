@@ -38,7 +38,7 @@ func (u *ui) markService(n *tview.TreeNode) {
 	if u.regCache != nil {
 		suffix = versionSuffix(u.regCache.status(ctx, svc.ImageRef))
 	}
-	row := serviceRow(svc, u.svcCols, suffix)
+	row := serviceRow(svc, u.svcCols, suffix, u.svcUsageBadge(ref.name))
 	switch {
 	case len(n.GetChildren()) == 0:
 		n.SetText("  " + row)
@@ -113,6 +113,8 @@ func (u *ui) renderContainers() {
 	// over every service so the alignment stays stable while filtering.
 	u.svcCols = svcColumns{}
 	u.svcByName = make(map[string]resolve.Service, len(u.lastSvcs))
+	// Rebuilt with the tree, so a container that has gone leaves no entry behind.
+	u.leafBase = make(map[string]string, len(u.lastCands))
 	for _, s := range u.lastSvcs {
 		u.svcByName[s.Name] = s
 		if w := len(orDash(s.Name)); w > u.svcCols.name {
@@ -185,7 +187,7 @@ func (u *ui) renderContainers() {
 			continue
 		}
 		// Collapsed by default (spec); keep a service the operator expanded.
-		svcNode := tview.NewTreeNode(serviceRow(s, u.svcCols, "")).
+		svcNode := tview.NewTreeNode(serviceRow(s, u.svcCols, "", u.svcUsageBadge(s.Name))).
 			SetColor(serviceColor(s.Running, s.Desired)).
 			SetReference(svcRef{name: s.Name}).
 			SetExpanded(wasExpanded[s.Name])
@@ -203,7 +205,12 @@ func (u *ui) renderContainers() {
 			} else {
 				label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
 			}
-			leaf := tview.NewTreeNode(annotateForwards(label, forwards.forContainer(c.ContainerID))).SetReference(c)
+			label = annotateForwards(label, forwards.forContainer(c.ContainerID))
+			// Keep the badge-free label: re-marking a row when new readings land
+			// then just re-appends, instead of trying to cut the old marker back
+			// off a string that also carries the forward and update markers.
+			u.leafBase[c.ContainerID] = label
+			leaf := tview.NewTreeNode(label + usageBadge(u.usage[c.ContainerID])).SetReference(c)
 			svcNode.AddChild(leaf)
 			if c.ContainerID == prevID {
 				targetLeaf = leaf
@@ -524,4 +531,71 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 	// Height tracks the item count: 6 items plus the border.
 	pages.AddPage(pageMenu, centered(list, 48, 8), true, true)
 	app.SetFocus(list)
+}
+
+// svcUsageBadge is the resource marker for a service row: the worst reading
+// across its containers. Empty when nothing is known yet or nothing is hot.
+func (u *ui) svcUsageBadge(service string) string {
+	if len(u.usage) == 0 {
+		return ""
+	}
+	agg, ok := serviceUsage(u.usage, u.lastCands, service)
+	if !ok {
+		return ""
+	}
+	return usageBadge(agg)
+}
+
+// loadUsage refreshes the live resource readings in the background and re-marks
+// the tree when they land.
+//
+// Deliberately not part of fetchContainers: usage comes from the node agents
+// rather than the manager, is best-effort, and can be slower than the tree
+// fetch. Folding it in would make the whole tree wait on the slowest agent —
+// and an agent too old to know the RPC would then break the view instead of
+// just leaving the badges off.
+func (u *ui) loadUsage() {
+	app, ctx, cfg := u.app, u.ctx, u.cfg
+	if !u.usageBusy.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer u.usageBusy.Store(false)
+		start := time.Now()
+		nodes, err := u.r.Nodes(ctx)
+		if err != nil {
+			clientlog.Timed("ui.loadUsage", start, err)
+			return
+		}
+		byContainer, byNode := collectUsage(ctx, cfg, nodes, u.f.connectTimeout, u.statsGate)
+		clientlog.Timed("ui.loadUsage", start, nil)
+		if ctx.Err() != nil {
+			return
+		}
+		app.QueueUpdateDraw(func() {
+			u.usage, u.nodeUse = byContainer, byNode
+			// Re-mark rather than rebuild: the readings only change row text, and
+			// rebuilding would fight the operator's cursor and fold state.
+			u.remarkUsage()
+		})
+	}()
+}
+
+// remarkUsage refreshes the badge on every row in place, leaving the tree's
+// shape, cursor and fold state alone.
+func (u *ui) remarkUsage() {
+	if u.croot == nil {
+		return
+	}
+	u.croot.Walk(func(n, parent *tview.TreeNode) bool {
+		switch ref := n.GetReference().(type) {
+		case svcRef:
+			u.markService(n)
+		case resolve.Candidate:
+			if base, ok := u.leafBase[ref.ContainerID]; ok {
+				n.SetText(base + usageBadge(u.usage[ref.ContainerID]))
+			}
+		}
+		return true
+	})
 }
