@@ -97,6 +97,12 @@
     .rel-notes ul { margin: .25rem 0 .5rem; padding-left: 1.2rem; }
     .rel-notes li { margin: .15rem 0; }
     .rel-notes p.cont { margin: .2rem 0; color: var(--muted); }
+    .rel-notes p.text { margin: .45rem 0; }
+    .rel-notes pre.screen {
+      background: #010409; border: 1px solid var(--border); border-radius: 8px;
+      padding: .8rem 1rem; margin: .6rem 0; color: var(--muted);
+      overflow-x: auto; white-space: pre; font-size: .8rem; line-height: 1.6;
+    }
     .rel-notes code {
       background: #010409; border: 1px solid var(--border); border-radius: 4px;
       padding: 0 .3em; font-size: .85em;
@@ -195,36 +201,89 @@
         return s.replace(/`([^`]+)`/g, '<code>$1</code>');
       }
 
+      function heading(s) { return '<h3 class="section">' + inlineCode(esc(s.trim())) + '</h3>'; }
+
+      // One block of non-blank lines. Its shape is read line by line rather
+      // than guessed from the first line: a "- " at column 0 opens a bullet and
+      // indented lines below it are that bullet wrapping; an indented run with
+      // no bullet above it is a screen and keeps its layout; everything else is
+      // prose, and a run of prose lines is ONE paragraph, not one heading each.
+      function renderBlock(block) {
+        var out = [], text = [], pre = [], items = null;
+
+        function flushText() {
+          if (!text.length) return;
+          // A lone line that does not read as a sentence is a section heading —
+          // the shape most of these messages use ("Features", "Fixes").
+          if (text.length === 1 && !/[.:;,!?]$/.test(text[0].trim())) out.push(heading(text[0]));
+          else {
+            var joined = text.map(function (l) { return l.trim(); }).join(' ');
+            out.push('<p class="text">' + inlineCode(esc(joined)) + '</p>');
+          }
+          text = [];
+        }
+        function flushPre() {
+          if (!pre.length) return;
+          var min = Infinity;
+          for (var k = 0; k < pre.length; k++) {
+            var n = pre[k].match(/^[ \t]*/)[0].length;
+            if (n < min) min = n;
+          }
+          var body = pre.map(function (l) { return esc(l.slice(min).replace(/\s+$/, '')); }).join('\n');
+          out.push('<pre class="screen">' + body + '</pre>');
+          pre = [];
+        }
+        function flushList() {
+          if (!items) return;
+          var html = '<ul>';
+          for (var j = 0; j < items.length; j++) html += '<li>' + inlineCode(esc(items[j])) + '</li>';
+          out.push(html + '</ul>');
+          items = null;
+        }
+
+        for (var i = 0; i < block.length; i++) {
+          var line = block[i], m = line.match(/^- (.*)$/);
+          if (m) { flushText(); flushPre(); if (!items) items = []; items.push(m[1].trim()); continue; }
+          if (/^\s/.test(line)) {
+            if (items && items.length) { items[items.length - 1] += ' ' + line.trim(); continue; }
+            flushText();
+            pre.push(line);
+            continue;
+          }
+          flushList(); flushPre(); text.push(line);
+        }
+        flushText(); flushPre(); flushList();
+        return out.join('');
+      }
+
       // Convert the plain-text tag message into safe HTML. Everything is escaped
       // first; only our own tags are ever emitted.
+      //
+      // Tag messages are hand-written and not all the same shape: some are lists
+      // of "- " bullets, some are prose, some carry an indented block meant to be
+      // read as a screen. The shape is therefore inferred per block rather than
+      // assumed, so a message in an unexpected style still reads as text instead
+      // of turning into one heading per line.
       function renderNotes(msg) {
-        var lines = String(msg || '').split('\n');
-        if (lines.length && /^swarmexec /.test(lines[0])) lines.shift();
-        var out = [], inList = false, liBuf = null;
-        function flushLi() {
-          if (liBuf !== null) { out.push('<li>' + inlineCode(esc(liBuf)) + '</li>'); liBuf = null; }
+        var lines = String(msg || '').split('\n'), out = [];
+
+        // A leading "swarmexec v1.2.3 — summary" / "v1.2.3 — summary": the version
+        // and date already head the entry, so only the summary half is kept.
+        var head = lines.length
+          ? lines[0].match(/^(?:swarmexec\s+)?v?\d+\.\d+\.\d+\s*(?:[—–-]\s*(\S.*))?$/) : null;
+        if (head) {
+          lines.shift();
+          if (head[1]) out.push(heading(head[1]));
         }
-        function closeList() { flushLi(); if (inList) { out.push('</ul>'); inList = false; } }
+
+        // Blank lines separate blocks; each is classified on its own.
+        var blocks = [], cur = [];
         for (var i = 0; i < lines.length; i++) {
-          var raw = lines[i], line = raw.replace(/\s+$/, '');
-          if (line.trim() === '') { closeList(); continue; }
-          var m = line.match(/^- (.*)$/);
-          if (m) {
-            flushLi();
-            if (!inList) { out.push('<ul>'); inList = true; }
-            liBuf = m[1];
-            continue;
-          }
-          if (/^\s{2,}\S/.test(raw)) {
-            if (inList && liBuf !== null) { liBuf += ' ' + line.trim(); continue; }
-            closeList();
-            out.push('<p class="cont">' + inlineCode(esc(line.trim())) + '</p>');
-            continue;
-          }
-          closeList();
-          out.push('<h3 class="section">' + inlineCode(esc(line.trim())) + '</h3>');
+          if (lines[i].trim() === '') { if (cur.length) { blocks.push(cur); cur = []; } }
+          else { cur.push(lines[i]); }
         }
-        closeList();
+        if (cur.length) blocks.push(cur);
+        for (var b = 0; b < blocks.length; b++) out.push(renderBlock(blocks[b]));
         return out.join('');
       }
 
