@@ -489,7 +489,8 @@
       </table></div>
       <div class="note">
         Domyślny obraz agenta jest publiczny na Docker Hubie, więc logowanie do rejestru nie
-        jest potrzebne. Uruchom ponownie z <code>--force</code>, żeby wdrożyć nową wersję agenta.
+        jest potrzebne. Uruchom ponownie z <code>--force</code>, żeby wdrożyć nową wersję agenta
+        — zobacz <a href="#reroll">ponowne wdrożenie agentów bez zmiany sekretu</a>.
       </div>
 
       <h3><code>down</code> — usuń agentów</h3>
@@ -514,7 +515,9 @@
         agenta na każdym gotowym węźle pod kątem osiągalności i rozjazdu wersji. Wypisuje
         tabelę per węzeł (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>);
         kończy się kodem niezerowym, jeśli menedżer jest nieosiągalny albo któryś agent jest
-        niezdrowy.
+        niezdrowy. Węzeł raportowany jako <code>too old (init --force)</code> uruchamia agenta
+        starszego niż twój klient — zobacz
+        <a href="#reroll">ponowne wdrożenie agentów bez zmiany sekretu</a>.
       </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
@@ -524,6 +527,54 @@
           <tr><td><code>--json</code></td><td><code>false</code></td><td>wypisz JSON zamiast tabeli</td></tr>
         </tbody>
       </table></div>
+
+      <h3 id="reroll">Ponowne wdrożenie agentów bez zmiany sekretu</h3>
+      <p>
+        Prędzej czy później musisz wdrożyć agentów ponownie w swarmie, który jest już
+        zaprowizjonowany: agent się zawiesza, <code>doctor</code> pokazuje węzeł jako
+        <code>too old (init --force)</code>, komenda kończy się błędem <em>„agent is
+        older than this client (missing RPC) — update it with <code>swarmexec init
+        --force</code>”</em> albo węzeł został postawiony od nowa i jego agent nigdy nie
+        wrócił. Rozwiązaniem jest ponowne uruchomienie <code>init</code> z
+        <code>--force</code> — flaga oznacza dokładnie <em>zaktualizuj usługę, jeśli już
+        istnieje</em>. Bez niej uruchomienie <code>init</code> na istniejącej usłudze jest
+        błędem użycia, który każe ci dodać <code>--force</code>; nic nie zostaje zmienione.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+      <p>
+        To wdraża agenta ponownie na każdym węźle i <strong>nie rusza współdzielonego
+        sekretu</strong>. Sekrety Dockera są niezmienne, więc <code>init</code> znajduje
+        istniejący <code>swarmexec_agent_secret</code>, raportuje go jako
+        <code>reusing existing</code> i zachowuje wartość, która już jest w klastrze.
+        Każdy klient, który działał wcześniej, działa dalej — nie trzeba niczego
+        rozdystrybuowywać ponownie.
+      </p>
+      <div class="warn">
+        <strong>Nie przekazuj <code>--secret</code> przy ponownym wdrożeniu.</strong>
+        Jeśli sekret już istnieje, nie da się go nadpisać, więc twoja wartość
+        <strong>nie zostaje zastosowana w klastrze</strong> — ale <strong>mimo to</strong>
+        zostaje zapisana do twojej konfiguracji klienta. Jeśli nie jest akurat prawdziwą
+        wartością istniejącego sekretu, agenci od tego momentu będą cię odrzucać, a awaria
+        ujawni się dopiero później i wygląda jak zepsuty agent, a nie jak zła lokalna
+        konfiguracja. <code>init</code> ostrzega dokładnie w tym przypadku; potraktuj to
+        ostrzeżenie poważnie. Żeby naprawdę zmienić sekret klastra, musisz najpierw usunąć
+        sekret (żadna usługa nie może się do niego odwoływać) i uruchomić <code>init</code>
+        ponownie.
+      </div>
+      <p>
+        <code>--save-config</code> domyślnie ma wartość <code>true</code>, więc ponowne
+        wdrożenie przepisuje też <code>~/.config/swarmexec/config.yaml</code>. Przekaż
+        <code>--save-config=false</code>, kiedy lokalna konfiguracja klienta ma pozostać
+        nietknięta — na przykład gdy wdrażasz agentów ponownie z maszyny, której
+        konfiguracja jest już poprawna, albo z CI.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force --save-config=false</div>
+      <p>
+        Potem sprawdź wynik. <code>doctor</code> raportuje status per węzeł;
+        <code>ok</code> na każdym węźle oznacza, że klient, agent i sekret znów się
+        zgadzają.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
 
       <h3><code>ps</code> — wypisz zadania</h3>
       <p>

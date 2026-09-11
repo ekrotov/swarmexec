@@ -501,7 +501,8 @@
       <div class="note">
         Das Standard-Agent-Image ist öffentlich auf Docker Hub, es ist also kein
         Registry-Login nötig. Führe es mit <code>--force</code> erneut aus, um eine neue
-        Agent-Version auszurollen.
+        Agent-Version auszurollen — siehe
+        <a href="#reroll">Agents neu ausrollen, ohne das Secret zu ändern</a>.
       </div>
 
       <h3><code>down</code> — die Agents entfernen</h3>
@@ -527,7 +528,9 @@
         Tabelle pro Node aus
         (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>); beendet
         sich mit einem Wert ungleich null, wenn der Manager nicht erreichbar ist oder ein
-        Agent unhealthy ist.
+        Agent unhealthy ist. Ein Node mit dem Status <code>too old (init --force)</code>
+        betreibt einen Agent, der älter ist als dein Client — siehe
+        <a href="#reroll">Agents neu ausrollen, ohne das Secret zu ändern</a>.
       </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
@@ -537,6 +540,56 @@
           <tr><td><code>--json</code></td><td><code>false</code></td><td>JSON statt einer Tabelle ausgeben</td></tr>
         </tbody>
       </table></div>
+
+      <h3 id="reroll">Agents neu ausrollen, ohne das Secret zu ändern</h3>
+      <p>
+        Früher oder später musst du die Agents in einem bereits provisionierten Swarm neu
+        ausrollen: ein Agent hängt, <code>doctor</code> zeigt einen Node als
+        <code>too old (init --force)</code>, ein Kommando scheitert mit <em>„agent is
+        older than this client (missing RPC) — update it with <code>swarmexec init
+        --force</code>“</em>, oder ein Node wurde neu aufgesetzt und sein Agent kam nie
+        zurück. Die Lösung ist, <code>init</code> mit <code>--force</code> erneut
+        auszuführen — das Flag bedeutet genau <em>den Service aktualisieren, falls er
+        bereits existiert</em>. Ohne das Flag ist ein <code>init</code> auf einen
+        bestehenden Service ein Usage-Fehler, der dich auffordert, <code>--force</code>
+        zu ergänzen; geändert wird dabei nichts.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+      <p>
+        Damit wird der Agent auf jedem Node neu ausgerollt, und das geteilte Secret
+        <strong>bleibt unangetastet</strong>. Docker-Secrets sind unveränderlich, also
+        findet <code>init</code> das vorhandene <code>swarmexec_agent_secret</code>,
+        meldet es als <code>reusing existing</code> und behält den Wert, der bereits im
+        Cluster liegt. Jeder Client, der vorher funktioniert hat, funktioniert danach
+        weiter — es muss nichts neu verteilt werden.
+      </p>
+      <div class="warn">
+        <strong>Übergib beim erneuten Ausrollen kein <code>--secret</code>.</strong>
+        Existiert das Secret bereits, kann es nicht überschrieben werden: dein Wert wird
+        <strong>nicht auf den Cluster angewendet</strong> — aber er wird
+        <strong>trotzdem</strong> in deine Client-Konfiguration geschrieben. Ist er nicht
+        zufällig der echte Wert des bestehenden Secrets, weisen die Agents dich ab dem
+        Moment zurück, und der Fehler zeigt sich erst später und sieht nach einem defekten
+        Agent aus statt nach einer falschen lokalen Konfiguration. <code>init</code> warnt
+        in genau diesem Fall — nimm die Warnung ernst. Um das Cluster-Secret wirklich zu
+        ändern, musst du das Secret zuerst entfernen (kein Service darf es referenzieren)
+        und <code>init</code> erneut ausführen.
+      </div>
+      <p>
+        <code>--save-config</code> steht standardmäßig auf <code>true</code>, ein
+        erneutes Ausrollen schreibt also auch
+        <code>~/.config/swarmexec/config.yaml</code> neu. Übergib
+        <code>--save-config=false</code>, wenn die lokale Client-Konfiguration unberührt
+        bleiben muss — etwa wenn du die Agents von einem Rechner aus neu ausrollst, dessen
+        Konfiguration bereits korrekt ist, oder aus der CI.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force --save-config=false</div>
+      <p>
+        Danach prüfen: <code>doctor</code> meldet einen Status pro Node;
+        <code>ok</code> auf jedem Node heißt, dass Client, Agent und Secret wieder
+        zusammenpassen.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
 
       <h3><code>ps</code> — Tasks auflisten</h3>
       <p>
