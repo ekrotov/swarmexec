@@ -47,19 +47,24 @@ type Options struct {
 	// VolumeSizeInterval sets the volume-size cache's periodic rescan interval.
 	// Zero uses the default (volumeSizeInterval).
 	VolumeSizeInterval time.Duration
+	// StatsInterval sets how often the container-stats sampler takes a reading —
+	// also the resolution of every CPU percentage, which is a delta between two
+	// of them. Zero uses the default (statsInterval).
+	StatsInterval time.Duration
 }
 
 // Server is the Agent gRPC service implementation.
 type Server struct {
 	pb.UnimplementedAgentServer
 
-	docker    DockerClient
-	authz     auth.Authorizer
-	audit     *audit.Logger
-	log       *slog.Logger
-	metrics   Metrics
-	opts      Options
-	sizeCache *volumeSizeCache // serves ListVolumes(with_size) from memory
+	docker     DockerClient
+	authz      auth.Authorizer
+	audit      *audit.Logger
+	log        *slog.Logger
+	metrics    Metrics
+	opts       Options
+	sizeCache  *volumeSizeCache     // serves ListVolumes(with_size) from memory
+	statsCache *containerStatsCache // serves Stats from memory (see statscache.go)
 
 	// identityFn extracts the authenticated client identity from the RPC
 	// context. Overridable in tests; defaults to the mTLS peer CN.
@@ -93,6 +98,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 		opts:    opts,
 	}
 	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
+	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {
@@ -106,6 +112,14 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 // is cancelled. Call it once after New.
 func (s *Server) StartVolumeSizeCache(ctx context.Context) {
 	go s.sizeCache.run(ctx)
+}
+
+// StartStatsCache launches the background container-stats sampler. Unlike the
+// volume cache it only does work while a client is actually asking for stats
+// (see statsIdleAfter), so an agent nobody is watching stays idle. Call it once
+// after New.
+func (s *Server) StartStatsCache(ctx context.Context) {
+	go s.statsCache.run(ctx)
 }
 
 // ListContainers lists running containers on the local node, optionally

@@ -211,6 +211,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 		// Grouping is on by default; it only takes effect once something in the
 		// cluster actually carries a stack label (see anyStacked).
 		groupByStack: true,
+		statsGate:    newStatsGate(),
 	}
 	return u.run(keyWarnings)
 }
@@ -901,6 +902,10 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	})
 
 	u.loadContainersSync() // startup: before app.Run, so fetch+apply inline
+	// Arm the agents' samplers right away: the first reading carries memory but
+	// no CPU (a percentage needs two), so asking at startup means the numbers are
+	// complete by the time the operator has looked at anything.
+	u.loadUsage()
 	u.setTab("containers")
 	u.refreshCluster()
 
@@ -916,6 +921,9 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 				return
 			case <-t.C:
 				u.autoRefreshContainers()
+				// Usage rides the same tick but on its own goroutine, so a slow or
+				// unreachable agent delays only the badges, never the tree.
+				u.loadUsage()
 			}
 		}
 	}()
@@ -1258,7 +1266,7 @@ type svcColumns struct {
 // "name  mode  running/desired  image  ports" — padded to the shared column
 // widths. Image and ports are appended only when present, and trailing padding
 // is trimmed so a selected row's highlight does not run past the text.
-func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
+func serviceRow(s resolve.Service, c svcColumns, imageSuffix, usage string) string {
 	var b strings.Builder
 	// The security marker leads the row, in a fixed-width slot every service
 	// occupies, so the shields form a vertical scan column and the name column
@@ -1275,9 +1283,9 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix string) string {
 	if s.Ports != "" {
 		fmt.Fprintf(&b, "  %s", s.Ports)
 	}
-	// The update badge is appended last (after the padded columns are trimmed) so
-	// its tags never disturb the column alignment.
-	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState)
+	// The update and resource badges are appended last (after the padded columns
+	// are trimmed) so their tags never disturb the column alignment.
+	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState) + usage
 }
 
 // securityBadgeWidth is the fixed leading slot every service row reserves for
@@ -1769,7 +1777,7 @@ func (u *ui) showHelp() {
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
 	line("a", "actions menu (all edits below, no Shift needed)")
 	line("Enter", "NETWORKS: expand a network → its containers")
-	line("t", "toggle raw JSON / table")
+	line("t", "cycle table / stats / raw JSON")
 	line("d / D", "diff spec · why (placement)")
 	line("R", "roll back to the previous version")
 	line("s / f", "scale · force-update")
@@ -2053,6 +2061,7 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 			switch active {
 			case "containers":
 				u.loadContainers()
+				u.loadUsage()
 			case "volumes":
 				u.loadVolumes()
 			case "networks":
@@ -2063,6 +2072,7 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 				u.loadContexts()
 			case "nodes":
 				u.loadNodes()
+				u.loadUsage() // the node detail shows measured usage next to reservations
 			default:
 				u.renderForwards()
 			}

@@ -80,6 +80,13 @@ service Agent {
   // the one transport). The first ClientMessage MUST carry a StartForward.
   rpc PortForward(stream ForwardClientMessage) returns (stream ForwardServerMessage);
 
+  // Resource usage of the containers on THIS node. Unary on purpose: the agent
+  // samples in the background and answers from memory, so a client polls this on
+  // the refresh cycle it already has instead of holding a stream open per node.
+  // It also solves the sampling problem — a CPU percentage needs two readings,
+  // and the background sampler always has the previous one.
+  rpc Stats(StatsRequest) returns (StatsResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -99,6 +106,7 @@ message ContainerInfo {
   string id = 1;       // full container ID
   string name = 2;     // container name
   string service = 3;  // swarm service name if known, else empty
+  repeated string volumes = 4;  // names of named volumes this container mounts
 }
 
 message ClientMessage {
@@ -150,7 +158,12 @@ message LogChunk {
   }
 }
 
-message ListVolumesRequest {}
+message ListVolumesRequest {
+  // with_size asks the agent to also compute each volume's on-disk size via the
+  // docker disk-usage endpoint (du-style; can be slow). Off by default so the
+  // plain listing stays fast.
+  bool with_size = 1;
+}
 
 message ListVolumesResponse {
   repeated VolumeInfo volumes = 1;
@@ -162,9 +175,16 @@ message VolumeInfo {
   string mountpoint = 3;
   string created_at = 4;  // RFC3339, if known
   string scope = 5;       // "local" or "global"
-  int64 size_bytes = 6;   // on-disk size; only meaningful when size_known is true
-  bool size_known = 7;    // true when the agent actually computed the size
-  map<string, string> labels = 8;  // volume metadata labels, as set at creation
+  // size_bytes is the on-disk size, only meaningful when size_known is true.
+  // -1 means "not available" (e.g. non-local driver).
+  int64 size_bytes = 6;
+  // size_known is true when the agent actually computed the size (with_size
+  // requested and disk-usage succeeded). It lets the client tell "0 bytes" from
+  // "an older agent that doesn't report sizes" (which would default size_bytes
+  // to 0).
+  bool size_known = 7;
+  // labels are the volume's metadata labels, as set at creation time.
+  map<string, string> labels = 8;
 }
 
 message RemoveVolumeRequest {
@@ -197,6 +217,11 @@ message ForwardClientMessage {
   }
 }
 
+// ForwardReady is sent once, after the agent has established the connection to
+// the target port and before any data. It lets the client distinguish "the
+// target accepted" from "connected, but the peer has not spoken yet" — without
+// it a forward pointing at a closed port looks healthy until the operator's
+// own client times out.
 message ForwardReady {}
 
 message ForwardServerMessage {
@@ -212,6 +237,56 @@ message VersionRequest {}
 message VersionResponse {
   string version = 1;        // agent build version
   string proto_version = 2;  // wire protocol version
+}
+
+message StatsRequest {
+  // container_ids narrows the answer to these containers; empty means every
+  // container the agent is sampling. The cli sends the ids it is displaying so
+  // a large node does not ship readings nobody looks at.
+  repeated string container_ids = 1;
+}
+
+message StatsResponse {
+  repeated ContainerStats stats = 1;
+
+  // cpu_ready is false until the sampler has taken the TWO readings a CPU
+  // percentage needs — it is a delta, unlike memory, which is valid from the
+  // first sample. So a response can carry usable memory numbers with
+  // cpu_ready=false, and the client renders "…" for CPU rather than a wrong 0%.
+  bool cpu_ready = 2;
+
+  // sampled_at is when the underlying sample was taken (RFC3339), so a client
+  // can spot a stalled sampler rather than trusting stale numbers.
+  string sampled_at = 3;
+
+  // The node as a whole, for putting usage next to what the scheduler booked.
+  // node_cpus is the online CPU count; usage percentages are relative to it
+  // when a container has no CPU limit of its own.
+  int64 node_cpus = 4;
+  int64 node_memory_total_bytes = 5;
+}
+
+message ContainerStats {
+  string container_id = 1;
+
+  // cpu_percent is the same number `docker stats` prints: the share of ONE cpu,
+  // so 250.0 means two and a half cores. Divide by cpu_limit_cores (or by
+  // node_cpus when there is no limit) to get a 0-100 utilisation.
+  double cpu_percent = 2;
+
+  // cpu_limit_cores is the container's own CPU limit in cores, 0 when it has
+  // none. With no limit the container may use the whole node, which is why the
+  // client falls back to node_cpus for the ratio.
+  double cpu_limit_cores = 3;
+
+  int64 memory_bytes = 4;
+
+  // memory_limit_bytes is the container's limit if it has one, otherwise the
+  // node's total memory — the same substitution docker itself makes.
+  // memory_limited says which of the two it is, so "80% of its limit" is never
+  // confused with "80% of the node".
+  int64 memory_limit_bytes = 5;
+  bool memory_limited = 6;
 }
 ```
 
@@ -249,6 +324,30 @@ TTY container the Docker log stream is raw and the agent forwards everything as
 agent demultiplexes it into `stdout`/`stderr`. The same buffer-safety rule (§6)
 applies. The agent authorizes a Logs request before streaming, exactly as for
 Exec.
+
+### 3.3 Stats semantics (normative)
+
+`Stats` is unary although the underlying data is continuous. The agent samples
+its containers in the background and answers from memory; a client polls on
+whatever refresh cycle it already has.
+
+- `cpu_percent` is a **delta** between two readings, so it does not exist until
+  the agent has taken two. `cpu_ready` says whether the CPU figures in this
+  response are meaningful. Memory needs no delta and is valid from the first
+  reading, so a response MAY carry usable memory with `cpu_ready=false`. A
+  client MUST NOT render a `cpu_percent` of 0 as "idle" when `cpu_ready` is
+  false.
+- `cpu_percent` uses docker's own convention: the share of ONE cpu, so 250.0
+  means two and a half cores.
+- `memory_limit_bytes` is the container's own limit only when `memory_limited`
+  is true; otherwise it is the node's total memory, which docker substitutes for
+  a container with no limit. A client MUST consult `memory_limited` before
+  describing a ratio as "of its limit".
+- The agent MAY stop sampling while no client is asking, and MAY then report an
+  empty `stats` list with `cpu_ready=false` until sampling resumes.
+- An agent that predates this RPC answers `UNIMPLEMENTED`. Usage is
+  supplementary, so a client MUST treat that as "no readings" rather than an
+  error, and SHOULD back off rather than re-probing such a node every cycle.
 
 ## 4. Session Lifecycle (normative)
 

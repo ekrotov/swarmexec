@@ -38,6 +38,13 @@ service Agent {
   // the one transport). The first ClientMessage MUST carry a StartForward.
   rpc PortForward(stream ForwardClientMessage) returns (stream ForwardServerMessage);
 
+  // Resource usage of the containers on THIS node. Unary on purpose: the agent
+  // samples in the background and answers from memory, so a client polls this on
+  // the refresh cycle it already has instead of holding a stream open per node.
+  // It also solves the sampling problem — a CPU percentage needs two readings,
+  // and the background sampler always has the previous one.
+  rpc Stats(StatsRequest) returns (StatsResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -188,4 +195,54 @@ message VersionRequest {}
 message VersionResponse {
   string version = 1;        // agent build version
   string proto_version = 2;  // wire protocol version
+}
+
+message StatsRequest {
+  // container_ids narrows the answer to these containers; empty means every
+  // container the agent is sampling. The cli sends the ids it is displaying so
+  // a large node does not ship readings nobody looks at.
+  repeated string container_ids = 1;
+}
+
+message StatsResponse {
+  repeated ContainerStats stats = 1;
+
+  // cpu_ready is false until the sampler has taken the TWO readings a CPU
+  // percentage needs — it is a delta, unlike memory, which is valid from the
+  // first sample. So a response can carry usable memory numbers with
+  // cpu_ready=false, and the client renders "…" for CPU rather than a wrong 0%.
+  bool cpu_ready = 2;
+
+  // sampled_at is when the underlying sample was taken (RFC3339), so a client
+  // can spot a stalled sampler rather than trusting stale numbers.
+  string sampled_at = 3;
+
+  // The node as a whole, for putting usage next to what the scheduler booked.
+  // node_cpus is the online CPU count; usage percentages are relative to it
+  // when a container has no CPU limit of its own.
+  int64 node_cpus = 4;
+  int64 node_memory_total_bytes = 5;
+}
+
+message ContainerStats {
+  string container_id = 1;
+
+  // cpu_percent is the same number `docker stats` prints: the share of ONE cpu,
+  // so 250.0 means two and a half cores. Divide by cpu_limit_cores (or by
+  // node_cpus when there is no limit) to get a 0-100 utilisation.
+  double cpu_percent = 2;
+
+  // cpu_limit_cores is the container's own CPU limit in cores, 0 when it has
+  // none. With no limit the container may use the whole node, which is why the
+  // client falls back to node_cpus for the ratio.
+  double cpu_limit_cores = 3;
+
+  int64 memory_bytes = 4;
+
+  // memory_limit_bytes is the container's limit if it has one, otherwise the
+  // node's total memory — the same substitution docker itself makes.
+  // memory_limited says which of the two it is, so "80% of its limit" is never
+  // confused with "80% of the node".
+  int64 memory_limit_bytes = 5;
+  bool memory_limited = 6;
 }

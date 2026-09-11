@@ -153,6 +153,10 @@ func run(args []string) error {
 	cacheCtx, cacheCancel := context.WithCancel(context.Background())
 	defer cacheCancel()
 	srv.StartVolumeSizeCache(cacheCtx)
+	// Background container-stats sampler for the Stats RPC. Unlike the volume
+	// cache it idles unless a client is actually asking, so an agent nobody is
+	// watching costs nothing.
+	srv.StartStatsCache(cacheCtx)
 
 	serverOpts := []grpc.ServerOption{
 		grpc.Creds(credentials.NewTLS(tlsCfg)),

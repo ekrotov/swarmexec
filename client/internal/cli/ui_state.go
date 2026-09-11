@@ -108,6 +108,16 @@ type ui struct {
 	regCache        *registryCache             // :latest version / newer-tag resolver
 	autoRefreshBusy atomic.Bool                // guards against overlapping tree refreshes
 
+	// Live resource usage, from the node agents (see stats.go). Kept separate
+	// from the tree fetch because it comes from a different source and must
+	// never hold the tree up: it is an overlay on the rows, and an empty map
+	// simply means no badges.
+	usage     map[string]containerUsage // by container id
+	leafBase  map[string]string         // container id -> tree label without the badge
+	nodeUse   map[string]nodeUsage      // by node name
+	usageBusy atomic.Bool               // guards against overlapping usage fetches
+	statsGate *statsGate                // nodes whose agent cannot serve stats, so we stop asking
+
 	// shared tab state / caches
 	active       string       // the selected tab
 	activeCtx    string       // active docker-context name

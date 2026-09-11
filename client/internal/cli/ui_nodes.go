@@ -346,6 +346,8 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	kv("memory", formatMemBytes(n.MemoryBytes))
 	kv("tasks", fmt.Sprintf("%d running", n.Tasks))
 	b.WriteString(nodeResourceSection(n))
+	use, known := u.nodeUse[n.Hostname]
+	b.WriteString(nodeUsageSection(n, use, known))
 	vol := "…"
 	if u.nodeVolsLoaded {
 		vol = fmt.Sprintf("%d", u.nodeVolCounts[n.Hostname])
@@ -380,4 +382,57 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	})
 	pages.AddPage(pageNodeDetail, centered(tv, 72, 24), true, true)
 	app.SetFocus(tv)
+}
+
+// nodeUsageSection renders what the node's containers are ACTUALLY using, as a
+// counterpart to the reservation figures above it. The two answer different
+// questions and are routinely far apart: a node can be fully booked and idle,
+// or barely booked and on fire. Keeping them in separate blocks, each labelled
+// with where it comes from, is what stops them being read as one number.
+//
+// Absent when no agent answered — an unreachable or too-old agent leaves the
+// reservation view intact rather than showing zeros that look like "idle".
+func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
+	if !known {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n  [gray]in use by containers (measured on the node)[-]\n")
+
+	cpus := use.NodeCPUs
+	if cpus <= 0 && n.NanoCPUs > 0 {
+		cpus = n.NanoCPUs / 1e9
+	}
+	switch {
+	case !use.CPUReady:
+		// The agent has one reading; a percentage needs two. Saying so beats a
+		// confident 0%.
+		b.WriteString("    cpu     [gray]measuring…[-]\n")
+	case cpus > 0:
+		// use.CPUPercent is the share of ONE cpu summed over the containers, so
+		// the node's own capacity is cpus*100 of those.
+		usedCores := int64(use.CPUPercent / 100 * 1e9)
+		capacity := cpus * 1e9
+		fmt.Fprintf(&b, "    %-7s %s  %s / %s\n", "cpu", resourceBar(usedCores, capacity),
+			formatCPUCores(usedCores), formatCPUCores(capacity))
+	default:
+		fmt.Fprintf(&b, "    %-7s %.2f cores\n", "cpu", use.CPUPercent/100)
+	}
+
+	total := use.NodeMem
+	if total <= 0 {
+		total = n.MemoryBytes
+	}
+	if total > 0 {
+		fmt.Fprintf(&b, "    %-7s %s  %s / %s\n", "memory", resourceBar(use.MemBytes, total),
+			formatMemBytes(use.MemBytes), formatMemBytes(total))
+	} else {
+		fmt.Fprintf(&b, "    %-7s %s\n", "memory", formatMemBytes(use.MemBytes))
+	}
+
+	// Container usage is not node usage: the kernel, the daemon and anything
+	// running outside docker are not in these numbers. Say so rather than let
+	// the bar be read as the node's load average.
+	b.WriteString("    [gray]containers only — processes outside docker are not counted.[-]\n")
+	return b.String()
 }

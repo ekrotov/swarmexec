@@ -32,6 +32,7 @@ const (
 	Agent_RemoveVolume_FullMethodName   = "/swarmexec.Agent/RemoveVolume"
 	Agent_CreateVolume_FullMethodName   = "/swarmexec.Agent/CreateVolume"
 	Agent_PortForward_FullMethodName    = "/swarmexec.Agent/PortForward"
+	Agent_Stats_FullMethodName          = "/swarmexec.Agent/Stats"
 	Agent_Version_FullMethodName        = "/swarmexec.Agent/Version"
 )
 
@@ -62,6 +63,12 @@ type AgentClient interface {
 	// listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
 	// the one transport). The first ClientMessage MUST carry a StartForward.
 	PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage], error)
+	// Resource usage of the containers on THIS node. Unary on purpose: the agent
+	// samples in the background and answers from memory, so a client polls this on
+	// the refresh cycle it already has instead of holding a stream open per node.
+	// It also solves the sampling problem — a CPU percentage needs two readings,
+	// and the background sampler always has the previous one.
+	Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -162,6 +169,16 @@ func (c *agentClient) PortForward(ctx context.Context, opts ...grpc.CallOption) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_PortForwardClient = grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage]
 
+func (c *agentClient) Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatsResponse)
+	err := c.cc.Invoke(ctx, Agent_Stats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -199,6 +216,12 @@ type AgentServer interface {
 	// listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
 	// the one transport). The first ClientMessage MUST carry a StartForward.
 	PortForward(grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]) error
+	// Resource usage of the containers on THIS node. Unary on purpose: the agent
+	// samples in the background and answers from memory, so a client polls this on
+	// the refresh cycle it already has instead of holding a stream open per node.
+	// It also solves the sampling problem — a CPU percentage needs two readings,
+	// and the background sampler always has the previous one.
+	Stats(context.Context, *StatsRequest) (*StatsResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -234,6 +257,9 @@ func (UnimplementedAgentServer) CreateVolume(context.Context, *CreateVolumeReque
 }
 func (UnimplementedAgentServer) PortForward(grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method PortForward not implemented")
+}
+func (UnimplementedAgentServer) Stats(context.Context, *StatsRequest) (*StatsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Stats not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -356,6 +382,24 @@ func _Agent_PortForward_Handler(srv interface{}, stream grpc.ServerStream) error
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_PortForwardServer = grpc.BidiStreamingServer[ForwardClientMessage, ForwardServerMessage]
 
+func _Agent_Stats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).Stats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_Stats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).Stats(ctx, req.(*StatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -396,6 +440,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateVolume",
 			Handler:    _Agent_CreateVolume_Handler,
+		},
+		{
+			MethodName: "Stats",
+			Handler:    _Agent_Stats_Handler,
 		},
 		{
 			MethodName: "Version",

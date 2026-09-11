@@ -43,14 +43,14 @@ func TestServiceRowUpdateBadge(t *testing.T) {
 	cols := svcColumns{name: 3, mode: 10, repl: 3, image: 5}
 	base := resolve.Service{Name: "web", Mode: "replicated", Running: 2, Desired: 3, Image: "nginx"}
 
-	settled := serviceRow(base, cols, "")
+	settled := serviceRow(base, cols, "", "")
 	if strings.Contains(settled, "updating") {
 		t.Errorf("settled row unexpectedly shows a badge: %q", settled)
 	}
 
 	updating := base
 	updating.UpdateState = "updating"
-	row := serviceRow(updating, cols, "")
+	row := serviceRow(updating, cols, "", "")
 	if !strings.Contains(row, "⟳ updating") {
 		t.Errorf("updating row missing badge: %q", row)
 	}

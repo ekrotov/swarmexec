@@ -25,6 +25,7 @@ type inspectView struct {
 	title   string
 	op      string                             // clientlog label for the initial fetch
 	editSvc string                             // "" for a task/container inspect — disables the service editor keys
+	subject statsSubject                       // what the STATS view measures
 	fetch   func() ([]inspLine, string, error) // pure data source (see inspect.go)
 
 	table      *tview.Table
@@ -37,7 +38,7 @@ type inspectView struct {
 	upInfo     *upgradeInfo    // the upgrade's picker data, so "u" works from any row
 	expanded   map[string]bool // which networks are expanded
 	loaded     bool
-	showRaw    bool
+	mode       inspMode
 
 	setHelp     func(string)
 	restoreHelp func()
@@ -47,7 +48,7 @@ type inspectView struct {
 // logging labels; editSvc is the service name for a service inspect (enabling the
 // editor keys) or "" for a task/container; fetch yields the structured + raw
 // views. It builds an inspectView and hands off to its methods.
-func (u *ui) showInspect(title string, op string, editSvc string, fetch func() ([]inspLine, string, error)) {
+func (u *ui) showInspect(title string, op string, editSvc string, subject statsSubject, fetch func() ([]inspLine, string, error)) {
 	table := tview.NewTable().SetSelectable(true, false)
 	table.SetBorder(true)
 	iv := &inspectView{
@@ -55,6 +56,7 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 		title:      title,
 		op:         op,
 		editSvc:    editSvc,
+		subject:    subject,
 		fetch:      fetch,
 		table:      table,
 		rowNet:     map[int]string{},
@@ -65,12 +67,41 @@ func (u *ui) showInspect(title string, op string, editSvc string, fetch func() (
 	iv.open()
 }
 
+// inspMode is which of the overlay's three views is showing. "t" cycles them
+// rather than each getting its own key: they are the same object read three
+// ways, and the footer names whichever comes next.
+type inspMode int
+
+const (
+	inspModeTable inspMode = iota // the operator-first tabular summary
+	inspModeStats                 // live resource usage (see stats.go)
+	inspModeRaw                   // the raw daemon JSON
+)
+
+// next cycles table -> stats -> raw -> table.
+func (m inspMode) next() inspMode { return (m + 1) % 3 }
+
+func (m inspMode) label() string {
+	switch m {
+	case inspModeStats:
+		return "stats"
+	case inspModeRaw:
+		return "raw json"
+	default:
+		return "table"
+	}
+}
+
+// statsSubject says what the STATS view should measure: a whole service (every
+// container of it) or one container.
+type statsSubject struct {
+	service     string
+	containerID string
+}
+
 // keysText builds the footer key hints for the current mode.
 func (iv *inspectView) keysText() string {
-	toggle := "raw JSON"
-	if iv.showRaw {
-		toggle = "table"
-	}
+	toggle := iv.mode.next().label()
 	// Front-load the escape hatches ("? help" and "Esc/q close") so that,
 	// when this dense line overflows a narrow terminal, it is the tail of
 	// actions that clips — never the way out or the pointer to the full key
@@ -106,11 +137,7 @@ func (iv *inspectView) setFooter(status string) {
 // handleKey and keeps the selection stable across re-renders.
 func (iv *inspectView) populate() {
 	table := iv.table
-	mode := "table"
-	if iv.showRaw {
-		mode = "raw json"
-	}
-	table.SetTitle(fmt.Sprintf(" inspect %s — %s ", iv.title, mode))
+	table.SetTitle(fmt.Sprintf(" inspect %s — %s ", iv.title, iv.mode.label()))
 	keepRow, _ := table.GetSelection()
 	table.Clear()
 	iv.plain = iv.plain[:0]
@@ -144,11 +171,16 @@ func (iv *inspectView) populate() {
 		}
 		r++
 	}
-	if iv.showRaw {
+	switch iv.mode {
+	case inspModeRaw:
 		for _, ln := range strings.Split(iv.rawJSON, "\n") {
 			put(ln, tcell.ColorWhite, false, true, ln, "")
 		}
-	} else {
+	case inspModeStats:
+		for _, ln := range iv.statsLines() {
+			put(ln.text, ln.color, ln.bold, ln.text != "", strings.TrimSpace(ln.text), "")
+		}
+	default:
 		for _, ln := range iv.lines {
 			switch ln.Kind {
 			case inspTitle:
@@ -527,7 +559,7 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		iv.copyLine()
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
-		iv.showRaw = !iv.showRaw
+		iv.mode = iv.mode.next()
 		iv.populate()
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
@@ -621,11 +653,124 @@ func (u *ui) inspectCurrent() {
 	}
 	if c, ok := n.GetReference().(resolve.Candidate); ok {
 		u.showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task", "",
+			statsSubject{containerID: c.ContainerID},
 			func() ([]inspLine, string, error) { return taskInspectViews(ctx, dcli, c.TaskID) })
 		return
 	}
 	if ref, ok := n.GetReference().(svcRef); ok {
 		u.showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service", ref.name,
+			statsSubject{service: ref.name},
 			func() ([]inspLine, string, error) { return serviceInspectViews(ctx, dcli, ref.name, u.regCache) })
 	}
+}
+
+// statsRow is one rendered line of the STATS view. It is deliberately not an
+// inspLine: that type carries the tabular view's collapse/upgrade machinery,
+// none of which applies here.
+type statsRow struct {
+	text  string
+	color tcell.Color
+	bold  bool
+}
+
+// statsLines renders the live resource usage of the inspected object. The
+// readings come from the same background fetch that badges the tree
+// (ui.loadUsage), so opening this view costs nothing extra and the numbers
+// refresh on their own while it is open.
+func (iv *inspectView) statsLines() []statsRow {
+	u := iv.u
+	var rows []statsRow
+	head := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorAqua, bold: true}) }
+	line := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorWhite}) }
+	dim := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorGray}) }
+	blank := func() { rows = append(rows, statsRow{}) }
+
+	cands := iv.subject.containers(u.lastCands)
+	if len(cands) == 0 {
+		head("RESOURCE USAGE")
+		dim("  (no running container to measure)")
+		return rows
+	}
+
+	head("RESOURCE USAGE")
+	dim("  measured on each node, refreshed with the tree")
+	blank()
+
+	measured := 0
+	for _, c := range cands {
+		usage, ok := u.usage[c.ContainerID]
+		name := fmt.Sprintf("%s  on %s", shortID(c.ContainerID), orDash(c.NodeName))
+		if c.Slot > 0 {
+			name = fmt.Sprintf("%s.%d  %s  on %s", orDash(c.Service), c.Slot, shortID(c.ContainerID), orDash(c.NodeName))
+		}
+		rows = append(rows, statsRow{text: "  " + name, color: tcell.ColorWhite, bold: true})
+		if !ok {
+			// A container the agents have not reported: unreachable node, an agent
+			// too old to know the RPC, or a container that started since the last
+			// reading. Saying which is impossible here; saying nothing is honest.
+			dim("      no reading — the node's agent did not report this container")
+			blank()
+			continue
+		}
+		measured++
+		line(fmt.Sprintf("      %-7s %s  %s", "cpu", usageMeter(usage.CPURatio, usage.CPUReady), formatCPUUsage(usage)))
+		line(fmt.Sprintf("      %-7s %s  %s", "memory", usageMeter(usage.MemRatio, true), formatMemUsage(usage)))
+		dim("      " + usageBasis(usage))
+		blank()
+	}
+
+	if measured > 1 {
+		if agg, ok := serviceUsage(u.usage, u.lastCands, iv.subject.service); ok {
+			head("ACROSS " + fmt.Sprint(measured) + " CONTAINERS")
+			// The worst replica, not the average: an average hides the one that is
+			// about to be OOM-killed, which is the container you opened this for.
+			line(fmt.Sprintf("  %-7s %s peak", "cpu", formatRatio(agg.CPURatio)))
+			line(fmt.Sprintf("  %-7s %s peak · %s total", "memory", formatRatio(agg.MemRatio), humanBytes(agg.MemBytes)))
+		}
+	}
+	return rows
+}
+
+// containers picks the candidates this subject covers: every replica of a
+// service, or the single container of a task inspect.
+func (s statsSubject) containers(all []resolve.Candidate) []resolve.Candidate {
+	var out []resolve.Candidate
+	for _, c := range all {
+		switch {
+		case s.containerID != "" && c.ContainerID == s.containerID:
+			out = append(out, c)
+		case s.containerID == "" && s.service != "" && c.Service == s.service:
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// usageBasis spells out what the percentages are a percentage OF, per resource.
+// Without it "91%" is ambiguous in the way that matters most: 91% of a 256 MB
+// limit is nearly an OOM kill, 91% of a 64 GB node is a different problem.
+func usageBasis(u containerUsage) string {
+	cpu, mem := "the node's cpus", "the node's memory"
+	if u.CPULimited {
+		cpu = "its own cpu limit"
+	}
+	if u.MemLimited {
+		mem = "its own memory limit"
+	}
+	if cpu == mem {
+		return "% of " + cpu
+	}
+	return "cpu % of " + cpu + " · memory % of " + mem
+}
+
+// usageMeter draws the same proportional bar the node view uses, so a ratio
+// reads identically wherever it appears.
+func usageMeter(ratio float64, ready bool) string {
+	if !ready {
+		return strings.Repeat("─", resourceBarWidth)
+	}
+	if ratio < 0 {
+		ratio = 0
+	}
+	return resourceBar(int64(ratio*1000), 1000)
 }
