@@ -411,3 +411,93 @@ func TestServiceNetDNS_DeduplicatesByName(t *testing.T) {
 		t.Errorf("got %d rows, want the network listed once: %+v", len(nets), nets)
 	}
 }
+
+// Swarm joins a service to the ingress network by itself as soon as it
+// publishes a port in ingress mode — the attachment is nowhere in the spec, but
+// the VIP is the address the routing mesh answers on, so it gets a row.
+func TestServiceNetDNS_IngressRow(t *testing.T) {
+	var svc swarm.Service
+	svc.Spec.Name = "web"
+	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
+	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{
+		{NetworkID: "netid1", Addr: "10.0.1.2/24"},
+		{NetworkID: "ingressid", Addr: "10.0.0.5/24"},
+	}
+	svc.Endpoint.Ports = []swarm.PortConfig{
+		{PublishedPort: 8080, TargetPort: 80, Protocol: swarm.PortConfigProtocolTCP, PublishMode: swarm.PortConfigPublishModeIngress},
+		{PublishedPort: 9000, TargetPort: 9000, Protocol: swarm.PortConfigProtocolTCP, PublishMode: swarm.PortConfigPublishModeHost},
+	}
+
+	task := runningTask(1, "node1", "netid1", "frontend-net", "10.0.1.5/24")
+	var ing swarm.Network
+	ing.ID = "ingressid"
+	ing.Spec.Name = "ingress"
+	task.NetworksAttachments = append(task.NetworksAttachments,
+		swarm.NetworkAttachment{Network: ing, Addresses: []string{"10.0.0.9/24"}})
+
+	info := netInfo{
+		names:     map[string]string{"netid1": "frontend-net", "frontend-net": "frontend-net", "ingressid": "ingress", "ingress": "ingress"},
+		encrypted: map[string]bool{},
+		ingress:   map[string]bool{"ingressid": true, "ingress": true},
+		nodeNames: map[string]string{"node1": "host-a"},
+		tasks:     []swarm.Task{task},
+	}
+	nets := serviceNetDNS(svc, info)
+	if len(nets) != 2 {
+		t.Fatalf("got %d rows, want the spec network plus ingress: %+v", len(nets), nets)
+	}
+	// The spec's own networks come first; ingress is appended, not interleaved.
+	if nets[0].Name != "frontend-net" || nets[1].Name != "ingress" {
+		t.Fatalf("wrong order: %q then %q", nets[0].Name, nets[1].Name)
+	}
+	ingRow := nets[1]
+	if ingRow.Addr != "10.0.0.5/24" || ingRow.AddrLabel != "vip" {
+		t.Errorf("ingress vip = %q/%q", ingRow.AddrLabel, ingRow.Addr)
+	}
+	// No service DNS name resolves on ingress, so the count would read "0 dns
+	// names" — the note replaces it.
+	if ingRow.Note != "routing mesh" {
+		t.Errorf("ingress note = %q, want routing mesh", ingRow.Note)
+	}
+	if len(ingRow.DNS) != 0 {
+		t.Errorf("ingress should carry no service DNS names: %v", ingRow.DNS)
+	}
+	// The published ports are the reason the row exists; host-mode ones bypass
+	// ingress and must not be claimed for it.
+	if len(ingRow.Extra) != 1 || !strings.Contains(ingRow.Extra[0], "8080 -> 80/tcp") {
+		t.Errorf("ingress ports = %v, want only the ingress-published one", ingRow.Extra)
+	}
+	// It drills down to the containers' ingress addresses, like any other row.
+	if len(ingRow.Tasks) != 1 || !strings.Contains(ingRow.Tasks[0].Text, "10.0.0.9/24") {
+		t.Errorf("ingress container rows = %+v", ingRow.Tasks)
+	}
+}
+
+// A VIP on a network the spec DOES attach must not produce a second row.
+func TestServiceNetDNS_NoDuplicateRowForSpecNetwork(t *testing.T) {
+	var svc swarm.Service
+	svc.Spec.Name = "web"
+	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
+	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: "10.0.1.2/24"}}
+
+	info := netInfo{
+		names:     map[string]string{"netid1": "frontend-net", "frontend-net": "frontend-net"},
+		encrypted: map[string]bool{},
+		ingress:   map[string]bool{},
+	}
+	if nets := serviceNetDNS(svc, info); len(nets) != 1 {
+		t.Errorf("got %d rows, want 1: %+v", len(nets), nets)
+	}
+}
+
+// A service with no published ports never lands on ingress, so no extra row.
+func TestServiceNetDNS_NoIngressWithoutVIP(t *testing.T) {
+	var svc swarm.Service
+	svc.Spec.Name = "web"
+	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
+
+	info := netInfo{names: map[string]string{"netid1": "net"}, encrypted: map[string]bool{}, ingress: map[string]bool{}}
+	if nets := serviceNetDNS(svc, info); len(nets) != 1 {
+		t.Errorf("got %d rows, want only the spec network: %+v", len(nets), nets)
+	}
+}

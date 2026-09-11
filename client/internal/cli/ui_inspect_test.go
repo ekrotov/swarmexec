@@ -130,3 +130,20 @@ func TestInspectNetworkRowWithoutVIP(t *testing.T) {
 		t.Errorf("a vip-less network row should copy its name: %v", iv.plain)
 	}
 }
+
+// A row whose DNS-name count would say nothing (ingress) shows its note instead.
+func TestInspectNetworkRowNote(t *testing.T) {
+	iv := inspectViewFor([]inspLine{{
+		Kind: inspNet, Text: "ingress", Net: "ingress",
+		Addr: "10.0.0.5/24", AddrLabel: "vip", Note: "routing mesh",
+		Children: []string{"published 8080 -> 80/tcp"},
+	}})
+	iv.populate()
+	out := rendered(iv)
+	if !strings.Contains(out, "ingress  vip 10.0.0.5/24  (routing mesh)") {
+		t.Errorf("note should replace the dns-name count:\n%s", out)
+	}
+	if strings.Contains(out, "dns names") {
+		t.Errorf("a noted row must not also count dns names:\n%s", out)
+	}
+}

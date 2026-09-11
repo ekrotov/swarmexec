@@ -1122,8 +1122,13 @@
         en mode d'endpoint <strong>dnsrr</strong> n'a aucune VIP — c'est voulu, pas une
         donnée manquante — donc au lieu d'un blanc, le réseau déplié porte la ligne
         <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>.
-        Le réseau <strong>ingress</strong> n'est pas listé ici : la section montre les
-        réseaux auxquels la spec du service elle-même est attachée.
+        Le réseau <strong>ingress</strong> est lui aussi listé ici, bien qu'aucune spec ne
+        le mentionne — le swarm y attache le service de lui-même (voir plus bas). Il est
+        ajouté <strong>après</strong> les réseaux que déclare la spec, jamais intercalé
+        entre eux, et son en-tête se lit
+        <code>+ ingress  vip 10.0.0.250/24  (routing mesh)</code> : la mention
+        <code>(routing mesh)</code> prend la place d'un décompte de noms DNS qui ne
+        pourrait jamais dire que <code>(0 dns names)</code>.
       </p>
       <p>
         Déplacez-vous sur une ligne de réseau et appuyez sur <kbd>Enter</kbd> pour la
@@ -1159,6 +1164,35 @@
         d'API laisse simplement le détail vide. Les deux niveaux se replient
         indépendamment ; replier le réseau masque avec lui le niveau des conteneurs.
       </p>
+      <p>
+        La ligne <strong>ingress</strong> est celle qui ne figure dans aucune spec : le
+        swarm rattache un service au réseau ingress de lui-même dès qu'il publie un port
+        en mode <strong>ingress</strong>, et cet attachement n'apparaît nulle part dans la
+        spec du service — pourtant sa <code>vip</code> est l'adresse à laquelle le
+        <strong>routing mesh</strong> répond réellement, ce que l'on veut savoir en
+        premier quand un port publié se comporte mal. Elle obtient donc une ligne à elle,
+        ajoutée après les réseaux déclarés par la spec et de forme légèrement différente :
+        aucun nom DNS de service ne se résout sur ingress, aussi, là où un autre réseau
+        compte ses noms, cet en-tête porte la mention <code>(routing mesh)</code>.
+        Dépliée, la ligne liste à la place les <strong>ports publiés via ingress</strong>
+        qui y ont mené le service — la raison d'être de la ligne —, un par ligne :
+        <code>published 2222 -&gt; 22/tcp</code>. Les ports publiés en mode
+        <strong>host</strong> contournent le routing mesh et n'y sont délibérément pas
+        listés. En dessous, elle descend jusqu'aux conteneurs exactement comme toute autre
+        ligne de réseau : le même niveau <code>+ 1 container</code>, avec l'adresse propre
+        de chaque conteneur sur le réseau ingress. Un service qui ne publie aucun port en
+        ingress n'y a pas de VIP — et donc pas de telle ligne du tout.
+      </p>
+      <p>Un service GitLab publiant SSH sur <code>2222</code>, les deux niveaux dépliés :</p>
+      <div class="cmd">  - dbnet  vip 10.0.1.137/24  (2 dns names)
+      gl_gitlab
+      tasks.gl_gitlab
+      - 1 container
+          gl_gitlab.1  10.0.1.54/24  docker3v2
+  - ingress  vip 10.0.0.250/24  (routing mesh)
+      published 2222 -&gt; 22/tcp
+      - 1 container
+          gl_gitlab.1  10.0.0.64/24  docker3v2</div>
       <p>
         Copier dans <strong>NETWORKS</strong> donne l'<strong>adresse sans son
         masque</strong> — <code>10.0.5.2</code>, la forme que vous collez dans un

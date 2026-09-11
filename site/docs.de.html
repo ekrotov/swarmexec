@@ -1104,8 +1104,13 @@
         hat überhaupt keine VIP — das ist so gewollt und kein fehlender Wert —, deshalb steht
         statt einer Lücke im ausgeklappten Netzwerk die Zeile
         <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>.
-        Das <strong>ingress</strong>-Netzwerk wird hier nicht aufgeführt: der Abschnitt zeigt
-        die Netzwerke, an die die Spec des Service selbst angeschlossen ist.
+        Das <strong>ingress</strong>-Netzwerk steht ebenfalls hier, obwohl es in keiner Spec
+        vorkommt — Swarm hängt den Service von sich aus daran (siehe unten). Es wird
+        <strong>hinter</strong> den Netzwerken aus der Spec angehängt, nie zwischen sie
+        gemischt, und seine Kopfzeile lautet
+        <code>+ ingress  vip 10.0.0.250/24  (routing mesh)</code>: der Hinweis
+        <code>(routing mesh)</code> steht dort, wo eine DNS-Namen-Zählung nur
+        <code>(0 dns names)</code> ergeben könnte.
       </p>
       <p>
         Geh auf eine Netzwerkzeile und drücke <kbd>Enter</kbd>, um sie aus- oder einzuklappen.
@@ -1137,6 +1142,35 @@
         einfach leer. Die beiden Ebenen klappen unabhängig voneinander; klappst du das
         Netzwerk ein, verschwindet die Container-Ebene mit.
       </p>
+      <p>
+        Die <strong>ingress</strong>-Zeile ist diejenige, die in keiner Spec steht: Swarm hängt
+        einen Service von sich aus an das ingress-Netzwerk, sobald er einen Port im Modus
+        <strong>ingress</strong> veröffentlicht. Diese Anbindung taucht in der Service-Spec
+        nirgends auf — ihre <code>vip</code> ist aber genau die Adresse, auf der das
+        <strong>Routing Mesh</strong> tatsächlich antwortet, und das ist das Erste, was du
+        wissen willst, wenn ein veröffentlichter Port sich merkwürdig verhält. Deshalb bekommt
+        sie eine eigene Zeile, angehängt hinter den Netzwerken aus der Spec und leicht anders
+        geformt: auf ingress löst kein Service-DNS-Name auf, deshalb trägt diese Kopfzeile dort,
+        wo andere Netzwerke ihre Namen zählen, den Hinweis <code>(routing mesh)</code>.
+        Ausgeklappt listet sie stattdessen die <strong>über ingress veröffentlichten Ports</strong>
+        auf, die den Service überhaupt dorthin gebracht haben — der Grund für die Zeile —, je eine
+        Zeile pro Port: <code>published 2222 -&gt; 22/tcp</code>. Ports, die im Modus
+        <strong>host</strong> veröffentlicht sind, umgehen das Routing Mesh und werden dort
+        bewusst nicht aufgeführt. Darunter geht es genauso in die Tiefe wie bei jeder anderen
+        Netzwerkzeile: dieselbe Ebene <code>+ 1 container</code>, mit der eigenen Adresse jedes
+        Containers im ingress-Netzwerk. Ein Service, der keinen Port über ingress
+        veröffentlicht, hat dort keine VIP — und damit auch keine solche Zeile.
+      </p>
+      <p>Ein GitLab-Service, der SSH auf <code>2222</code> veröffentlicht, beide Ebenen ausgeklappt:</p>
+      <div class="cmd">  - dbnet  vip 10.0.1.137/24  (2 dns names)
+      gl_gitlab
+      tasks.gl_gitlab
+      - 1 container
+          gl_gitlab.1  10.0.1.54/24  docker3v2
+  - ingress  vip 10.0.0.250/24  (routing mesh)
+      published 2222 -&gt; 22/tcp
+      - 1 container
+          gl_gitlab.1  10.0.0.64/24  docker3v2</div>
       <p>
         Kopieren innerhalb von <strong>NETWORKS</strong> liefert die <strong>Adresse ohne
         Maske</strong> — <code>10.0.5.2</code>, die Form, die du in ein <code>curl</code> oder
