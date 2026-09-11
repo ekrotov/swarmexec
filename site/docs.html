@@ -1049,8 +1049,12 @@
         <strong>dnsrr</strong> endpoint mode has no VIP at all — that is by design, not missing
         data — so instead of a blank the expanded network carries the line
         <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. The
-        <strong>ingress</strong> network is not listed here: the section shows the networks the
-        service's own spec attaches to.
+        <strong>ingress</strong> network is listed here too, even though no spec ever mentions it
+        — swarm attaches the service to it by itself (see below). It is appended
+        <strong>after</strong> the networks the spec declares, never interleaved with them, and
+        its header reads <code>+ ingress  vip 10.0.0.250/24  (routing mesh)</code>: the
+        <code>(routing mesh)</code> note stands in for a dns-name count that could only ever say
+        <code>(0 dns names)</code>.
       </p>
       <p>
         Move onto a network row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
@@ -1079,6 +1083,34 @@
         — an API error just leaves the drill-down empty. The two levels collapse independently;
         collapsing the network hides the container level with it.
       </p>
+      <p>
+        The <strong>ingress</strong> row is the one that is in no spec. Swarm joins a service to
+        the ingress network on its own as soon as the service publishes a port in
+        <strong>ingress</strong> mode, and that attachment appears nowhere in the service spec —
+        yet its <code>vip</code> is the address the <strong>routing mesh</strong> actually answers
+        on, which is the first thing you want when a published port misbehaves. So it gets a row
+        of its own, appended after the networks the spec declares and shaped slightly
+        differently. No service DNS name resolves on ingress, so where another network counts its
+        names this header carries the note <code>(routing mesh)</code>; expanded, the row lists
+        instead the <strong>ingress-published ports</strong> that put the service there — the
+        reason the row exists at all — one line each,
+        <code>published 2222 -&gt; 22/tcp</code>. Ports published in <strong>host</strong> mode
+        bypass the routing mesh and are deliberately not listed there. Below them it drills down
+        to the containers exactly like every other network row: the same
+        <code>+ 1 container</code> level, with each container's own address on the ingress
+        network. A service that publishes no ingress port has no ingress VIP — and therefore no
+        such row at all.
+      </p>
+      <p>A GitLab service publishing SSH on <code>2222</code>, both levels expanded:</p>
+      <div class="cmd">  - dbnet  vip 10.0.1.137/24  (2 dns names)
+      gl_gitlab
+      tasks.gl_gitlab
+      - 1 container
+          gl_gitlab.1  10.0.1.54/24  docker3v2
+  - ingress  vip 10.0.0.250/24  (routing mesh)
+      published 2222 -&gt; 22/tcp
+      - 1 container
+          gl_gitlab.1  10.0.0.64/24  docker3v2</div>
       <p>
         Copying inside <strong>NETWORKS</strong> yields the <strong>address without its
         mask</strong> — <code>10.0.5.2</code>, the form you paste into a <code>curl</code> or a

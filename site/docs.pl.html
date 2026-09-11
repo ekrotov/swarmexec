@@ -1076,8 +1076,12 @@
         VIP-a — tak ma być, to nie brakujące dane — więc zamiast pustego miejsca rozwinięta sieć
         pokazuje linię
         <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. Sieć
-        <strong>ingress</strong> nie jest tu wymieniana: sekcja pokazuje sieci, do których
-        podłącza się własna spec usługi.
+        <strong>ingress</strong> też jest tu wymieniana, choć nie pojawia się w żadnej spec —
+        swarm podłącza do niej usługę sam z siebie (patrz niżej). Dopisywana jest
+        <strong>za</strong> sieciami zadeklarowanymi w spec, nigdy nie jest z nimi przeplatana,
+        a jej nagłówek brzmi <code>+ ingress  vip 10.0.0.250/24  (routing mesh)</code>: adnotacja
+        <code>(routing mesh)</code> stoi w miejscu licznika nazw DNS, który mógłby pokazać
+        wyłącznie <code>(0 dns names)</code>.
       </p>
       <p>
         Najedź na wiersz sieci i naciśnij <kbd>Enter</kbd>, żeby go rozwinąć lub zwinąć.
@@ -1108,6 +1112,34 @@
         i są best effort: błąd API po prostu zostawia rozwinięcie puste. Oba poziomy zwijają się
         niezależnie; zwinięcie sieci ukrywa razem z nią poziom kontenerów.
       </p>
+      <p>
+        Wiersz <strong>ingress</strong> to ten, którego nie ma w żadnej spec: swarm podłącza
+        usługę do sieci ingress sam z siebie, gdy tylko opublikuje ona port w trybie
+        <strong>ingress</strong>, a to podłączenie nie pojawia się nigdzie w spec usługi — za to
+        jego <code>vip</code> jest adresem, pod którym faktycznie odpowiada
+        <strong>routing mesh</strong>, czyli pierwszą rzeczą, jakiej szukasz, gdy opublikowany
+        port zachowuje się dziwnie. Dlatego dostaje własny wiersz, dopisany za sieciami
+        zadeklarowanymi w spec i nieco inaczej zbudowany: w sieci ingress nie rozwiązuje się żadna
+        nazwa DNS usługi, więc tam, gdzie inna sieć liczy swoje nazwy, ten nagłówek nosi adnotację
+        <code>(routing mesh)</code>. Rozwinięty wypisuje natomiast <strong>porty opublikowane
+        przez ingress</strong>, które w ogóle umieściły tam usługę — powód istnienia tego wiersza
+        — po jednej linii na port: <code>published 2222 -&gt; 22/tcp</code>. Porty opublikowane
+        w trybie <strong>host</strong> omijają routing mesh i celowo nie są tam wypisywane. Niżej
+        schodzi do kontenerów dokładnie tak samo jak każdy inny wiersz sieci: ten sam poziom
+        <code>+ 1 container</code>, z własnym adresem każdego kontenera w sieci ingress. Usługa,
+        która nie publikuje żadnego portu przez ingress, nie ma tam VIP-a — a więc i takiego
+        wiersza w ogóle.
+      </p>
+      <p>Usługa GitLab publikująca SSH na <code>2222</code>, oba poziomy rozwinięte:</p>
+      <div class="cmd">  - dbnet  vip 10.0.1.137/24  (2 dns names)
+      gl_gitlab
+      tasks.gl_gitlab
+      - 1 container
+          gl_gitlab.1  10.0.1.54/24  docker3v2
+  - ingress  vip 10.0.0.250/24  (routing mesh)
+      published 2222 -&gt; 22/tcp
+      - 1 container
+          gl_gitlab.1  10.0.0.64/24  docker3v2</div>
       <p>
         Kopiowanie wewnątrz <strong>NETWORKS</strong> daje <strong>adres bez maski</strong> —
         <code>10.0.5.2</code>, w postaci, którą wklejasz do <code>curl</code> albo

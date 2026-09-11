@@ -70,6 +70,11 @@ type inspLine struct {
 	// is one container — its own address is in Addr).
 	Tasks []inspTaskRow
 
+	// inspNet: replaces the "(N dns names)" suffix where that count says nothing
+	// — the ingress network carries no service DNS names, so it reads
+	// "(routing mesh)" instead of "(0 dns names)".
+	Note string
+
 	// inspUpgrade picker data (version-pinned services): the repo, the running
 	// tag, the newer same-family tags (suggestions) and every known repo tag (to
 	// validate a typed-in override). Empty for a :latest digest update.
@@ -105,6 +110,7 @@ func (b *inspBuilder) net(n netDNS) {
 		Addr:      n.Addr,
 		AddrLabel: n.AddrLabel,
 		Tasks:     n.Tasks,
+		Note:      n.Note,
 	})
 }
 
@@ -340,6 +346,7 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 type netInfo struct {
 	names     map[string]string // network id/name → name
 	encrypted map[string]bool   // network id/name → overlay data-plane encryption
+	ingress   map[string]bool   // network id/name → is the swarm routing mesh
 	nodeNames map[string]string // node id → hostname
 	tasks     []swarm.Task
 }
@@ -347,12 +354,14 @@ type netInfo struct {
 // networkInfo fills the network half of a netInfo from one NetworkList. Best
 // effort; empty maps on error (the inspect still renders, just less readably).
 func networkInfo(ctx context.Context, dcli *client.Client) netInfo {
-	info := netInfo{names: map[string]string{}, encrypted: map[string]bool{}}
+	info := netInfo{names: map[string]string{}, encrypted: map[string]bool{}, ingress: map[string]bool{}}
 	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
 		return info
 	}
 	for _, n := range nets {
+		info.ingress[n.ID] = n.Ingress
+		info.ingress[n.Name] = n.Ingress
 		info.names[n.ID] = n.Name
 		info.names[n.Name] = n.Name
 		enc := networkEncrypted(n.Options)
@@ -555,6 +564,7 @@ type netDNS struct {
 	Tasks     []inspTaskRow // the service's containers on this network
 	Extra     []string
 	Encrypted bool
+	Note      string // shown instead of the DNS-name count when that says nothing
 }
 
 // dnsNames builds the DNS names resolvable for a service on a network: the
@@ -614,7 +624,7 @@ func serviceNetDNS(svc swarm.Service, info netInfo) []netDNS {
 	for _, a := range svc.Spec.Networks {
 		add(a)
 	}
-	return out
+	return append(out, implicitNets(svc, info, vips, addrs, seen)...)
 }
 
 // taskNetDNS returns a task's networks with the DNS names/aliases it inherits
@@ -654,6 +664,60 @@ func taskNetDNS(task swarm.Task, owning *swarm.Service, info netInfo) []netDNS {
 			nd.Extra = []string{"addresses: " + strings.Join(a.Addresses, ", ")}
 		}
 		out = append(out, nd)
+	}
+	return out
+}
+
+// implicitNets returns rows for networks the service holds a VIP on but never
+// attached in its spec. In practice that is exactly one: ingress, which swarm
+// joins a service to on its own as soon as it publishes a port in ingress mode.
+// Leaving it out hid the address the routing mesh actually answers on, which is
+// the first thing you want when a published port misbehaves.
+//
+// It gets a row of its own shape: no service DNS names resolve there, so the
+// header says "routing mesh" instead of counting them, and the published ports
+// that put it there are listed as the reason it exists.
+func implicitNets(svc swarm.Service, info netInfo, vips map[string]string, addrs map[string][]netTaskAddr, seen map[string]bool) []netDNS {
+	var out []netDNS
+	for _, v := range svc.Endpoint.VirtualIPs {
+		name := info.names[v.NetworkID]
+		if name == "" {
+			name = shortID(v.NetworkID)
+		}
+		if v.Addr == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		nd := netDNS{
+			Name:      name,
+			Addr:      v.Addr,
+			AddrLabel: "vip",
+			Tasks:     taskAddrRows(pickAddrs(addrs, v.NetworkID, name)),
+			Encrypted: info.encrypted[v.NetworkID],
+			Note:      "not attached in the spec",
+		}
+		if info.ingress[v.NetworkID] {
+			nd.Note = "routing mesh"
+			nd.Extra = ingressPortLines(svc)
+		}
+		out = append(out, nd)
+	}
+	return out
+}
+
+// ingressPortLines describes why a service sits on the routing mesh: the ports
+// it publishes through it. Host-mode ports bypass ingress and are left out.
+func ingressPortLines(svc swarm.Service) []string {
+	ports := svc.Endpoint.Ports
+	if len(ports) == 0 && svc.Spec.EndpointSpec != nil {
+		ports = svc.Spec.EndpointSpec.Ports
+	}
+	var out []string
+	for _, p := range ports {
+		if p.PublishMode != swarm.PortConfigPublishModeIngress {
+			continue
+		}
+		out = append(out, fmt.Sprintf("published %d -> %d/%s", p.PublishedPort, p.TargetPort, p.Protocol))
 	}
 	return out
 }

@@ -1085,8 +1085,12 @@
         alguna — es así por diseño, no un dato que falte — así que en lugar de un hueco la red
         expandida muestra la línea
         <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. La
-        red <strong>ingress</strong> no se lista aquí: la sección muestra las redes a las que se
-        conecta la propia spec del servicio.
+        red <strong>ingress</strong> también se lista aquí, aunque ninguna spec la mencione: el
+        swarm conecta el servicio a ella por su cuenta (ver más abajo). Se añade
+        <strong>después</strong> de las redes que declara la spec, nunca intercalada entre ellas,
+        y su cabecera es <code>+ ingress  vip 10.0.0.250/24  (routing mesh)</code>: la nota
+        <code>(routing mesh)</code> ocupa el lugar de un recuento de nombres DNS que solo podría
+        decir <code>(0 dns names)</code>.
       </p>
       <p>
         Muévete sobre una fila de red y pulsa <kbd>Enter</kbd> para expandirla o colapsarla.
@@ -1117,6 +1121,34 @@
         Los dos niveles se colapsan de forma independiente; colapsar la red oculta con ella el
         nivel de contenedores.
       </p>
+      <p>
+        La fila de <strong>ingress</strong> es la que no está en ninguna spec: el swarm conecta el
+        servicio a la red ingress por su cuenta en cuanto este publica un puerto en modo
+        <strong>ingress</strong>, y esa conexión no aparece por ningún lado en la spec del
+        servicio — pero su <code>vip</code> es la dirección en la que responde realmente la
+        <strong>malla de enrutamiento</strong> (routing mesh), que es lo primero que quieres saber
+        cuando un puerto publicado se porta mal. Por eso tiene una fila propia, añadida después de
+        las redes que declara la spec y con una forma algo distinta: en ingress no resuelve ningún
+        nombre DNS del servicio, así que donde otra red cuenta sus nombres esta cabecera lleva la
+        nota <code>(routing mesh)</code>. Expandida, lista en su lugar los <strong>puertos
+        publicados por ingress</strong> que han llevado allí al servicio — la razón de ser de la
+        fila —, uno por línea: <code>published 2222 -&gt; 22/tcp</code>. Los puertos publicados en
+        modo <strong>host</strong> se saltan la malla de enrutamiento y deliberadamente no se
+        listan ahí. Por debajo baja hasta los contenedores igual que cualquier otra fila de red:
+        el mismo nivel <code>+ 1 container</code>, con la dirección propia de cada contenedor en la
+        red ingress. Un servicio que no publica ningún puerto por ingress no tiene VIP allí — y
+        por tanto tampoco esa fila.
+      </p>
+      <p>Un servicio GitLab que publica SSH en <code>2222</code>, con ambos niveles expandidos:</p>
+      <div class="cmd">  - dbnet  vip 10.0.1.137/24  (2 dns names)
+      gl_gitlab
+      tasks.gl_gitlab
+      - 1 container
+          gl_gitlab.1  10.0.1.54/24  docker3v2
+  - ingress  vip 10.0.0.250/24  (routing mesh)
+      published 2222 -&gt; 22/tcp
+      - 1 container
+          gl_gitlab.1  10.0.0.64/24  docker3v2</div>
       <p>
         Copiar dentro de <strong>NETWORKS</strong> da la <strong>dirección sin su
         máscara</strong> — <code>10.0.5.2</code>, la forma que pegas en un <code>curl</code> o un

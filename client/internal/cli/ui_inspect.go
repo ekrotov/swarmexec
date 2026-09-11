@@ -167,7 +167,11 @@ func (iv *inspectView) populate() {
 				if ln.Addr != "" {
 					head += fmt.Sprintf("  %s %s", ln.AddrLabel, ln.Addr)
 				}
-				head += fmt.Sprintf("  (%d dns names)", ln.Count)
+				if ln.Note != "" {
+					head += "  (" + ln.Note + ")"
+				} else {
+					head += fmt.Sprintf("  (%d dns names)", ln.Count)
+				}
 				// Copying a network row yields the address rather than the name:
 				// it is the one value on the row you paste somewhere else.
 				put(head, tcell.ColorWhite, false, true, netRowCopy(ln), ln.Net)
