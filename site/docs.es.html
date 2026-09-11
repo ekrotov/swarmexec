@@ -1052,7 +1052,7 @@
         seleccionada a tu portapapeles por OSC52 — el mismo mecanismo de copia usado en otros
         lugares— para que puedas capturar un único id, montaje o dirección sin seleccionar
         texto a mano. <kbd>Enter</kbd> también copia, salvo en una fila colapsable de
-        <strong>NETWORKS</strong>, donde en su lugar expande/colapsa esa red (véase más abajo).
+        <strong>NETWORKS</strong>, donde en su lugar expande/colapsa esa fila (véase más abajo).
         Ambas vistas (el resumen tabular y el JSON crudo al que se llega con <kbd>t</kbd>) son
         seleccionables y copiables línea a línea. Un <strong>pie siempre lista las teclas
         disponibles</strong>, para que lo que puedes hacer sea visible de un vistazo; para un
@@ -1063,7 +1063,7 @@
         <tbody>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>mueve la selección entre líneas de datos (se omiten encabezados/blancos)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copia la línea seleccionada al portapapeles (OSC52) — siempre</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>en una fila colapsable de <strong>NETWORKS</strong>, expande/colapsa esa red; en cualquier otra línea, la copia (OSC52)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>en una fila colapsable de <strong>NETWORKS</strong>, expande/colapsa ese nivel — las filas anidan en dos niveles, una red y su desglose <code>N containers</code>; en cualquier otra línea, la copia (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>alterna entre el resumen tabular y el JSON crudo del daemon (ambos seleccionables)</td></tr>
           <tr><td><kbd>a</kbd></td><td>menú de acciones — todos los editores y acciones del servicio en una lista, sin Shift (solo servicios; ver abajo)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edita el servicio — escalar / forzar actualización / puertos / etiquetas / env / redes / secretos / montajes / alias (solo servicio; <kbd>S</kbd> es mayúscula, Shift+s, para distinguirla de <kbd>s</kbd> escalar; <kbd>A</kbd> también es mayúscula; véase más abajo)</td></tr>
@@ -1071,17 +1071,59 @@
         </tbody>
       </table></div>
       <p>
-        La sección <strong>NETWORKS</strong> es <strong>colapsable</strong>: cada red
-        conectada se muestra como una fila colapsada <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>.
+        La sección <strong>NETWORKS</strong> es <strong>colapsable</strong> y responde a «¿en qué
+        dirección se alcanza esto?» antes de expandir nada: cada red conectada se muestra como
+        una fila colapsada <code>+ &lt;network&gt; 🔒 vip 10.0.5.2/24 (2 dns names)</code>.
         Un <strong>icono de candado 🔒</strong> tras el nombre de la red marca una red overlay
         <strong>cifrada</strong> (cifrado del plano de datos, <code>--opt encrypted</code>); su
-        ausencia significa sin cifrar. Muévete sobre esa fila y pulsa <kbd>Enter</kbd> para
-        expandirla o colapsarla. Expandida, lista los nombres DNS que resuelven al
-        servicio/contenedor en esa red — el nombre del servicio,
-        <code>tasks.&lt;service&gt;</code>, cualquier alias personalizado y (para un
-        contenedor/tarea) su dirección — para que puedas ver bajo qué nombre DNS se alcanza el
-        servicio/contenedor y qué alias lleva, por red. En estas filas de red <kbd>Enter</kbd>
-        alterna; en cualquier otra línea copia (y <kbd>y</kbd> siempre copia).
+        ausencia significa sin cifrar. En la inspección de un <strong>servicio</strong> la
+        dirección se etiqueta <code>vip</code> — la IP virtual del servicio en esa red, la
+        dirección en la que responde el balanceador de carga del swarm, tomada del
+        <code>ServiceInspect</code> del manager (<code>Endpoint.VirtualIPs</code>). En la de un
+        <strong>contenedor/tarea</strong> se etiqueta <code>addr</code>: la dirección propia de
+        ese contenedor allí. Un servicio en modo de endpoint <strong>dnsrr</strong> no tiene VIP
+        alguna — es así por diseño, no un dato que falte — así que en lugar de un hueco la red
+        expandida muestra la línea
+        <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. La
+        red <strong>ingress</strong> no se lista aquí: la sección muestra las redes a las que se
+        conecta la propia spec del servicio.
+      </p>
+      <p>
+        Muévete sobre una fila de red y pulsa <kbd>Enter</kbd> para expandirla o colapsarla.
+        Expandida, lista los nombres DNS que resuelven al servicio/contenedor en esa red — el
+        nombre del servicio, <code>tasks.&lt;service&gt;</code> y cualquier alias personalizado —
+        para que puedas ver bajo qué nombre DNS se alcanza y qué alias lleva, por red. Debajo de
+        ellos hay una segunda fila colapsable, <code>+ 2 containers</code> (en singular,
+        <code>+ 1 container</code>), y <kbd>Enter</kbd> sobre <em>esa</em> abre el nivel más
+        profundo: una fila por contenedor, alineada en columnas,
+        <code>web.1 10.0.1.5/24 host-a</code> — nombre de la tarea, su dirección en esta red y el
+        nodo en el que corre (las tareas replicadas se llaman
+        <code>&lt;service&gt;.&lt;slot&gt;</code>, las globales
+        <code>&lt;service&gt;.&lt;node&gt;</code>, al no tener slot).
+      </p>
+      <p>
+        El filtro es el estado <strong>deseado</strong> de la tarea, no el actual: se lista toda
+        tarea que el manager sigue queriendo en ejecución, incluidas las que solo están
+        <code>preparing</code>, <code>assigned</code> o <code>starting</code> — ya tienen su
+        dirección, y durante una actualización progresiva esas son la mayoría, así que filtrar
+        por el estado actual vaciaría el desglose justo cuando más interesa. Una tarea que el
+        manager ha dado por perdida — estado deseado <code>shutdown</code>, es decir, sustituida
+        por una actualización progresiva, eliminada al escalar o fallida — no se lista: su
+        dirección ya se ha liberado y puede pertenecer a otro contenedor, así que mostrarla sería
+        activamente erróneo. Una tarea que aún no sirve tráfico lleva su estado entre paréntesis
+        al final de la fila, <code>web.1 10.0.1.5/24 host-a (starting)</code>; una en ejecución no
+        lleva sufijo. Las filas vienen de un <code>TaskList</code> de la API del manager filtrado
+        por el servicio y son best-effort: un error de la API simplemente deja el desglose vacío.
+        Los dos niveles se colapsan de forma independiente; colapsar la red oculta con ella el
+        nivel de contenedores.
+      </p>
+      <p>
+        Copiar dentro de <strong>NETWORKS</strong> da la <strong>dirección sin su
+        máscara</strong> — <code>10.0.5.2</code>, la forma que pegas en un <code>curl</code> o un
+        <code>ping</code>: en una fila de red su vip/addr, en una fila de contenedor la dirección
+        de ese contenedor. Una fila de red sin dirección (dnsrr) copia el nombre de la red, como
+        antes. En ambos tipos de fila colapsable <kbd>Enter</kbd> alterna; en cualquier otra línea
+        copia (y <kbd>y</kbd> siempre copia).
       </p>
       <p>
         Cuando inspeccionas un <strong>servicio</strong> (no una hoja de contenedor/tarea,

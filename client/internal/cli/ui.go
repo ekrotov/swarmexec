@@ -1768,11 +1768,12 @@ func (u *ui) showHelp() {
 
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
 	line("a", "actions menu (all edits below, no Shift needed)")
+	line("Enter", "NETWORKS: expand a network → its containers")
 	line("t", "toggle raw JSON / table")
 	line("d / D", "diff spec · why (placement)")
 	line("R", "roll back to the previous version")
 	line("s / f", "scale · force-update")
-	line("u", "update to a newer image")
+	line("u", "set the image version (update / pin / revert)")
 	line("p l e", "edit ports · labels · env")
 	line("n S v", "edit networks · secrets · mounts")
 	line("r P", "edit resources · placement")

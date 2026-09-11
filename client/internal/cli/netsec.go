@@ -483,17 +483,8 @@ func taskOnNetwork(t swarm.Task, netID string) bool {
 // CIDR (e.g. "10.0.1.5/24"), so the mask is stripped.
 func taskIPv4(t swarm.Task, netID string) string {
 	for _, a := range t.NetworksAttachments {
-		if a.Network.ID != netID {
-			continue
-		}
-		for _, addr := range a.Addresses {
-			ip := addr
-			if i := strings.IndexByte(addr, '/'); i >= 0 {
-				ip = addr[:i]
-			}
-			if strings.Contains(ip, ".") {
-				return ip
-			}
+		if a.Network.ID == netID {
+			return stripMask(firstIPv4(a.Addresses))
 		}
 	}
 	return ""

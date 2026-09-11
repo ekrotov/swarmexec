@@ -1086,7 +1086,7 @@
         utilisé ailleurs — pour que vous puissiez saisir un seul id, montage ou
         adresse sans sélectionner de texte à la main. <kbd>Enter</kbd> copie aussi,
         sauf sur une ligne <strong>NETWORKS</strong> repliable, où il déplie/replie
-        plutôt ce réseau (voir ci-dessous). Les deux vues (le résumé tabulaire et le
+        plutôt cette ligne (voir ci-dessous). Les deux vues (le résumé tabulaire et le
         JSON brut atteint avec <kbd>t</kbd>) sont sélectionnables et copiables ligne
         par ligne. Un <strong>pied de page liste toujours les touches
         disponibles</strong>, de sorte que ce que vous pouvez faire est visible d'un
@@ -1098,7 +1098,7 @@
         <tbody>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>déplace la sélection entre les lignes de données (en-têtes/vides ignorés)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copie la ligne sélectionnée dans le presse-papiers (OSC52) — toujours</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>sur une ligne <strong>NETWORKS</strong> repliable, déplie/replie ce réseau ; sur toute autre ligne, la copie (OSC52)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>sur une ligne <strong>NETWORKS</strong> repliable, déplie/replie ce niveau — les lignes s'imbriquent sur deux niveaux, un réseau et son détail <code>N containers</code> ; sur toute autre ligne, la copie (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>bascule entre le résumé tabulaire et le JSON brut du démon (les deux sélectionnables)</td></tr>
           <tr><td><kbd>a</kbd></td><td>menu d'actions — tous les éditeurs et actions du service en une seule liste, sans Maj (services uniquement ; voir ci-dessous)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>édite le service — mise à l'échelle / mise à jour forcée / ports / labels / env / réseaux / secrets / montages / alias (service uniquement ; <kbd>S</kbd> est en majuscule, Maj+s, pour le distinguer de <kbd>s</kbd> mise à l'échelle ; <kbd>A</kbd> est aussi en majuscule ; voir ci-dessous)</td></tr>
@@ -1106,19 +1106,67 @@
         </tbody>
       </table></div>
       <p>
-        La section <strong>NETWORKS</strong> est <strong>repliable</strong> : chaque
-        réseau attaché apparaît comme une ligne repliée
-        <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>. Une <strong>icône de
-        cadenas 🔒</strong> après le nom du réseau signale un réseau overlay
-        <strong>chiffré</strong> (chiffrement du plan de données,
-        <code>--opt encrypted</code>) ; son absence signifie non chiffré. Déplacez-vous
-        sur cette ligne et appuyez sur <kbd>Enter</kbd> pour la déplier ou la replier.
-        Dépliée, elle liste les noms DNS qui se résolvent vers le service/conteneur
-        sur ce réseau — le nom du service, <code>tasks.&lt;service&gt;</code>, tout
-        alias personnalisé, et (pour un conteneur/tâche) son adresse — pour que vous
-        puissiez voir sous quel nom DNS le service/conteneur est joint et quels alias
-        il porte, par réseau. Sur ces lignes de réseau <kbd>Enter</kbd> bascule ; sur
-        toute autre ligne il copie (et <kbd>y</kbd> copie toujours).
+        La section <strong>NETWORKS</strong> est <strong>repliable</strong>, et elle
+        répond à « à quelle adresse est-ce joint ? » avant même de rien déplier :
+        chaque réseau attaché apparaît comme une ligne repliée
+        <code>+ &lt;network&gt; 🔒 vip 10.0.5.2/24 (2 dns names)</code>. Une
+        <strong>icône de cadenas 🔒</strong> après le nom du réseau signale un réseau
+        overlay <strong>chiffré</strong> (chiffrement du plan de données,
+        <code>--opt encrypted</code>) ; son absence signifie non chiffré. Sur
+        l'inspection d'un <strong>service</strong>, l'adresse est étiquetée
+        <code>vip</code> — l'IP virtuelle du service sur ce réseau, l'adresse à
+        laquelle répond le répartiteur de charge du swarm, tirée du
+        <code>ServiceInspect</code> du manager (<code>Endpoint.VirtualIPs</code>). Sur
+        celle d'un <strong>conteneur/tâche</strong>, elle est étiquetée
+        <code>addr</code> : l'adresse propre de ce conteneur sur ce réseau. Un service
+        en mode d'endpoint <strong>dnsrr</strong> n'a aucune VIP — c'est voulu, pas une
+        donnée manquante — donc au lieu d'un blanc, le réseau déplié porte la ligne
+        <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>.
+        Le réseau <strong>ingress</strong> n'est pas listé ici : la section montre les
+        réseaux auxquels la spec du service elle-même est attachée.
+      </p>
+      <p>
+        Déplacez-vous sur une ligne de réseau et appuyez sur <kbd>Enter</kbd> pour la
+        déplier ou la replier. Dépliée, elle liste les noms DNS qui se résolvent vers le
+        service/conteneur sur ce réseau — le nom du service,
+        <code>tasks.&lt;service&gt;</code> et tout alias personnalisé — pour que vous
+        puissiez voir sous quel nom DNS il est joint et quels alias il porte, par
+        réseau. En dessous se trouve une seconde ligne repliable,
+        <code>+ 2 containers</code> (au singulier, <code>+ 1 container</code>) ;
+        <kbd>Enter</kbd> sur <em>celle-ci</em> ouvre le niveau le plus profond : une
+        ligne par conteneur, alignée en colonnes,
+        <code>web.1 10.0.1.5/24 host-a</code> — nom de la tâche, son adresse sur ce
+        réseau, et le nœud sur lequel elle tourne (les tâches répliquées sont nommées
+        <code>&lt;service&gt;.&lt;slot&gt;</code>, les globales
+        <code>&lt;service&gt;.&lt;node&gt;</code>, faute de slot).
+      </p>
+      <p>
+        Le filtre porte sur l'état <strong>souhaité</strong> (desired state) de la
+        tâche, pas sur son état courant : toute tâche que le manager veut encore voir
+        tourner est listée, y compris celles qui ne sont que <code>preparing</code>,
+        <code>assigned</code> ou <code>starting</code> — elles détiennent déjà leur
+        adresse, et pendant une mise à jour progressive c'est le cas de la plupart ;
+        filtrer sur l'état courant viderait donc le détail précisément quand il est le
+        plus intéressant. Une tâche que le manager a abandonnée — état souhaité
+        <code>shutdown</code>, c'est-à-dire remplacée par une mise à jour progressive,
+        supprimée par une mise à l'échelle ou en échec — n'est pas listée : son adresse
+        a été libérée et peut déjà appartenir à un autre conteneur, l'afficher serait
+        donc activement faux. Une tâche qui ne sert pas encore de trafic porte son état
+        entre parenthèses en fin de ligne,
+        <code>web.1 10.0.1.5/24 host-a (starting)</code> ; une tâche en cours
+        d'exécution n'a pas de suffixe. Les lignes viennent d'un <code>TaskList</code>
+        de l'API du manager filtré sur le service, au mieux (best-effort) : une erreur
+        d'API laisse simplement le détail vide. Les deux niveaux se replient
+        indépendamment ; replier le réseau masque avec lui le niveau des conteneurs.
+      </p>
+      <p>
+        Copier dans <strong>NETWORKS</strong> donne l'<strong>adresse sans son
+        masque</strong> — <code>10.0.5.2</code>, la forme que vous collez dans un
+        <code>curl</code> ou un <code>ping</code> : sur une ligne de réseau son
+        vip/addr, sur une ligne de conteneur l'adresse de ce conteneur. Une ligne de
+        réseau sans adresse (dnsrr) copie le nom du réseau, comme avant. Sur les deux
+        types de lignes repliables <kbd>Enter</kbd> bascule ; sur toute autre ligne il
+        copie (et <kbd>y</kbd> copie toujours).
       </p>
       <p>
         Lorsque vous inspectez un <strong>service</strong> (pas une feuille

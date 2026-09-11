@@ -1016,7 +1016,7 @@
         over OSC52 — the same yank mechanism used elsewhere — so you can grab a single id,
         mount or address without selecting text by hand. <kbd>Enter</kbd> also copies, except
         on a collapsible <strong>NETWORKS</strong> row, where it instead expands/collapses that
-        network (see below). Both views (the
+        row (see below). Both views (the
         tabular summary and the raw JSON reached with <kbd>t</kbd>) are selectable and
         copyable line by line. A <strong>footer always lists the available keys</strong>,
         so what you can do is visible at a glance; for a service the footer also shows the
@@ -1027,7 +1027,7 @@
         <tbody>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>move the selection between data lines (headers/blanks skipped)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the selected line to the clipboard (OSC52) — always</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that network; on any other line, copy it (OSC52)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that level — the rows nest two deep, a network and its <code>N containers</code> drill-down; on any other line, copy it (OSC52)</td></tr>
           <tr><td><kbd>t</kbd></td><td>toggle between the tabular summary and the raw daemon JSON (both selectable)</td></tr>
           <tr><td><kbd>a</kbd></td><td>actions menu — every service editor and action in one list, no Shift needed (service only; see below)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edit the service — scale / force-update / ports / labels / env / networks / secrets / mounts / aliases (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; <kbd>A</kbd> is capital too; see below)</td></tr>
@@ -1035,17 +1035,57 @@
         </tbody>
       </table></div>
       <p>
-        The <strong>NETWORKS</strong> section is <strong>collapsible</strong>: each attached
-        network shows as a collapsed row <code>+ &lt;network&gt; (&lt;N&gt; dns names)</code>.
-        A <strong>🔒 lock icon</strong> after the network name marks an <strong>encrypted</strong>
+        The <strong>NETWORKS</strong> section is <strong>collapsible</strong>, and it answers
+        “which address is this reached at” before you expand anything: each attached network
+        shows as a collapsed row
+        <code>+ &lt;network&gt; 🔒 vip 10.0.5.2/24 (2 dns names)</code>. A
+        <strong>🔒 lock icon</strong> after the network name marks an <strong>encrypted</strong>
         overlay network (data-plane encryption, <code>--opt encrypted</code>); its absence means
-        unencrypted. Move onto that row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
-        lists the DNS names that resolve to the service/container on that network — the
-        service name, <code>tasks.&lt;service&gt;</code>, any custom aliases, and (for a
-        container/task) its address — so you can see under which DNS name the
-        service/container is reached and which aliases it carries, per network. On these
-        network rows <kbd>Enter</kbd> toggles; on every other line it copies (and <kbd>y</kbd>
-        always copies).
+        unencrypted. On a <strong>service</strong> inspect the address is labelled
+        <code>vip</code> — the service's virtual IP on that network, the address the swarm load
+        balancer answers on, taken from the manager's <code>ServiceInspect</code>
+        (<code>Endpoint.VirtualIPs</code>). On a <strong>container/task</strong> inspect it is
+        labelled <code>addr</code>: that container's own address there. A service in
+        <strong>dnsrr</strong> endpoint mode has no VIP at all — that is by design, not missing
+        data — so instead of a blank the expanded network carries the line
+        <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. The
+        <strong>ingress</strong> network is not listed here: the section shows the networks the
+        service's own spec attaches to.
+      </p>
+      <p>
+        Move onto a network row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
+        lists the DNS names that resolve to the service/container on that network — the service
+        name, <code>tasks.&lt;service&gt;</code> and any custom aliases — so you can see under
+        which DNS name it is reached and which aliases it carries, per network. Below them sits a
+        second collapsible row, <code>+ 2 containers</code> (singularised,
+        <code>+ 1 container</code>), and <kbd>Enter</kbd> on <em>that</em> opens the deepest level: one
+        column-aligned row per container, <code>web.1 10.0.1.5/24 host-a</code> — task name, its
+        address on this network, and the node it runs on (replicated tasks are named
+        <code>&lt;service&gt;.&lt;slot&gt;</code>, global ones
+        <code>&lt;service&gt;.&lt;node&gt;</code>, having no slot).
+      </p>
+      <p>
+        What is listed is filtered on the task's <strong>desired</strong> state, not its current
+        one — every task the manager still wants running appears, including ones that are only
+        <code>preparing</code>, <code>assigned</code> or <code>starting</code>: they already hold
+        their address, and during a rolling update that is most of them, so filtering on the
+        current state would empty the drill-down exactly when it is most interesting. A task the
+        manager has given up on — desired state <code>shutdown</code>, i.e. replaced by a rolling
+        update, scaled away or failed — is not listed: its address has been released and may
+        already belong to a different container, so showing it would be actively wrong. A task
+        that is not serving traffic yet carries its state in brackets at the end of its row,
+        <code>web.1 10.0.1.5/24 host-a (starting)</code>; a running one has no suffix. The rows
+        come from a manager-API <code>TaskList</code> filtered to the service and are best-effort
+        — an API error just leaves the drill-down empty. The two levels collapse independently;
+        collapsing the network hides the container level with it.
+      </p>
+      <p>
+        Copying inside <strong>NETWORKS</strong> yields the <strong>address without its
+        mask</strong> — <code>10.0.5.2</code>, the form you paste into a <code>curl</code> or a
+        <code>ping</code>: on a network row its vip/addr, on a container row that container's
+        address. A network row that has no address (dnsrr) copies the network name, as before. On
+        both kinds of collapsible row <kbd>Enter</kbd> toggles; on every other line it copies (and
+        <kbd>y</kbd> always copies).
       </p>
       <p>
         When you inspect a <strong>service</strong> (not a container/task leaf, whose
