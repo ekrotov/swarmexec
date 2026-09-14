@@ -925,8 +925,10 @@
       <p>
         Se muestra cada servicio (incluso uno escalado a cero), cada fila renderizada como una
         línea de <code>docker service ls</code> —nombre, modo, recuento en ejecución/deseado,
-        imagen y puertos publicados— y coloreada según la salud (aqua = todas las tareas
-        arriba, naranja = parcial, rojo = caído, gris = escalado a cero). Un marcador
+        imagen y puertos publicados— y coloreada según cómo le va de verdad: el recuento en
+        ejecución/deseado fija el color base (aqua = todas las tareas arriba, naranja =
+        parcial, rojo = caído, gris = escalado a cero) y un <strong>healthcheck</strong> que
+        falla lo sobrescribe (véase más abajo). Un marcador
         <code>▸</code>/<code>▾</code> indica si un servicio está colapsado o expandido; sus
         contenedores en ejecución se anidan debajo. Un servicio <strong>en medio de una
         actualización progresiva</strong> lleva una insignia de color en su fila del árbol —
@@ -934,6 +936,58 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — y el mismo estado aparece en el overlay
         de inspección del servicio; desaparece en cuanto la actualización se completa.
       </p>
+      <p>
+        <strong>Coloreada por el healthcheck, no solo por el recuento de réplicas.</strong>
+        El color de una fila de servicio salía únicamente de en ejecución frente a deseado:
+        así, un servicio con <em>todos</em> sus contenedores fallando el healthcheck seguía
+        pintándose como un plácido <strong>3/3</strong> en aqua. El recuento era cierto y la
+        fila engañaba. El estado de tarea de Swarm tampoco ayuda: una tarea figura como
+        <code>running</code> mientras su contenedor falla cada sonda, de modo que el
+        veredicto tiene que venir del nodo. Ahora una sonda que falla se trata como una
+        degradación del mismo tipo que una réplica que falta:
+      </p>
+      <ul>
+        <li><strong>todos</strong> los contenedores comprobados unhealthy → la fila se pone
+          <strong style="color:#f85149">roja</strong>, que es tan malo como que no haya
+          ninguno en ejecución;</li>
+        <li><strong>algunos</strong> unhealthy →
+          <strong style="color:#db6d28">naranja</strong>, como un despliegue a medias;</li>
+        <li>todos healthy → el color que ya le daba el recuento de réplicas,
+          <strong>sin tocar</strong>;</li>
+        <li>contenedores que <strong>no declaran healthcheck</strong> → la fila
+          <strong>no se recolorea en absoluto</strong>. No se sabe nada de ellos, y adivinar
+          sería el mismo error en la dirección contraria.</li>
+      </ul>
+      <p>
+        <strong>Los marcadores.</strong> Una fila de servicio lleva
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> en rojo, o
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> en amarillo mientras las
+        sondas todavía no han pasado; una hoja de contenedor lleva
+        <span style="color:#f85149">✖&nbsp;unhealthy</span> /
+        <span style="color:#f2cc60">◌&nbsp;starting</span>. Unhealthy manda sobre starting:
+        es lo que exige actuar. Una fila de stack agrega ese mismo marcador sobre todo lo que
+        hay dentro (véase <em>Agrupado por stack</em> más abajo). Un contenedor
+        <strong>sano</strong> no recibe
+        <strong>ningún</strong> marcador, y tampoco lo recibe uno <strong>sin</strong>
+        healthcheck, así que el marcador sigue significando algo. Conviven con los
+        marcadores de recursos <code>⚡</code>/<code>▣</code> de más abajo, y la salud va
+        <strong>primero</strong> en la fila: es lo que contradice al recuento que tiene al
+        lado.
+      </p>
+      <div class="note">
+        <strong>De dónde sale el veredicto — y qué cuesta.</strong> Nada añadido: viaja con
+        las lecturas de recursos de más abajo, el mismo agente, la misma llamada,
+        <strong>ninguna petición extra a la API</strong>. La lista de contenedores que el
+        agente ya pide en cada pasada de muestreo trae el veredicto en su línea de estado
+        (<code>Up 3 days (healthy)</code>), la misma cadena que imprime <code>docker ps</code>.
+        El parser es deliberadamente <strong>estricto</strong>: lo que no reconoce se
+        convierte en <em>sin veredicto</em> y no en una suposición, así que si algún día el
+        daemon reescribe esa línea, swarmexec deja de afirmar que sabe en vez de dar por
+        sano un contenedor que falla. Rige además el mismo requisito que para las cifras de
+        uso: hacen falta agentes de esta release o posteriores, de modo que un clúster que
+        no se ha vuelto a desplegar no muestra ningún marcador de salud — despliégalos con
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </div>
       <p>
         <strong>Marcadores de CPU y memoria en vivo.</strong> Junto a esas insignias una
         fila puede mostrar además lo que está <em>usando</em> ahora mismo: hasta ahora
@@ -982,7 +1036,7 @@
         salen, el bloque del nodo no aparece y todo lo demás queda intacto; además el
         cliente deja en paz a ese nodo un rato en vez de sondearlo en cada refresco. Así
         que en un clúster que todavía no se ha vuelto a desplegar <strong>no hay ninguna
-        cifra de uso</strong> hasta que se actualicen los agentes — despliégalos con
+        cifra de uso ni ningún marcador de salud</strong> hasta que se actualicen los agentes — despliégalos con
         <a href="#reroll"><code>swarmexec init --force</code></a>. Este es, con diferencia,
         el motivo más probable de no ver nada.
       </div>
@@ -995,14 +1049,21 @@
         <strong>stack&nbsp;→ servicio&nbsp;→ contenedor</strong>. Una fila de stack muestra
         el nombre del stack, cuántos servicios cuelgan de él y el recuento
         <strong>sumado en ejecución/deseado</strong> de tareas
-        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloreado con la misma regla de salud
-        que una fila de servicio. Detrás van dos contadores agregados, cuando no son cero:
+        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloreado exactamente con la misma regla
+        que una fila de servicio: el recuento sumado en ejecución/deseado, <strong>con la
+        misma sobrescritura por healthcheck</strong> encima. Detrás van los contadores
+        agregados, cuando no son cero:
         <span style="color:#f2cc60">⟳&nbsp;n</span> —servicios de ese stack
-        <strong>en medio de una actualización progresiva</strong>— y
+        <strong>en medio de una actualización progresiva</strong>—,
         <span style="color:#f85149">🛡&nbsp;n</span> —servicios con un
         <strong>hallazgo de seguridad que merece acción</strong>, el mismo escudo que llevan
-        las filas de servicio—. Así, incluso un stack colapsado te dice si algo dentro
-        necesita atención.
+        las filas de servicio— y después el marcador de salud,
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> o
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span>, sumado sobre todos los
+        contenedores de todos los servicios del stack. Así, incluso un stack colapsado te
+        dice si algo dentro necesita atención. Y que la salud suba de nivel importa sobre
+        todo aquí: la fila de stack es la que un operador mira <em>primero</em>, así que un
+        «todo está arriba» engañoso es peor ahí que un nivel más abajo, no mejor.
       </p>
       <p>
         Los servicios creados con <code>docker service create</code> no llevan etiqueta de
@@ -1161,7 +1222,15 @@
         <strong>pico</strong> de porcentaje de memoria y <strong>total</strong> de memoria
         entre las réplicas. Un contenedor del que ningún agente informó —nodo inalcanzable,
         un agente demasiado antiguo para el RPC <code>Stats</code>, o uno arrancado después
-        de la última lectura— lo dice en su propia línea en vez de mostrar ceros. La
+        de la última lectura— lo dice en su propia línea en vez de mostrar ceros. Cada
+        contenedor tiene además una <strong>línea <code>health</code></strong>:
+        <span style="color:#f85149">failing its healthcheck</span> (rojo),
+        <span style="color:#f2cc60">starting — probe has not passed yet</span> (amarillo),
+        <span style="color:#3fb950">healthy</span> (verde) o
+        <span style="color:#8b949e">no healthcheck configured</span> (gris). Esas dos
+        últimas son a propósito <strong>líneas distintas</strong> y no una línea y un hueco:
+        «no hay healthcheck configurado» y «la sonda pasa» son hechos distintos, y un hueco
+        se leería como el segundo. La
         entrada <kbd>t</kbd> del overlay de ayuda <kbd>?</kbd> reza, en consecuencia,
         <em>cycle table / stats / raw JSON</em>.
       </p>

@@ -901,14 +901,65 @@
       <p>
         Every service is shown (even one scaled to zero), each row rendered like a
         <code>docker service ls</code> line — name, mode, running/desired count, image
-        and published ports — and coloured by health (aqua = all tasks up, orange =
-        partial, red = down, grey = scaled to zero). A <code>▸</code>/<code>▾</code>
+        and published ports — and coloured by how it is actually doing: the
+        running/desired count sets the base colour (aqua = all tasks up, orange =
+        partial, red = down, grey = scaled to zero), and a failing
+        <strong>healthcheck</strong> overrides it (see below). A <code>▸</code>/<code>▾</code>
         marker shows whether a service is collapsed or expanded; its running containers
         nest underneath. A service that is <strong>mid rolling-update</strong> carries a
         coloured badge on its tree row — <span style="color:#f2cc60">⟳&nbsp;updating</span> or
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — and the same status appears
         in the service inspect overlay; it clears once the update completes.
       </p>
+      <p>
+        <strong>Coloured by healthcheck, not only by replica count.</strong> A service
+        row's colour used to come from running vs desired alone — so a service whose
+        <em>every</em> container was failing its healthcheck still rendered as a calm aqua
+        <strong>3/3</strong>. The count was true and the row was misleading. Swarm's task
+        state does not help here either: a task reads <code>running</code> while its
+        container fails every probe, so the verdict has to come from the node. A failing
+        probe is now treated as degradation of the same kind as a missing replica:
+      </p>
+      <ul>
+        <li><strong>every</strong> checked container unhealthy → the row goes
+          <strong style="color:#f85149">red</strong>, which is as bad as none running;</li>
+        <li><strong>some</strong> of them unhealthy →
+          <strong style="color:#db6d28">orange</strong>, like a partial rollout;</li>
+        <li>all healthy → the colour the replica count already gave the row,
+          <strong>unchanged</strong>;</li>
+        <li>containers that declare <strong>no healthcheck</strong> → the row is
+          <strong>not recoloured at all</strong>. Nothing is known about them, and guessing
+          would be the same mistake in the other direction.</li>
+      </ul>
+      <p>
+        <strong>The markers.</strong> A service row carries
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> in red, or
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> in yellow while the probes
+        have not passed yet; a container leaf carries
+        <span style="color:#f85149">✖&nbsp;unhealthy</span> /
+        <span style="color:#f2cc60">◌&nbsp;starting</span>. Unhealthy outranks starting — it
+        is the one that needs acting on. A stack row rolls the same marker up over everything
+        inside it (see <em>Grouped by stack</em> below). A <strong>healthy</strong> container gets
+        <strong>no</strong> marker, and neither does one <strong>without</strong> a
+        healthcheck, so the marker keeps meaning something. These sit alongside the
+        <code>⚡</code>/<code>▣</code> resource markers below, and health comes
+        <strong>first</strong> in the row: it is the thing contradicting the count standing
+        next to it.
+      </p>
+      <div class="note">
+        <strong>Where the verdict comes from — and what it costs.</strong> Nothing extra: it
+        rides along with the resource readings below, same agent, same call, <strong>no
+        additional API request</strong>. The container list the agent already fetches on each
+        sampling pass carries the verdict in its status line
+        (<code>Up 3 days (healthy)</code>) — the same string <code>docker ps</code> prints.
+        The parser is deliberately <strong>strict</strong>: anything it does not recognise
+        becomes <em>no verdict</em> rather than a guess, so if the daemon ever rewords that
+        line swarmexec stops claiming to know instead of reporting a failing container as
+        healthy. Same precondition as the usage numbers, too — it needs agents from this
+        release or newer, so a cluster that has not been re-rolled shows no health markers
+        at all until you roll them out with
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </div>
       <p>
         <strong>Live CPU &amp; memory markers.</strong> Next to those badges a row can also
         carry what it is actually <em>using</em> right now — until now swarmexec could only
@@ -953,7 +1004,8 @@
         RPC</strong> — simply contributes no readings. The markers stay off, the node
         block stays absent, and everything else is untouched; the client also backs off
         from such a node rather than probing it every refresh. On a cluster that has not
-        been re-rolled yet there are therefore <strong>no usage numbers at all</strong>
+        been re-rolled yet there are therefore <strong>no usage numbers and no health
+        markers at all</strong>
         until the agents are updated — roll them out with
         <a href="#reroll"><code>swarmexec init --force</code></a>. This is by far the most
         likely reason you see nothing.
@@ -966,13 +1018,19 @@
         object, and this is the only link — and nests the tree three levels deep:
         <strong>stack&nbsp;→ service&nbsp;→ container</strong>. A stack row shows the stack
         name, how many services are under it and the <strong>summed running/desired</strong>
-        task count (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloured by the same health
-        rule as a service row. Two roll-up counters follow it when they are non-zero:
-        <span style="color:#f2cc60">⟳&nbsp;n</span> — services in that stack currently
-        <strong>mid rolling-update</strong> — and <span style="color:#f85149">🛡&nbsp;n</span> —
+        task count (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloured by exactly the same
+        rule as a service row — the summed running/desired count, <strong>with the same
+        healthcheck override</strong> on top of it. Roll-up counters follow it when they are
+        non-zero: <span style="color:#f2cc60">⟳&nbsp;n</span> — services in that stack currently
+        <strong>mid rolling-update</strong> — <span style="color:#f85149">🛡&nbsp;n</span> —
         services with an <strong>actionable security finding</strong>, the same shield the
-        service rows carry. So a folded stack still tells you whether anything inside it
-        needs attention.
+        service rows carry — and then the health marker,
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> or
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span>, summed over every container
+        of every service in the stack. So a folded stack still tells you whether anything
+        inside it needs attention. Health rolling up matters most here: the stack row is the
+        level an operator scans <em>first</em>, so a misleading &ldquo;everything is up&rdquo;
+        is worse there than one tier down, not better.
       </p>
       <p>
         Services created with <code>docker service create</code> carry no stack label; they
@@ -1120,7 +1178,14 @@
         memory percentage and <strong>total</strong> memory across the replicas. A
         container no agent reported — unreachable node, an agent too old for the
         <code>Stats</code> RPC, or one started since the last reading — says so on its own
-        line instead of showing zeros. The <kbd>?</kbd> help overlay's <kbd>t</kbd> entry
+        line instead of showing zeros. Each container also gets a
+        <strong><code>health</code> line</strong>: <span style="color:#f85149">failing its
+        healthcheck</span> (red), <span style="color:#f2cc60">starting — probe has not
+        passed yet</span> (yellow), <span style="color:#3fb950">healthy</span> (green), or
+        <span style="color:#8b949e">no healthcheck configured</span> (grey). Those last two
+        are deliberately <strong>different lines</strong> rather than a line and a blank:
+        <em>no healthcheck configured</em> and <em>the probe passes</em> are different facts,
+        and a blank would read as the second. The <kbd>?</kbd> help overlay's <kbd>t</kbd> entry
         reads <em>cycle table / stats / raw JSON</em> accordingly.
       </p>
       <p>

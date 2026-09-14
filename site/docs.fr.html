@@ -952,9 +952,11 @@
       <p>
         Chaque service est affiché (même un mis à l'échelle à zéro), chaque ligne
         rendue comme une ligne <code>docker service ls</code> — nom, mode, nombre en
-        cours d'exécution/souhaité, image et ports publiés — et colorée selon la santé
+        cours d'exécution/souhaité, image et ports publiés — et colorée selon son état
+        réel : le nombre en cours d'exécution/souhaité donne la couleur de base
         (aqua = toutes les tâches actives, orange = partiel, rouge = arrêté, gris =
-        mis à l'échelle à zéro). Un marqueur <code>▸</code>/<code>▾</code> indique si
+        mis à l'échelle à zéro), et un <strong>healthcheck</strong> en échec la remplace
+        (voir plus bas). Un marqueur <code>▸</code>/<code>▾</code> indique si
         un service est replié ou déplié ; ses conteneurs en cours d'exécution
         s'imbriquent en dessous. Un service <strong>en cours de mise à jour
         progressive</strong> porte un badge coloré sur sa ligne d'arbre —
@@ -962,6 +964,60 @@
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — et le même statut apparaît dans
         l'overlay d'inspection du service ; il disparaît dès que la mise à jour est terminée.
       </p>
+      <p>
+        <strong>Colorée par le healthcheck, et pas seulement par le nombre de
+        réplicas.</strong> La couleur d'une ligne de service venait du seul rapport en cours
+        d'exécution / souhaité : un service dont <em>tous</em> les conteneurs échouaient à
+        leur healthcheck s'affichait donc toujours en un paisible <strong>3/3</strong>
+        aqua. Le compte était juste et la ligne trompeuse. L'état de tâche de Swarm n'aide
+        pas davantage : une tâche est <code>running</code> pendant que son conteneur rate
+        chaque sonde — le verdict doit donc venir du nœud. Une sonde en échec est désormais
+        traitée comme une dégradation de même nature qu'un réplica manquant :
+      </p>
+      <ul>
+        <li><strong>tous</strong> les conteneurs contrôlés unhealthy → la ligne passe au
+          <strong style="color:#f85149">rouge</strong>, ce qui est aussi grave qu'aucun en
+          cours d'exécution ;</li>
+        <li><strong>certains</strong> unhealthy →
+          <strong style="color:#db6d28">orange</strong>, comme un déploiement à moitié
+          fait ;</li>
+        <li>tous healthy → la couleur que le nombre de réplicas donnait déjà à la ligne,
+          <strong>inchangée</strong> ;</li>
+        <li>des conteneurs <strong>sans healthcheck déclaré</strong> → la ligne
+          <strong>n'est pas recolorée du tout</strong>. On ne sait rien d'eux, et deviner
+          serait la même erreur dans l'autre sens.</li>
+      </ul>
+      <p>
+        <strong>Les marqueurs.</strong> Une ligne de service porte
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> en rouge, ou
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> en jaune tant que les
+        sondes ne sont pas encore passées ; une feuille de conteneur porte
+        <span style="color:#f85149">✖&nbsp;unhealthy</span> /
+        <span style="color:#f2cc60">◌&nbsp;starting</span>. Unhealthy prime sur starting :
+        c'est celui sur lequel il faut agir. Une ligne de stack cumule le même marqueur sur tout
+        ce qu'elle contient (voir <em>Regroupé par stack</em> plus bas). Un conteneur
+        <strong>sain</strong> n'obtient
+        <strong>aucun</strong> marqueur, ni d'ailleurs un conteneur <strong>sans</strong>
+        healthcheck — ainsi le marqueur continue de vouloir dire quelque chose. Ils
+        côtoient les marqueurs de ressources <code>⚡</code>/<code>▣</code> ci-dessous, et la
+        santé vient en <strong>premier</strong> dans la ligne : c'est elle qui contredit le
+        compte juste à côté.
+      </p>
+      <div class="note">
+        <strong>D'où vient le verdict — et ce qu'il coûte.</strong> Rien de plus : il voyage
+        avec les relevés de ressources ci-dessous — même agent, même appel,
+        <strong>aucune requête d'API supplémentaire</strong>. La liste de conteneurs que
+        l'agent récupère déjà à chaque passe d'échantillonnage porte le verdict dans sa
+        ligne de statut (<code>Up 3 days (healthy)</code>), la chaîne même qu'imprime
+        <code>docker ps</code>. L'analyse est volontairement <strong>stricte</strong> : tout
+        ce qu'elle ne reconnaît pas devient <em>pas de verdict</em> plutôt qu'une
+        supposition, de sorte que si le démon reformule un jour cette ligne, swarmexec
+        cesse de prétendre savoir au lieu d'annoncer sain un conteneur en échec. Même
+        prérequis que pour les chiffres d'utilisation : il faut des agents de cette version
+        ou plus récents, un cluster qui n'a pas été redéployé n'affiche donc aucun marqueur
+        de santé — déployez-les avec
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </div>
       <p>
         <strong>Marqueurs CPU et mémoire en direct.</strong> À côté de ces badges, une
         ligne peut aussi porter ce qu'elle <em>consomme</em> réellement à l'instant :
@@ -1012,7 +1068,8 @@
         relevé. Les marqueurs restent éteints, le bloc du nœud reste absent et tout le
         reste est intact ; le client met de plus ce nœud de côté un moment au lieu de le
         sonder à chaque rafraîchissement. Sur un cluster qui n'a pas encore été redéployé,
-        il n'y a donc <strong>aucun chiffre d'utilisation</strong> tant que les agents ne
+        il n'y a donc <strong>aucun chiffre d'utilisation ni aucun marqueur de santé</strong>
+        tant que les agents ne
         sont pas à jour — déployez-les avec
         <a href="#reroll"><code>swarmexec init --force</code></a>. C'est de loin la raison la
         plus probable de ne rien voir.
@@ -1026,14 +1083,22 @@
         niveaux : <strong>stack&nbsp;→ service&nbsp;→ conteneur</strong>. Une ligne de stack
         affiche le nom du stack, combien de services en dépendent et le nombre de tâches
         <strong>en cours d'exécution/souhaité cumulé</strong>
-        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloré selon la même règle de santé
-        qu'une ligne de service. Deux compteurs de synthèse la suivent lorsqu'ils ne sont pas
+        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloré selon exactement la même règle
+        qu'une ligne de service : le total en cours d'exécution / souhaité, <strong>avec le
+        même remplacement par le healthcheck</strong> par-dessus. Les compteurs de synthèse
+        la suivent lorsqu'ils ne sont pas
         nuls : <span style="color:#f2cc60">⟳&nbsp;n</span> — les services de ce stack
-        <strong>en cours de mise à jour progressive</strong> — et
+        <strong>en cours de mise à jour progressive</strong> —,
         <span style="color:#f85149">🛡&nbsp;n</span> — les services présentant un
         <strong>constat de sécurité qui mérite une action</strong>, le même bouclier que
-        portent les lignes de service. Même replié, un stack indique donc si quelque chose à
-        l'intérieur demande votre attention.
+        portent les lignes de service — puis le marqueur de santé,
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> ou
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span>, cumulé sur tous les
+        conteneurs de tous les services du stack. Même replié, un stack indique donc si
+        quelque chose à l'intérieur demande votre attention. Et c'est ici que la remontée de
+        la santé compte le plus : la ligne de stack est le niveau qu'un opérateur parcourt
+        <em>en premier</em>, un « tout est en ligne » trompeur y est donc pire qu'un étage
+        plus bas, et non moins grave.
       </p>
       <p>
         Les services créés avec <code>docker service create</code> ne portent pas de label
@@ -1198,7 +1263,15 @@
         <strong>pic</strong> de pourcentage mémoire et <strong>total</strong> de mémoire
         sur les réplicas. Un conteneur qu'aucun agent n'a rapporté — nœud injoignable,
         agent trop ancien pour le RPC <code>Stats</code>, ou conteneur démarré depuis le
-        dernier relevé — le dit sur sa propre ligne au lieu d'afficher des zéros. L'entrée
+        dernier relevé — le dit sur sa propre ligne au lieu d'afficher des zéros. Chaque
+        conteneur a en plus une <strong>ligne <code>health</code></strong> :
+        <span style="color:#f85149">failing its healthcheck</span> (rouge),
+        <span style="color:#f2cc60">starting — probe has not passed yet</span> (jaune),
+        <span style="color:#3fb950">healthy</span> (vert) ou
+        <span style="color:#8b949e">no healthcheck configured</span> (gris). Ces deux
+        dernières sont délibérément <strong>deux lignes distinctes</strong>, et non une ligne
+        et un vide : « aucun healthcheck configuré » et « la sonde passe » sont deux faits
+        différents, et un vide se lirait comme le second. L'entrée
         <kbd>t</kbd> de la surcouche d'aide <kbd>?</kbd> indique en conséquence
         <em>cycle table / stats / raw JSON</em>.
       </p>

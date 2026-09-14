@@ -713,6 +713,7 @@ func (iv *inspectView) statsLines() []statsRow {
 			continue
 		}
 		measured++
+		rows = append(rows, healthRow(usage.Health))
 		line(fmt.Sprintf("      %-7s %s  %s", "cpu", usageMeter(usage.CPURatio, usage.CPUReady), formatCPUUsage(usage)))
 		line(fmt.Sprintf("      %-7s %s  %s", "memory", usageMeter(usage.MemRatio, true), formatMemUsage(usage)))
 		dim("      " + usageBasis(usage))
@@ -773,4 +774,21 @@ func usageMeter(ratio float64, ready bool) string {
 		ratio = 0
 	}
 	return resourceBar(int64(ratio*1000), 1000)
+}
+
+// healthRow renders one container's healthcheck verdict inside the stats view.
+// A container with no healthcheck says so rather than being left blank: "no
+// healthcheck configured" and "the probe passes" are different facts, and the
+// blank would read as the second.
+func healthRow(health string) statsRow {
+	switch health {
+	case healthUnhealthy:
+		return statsRow{text: "      health  failing its healthcheck", color: tcell.ColorRed, bold: true}
+	case healthStarting:
+		return statsRow{text: "      health  starting — probe has not passed yet", color: tcell.ColorYellow}
+	case healthHealthy:
+		return statsRow{text: "      health  healthy", color: tcell.ColorGreen}
+	default:
+		return statsRow{text: "      health  no healthcheck configured", color: tcell.ColorGray}
+	}
 }

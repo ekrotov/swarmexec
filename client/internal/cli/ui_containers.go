@@ -188,7 +188,7 @@ func (u *ui) renderContainers() {
 		}
 		// Collapsed by default (spec); keep a service the operator expanded.
 		svcNode := tview.NewTreeNode(serviceRow(s, u.svcCols, "", u.svcUsageBadge(s.Name))).
-			SetColor(serviceColor(s.Running, s.Desired)).
+			SetColor(u.svcColor(s)).
 			SetReference(svcRef{name: s.Name}).
 			SetExpanded(wasExpanded[s.Name])
 		parentFor(s).AddChild(svcNode)
@@ -210,7 +210,8 @@ func (u *ui) renderContainers() {
 			// then just re-appends, instead of trying to cut the old marker back
 			// off a string that also carries the forward and update markers.
 			u.leafBase[c.ContainerID] = label
-			leaf := tview.NewTreeNode(label + usageBadge(u.usage[c.ContainerID])).SetReference(c)
+			usage := u.usage[c.ContainerID]
+			leaf := tview.NewTreeNode(label + containerHealthBadge(usage.Health) + usageBadge(usage)).SetReference(c)
 			svcNode.AddChild(leaf)
 			if c.ContainerID == prevID {
 				targetLeaf = leaf
@@ -290,9 +291,15 @@ func (u *ui) markStack(n *tview.TreeNode) {
 	if summary.Risky > 0 {
 		fmt.Fprintf(&extra, "  [red]🛡 %d[-]", summary.Risky)
 	}
+	// Health rolls up like the other markers. A stack whose services are all
+	// failing their probes would otherwise read as calm at exactly the level an
+	// operator scans first — the same misleading "everything is up" one tier
+	// above the service rows.
+	health := u.stackHealth(summary.Services)
+	extra.WriteString(healthBadge(health))
 	n.SetText(fmt.Sprintf("%s %s  [gray](%d svc · %d/%d)[-]%s",
 		marker, ref.name, len(summary.Services), summary.Running, summary.Desired, extra.String()))
-	n.SetColor(serviceColor(summary.Running, summary.Desired))
+	n.SetColor(healthColor(serviceColor(summary.Running, summary.Desired), health))
 }
 
 // removeServiceUnderCursor removes the service the tree cursor is on, so a
@@ -539,11 +546,41 @@ func (u *ui) svcUsageBadge(service string) string {
 	if len(u.usage) == 0 {
 		return ""
 	}
-	agg, ok := serviceUsage(u.usage, u.lastCands, service)
-	if !ok {
-		return ""
+	// Health leads: it is the marker that contradicts the running/desired count
+	// standing right next to it, so it should not sit behind the resource
+	// numbers when the row is long.
+	badge := healthBadge(healthOf(u.usage, u.lastCands, service))
+	if agg, ok := serviceUsage(u.usage, u.lastCands, service); ok {
+		badge += usageBadge(agg)
 	}
-	return usageBadge(agg)
+	return badge
+}
+
+// stackHealth folds the healthcheck verdicts of every container under a stack
+// into one count.
+func (u *ui) stackHealth(services []resolve.Service) serviceHealth {
+	var out serviceHealth
+	if len(u.usage) == 0 {
+		return out
+	}
+	for _, svc := range services {
+		h := healthOf(u.usage, u.lastCands, svc.Name)
+		out.Healthy += h.Healthy
+		out.Unhealthy += h.Unhealthy
+		out.Starting += h.Starting
+		out.Unknown += h.Unknown
+	}
+	return out
+}
+
+// svcColor is the tree colour for a service row: the running/desired verdict,
+// overridden when the healthchecks disagree with it.
+func (u *ui) svcColor(s resolve.Service) tcell.Color {
+	base := serviceColor(s.Running, s.Desired)
+	if len(u.usage) == 0 {
+		return base
+	}
+	return healthColor(base, healthOf(u.usage, u.lastCands, s.Name))
 }
 
 // loadUsage refreshes the live resource readings in the background and re-marks
@@ -591,9 +628,13 @@ func (u *ui) remarkUsage() {
 		switch ref := n.GetReference().(type) {
 		case svcRef:
 			u.markService(n)
+			if svc, ok := u.svcByName[ref.name]; ok {
+				n.SetColor(u.svcColor(svc))
+			}
 		case resolve.Candidate:
 			if base, ok := u.leafBase[ref.ContainerID]; ok {
-				n.SetText(base + usageBadge(u.usage[ref.ContainerID]))
+				usage := u.usage[ref.ContainerID]
+				n.SetText(base + containerHealthBadge(usage.Health) + usageBadge(usage))
 			}
 		}
 		return true
