@@ -87,6 +87,15 @@ service Agent {
   // and the background sampler always has the previous one.
   rpc Stats(StatsRequest) returns (StatsResponse);
 
+  // List the images on THIS node, with what each costs on disk and whether a
+  // running container is using it. Images are node-local and the manager has no
+  // view of them at all, so the cli asks each node in turn.
+  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+
+  // Reclaim image disk space on THIS node (authorized + audited). Destructive:
+  // see PruneImagesRequest.all for the two very different things it can mean.
+  rpc PruneImages(PruneImagesRequest) returns (PruneImagesResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -298,6 +307,48 @@ message ContainerStats {
   // health is only knowable on the node itself.
   string health = 7;
 }
+
+message ListImagesRequest {}
+
+message ListImagesResponse {
+  repeated ImageInfo images = 1;
+
+  // Totals for the node, so a client can say what is at stake without summing a
+  // long list — and can show the safe and the risky figure separately, because
+  // they are what the operator is choosing between.
+  int64 total_bytes = 2;
+  int64 dangling_bytes = 3;  // untagged leftovers: nothing can start from these
+  int64 unused_bytes = 4;    // tagged, but no RUNNING container uses them
+}
+
+message ImageInfo {
+  string id = 1;
+  repeated string tags = 2;  // empty for a dangling image
+  int64 size_bytes = 3;
+  int64 created_unix = 4;
+  // in_use means a container that is RUNNING on this node right now uses it.
+  // It is not the same as "needed": a service scaled to zero, or a task between
+  // restarts, still needs its image and shows in_use=false.
+  bool in_use = 5;
+  bool dangling = 6;
+}
+
+message PruneImagesRequest {
+  // all=false removes only DANGLING images — untagged leftovers of a rebuild,
+  // which nothing can be about to start from. Always safe.
+  //
+  // all=true also removes TAGGED images that no running container uses. On a
+  // swarm node that includes the image of any service currently scaled to zero
+  // or between restarts: it will have to be pulled again, which is an outage if
+  // the registry is unreachable. A client MUST present the two as separate
+  // choices and MUST NOT default to this one.
+  bool all = 1;
+}
+
+message PruneImagesResponse {
+  int64 reclaimed_bytes = 1;
+  repeated string deleted = 2;  // what the daemon reported removing
+}
 ```
 
 ### 3.2 Port-forward lifecycle (normative)
@@ -363,6 +414,32 @@ whatever refresh cycle it already has.
 - An agent that predates this RPC answers `UNIMPLEMENTED`. Usage is
   supplementary, so a client MUST treat that as "no readings" rather than an
   error, and SHOULD back off rather than re-probing such a node every cycle.
+
+### 3.4 Image accounting (normative)
+
+`ListImages` reports disk figures, and how they are derived is part of the
+contract because an operator deletes things by them.
+
+- `total_bytes` is the layer store's real size, counting each layer once. It is
+  NOT the sum of the images' `size_bytes`: an image's size includes every layer
+  it is built from, and layers are shared, so that sum over-reports badly.
+- `dangling_bytes + unused_bytes` is what removing every unused image would
+  free: everything not held exclusively by an image a container is running.
+- `dangling_bytes` alone is a LOWER bound on what the untagged-only prune
+  frees. A layer shared by two untagged images belongs to neither one's unique
+  size, and deriving the exact figure would need per-layer ownership the API
+  does not expose. `unused_bytes` carries the remainder, so the two always sum
+  to the exact total.
+- `in_use` means a container is running from the image right now. It does NOT
+  mean "needed": a service scaled to zero, or a task between restarts, still
+  needs its image and reports `in_use=false`. This is why the two prune modes
+  are not interchangeable.
+
+`PruneImages` is destructive and authorized under two distinct actions,
+`image.prune` for the untagged-only sweep and `image.prune.all` for the one
+that also removes tagged images — so a policy can permit the first without the
+second. A client MUST present them as separate choices and MUST NOT default to
+`all`.
 
 ## 4. Session Lifecycle (normative)
 

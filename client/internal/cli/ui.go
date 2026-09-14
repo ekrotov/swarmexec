@@ -152,6 +152,7 @@ const (
 	pageNodeLabels       = "nodelabels"
 	pageNodeLabelPrompt  = "nodelabelprompt"
 	pageNodeDetail       = "nodedetail"
+	pageNodeImages       = "nodeimages"
 )
 
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
@@ -883,6 +884,12 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeAvail {
 			if n, ok := u.selectedNode(); ok {
 				u.openNodeAvailability(n, notable, u.loadNodes)
+			}
+			return nil
+		}
+		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeImages {
+			if n, ok := u.selectedNode(); ok {
+				u.openNodeImagePrune(n, notable, u.loadNodes)
 			}
 			return nil
 		}
@@ -1732,7 +1739,8 @@ func (u *ui) helpFor(name string) string {
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] use  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
 			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 	case "nodes":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability", kl(km.NodeLabels), kl(km.NodeAvail))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  [yellow]%s[white] reclaim images",
+			kl(km.NodeLabels), kl(km.NodeAvail), kl(km.NodeImages))
 	case "configs":
 		return head + "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
 
@@ -1814,6 +1822,7 @@ func (u *ui) showHelp() {
 	line("Enter / i", "details")
 	line(kl(km.NodeLabels), "edit labels")
 	line(kl(km.NodeAvail), "availability: active / pause / drain")
+	line(kl(km.NodeImages), "reclaim image disk space on the node")
 
 	sec("Configs")
 	line("Enter / i", "details, including the config's content")

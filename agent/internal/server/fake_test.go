@@ -18,6 +18,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
@@ -34,12 +36,18 @@ type fakeDocker struct {
 	containers []types.Container
 	inspect    map[string]types.ContainerJSON
 
-	inspects    int
-	statsFrames map[string][]container.StatsResponse
-	statsIdx    map[string]int
-	statsErr    error
-	info        system.Info
-	infoErr     error
+	inspects       int
+	imageDiskUsage types.DiskUsage
+	images         []image.Summary
+	imageListErr   error
+	pruneReport    image.PruneReport
+	pruneErr       error
+	pruneFilters   []filters.Args
+	statsFrames    map[string][]container.StatsResponse
+	statsIdx       map[string]int
+	statsErr       error
+	info           system.Info
+	infoErr        error
 
 	listErr   error
 	createErr error
@@ -245,6 +253,24 @@ func (f *fakeDocker) ContainerStatsOneShot(_ context.Context, id string) (contai
 	return container.StatsResponseReader{Body: io.NopCloser(bytes.NewReader(body))}, nil
 }
 
+func (f *fakeDocker) ImageList(_ context.Context, _ image.ListOptions) ([]image.Summary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.images, f.imageListErr
+}
+
+// ImagesPrune records what it was asked for, so a test can prove the safe mode
+// really is the safe one.
+func (f *fakeDocker) ImagesPrune(_ context.Context, args filters.Args) (image.PruneReport, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pruneFilters = append(f.pruneFilters, args)
+	if f.pruneErr != nil {
+		return image.PruneReport{}, f.pruneErr
+	}
+	return f.pruneReport, nil
+}
+
 func (f *fakeDocker) Info(_ context.Context) (system.Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -254,9 +280,14 @@ func (f *fakeDocker) Info(_ context.Context) (system.Info, error) {
 	return f.info, nil
 }
 
-func (f *fakeDocker) DiskUsage(_ context.Context, _ types.DiskUsageOptions) (types.DiskUsage, error) {
+func (f *fakeDocker) DiskUsage(_ context.Context, opts types.DiskUsageOptions) (types.DiskUsage, error) {
 	if f.diskUsageErr != nil {
 		return types.DiskUsage{}, f.diskUsageErr
+	}
+	for _, t := range opts.Types {
+		if t == types.ImageObject {
+			return f.imageDiskUsage, nil
+		}
 	}
 	return types.DiskUsage{Volumes: f.volumes}, nil
 }

@@ -126,6 +126,20 @@ func (l *Logger) VolumeCreate(identity, name string, ok bool, errMsg string) {
 }
 
 // AuthDecision records an authorization allow/deny along with the reason.
+// ImagePrune records a reclaim on this node. The `all` flag is recorded
+// separately because the two modes are different acts: one removes untagged
+// leftovers, the other removes images a stopped service still needs.
+func (l *Logger) ImagePrune(identity string, all bool, reclaimed int64, deleted int, ok bool, errMsg string) {
+	l.log.Info("image.prune",
+		"identity", identity,
+		"all", all,
+		"reclaimed_bytes", reclaimed,
+		"deleted", deleted,
+		"ok", ok,
+		"error", errMsg,
+	)
+}
+
 func (l *Logger) AuthDecision(identity, containerID, service string, allow bool, reason string) {
 	l.log.Info("auth_decision",
 		"event", "auth_decision",

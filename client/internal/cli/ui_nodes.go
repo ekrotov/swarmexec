@@ -12,6 +12,8 @@ import (
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"swarmexec/client/internal/resolve"
 )
 
 func (u *ui) renderNodes() {
@@ -79,6 +81,25 @@ func (u *ui) loadNodes() {
 			u.nodeInfos, u.nodeVolsLoaded = list, false
 			u.renderNodes()
 		})
+	}()
+	// Image footprints are node-local too and only shown in the detail, so they
+	// load on their own and simply stay absent for an agent that cannot answer.
+	go func() {
+		imgs := map[string]nodeImages{}
+		if ns, nerr := r.Nodes(ctx); nerr == nil {
+			per := make([]nodeImages, len(ns))
+			ok := make([]bool, len(ns))
+			forEachNode(ns, func(i int, n resolve.Node) {
+				ni, ierr := listNodeImages(ctx, cfg, n, f.connectTimeout)
+				per[i], ok[i] = ni, ierr == nil
+			})
+			for i, n := range ns {
+				if ok[i] {
+					imgs[n.Name] = per[i]
+				}
+			}
+		}
+		app.QueueUpdateDraw(func() { u.nodeImgs = imgs })
 	}()
 	// Per-node volume counts are node-local (agent fan-out), so fill them in
 	// asynchronously — the VOLS column shows "…" until they arrive.
@@ -348,6 +369,8 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	b.WriteString(nodeResourceSection(n))
 	use, known := u.nodeUse[n.Hostname]
 	b.WriteString(nodeUsageSection(n, use, known))
+	imgs, imgsKnown := u.nodeImgs[n.Hostname]
+	b.WriteString(imageSection(imgs, imgsKnown))
 	vol := "…"
 	if u.nodeVolsLoaded {
 		vol = fmt.Sprintf("%d", u.nodeVolCounts[n.Hostname])
@@ -435,4 +458,72 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 	// the bar be read as the node's load average.
 	b.WriteString("    [gray]containers only — processes outside docker are not counted.[-]\n")
 	return b.String()
+}
+
+// openNodeImagePrune offers the two reclaim modes as two separate entries
+// rather than one action with a checkbox.
+//
+// They are different acts: one removes untagged leftovers that nothing can
+// start from, the other removes images a service scaled to zero still needs.
+// A checkbox invites getting the destructive one by accident; a menu makes the
+// operator name which one they mean, and each still goes through its own
+// confirm spelling out the consequence.
+func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
+	app, pages := u.app, u.pages
+	ni, known := u.nodeImgs[n.Hostname]
+	if !known {
+		u.info(fmt.Sprintf("No image information for %q.\n\n"+
+			"The node's agent did not answer — it may be unreachable, or older\n"+
+			"than this release and unaware of the image RPC.", n.Hostname))
+		return
+	}
+
+	list := tview.NewList().ShowSecondaryText(true)
+	list.SetBorder(true).SetTitle(fmt.Sprintf(" reclaim image space — %s ", n.Hostname))
+	_, restore := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeIt := func() { restore(); pages.RemovePage(pageNodeImages); app.SetFocus(back) }
+
+	run := func(all bool) {
+		closeIt()
+		u.confirm(pruneConfirmText(n.Hostname, ni, all), "Remove", back, func() {
+			go func() {
+				// Resolve the dial address rather than deriving one from the node
+				// row: which address reaches an agent depends on the configured
+				// address mode, and only the resolver knows it.
+				target, terr := nodeByHostname(u.ctx, u.r, n.Hostname)
+				if terr != nil {
+					app.QueueUpdateDraw(func() { u.info("prune images: " + terr.Error()) })
+					return
+				}
+				reclaimed, deleted, err := pruneNodeImages(u.ctx, u.cfg, target, all, u.f.connectTimeout)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						u.info("prune images: " + err.Error())
+						return
+					}
+					u.flash(fmt.Sprintf(" [green]✓ %s freed on %s (%d image(s))[white]",
+						formatMemBytes(reclaimed), n.Hostname, deleted))
+					if after != nil {
+						after()
+					}
+				})
+			}()
+		})
+	}
+
+	list.AddItem(fmt.Sprintf("Untagged leftovers — frees %s", formatMemBytes(ni.Dangling)),
+		"safe: nothing can start from an untagged image", 0, func() { run(false) })
+	list.AddItem(fmt.Sprintf("[red]Every unused image[white] — frees %s", formatMemBytes(ni.Dangling+ni.Unused)),
+		"also removes images a stopped service still needs", 0, func() { run(true) })
+	list.AddItem("Cancel", "", 0, closeIt)
+
+	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape {
+			closeIt()
+			return nil
+		}
+		return vimListKeys(ev)
+	})
+	pages.AddPage(pageNodeImages, centered(list, 66, 9), true, true)
+	app.SetFocus(list)
 }

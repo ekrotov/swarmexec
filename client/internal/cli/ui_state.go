@@ -155,6 +155,7 @@ type ui struct {
 	nodeInfos      []swarmNodeInfo
 	nodeVolCounts  map[string]int
 	nodeVolsLoaded bool
+	nodeImgs       map[string]nodeImages // by node hostname; absent = agent did not answer
 
 	// toggleable client-log overlay
 	logViewStop    chan struct{}
