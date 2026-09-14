@@ -999,7 +999,7 @@
         <strong>sain</strong> n'obtient
         <strong>aucun</strong> marqueur, ni d'ailleurs un conteneur <strong>sans</strong>
         healthcheck — ainsi le marqueur continue de vouloir dire quelque chose. Ils
-        côtoient les marqueurs de ressources <code>⚡</code>/<code>▣</code> ci-dessous, et la
+        côtoient les marqueurs de ressources <code>cpu</code>/<code>mem</code> ci-dessous, et la
         santé vient en <strong>premier</strong> dans la ligne : c'est elle qui contredit le
         compte juste à côté.
       </p>
@@ -1024,10 +1024,15 @@
         jusqu'ici swarmexec ne pouvait montrer que ce que l'ordonnanceur avait
         <em>réservé</em> (voir l'onglet Nœuds plus bas). Un conteneur — ou un service —
         dont l'utilisation dépasse <strong>70 %</strong> reçoit un marqueur orange, et
-        <strong>90 %</strong> un rouge, en fin de ligne : un glyphe qui nomme la ressource
-        (<code>⚡</code> pour le CPU, <code>▣</code> pour la mémoire) suivi du pourcentage
-        (<span style="color:#f85149">⚡&nbsp;93 %</span>). Si les deux chauffent, les deux
-        apparaissent. En dessous de 70 % rien n'est dessiné, pour que les marqueurs restent
+        <strong>90 %</strong> un rouge, en fin de ligne : la ressource nommée en
+        <strong>toutes lettres</strong> (<code>cpu</code> pour le CPU, <code>mem</code> pour
+        la mémoire) suivie du pourcentage
+        (<span style="color:#f85149">cpu&nbsp;94 %</span>,
+        <span style="color:#db6d28">mem&nbsp;91 %</span>). Si les deux chauffent, les deux
+        apparaissent. Des mots plutôt que des symboles, à largeur égale : un marqueur dont il
+        faut aller chercher le sens ne fait pas son travail, et des lettres ne peuvent pas
+        échouer à s'afficher dans un terminal. En dessous de 70 % rien n'est dessiné, pour
+        que les marqueurs restent
         un signal et non du papier peint. Une ligne de <strong>service</strong> prend
         <strong>la pire de ses réplicas</strong>, pas la moyenne — une moyenne masque
         précisément le conteneur qui est sur le point de mourir, celui qu'il faut voir.
@@ -1040,8 +1045,8 @@
         <strong>sa propre limite lorsqu'il en a une, la capacité du nœud sinon</strong>.
         C'est là tout l'enjeu — 91 % d'une limite de 256&nbsp;Mo signifie qu'un OOM kill
         est proche, 91 % d'un nœud de 64&nbsp;Go est une tout autre conversation. La
-        <a href="#tui">vue stats</a> de la surcouche d'inspection écrit la base par
-        conteneur sur une ligne sous les chiffres.
+        <a href="#tui">vue stats</a> de la surcouche d'inspection affiche les deux côtés de
+        cette division par conteneur et nomme la base sous le tableau.
       </p>
       <div class="note">
         <strong>D'où viennent les chiffres — et pourquoi ils arrivent en retard.</strong>
@@ -1254,24 +1259,44 @@
         <strong>La vue stats.</strong> Celle du milieu montre l'<em>utilisation des
         ressources en direct</em> — les mêmes relevés que ceux qui marquent l'arbre :
         l'ouvrir ne coûte aucun appel supplémentaire et les chiffres continuent de se
-        rafraîchir tant qu'elle est ouverte. Elle liste chaque conteneur du service (ou
-        l'unique conteneur d'une inspection de tâche), chacun avec une barre
-        proportionnelle, le <strong>CPU en cœurs</strong> et son pourcentage, la
-        <strong>mémoire utilisée face à sa limite</strong>, et la ligne qui dit de quoi ces
-        pourcentages sont le pourcentage : sa propre limite, ou la capacité du nœud. Avec
-        plus d'un conteneur mesuré, elle ajoute une synthèse : <strong>pic</strong> de CPU,
-        <strong>pic</strong> de pourcentage mémoire et <strong>total</strong> de mémoire
-        sur les réplicas. Un conteneur qu'aucun agent n'a rapporté — nœud injoignable,
-        agent trop ancien pour le RPC <code>Stats</code>, ou conteneur démarré depuis le
-        dernier relevé — le dit sur sa propre ligne au lieu d'afficher des zéros. Chaque
-        conteneur a en plus une <strong>ligne <code>health</code></strong> :
-        <span style="color:#f85149">failing its healthcheck</span> (rouge),
-        <span style="color:#f2cc60">starting — probe has not passed yet</span> (jaune),
-        <span style="color:#3fb950">healthy</span> (vert) ou
-        <span style="color:#8b949e">no healthcheck configured</span> (gris). Ces deux
-        dernières sont délibérément <strong>deux lignes distinctes</strong>, et non une ligne
-        et un vide : « aucun healthcheck configuré » et « la sonde passe » sont deux faits
-        différents, et un vide se lirait comme le second. L'entrée
+        rafraîchir tant qu'elle est ouverte. C'est un <strong>tableau</strong>, une ligne par
+        conteneur du service (ou l'unique conteneur d'une inspection de tâche) :
+      </p>
+      <div class="cmd"><span class="k">RESOURCE USAGE</span>
+<span style="color:#8b949e">  measured on each node, refreshed with the tree</span>
+
+<span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
+  gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
+
+<span style="color:#8b949e">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+      <p>
+        Un tableau, parce qu'un pourcentage nu n'est pas lisible si l'on ne sait pas déjà
+        comment l'outil mesure — <em>94 % de quoi ?</em> Chaque cellule porte ses
+        <strong>propres unités</strong> : <code>0.07 / 4.00 cores</code> n'a besoin d'aucune
+        légende, et le pourcentage se tient à côté du chiffre dont il est le pourcentage ; et
+        plusieurs réplicas se comparent en <strong>parcourant une colonne</strong> plutôt
+        qu'en confrontant des blocs empilés. La colonne <strong>HEALTH</strong> formule le
+        verdict en toutes lettres : <code>healthy</code>, <code>unhealthy</code>,
+        <code>starting</code>, ou <code>none</code> pour un conteneur qui ne déclare aucun
+        healthcheck. <code>none</code> et <code>healthy</code> sont délibérément
+        <strong>deux mots distincts</strong>, et non un mot et un vide : « aucun healthcheck
+        configuré » et « la sonde passe » sont deux faits différents, et un vide se lirait
+        comme le second. Un conteneur qu'aucun agent n'a rapporté — nœud injoignable, agent
+        trop ancien pour le RPC <code>Stats</code>, ou conteneur démarré depuis le dernier
+        relevé — affiche <code>no reading</code> dans les deux colonnes de ressources au lieu
+        d'un zéro, qui se lirait comme « au repos ».
+      </p>
+      <p>
+        La note sous le tableau nomme le <strong>dénominateur</strong> : la limite propre du
+        conteneur lorsqu'il en a une, la capacité du nœud sinon. C'est cela qui donne un sens
+        à un pourcentage — 85 % d'une limite de 8&nbsp;Gio et 85 % d'un nœud de 64&nbsp;Gio
+        sont deux conversations différentes. La mémoire est en <strong>unités
+        binaires</strong> (MiB/GiB), les mêmes que le détail de nœud et celles que docker
+        rapporte lui-même : le même chiffre ne se lit jamais différemment à deux endroits.
+        Avec plus d'un conteneur mesuré, une synthèse s'ajoute sous le tableau : CPU et
+        mémoire de la <strong>pire réplica</strong> — pas une moyenne, qui masque justement
+        le conteneur sur le point d'être tué par l'OOM — plus la mémoire totale sur
+        l'ensemble. L'entrée
         <kbd>t</kbd> de la surcouche d'aide <kbd>?</kbd> indique en conséquence
         <em>cycle table / stats / raw JSON</em>.
       </p>

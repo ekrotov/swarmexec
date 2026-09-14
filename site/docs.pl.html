@@ -965,7 +965,7 @@
         nie dostaje
         <strong>żadnego</strong> znacznika, tak samo jak taki <strong>bez</strong>
         healthchecku, dzięki czemu znacznik nadal coś znaczy. Stoją obok znaczników zasobów
-        <code>⚡</code>/<code>▣</code> opisanych niżej, a kondycja idzie w wierszu
+        <code>cpu</code>/<code>mem</code> opisanych niżej, a kondycja idzie w wierszu
         <strong>pierwsza</strong>: to ona przeczy liczbie stojącej tuż obok.
       </p>
       <div class="note">
@@ -988,10 +988,14 @@
         swarmexec potrafił pokazać tylko to, co scheduler <em>zarezerwował</em> (zobacz
         zakładkę Nodes niżej). Kontener albo usługa, której zużycie przekroczy
         <strong>70%</strong>, dostaje pomarańczowy znacznik, a przy <strong>90%</strong>
-        czerwony — na końcu wiersza: glif nazywający zasób (<code>⚡</code> dla CPU,
-        <code>▣</code> dla pamięci) i procent
-        (<span style="color:#f85149">⚡&nbsp;93%</span>). Jeśli gorąco jest na obu, pojawią
-        się oba. Poniżej 70% nie rysuje się nic, żeby znaczniki pozostały sygnałem, a nie
+        czerwony — na końcu wiersza: zasób nazwany <strong>słowem</strong> (<code>cpu</code>
+        dla CPU, <code>mem</code> dla pamięci) i procent
+        (<span style="color:#f85149">cpu&nbsp;94%</span>,
+        <span style="color:#db6d28">mem&nbsp;91%</span>). Jeśli gorąco jest na obu, pojawią
+        się oba. Słowa zamiast symboli, przy tej samej szerokości: znacznik, którego
+        znaczenie trzeba dopiero sprawdzić, nie robi swojej roboty, a litery nie mają jak się
+        nie wyrenderować w żadnym terminalu. Poniżej 70% nie rysuje się nic, żeby znaczniki
+        pozostały sygnałem, a nie
         tapetą. Wiersz <strong>usługi</strong> bierze <strong>najgorszą ze swoich
         replik</strong>, a nie średnią — średnia ukrywa dokładnie ten jeden kontener, który
         zaraz padnie, czyli ten, który warto zobaczyć. (Bezwzględna pamięć w wierszu usługi
@@ -1002,8 +1006,8 @@
         dany kontener naprawdę może zużyć: <strong>własnego limitu, jeśli go ma, a w
         przeciwnym razie pojemności węzła</strong>. I to jest tu najważniejsze — 91%
         limitu 256&nbsp;MB znaczy, że OOM kill jest blisko; 91% węzła o 64&nbsp;GB to
-        zupełnie inna rozmowa. <a href="#tui">Widok stats</a> w nakładce inspekcji wypisuje
-        podstawę dla każdego kontenera w linii pod liczbami.
+        zupełnie inna rozmowa. <a href="#tui">Widok stats</a> w nakładce inspekcji pokazuje
+        obie strony tego dzielenia dla każdego kontenera i nazywa podstawę pod tabelą.
       </p>
       <div class="note">
         <strong>Skąd biorą się liczby — i dlaczego pojawiają się z opóźnieniem.</strong>
@@ -1203,23 +1207,42 @@
         <strong>Widok stats.</strong> Środkowy z trzech to <em>bieżące zużycie
         zasobów</em> — te same odczyty, które znaczą drzewo, więc otwarcie go nie kosztuje
         żadnego dodatkowego wywołania, a liczby odświeżają się dalej, dopóki widok jest
-        otwarty. Wypisuje każdy kontener usługi (albo jeden kontener przy inspekcji
-        zadania), każdy z proporcjonalnym paskiem, <strong>CPU w rdzeniach</strong> wraz z
-        procentem, <strong>zużytą pamięcią względem jej limitu</strong> i linią mówiącą,
-        czego te procenty są procentem: własnego limitu czy pojemności węzła. Przy więcej
-        niż jednym zmierzonym kontenerze dochodzi podsumowanie: <strong>szczyt</strong> CPU,
-        <strong>szczytowy</strong> procent pamięci i <strong>suma</strong> pamięci po
-        replikach. Kontener, którego żaden agent nie zgłosił — nieosiągalny węzeł, agent
-        zbyt stary na RPC <code>Stats</code> albo kontener uruchomiony po ostatnim odczycie
-        — mówi to w swojej własnej linii, zamiast pokazywać zera. Każdy kontener ma tu
-        dodatkowo <strong>linię <code>health</code></strong>:
-        <span style="color:#f85149">failing its healthcheck</span> (czerwona),
-        <span style="color:#f2cc60">starting — probe has not passed yet</span> (żółta),
-        <span style="color:#3fb950">healthy</span> (zielona) albo
-        <span style="color:#8b949e">no healthcheck configured</span> (szara). Te dwie
-        ostatnie są celowo <strong>osobnymi liniami</strong>, a nie linią i pustką: „brak
-        skonfigurowanego healthchecku” i „próba przechodzi” to różne fakty, a pustka
-        czytałaby się jak to drugie. Wpis <kbd>t</kbd> w
+        otwarty. To <strong>tabela</strong>, jeden wiersz na kontener usługi (albo jeden
+        kontener przy inspekcji zadania):
+      </p>
+      <div class="cmd"><span class="k">RESOURCE USAGE</span>
+<span style="color:#8b949e">  measured on each node, refreshed with the tree</span>
+
+<span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
+  gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
+
+<span style="color:#8b949e">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+      <p>
+        Tabela, bo goły procent jest nieczytelny, jeśli nie wie się z góry, jak to narzędzie
+        mierzy — <em>94% czego?</em> Każda komórka niesie <strong>własne jednostki</strong>,
+        więc <code>0.07 / 4.00 cores</code> nie potrzebuje legendy, a procent stoi obok
+        liczby, której jest procentem; kilka replik porównuje się zaś,
+        <strong>przebiegając wzrokiem kolumnę</strong>, a nie zestawiając ułożone jeden pod
+        drugim bloki. Kolumna <strong>HEALTH</strong> ujmuje werdykt w słowa:
+        <code>healthy</code>, <code>unhealthy</code>, <code>starting</code> albo
+        <code>none</code> dla kontenera, który nie deklaruje żadnego healthchecku.
+        <code>none</code> i <code>healthy</code> to celowo <strong>dwa różne słowa</strong>, a
+        nie słowo i pustka: „brak skonfigurowanego healthchecku” i „próba przechodzi” to
+        różne fakty, a pustka czytałaby się jak to drugie. Kontener, którego żaden agent nie
+        zgłosił — nieosiągalny węzeł, agent zbyt stary na RPC <code>Stats</code> albo
+        kontener uruchomiony po ostatnim odczycie — pokazuje w obu kolumnach zasobów
+        <code>no reading</code> zamiast zera, które czytałoby się jak „bezczynny”.
+      </p>
+      <p>
+        Przypis pod tabelą nazywa <strong>mianownik</strong>: własny limit kontenera, jeśli
+        go ma, a w przeciwnym razie pojemność węzła. To dopiero nadaje procentowi sens — 85%
+        limitu 8&nbsp;GiB i 85% węzła o 64&nbsp;GiB to dwie różne rozmowy. Pamięć jest w
+        <strong>jednostkach binarnych</strong> (MiB/GiB), tych samych, których używa szczegół
+        węzła i które raportuje sam docker, więc ta sama liczba nigdy nie czyta się inaczej w
+        dwóch miejscach. Przy więcej niż jednym zmierzonym kontenerze pod tabelą dochodzi
+        podsumowanie: CPU i pamięć <strong>najgorszej repliki</strong> — nie średnia, która
+        ukrywa właśnie ten kontener, który zaraz zostanie zabity przez OOM — plus łączna
+        pamięć po wszystkich. Wpis <kbd>t</kbd> w
         nakładce pomocy <kbd>?</kbd> brzmi odpowiednio
         <em>cycle table / stats / raw JSON</em>.
       </p>

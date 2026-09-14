@@ -970,7 +970,7 @@
         <strong>sano</strong> no recibe
         <strong>ningún</strong> marcador, y tampoco lo recibe uno <strong>sin</strong>
         healthcheck, así que el marcador sigue significando algo. Conviven con los
-        marcadores de recursos <code>⚡</code>/<code>▣</code> de más abajo, y la salud va
+        marcadores de recursos <code>cpu</code>/<code>mem</code> de más abajo, y la salud va
         <strong>primero</strong> en la fila: es lo que contradice al recuento que tiene al
         lado.
       </p>
@@ -994,10 +994,14 @@
         swarmexec solo podía enseñar lo que el planificador había <em>reservado</em> (véase
         la pestaña Nodos más abajo). Un contenedor —o un servicio— cuyo uso supera el
         <strong>70 %</strong> recibe un marcador naranja, y al <strong>90 %</strong> uno
-        rojo, al final de la fila: un glifo que nombra el recurso —<code>⚡</code> para la
-        CPU, <code>▣</code> para la memoria— seguido del porcentaje
-        (<span style="color:#f85149">⚡&nbsp;93 %</span>). Si ambos están calientes,
-        aparecen los dos. Por debajo del 70 % no se dibuja nada, para que los marcadores
+        rojo, al final de la fila: el recurso nombrado en <strong>palabras</strong>
+        —<code>cpu</code> para la CPU, <code>mem</code> para la memoria— seguido del
+        porcentaje (<span style="color:#f85149">cpu&nbsp;94 %</span>,
+        <span style="color:#db6d28">mem&nbsp;91 %</span>). Si ambos están calientes,
+        aparecen los dos. Palabras en vez de símbolos, con el mismo ancho: un marcador cuyo
+        significado hay que ir a buscar no está haciendo su trabajo, y unas letras no pueden
+        fallar al dibujarse en ningún terminal. Por debajo del 70 % no se dibuja nada, para
+        que los marcadores
         sigan siendo una señal y no papel pintado. Una fila de <strong>servicio</strong>
         toma <strong>la peor de sus réplicas</strong>, no la media: una media esconde
         justamente el contenedor que está a punto de morir, que es el que interesa ver. (La
@@ -1010,7 +1014,8 @@
         capacidad del nodo cuando no</strong>. Ahí está la clave: el 91 % de un límite de
         256&nbsp;MB significa que un OOM kill está cerca; el 91 % de un nodo de 64&nbsp;GB
         es otra conversación. La <a href="#tui">vista de stats</a> del overlay de
-        inspección deja escrita la base por contenedor en una línea bajo las cifras.
+        inspección muestra los dos lados de esa división por contenedor y nombra la base
+        debajo de la tabla.
       </p>
       <div class="note">
         <strong>De dónde salen las cifras — y por qué tardan un poco.</strong> El uso no
@@ -1214,23 +1219,43 @@
         <strong>La vista de stats.</strong> La del medio es el <em>uso de recursos en
         vivo</em> — las mismas lecturas que marcan el árbol, así que abrirla no cuesta
         ninguna llamada extra y las cifras se siguen refrescando mientras está abierta.
-        Lista cada contenedor del servicio (o el único contenedor de una inspección de
-        tarea), cada uno con una barra proporcional, la <strong>CPU en núcleos</strong> más
-        su porcentaje, la <strong>memoria usada frente a su límite</strong> y la línea que
-        indica de qué son esos porcentajes: de su propio límite o de la capacidad del nodo.
-        Con más de un contenedor medido añade un resumen: <strong>pico</strong> de CPU,
-        <strong>pico</strong> de porcentaje de memoria y <strong>total</strong> de memoria
-        entre las réplicas. Un contenedor del que ningún agente informó —nodo inalcanzable,
-        un agente demasiado antiguo para el RPC <code>Stats</code>, o uno arrancado después
-        de la última lectura— lo dice en su propia línea en vez de mostrar ceros. Cada
-        contenedor tiene además una <strong>línea <code>health</code></strong>:
-        <span style="color:#f85149">failing its healthcheck</span> (rojo),
-        <span style="color:#f2cc60">starting — probe has not passed yet</span> (amarillo),
-        <span style="color:#3fb950">healthy</span> (verde) o
-        <span style="color:#8b949e">no healthcheck configured</span> (gris). Esas dos
-        últimas son a propósito <strong>líneas distintas</strong> y no una línea y un hueco:
-        «no hay healthcheck configurado» y «la sonda pasa» son hechos distintos, y un hueco
-        se leería como el segundo. La
+        Es una <strong>tabla</strong>, una fila por contenedor del servicio (o el único
+        contenedor de una inspección de tarea):
+      </p>
+      <div class="cmd"><span class="k">RESOURCE USAGE</span>
+<span style="color:#8b949e">  measured on each node, refreshed with the tree</span>
+
+<span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
+  gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
+
+<span style="color:#8b949e">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+      <p>
+        Una tabla, porque un porcentaje a secas no se puede leer si no sabes ya cómo mide la
+        herramienta: <em>¿94 % de qué?</em> Cada celda lleva <strong>sus propias
+        unidades</strong>, así que <code>0.07 / 4.00 cores</code> no necesita leyenda y el
+        porcentaje queda junto a la cifra de la que es porcentaje; y varias réplicas se
+        comparan <strong>recorriendo una columna</strong> en vez de cotejando bloques
+        apilados. La columna <strong>HEALTH</strong> pone el veredicto en palabras:
+        <code>healthy</code>, <code>unhealthy</code>, <code>starting</code> o
+        <code>none</code> para un contenedor que no declara healthcheck alguno.
+        <code>none</code> y <code>healthy</code> son a propósito <strong>palabras
+        distintas</strong> y no una palabra y un hueco: «no hay healthcheck configurado» y
+        «la sonda pasa» son hechos distintos, y un hueco se leería como el segundo. Un
+        contenedor del que ningún agente informó —nodo inalcanzable, un agente demasiado
+        antiguo para el RPC <code>Stats</code>, o uno arrancado después de la última
+        lectura— muestra <code>no reading</code> en las dos columnas de recursos en vez de
+        un cero, que se leería como «ocioso».
+      </p>
+      <p>
+        La nota al pie bajo la tabla nombra el <strong>denominador</strong>: el propio
+        límite del contenedor cuando lo tiene, y si no la capacidad del nodo. Eso es lo que
+        hace que un porcentaje signifique algo — el 85 % de un límite de 8&nbsp;GiB y el
+        85 % de un nodo de 64&nbsp;GiB son conversaciones distintas. La memoria va en
+        <strong>unidades binarias</strong> (MiB/GiB), las mismas que usa el detalle de nodo
+        y las que reporta el propio docker, así que la misma cifra nunca se lee distinta en
+        dos sitios. Con más de un contenedor medido añade un resumen bajo la tabla: CPU y
+        memoria de la <strong>peor réplica</strong> —no la media, que esconde justo el
+        contenedor a punto de morir por OOM— más el total de memoria entre todas. La
         entrada <kbd>t</kbd> del overlay de ayuda <kbd>?</kbd> reza, en consecuencia,
         <em>cycle table / stats / raw JSON</em>.
       </p>

@@ -46,7 +46,10 @@ type containerUsage struct {
 	CPULimited bool
 	MemLimited bool
 
-	// MemLimitBytes is the denominator behind MemRatio, for display.
+	// The denominators behind the two ratios, kept so a view can show what the
+	// percentage is a percentage OF. A bare "94%" is unreadable to anyone who
+	// does not already know how this tool measures.
+	CPULimitCores float64
 	MemLimitBytes int64
 
 	// Health is the container's healthcheck verdict, or "" when it declares
@@ -241,10 +244,12 @@ func usageOf(s *pb.ContainerStats, resp *pb.StatsResponse) containerUsage {
 	// the whole node — which is the real ceiling for an unlimited container.
 	switch cores := s.GetCpuLimitCores(); {
 	case cores > 0:
-		u.CPURatio = u.CPUPercent / (cores * 100)
-		u.CPULimited = true
-	case resp.GetNodeCpus() > 0:
-		u.CPURatio = u.CPUPercent / (float64(resp.GetNodeCpus()) * 100)
+		u.CPULimitCores, u.CPULimited = cores, true
+	default:
+		u.CPULimitCores = float64(resp.GetNodeCpus())
+	}
+	if u.CPULimitCores > 0 {
+		u.CPURatio = u.CPUPercent / (u.CPULimitCores * 100)
 	}
 	if u.MemLimitBytes > 0 {
 		u.MemRatio = float64(u.MemBytes) / float64(u.MemLimitBytes)
@@ -276,20 +281,33 @@ func fetchNodeStats(ctx context.Context, cfg config.Config, n resolve.Node, conn
 	return resp, nil
 }
 
-// formatCPUUsage renders a CPU reading for display: docker's share-of-one-cpu
-// number as cores, plus the share of what the container may use.
+// formatCPUUsage renders a CPU reading as "used of allowed", because the
+// percentage on its own is not readable: it tells you nothing about the scale
+// it is measured against.
 func formatCPUUsage(u containerUsage) string {
-	if !u.CPUReady {
+	switch {
+	case !u.CPUReady:
 		return "…"
+	case u.CPULimitCores > 0:
+		return fmt.Sprintf("%.2f / %.2f cores (%s)", u.CPUPercent/100, u.CPULimitCores, formatRatio(u.CPURatio))
+	default:
+		return fmt.Sprintf("%.2f cores", u.CPUPercent/100)
 	}
-	return fmt.Sprintf("%.2f cores (%s)", u.CPUPercent/100, formatRatio(u.CPURatio))
 }
 
+// formatMemUsage renders memory as "used of allowed". It uses the binary units
+// formatMemBytes gives (MiB/GiB), not SI: cgroup limits are binary, docker
+// reports binary, and the node detail already shows the same figures that way —
+// the same number must not read differently in two places.
 func formatMemUsage(u containerUsage) string {
-	if u.MemLimitBytes <= 0 {
-		return humanBytes(u.MemBytes)
+	used := formatMemBytes(u.MemBytes)
+	if used == "" {
+		used = "0B" // formatMemBytes yields "" at zero; a table cell needs a value
 	}
-	return fmt.Sprintf("%s / %s (%s)", humanBytes(u.MemBytes), humanBytes(u.MemLimitBytes), formatRatio(u.MemRatio))
+	if u.MemLimitBytes <= 0 {
+		return used
+	}
+	return fmt.Sprintf("%s / %s (%s)", used, formatMemBytes(u.MemLimitBytes), formatRatio(u.MemRatio))
 }
 
 func formatRatio(r float64) string { return fmt.Sprintf("%.0f%%", r*100) }
@@ -298,11 +316,13 @@ func formatRatio(r float64) string { return fmt.Sprintf("%.0f%%", r*100) }
 // their colour tags cannot disturb the alignment — the same place the
 // rolling-update badge lives.
 //
-// Glyphs rather than words because the row is already dense; the percentage
-// next to them carries the actual meaning, and the colour carries the urgency.
+// Words, not glyphs. These were ⚡ and ▣, which cost the same width and read as
+// neither cpu nor memory to anyone who had not been told — and a marker whose
+// meaning has to be looked up is not doing its job. "cpu"/"mem" also cannot
+// fail to render, which no emoji can promise across terminals and fonts.
 const (
-	cpuGlyph = "⚡"
-	memGlyph = "▣"
+	cpuGlyph = "cpu"
+	memGlyph = "mem"
 )
 
 // usageColor maps a level to a tview colour tag. usageOK has none — a row that

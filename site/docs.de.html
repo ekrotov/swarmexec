@@ -988,7 +988,7 @@
         <strong>gesunder</strong> Container bekommt
         <strong>keinen</strong> Marker, einer <strong>ohne</strong> Healthcheck ebenso wenig;
         so bleibt der Marker eine Aussage. Sie stehen neben den
-        <code>⚡</code>/<code>▣</code>-Ressourcenmarkern weiter unten, und die Gesundheit
+        <code>cpu</code>/<code>mem</code>-Ressourcenmarkern weiter unten, und die Gesundheit
         kommt in der Zeile <strong>zuerst</strong>: Sie ist das, was der Zahl direkt daneben
         widerspricht.
       </p>
@@ -1013,10 +1013,14 @@
         bisher konnte swarmexec nur anzeigen, was der Scheduler <em>gebucht</em> hat (siehe
         den Nodes-Tab weiter unten). Überschreitet ein Container oder ein Service
         <strong>70 %</strong>, bekommt er einen orangen Marker, ab <strong>90 %</strong>
-        einen roten — am Ende der Zeile, mit einem Glyph für die Ressource
-        (<code>⚡</code> für CPU, <code>▣</code> für Memory) und dem Prozentwert
-        (<span style="color:#f85149">⚡&nbsp;93 %</span>). Sind beide heiß, erscheinen
-        beide. Unter 70 % wird nichts gezeichnet, damit die Marker ein Signal bleiben und
+        einen roten — am Ende der Zeile, mit der Ressource in <strong>Worten</strong>
+        (<code>cpu</code> für CPU, <code>mem</code> für Memory) und dem Prozentwert
+        (<span style="color:#f85149">cpu&nbsp;94 %</span>,
+        <span style="color:#db6d28">mem&nbsp;91 %</span>). Sind beide heiß, erscheinen
+        beide. Worte statt Symbolen, bei gleicher Breite: Ein Marker, dessen Bedeutung man
+        erst nachschlagen muss, tut seinen Job nicht — und Buchstaben können in keinem
+        Terminal an der Darstellung scheitern. Unter 70 % wird nichts gezeichnet, damit die
+        Marker ein Signal bleiben und
         keine Tapete. Eine <strong>Service</strong>-Zeile nimmt den
         <strong>schlechtesten ihrer Replicas</strong>, nicht den Durchschnitt — ein
         Durchschnitt verdeckt genau den einen Container, der gleich stirbt, und der ist der
@@ -1029,7 +1033,8 @@
         hat, sonst die Kapazität des Nodes</strong>. Genau darauf kommt es an — 91 % eines
         256-MB-Limits heißt, ein OOM-Kill steht bevor; 91 % eines 64-GB-Nodes ist eine
         ganz andere Geschichte. Die <a href="#tui">Stats-Ansicht</a> des Inspect-Overlays
-        schreibt die Bezugsgröße pro Container in eine Zeile unter die Zahlen.
+        zeigt pro Container beide Seiten dieser Division und benennt die Bezugsgröße unter
+        der Tabelle.
       </p>
       <div class="note">
         <strong>Woher die Zahlen kommen — und warum sie verzögert eintreffen.</strong> Die
@@ -1233,25 +1238,46 @@
         <strong>Die Stats-Ansicht.</strong> Die mittlere der drei zeigt die
         <em>tatsächliche Ressourcennutzung</em> — dieselben Messwerte, die auch den Baum
         markieren; das Öffnen kostet also keinen zusätzlichen Aufruf, und die Zahlen
-        aktualisieren sich weiter, solange die Ansicht offen ist. Sie listet jeden Container
-        des Service (oder den einen Container eines Task-Inspects), jeweils mit einem
-        proportionalen Balken, der <strong>CPU in Cores</strong> plus Prozentwert, dem
-        <strong>belegten Memory gegen sein Limit</strong> und der Zeile, die sagt, worauf
-        sich diese Prozente beziehen — das eigene Limit oder die Kapazität des Nodes. Bei
-        mehr als einem gemessenen Container kommt eine Zusammenfassung dazu:
-        <strong>Spitzenwert</strong> CPU, <strong>Spitzenwert</strong> Memory-Prozent und
-        <strong>Summe</strong> des Memory über die Replicas. Ein Container, den kein Agent
-        gemeldet hat — nicht erreichbarer Node, ein für den <code>Stats</code>-RPC zu alter
-        Agent oder ein erst seit der letzten Messung laufender Container —, sagt das in
-        seiner eigenen Zeile, statt Nullen zu zeigen. Dazu bekommt jeder Container eine
-        <strong><code>health</code>-Zeile</strong>:
-        <span style="color:#f85149">failing its healthcheck</span> (rot),
-        <span style="color:#f2cc60">starting — probe has not passed yet</span> (gelb),
-        <span style="color:#3fb950">healthy</span> (grün) oder
-        <span style="color:#8b949e">no healthcheck configured</span> (grau). Die letzten
-        beiden sind mit Absicht <strong>zwei verschiedene Zeilen</strong> und nicht eine
-        Zeile und eine Lücke: „kein Healthcheck konfiguriert“ und „die Probe läuft durch“
-        sind verschiedene Tatsachen, und eine Lücke läse sich wie das Zweite. Der
+        aktualisieren sich weiter, solange die Ansicht offen ist. Sie ist eine
+        <strong>Tabelle</strong>, eine Zeile pro Container des Service (oder der eine
+        Container eines Task-Inspects):
+      </p>
+      <div class="cmd"><span class="k">RESOURCE USAGE</span>
+<span style="color:#8b949e">  measured on each node, refreshed with the tree</span>
+
+<span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
+  gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
+
+<span style="color:#8b949e">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+      <p>
+        Eine Tabelle, weil ein nackter Prozentwert nicht lesbar ist, wenn man nicht ohnehin
+        weiß, wie das Werkzeug misst — <em>94 % wovon?</em> Jede Zelle bringt ihre
+        <strong>eigenen Einheiten</strong> mit, <code>0.07 / 4.00 cores</code> braucht also
+        keine Legende, und der Prozentwert steht direkt neben der Zahl, von der er ein
+        Prozentwert ist. Mehrere Replicas vergleicht man, indem man eine <strong>Spalte
+        entlangliest</strong>, statt gestapelte Blöcke gegeneinanderzuhalten. Die Spalte
+        <strong>HEALTH</strong> formuliert das Urteil in Worten — <code>healthy</code>,
+        <code>unhealthy</code>, <code>starting</code> oder <code>none</code> für einen
+        Container, der gar keinen Healthcheck deklariert. <code>none</code> und
+        <code>healthy</code> sind mit Absicht <strong>zwei verschiedene Worte</strong> und
+        nicht ein Wort und eine Lücke: „kein Healthcheck konfiguriert“ und „die Probe läuft
+        durch“ sind verschiedene Tatsachen, und eine Lücke läse sich wie das Zweite. Ein
+        Container, den kein Agent gemeldet hat — nicht erreichbarer Node, ein für den
+        <code>Stats</code>-RPC zu alter Agent oder ein erst seit der letzten Messung
+        laufender Container —, zeigt in beiden Ressourcenspalten <code>no reading</code>
+        statt einer Null, die sich wie „im Leerlauf“ läse.
+      </p>
+      <p>
+        Die Fußnote unter der Tabelle benennt den <strong>Nenner</strong>: das eigene Limit
+        des Containers, wenn er eins hat, sonst die Kapazität des Nodes. Genau das macht
+        einen Prozentwert erst aussagekräftig — 85 % eines 8-GiB-Limits und 85 % eines
+        64-GiB-Nodes sind zwei verschiedene Geschichten. Memory steht in
+        <strong>binären Einheiten</strong> (MiB/GiB), denselben, die auch das Node-Detail
+        verwendet und die docker selbst meldet; dieselbe Zahl liest sich also nie an zwei
+        Stellen unterschiedlich. Bei mehr als einem gemessenen Container kommt unter der
+        Tabelle eine Zusammenfassung dazu: CPU und Memory des <strong>schlechtesten
+        Replicas</strong> — nicht der Durchschnitt, der genau den einen Container verdeckt,
+        der gleich OOM-gekillt wird — plus das gesamte Memory über alle. Der
         <kbd>t</kbd>-Eintrag im
         <kbd>?</kbd>-Hilfe-Overlay lautet entsprechend
         <em>cycle table / stats / raw JSON</em>.
