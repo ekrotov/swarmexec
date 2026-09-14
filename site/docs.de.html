@@ -1600,9 +1600,10 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, den Blöcken <strong>reservierte Ressourcen</strong> und <strong>tatsächliche Nutzung</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, den Blöcken <strong>reservierte Ressourcen</strong>, <strong>tatsächliche Nutzung</strong> und <strong>Images auf diesem Node</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
           <tr><td><kbd>l</kbd></td><td>die <strong>Labels</strong> des ausgewählten Nodes bearbeiten — ein gestagter Listeneditor (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen) über <code>key=value</code>-Einträge. Das Anwenden macht ein <code>NodeUpdate</code> — anders als bei einem Service <strong>greift ein Node-Update sofort</strong> (kein Rolling Update). Node-Labels werden häufig als Ziele von Placement-Constraints verwendet (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>Active</em> plant Tasks hier normal ein; <em>Pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>Drain</em> verschiebt <strong>jeden</strong> Task vom Node herunter. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umlegbar als <code>node_availability</code></td></tr>
+          <tr><td><kbd>P</kbd></td><td>Image-Plattenplatz auf dem Node freiräumen (großes <kbd>P</kbd>, also Shift+p — dieselbe Geste, die der Volumes-Tab für sein Prune verwendet). Öffnet ein kleines Menü mit den <strong>zwei</strong> unten beschriebenen Modi, jeder hinter einer eigenen Bestätigung; es lohnt sich, vorher zu lesen, welcher welcher ist. Die Fußzeile endet mit <em>P reclaim images</em>, das <kbd>?</kbd>-Overlay führt es als <em>reclaim image disk space on the node</em>. Umlegbar als <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1650,6 +1651,74 @@
         <em>nicht</em> in dieser Zahl. Es ist nicht die Load des Nodes, und der Block sagt
         das selbst dazu.
       </div>
+      <p>
+        <strong>Images auf diesem Node.</strong> Zuletzt steht in den Details ein Block
+        <em>images on this node</em>: wie viel der Layer-Store des Nodes belegt und in wie
+        vielen Images, und wie viel davon in <strong>ungetaggten Überbleibseln</strong>
+        freigeräumt werden kann (ein Node ohne ungetaggte Images sagt das, statt eine Null
+        anzubieten). Gibt es darüber hinaus etwas, kommt eine weitere Zeile dazu: wie viel
+        zusätzlich <strong>getaggt, aber ungenutzt</strong> ist — bewusst als Kosten
+        formuliert, <em>das Entfernen bedeutet, diese Images wieder zu ziehen</em>, und
+        nicht als Angebot. Den Block gibt es, weil Images die eine node-lokale Ressource
+        sind, die von der Cluster-Seite <em>überhaupt nicht</em> zu sehen ist: Die
+        Manager-API hat keinerlei Sicht auf Images — anders als bei Volumes, von denen sie
+        immerhin weiß, dass sie gemountet sind. Volumes ließen sich aus swarmexec längst
+        clusterweit verwalten; ein Node, dessen Platte still mit alten Layern volllief, war
+        nicht einmal sichtbar. Der Block lädt eigenständig, parallel zur Node-Liste, und
+        erscheint daher einen Moment nach dem Rest des Overlays.
+      </p>
+      <p>
+        <strong>Freiräumen — <kbd>P</kbd> im Nodes-Tab.</strong> Das Menü dahinter hat
+        <strong>zwei Einträge, bewusst keine Aktion mit Checkbox</strong>, denn es sind
+        zwei verschiedene Handlungen, und eine Checkbox lädt dazu ein, versehentlich die
+        zerstörerische zu erwischen:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Eintrag</th><th>Was entfernt wird</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Untagged leftovers</strong></td><td>die Layer, die Rebuilds zurücklassen und aus denen sich nichts starten lässt. <strong>Sicher</strong>: Das kann keinen Service stoppen und keinen Pull erzwingen</td></tr>
+          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>entfernt zusätzlich <strong>getaggte</strong> Images, die <em>gerade jetzt</em> kein Container benutzt. Auf einem Swarm-Node gehören dazu jeder Service, der aktuell auf <strong>null skaliert</strong> ist, und jede Task <strong>zwischen zwei Restarts</strong> — jede davon muss ihr Image <strong>erneut ziehen</strong></td></tr>
+        </tbody>
+      </table></div>
+      <div class="warn">
+        <strong>Lies den zweiten Eintrag nicht als „dasselbe, nur mehr“.</strong> „Every
+        unused image“ entfernt Images, die zu etwas gehören, das bloß <em>in diesem
+        Augenblick</em> nicht läuft. Ein auf null skalierter Service, eine neu startende
+        Task, ein gestern gestoppter Stack — sie alle verlieren ihr Image und müssen es
+        wieder ziehen, um zurückzukommen, und <strong>wenn die Registry nicht erreichbar
+        ist, kommen sie nicht zurück</strong>. Jeder der beiden Einträge läuft über eine
+        <strong>eigene</strong> Bestätigung, die genau diese Konsequenz benennt und die
+        Bytes nennt, die er freiräumen würde; es sind getrennte Texte, gerade damit keiner
+        anfangen kann, den anderen zu beschreiben.
+      </div>
+      <p>
+        <strong>Zwei Modi, zwei Berechtigungen.</strong> Der Agent autorisiert sie als zwei
+        eigenständige Aktionen — <code>image.prune</code> für die ungetaggten Überbleibsel
+        und <code>image.prune.all</code> für den Rundumschlag —, sodass eine Policy das
+        Freiräumen ungetaggter Layer erlauben kann, <em>ohne</em> den zerstörerischen Modus
+        mit zu erlauben. Jedes Prune landet im <strong>Audit-Log</strong> des Agents: mit
+        welchem Modus, wie viel freigeräumt wurde und wie viele Images gegangen sind.
+      </p>
+      <div class="note">
+        <strong>Woher die Zahlen kommen.</strong> Sie stammen aus derselben Quelle, aus der
+        auch <code>docker system df</code> berichtet, und stimmen exakt mit ihm überein —
+        auf einem echten Node nachgemessen bei 56 Images, 32,70&nbsp;GB auf Platte,
+        22,99&nbsp;GB freiräumbar. Insbesondere summiert swarmexec <strong>nicht</strong>
+        die Größen der einzelnen Images: Die Größe eines Images enthält jeden Layer, aus dem
+        es gebaut ist, und Layer werden geteilt — diese Summe meldet also deutlich zu viel;
+        in der Entwicklung behauptete sie 32,7&nbsp;GB, wo der Daemon 22,2&nbsp;GB sagte.
+        Eine Einschränkung, die dazugehört: Der Wert für <em>nur ungetaggt</em> ist eine
+        <strong>Untergrenze</strong> — ein Layer, den sich zwei ungetaggte Images teilen,
+        gehört zur Unique-Size von keinem der beiden —, ein Prune der ungetaggten Images
+        räumt also womöglich etwas <em>mehr</em> frei als angekündigt, nie weniger.
+      </div>
+      <p>
+        Dieselbe Voraussetzung wie bei den Nutzungs- und Health-Zahlen oben: Es braucht
+        <strong>Agents aus diesem Release oder neuer</strong>. Ein Node mit älterem Agent
+        zeigt schlicht gar keinen Image-Block und meldet auf <kbd>P</kbd>, dass er nicht
+        geantwortet hat — ausrollen mit
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </p>
 
       <h3>Configs-Tab</h3>
       <p>
@@ -1768,7 +1837,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    node_availability: a
+node_edit_labels: l    node_availability: a    node_prune_images: P
 secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>

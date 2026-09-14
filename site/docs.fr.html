@@ -1630,9 +1630,10 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, les blocs <strong>ressources réservées</strong> et <strong>utilisation réelle</strong> (voir ci-dessous), nombre de volumes et la liste complète des labels</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, les blocs <strong>ressources réservées</strong>, <strong>utilisation réelle</strong> et <strong>images sur ce nœud</strong> (voir ci-dessous), nombre de volumes et la liste complète des labels</td></tr>
           <tr><td><kbd>l</kbd></td><td>édite les <strong>labels</strong> du nœud sélectionné — un éditeur de liste étagé (<kbd>a</kbd> ajouter / <kbd>e</kbd> éditer / <kbd>d</kbd> supprimer / <kbd>w</kbd> appliquer / <kbd>Esc</kbd> annuler) sur des entrées <code>key=value</code>. Appliquer effectue un seul <code>NodeUpdate</code> — contrairement à un service, une mise à jour de nœud <strong>s'applique immédiatement</strong> (pas de mise à jour progressive). Les labels de nœud sont couramment utilisés comme cibles de contraintes de placement (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>définit la <strong>disponibilité</strong> du nœud — un menu <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> qui signale l'état dans lequel le nœud se trouve actuellement. <em>Active</em> y planifie les tâches normalement ; <em>Pause</em> conserve les tâches en cours d'exécution et empêche seulement les <strong>nouveaux</strong> placements ; <em>Drain</em> déplace <strong>toutes</strong> les tâches hors du nœud. Active et Pause s'appliquent aussitôt ; Drain passe par une confirmation qui indique combien de tâches en cours d'exécution le swarm va arrêter et replanifier ailleurs (les services dont les tâches ne peuvent être placées nulle part ailleurs deviennent unschedulable). Comme un changement de labels, c'est un seul <code>NodeUpdate</code> (lecture-modification-écriture sur la spec du nœud) et cela <strong>s'applique immédiatement</strong> — les nœuds n'ont pas de mise à jour progressive. Remappable via <code>node_availability</code></td></tr>
+          <tr><td><kbd>P</kbd></td><td>récupère de l'espace disque occupé par les images sur le nœud (<kbd>P</kbd> majuscule, c.-à-d. Shift+p — le même geste que celui de l'onglet Volumes pour son prune). Ouvre un petit menu avec les <strong>deux</strong> modes décrits ci-dessous, chacun derrière sa propre confirmation ; mieux vaut lire lequel est lequel avant de choisir. Le pied de page se termine par <em>P reclaim images</em> et la surcouche <kbd>?</kbd> l'annonce comme <em>reclaim image disk space on the node</em>. Remappable via <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1681,6 +1682,75 @@
         dehors de docker ne sont <em>pas</em> dans ce chiffre. Ce n'est pas la charge du
         nœud, et le bloc le dit lui-même.
       </div>
+      <p>
+        <strong>Images sur ce nœud.</strong> En dernier, les détails portent un bloc
+        <em>images on this node</em> : ce que pèse le magasin de couches du nœud et en
+        combien d'images, puis ce qui en est récupérable en <strong>restes non
+        étiquetés</strong> (un nœud qui n'a rien de non étiqueté le dit, plutôt que de
+        proposer un zéro). Lorsqu'il y en a, une ligne supplémentaire indique combien
+        d'espace est en outre <strong>étiqueté mais inutilisé</strong> — formulé comme un
+        coût, <em>l'enlever oblige à retélécharger ces images</em>, et non comme une offre.
+        Ce bloc existe parce que les images sont la seule ressource locale au nœud que le
+        côté cluster ne voit <em>pas du tout</em> : l'API du manager n'a aucune vue sur les
+        images, contrairement aux volumes, dont elle sait au moins qu'ils sont montés. Les
+        volumes se géraient déjà depuis swarmexec à l'échelle du cluster ; un nœud dont le
+        disque se remplissait silencieusement de vieilles couches n'était même pas visible.
+        Le bloc se charge de son côté, en parallèle de la liste des nœuds, et apparaît donc
+        un instant après le reste de la surcouche.
+      </p>
+      <p>
+        <strong>Récupérer l'espace — <kbd>P</kbd> sur l'onglet Nodes.</strong> Le menu
+        ouvert comporte <strong>deux entrées, délibérément pas une action avec une case à
+        cocher</strong>, car ce sont deux actes différents et une case invite à tomber par
+        accident sur le destructeur :
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Entrée</th><th>Ce qu'elle supprime</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Untagged leftovers</strong></td><td>les couches laissées derrière eux par les rebuilds, dont rien ne peut démarrer. <strong>Sans risque</strong> : cela ne peut ni arrêter un service ni forcer un téléchargement</td></tr>
+          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>supprime en plus les images <strong>étiquetées</strong> qu'aucun conteneur n'exécute <em>à cet instant</em>. Sur un nœud swarm, cela comprend tout service actuellement <strong>mis à zéro réplica</strong> et toute tâche <strong>entre deux redémarrages</strong> : chacune devra <strong>retélécharger son image</strong></td></tr>
+        </tbody>
+      </table></div>
+      <div class="warn">
+        <strong>Ne lisez pas la seconde entrée comme « la même chose, en plus large
+        ».</strong> « Every unused image » supprime des images qui appartiennent à quelque
+        chose qui, simplement, <em>ne tourne pas à cet instant</em> : un service mis à zéro,
+        une tâche qui redémarre, une stack arrêtée hier. Toutes perdent leur image et
+        doivent la retélécharger pour revenir — et <strong>si le registre est injoignable,
+        elles ne remonteront pas</strong>. Chacune des deux entrées passe par sa
+        <strong>propre</strong> boîte de confirmation, qui énonce exactement cette
+        conséquence et nomme les octets qu'elle libérerait ; ce sont deux textes séparés
+        précisément pour qu'aucun ne puisse se mettre à décrire l'autre.
+      </div>
+      <p>
+        <strong>Deux modes, deux autorisations.</strong> L'agent les autorise comme deux
+        actions distinctes — <code>image.prune</code> pour les restes non étiquetés et
+        <code>image.prune.all</code> pour le balayage — de sorte qu'une politique peut
+        autoriser la récupération des couches non étiquetées <em>sans</em> autoriser la
+        destructrice. Chaque prune est inscrit dans le <strong>journal d'audit</strong> de
+        l'agent avec le mode utilisé, l'espace récupéré et le nombre d'images parties.
+      </p>
+      <div class="note">
+        <strong>D'où viennent les chiffres.</strong> Ils proviennent de la source même dont
+        <code>docker system df</code> tire ses rapports, et coïncident exactement avec lui —
+        vérifié sur un nœud réel à 56 images, 32,70&nbsp;Go sur le disque, 22,99&nbsp;Go
+        récupérables. En particulier, swarmexec n'additionne <strong>pas</strong> les
+        tailles des images prises une à une : la taille d'une image inclut toutes les
+        couches dont elle est bâtie, et les couches sont partagées — cette somme surestime
+        donc largement ; pendant le développement, elle annonçait 32,7&nbsp;Go là où le
+        démon disait 22,2&nbsp;Go. Une réserve qu'il faut énoncer : le chiffre
+        <em>non étiquetés seulement</em> est une <strong>borne inférieure</strong> — une
+        couche partagée par deux images non étiquetées n'appartient à la taille propre
+        d'aucune des deux — si bien qu'un prune des non étiquetées peut libérer un peu
+        <em>plus</em> qu'annoncé, jamais moins.
+      </div>
+      <p>
+        Même prérequis que les chiffres d'utilisation et de santé ci-dessus : il faut des
+        <strong>agents de cette version ou plus récents</strong>. Un nœud dont l'agent est
+        plus ancien n'affiche tout simplement aucun bloc images, et signale qu'il n'a pas
+        répondu si vous appuyez sur <kbd>P</kbd> — déployez-les avec
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </p>
 
       <h3>Onglet Configs</h3>
       <p>
@@ -1803,7 +1873,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    node_availability: a
+node_edit_labels: l    node_availability: a    node_prune_images: P
 secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>
