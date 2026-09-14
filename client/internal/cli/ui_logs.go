@@ -138,6 +138,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	setTitle()
 	page, refreshHint := u.logPage(tv)
 	lctx, lcancel := context.WithCancel(ctx)
+	lv.start(lctx) // bounded redraw rate; see logFlushInterval
 	closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
 	tv.SetInputCapture(u.logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 	target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
@@ -175,6 +176,7 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 	setTitle()
 	page, refreshHint := u.logPage(tv)
 	lctx, lcancel := context.WithCancel(ctx)
+	lv.start(lctx) // bounded redraw rate; see logFlushInterval
 	closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
 	tv.SetInputCapture(u.logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 	for _, c := range members {

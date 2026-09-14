@@ -593,7 +593,13 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // just leaving the badges off.
 func (u *ui) loadUsage() {
 	app, ctx, cfg := u.app, u.ctx, u.cfg
-	if !u.usageBusy.CompareAndSwap(false, true) {
+	// Pause while an overlay is open, exactly as the tree refresh does. The log
+	// view is the case that matters: it is the one overlay under constant
+	// redraw, and a usage pass ends in remarkUsage walking the whole tree on the
+	// main loop — competing with the log stream for the loop that also handles
+	// keystrokes. Nobody is looking at the tree's badges from inside an overlay
+	// anyway.
+	if u.overlayDepth.Load() > 0 || !u.usageBusy.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
@@ -606,8 +612,8 @@ func (u *ui) loadUsage() {
 		}
 		byContainer, byNode := collectUsage(ctx, cfg, nodes, u.f.connectTimeout, u.statsGate)
 		clientlog.Timed("ui.loadUsage", start, nil)
-		if ctx.Err() != nil {
-			return
+		if ctx.Err() != nil || u.overlayDepth.Load() > 0 {
+			return // an overlay opened while we were fanning out
 		}
 		app.QueueUpdateDraw(func() {
 			u.usage, u.nodeUse = byContainer, byNode
