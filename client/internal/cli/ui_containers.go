@@ -291,9 +291,15 @@ func (u *ui) markStack(n *tview.TreeNode) {
 	if summary.Risky > 0 {
 		fmt.Fprintf(&extra, "  [red]🛡 %d[-]", summary.Risky)
 	}
+	// Health rolls up like the other markers. A stack whose services are all
+	// failing their probes would otherwise read as calm at exactly the level an
+	// operator scans first — the same misleading "everything is up" one tier
+	// above the service rows.
+	health := u.stackHealth(summary.Services)
+	extra.WriteString(healthBadge(health))
 	n.SetText(fmt.Sprintf("%s %s  [gray](%d svc · %d/%d)[-]%s",
 		marker, ref.name, len(summary.Services), summary.Running, summary.Desired, extra.String()))
-	n.SetColor(serviceColor(summary.Running, summary.Desired))
+	n.SetColor(healthColor(serviceColor(summary.Running, summary.Desired), health))
 }
 
 // removeServiceUnderCursor removes the service the tree cursor is on, so a
@@ -548,6 +554,23 @@ func (u *ui) svcUsageBadge(service string) string {
 		badge += usageBadge(agg)
 	}
 	return badge
+}
+
+// stackHealth folds the healthcheck verdicts of every container under a stack
+// into one count.
+func (u *ui) stackHealth(services []resolve.Service) serviceHealth {
+	var out serviceHealth
+	if len(u.usage) == 0 {
+		return out
+	}
+	for _, svc := range services {
+		h := healthOf(u.usage, u.lastCands, svc.Name)
+		out.Healthy += h.Healthy
+		out.Unhealthy += h.Unhealthy
+		out.Starting += h.Starting
+		out.Unknown += h.Unknown
+	}
+	return out
 }
 
 // svcColor is the tree colour for a service row: the running/desired verdict,

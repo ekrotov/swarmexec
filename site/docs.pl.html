@@ -920,15 +920,68 @@
       <p>
         Pokazywana jest każda usługa (nawet przeskalowana do zera), każdy wiersz wyrenderowany
         jak linia <code>docker service ls</code> — nazwa, tryb, liczba działających/żądanych,
-        obraz i opublikowane porty — i pokolorowany według kondycji (turkusowy = wszystkie
+        obraz i opublikowane porty — i pokolorowany według tego, jak usłudze naprawdę idzie:
+        liczba działających/żądanych zadań ustala kolor bazowy (turkusowy = wszystkie
         zadania działają, pomarańczowy = częściowo, czerwony = leży, szary = przeskalowana do
-        zera). Znacznik <code>▸</code>/<code>▾</code> pokazuje, czy usługa jest zwinięta, czy
+        zera), a nieprzechodzący <strong>healthcheck</strong> go nadpisuje (patrz niżej).
+        Znacznik <code>▸</code>/<code>▾</code> pokazuje, czy usługa jest zwinięta, czy
         rozwinięta; jej działające kontenery zagnieżdżają się pod nią. Usługa
         <strong>w trakcie aktualizacji kroczącej</strong> nosi kolorową plakietkę na swoim
         wierszu drzewa — <span style="color:#f2cc60">⟳&nbsp;updating</span> albo
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — a ten sam status pojawia
         się w nakładce inspekcji usługi; znika po zakończeniu aktualizacji.
       </p>
+      <p>
+        <strong>Kolor z healthchecku, nie tylko z liczby replik.</strong> Kolor wiersza
+        usługi brał się wyłącznie z relacji działające do żądanych — więc usługa, której
+        <em>każdy</em> kontener oblewał healthcheck, nadal rysowała się jako spokojne,
+        turkusowe <strong>3/3</strong>. Liczba była prawdziwa, a wiersz mylący. Stan zadania
+        w Swarmie też tego nie powie: zadanie jest <code>running</code>, podczas gdy jego
+        kontener oblewa każdą próbę — werdykt musi więc przyjść z węzła. Nieudana próba
+        liczy się teraz jako pogorszenie tego samego rodzaju co brakująca replika:
+      </p>
+      <ul>
+        <li><strong>wszystkie</strong> sprawdzane kontenery unhealthy → wiersz robi się
+          <strong style="color:#f85149">czerwony</strong>, to tak samo źle jak „nie działa
+          żaden”;</li>
+        <li><strong>część</strong> unhealthy →
+          <strong style="color:#db6d28">pomarańczowy</strong>, jak przy wdrożeniu w
+          połowie;</li>
+        <li>wszystkie healthy → kolor, który wiersz dostał już od liczby replik,
+          <strong>bez zmian</strong>;</li>
+        <li>kontenery <strong>bez zadeklarowanego healthchecku</strong> → wiersz
+          <strong>w ogóle nie jest przekolorowywany</strong>. Nic o nich nie wiadomo, a
+          zgadywanie byłoby tym samym błędem w drugą stronę.</li>
+      </ul>
+      <p>
+        <strong>Znaczniki.</strong> Wiersz usługi niesie
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> na czerwono albo
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> na żółto, dopóki próby nie
+        przeszły; liść kontenera niesie
+        <span style="color:#f85149">✖&nbsp;unhealthy</span> /
+        <span style="color:#f2cc60">◌&nbsp;starting</span>. Unhealthy bije starting — to
+        ono wymaga reakcji. Wiersz stacka zbiera ten sam znacznik ze wszystkiego, co jest pod
+        nim (zobacz <em>Grupowanie po stackach</em> niżej). <strong>Zdrowy</strong> kontener
+        nie dostaje
+        <strong>żadnego</strong> znacznika, tak samo jak taki <strong>bez</strong>
+        healthchecku, dzięki czemu znacznik nadal coś znaczy. Stoją obok znaczników zasobów
+        <code>⚡</code>/<code>▣</code> opisanych niżej, a kondycja idzie w wierszu
+        <strong>pierwsza</strong>: to ona przeczy liczbie stojącej tuż obok.
+      </p>
+      <div class="note">
+        <strong>Skąd bierze się werdykt — i ile kosztuje.</strong> Nic ponadto: jedzie razem
+        z odczytami zużycia opisanymi niżej — ten sam agent, to samo wywołanie,
+        <strong>żadnego dodatkowego zapytania do API</strong>. Lista kontenerów, którą agent
+        i tak pobiera przy każdym przebiegu próbkowania, niesie werdykt w linii statusu
+        (<code>Up 3 days (healthy)</code>) — dokładnie tym ciągu, który drukuje
+        <code>docker ps</code>. Parser jest celowo <strong>rygorystyczny</strong>: czego nie
+        rozpozna, staje się <em>brakiem werdyktu</em>, a nie domysłem. Jeśli demon kiedyś
+        przeredaguje tę linię, swarmexec przestanie twierdzić, że wie, zamiast zgłaszać
+        oblewający kontener jako zdrowy. Obowiązuje ten sam warunek co przy liczbach o
+        zużyciu: potrzebne są agenty z tego wydania lub nowsze, więc klaster, który nie
+        został przetoczony, nie pokaże żadnych znaczników kondycji — wdrożysz je przez
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </div>
       <p>
         <strong>Znaczniki bieżącego zużycia CPU i pamięci.</strong> Obok tych plakietek
         wiersz może nieść także to, co naprawdę <em>zużywa</em> w tej chwili — do tej pory
@@ -975,7 +1028,8 @@
         szczegółach węzła nie ma, a cała reszta działa bez zmian; klient dodatkowo na jakiś
         czas odpuszcza taki węzeł, zamiast odpytywać go przy każdym odświeżeniu. Na
         klastrze, który nie został jeszcze przetoczony, <strong>nie ma więc żadnych liczb
-        o zużyciu</strong>, dopóki agenty nie zostaną zaktualizowane — wdrożysz je przez
+        o zużyciu ani żadnych znaczników kondycji</strong>, dopóki agenty nie zostaną
+        zaktualizowane — wdrożysz je przez
         <a href="#reroll"><code>swarmexec init --force</code></a>. To zdecydowanie
         najczęstszy powód, dla którego nic nie widać.
       </div>
@@ -988,13 +1042,20 @@
         poziomach: <strong>stack&nbsp;→ usługa&nbsp;→ kontener</strong>. Wiersz stacka pokazuje
         nazwę stacka, ile usług się pod nim znajduje oraz <strong>zsumowaną</strong> liczbę
         działających/żądanych zadań (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), pokolorowaną
-        według tej samej reguły kondycji co wiersz usługi. Za nim pojawiają się dwa zbiorcze
+        według dokładnie tej samej reguły co wiersz usługi: zsumowanej liczby
+        działających/żądanych, <strong>z tym samym nadpisaniem z healthchecku</strong> na
+        wierzchu. Za nim pojawiają się zbiorcze
         liczniki, gdy są niezerowe: <span style="color:#f2cc60">⟳&nbsp;n</span> — usługi w tym
-        stacku będące właśnie <strong>w trakcie aktualizacji kroczącej</strong> — oraz
+        stacku będące właśnie <strong>w trakcie aktualizacji kroczącej</strong> —
         <span style="color:#f85149">🛡&nbsp;n</span> — usługi z
         <strong>ustaleniem bezpieczeństwa wymagającym działania</strong>, tą samą tarczą, którą
-        noszą wiersze usług. Dzięki temu zwinięty stack wciąż mówi ci, czy coś w środku
-        wymaga uwagi.
+        noszą wiersze usług — a po nich znacznik kondycji,
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> albo
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span>, zsumowany po wszystkich
+        kontenerach wszystkich usług w stacku. Dzięki temu zwinięty stack wciąż mówi ci, czy
+        coś w środku wymaga uwagi. Przy kondycji liczy się to najbardziej: wiersz stacka to
+        poziom, po którym operator wodzi wzrokiem <em>najpierw</em>, więc zwodnicze
+        „wszystko działa” jest tu gorsze niż piętro niżej, a nie mniej groźne.
       </p>
       <p>
         Usługi utworzone przez <code>docker service create</code> nie mają etykiety stacka;
@@ -1150,7 +1211,15 @@
         <strong>szczytowy</strong> procent pamięci i <strong>suma</strong> pamięci po
         replikach. Kontener, którego żaden agent nie zgłosił — nieosiągalny węzeł, agent
         zbyt stary na RPC <code>Stats</code> albo kontener uruchomiony po ostatnim odczycie
-        — mówi to w swojej własnej linii, zamiast pokazywać zera. Wpis <kbd>t</kbd> w
+        — mówi to w swojej własnej linii, zamiast pokazywać zera. Każdy kontener ma tu
+        dodatkowo <strong>linię <code>health</code></strong>:
+        <span style="color:#f85149">failing its healthcheck</span> (czerwona),
+        <span style="color:#f2cc60">starting — probe has not passed yet</span> (żółta),
+        <span style="color:#3fb950">healthy</span> (zielona) albo
+        <span style="color:#8b949e">no healthcheck configured</span> (szara). Te dwie
+        ostatnie są celowo <strong>osobnymi liniami</strong>, a nie linią i pustką: „brak
+        skonfigurowanego healthchecku” i „próba przechodzi” to różne fakty, a pustka
+        czytałaby się jak to drugie. Wpis <kbd>t</kbd> w
         nakładce pomocy <kbd>?</kbd> brzmi odpowiednio
         <em>cycle table / stats / raw JSON</em>.
       </p>

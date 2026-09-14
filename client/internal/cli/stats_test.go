@@ -377,3 +377,37 @@ func TestHealthRowDistinguishesUnknownFromHealthy(t *testing.T) {
 		t.Error("a failing probe should be red")
 	}
 }
+
+// A stack rolls health up like it rolls up updates and security findings. A
+// stack row is what an operator scans first, so it must not read as calm while
+// every service under it is failing its probes.
+func TestStackHealthRollsUp(t *testing.T) {
+	u := &ui{
+		lastCands: []resolve.Candidate{
+			usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
+		},
+		usage: map[string]containerUsage{
+			"c1": {Health: healthUnhealthy},
+			"c2": {Health: healthHealthy},
+			"c3": {Health: healthUnhealthy},
+		},
+	}
+	svcs := []resolve.Service{{Name: "web"}, {Name: "api"}}
+
+	h := u.stackHealth(svcs)
+	if h.Unhealthy != 2 || h.Healthy != 1 {
+		t.Errorf("roll-up = %+v, want 2 unhealthy across both services", h)
+	}
+	if got := healthColor(serviceColor(3, 3), h); got != tcell.ColorOrange {
+		t.Errorf("a stack with some unhealthy = %v, want orange rather than a calm full-count colour", got)
+	}
+
+	// With no readings at all the stack keeps the count's own colour.
+	empty := (&ui{}).stackHealth(svcs)
+	if empty.Total() != 0 {
+		t.Errorf("no readings should roll up to nothing, got %+v", empty)
+	}
+	if got := healthColor(serviceColor(3, 3), empty); got != serviceColor(3, 3) {
+		t.Error("a stack with no health readings must not be recoloured")
+	}
+}

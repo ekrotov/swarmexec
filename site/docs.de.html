@@ -942,15 +942,71 @@
       <p>
         Jeder Service wird angezeigt (auch einer, der auf null skaliert ist), jede Zeile
         gerendert wie eine <code>docker service ls</code>-Zeile — Name, Modus,
-        laufende/gewünschte Anzahl, Image und veröffentlichte Ports — und nach Gesundheit
-        eingefärbt (aqua = alle Tasks oben, orange = teilweise, rot = unten, grau = auf
-        null skaliert). Ein <code>▸</code>/<code>▾</code>-Marker zeigt, ob ein Service
+        laufende/gewünschte Anzahl, Image und veröffentlichte Ports — und danach eingefärbt,
+        wie es dem Service tatsächlich geht: Die laufenden/gewünschten Tasks geben die
+        Grundfarbe vor (aqua = alle Tasks oben, orange = teilweise, rot = unten, grau = auf
+        null skaliert), ein fehlschlagender <strong>Healthcheck</strong> überschreibt sie
+        (siehe unten). Ein <code>▸</code>/<code>▾</code>-Marker zeigt, ob ein Service
         eingeklappt oder ausgeklappt ist; seine laufenden Container verschachteln sich
         darunter. Ein Service <strong>mitten in einem Rolling Update</strong> trägt ein
         farbiges Badge in seiner Baumzeile — <span style="color:#f2cc60">⟳&nbsp;updating</span> oder
         <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — und derselbe Status erscheint
         im Service-Inspect-Overlay; es verschwindet, sobald das Update abgeschlossen ist.
       </p>
+      <p>
+        <strong>Eingefärbt nach Healthcheck, nicht nur nach Replica-Zahl.</strong> Die Farbe
+        einer Service-Zeile kam bisher allein aus laufend gegen gewünscht — ein Service,
+        dessen <em>sämtliche</em> Container ihren Healthcheck rissen, stand also weiterhin
+        als ruhiges aquafarbenes <strong>3/3</strong> da. Die Zahl stimmte, die Zeile log.
+        Der Task-Status von Swarm hilft hier nicht weiter: Eine Task ist
+        <code>running</code>, während ihr Container jede Probe verfehlt — das Urteil muss
+        also vom Node kommen. Eine fehlschlagende Probe gilt jetzt als Verschlechterung
+        derselben Art wie ein fehlendes Replica:
+      </p>
+      <ul>
+        <li><strong>alle</strong> geprüften Container unhealthy → die Zeile wird
+          <strong style="color:#f85149">rot</strong>, das ist so schlimm wie „läuft
+          keiner“;</li>
+        <li><strong>ein Teil</strong> unhealthy →
+          <strong style="color:#db6d28">orange</strong>, wie bei einem halb ausgerollten
+          Update;</li>
+        <li>alle healthy → die Farbe, die die Replica-Zahl der Zeile ohnehin gegeben hat,
+          <strong>unverändert</strong>;</li>
+        <li>Container <strong>ohne Healthcheck</strong> → die Zeile wird
+          <strong>gar nicht umgefärbt</strong>. Über sie ist nichts bekannt, und Raten wäre
+          derselbe Fehler in die andere Richtung.</li>
+      </ul>
+      <p>
+        <strong>Die Marker.</strong> Eine Service-Zeile trägt
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> in Rot oder
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> in Gelb, solange die Proben
+        noch nicht durch sind; ein Container-Blatt trägt
+        <span style="color:#f85149">✖&nbsp;unhealthy</span> bzw.
+        <span style="color:#f2cc60">◌&nbsp;starting</span>. Unhealthy sticht starting — das
+        ist das, wo man ran muss. Eine Stack-Zeile fasst denselben Marker über alles darunter
+        zusammen (siehe <em>Nach Stack gruppiert</em> weiter unten). Ein
+        <strong>gesunder</strong> Container bekommt
+        <strong>keinen</strong> Marker, einer <strong>ohne</strong> Healthcheck ebenso wenig;
+        so bleibt der Marker eine Aussage. Sie stehen neben den
+        <code>⚡</code>/<code>▣</code>-Ressourcenmarkern weiter unten, und die Gesundheit
+        kommt in der Zeile <strong>zuerst</strong>: Sie ist das, was der Zahl direkt daneben
+        widerspricht.
+      </p>
+      <div class="note">
+        <strong>Woher das Urteil kommt — und was es kostet.</strong> Nichts zusätzlich: Es
+        fährt bei den Ressourcen-Messwerten weiter unten mit — derselbe Agent, derselbe
+        Aufruf, <strong>keine zusätzliche API-Anfrage</strong>. Die Container-Liste, die der
+        Agent bei jedem Sampling-Durchlauf ohnehin holt, trägt das Urteil in ihrer
+        Statuszeile (<code>Up 3 days (healthy)</code>) — genau die Zeichenkette, die auch
+        <code>docker ps</code> ausgibt. Der Parser ist bewusst <strong>streng</strong>: Was
+        er nicht kennt, wird zu <em>kein Urteil</em> statt zu einer Vermutung. Formuliert
+        der Daemon diese Zeile eines Tages um, hört swarmexec also auf, Bescheid zu wissen,
+        statt einen fehlschlagenden Container als gesund zu melden. Es gilt dieselbe
+        Voraussetzung wie für die Nutzungszahlen: Es braucht Agents aus diesem Release oder
+        neuer, ein noch nicht neu ausgerolltes Cluster zeigt also gar keine
+        Health-Marker — ausrollen mit
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </div>
       <p>
         <strong>Marker für die tatsächliche CPU- und Memory-Nutzung.</strong> Neben diesen
         Badges kann eine Zeile auch zeigen, was sie gerade wirklich <em>verbraucht</em> —
@@ -999,7 +1055,8 @@
         bleiben aus, der Node-Block fehlt, alles andere bleibt unberührt; der Client nimmt
         so einen Node zudem für eine Weile aus dem Rennen, statt ihn bei jedem Refresh neu
         anzufragen. Auf einem Cluster, das noch nicht neu ausgerollt wurde, gibt es deshalb
-        <strong>überhaupt keine Nutzungszahlen</strong>, bis die Agents aktualisiert sind —
+        <strong>überhaupt keine Nutzungszahlen und keine Health-Marker</strong>, bis die
+        Agents aktualisiert sind —
         ausrollen mit <a href="#reroll"><code>swarmexec init --force</code></a>. Das ist mit
         Abstand der häufigste Grund, nichts zu sehen.
       </div>
@@ -1013,14 +1070,20 @@
         drei Ebenen tief: <strong>Stack&nbsp;→ Service&nbsp;→ Container</strong>. Eine
         Stack-Zeile zeigt den Stack-Namen, wie viele Services darunter hängen und die
         <strong>summierte laufende/gewünschte</strong> Task-Anzahl
-        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), eingefärbt nach derselben
-        Gesundheitsregel wie eine Service-Zeile. Dahinter stehen zwei Sammelzähler, sobald
+        (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), eingefärbt nach genau derselben Regel
+        wie eine Service-Zeile — der summierten laufend/gewünscht-Zahl, <strong>mit derselben
+        Healthcheck-Übersteuerung</strong> darüber. Dahinter stehen die Sammelzähler, sobald
         sie nicht null sind: <span style="color:#f2cc60">⟳&nbsp;n</span> — Services in
-        diesem Stack <strong>mitten in einem Rolling Update</strong> — und
+        diesem Stack <strong>mitten in einem Rolling Update</strong> —
         <span style="color:#f85149">🛡&nbsp;n</span> — Services mit einem
         <strong>handlungswürdigen Sicherheitsbefund</strong>, dasselbe Schild, das die
-        Service-Zeilen tragen. Auch ein zugeklappter Stack verrät so, ob darin etwas
-        Aufmerksamkeit braucht.
+        Service-Zeilen tragen — und danach der Health-Marker,
+        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> oder
+        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span>, summiert über jeden
+        Container jedes Service im Stack. Auch ein zugeklappter Stack verrät so, ob darin etwas
+        Aufmerksamkeit braucht. Gerade beim Health-Marker zählt das: Die Stack-Zeile ist die
+        Ebene, die man <em>zuerst</em> überfliegt — ein trügerisches „läuft alles“ ist hier
+        schlimmer als eine Ebene tiefer, nicht harmloser.
       </p>
       <p>
         Services, die mit <code>docker service create</code> angelegt wurden, tragen kein
@@ -1180,7 +1243,16 @@
         <strong>Summe</strong> des Memory über die Replicas. Ein Container, den kein Agent
         gemeldet hat — nicht erreichbarer Node, ein für den <code>Stats</code>-RPC zu alter
         Agent oder ein erst seit der letzten Messung laufender Container —, sagt das in
-        seiner eigenen Zeile, statt Nullen zu zeigen. Der <kbd>t</kbd>-Eintrag im
+        seiner eigenen Zeile, statt Nullen zu zeigen. Dazu bekommt jeder Container eine
+        <strong><code>health</code>-Zeile</strong>:
+        <span style="color:#f85149">failing its healthcheck</span> (rot),
+        <span style="color:#f2cc60">starting — probe has not passed yet</span> (gelb),
+        <span style="color:#3fb950">healthy</span> (grün) oder
+        <span style="color:#8b949e">no healthcheck configured</span> (grau). Die letzten
+        beiden sind mit Absicht <strong>zwei verschiedene Zeilen</strong> und nicht eine
+        Zeile und eine Lücke: „kein Healthcheck konfiguriert“ und „die Probe läuft durch“
+        sind verschiedene Tatsachen, und eine Lücke läse sich wie das Zweite. Der
+        <kbd>t</kbd>-Eintrag im
         <kbd>?</kbd>-Hilfe-Overlay lautet entsprechend
         <em>cycle table / stats / raw JSON</em>.
       </p>
