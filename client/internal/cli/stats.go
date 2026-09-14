@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -47,7 +48,20 @@ type containerUsage struct {
 
 	// MemLimitBytes is the denominator behind MemRatio, for display.
 	MemLimitBytes int64
+
+	// Health is the container's healthcheck verdict, or "" when it declares
+	// none. It comes from the node because the manager cannot know it: a swarm
+	// task reads "running" while its container fails every probe, which is
+	// exactly the case the tree used to render as a confident "3/3".
+	Health string
 }
+
+// Health verdicts, matching docker's vocabulary and the agent's.
+const (
+	healthHealthy   = "healthy"
+	healthUnhealthy = "unhealthy"
+	healthStarting  = "starting"
+)
 
 // nodeUsage is one node's totals, for putting live use next to what the
 // scheduler booked.
@@ -221,6 +235,7 @@ func usageOf(s *pb.ContainerStats, resp *pb.StatsResponse) containerUsage {
 		MemBytes:      s.GetMemoryBytes(),
 		MemLimited:    s.GetMemoryLimited(),
 		MemLimitBytes: s.GetMemoryLimitBytes(),
+		Health:        s.GetHealth(),
 	}
 	// CPU: against the container's own limit when it has one, otherwise against
 	// the whole node — which is the real ceiling for an unlimited container.
@@ -349,4 +364,82 @@ func serviceUsage(usage map[string]containerUsage, cands []resolve.Candidate, se
 		out.MemBytes += u.MemBytes
 	}
 	return out, found
+}
+
+// serviceHealth counts the healthcheck verdicts across a service's containers.
+// unknown covers both "declares no healthcheck" and "no reading from the node";
+// neither entitles the view to claim anything.
+type serviceHealth struct {
+	Healthy, Unhealthy, Starting, Unknown int
+}
+
+// Total is how many containers were looked at.
+func (h serviceHealth) Total() int { return h.Healthy + h.Unhealthy + h.Starting + h.Unknown }
+
+// Checked is how many actually report a verdict — the denominator that makes
+// "1 unhealthy" mean something.
+func (h serviceHealth) Checked() int { return h.Healthy + h.Unhealthy + h.Starting }
+
+func healthOf(usage map[string]containerUsage, cands []resolve.Candidate, service string) serviceHealth {
+	var h serviceHealth
+	for _, c := range cands {
+		if c.Service != service {
+			continue
+		}
+		switch usage[c.ContainerID].Health {
+		case healthHealthy:
+			h.Healthy++
+		case healthUnhealthy:
+			h.Unhealthy++
+		case healthStarting:
+			h.Starting++
+		default:
+			h.Unknown++
+		}
+	}
+	return h
+}
+
+// healthBadge names a failing healthcheck on a row. Healthy and un-checked
+// containers get nothing: the badge exists to contradict the running/desired
+// count, and a badge on every row would stop doing that.
+func healthBadge(h serviceHealth) string {
+	switch {
+	case h.Unhealthy > 0:
+		return fmt.Sprintf("  [red]✖ %d unhealthy[-]", h.Unhealthy)
+	case h.Starting > 0:
+		return fmt.Sprintf("  [yellow]◌ %d starting[-]", h.Starting)
+	default:
+		return ""
+	}
+}
+
+// containerHealthBadge is the same marker for a single container leaf.
+func containerHealthBadge(health string) string {
+	switch health {
+	case healthUnhealthy:
+		return "  [red]✖ unhealthy[-]"
+	case healthStarting:
+		return "  [yellow]◌ starting[-]"
+	default:
+		return ""
+	}
+}
+
+// healthColor adjusts a service row's colour for what the healthchecks say.
+//
+// This is the point of the whole feature: the row was coloured by running vs
+// desired alone, so a service whose every container fails its probe still read
+// as a calm "3/3" in aqua. A failing probe is degradation of the same kind as a
+// missing replica, so it is coloured the same way — every container failing is
+// as bad as none running.
+func healthColor(base tcell.Color, h serviceHealth) tcell.Color {
+	switch {
+	case h.Unhealthy == 0:
+		return base
+	case h.Unhealthy >= h.Checked():
+		return tcell.ColorRed
+	default:
+		return tcell.ColorOrange
+	}
 }

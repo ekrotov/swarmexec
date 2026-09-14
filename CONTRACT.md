@@ -287,6 +287,16 @@ message ContainerStats {
   // confused with "80% of the node".
   int64 memory_limit_bytes = 5;
   bool memory_limited = 6;
+
+  // health is the container's healthcheck verdict: "healthy", "unhealthy",
+  // "starting", or "" when the container declares no healthcheck (and also when
+  // the agent could not tell — the two are indistinguishable here, and both
+  // mean "do not claim anything about this container's health").
+  //
+  // It rides along with the usage readings because the manager cannot supply
+  // it: a swarm task reads "running" while its container fails every probe, so
+  // health is only knowable on the node itself.
+  string health = 7;
 }
 ```
 
@@ -345,6 +355,11 @@ whatever refresh cycle it already has.
   describing a ratio as "of its limit".
 - The agent MAY stop sampling while no client is asking, and MAY then report an
   empty `stats` list with `cpu_ready=false` until sampling resumes.
+- `health` is the container's healthcheck verdict (`healthy` / `unhealthy` /
+  `starting`), and is empty both when the container declares no healthcheck and
+  when the agent could not determine one. A client MUST NOT read empty as
+  healthy. The manager cannot supply this: a swarm task reads `running` while
+  its container fails every probe, which is why it travels with the readings.
 - An agent that predates this RPC answers `UNIMPLEMENTED`. Usage is
   supplementary, so a client MUST treat that as "no readings" rather than an
   error, and SHOULD back off rather than re-probing such a node every cycle.

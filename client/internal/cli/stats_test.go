@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -265,4 +266,114 @@ func TestStatsGateBenchesFailingNodes(t *testing.T) {
 	}
 	none.fail("x", nil)
 	none.ok("x")
+}
+
+func healthCands() []resolve.Candidate {
+	return []resolve.Candidate{usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("web", "c3", 3)}
+}
+
+// The whole point of F7: a service whose containers fail their probes must stop
+// reading as a calm "3/3". The colour is what said so, and it lied.
+func TestHealthColorContradictsTheCount(t *testing.T) {
+	cands := healthCands()
+	full := serviceColor(3, 3) // what the row used to be, unconditionally
+
+	// Every container failing is as bad as none running.
+	allBad := healthOf(map[string]containerUsage{
+		"c1": {Health: healthUnhealthy}, "c2": {Health: healthUnhealthy}, "c3": {Health: healthUnhealthy},
+	}, cands, "web")
+	if got := healthColor(full, allBad); got != tcell.ColorRed {
+		t.Errorf("all unhealthy = %v, want red", got)
+	}
+
+	// Some failing is degradation, like a missing replica.
+	someBad := healthOf(map[string]containerUsage{
+		"c1": {Health: healthUnhealthy}, "c2": {Health: healthHealthy}, "c3": {Health: healthHealthy},
+	}, cands, "web")
+	if got := healthColor(full, someBad); got != tcell.ColorOrange {
+		t.Errorf("one of three unhealthy = %v, want orange", got)
+	}
+
+	// All healthy must not change what the count already said.
+	allGood := healthOf(map[string]containerUsage{
+		"c1": {Health: healthHealthy}, "c2": {Health: healthHealthy}, "c3": {Health: healthHealthy},
+	}, cands, "web")
+	if got := healthColor(full, allGood); got != full {
+		t.Errorf("all healthy = %v, want the count's own colour %v", got, full)
+	}
+
+	// No healthchecks at all: we know nothing, so we must not recolour.
+	none := healthOf(map[string]containerUsage{}, cands, "web")
+	if got := healthColor(full, none); got != full {
+		t.Errorf("no verdicts = %v, want the count's own colour", got)
+	}
+	if none.Checked() != 0 || none.Unknown != 3 {
+		t.Errorf("unread containers should count as unknown: %+v", none)
+	}
+
+	// A degraded service must not be painted *better* by healthy containers.
+	degraded := serviceColor(1, 3)
+	if got := healthColor(degraded, allGood); got != degraded {
+		t.Errorf("healthy probes must not upgrade a degraded row: %v", got)
+	}
+}
+
+func TestHealthBadges(t *testing.T) {
+	cands := healthCands()
+	usage := map[string]containerUsage{
+		"c1": {Health: healthUnhealthy}, "c2": {Health: healthStarting}, "c3": {Health: healthHealthy},
+	}
+	h := healthOf(usage, cands, "web")
+	if h.Unhealthy != 1 || h.Starting != 1 || h.Healthy != 1 || h.Total() != 3 {
+		t.Fatalf("counts wrong: %+v", h)
+	}
+
+	// Unhealthy outranks starting: it is the one that needs acting on.
+	badge := healthBadge(h)
+	if !strings.Contains(badge, "1 unhealthy") || !strings.Contains(badge, "red") {
+		t.Errorf("badge = %q, want the unhealthy count in red", badge)
+	}
+	if strings.Contains(badge, "starting") {
+		t.Errorf("badge = %q, should not also report starting", badge)
+	}
+
+	// Starting alone is worth showing, but not in red.
+	starting := healthBadge(serviceHealth{Starting: 2, Healthy: 1})
+	if !strings.Contains(starting, "2 starting") || strings.Contains(starting, "red") {
+		t.Errorf("starting badge = %q", starting)
+	}
+
+	// A healthy service gets no badge — it must not become wallpaper.
+	if got := healthBadge(serviceHealth{Healthy: 3}); got != "" {
+		t.Errorf("healthy service badge = %q, want none", got)
+	}
+	if got := healthBadge(serviceHealth{Unknown: 3}); got != "" {
+		t.Errorf("a service with no healthchecks must not be badged, got %q", got)
+	}
+
+	// Per-container markers follow the same rule.
+	if got := containerHealthBadge(healthUnhealthy); !strings.Contains(got, "unhealthy") {
+		t.Errorf("container badge = %q", got)
+	}
+	for _, quiet := range []string{healthHealthy, "", "bogus"} {
+		if got := containerHealthBadge(quiet); got != "" {
+			t.Errorf("containerHealthBadge(%q) = %q, want none", quiet, got)
+		}
+	}
+}
+
+// "No healthcheck configured" and "the probe passes" are different facts and
+// must not render the same.
+func TestHealthRowDistinguishesUnknownFromHealthy(t *testing.T) {
+	healthy := healthRow(healthHealthy)
+	none := healthRow("")
+	if healthy.text == none.text {
+		t.Error("a container without a healthcheck must not read as healthy")
+	}
+	if !strings.Contains(none.text, "no healthcheck") {
+		t.Errorf("unknown row = %q", none.text)
+	}
+	if healthRow(healthUnhealthy).color != tcell.ColorRed {
+		t.Error("a failing probe should be red")
+	}
 }

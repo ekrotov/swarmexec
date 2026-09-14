@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ type containerSample struct {
 	systemTotal uint64 // host-wide cpu time at the same instant
 	onlineCPUs  uint32
 
+	health    string // healthcheck verdict, "" when there is none
 	memBytes  int64
 	memLimit  int64
 	memIsOwn  bool // the limit is the container's own, not the node's total
@@ -232,6 +234,9 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, ct := range list {
 		id := ct.ID
+		// The list entry already carries the healthcheck verdict, so health costs
+		// nothing on top of the pass we are making anyway.
+		health := healthFromStatus(ct.Status)
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -241,6 +246,7 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 			if !ok {
 				return
 			}
+			s.health = health
 			lim := c.limitsFor(ctx, id)
 			s.cpuLimit = lim.cpuCores
 			// The stats frame reports the node's total memory as the "limit" for a
@@ -350,4 +356,37 @@ func cpuPercent(prev, cur containerSample) (float64, bool) {
 		cpus = 1
 	}
 	return cpuDelta / sysDelta * cpus * 100.0, true
+}
+
+// Health verdicts, matching docker's own vocabulary.
+const (
+	healthHealthy   = "healthy"
+	healthUnhealthy = "unhealthy"
+	healthStarting  = "starting"
+)
+
+// healthFromStatus reads the healthcheck verdict out of the status line the
+// container list already returns ("Up 3 days (healthy)").
+//
+// The list API has no structured health field — only ContainerInspect does, and
+// running one per container per pass would multiply the sampler's cost for a
+// value the daemon has already formatted for us. This is the same string
+// `docker ps` prints.
+//
+// Anything unrecognised yields "", which the views render as "no healthcheck".
+// That is the honest failure mode: if the daemon ever changes the wording we
+// stop claiming to know, rather than reporting a container as healthy.
+func healthFromStatus(status string) string {
+	open := strings.LastIndexByte(status, '(')
+	if open < 0 || !strings.HasSuffix(status, ")") {
+		return "" // "Up 3 days" — no healthcheck configured
+	}
+	switch inner := status[open+1 : len(status)-1]; inner {
+	case healthHealthy, healthUnhealthy:
+		return inner
+	case "health: starting":
+		return healthStarting
+	default:
+		return ""
+	}
 }

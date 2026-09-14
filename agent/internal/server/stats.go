@@ -71,6 +71,7 @@ func statsProto(id string, s containerSample, nodeMem int64) *pb.ContainerStats 
 		MemoryBytes:   s.memBytes,
 		CpuLimitCores: s.cpuLimit,
 		MemoryLimited: s.memIsOwn,
+		Health:        s.health,
 	}
 	switch {
 	case s.memIsOwn:

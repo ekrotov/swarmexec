@@ -248,3 +248,45 @@ func TestStatsCacheKeepsReadingsOnListError(t *testing.T) {
 		t.Errorf("a failed list should keep the previous readings, got %d samples ready=%v", len(samples), ready)
 	}
 }
+
+// The health verdict is read out of the status line the container list already
+// returns, so it costs nothing. That makes the parser the whole risk.
+func TestHealthFromStatus(t *testing.T) {
+	cases := []struct {
+		status, want string
+	}{
+		{"Up 3 days (healthy)", healthHealthy},
+		{"Up 2 minutes (unhealthy)", healthUnhealthy},
+		{"Up 5 seconds (health: starting)", healthStarting},
+		{"Up 3 days", ""}, // no healthcheck configured
+		{"Exited (0) 2 days ago", ""},
+		{"", ""},
+		// Anything we do not recognise must NOT become a verdict. Reporting a
+		// container as healthy because the daemon reworded its status would be
+		// worse than admitting we do not know.
+		{"Up 3 days (paused)", ""},
+		{"Up 3 days (something new)", ""},
+		{"Up 3 days (", ""},
+		{"Up 3 days )healthy(", ""},
+	}
+	for _, tc := range cases {
+		if got := healthFromStatus(tc.status); got != tc.want {
+			t.Errorf("healthFromStatus(%q) = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}
+
+// Health rides along with the usage readings, from the list call the sampler
+// already makes — no extra inspect per container.
+func TestStatsCacheCarriesHealth(t *testing.T) {
+	d := statsFake(0, 0)
+	d.containers[0].Status = "Up 3 days (unhealthy)"
+	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c.refresh(context.Background())
+	if got := c.samples["c1"].health; got != healthUnhealthy {
+		t.Errorf("health = %q, want unhealthy", got)
+	}
+	if n := d.inspectCalls(); n != 1 {
+		t.Errorf("%d inspect calls — health must not add one per pass (only the one-off limits read)", n)
+	}
+}
