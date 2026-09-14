@@ -894,7 +894,7 @@
           <tr><td><kbd>L</kbd></td><td>logs (capital <kbd>L</kbd>) — on a container its own logs, on a service the aggregated logs of all its tasks</td></tr>
           <tr><td><kbd>!</kbd></td><td>open the security-risks overlay for the whole service list (see below)</td></tr>
           <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, <kbd>t</kbd> cycles table → stats → raw daemon JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, a <strong>tab strip</strong> at the top names the three views and <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> select table / stats / raw daemon JSON directly while <kbd>t</kbd> cycles them (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
           <tr><td><kbd>X</kbd></td><td>remove a service <strong>straight from the tree</strong> (capital <kbd>X</kbd>, i.e. Shift+x) — no detour through the inspect overlay. What it acts on follows the row under the cursor: on a <strong>service</strong> row it removes that service; on a <strong>container</strong> row it removes that container's <strong>owning service</strong>, because a single task cannot be removed on its own — Swarm would immediately reschedule it; on a <strong>stack</strong> row it removes nothing and instead notes briefly in the footer that a stack's services have to be removed individually, or with <code>docker stack rm &lt;stack&gt;</code>. It goes through the <strong>same confirm</strong> as the inspect <kbd>X</kbd> below — it <strong>permanently deletes</strong> the service and stops all its tasks, cannot be undone, and afterwards offers to delete any now-orphaned secrets. A fixed capital key, not a remappable keymap action; the footer lists it in red as <span style="color:#f85149"><em>X remove</em></span> and the <kbd>?</kbd> overlay lists it too. The <kbd>X</kbd> inside the inspect overlay is unchanged</td></tr>
         </tbody>
       </table></div>
@@ -1162,12 +1162,18 @@
         by operational relevance — networks, labels, volumes/mounts and secrets (and
         configs) first, then ports, image, mode, env, resources, placement and update
         policy (plus state, node and container id for a container/task), with ids and
-        timestamps last. Press <kbd>t</kbd> to cycle the overlay's <strong>three</strong>
-        views — <strong>table&nbsp;→ stats&nbsp;→ raw daemon JSON</strong> — and back; the
-        footer names whichever comes next, and the overlay title says which one you are in.
-        Note this tabular view is the manager's task view, not a full node-local
-        <code>docker container inspect</code> of the running container — a real container
-        inspect via the agent is planned.
+        timestamps last. The overlay's first line, inside the border and pinned above the
+        scrolling content, is a <strong>tab strip</strong> naming its <strong>three</strong>
+        views — <code>table 1&nbsp;&nbsp; stats 2&nbsp;&nbsp; raw json 3</code> — with the
+        current one in the accent colour; it is the same shape as the main window's tab bar,
+        a label followed by the digit that selects it. <kbd>1</kbd>, <kbd>2</kbd> and
+        <kbd>3</kbd> jump <strong>straight</strong> to table, stats and raw daemon JSON, and
+        <kbd>t</kbd> still cycles <strong>table&nbsp;→ stats&nbsp;→ raw json</strong> and
+        back. The footer hint is simply <em>1-3/t view</em>, and the border title no longer
+        repeats the current view's name — it just reads <code>inspect service foo</code>,
+        because the strip already says where you are. Note this tabular view is the
+        manager's task view, not a full node-local <code>docker container inspect</code> of
+        the running container — a real container inspect via the agent is planned.
       </p>
       <p>
         <strong>The stats view.</strong> The middle of the three is <em>live resource
@@ -1219,7 +1225,8 @@
         mount or address without selecting text by hand. <kbd>Enter</kbd> also copies, except
         on a collapsible <strong>NETWORKS</strong> row, where it instead expands/collapses that
         row (see below). All three views
-        (the tabular summary, the stats view and the raw JSON, cycled with <kbd>t</kbd>)
+        (the tabular summary, the stats view and the raw JSON, reached with
+        <kbd>1</kbd>–<kbd>3</kbd> or cycled with <kbd>t</kbd>)
         are selectable and copyable line by line. A <strong>footer always lists the available keys</strong>,
         so what you can do is visible at a glance; for a service the footer also shows the
         edit keys below.
@@ -1230,7 +1237,8 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>move the selection between data lines (headers/blanks skipped)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copy the selected line to the clipboard (OSC52) — always</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that level — the rows nest two deep, a network and its <code>N containers</code> drill-down; on any other line, copy it (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>cycle the three views — tabular summary → <strong>stats</strong> (live CPU / memory, see below) → raw daemon JSON → back; all three selectable, and the footer names whichever comes next</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>select a view directly — <strong>1</strong> tabular summary, <strong>2</strong> <strong>stats</strong> (live CPU / memory, see below), <strong>3</strong> raw daemon JSON; these are the digits the tab strip shows</td></tr>
+          <tr><td><kbd>t</kbd></td><td>cycle the three views — tabular summary → <strong>stats</strong> (live CPU / memory, see below) → raw daemon JSON → back; all three selectable, and the tab strip at the top marks the one you are in</td></tr>
           <tr><td><kbd>a</kbd></td><td>actions menu — every service editor and action in one list, no Shift needed (service only; see below)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edit the service — scale / force-update / ports / labels / env / networks / secrets / mounts / aliases (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; <kbd>A</kbd> is capital too; see below)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>close the overlay</td></tr>
@@ -1323,7 +1331,7 @@
       </p>
       <p>
         When you inspect a <strong>service</strong> (not a container/task leaf, whose
-        overlay stays read-only), the overlay title also exposes several edit keys, each a
+        overlay stays read-only), the overlay footer also exposes several edit keys, each a
         manager-API <code>ServiceUpdate</code> that triggers a rolling update /
         reconciliation of the service's tasks.
       </p>

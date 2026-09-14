@@ -913,7 +913,7 @@
           <tr><td><kbd>L</kbd></td><td>logi (wielkie <kbd>L</kbd>) — na kontenerze jego własne logi, na usłudze zagregowane logi wszystkich jej zadań</td></tr>
           <tr><td><kbd>!</kbd></td><td>otwórz nakładkę z ryzykami bezpieczeństwa dla całej listy usług (zobacz niżej)</td></tr>
           <tr><td><kbd>p</kbd></td><td>przekieruj port zadania pod kursorem</td></tr>
-          <tr><td><kbd>i</kbd></td><td>zbadaj węzeł drzewa pod kursorem — nawigowalna nakładka z tabelarycznym podsumowaniem; zaznaczenie przesuwasz przez <kbd>↑</kbd>/<kbd>↓</kbd> albo <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiuje zaznaczoną linię, <kbd>t</kbd> przełącza po kolei tabelę → stats → surowy JSON demona (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> zamyka). Na <strong>usłudze</strong> nakładka pozwala też ją edytować: <kbd>s</kbd> skalowanie, <kbd>f</kbd> wymuszona aktualizacja, <kbd>p</kbd> porty, <kbd>l</kbd> etykiety, <kbd>e</kbd> zmienne środowiskowe, <kbd>n</kbd> sieci, <kbd>S</kbd> sekrety, <kbd>v</kbd> montowania, <kbd>A</kbd> aliasy; <kbd>D</kbd> diagnozuje, <em>dlaczego</em> usługa nie działa wszędzie; <kbd>X</kbd> ją usuwa</td></tr>
+          <tr><td><kbd>i</kbd></td><td>zbadaj węzeł drzewa pod kursorem — nawigowalna nakładka z tabelarycznym podsumowaniem; zaznaczenie przesuwasz przez <kbd>↑</kbd>/<kbd>↓</kbd> albo <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiuje zaznaczoną linię, <strong>pasek zakładek</strong> u góry nazywa trzy widoki, a <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> wybierają wprost tabelę / stats / surowy JSON demona, natomiast <kbd>t</kbd> przełącza je po kolei (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> zamyka). Na <strong>usłudze</strong> nakładka pozwala też ją edytować: <kbd>s</kbd> skalowanie, <kbd>f</kbd> wymuszona aktualizacja, <kbd>p</kbd> porty, <kbd>l</kbd> etykiety, <kbd>e</kbd> zmienne środowiskowe, <kbd>n</kbd> sieci, <kbd>S</kbd> sekrety, <kbd>v</kbd> montowania, <kbd>A</kbd> aliasy; <kbd>D</kbd> diagnozuje, <em>dlaczego</em> usługa nie działa wszędzie; <kbd>X</kbd> ją usuwa</td></tr>
           <tr><td><kbd>X</kbd></td><td>usuń usługę <strong>prosto z drzewa</strong> (wielkie <kbd>X</kbd>, czyli Shift+x) — bez okrężnej drogi przez nakładkę inspekcji. To, na co działa, zależy od wiersza pod kursorem: na wierszu <strong>usługi</strong> usuwa tę usługę; na wierszu <strong>kontenera</strong> usuwa <strong>usługę właścicielską</strong> tego kontenera, bo pojedynczego zadania nie da się usunąć samego — Swarm natychmiast zaplanowałby je ponownie; na wierszu <strong>stacka</strong> nie usuwa niczego, a zamiast tego pokazuje krótką notkę w stopce, że usługi stacka trzeba usuwać pojedynczo albo poleceniem <code>docker stack rm &lt;stack&gt;</code>. Przechodzi przez <strong>to samo potwierdzenie</strong> co <kbd>X</kbd> w inspekcji niżej — <strong>trwale kasuje</strong> usługę i zatrzymuje wszystkie jej zadania, nie da się tego cofnąć, a potem proponuje usunięcie osieroconych sekretów. Stały klawisz z wielkiej litery, nie przemapowywalna akcja keymapy; stopka wymienia go na czerwono jako <span style="color:#f85149"><em>X remove</em></span>, a nakładka <kbd>?</kbd> również go wypisuje. <kbd>X</kbd> wewnątrz nakładki inspekcji pozostaje bez zmian</td></tr>
         </tbody>
       </table></div>
@@ -1196,9 +1196,16 @@
         wolumeny/montowania i sekrety (oraz configi), potem porty, obraz, tryb, zmienne
         środowiskowe, zasoby, rozmieszczenie i polityka aktualizacji (plus stan, węzeł i id
         kontenera dla kontenera/zadania), a identyfikatory i znaczniki czasu na końcu.
-        Naciśnij <kbd>t</kbd>, żeby przełączać po kolei <strong>trzy</strong> widoki
-        nakładki — <strong>tabela&nbsp;→ stats&nbsp;→ surowy JSON demona</strong> — i z
-        powrotem; stopka nazywa zawsze ten następny, a tytuł nakładki ten bieżący.
+        Pierwsza linia nakładki — wewnątrz ramki, przypięta nad przewijaną treścią — to
+        <strong>pasek zakładek</strong> nazywający jej <strong>trzy</strong> widoki:
+        <code>table 1&nbsp;&nbsp; stats 2&nbsp;&nbsp; raw json 3</code>, bieżący w kolorze
+        akcentu. Ma taki sam kształt jak pasek zakładek głównego okna — etykieta, a po niej
+        cyfra, która ją wybiera. <kbd>1</kbd>, <kbd>2</kbd> i <kbd>3</kbd> przechodzą
+        <strong>wprost</strong> do tabeli, statystyk i surowego JSON-a demona, a <kbd>t</kbd>
+        nadal przełącza po kolei <strong>tabela&nbsp;→ stats&nbsp;→ surowy JSON</strong> i z
+        powrotem. Podpowiedź w stopce brzmi już tylko <em>1-3/t view</em>, a tytuł na ramce
+        nie powtarza nazwy bieżącego widoku — czyta się po prostu
+        <code>inspect service foo</code>, bo pasek i tak mówi, gdzie jesteś.
         Pamiętaj, że widok tabelaryczny to widok zadania z perspektywy menedżera, a nie
         pełne lokalne <code>docker container inspect</code> działającego kontenera na węźle
         — prawdziwa inspekcja kontenera przez agenta jest planowana.
@@ -1255,7 +1262,8 @@
         pojedyncze id, montowanie albo adres bez zaznaczania tekstu ręcznie. <kbd>Enter</kbd>
         też kopiuje, z wyjątkiem zwijalnego wiersza <strong>NETWORKS</strong>, gdzie zamiast
         tego rozwija/zwija ten wiersz (zobacz niżej). Wszystkie trzy widoki (podsumowanie
-        tabelaryczne, widok stats i surowy JSON, przełączane klawiszem <kbd>t</kbd>) są
+        tabelaryczne, widok stats i surowy JSON, dostępne przez <kbd>1</kbd>–<kbd>3</kbd>
+        albo przełączane po kolei klawiszem <kbd>t</kbd>) są
         wybieralne i kopiowalne linia po linii.
         <strong>Stopka zawsze wymienia dostępne klawisze</strong>, więc od razu widać, co
         możesz zrobić; dla usługi stopka pokazuje też klawisze edycji opisane niżej.
@@ -1266,7 +1274,8 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>przesuwaj zaznaczenie między liniami z danymi (nagłówki/puste pomijane)</td></tr>
           <tr><td><kbd>y</kbd></td><td>skopiuj zaznaczoną linię do schowka (OSC52) — zawsze</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>na zwijalnym wierszu <strong>NETWORKS</strong> rozwija/zwija ten poziom — wiersze są zagnieżdżone na dwóch poziomach, sieć i jej rozwinięcie <code>N containers</code>; w każdej innej linii kopiuje ją (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>przełączaj po kolei trzy widoki — podsumowanie tabelaryczne → <strong>stats</strong> (bieżące CPU / pamięć, patrz niżej) → surowy JSON demona → z powrotem; wszystkie trzy wybieralne, a stopka nazywa ten następny</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>wybierz widok wprost — <strong>1</strong> podsumowanie tabelaryczne, <strong>2</strong> <strong>stats</strong> (bieżące CPU / pamięć, patrz niżej), <strong>3</strong> surowy JSON demona; to te same cyfry, które pokazuje pasek zakładek</td></tr>
+          <tr><td><kbd>t</kbd></td><td>przełączaj po kolei trzy widoki — podsumowanie tabelaryczne → <strong>stats</strong> (bieżące CPU / pamięć, patrz niżej) → surowy JSON demona → z powrotem; wszystkie trzy wybieralne, a pasek zakładek u góry zaznacza bieżący</td></tr>
           <tr><td><kbd>a</kbd></td><td>menu akcji — wszystkie edytory i akcje usługi na jednej liście, bez Shiftu (tylko usługi; patrz niżej)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edytuj usługę — skalowanie / wymuszona aktualizacja / porty / etykiety / zmienne środowiskowe / sieci / sekrety / montowania / aliasy (tylko usługa; <kbd>S</kbd> to wielka litera, Shift+s, żeby odróżnić ją od <kbd>s</kbd> skalowanie; <kbd>A</kbd> też jest wielkie; zobacz niżej)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>zamknij nakładkę</td></tr>
@@ -1362,7 +1371,7 @@
       </p>
       <p>
         Gdy badasz <strong>usługę</strong> (a nie liść kontenera/zadania, którego nakładka
-        pozostaje tylko do odczytu), tytuł nakładki udostępnia też kilka klawiszy edycji,
+        pozostaje tylko do odczytu), stopka nakładki udostępnia też kilka klawiszy edycji,
         z których każdy jest wywołaniem <code>ServiceUpdate</code> w API menedżera
         wyzwalającym aktualizację kroczącą / uzgodnienie zadań usługi.
       </p>
