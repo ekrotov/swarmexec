@@ -5,10 +5,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"regexp"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rivo/tview"
 
@@ -30,6 +32,26 @@ type logRow struct {
 	line   string // raw log line, or the note text when note is set
 	stderr bool
 	note   bool // a status line (e.g. a reconnect notice): always shown, never parsed
+
+	// Parsing and rendering a line is expensive — a rebuild of a full ring cost
+	// ~230ms on the MAIN event loop, which is what made a format or filter key
+	// feel like the program had hung. Neither result depends on anything but the
+	// line and the active format, so both are cached and only recomputed when
+	// the format changes. A level or grep change then costs no parsing at all.
+	entry     logfmt.Entry
+	rendered  string
+	cachedFor string // format name the two above belong to; "" = not yet computed
+}
+
+// resolve fills the row's cached parse and rendering for f, if they are not
+// already there. Returns them.
+func (r *logRow) resolve(f logfmt.Format) (logfmt.Entry, string) {
+	if r.cachedFor != f.Name() {
+		r.entry = f.Parse(r.line)
+		r.rendered = renderLogRow(f, *r, r.entry)
+		r.cachedFor = f.Name()
+	}
+	return r.entry, r.rendered
 }
 
 // logViewer renders a format-aware, filtered log stream into a TextView and
@@ -44,6 +66,10 @@ type logViewer struct {
 	rows   []logRow
 	format logfmt.Format
 	filter logfmt.Filter
+
+	// pending holds rendered output waiting for the next flush. Stream
+	// goroutines write here; only the flusher touches the widget.
+	pending bytes.Buffer
 }
 
 func newLogViewer(app *tview.Application, tv *tview.TextView, follow *atomic.Bool, format logfmt.Format, filter logfmt.Filter) *logViewer {
@@ -56,11 +82,24 @@ func newLogViewer(app *tview.Application, tv *tview.TextView, follow *atomic.Boo
 	return &logViewer{app: app, tv: tv, follow: follow, format: format, filter: filter}
 }
 
-// addLines buffers a batch of raw lines and appends the ones that pass the
-// current filter to the view in a single redraw. Called from stream goroutines
-// once per network chunk — QueueUpdateDraw blocks until the main loop runs it
-// and forces a full redraw, so doing it per line would starve keyboard input on
-// a chatty container. Batching per chunk keeps the UI responsive.
+// logFlushInterval bounds how often the view redraws while streaming.
+//
+// Batching per network chunk was not enough: a chatty container delivers many
+// small chunks a second, every redraw goes through the main event loop — the
+// same loop that handles keystrokes — and QueueUpdateDraw blocks until that
+// loop runs it. The result was a UI so sluggish it looked hung. Ten redraws a
+// second is faster than anyone reads and leaves the loop free for input.
+const logFlushInterval = 100 * time.Millisecond
+
+// pendingCap bounds the rendered output one flush can carry, so a pathological
+// burst cannot hand the widget a huge string at once. Anything above the ring
+// cap would be trimmed by SetMaxLines on arrival anyway.
+const pendingCap = 1 << 20
+
+// addLines buffers a batch of raw lines and queues the ones that pass the
+// current filter for the next flush. Called from stream goroutines once per
+// network chunk; it never touches the widget itself and never blocks on the
+// main loop — see logFlushInterval for why that matters.
 func (v *logViewer) addLines(prefix string, lines []string, stderr bool) {
 	if len(lines) == 0 {
 		return
@@ -69,20 +108,64 @@ func (v *logViewer) addLines(prefix string, lines []string, stderr bool) {
 	var b bytes.Buffer
 	for _, line := range lines {
 		row := logRow{prefix: prefix, line: line, stderr: stderr}
+		entry, rendered := row.resolve(v.format)
 		v.rows = append(v.rows, row)
-		if v.filter.Match(v.format.Parse(line)) {
-			b.WriteString(renderLogRow(v.format, row))
+		if v.filter.Match(entry) {
+			b.WriteString(rendered)
 			b.WriteByte('\n')
 		}
 	}
 	if len(v.rows) > logBufferCap {
 		v.rows = v.rows[len(v.rows)-logBufferCap:]
 	}
-	out := b.String()
+	v.queueLocked(b.String())
 	v.mu.Unlock()
+}
+
+// queueLocked appends rendered output to the pending buffer. Caller holds mu.
+func (v *logViewer) queueLocked(out string) {
 	if out == "" {
 		return
 	}
+	v.pending.WriteString(out)
+	if v.pending.Len() > pendingCap {
+		// Keep the tail: on a burst this large the head is what SetMaxLines
+		// would drop the moment it arrived.
+		tail := v.pending.Bytes()[v.pending.Len()-pendingCap:]
+		kept := make([]byte, len(tail))
+		copy(kept, tail)
+		v.pending.Reset()
+		v.pending.Write(kept)
+	}
+}
+
+// start runs the flusher until ctx ends. It is the only writer to the widget
+// while streaming, which is what keeps the redraw rate bounded.
+func (v *logViewer) start(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(logFlushInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				v.flush() // one last flush, so the tail is not lost on close
+				return
+			case <-t.C:
+				v.flush()
+			}
+		}
+	}()
+}
+
+func (v *logViewer) flush() {
+	v.mu.Lock()
+	if v.pending.Len() == 0 {
+		v.mu.Unlock()
+		return
+	}
+	out := v.pending.String()
+	v.pending.Reset()
+	v.mu.Unlock()
 	v.app.QueueUpdateDraw(func() {
 		fmt.Fprint(v.tv, out)
 		if v.follow == nil || v.follow.Load() {
@@ -100,14 +183,10 @@ func (v *logViewer) addNote(text string) {
 	if len(v.rows) > logBufferCap {
 		v.rows = v.rows[len(v.rows)-logBufferCap:]
 	}
-	rendered := renderLogRow(v.format, row)
+	// Through the same buffer as the lines, or a note could overtake output that
+	// arrived before it.
+	v.queueLocked(renderLogRow(v.format, row, logfmt.Entry{}) + "\n")
 	v.mu.Unlock()
-	v.app.QueueUpdateDraw(func() {
-		fmt.Fprintln(v.tv, rendered)
-		if v.follow == nil || v.follow.Load() {
-			v.tv.ScrollToEnd()
-		}
-	})
 }
 
 // rebuild re-renders the whole buffer through the current format and filter.
@@ -120,14 +199,23 @@ func (v *logViewer) addNote(text string) {
 func (v *logViewer) rebuild() {
 	v.mu.Lock()
 	var b bytes.Buffer
-	for _, r := range v.rows {
-		if r.note || v.filter.Match(v.format.Parse(r.line)) {
-			b.WriteString(renderLogRow(v.format, r))
+	for i := range v.rows {
+		if v.rows[i].note {
+			b.WriteString(renderLogRow(v.format, v.rows[i], logfmt.Entry{}))
+			b.WriteByte('\n')
+			continue
+		}
+		entry, rendered := v.rows[i].resolve(v.format)
+		if v.filter.Match(entry) {
+			b.WriteString(rendered)
 			b.WriteByte('\n')
 		}
 	}
 	out := b.String()
 	follow := v.follow == nil || v.follow.Load()
+	// rows already contains everything queued, so anything pending would be
+	// appended a second time after this re-render.
+	v.pending.Reset()
 	v.mu.Unlock()
 	v.tv.Clear()
 	fmt.Fprint(v.tv, out)
@@ -226,11 +314,13 @@ func (w *logIngest) Write(p []byte) (int, error) {
 // renderLogRow produces the tview-coloured display line for a row under the
 // given format. Structured formats show "LEVEL  message"; plain formats keep
 // the raw line (stderr red, else tinted by level when one was detected).
-func renderLogRow(f logfmt.Format, r logRow) string {
+// e is the already-parsed entry; renderLogRow does not parse again. It used to,
+// which meant every line was parsed TWICE on every pass — once for the filter
+// and once here.
+func renderLogRow(f logfmt.Format, r logRow, e logfmt.Entry) string {
 	if r.note {
 		return "[gray]" + tview.Escape(r.line) + "[-]"
 	}
-	e := f.Parse(r.line)
 	prefix := ""
 	if r.prefix != "" {
 		prefix = "[gray]" + tview.Escape(r.prefix) + "[-]"

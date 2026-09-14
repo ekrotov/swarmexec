@@ -33,7 +33,7 @@ func TestFollowTargetFromTarget(t *testing.T) {
 // A note row is shown verbatim (dimmed) regardless of the format, so a reconnect
 // notice never gets swallowed by a structured parser or a filter.
 func TestRenderLogRow_NoteAlwaysShown(t *testing.T) {
-	got := renderLogRow(logfmt.JSON, logRow{note: true, line: "── reconnected ──"})
+	got := renderLogRow(logfmt.JSON, logRow{note: true, line: "── reconnected ──"}, logfmt.Entry{})
 	if !strings.Contains(got, "reconnected") {
 		t.Errorf("note row not rendered verbatim: %q", got)
 	}
