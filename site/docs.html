@@ -942,7 +942,7 @@
         inside it (see <em>Grouped by stack</em> below). A <strong>healthy</strong> container gets
         <strong>no</strong> marker, and neither does one <strong>without</strong> a
         healthcheck, so the marker keeps meaning something. These sit alongside the
-        <code>⚡</code>/<code>▣</code> resource markers below, and health comes
+        <code>cpu</code>/<code>mem</code> resource markers below, and health comes
         <strong>first</strong> in the row: it is the thing contradicting the count standing
         next to it.
       </p>
@@ -965,9 +965,12 @@
         carry what it is actually <em>using</em> right now — until now swarmexec could only
         show what the scheduler had <em>booked</em> (see the Nodes tab below). A container
         or a service whose usage crosses <strong>70%</strong> gets an orange marker and
-        <strong>90%</strong> a red one, at the end of the row: a glyph naming the resource
-        — <code>⚡</code> for CPU, <code>▣</code> for memory — followed by the percentage
-        (<span style="color:#f85149">⚡&nbsp;93%</span>). Both appear when both are hot.
+        <strong>90%</strong> a red one, at the end of the row: the resource named in
+        <strong>words</strong> — <code>cpu</code> or <code>mem</code> — followed by the
+        percentage (<span style="color:#f85149">cpu&nbsp;94%</span>,
+        <span style="color:#db6d28">mem&nbsp;91%</span>). Both appear when both are hot.
+        Words rather than symbols, and at the same width: a marker whose meaning has to be
+        looked up is not doing its job, and letters cannot fail to render in a terminal.
         Below 70% nothing is drawn at all, so the markers stay a signal rather than
         wallpaper. A <strong>service</strong> row takes the <strong>worst of its
         replicas</strong>, not an average — an average hides the one container that is
@@ -979,8 +982,8 @@
         that container may actually use: <strong>its own limit when it has one, the node's
         capacity when it does not</strong>. That distinction is the whole point — 91% of a
         256&nbsp;MB limit means an OOM kill is close, 91% of a 64&nbsp;GB node is a
-        different conversation. The inspect overlay's <a href="#tui">stats view</a> spells
-        out the basis per container in a line under the numbers.
+        different conversation. The inspect overlay's <a href="#tui">stats view</a> prints
+        both sides of that division per container and names the basis under the table.
       </p>
       <div class="note">
         <strong>Where the numbers come from — and why they arrive late.</strong> Usage is
@@ -1169,24 +1172,43 @@
       <p>
         <strong>The stats view.</strong> The middle of the three is <em>live resource
         usage</em> — the same readings that mark the tree, so opening it costs no extra
-        call and the numbers keep refreshing while it is open. It lists every container of
-        the service (or the single container of a task inspect), each with a proportional
-        bar, the <strong>CPU in cores</strong> plus its percentage, <strong>memory used
-        against its limit</strong>, and the basis line saying what those percentages are
-        <em>of</em> — its own limit, or the node's capacity. With more than one measured
-        container it adds a roll-up: <strong>peak</strong> CPU, <strong>peak</strong>
-        memory percentage and <strong>total</strong> memory across the replicas. A
-        container no agent reported — unreachable node, an agent too old for the
-        <code>Stats</code> RPC, or one started since the last reading — says so on its own
-        line instead of showing zeros. Each container also gets a
-        <strong><code>health</code> line</strong>: <span style="color:#f85149">failing its
-        healthcheck</span> (red), <span style="color:#f2cc60">starting — probe has not
-        passed yet</span> (yellow), <span style="color:#3fb950">healthy</span> (green), or
-        <span style="color:#8b949e">no healthcheck configured</span> (grey). Those last two
-        are deliberately <strong>different lines</strong> rather than a line and a blank:
-        <em>no healthcheck configured</em> and <em>the probe passes</em> are different facts,
-        and a blank would read as the second. The <kbd>?</kbd> help overlay's <kbd>t</kbd> entry
-        reads <em>cycle table / stats / raw JSON</em> accordingly.
+        call and the numbers keep refreshing while it is open. It is a <strong>table</strong>,
+        one row per container of the service (or the single container of a task inspect):
+      </p>
+      <div class="cmd"><span class="k">RESOURCE USAGE</span>
+<span style="color:#8b949e">  measured on each node, refreshed with the tree</span>
+
+<span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
+  gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
+
+<span style="color:#8b949e">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+      <p>
+        A table, because a bare percentage is not readable if you do not already know how
+        the tool measures — <em>94% of what?</em> Every cell carries <strong>its own
+        units</strong>, so <code>0.07 / 4.00 cores</code> needs no legend and the percentage
+        sits next to the figure it is a percentage <em>of</em>; and several replicas are
+        compared by <strong>scanning a column</strong> rather than by comparing stacked
+        blocks. The <strong>HEALTH</strong> column words the verdict —
+        <code>healthy</code>, <code>unhealthy</code>, <code>starting</code>, or
+        <code>none</code> for a container that declares no healthcheck. <code>none</code> and
+        <code>healthy</code> are deliberately <strong>different words</strong> rather than a
+        word and a blank: <em>no healthcheck configured</em> and <em>the probe passes</em> are
+        different facts, and a blank would read as the second. A container the agents did not
+        report — unreachable node, an agent too old for the <code>Stats</code> RPC, or one
+        started since the last reading — shows <code>no reading</code> in both resource
+        columns rather than a zero, which would read as idle.
+      </p>
+      <p>
+        The footnote under the table names the <strong>denominator</strong>: the container's
+        own limit where it has one, otherwise the node's capacity. That is the thing that
+        makes a percentage mean something — 85% of an 8&nbsp;GiB limit and 85% of a 64&nbsp;GiB
+        node are different conversations. Memory is shown in <strong>binary units</strong>
+        (MiB/GiB), the same units the node detail uses and the same ones docker itself
+        reports, so the same figure never reads differently in two places. With more than one
+        measured container the view adds a roll-up under the table: CPU and memory of the
+        <strong>worst replica</strong> — not an average, which hides the one container about
+        to be OOM-killed — plus the total memory across them. The <kbd>?</kbd> help overlay's
+        <kbd>t</kbd> entry reads <em>cycle table / stats / raw JSON</em> accordingly.
       </p>
       <p>
         The overlay is <strong>navigable and selectable</strong>, not just a plain scroll:
