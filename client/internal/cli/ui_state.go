@@ -123,6 +123,7 @@ type ui struct {
 	activeCtx    string       // active docker-context name
 	clusterText  string       // last cluster-probe summary for the footer
 	curHelp      string       // current tab's footer help
+	footerBase   string       // what the footer's owner wants shown; a flash returns to THIS
 	savedHelp    string       // footer help saved while search is open
 	searchMode   string       // what the "/" bar filters ("containers"/"volumes")
 	filter       string       // container-tree "/" query

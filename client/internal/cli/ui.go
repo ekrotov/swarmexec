@@ -514,7 +514,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 		if empty {
 			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
 		}
-		help.SetText(u.savedHelp) // restore the tab help
+		u.setFooter(u.savedHelp) // restore the tab help
 		if isVol {
 			app.SetFocus(vtable) // Enter keeps the filter; the bar stays as an indicator
 		} else {
@@ -1629,23 +1629,36 @@ func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm f
 	app.SetFocus(m)
 }
 
-// flash briefly replaces the footer with a status message, then restores the
-// footer that was there BEFORE — which may be a tab footer or an overlay's own
-// footer (pushOverlayHelp), so it must snapshot, not assume curHelp. The
-// restore is guarded: if anything else changed the footer meanwhile (a tab
-// switch, an opened overlay, a newer flash), that owner keeps it.
+// flash briefly replaces the footer with a status message, then puts the
+// footer back.
+//
+// "Back" is u.footerBase — what the footer's actual owner (the tab, or an open
+// overlay) last asked for — NOT a snapshot of the text taken here. Snapshotting
+// was the bug: press a flashing key twice inside the window and the second
+// flash captured the FIRST flash's message as what to restore, so the key hints
+// vanished until the next tab switch. Same for opening an overlay mid-flash.
+//
+// The restore is still guarded on the text: if anything changed the footer
+// meanwhile, that owner keeps it.
 func (u *ui) flash(msg string) {
 	help, app := u.help, u.app
-	prev := help.GetText(false)
 	help.SetText(msg)
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
 		app.QueueUpdateDraw(func() {
 			if help.GetText(false) == msg {
-				help.SetText(prev)
+				help.SetText(u.footerBase)
 			}
 		})
 	}()
+}
+
+// setFooter sets the footer AND records it as the baseline a flash returns to.
+// Every owner of the footer goes through this; only flash writes the widget
+// directly, precisely because a flash is not an owner.
+func (u *ui) setFooter(markup string) {
+	u.footerBase = markup
+	u.help.SetText(markup)
 }
 
 // updateStatus composes the footer status line from the active context, the
@@ -1695,18 +1708,19 @@ func (u *ui) toggleMouse() {
 // otherwise its periodic renderContainers on the UI goroutine competes with
 // keystrokes in an overlay and makes them feel laggy.
 func (u *ui) pushOverlayHelp(markup string) (func(string), func()) {
-	help := u.help
-	prev := help.GetText(false)
-	help.SetText(markup)
+	// The baseline, not the widget's current text: opening an overlay while a
+	// flash is showing must not adopt the flash message as what to restore.
+	prev := u.footerBase
+	u.setFooter(markup)
 	u.overlayDepth.Add(1)
 	var once sync.Once
 	restore := func() {
 		once.Do(func() {
 			u.overlayDepth.Add(-1)
-			help.SetText(prev)
+			u.setFooter(prev)
 		})
 	}
-	return func(m string) { help.SetText(m) }, restore
+	return u.setFooter, restore
 }
 
 // helpFor builds the footer key hints from the live keymap, so remapped keys
@@ -1866,14 +1880,14 @@ func (u *ui) renderTabBar(active string) {
 }
 
 func (u *ui) setTab(name string) {
-	content, help, app := u.content, u.help, u.app
+	content, app := u.content, u.app
 	ctree, vtable, ftable := u.ctree, u.vtable, u.ftable
 	nettable, sectable := u.nettable, u.sectable
 	cxtable, notable := u.cxtable, u.notable
 	u.active = name
 	content.SwitchToPage(name)
 	u.curHelp = u.helpFor(name)
-	help.SetText(u.curHelp)
+	u.setFooter(u.curHelp)
 	u.renderTabBar(name)
 	u.updateStatus() // the selection count shows only on the volumes tab
 	switch name {
@@ -1904,11 +1918,11 @@ func (u *ui) setTab(name string) {
 }
 
 func (u *ui) startSearch(mode string) {
-	root, search, help, app := u.root, u.search, u.help, u.app
+	root, search, app := u.root, u.search, u.app
 	u.searchMode = mode
 	root.ResizeItem(search, 1, 0)
-	u.savedHelp = help.GetText(false)
-	help.SetText(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
+	u.savedHelp = u.footerBase
+	u.setFooter(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
 	if mode == "volumes" {
 		search.SetPlaceholder("filter volumes / driver / node")
 		search.SetText(u.volFilter)
