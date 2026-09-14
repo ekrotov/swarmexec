@@ -1566,9 +1566,10 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, los bloques de <strong>recursos reservados</strong> y de <strong>uso real</strong> (véase más abajo), recuento de volúmenes y la lista completa de etiquetas</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, los bloques de <strong>recursos reservados</strong>, de <strong>uso real</strong> y de <strong>imágenes en este nodo</strong> (véase más abajo), recuento de volúmenes y la lista completa de etiquetas</td></tr>
           <tr><td><kbd>l</kbd></td><td>edita las <strong>etiquetas</strong> del nodo seleccionado — un editor de lista por etapas (<kbd>a</kbd> añadir / <kbd>e</kbd> editar / <kbd>d</kbd> eliminar / <kbd>w</kbd> aplicar / <kbd>Esc</kbd> cancelar) sobre entradas <code>key=value</code>. Aplicar hace un <code>NodeUpdate</code> — a diferencia de un servicio, una actualización de nodo <strong>se aplica de inmediato</strong> (sin actualización progresiva). Las etiquetas de nodo se usan comúnmente como objetivos de restricción de colocación (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>fija la <strong>disponibilidad</strong> del nodo — un menú con <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> que marca el estado en el que está el nodo ahora mismo. <em>Active</em> programa tareas aquí con normalidad; <em>Pause</em> conserva las tareas en ejecución y solo impide colocaciones <strong>nuevas</strong>; <em>Drain</em> saca <strong>todas</strong> las tareas del nodo. Active y Pause se aplican al instante; Drain pasa por una confirmación que indica cuántas tareas en ejecución detendrá el swarm y reprogramará en otros nodos (los servicios cuyas tareas no puedan colocarse en ningún otro sitio quedarán unschedulable). Igual que un cambio de etiquetas, es un único <code>NodeUpdate</code> (lectura-modificación-escritura sobre la spec del nodo) y <strong>se aplica de inmediato</strong>: los nodos no tienen actualización progresiva. Reasignable como <code>node_availability</code></td></tr>
+          <tr><td><kbd>P</kbd></td><td>recupera espacio de disco de imágenes en el nodo (<kbd>P</kbd> mayúscula, es decir Shift+p — el mismo gesto que la pestaña Volumes usa para su prune). Abre un pequeño menú con los <strong>dos</strong> modos que se describen más abajo, cada uno tras su propia confirmación; conviene leer cuál es cuál antes de elegir. El pie de página termina con <em>P reclaim images</em> y el overlay <kbd>?</kbd> lo lista como <em>reclaim image disk space on the node</em>. Reasignable como <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1616,6 +1617,74 @@
         docker <em>no</em> entran en la cifra. No es la carga del nodo, y el propio bloque
         lo dice.
       </div>
+      <p>
+        <strong>Imágenes en este nodo.</strong> Al final de los detalles aparece un bloque
+        <em>images on this node</em>: cuánto ocupa el almacén de capas del nodo y en cuántas
+        imágenes, y cuánto de eso se puede recuperar en <strong>restos sin
+        etiquetar</strong> (un nodo sin nada sin etiquetar lo dice, en vez de ofrecer un
+        cero). Cuando hay algo más, añade una línea: cuánto hay además
+        <strong>etiquetado pero sin usar</strong> — redactado como un coste,
+        <em>eliminarlo significa volver a descargar esas imágenes</em>, no como una oferta.
+        El bloque existe porque las imágenes son el único recurso local al nodo que el lado
+        del clúster no puede ver <em>en absoluto</em>: la API del manager no tiene ninguna
+        visión de las imágenes, a diferencia de los volúmenes, de los que al menos sabe que
+        están montados. Los volúmenes ya se podían gestionar desde swarmexec en todo el
+        clúster; un nodo cuyo disco se llenaba en silencio de capas viejas ni siquiera se
+        veía. El bloque se carga por su cuenta, en paralelo con la lista de nodos, así que
+        aparece un instante después del resto del overlay.
+      </p>
+      <p>
+        <strong>Recuperarlo — <kbd>P</kbd> en la pestaña Nodes.</strong> El menú que abre
+        tiene <strong>dos entradas, deliberadamente no una acción con casilla</strong>,
+        porque son actos distintos y una casilla invita a acabar sin querer en el
+        destructivo:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Entrada</th><th>Qué elimina</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Untagged leftovers</strong></td><td>las capas que dejan atrás las reconstrucciones y desde las que no se puede arrancar nada. <strong>Seguro</strong>: no puede parar un servicio ni forzar una descarga</td></tr>
+          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>elimina además imágenes <strong>etiquetadas</strong> que ningún contenedor está ejecutando <em>ahora mismo</em>. En un nodo de swarm eso incluye todo servicio <strong>escalado a cero</strong> y toda tarea <strong>entre reinicios</strong>: cada una tendrá que <strong>volver a descargar su imagen</strong></td></tr>
+        </tbody>
+      </table></div>
+      <div class="warn">
+        <strong>No leas la segunda entrada como «lo mismo, pero más».</strong> «Every unused
+        image» elimina imágenes que pertenecen a algo que sencillamente <em>no está
+        corriendo en este instante</em>: un servicio escalado a cero, una tarea que se
+        reinicia, un stack que paraste ayer. Todos pierden su imagen y tienen que volver a
+        descargarla para regresar, y <strong>si el registro no es alcanzable, no volverán a
+        levantarse</strong>. Cada una de las dos entradas pasa por su <strong>propio</strong>
+        diálogo de confirmación, que enuncia exactamente esa consecuencia y nombra los bytes
+        que liberaría; son textos separados precisamente para que ninguno pueda acabar
+        describiendo al otro.
+      </div>
+      <p>
+        <strong>Dos modos, dos permisos.</strong> El agente los autoriza como dos acciones
+        distintas — <code>image.prune</code> para los restos sin etiquetar e
+        <code>image.prune.all</code> para el barrido —, de modo que una política puede
+        permitir recuperar capas sin etiquetar <em>sin</em> permitir la destructiva. Cada
+        prune se escribe en el <strong>registro de auditoría</strong> del agente con qué
+        modo se usó, cuánto se recuperó y cuántas imágenes se fueron.
+      </p>
+      <div class="note">
+        <strong>De dónde salen las cifras.</strong> Se leen de la misma fuente de la que
+        informa <code>docker system df</code>, y coinciden exactamente con él — comprobado
+        en un nodo real con 56 imágenes, 32,70&nbsp;GB en disco y 22,99&nbsp;GB
+        recuperables. En particular, swarmexec <strong>no</strong> suma los tamaños de las
+        imágenes individuales: el tamaño de una imagen incluye todas las capas con las que
+        está construida, y las capas se comparten, así que esa suma exagera mucho — durante
+        el desarrollo afirmaba 32,7&nbsp;GB donde el demonio decía 22,2&nbsp;GB. Una
+        salvedad que toca decir: la cifra de <em>solo sin etiquetar</em> es una
+        <strong>cota inferior</strong> — una capa compartida por dos imágenes sin etiquetar
+        no pertenece al tamaño exclusivo de ninguna de las dos —, así que un prune de las
+        sin etiquetar puede liberar algo <em>más</em> de lo anunciado, nunca menos.
+      </div>
+      <p>
+        Mismo requisito previo que las cifras de uso y de salud de más arriba: necesita
+        <strong>agentes de esta versión o más nuevos</strong>. Un nodo cuyo agente sea más
+        antiguo sencillamente no muestra bloque de imágenes, e informa de que no respondió
+        si pulsas <kbd>P</kbd> — despliégalos con
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </p>
 
       <h3>Pestaña Configs</h3>
       <p>
@@ -1730,7 +1799,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    node_availability: a
+node_edit_labels: l    node_availability: a    node_prune_images: P
 secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>

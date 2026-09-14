@@ -10,6 +10,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
@@ -43,6 +45,10 @@ type DockerClient interface {
 	// the previous reading itself, which is what a CPU percentage needs, and a
 	// stream per container would cost far more than it buys at our resolution.
 	ContainerStatsOneShot(ctx context.Context, containerID string) (container.StatsResponseReader, error)
+	// Images are node-local and invisible to the manager; these two back the
+	// per-node image view and its cleanup.
+	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
+	ImagesPrune(ctx context.Context, pruneFilter filters.Args) (image.PruneReport, error)
 	// Info reports the node's own capacity (CPU count, total memory) — the
 	// denominator for "how loaded is this node".
 	Info(ctx context.Context) (system.Info, error)

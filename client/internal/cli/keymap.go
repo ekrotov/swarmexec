@@ -29,7 +29,7 @@ type keybinds struct {
 	// networks
 	NetAttached, NetNew rune
 	// nodes
-	NodeLabels, NodeAvail rune
+	NodeLabels, NodeAvail, NodeImages rune
 	// secrets
 	SecDelete, SecNew rune
 	// contexts
@@ -73,6 +73,9 @@ var keyActions = []keyAction{
 	{"network_new", []string{"networks"}, 'n', func(k *keybinds) *rune { return &k.NetNew }},
 	{"node_edit_labels", []string{"nodes"}, 'l', func(k *keybinds) *rune { return &k.NodeLabels }},
 	{"node_availability", []string{"nodes"}, 'a', func(k *keybinds) *rune { return &k.NodeAvail }},
+	// Capital P, the same gesture the volumes tab uses for its prune — same verb,
+	// same shape, different scope.
+	{"node_prune_images", []string{"nodes"}, 'P', func(k *keybinds) *rune { return &k.NodeImages }},
 	{"secret_delete", []string{"secrets"}, 'd', func(k *keybinds) *rune { return &k.SecDelete }},
 	{"secret_new", []string{"secrets"}, 'n', func(k *keybinds) *rune { return &k.SecNew }},
 	{"context_use", []string{"contexts"}, 'u', func(k *keybinds) *rune { return &k.CtxUse }},

@@ -45,6 +45,15 @@ service Agent {
   // and the background sampler always has the previous one.
   rpc Stats(StatsRequest) returns (StatsResponse);
 
+  // List the images on THIS node, with what each costs on disk and whether a
+  // running container is using it. Images are node-local and the manager has no
+  // view of them at all, so the cli asks each node in turn.
+  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+
+  // Reclaim image disk space on THIS node (authorized + audited). Destructive:
+  // see PruneImagesRequest.all for the two very different things it can mean.
+  rpc PruneImages(PruneImagesRequest) returns (PruneImagesResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -255,4 +264,46 @@ message ContainerStats {
   // it: a swarm task reads "running" while its container fails every probe, so
   // health is only knowable on the node itself.
   string health = 7;
+}
+
+message ListImagesRequest {}
+
+message ListImagesResponse {
+  repeated ImageInfo images = 1;
+
+  // Totals for the node, so a client can say what is at stake without summing a
+  // long list — and can show the safe and the risky figure separately, because
+  // they are what the operator is choosing between.
+  int64 total_bytes = 2;
+  int64 dangling_bytes = 3;  // untagged leftovers: nothing can start from these
+  int64 unused_bytes = 4;    // tagged, but no RUNNING container uses them
+}
+
+message ImageInfo {
+  string id = 1;
+  repeated string tags = 2;  // empty for a dangling image
+  int64 size_bytes = 3;
+  int64 created_unix = 4;
+  // in_use means a container that is RUNNING on this node right now uses it.
+  // It is not the same as "needed": a service scaled to zero, or a task between
+  // restarts, still needs its image and shows in_use=false.
+  bool in_use = 5;
+  bool dangling = 6;
+}
+
+message PruneImagesRequest {
+  // all=false removes only DANGLING images — untagged leftovers of a rebuild,
+  // which nothing can be about to start from. Always safe.
+  //
+  // all=true also removes TAGGED images that no running container uses. On a
+  // swarm node that includes the image of any service currently scaled to zero
+  // or between restarts: it will have to be pulled again, which is an outage if
+  // the registry is unreachable. A client MUST present the two as separate
+  // choices and MUST NOT default to this one.
+  bool all = 1;
+}
+
+message PruneImagesResponse {
+  int64 reclaimed_bytes = 1;
+  repeated string deleted = 2;  // what the daemon reported removing
 }

@@ -1513,9 +1513,10 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong> and <strong>in-use</strong> blocks (see below), volume count and the full label list</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong>, <strong>in-use</strong> and <strong>images on this node</strong> blocks (see below), volume count and the full label list</td></tr>
           <tr><td><kbd>l</kbd></td><td>edit the selected node's <strong>labels</strong> — a staged list editor (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel) over <code>key=value</code> entries. Applying does one <code>NodeUpdate</code> — unlike a service, a node update <strong>applies immediately</strong> (no rolling update). Node labels are commonly used as placement-constraint targets (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>set the node's <strong>availability</strong> — a menu of <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> that marks the state the node is currently in. <em>Active</em> schedules tasks here normally; <em>Pause</em> keeps the running tasks and only stops <strong>new</strong> placements; <em>Drain</em> moves <strong>every</strong> task off the node. Active and Pause apply straight away; Drain goes through a confirm naming how many running tasks swarm will stop and reschedule elsewhere (services whose tasks can't be placed anywhere else go unschedulable). Like a label change it is one <code>NodeUpdate</code> (read-modify-write on the node spec) and <strong>applies immediately</strong> — nodes have no rolling update. Remappable as <code>node_availability</code></td></tr>
+          <tr><td><kbd>P</kbd></td><td>reclaim image disk space on the node (capital <kbd>P</kbd>, i.e. Shift+p — the same gesture the Volumes tab uses for its prune). Opens a small menu with the <strong>two</strong> reclaim modes described below, each behind its own confirm; it is worth reading which is which before picking one. The footer ends with <em>P reclaim images</em> and the <kbd>?</kbd> overlay lists it as <em>reclaim image disk space on the node</em>. Remappable as <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1560,6 +1561,70 @@
         <em>not</em> in the figure. It is not the node's load average, and the block says so
         itself.
       </div>
+      <p>
+        <strong>Images on this node.</strong> Last in the detail comes an <em>images on this
+        node</em> block: how much the node's layer store holds and in how many images, and
+        how much of that is reclaimable in <strong>untagged leftovers</strong> (a node with
+        nothing untagged says so rather than offering a zero). When there is any, one
+        further line notes how much more is <strong>tagged but unused</strong> — phrased as
+        a cost, <em>removing it means pulling those images again</em>, not as an offer. The
+        block exists because images are the one node-local resource the cluster side cannot
+        see <em>at all</em>: the manager API has no view of images whatsoever, unlike
+        volumes, which it at least knows are mounted. Volumes could already be managed
+        cluster-wide from swarmexec; a node quietly filling up with old layers could not
+        even be seen. It loads on its own, in parallel with the node list, so it appears a
+        moment after the rest of the overlay.
+      </p>
+      <p>
+        <strong>Reclaiming it — <kbd>P</kbd> on the Nodes tab.</strong> The menu it opens
+        has <strong>two entries, deliberately not one action with a checkbox</strong>,
+        because they are different acts and a checkbox invites getting the destructive one
+        by accident:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Entry</th><th>What it removes</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Untagged leftovers</strong></td><td>the layers left behind by rebuilds, which nothing can start from. <strong>Safe</strong>: it cannot stop a service and it cannot force a pull</td></tr>
+          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>also removes <strong>tagged</strong> images that no container is running <em>right now</em>. On a swarm node that includes every service currently <strong>scaled to zero</strong> and every task <strong>between restarts</strong> — each of them will have to <strong>pull its image again</strong></td></tr>
+        </tbody>
+      </table></div>
+      <div class="warn">
+        <strong>Do not read the second entry as “the same, but more”.</strong> “Every unused
+        image” removes images that belong to something which is merely <em>not running at
+        this instant</em>. A service scaled to zero, a task restarting, a stack you stopped
+        yesterday — all of them lose their image and must pull it again to come back, and
+        <strong>if the registry is unreachable they will not come back up</strong>. Each of
+        the two entries goes through its <strong>own</strong> confirm dialog that states
+        exactly that consequence and names the bytes each one would free; they are separate
+        texts precisely so neither can drift into describing the other.
+      </div>
+      <p>
+        <strong>Two modes, two permissions.</strong> The agent authorizes them as two
+        distinct actions — <code>image.prune</code> for the untagged leftovers and
+        <code>image.prune.all</code> for the sweep — so a policy can allow reclaiming
+        untagged layers <em>without</em> allowing the destructive one. Every prune is
+        written to the agent's <strong>audit log</strong> with which mode was used, how much
+        was reclaimed and how many images went.
+      </p>
+      <div class="note">
+        <strong>Where the numbers come from.</strong> They are read from the same source
+        <code>docker system df</code> reports from, and match it exactly — verified on a
+        real node at 56 images, 32.70&nbsp;GB on disk, 22.99&nbsp;GB reclaimable. In
+        particular swarmexec does <strong>not</strong> add up the individual image sizes: an
+        image's size includes every layer it is built from, and layers are shared, so that
+        sum over-reports badly — during development it claimed 32.7&nbsp;GB where the daemon
+        said 22.2&nbsp;GB. One caveat worth stating: the <em>untagged-only</em> figure is a
+        <strong>lower bound</strong> — a layer shared by two untagged images belongs to
+        neither one's unique size — so an untagged prune may free a little <em>more</em>
+        than advertised, never less.
+      </div>
+      <p>
+        Same precondition as the usage and health numbers above: it needs
+        <strong>agents from this release or newer</strong>. A node whose agent is older
+        simply shows no image block at all, and reports that it did not answer if you press
+        <kbd>P</kbd> — roll the agents out with
+        <a href="#reroll"><code>swarmexec init --force</code></a>.
+      </p>
 
       <h3>Configs tab</h3>
       <p>
@@ -1672,7 +1737,7 @@ volume_delete: d volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: d
-node_edit_labels: l    node_availability: a
+node_edit_labels: l    node_availability: a    node_prune_images: P
 secret_delete: d secret_new: n
 forward_stop: d  forward_copy_url: o</div>
       <p>

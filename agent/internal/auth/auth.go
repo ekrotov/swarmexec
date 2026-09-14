@@ -12,7 +12,10 @@ import "context"
 // Request is everything the authorizer needs to decide on a single action.
 type Request struct {
 	// Action is the operation being authorized: "exec", "logs", "portforward",
-	// "volume.list", "volume.remove", or "stats.read".
+	// "volume.list", "volume.remove", "stats.read", "image.list",
+	// "image.prune" or "image.prune.all" — the last two are distinct so a policy
+	// can allow reclaiming untagged layers without allowing the sweep that also
+	// removes images a stopped service still needs.
 	Action string
 	// Port is the target TCP port inside the container for "portforward".
 	// Forwarding is a distinct exposure class from exec — it lifts an internal

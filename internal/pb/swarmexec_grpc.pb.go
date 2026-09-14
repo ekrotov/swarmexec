@@ -33,6 +33,8 @@ const (
 	Agent_CreateVolume_FullMethodName   = "/swarmexec.Agent/CreateVolume"
 	Agent_PortForward_FullMethodName    = "/swarmexec.Agent/PortForward"
 	Agent_Stats_FullMethodName          = "/swarmexec.Agent/Stats"
+	Agent_ListImages_FullMethodName     = "/swarmexec.Agent/ListImages"
+	Agent_PruneImages_FullMethodName    = "/swarmexec.Agent/PruneImages"
 	Agent_Version_FullMethodName        = "/swarmexec.Agent/Version"
 )
 
@@ -69,6 +71,13 @@ type AgentClient interface {
 	// It also solves the sampling problem — a CPU percentage needs two readings,
 	// and the background sampler always has the previous one.
 	Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsResponse, error)
+	// List the images on THIS node, with what each costs on disk and whether a
+	// running container is using it. Images are node-local and the manager has no
+	// view of them at all, so the cli asks each node in turn.
+	ListImages(ctx context.Context, in *ListImagesRequest, opts ...grpc.CallOption) (*ListImagesResponse, error)
+	// Reclaim image disk space on THIS node (authorized + audited). Destructive:
+	// see PruneImagesRequest.all for the two very different things it can mean.
+	PruneImages(ctx context.Context, in *PruneImagesRequest, opts ...grpc.CallOption) (*PruneImagesResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -179,6 +188,26 @@ func (c *agentClient) Stats(ctx context.Context, in *StatsRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *agentClient) ListImages(ctx context.Context, in *ListImagesRequest, opts ...grpc.CallOption) (*ListImagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListImagesResponse)
+	err := c.cc.Invoke(ctx, Agent_ListImages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentClient) PruneImages(ctx context.Context, in *PruneImagesRequest, opts ...grpc.CallOption) (*PruneImagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PruneImagesResponse)
+	err := c.cc.Invoke(ctx, Agent_PruneImages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -222,6 +251,13 @@ type AgentServer interface {
 	// It also solves the sampling problem — a CPU percentage needs two readings,
 	// and the background sampler always has the previous one.
 	Stats(context.Context, *StatsRequest) (*StatsResponse, error)
+	// List the images on THIS node, with what each costs on disk and whether a
+	// running container is using it. Images are node-local and the manager has no
+	// view of them at all, so the cli asks each node in turn.
+	ListImages(context.Context, *ListImagesRequest) (*ListImagesResponse, error)
+	// Reclaim image disk space on THIS node (authorized + audited). Destructive:
+	// see PruneImagesRequest.all for the two very different things it can mean.
+	PruneImages(context.Context, *PruneImagesRequest) (*PruneImagesResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -260,6 +296,12 @@ func (UnimplementedAgentServer) PortForward(grpc.BidiStreamingServer[ForwardClie
 }
 func (UnimplementedAgentServer) Stats(context.Context, *StatsRequest) (*StatsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Stats not implemented")
+}
+func (UnimplementedAgentServer) ListImages(context.Context, *ListImagesRequest) (*ListImagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListImages not implemented")
+}
+func (UnimplementedAgentServer) PruneImages(context.Context, *PruneImagesRequest) (*PruneImagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PruneImages not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -400,6 +442,42 @@ func _Agent_Stats_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_ListImages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListImagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).ListImages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_ListImages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).ListImages(ctx, req.(*ListImagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Agent_PruneImages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PruneImagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).PruneImages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_PruneImages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).PruneImages(ctx, req.(*PruneImagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -444,6 +522,14 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Stats",
 			Handler:    _Agent_Stats_Handler,
+		},
+		{
+			MethodName: "ListImages",
+			Handler:    _Agent_ListImages_Handler,
+		},
+		{
+			MethodName: "PruneImages",
+			Handler:    _Agent_PruneImages_Handler,
 		},
 		{
 			MethodName: "Version",
