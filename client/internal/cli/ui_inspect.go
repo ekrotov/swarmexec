@@ -673,63 +673,145 @@ type statsRow struct {
 	bold  bool
 }
 
-// statsLines renders the live resource usage of the inspected object. The
-// readings come from the same background fetch that badges the tree
+// statsLines renders the live resource usage of the inspected object as a
+// TABLE rather than a block per container.
+//
+// The readings come from the same background fetch that badges the tree
 // (ui.loadUsage), so opening this view costs nothing extra and the numbers
 // refresh on their own while it is open.
+//
+// A table because a bare percentage is not readable on its own: "94%" says
+// nothing about the scale it is measured against, and stacked blocks make two
+// replicas hard to compare. Every cell here carries its own units — "1.80 /
+// 2.00 cores" needs no legend — and the percentage sits next to the figure it
+// is a percentage of.
 func (iv *inspectView) statsLines() []statsRow {
 	u := iv.u
 	var rows []statsRow
 	head := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorAqua, bold: true}) }
-	line := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorWhite}) }
 	dim := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorGray}) }
 	blank := func() { rows = append(rows, statsRow{}) }
 
 	cands := iv.subject.containers(u.lastCands)
+	head("RESOURCE USAGE")
 	if len(cands) == 0 {
-		head("RESOURCE USAGE")
 		dim("  (no running container to measure)")
 		return rows
 	}
-
-	head("RESOURCE USAGE")
 	dim("  measured on each node, refreshed with the tree")
 	blank()
 
-	measured := 0
-	for _, c := range cands {
-		usage, ok := u.usage[c.ContainerID]
-		name := fmt.Sprintf("%s  on %s", shortID(c.ContainerID), orDash(c.NodeName))
-		if c.Slot > 0 {
-			name = fmt.Sprintf("%s.%d  %s  on %s", orDash(c.Service), c.Slot, shortID(c.ContainerID), orDash(c.NodeName))
+	cells, measured := statsTableCells(cands, u.usage)
+	widths := columnWidths(cells)
+	for i, row := range cells {
+		text := "  " + padRow(row, widths)
+		switch {
+		case i == 0:
+			rows = append(rows, statsRow{text: text, color: tcell.ColorAqua, bold: true})
+		default:
+			rows = append(rows, statsRow{text: text, color: tcell.ColorWhite})
 		}
-		rows = append(rows, statsRow{text: "  " + name, color: tcell.ColorWhite, bold: true})
-		if !ok {
-			// A container the agents have not reported: unreachable node, an agent
-			// too old to know the RPC, or a container that started since the last
-			// reading. Saying which is impossible here; saying nothing is honest.
-			dim("      no reading — the node's agent did not report this container")
-			blank()
-			continue
-		}
-		measured++
-		rows = append(rows, healthRow(usage.Health))
-		line(fmt.Sprintf("      %-7s %s  %s", "cpu", usageMeter(usage.CPURatio, usage.CPUReady), formatCPUUsage(usage)))
-		line(fmt.Sprintf("      %-7s %s  %s", "memory", usageMeter(usage.MemRatio, true), formatMemUsage(usage)))
-		dim("      " + usageBasis(usage))
-		blank()
 	}
 
-	if measured > 1 {
+	blank()
+	// Without this the "of what" is invisible, which is the whole reason the
+	// numbers get shown as "used / allowed" in the first place.
+	dim("  limits are the container's own where it has one, otherwise the node's capacity")
+	if measured < len(cands) {
+		dim(fmt.Sprintf("  %d of %d containers reported no reading — an unreachable node,",
+			len(cands)-measured, len(cands)))
+		dim("  an agent older than this release, or a container started since the last sample")
+	}
+
+	if measured > 1 && iv.subject.service != "" {
 		if agg, ok := serviceUsage(u.usage, u.lastCands, iv.subject.service); ok {
+			blank()
 			head("ACROSS " + fmt.Sprint(measured) + " CONTAINERS")
 			// The worst replica, not the average: an average hides the one that is
 			// about to be OOM-killed, which is the container you opened this for.
-			line(fmt.Sprintf("  %-7s %s peak", "cpu", formatRatio(agg.CPURatio)))
-			line(fmt.Sprintf("  %-7s %s peak · %s total", "memory", formatRatio(agg.MemRatio), humanBytes(agg.MemBytes)))
+			rows = append(rows, statsRow{
+				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", formatRatio(agg.CPURatio)),
+				color: tcell.ColorWhite,
+			})
+			rows = append(rows, statsRow{
+				text: fmt.Sprintf("  %-10s %s of its limit (worst replica) · %s in total",
+					"memory", formatRatio(agg.MemRatio), humanBytes(agg.MemBytes)),
+				color: tcell.ColorWhite,
+			})
 		}
 	}
 	return rows
+}
+
+// statsTableCells builds the header row plus one row per container. Kept pure
+// so the column contents can be tested without a screen.
+func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage) (cells [][]string, measured int) {
+	cells = [][]string{{"CONTAINER", "NODE", "HEALTH", "CPU", "MEMORY"}}
+	for _, c := range cands {
+		name := shortID(c.ContainerID)
+		if c.Slot > 0 {
+			name = fmt.Sprintf("%s.%d", orDash(c.Service), c.Slot)
+		}
+		u, ok := usage[c.ContainerID]
+		if !ok {
+			cells = append(cells, []string{name, orDash(c.NodeName), "-", "no reading", "no reading"})
+			continue
+		}
+		measured++
+		cells = append(cells, []string{
+			name, orDash(c.NodeName), healthCell(u.Health),
+			formatCPUUsage(u), formatMemUsage(u),
+		})
+	}
+	return cells, measured
+}
+
+// healthCell words the verdict for the table. "no healthcheck" is not the same
+// as healthy and must not render as a blank, which would read as a pass.
+func healthCell(health string) string {
+	switch health {
+	case healthUnhealthy:
+		return "unhealthy"
+	case healthStarting:
+		return "starting"
+	case healthHealthy:
+		return "healthy"
+	default:
+		return "none"
+	}
+}
+
+// columnWidths measures each column across every row, so the table lines up.
+func columnWidths(cells [][]string) []int {
+	var w []int
+	for _, row := range cells {
+		for i, cell := range row {
+			for len(w) <= i {
+				w = append(w, 0)
+			}
+			if n := len(cell); n > w[i] {
+				w[i] = n
+			}
+		}
+	}
+	return w
+}
+
+// padRow pads a row to the measured widths. The last column is not padded, so a
+// selected row's highlight does not run past the text.
+func padRow(row []string, widths []int) string {
+	var b strings.Builder
+	for i, cell := range row {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		if i == len(row)-1 {
+			b.WriteString(cell)
+			break
+		}
+		fmt.Fprintf(&b, "%-*s", widths[i], cell)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 // containers picks the candidates this subject covers: every replica of a
@@ -745,50 +827,4 @@ func (s statsSubject) containers(all []resolve.Candidate) []resolve.Candidate {
 		}
 	}
 	return out
-}
-
-// usageBasis spells out what the percentages are a percentage OF, per resource.
-// Without it "91%" is ambiguous in the way that matters most: 91% of a 256 MB
-// limit is nearly an OOM kill, 91% of a 64 GB node is a different problem.
-func usageBasis(u containerUsage) string {
-	cpu, mem := "the node's cpus", "the node's memory"
-	if u.CPULimited {
-		cpu = "its own cpu limit"
-	}
-	if u.MemLimited {
-		mem = "its own memory limit"
-	}
-	if cpu == mem {
-		return "% of " + cpu
-	}
-	return "cpu % of " + cpu + " · memory % of " + mem
-}
-
-// usageMeter draws the same proportional bar the node view uses, so a ratio
-// reads identically wherever it appears.
-func usageMeter(ratio float64, ready bool) string {
-	if !ready {
-		return strings.Repeat("─", resourceBarWidth)
-	}
-	if ratio < 0 {
-		ratio = 0
-	}
-	return resourceBar(int64(ratio*1000), 1000)
-}
-
-// healthRow renders one container's healthcheck verdict inside the stats view.
-// A container with no healthcheck says so rather than being left blank: "no
-// healthcheck configured" and "the probe passes" are different facts, and the
-// blank would read as the second.
-func healthRow(health string) statsRow {
-	switch health {
-	case healthUnhealthy:
-		return statsRow{text: "      health  failing its healthcheck", color: tcell.ColorRed, bold: true}
-	case healthStarting:
-		return statsRow{text: "      health  starting — probe has not passed yet", color: tcell.ColorYellow}
-	case healthHealthy:
-		return statsRow{text: "      health  healthy", color: tcell.ColorGreen}
-	default:
-		return statsRow{text: "      health  no healthcheck configured", color: tcell.ColorGray}
-	}
 }

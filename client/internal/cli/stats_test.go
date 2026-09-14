@@ -174,23 +174,6 @@ func TestStatsSubjectContainers(t *testing.T) {
 	}
 }
 
-// The basis line is what stops "91%" from being ambiguous.
-func TestUsageBasisNamesTheDenominator(t *testing.T) {
-	both := usageBasis(containerUsage{CPULimited: true, MemLimited: true})
-	if !strings.Contains(both, "its own") || strings.Contains(both, "node") {
-		t.Errorf("fully limited container: %q", both)
-	}
-	neither := usageBasis(containerUsage{})
-	if !strings.Contains(neither, "node") || strings.Contains(neither, "its own") {
-		t.Errorf("unlimited container: %q", neither)
-	}
-	// The mixed case must name both, or one of them is silently wrong.
-	mixed := usageBasis(containerUsage{MemLimited: true})
-	if !strings.Contains(mixed, "cpu") || !strings.Contains(mixed, "memory") {
-		t.Errorf("mixed limits must spell out both: %q", mixed)
-	}
-}
-
 func TestInspModeCycles(t *testing.T) {
 	m := inspModeTable
 	for _, want := range []string{"stats", "raw json", "table"} {
@@ -362,22 +345,6 @@ func TestHealthBadges(t *testing.T) {
 	}
 }
 
-// "No healthcheck configured" and "the probe passes" are different facts and
-// must not render the same.
-func TestHealthRowDistinguishesUnknownFromHealthy(t *testing.T) {
-	healthy := healthRow(healthHealthy)
-	none := healthRow("")
-	if healthy.text == none.text {
-		t.Error("a container without a healthcheck must not read as healthy")
-	}
-	if !strings.Contains(none.text, "no healthcheck") {
-		t.Errorf("unknown row = %q", none.text)
-	}
-	if healthRow(healthUnhealthy).color != tcell.ColorRed {
-		t.Error("a failing probe should be red")
-	}
-}
-
 // A stack rolls health up like it rolls up updates and security findings. A
 // stack row is what an operator scans first, so it must not read as calm while
 // every service under it is failing its probes.
@@ -409,5 +376,102 @@ func TestStackHealthRollsUp(t *testing.T) {
 	}
 	if got := healthColor(serviceColor(3, 3), empty); got != serviceColor(3, 3) {
 		t.Error("a stack with no health readings must not be recoloured")
+	}
+}
+
+// The stats view is a table because a bare percentage is not readable on its
+// own. Every cell must carry its own units, and the percentage must sit next to
+// the figure it is a percentage of.
+func TestStatsTableCellsCarryTheirUnits(t *testing.T) {
+	cands := []resolve.Candidate{
+		{Service: "web", ContainerID: "c1", Slot: 1, NodeName: "host-a"},
+		{Service: "web", ContainerID: "c2", Slot: 2, NodeName: "host-b"},
+	}
+	usage := map[string]containerUsage{
+		"c1": {
+			CPUReady: true, CPUPercent: 180, CPULimitCores: 2, CPURatio: 0.9, CPULimited: true,
+			MemBytes: 900 << 20, MemLimitBytes: 1 << 30, MemRatio: 0.88, MemLimited: true,
+			Health: healthHealthy,
+		},
+		// c2 has no reading at all.
+	}
+
+	cells, measured := statsTableCells(cands, usage)
+	if measured != 1 {
+		t.Errorf("measured = %d, want 1", measured)
+	}
+	if len(cells) != 3 {
+		t.Fatalf("got %d rows, want a header plus two containers", len(cells))
+	}
+	if cells[0][0] != "CONTAINER" || cells[0][3] != "CPU" || cells[0][4] != "MEMORY" {
+		t.Errorf("header = %v", cells[0])
+	}
+
+	row := cells[1]
+	if row[0] != "web.1" || row[1] != "host-a" || row[2] != "healthy" {
+		t.Errorf("identity columns = %v", row[:3])
+	}
+	// The whole point: not "90%" on its own.
+	if !strings.Contains(row[3], "1.80") || !strings.Contains(row[3], "2.00") || !strings.Contains(row[3], "cores") {
+		t.Errorf("cpu cell = %q, want used-of-allowed with its unit", row[3])
+	}
+	if !strings.Contains(row[3], "90%") {
+		t.Errorf("cpu cell = %q, should still carry the percentage", row[3])
+	}
+	if !strings.Contains(row[4], "/") || !strings.Contains(row[4], "88%") {
+		t.Errorf("memory cell = %q, want used / limit and the percentage", row[4])
+	}
+
+	// A container with no reading says so in both columns rather than showing a
+	// zero that would read as idle.
+	if cells[2][3] != "no reading" || cells[2][4] != "no reading" {
+		t.Errorf("unmeasured row = %v, want an explicit no-reading", cells[2])
+	}
+}
+
+// "No healthcheck" is not the same as healthy and must not render as a blank.
+func TestHealthCell(t *testing.T) {
+	for verdict, want := range map[string]string{
+		healthHealthy:   "healthy",
+		healthUnhealthy: "unhealthy",
+		healthStarting:  "starting",
+		"":              "none",
+		"bogus":         "none",
+	} {
+		if got := healthCell(verdict); got != want {
+			t.Errorf("healthCell(%q) = %q, want %q", verdict, got, want)
+		}
+	}
+}
+
+// Columns line up across rows, and the last one is not padded so a selected
+// row's highlight stops at the text.
+func TestStatsTableAlignment(t *testing.T) {
+	cells := [][]string{
+		{"CONTAINER", "NODE", "CPU"},
+		{"web.1", "a-very-long-hostname", "1.00 cores"},
+		{"web.10", "h", "0.10 cores"},
+	}
+	w := columnWidths(cells)
+	if w[0] != len("CONTAINER") || w[1] != len("a-very-long-hostname") {
+		t.Errorf("widths = %v, want the widest cell per column", w)
+	}
+	r1, r2 := padRow(cells[1], w), padRow(cells[2], w)
+	if strings.Index(r1, "1.00 cores") != strings.Index(r2, "0.10 cores") {
+		t.Errorf("last column not aligned:\n%q\n%q", r1, r2)
+	}
+	if r2 != strings.TrimRight(r2, " ") {
+		t.Errorf("row has trailing padding: %q", r2)
+	}
+}
+
+// A CPU reading with no known denominator must not invent one.
+func TestFormatCPUUsageWithoutALimit(t *testing.T) {
+	got := formatCPUUsage(containerUsage{CPUReady: true, CPUPercent: 250})
+	if strings.Contains(got, "/") || strings.Contains(got, "%") {
+		t.Errorf("cpu = %q, want just the cores when nothing bounds them", got)
+	}
+	if !strings.Contains(got, "2.50 cores") {
+		t.Errorf("cpu = %q, want the measured cores", got)
 	}
 }

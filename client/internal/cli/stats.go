@@ -46,7 +46,10 @@ type containerUsage struct {
 	CPULimited bool
 	MemLimited bool
 
-	// MemLimitBytes is the denominator behind MemRatio, for display.
+	// The denominators behind the two ratios, kept so a view can show what the
+	// percentage is a percentage OF. A bare "94%" is unreadable to anyone who
+	// does not already know how this tool measures.
+	CPULimitCores float64
 	MemLimitBytes int64
 
 	// Health is the container's healthcheck verdict, or "" when it declares
@@ -241,10 +244,12 @@ func usageOf(s *pb.ContainerStats, resp *pb.StatsResponse) containerUsage {
 	// the whole node — which is the real ceiling for an unlimited container.
 	switch cores := s.GetCpuLimitCores(); {
 	case cores > 0:
-		u.CPURatio = u.CPUPercent / (cores * 100)
-		u.CPULimited = true
-	case resp.GetNodeCpus() > 0:
-		u.CPURatio = u.CPUPercent / (float64(resp.GetNodeCpus()) * 100)
+		u.CPULimitCores, u.CPULimited = cores, true
+	default:
+		u.CPULimitCores = float64(resp.GetNodeCpus())
+	}
+	if u.CPULimitCores > 0 {
+		u.CPURatio = u.CPUPercent / (u.CPULimitCores * 100)
 	}
 	if u.MemLimitBytes > 0 {
 		u.MemRatio = float64(u.MemBytes) / float64(u.MemLimitBytes)
@@ -276,13 +281,18 @@ func fetchNodeStats(ctx context.Context, cfg config.Config, n resolve.Node, conn
 	return resp, nil
 }
 
-// formatCPUUsage renders a CPU reading for display: docker's share-of-one-cpu
-// number as cores, plus the share of what the container may use.
+// formatCPUUsage renders a CPU reading as "used of allowed", because the
+// percentage on its own is not readable: it tells you nothing about the scale
+// it is measured against.
 func formatCPUUsage(u containerUsage) string {
-	if !u.CPUReady {
+	switch {
+	case !u.CPUReady:
 		return "…"
+	case u.CPULimitCores > 0:
+		return fmt.Sprintf("%.2f / %.2f cores (%s)", u.CPUPercent/100, u.CPULimitCores, formatRatio(u.CPURatio))
+	default:
+		return fmt.Sprintf("%.2f cores", u.CPUPercent/100)
 	}
-	return fmt.Sprintf("%.2f cores (%s)", u.CPUPercent/100, formatRatio(u.CPURatio))
 }
 
 func formatMemUsage(u containerUsage) string {
