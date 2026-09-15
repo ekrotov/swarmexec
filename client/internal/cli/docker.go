@@ -12,8 +12,6 @@ import (
 
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
-
-	"swarmexec/client/internal/dockerctx"
 )
 
 // newDockerClient builds a Docker SDK client for the manager API, honoring
@@ -21,18 +19,20 @@ import (
 // context) including ssh:// endpoints — which the bare SDK's client.FromEnv
 // does not support (REQUIREMENTS §2).
 func newDockerClient(contextOverride string) (*client.Client, error) {
-	host, err := dockerctx.ResolveHost(contextOverride)
-	if err != nil {
-		return nil, err
-	}
+	return resolveEndpoint(contextOverride).client()
+}
 
+// dockerClientForHost builds the client for an ALREADY RESOLVED endpoint. The
+// split matters: it is what lets the manager client and the agent tunnel come
+// out of one resolution instead of two that can disagree (see dockerEndpoint).
+func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 	opts := []client.Opt{client.WithAPIVersionNegotiation()}
 	if strings.HasPrefix(host, "ssh://") {
 		// ssh endpoints need a connection helper (it tunnels the Docker API over
 		// ssh, the same way `docker --context <ssh-ctx>` does). Inject the
 		// context's ProxyJump (-J) so the API hop goes through the same bastion(s)
 		// as the agent tunnel — no ~/.ssh/config needed.
-		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, sshExtraFlags(contextOverride))
+		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, proxyJumpFlags(proxyJump))
 		if err != nil {
 			return nil, fmt.Errorf("set up ssh connection to %s: %w", host, err)
 		}

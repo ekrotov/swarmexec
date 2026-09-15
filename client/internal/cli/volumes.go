@@ -252,7 +252,8 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 
 // volumeSetup resolves config + manager client + the swarm node list.
 func volumeSetup(cmd *cobra.Command, g *globalFlags) (config.Config, context.Context, *client.Client, []resolve.Node, error) {
-	cfg, err := g.resolveConfig(cmd)
+	dockerEP := resolveEndpoint(g.dockerContext)
+	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return cfg, nil, nil, nil, &cliError{code: usageExitCode, err: err}
 	}
@@ -260,7 +261,7 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (config.Config, context.Con
 		return cfg, nil, nil, nil, &cliError{code: usageExitCode, err: err}
 	}
 	ctx := cmdContext(cmd)
-	dcli, err := newDockerClient(g.dockerContext)
+	dcli, err := dockerEP.client()
 	if err != nil {
 		return cfg, ctx, nil, nil, &cliError{code: session.TransportFailure, err: err}
 	}

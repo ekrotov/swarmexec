@@ -164,7 +164,15 @@ func (g *globalFlags) initLogging() error {
 
 // resolveConfig merges defaults + file + env, then overlays explicitly-set
 // global flags.
-func (g *globalFlags) resolveConfig(cmd *cobra.Command) (config.Config, error) {
+// ep is the endpoint this run is pointed at, and it is a PARAMETER rather than
+// something looked up here on purpose. Looking it up here is exactly what the
+// bug was: this function used g.dockerContext (the --context flag, never
+// updated) while the ui pointed its Docker client somewhere else, so after a
+// cluster switch the agent traffic still tunnelled through the previous
+// cluster's bastion. Taking the endpoint means the caller has already decided
+// where it is going, and the manager client and the agent tunnel come out of
+// that one decision.
+func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (config.Config, error) {
 	cfg, err := config.Load(g.configPath)
 	if err != nil {
 		return cfg, err
@@ -203,7 +211,7 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command) (config.Config, error) {
 
 	// With an ssh:// Docker context, tunnel agent traffic over the same ssh host
 	// (the nodes are usually only reachable through the bastion).
-	dialer, err := sshProxyDialer(g.dockerContext)
+	dialer, err := ep.agentDialer()
 	if err != nil {
 		return cfg, err
 	}

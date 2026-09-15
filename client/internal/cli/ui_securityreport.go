@@ -56,7 +56,7 @@ func (u *ui) writeSecurityReport(path string, setHelp func(string), keys string)
 	ctx, app := u.ctx, u.app
 	go func() {
 		report, err := gatherSecurityReport(ctx, u.dcli, u.cfg, u.g,
-			&securityFlags{output: path, connectTimeout: u.f.connectTimeout})
+			&securityFlags{output: path, connectTimeout: u.f.connectTimeout}, u.contextName())
 		if err == nil {
 			err = writeReportFile(path, report.Markdown())
 		}
@@ -101,13 +101,11 @@ func safeFileName(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// contextName is the cluster label the ui is pointed at, for the filename.
-func (u *ui) contextName() string {
-	if u.ctxOverride != "" {
-		return u.ctxOverride
-	}
-	return u.g.dockerContext
-}
+// contextName is the cluster the ui is actually pointed at — the switched-to
+// context, not the --context flag, which stops being the answer the moment
+// someone switches in the Contexts tab. Used for the export filename and for
+// the report's own header, which exists to say which cluster it describes.
+func (u *ui) contextName() string { return u.ctxOverride }
 
 // reportSummaryLine is the one-line verdict used where a full report will not
 // fit. Kept next to the report so the wording cannot drift from it.

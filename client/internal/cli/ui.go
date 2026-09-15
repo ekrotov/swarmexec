@@ -160,7 +160,12 @@ const (
 )
 
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
-	cfg, err := g.resolveConfig(cmd)
+	// ctxOverride, NOT g.dockerContext: after a cluster switch in the Contexts
+	// tab those two differ, and building the agent tunnel from the flag is what
+	// left exec, logs, port-forward, stats and volumes pointing at the previous
+	// cluster's bastion while the tree kept working.
+	dockerEP := resolveEndpoint(ctxOverride)
+	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return "", &cliError{code: usageExitCode, err: err}
 	}
@@ -191,7 +196,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// the UI then stops and the caller restarts against it.
 	var switchTo string
 
-	dcli, err := newDockerClient(ctxOverride)
+	dcli, err := dockerEP.client()
 	if err != nil {
 		return "", &cliError{code: session.TransportFailure, err: err}
 	}

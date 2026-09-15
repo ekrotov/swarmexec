@@ -38,7 +38,8 @@ type psRow struct {
 }
 
 func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error {
-	cfg, err := g.resolveConfig(cmd)
+	dockerEP := resolveEndpoint(g.dockerContext)
+	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
@@ -50,7 +51,7 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 		service = args[0]
 	}
 
-	dcli, err := newDockerClient(g.dockerContext)
+	dcli, err := dockerEP.client()
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

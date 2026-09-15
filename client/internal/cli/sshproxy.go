@@ -11,26 +11,23 @@ import (
 
 	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/docker/cli/cli/connhelper/ssh"
-
-	"swarmexec/client/internal/dockerctx"
 )
 
-// sshProxyDialer returns a dialer that tunnels TCP connections to the swarm
-// nodes over the same ssh:// host as the Docker context. It returns nil (dial
-// directly) when the context is not an ssh endpoint.
+// sshDialerForHost returns a dialer that tunnels TCP connections to the swarm
+// nodes over the endpoint's ssh host. It returns nil (dial directly) when the
+// endpoint is not ssh.
 //
 // Why: with an ssh:// Docker context the Docker API is tunnelled over ssh, but
 // the agents' gRPC endpoints are not — swarmexec would dial node:9443 directly,
 // which usually isn't routable from the operator's machine (the nodes live
 // behind the bastion). Tunnelling agent traffic over the same ssh host makes
 // exec/logs/doctor/ui work like the Docker API does.
-func sshProxyDialer(contextOverride string) (func(context.Context, string) (net.Conn, error), error) {
-	host, err := dockerctx.ResolveHost(contextOverride)
-	if err != nil {
-		// Best-effort: a command that actually needs Docker will fail later with
-		// a clearer error from newDockerClient.
-		return nil, nil //nolint:nilerr // intentional: don't fail config resolution here
-	}
+//
+// It takes an ALREADY RESOLVED host rather than a context name, and that is the
+// point: reached only through dockerEndpoint.agentDialer, it cannot be handed a
+// different cluster than the manager client got. A helper that resolved a name
+// of its own is precisely what let the two drift apart.
+func sshDialerForHost(host, jump string) (func(context.Context, string) (net.Conn, error), error) {
 	if !strings.HasPrefix(host, "ssh://") {
 		return nil, nil
 	}
@@ -38,7 +35,6 @@ func sshProxyDialer(contextOverride string) (func(context.Context, string) (net.
 	if err != nil {
 		return nil, fmt.Errorf("parse ssh docker context %q: %w", host, err)
 	}
-	jump := dockerctx.ResolveProxyJump(contextOverride)
 	return func(ctx context.Context, addr string) (net.Conn, error) {
 		// commandconn runs ssh via exec (no shell), so args need no quoting.
 		conn, cerr := commandconn.New(ctx, "ssh", sshForwardArgs(sp, addr, jump)...)
@@ -67,11 +63,11 @@ func sshForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
 	return args
 }
 
-// sshExtraFlags returns extra ssh CLI flags for the resolved context — currently
-// the ProxyJump (-J). Shared by the Docker-API connhelper and the agent tunnel so
-// both hop through the same bastion(s).
-func sshExtraFlags(contextOverride string) []string {
-	if pj := strings.TrimSpace(dockerctx.ResolveProxyJump(contextOverride)); pj != "" {
+// proxyJumpFlags turns an endpoint's ProxyJump into ssh CLI flags (-J). Both
+// the Docker-API connhelper and the agent tunnel pass the SAME endpoint's value
+// through here, so the two hop through the same bastion(s) by construction.
+func proxyJumpFlags(proxyJump string) []string {
+	if pj := strings.TrimSpace(proxyJump); pj != "" {
 		return []string{"-J", pj}
 	}
 	return nil

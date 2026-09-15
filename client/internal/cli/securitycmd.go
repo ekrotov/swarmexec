@@ -61,7 +61,8 @@ func newSecurityReportCmd(g *globalFlags) *cobra.Command {
 }
 
 func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) error {
-	cfg, err := g.resolveConfig(cmd)
+	dockerEP := resolveEndpoint(g.dockerContext)
+	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
@@ -70,12 +71,12 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 	}
 	ctx := cmdContext(cmd)
 
-	dcli, err := newDockerClient(g.dockerContext)
+	dcli, err := dockerEP.client()
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 
-	report, err := gatherSecurityReport(ctx, dcli, cfg, g, f)
+	report, err := gatherSecurityReport(ctx, dcli, cfg, g, f, dockerEP.Context)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
@@ -115,7 +116,7 @@ func writeReportFile(path, body string) error {
 // The manager calls are required: a report missing half the cluster is worse
 // than no report, because it looks complete. The agent round trip is optional
 // and its absence is recorded as a gap rather than passed over.
-func gatherSecurityReport(ctx context.Context, dcli *client.Client, cfg config.Config, g *globalFlags, f *securityFlags) (secscan.Report, error) {
+func gatherSecurityReport(ctx context.Context, dcli *client.Client, cfg config.Config, g *globalFlags, f *securityFlags, contextName string) (secscan.Report, error) {
 	svcs, err := listServicesForScan(ctx, dcli)
 	if err != nil {
 		return secscan.Report{}, fmt.Errorf("list services: %w", err)
@@ -138,7 +139,7 @@ func gatherSecurityReport(ctx context.Context, dcli *client.Client, cfg config.C
 	}
 
 	meta := secscan.ReportMeta{
-		Context:   contextLabel(ctx, dcli, g),
+		Context:   contextLabel(ctx, dcli, contextName),
 		Generated: time.Now(),
 		Tool:      "swarmexec " + g.version.Binary,
 	}
