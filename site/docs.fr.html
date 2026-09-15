@@ -945,7 +945,7 @@
           <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> majuscule) — sur un conteneur ses propres logs, sur un service les logs agrégés de toutes ses tâches</td></tr>
           <tr><td><kbd>!</kbd></td><td>ouvre la surcouche des risques de sécurité pour toute la liste des services (voir ci-dessous)</td></tr>
           <tr><td><kbd>p</kbd></td><td>redirige le port de la tâche sous le curseur</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspecte le nœud sous le curseur — une surcouche navigable avec un résumé tabulaire ; déplacez la sélection avec <kbd>↑</kbd>/<kbd>↓</kbd> ou <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copie la ligne sélectionnée, <kbd>t</kbd> fait défiler tableau → stats → JSON brut du démon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> ferme). Sur un <strong>service</strong> la surcouche l'édite aussi : <kbd>s</kbd> mise à l'échelle, <kbd>f</kbd> mise à jour forcée, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> réseaux, <kbd>S</kbd> secrets, <kbd>v</kbd> montages, <kbd>A</kbd> alias ; <kbd>D</kbd> diagnostique <em>pourquoi</em> il ne s'exécute pas partout ; <kbd>X</kbd> le supprime</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspecte le nœud sous le curseur — une surcouche navigable avec un résumé tabulaire ; déplacez la sélection avec <kbd>↑</kbd>/<kbd>↓</kbd> ou <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copie la ligne sélectionnée, une <strong>barre d'onglets</strong> en haut nomme les trois vues et <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> sélectionnent directement tableau / stats / JSON brut du démon, tandis que <kbd>t</kbd> les fait défiler (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> ferme). Sur un <strong>service</strong> la surcouche l'édite aussi : <kbd>s</kbd> mise à l'échelle, <kbd>f</kbd> mise à jour forcée, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> réseaux, <kbd>S</kbd> secrets, <kbd>v</kbd> montages, <kbd>A</kbd> alias ; <kbd>D</kbd> diagnostique <em>pourquoi</em> il ne s'exécute pas partout ; <kbd>X</kbd> le supprime</td></tr>
           <tr><td><kbd>X</kbd></td><td>supprime un service <strong>directement depuis l'arbre</strong> (<kbd>X</kbd> majuscule, c.-à-d. Shift+x) — sans détour par la surcouche d'inspection. Ce sur quoi elle agit dépend de la ligne sous le curseur : sur une ligne de <strong>service</strong> elle supprime ce service ; sur une ligne de <strong>conteneur</strong> elle supprime le <strong>service propriétaire</strong> du conteneur, car une tâche seule ne peut pas être supprimée — Swarm la replanifierait aussitôt ; sur une ligne de <strong>stack</strong> elle ne supprime rien et signale brièvement dans le pied de page que les services d'un stack se suppriment individuellement, ou avec <code>docker stack rm &lt;stack&gt;</code>. Elle passe par la <strong>même confirmation</strong> que le <kbd>X</kbd> de l'inspection ci-dessous — elle <strong>supprime définitivement</strong> le service et arrête toutes ses tâches ; irréversible. Touche majuscule fixe, pas une action de keymap réaffectable ; le pied de page l'indique en rouge comme <span style="color:#f85149"><em>X remove</em></span> et la surcouche <kbd>?</kbd> la liste aussi. Le <kbd>X</kbd> à l'intérieur de la surcouche d'inspection est inchangé</td></tr>
         </tbody>
       </table></div>
@@ -1247,13 +1247,20 @@
         secrets (et configs) d'abord, puis ports, image, mode, env, ressources,
         placement et politique de mise à jour (plus l'état, le nœud et l'id du
         conteneur pour un conteneur/tâche), avec les ids et horodatages en dernier.
-        Appuyez sur <kbd>t</kbd> pour faire défiler les <strong>trois</strong> vues de la
-        surcouche — <strong>tableau&nbsp;→ stats&nbsp;→ JSON brut du démon</strong> — puis
-        revenir ; le pied de page nomme toujours la suivante, et le titre de la surcouche
-        indique celle où vous êtes. Notez que la vue tabulaire est la vue de tâche du
-        manager, pas d'un <code>docker container inspect</code> complet et local au nœud
-        du conteneur en cours d'exécution — une véritable inspection de conteneur via
-        l'agent est prévue.
+        La première ligne de la surcouche, à l'intérieur de la bordure et fixée au-dessus du
+        contenu qui défile, est une <strong>barre d'onglets</strong> qui nomme ses
+        <strong>trois</strong> vues — <code>table 1&nbsp;&nbsp; stats 2&nbsp;&nbsp; raw json 3</code>
+        — la vue courante dans la couleur d'accentuation ; elle a la même forme que la barre
+        d'onglets de la fenêtre principale : un libellé suivi du chiffre qui le sélectionne.
+        <kbd>1</kbd>, <kbd>2</kbd> et <kbd>3</kbd> sautent <strong>directement</strong> au
+        tableau, aux stats et au JSON brut du démon, et <kbd>t</kbd> fait toujours défiler
+        <strong>tableau&nbsp;→ stats&nbsp;→ JSON brut</strong> puis revenir. L'indication du
+        pied de page se résume à <em>1-3/t view</em>, et le titre de la bordure ne répète
+        plus le nom de la vue courante — il dit simplement
+        <code>inspect service foo</code>, puisque la barre indique déjà où vous êtes.
+        Notez que la vue tabulaire est la vue de tâche du manager, pas d'un
+        <code>docker container inspect</code> complet et local au nœud du conteneur en cours
+        d'exécution — une véritable inspection de conteneur via l'agent est prévue.
       </p>
       <p>
         <strong>La vue stats.</strong> Celle du milieu montre l'<em>utilisation des
@@ -1311,7 +1318,8 @@
         adresse sans sélectionner de texte à la main. <kbd>Enter</kbd> copie aussi,
         sauf sur une ligne <strong>NETWORKS</strong> repliable, où il déplie/replie
         plutôt cette ligne (voir ci-dessous). Les trois vues (le résumé tabulaire, la vue
-        stats et le JSON brut, que <kbd>t</kbd> fait défiler) sont sélectionnables et
+        stats et le JSON brut, atteints par <kbd>1</kbd>–<kbd>3</kbd> ou en faisant défiler
+        avec <kbd>t</kbd>) sont sélectionnables et
         copiables ligne par ligne. Un <strong>pied de page liste toujours les touches
         disponibles</strong>, de sorte que ce que vous pouvez faire est visible d'un
         coup d'œil ; pour un service, le pied de page affiche aussi les touches
@@ -1323,7 +1331,8 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>déplace la sélection entre les lignes de données (en-têtes/vides ignorés)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copie la ligne sélectionnée dans le presse-papiers (OSC52) — toujours</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>sur une ligne <strong>NETWORKS</strong> repliable, déplie/replie ce niveau — les lignes s'imbriquent sur deux niveaux, un réseau et son détail <code>N containers</code> ; sur toute autre ligne, la copie (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>fait défiler les trois vues — résumé tabulaire → <strong>stats</strong> (CPU / mémoire en direct, voir ci-dessous) → JSON brut du démon → retour ; les trois sont sélectionnables, et le pied de page nomme la suivante</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>sélectionne une vue directement — <strong>1</strong> résumé tabulaire, <strong>2</strong> <strong>stats</strong> (CPU / mémoire en direct, voir ci-dessous), <strong>3</strong> JSON brut du démon ; ce sont les chiffres qu'affiche la barre d'onglets</td></tr>
+          <tr><td><kbd>t</kbd></td><td>fait défiler les trois vues — résumé tabulaire → <strong>stats</strong> (CPU / mémoire en direct, voir ci-dessous) → JSON brut du démon → retour ; les trois sont sélectionnables, et la barre d'onglets en haut marque celle où vous êtes</td></tr>
           <tr><td><kbd>a</kbd></td><td>menu d'actions — tous les éditeurs et actions du service en une seule liste, sans Maj (services uniquement ; voir ci-dessous)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>édite le service — mise à l'échelle / mise à jour forcée / ports / labels / env / réseaux / secrets / montages / alias (service uniquement ; <kbd>S</kbd> est en majuscule, Maj+s, pour le distinguer de <kbd>s</kbd> mise à l'échelle ; <kbd>A</kbd> est aussi en majuscule ; voir ci-dessous)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>ferme la surcouche</td></tr>
@@ -1428,7 +1437,7 @@
       </p>
       <p>
         Lorsque vous inspectez un <strong>service</strong> (pas une feuille
-        conteneur/tâche, dont la surcouche reste en lecture seule), le titre de la
+        conteneur/tâche, dont la surcouche reste en lecture seule), le pied de page de la
         surcouche expose aussi plusieurs touches d'édition, chacune un
         <code>ServiceUpdate</code> de l'API du manager qui déclenche une mise à jour
         progressive / réconciliation des tâches du service.

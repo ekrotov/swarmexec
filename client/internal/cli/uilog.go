@@ -25,7 +25,35 @@ const logBufferCap = 5000
 // footer (not the border title) so the log shortcuts are discoverable in the
 // same place as every other tab's shortcuts, and each key spells out what it
 // does rather than using a one-word label.
-const logViewHelp = " [yellow]f[white] follow on/off  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
+//
+// The follow hint names which of the two states is in force. A fixed "follow
+// on/off" is ambiguous in the one situation that matters: a view that has
+// stopped following looks exactly like a view whose container went quiet, and
+// the footer — the thing an operator reads to find out — said the same either
+// way. The mouse hint one field along already spells out its current mode for
+// the same reason.
+func logViewHelp(following bool) string {
+	return " [yellow]f[white] follow " + followHint(following) +
+		"  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
+}
+
+// followHint marks the active half of the on/off pair. Both halves stay visible
+// so the key still reads as a toggle; the active one is underlined AND coloured
+// rather than only coloured, because this sits in a dense single-line footer
+// where a colour change alone is easy to miss. Green for live, grey for paused —
+// the same pairing the rest of the ui uses for "running" and "nothing going on".
+// The closing tag turns the two flags off BY NAME ("BU") rather than resetting
+// them with "-". They are not equivalent in tview: "-" restores the attribute
+// MASK, and tcell keeps the underline outside that mask, so a "-" reset emitted
+// "reset everything, then underline" and the rest of the footer came out
+// underlined. Verified against the real terminal, which is the only place that
+// shows.
+func followHint(following bool) string {
+	if following {
+		return "[green::bu]on[white::BU]/off"
+	}
+	return "on/[gray::bu]off[white::BU]"
+}
 
 type logRow struct {
 	prefix string // service view tag, e.g. "[slot 2] "; "" for a single container

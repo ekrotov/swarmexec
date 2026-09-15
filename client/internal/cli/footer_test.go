@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rivo/tview"
@@ -99,5 +100,35 @@ func TestOverlayHelpNests(t *testing.T) {
 	}
 	if d := u.overlayDepth.Load(); d != 0 {
 		t.Errorf("overlay depth = %d, want 0", d)
+	}
+}
+
+// The log footer must say WHICH follow state is in force, not merely that f
+// toggles one. A paused log view and a container that has gone quiet look
+// identical on screen, and the footer is where an operator goes to tell them
+// apart — so a fixed "follow on/off" answered the question wrongly half the
+// time.
+func TestLogFooterNamesTheFollowState(t *testing.T) {
+	on, off := logViewHelp(true), logViewHelp(false)
+	if on == off {
+		t.Fatal("the follow hint reads the same whether following or not")
+	}
+	// Both halves stay present, so the key still reads as a toggle.
+	for _, s := range []string{on, off} {
+		if !strings.Contains(s, "on") || !strings.Contains(s, "off") {
+			t.Errorf("hint %q dropped one half of the toggle", s)
+		}
+	}
+	// The active half is marked twice over — colour and underline — because one
+	// word in a dense single-line footer is easy to miss by colour alone.
+	if !strings.Contains(on, "[green::bu]on[white::BU]") {
+		t.Errorf("following: %q does not mark \"on\" as active", on)
+	}
+	if !strings.Contains(off, "[gray::bu]off[white::BU]") {
+		t.Errorf("not following: %q does not mark \"off\" as active", off)
+	}
+	// Marking "off" as active must not also mark "on".
+	if strings.Contains(off, "[green::bu]on") {
+		t.Errorf("not following, yet %q still highlights \"on\"", off)
 	}
 }

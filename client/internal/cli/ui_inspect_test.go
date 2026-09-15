@@ -4,17 +4,19 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/rivo/tview"
 )
 
 // inspectViewFor builds an inspectView detached from the app, so the render half
 // (populate) can be exercised without a screen.
 func inspectViewFor(lines []inspLine) *inspectView {
+	table, tabs, frame := newInspectWidgets()
 	return &inspectView{
-		table:      tview.NewTable(),
+		table:      table,
+		tabs:       tabs,
+		frame:      frame,
 		lines:      lines,
 		loaded:     true,
 		rowNet:     map[int]string{},
@@ -145,5 +147,48 @@ func TestInspectNetworkRowNote(t *testing.T) {
 	}
 	if strings.Contains(out, "dns names") {
 		t.Errorf("a noted row must not also count dns names:\n%s", out)
+	}
+}
+
+// The overlay's three views are named on screen, all at once. Before this the
+// only place any of them was named was a footer hint for the NEXT one, so the
+// resource-usage view was reachable but undiscoverable: you had to press "t"
+// twice, past a hint that said "raw json", to find out it existed.
+func TestInspectTabStripNamesEveryView(t *testing.T) {
+	strip := inspTabStrip(inspModeTable)
+	for i, m := range inspModes {
+		if !strings.Contains(strip, m.label()) {
+			t.Errorf("the strip does not name %q: %s", m.label(), strip)
+		}
+		// Each carries the digit that selects it, matching the main tab bar.
+		if !strings.Contains(strip, fmt.Sprintf("%s[-::B] [#64748b]%d", m.label(), i+1)) &&
+			!strings.Contains(strip, fmt.Sprintf("%s[-::B] [#2dd4bf::b]%d", m.label(), i+1)) {
+			t.Errorf("%q is not followed by the digit %d: %s", m.label(), i+1, strip)
+		}
+	}
+
+	// Exactly one tab is accented, and it is the active one.
+	for _, active := range inspModes {
+		s := inspTabStrip(active)
+		if n := strings.Count(s, "[#2dd4bf::b]"); n != 2 { // label + digit
+			t.Errorf("%s: %d accented spans, want the label and its digit", active.label(), n)
+		}
+		if !strings.Contains(s, "[#2dd4bf::b]"+active.label()) {
+			t.Errorf("%s is not the accented tab: %s", active.label(), s)
+		}
+	}
+}
+
+// The digits the strip advertises must select the view they sit next to. An
+// off-by-one here would silently open the wrong view.
+func TestInspectDigitsMatchTheStripOrder(t *testing.T) {
+	want := []inspMode{inspModeTable, inspModeStats, inspModeRaw}
+	if len(inspModes) != len(want) {
+		t.Fatalf("strip has %d tabs, want %d", len(inspModes), len(want))
+	}
+	for i, m := range want {
+		if inspModes[i] != m {
+			t.Errorf("digit %d selects %q, want %q", i+1, inspModes[i].label(), m.label())
+		}
 	}
 }

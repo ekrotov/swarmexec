@@ -918,7 +918,7 @@
           <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> mayúscula) — sobre un contenedor sus propios logs, sobre un servicio los logs agregados de todas sus tareas</td></tr>
           <tr><td><kbd>!</kbd></td><td>abre el overlay de riesgos de seguridad para toda la lista de servicios (ver más abajo)</td></tr>
           <tr><td><kbd>p</kbd></td><td>reenvía el puerto de la tarea bajo el cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>inspecciona el nodo bajo el cursor — un overlay navegable con un resumen tabular; mueve la selección con <kbd>↑</kbd>/<kbd>↓</kbd> o <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copia la línea seleccionada, <kbd>t</kbd> rota entre tabla → stats → JSON crudo del daemon (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> cierra). Sobre un <strong>servicio</strong> el overlay también lo edita: <kbd>s</kbd> escalar, <kbd>f</kbd> forzar actualización, <kbd>p</kbd> puertos, <kbd>l</kbd> etiquetas, <kbd>e</kbd> env, <kbd>n</kbd> redes, <kbd>S</kbd> secretos, <kbd>v</kbd> montajes, <kbd>A</kbd> alias; <kbd>D</kbd> diagnostica <em>por qué</em> no se ejecuta en todas partes; <kbd>X</kbd> lo elimina</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspecciona el nodo bajo el cursor — un overlay navegable con un resumen tabular; mueve la selección con <kbd>↑</kbd>/<kbd>↓</kbd> o <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copia la línea seleccionada, una <strong>tira de pestañas</strong> arriba nombra las tres vistas y <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> seleccionan directamente tabla / stats / JSON crudo del daemon, mientras que <kbd>t</kbd> las rota (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> cierra). Sobre un <strong>servicio</strong> el overlay también lo edita: <kbd>s</kbd> escalar, <kbd>f</kbd> forzar actualización, <kbd>p</kbd> puertos, <kbd>l</kbd> etiquetas, <kbd>e</kbd> env, <kbd>n</kbd> redes, <kbd>S</kbd> secretos, <kbd>v</kbd> montajes, <kbd>A</kbd> alias; <kbd>D</kbd> diagnostica <em>por qué</em> no se ejecuta en todas partes; <kbd>X</kbd> lo elimina</td></tr>
           <tr><td><kbd>X</kbd></td><td>elimina un servicio <strong>directamente desde el árbol</strong> (<kbd>X</kbd> mayúscula, es decir Shift+x) — sin pasar por el overlay de inspección. Sobre qué actúa depende de la fila bajo el cursor: en una fila de <strong>servicio</strong> elimina ese servicio; en una fila de <strong>contenedor</strong> elimina el <strong>servicio propietario</strong> del contenedor, porque una tarea suelta no puede eliminarse por sí sola — Swarm la volvería a planificar de inmediato; en una fila de <strong>stack</strong> no elimina nada y en su lugar avisa brevemente en el pie de que los servicios de un stack se eliminan individualmente, o con <code>docker stack rm &lt;stack&gt;</code>. Pasa por la <strong>misma confirmación</strong> que la <kbd>X</kbd> de la inspección más abajo — <strong>borra permanentemente</strong> el servicio y detiene todas sus tareas; no se puede deshacer. Tecla mayúscula fija, no una acción remapeable del keymap; el pie la lista en rojo como <span style="color:#f85149"><em>X remove</em></span> y el overlay <kbd>?</kbd> también la lista. La <kbd>X</kbd> dentro del overlay de inspección no cambia</td></tr>
         </tbody>
       </table></div>
@@ -1208,12 +1208,19 @@
         etiquetas, volúmenes/montajes y secretos (y configs) primero, luego puertos, imagen,
         modo, env, recursos, colocación y política de actualización (más estado, nodo e id de
         contenedor para un contenedor/tarea), con los ids y las marcas de tiempo al final.
-        Pulsa <kbd>t</kbd> para rotar entre las <strong>tres</strong> vistas del overlay —
-        <strong>tabla&nbsp;→ stats&nbsp;→ JSON crudo del daemon</strong>— y volver; el pie
-        nombra siempre la siguiente y el título del overlay dice en cuál estás. Ten en
-        cuenta que la vista tabular es la vista de tarea del manager, no una
-        <code>docker container inspect</code> completa y local del contenedor en ejecución —
-        una inspección real de contenedor a través del agente está planificada.
+        La primera línea del overlay, dentro del borde y fija por encima del contenido que
+        se desplaza, es una <strong>tira de pestañas</strong> que nombra sus
+        <strong>tres</strong> vistas — <code>table 1&nbsp;&nbsp; stats 2&nbsp;&nbsp; raw json 3</code>
+        — con la actual en el color de acento; tiene la misma forma que la barra de pestañas
+        de la ventana principal: una etiqueta seguida del dígito que la selecciona.
+        <kbd>1</kbd>, <kbd>2</kbd> y <kbd>3</kbd> saltan <strong>directamente</strong> a la
+        tabla, a stats y al JSON crudo del daemon, y <kbd>t</kbd> sigue rotando
+        <strong>tabla&nbsp;→ stats&nbsp;→ JSON crudo</strong> y vuelta. La pista del pie es
+        simplemente <em>1-3/t view</em>, y el título del borde ya no repite el nombre de la
+        vista actual — dice solo <code>inspect service foo</code>, porque la tira ya indica
+        dónde estás. Ten en cuenta que la vista tabular es la vista de tarea del manager, no
+        una <code>docker container inspect</code> completa y local del contenedor en
+        ejecución — una inspección real de contenedor a través del agente está planificada.
       </p>
       <p>
         <strong>La vista de stats.</strong> La del medio es el <em>uso de recursos en
@@ -1268,8 +1275,8 @@
         lugares— para que puedas capturar un único id, montaje o dirección sin seleccionar
         texto a mano. <kbd>Enter</kbd> también copia, salvo en una fila colapsable de
         <strong>NETWORKS</strong>, donde en su lugar expande/colapsa esa fila (véase más abajo).
-        Las tres vistas (el resumen tabular, la vista de stats y el JSON crudo, que se rotan
-        con <kbd>t</kbd>) son seleccionables y copiables línea a línea. Un <strong>pie siempre lista las teclas
+        Las tres vistas (el resumen tabular, la vista de stats y el JSON crudo, a las que se
+        llega con <kbd>1</kbd>–<kbd>3</kbd> o rotando con <kbd>t</kbd>) son seleccionables y copiables línea a línea. Un <strong>pie siempre lista las teclas
         disponibles</strong>, para que lo que puedes hacer sea visible de un vistazo; para un
         servicio el pie muestra además las teclas de edición de más abajo.
       </p>
@@ -1279,7 +1286,8 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>mueve la selección entre líneas de datos (se omiten encabezados/blancos)</td></tr>
           <tr><td><kbd>y</kbd></td><td>copia la línea seleccionada al portapapeles (OSC52) — siempre</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>en una fila colapsable de <strong>NETWORKS</strong>, expande/colapsa ese nivel — las filas anidan en dos niveles, una red y su desglose <code>N containers</code>; en cualquier otra línea, la copia (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>rota entre las tres vistas — resumen tabular → <strong>stats</strong> (CPU/memoria en vivo, véase más abajo) → JSON crudo del daemon → vuelta; las tres seleccionables, y el pie nombra la siguiente</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>selecciona una vista directamente — <strong>1</strong> resumen tabular, <strong>2</strong> <strong>stats</strong> (CPU/memoria en vivo, véase más abajo), <strong>3</strong> JSON crudo del daemon; son los dígitos que muestra la tira de pestañas</td></tr>
+          <tr><td><kbd>t</kbd></td><td>rota entre las tres vistas — resumen tabular → <strong>stats</strong> (CPU/memoria en vivo, véase más abajo) → JSON crudo del daemon → vuelta; las tres seleccionables, y la tira de pestañas de arriba marca en cuál estás</td></tr>
           <tr><td><kbd>a</kbd></td><td>menú de acciones — todos los editores y acciones del servicio en una lista, sin Shift (solo servicios; ver abajo)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edita el servicio — escalar / forzar actualización / puertos / etiquetas / env / redes / secretos / montajes / alias (solo servicio; <kbd>S</kbd> es mayúscula, Shift+s, para distinguirla de <kbd>s</kbd> escalar; <kbd>A</kbd> también es mayúscula; véase más abajo)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>cierra el overlay</td></tr>
@@ -1374,7 +1382,7 @@
       </p>
       <p>
         Cuando inspeccionas un <strong>servicio</strong> (no una hoja de contenedor/tarea,
-        cuyo overlay permanece de solo lectura), el título del overlay expone además varias
+        cuyo overlay permanece de solo lectura), el pie del overlay expone además varias
         teclas de edición, cada una un <code>ServiceUpdate</code> de la API del manager que
         dispara una actualización progresiva / reconciliación de las tareas del servicio.
       </p>

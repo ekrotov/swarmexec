@@ -29,6 +29,8 @@ type inspectView struct {
 	fetch   func() ([]inspLine, string, error) // pure data source (see inspect.go)
 
 	table      *tview.Table
+	tabs       *tview.TextView // the view strip, pinned above the scrolling table
+	frame      *tview.Flex     // strip + table; carries the border and title
 	lines      []inspLine
 	rawJSON    string
 	plain      []string        // plain text of each current row, for copy
@@ -44,13 +46,29 @@ type inspectView struct {
 	restoreHelp func()
 }
 
+// newInspectWidgets builds the overlay's three widgets and their nesting. The
+// border belongs to the FRAME, not the table: that is what keeps the tab strip
+// inside the box and pinned while the table scrolls beneath it.
+//
+// It is a function of its own so the tests build the same arrangement the app
+// does — populate writes to all three, and a test double missing one of them
+// would only fail at the moment it is dereferenced.
+func newInspectWidgets() (*tview.Table, *tview.TextView, *tview.Flex) {
+	table := tview.NewTable().SetSelectable(true, false)
+	tabs := tview.NewTextView().SetDynamicColors(true)
+	frame := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(tabs, 1, 0, false).
+		AddItem(table, 0, 1, true)
+	frame.SetBorder(true)
+	return table, tabs, frame
+}
+
 // showInspect opens an inspect overlay for one entity. title/op are display and
 // logging labels; editSvc is the service name for a service inspect (enabling the
 // editor keys) or "" for a task/container; fetch yields the structured + raw
 // views. It builds an inspectView and hands off to its methods.
 func (u *ui) showInspect(title string, op string, editSvc string, subject statsSubject, fetch func() ([]inspLine, string, error)) {
-	table := tview.NewTable().SetSelectable(true, false)
-	table.SetBorder(true)
+	table, tabs, frame := newInspectWidgets()
 	iv := &inspectView{
 		u:          u,
 		title:      title,
@@ -59,6 +77,8 @@ func (u *ui) showInspect(title string, op string, editSvc string, subject statsS
 		subject:    subject,
 		fetch:      fetch,
 		table:      table,
+		tabs:       tabs,
+		frame:      frame,
 		rowNet:     map[int]string{},
 		rowUpgrade: map[int]string{},
 		expanded:   map[string]bool{},
@@ -92,6 +112,31 @@ func (m inspMode) label() string {
 	}
 }
 
+// inspModes is the strip's order, and the order the digits 1-3 select.
+var inspModes = []inspMode{inspModeTable, inspModeStats, inspModeRaw}
+
+// inspTabStrip renders the overlay's views as a tab bar, in the same shape as
+// the main window's: the label, then the digit that selects it, the current one
+// in the accent colour.
+//
+// It exists because naming only the NEXT view — which is all the footer's "t"
+// hint could do — hid the whole feature. An operator who never pressed "t"
+// twice had no way to learn there was a resource-usage view at all, and the one
+// hint they did see ("t raw json", once they were in stats) described something
+// else. Three named tabs say what the overlay holds without anyone having to
+// step through it.
+func inspTabStrip(active inspMode) string {
+	var b strings.Builder
+	for i, m := range inspModes {
+		lbl, num := "[#94a3b8]", "[#64748b]"
+		if m == active {
+			lbl, num = "[#2dd4bf::b]", "[#2dd4bf::b]"
+		}
+		fmt.Fprintf(&b, "  %s%s[-::B] %s%d[-::B] ", lbl, m.label(), num, i+1)
+	}
+	return b.String()
+}
+
 // statsSubject says what the STATS view should measure: a whole service (every
 // container of it) or one container.
 type statsSubject struct {
@@ -101,12 +146,16 @@ type statsSubject struct {
 
 // keysText builds the footer key hints for the current mode.
 func (iv *inspectView) keysText() string {
-	toggle := iv.mode.next().label()
 	// Front-load the escape hatches ("? help" and "Esc/q close") so that,
 	// when this dense line overflows a narrow terminal, it is the tail of
 	// actions that clips — never the way out or the pointer to the full key
 	// list. "?" opens the complete reference (showHelp).
-	parts := []string{"[yellow]?[white] help", "[yellow]Esc/q[white] close", "[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]t[white] " + toggle}
+	//
+	// The views are named by the strip at the top of the overlay, so the footer
+	// only has to say how to reach them. It used to name the next one instead,
+	// which was the only place they were named at all — and it could never show
+	// more than one of the three.
+	parts := []string{"[yellow]?[white] help", "[yellow]Esc/q[white] close", "[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]1-3/t[white] view"}
 	if iv.editSvc != "" {
 		// The ~14 editor actions live behind the "a" menu (showActions);
 		// the footer stays short. X (destructive) stays a bare key.
@@ -137,7 +186,9 @@ func (iv *inspectView) setFooter(status string) {
 // handleKey and keeps the selection stable across re-renders.
 func (iv *inspectView) populate() {
 	table := iv.table
-	table.SetTitle(fmt.Sprintf(" inspect %s — %s ", iv.title, iv.mode.label()))
+	// The strip names the current view, so the title no longer repeats it.
+	iv.frame.SetTitle(" inspect " + iv.title + " ")
+	iv.tabs.SetText(inspTabStrip(iv.mode))
 	keepRow, _ := table.GetSelection()
 	table.Clear()
 	iv.plain = iv.plain[:0]
@@ -562,6 +613,13 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		iv.mode = iv.mode.next()
 		iv.populate()
 		return nil
+	case ev.Key() == tcell.KeyRune && ev.Rune() >= '1' && ev.Rune() <= '3':
+		// The digits the strip shows, selecting a view directly — the same
+		// bargain the main window's tabs offer. No other key in this overlay
+		// takes a digit.
+		iv.mode = inspModes[ev.Rune()-'1']
+		iv.populate()
+		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
@@ -623,7 +681,7 @@ func (iv *inspectView) open() {
 	table.SetInputCapture(iv.handleKey)
 	iv.setHelp, iv.restoreHelp = u.pushOverlayHelp(iv.keysText())
 	iv.populate() // shows "loading…"
-	pages.AddPage(pageInspect, centered(table, 110, 40), true, true)
+	pages.AddPage(pageInspect, centered(iv.frame, 110, 40), true, true)
 	app.SetFocus(table)
 	go func() {
 		start := time.Now()

@@ -935,7 +935,7 @@
           <tr><td><kbd>L</kbd></td><td>Logs (großes <kbd>L</kbd>) — auf einem Container dessen eigene Logs, auf einem Service die aggregierten Logs aller seiner Tasks</td></tr>
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
           <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>den Node unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, <kbd>t</kbd> wechselt reihum Tabelle → Stats → rohes Daemon-JSON (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
+          <tr><td><kbd>i</kbd></td><td>den Node unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, eine <strong>Tab-Leiste</strong> oben benennt die drei Ansichten, <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> wählen Tabelle / Stats / rohes Daemon-JSON direkt aus und <kbd>t</kbd> schaltet reihum durch (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
           <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird nichts entfernt, stattdessen weist eine kurze Notiz in der Fußzeile darauf hin, dass die Services eines Stacks einzeln entfernt werden müssen oder mit <code>docker stack rm &lt;stack&gt;</code>. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks; das kann nicht rückgängig gemacht werden. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span style="color:#f85149"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
         </tbody>
       </table></div>
@@ -1226,13 +1226,20 @@
         die nach operativer Relevanz geordnet sind — zuerst Netzwerke, Labels,
         Volumes/Mounts und Secrets (und Configs), dann Ports, Image, Modus, Env,
         Ressourcen, Placement und Update-Policy (plus State, Node und Container-ID bei
-        einem Container/einer Task), mit IDs und Zeitstempeln zuletzt. <kbd>t</kbd> schaltet
-        reihum durch die <strong>drei</strong> Ansichten des Overlays —
-        <strong>Tabelle&nbsp;→ Stats&nbsp;→ rohes Daemon-JSON</strong> — und wieder zurück;
-        der Footer nennt jeweils die nächste, der Overlay-Titel die aktuelle. Beachte,
-        dass die tabellarische Ansicht die Task-Sicht des Managers ist, nicht ein
-        vollständiges node-lokales <code>docker container inspect</code> des laufenden
-        Containers — ein echtes Container-Inspect über den Agent ist geplant.
+        einem Container/einer Task), mit IDs und Zeitstempeln zuletzt. Die erste Zeile des
+        Overlays — innerhalb des Rahmens und fest über dem scrollenden Inhalt — ist eine
+        <strong>Tab-Leiste</strong>, die seine <strong>drei</strong> Ansichten benennt:
+        <code>table 1&nbsp;&nbsp; stats 2&nbsp;&nbsp; raw json 3</code>, die aktuelle in der
+        Akzentfarbe. Sie hat dieselbe Form wie die Tab-Leiste des Hauptfensters — ein Label,
+        gefolgt von der Ziffer, die es auswählt. <kbd>1</kbd>, <kbd>2</kbd> und <kbd>3</kbd>
+        springen <strong>direkt</strong> zu Tabelle, Stats und rohem Daemon-JSON, und
+        <kbd>t</kbd> schaltet weiterhin reihum <strong>Tabelle&nbsp;→ Stats&nbsp;→ rohes
+        JSON</strong> und wieder zurück. Der Footer-Hinweis lautet nur noch
+        <em>1-3/t view</em>, und der Rahmentitel wiederholt die aktuelle Ansicht nicht mehr —
+        er heißt schlicht <code>inspect service foo</code>, denn die Leiste sagt bereits, wo
+        du bist. Beachte, dass die tabellarische Ansicht die Task-Sicht des Managers ist,
+        nicht ein vollständiges node-lokales <code>docker container inspect</code> des
+        laufenden Containers — ein echtes Container-Inspect über den Agent ist geplant.
       </p>
       <p>
         <strong>Die Stats-Ansicht.</strong> Die mittlere der drei zeigt die
@@ -1293,7 +1300,8 @@
         <kbd>Enter</kbd> kopiert ebenfalls, außer auf einer einklappbaren
         <strong>NETWORKS</strong>-Zeile, wo es stattdessen diese Zeile
         aus-/einklappt (siehe unten). Alle drei Ansichten (die tabellarische
-        Zusammenfassung, die Stats-Ansicht und das rohe JSON, mit <kbd>t</kbd> durchgewechselt)
+        Zusammenfassung, die Stats-Ansicht und das rohe JSON, erreichbar über
+        <kbd>1</kbd>–<kbd>3</kbd> oder reihum mit <kbd>t</kbd>)
         sind Zeile für Zeile auswählbar und kopierbar. Ein <strong>Footer listet immer die verfügbaren Tasten</strong>, sodass
         auf einen Blick sichtbar ist, was du tun kannst; bei einem Service zeigt der
         Footer auch die untenstehenden Bearbeitungstasten.
@@ -1304,7 +1312,8 @@
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>die Auswahl zwischen Datenzeilen bewegen (Überschriften/Leerzeilen übersprungen)</td></tr>
           <tr><td><kbd>y</kbd></td><td>die ausgewählte Zeile in die Zwischenablage kopieren (OSC52) — immer</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>auf einer einklappbaren <strong>NETWORKS</strong>-Zeile diese Ebene aus-/einklappen — die Zeilen sind zwei Ebenen tief, ein Netzwerk und sein <code>N containers</code>-Drilldown; auf jeder anderen Zeile sie kopieren (OSC52)</td></tr>
-          <tr><td><kbd>t</kbd></td><td>reihum durch die drei Ansichten schalten — tabellarische Zusammenfassung → <strong>Stats</strong> (tatsächliche CPU-/Memory-Nutzung, siehe unten) → rohes Daemon-JSON → zurück; alle drei auswählbar, und der Footer nennt jeweils die nächste</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>eine Ansicht direkt auswählen — <strong>1</strong> tabellarische Zusammenfassung, <strong>2</strong> <strong>Stats</strong> (tatsächliche CPU-/Memory-Nutzung, siehe unten), <strong>3</strong> rohes Daemon-JSON; es sind die Ziffern, die die Tab-Leiste zeigt</td></tr>
+          <tr><td><kbd>t</kbd></td><td>reihum durch die drei Ansichten schalten — tabellarische Zusammenfassung → <strong>Stats</strong> (tatsächliche CPU-/Memory-Nutzung, siehe unten) → rohes Daemon-JSON → zurück; alle drei auswählbar, und die Tab-Leiste oben markiert die aktuelle</td></tr>
           <tr><td><kbd>a</kbd></td><td>Aktionsmenü — jeder Service-Editor und jede Aktion in einer Liste, ohne Shift (nur Service; siehe unten)</td></tr>
           <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>den Service bearbeiten — Skalieren / Force-Update / Ports / Labels / Env / Netzwerke / Secrets / Mounts / Aliase (nur Service; <kbd>S</kbd> ist groß, Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden; <kbd>A</kbd> ist ebenfalls groß; siehe unten)</td></tr>
           <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>das Overlay schließen</td></tr>
@@ -1405,7 +1414,7 @@
       </p>
       <p>
         Wenn du einen <strong>Service</strong> inspizierst (nicht ein Container/Task-Blatt,
-        dessen Overlay schreibgeschützt bleibt), stellt der Overlay-Titel auch mehrere
+        dessen Overlay schreibgeschützt bleibt), stellt der Overlay-Footer auch mehrere
         Bearbeitungstasten bereit, jede ein Manager-API-<code>ServiceUpdate</code>, das ein
         Rolling Update / eine Rekonziliation der Tasks des Service auslöst.
       </p>
