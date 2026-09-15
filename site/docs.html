@@ -211,6 +211,14 @@
 
       <!-- 2 -->
       <h2 id="install">2. Install</h2>
+      <p id="requirements">
+        <strong>Requires Docker Engine 19.03 or newer</strong> (API <strong>1.40</strong>)
+        on the manager and on every node. swarmexec refuses an older daemon at connect
+        with a message naming both versions, rather than connecting and then failing one
+        view at a time. Two features want a little more from the <em>node's</em> daemon —
+        live resource usage and the per-node image view need <strong>Docker 23.0</strong>
+        (API 1.41/1.42); below that they stay empty and say so instead of failing.
+      </p>
       <p>The client is a single static binary. Grab the latest release build for your platform:</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64

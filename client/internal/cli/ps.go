@@ -51,7 +51,7 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 		service = args[0]
 	}
 
-	dcli, err := dockerEP.client()
+	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

@@ -18,8 +18,9 @@ import (
 // Docker CLI contexts (--context / $DOCKER_CONTEXT / the config's current
 // context) including ssh:// endpoints — which the bare SDK's client.FromEnv
 // does not support (REQUIREMENTS §2).
-func newDockerClient(contextOverride string) (*client.Client, error) {
-	return resolveEndpoint(contextOverride).client()
+// It also refuses a daemon older than swarmexec supports; see minDockerAPI.
+func newDockerClient(ctx context.Context, contextOverride string) (*client.Client, error) {
+	return resolveEndpoint(contextOverride).connect(ctx)
 }
 
 // dockerClientForHost builds the client for an ALREADY RESOLVED endpoint. The

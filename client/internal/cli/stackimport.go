@@ -59,11 +59,11 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 	if len(args) > 1 {
 		name = args[1]
 	}
-	dcli, err := newDockerClient(g.dockerContext)
+	ctx := cmdContext(cmd)
+	dcli, err := newDockerClient(ctx, g.dockerContext)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
-	ctx := cmdContext(cmd)
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 
 	plan, err := stackfile.PlanFile(ctx, dcli, path, name)

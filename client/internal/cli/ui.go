@@ -196,7 +196,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOve
 	// the UI then stops and the caller restarts against it.
 	var switchTo string
 
-	dcli, err := dockerEP.client()
+	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
 		return "", &cliError{code: session.TransportFailure, err: err}
 	}
