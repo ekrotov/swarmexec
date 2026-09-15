@@ -174,20 +174,25 @@
 
       <div class="slideshow" role="group" aria-roledescription="karuzela" aria-label="Demonstracje funkcji" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="1 / 3">
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="1 / 4">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="Zamiast docker node ls, szukania węzła, ssh node-3 i docker exec, wystarczy uruchomić: swarmexec exec web -- sh">
             <figcaption><b>exec w całym klastrze</b> — shell w dowolnym zadaniu, z jednego terminala</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="2 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="2 / 4" hidden>
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 zestawia przekierowanie do zadania na node-3, a potem curl localhost:9090 kończy się powodzeniem — bez SSH i bez publikowanego portu">
             <figcaption><b>przekierowanie portu z laptopa</b> — dostań się do portu zadania, bez SSH, bez ingressu</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="3 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="3 / 4" hidden>
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
                  alt="swarmexec ui: TUI w terminalu pokazująca klaster jako drzewo stacków, usług i kontenerów; jedna usługa jest rozwinięta do swoich zadań na node-2, node-4 i node-5, a nakładka z ryzykami bezpieczeństwa wypisuje oznaczone usługi">
             <figcaption><b>TUI dla całego klastra</b> — stacki, usługi, kontenery, logi i ryzyka</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="4 / 4" hidden>
+            <img class="demo" src="/report.gif" width="860" height="470" loading="lazy"
+                 alt="swarmexec security report -o security.md zapisuje raport Markdown: tabelę podsumowania ze znaleziskami wysokimi, średnimi i niskimi, a potem znaleziska klastra, takie jak nieszyfrowana sieć overlay i menedżery bez autolocka">
+            <figcaption><b>raport bezpieczeństwa o całym klastrze</b> — usługi, sieci, sekrety i węzły, jako Markdown</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -196,6 +201,7 @@
             <button class="dot" type="button" aria-label="Pokaż demo: exec w całym klastrze" aria-current="true"></button>
             <button class="dot" type="button" aria-label="Pokaż demo: przekierowanie portów" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Pokaż demo: TUI w terminalu" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Pokaż demo: raport bezpieczeństwa" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Następny slajd">&#8250;</button>
         </div>

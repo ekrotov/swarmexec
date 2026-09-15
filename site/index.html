@@ -174,20 +174,25 @@
 
       <div class="slideshow" role="group" aria-roledescription="carousel" aria-label="Feature demos" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="1 / 3">
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="1 / 4">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="Instead of docker node ls, finding the node, ssh node-3 and docker exec, just run: swarmexec exec web -- sh">
             <figcaption><b>cluster-wide exec</b> — shell into any task, from one terminal</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="2 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="2 / 4" hidden>
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 brings up a forward to a task on node-3, then curl localhost:9090 succeeds — no SSH and no published port">
             <figcaption><b>port-forward from your laptop</b> — reach a task's port, no SSH, no ingress</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="3 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="3 / 4" hidden>
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
                  alt="swarmexec ui: a terminal UI showing the cluster as a tree of stacks, services and containers; a service is expanded to its tasks on node-2, node-4 and node-5, and the security-risks overlay lists the flagged services">
             <figcaption><b>a terminal UI for the whole cluster</b> — stacks, services, containers, logs and risks</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="4 / 4" hidden>
+            <img class="demo" src="/report.gif" width="860" height="470" loading="lazy"
+                 alt="swarmexec security report -o security.md writes a Markdown report: a summary table of high, medium and low findings, then cluster findings such as an unencrypted overlay network and managers that are not autolocked">
+            <figcaption><b>a security report for the whole cluster</b> — services, networks, secrets and nodes, as Markdown</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -196,6 +201,7 @@
             <button class="dot" type="button" aria-label="Show cluster-wide exec demo" aria-current="true"></button>
             <button class="dot" type="button" aria-label="Show port-forward demo" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Show terminal UI demo" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Show security report demo" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Next slide">&#8250;</button>
         </div>
