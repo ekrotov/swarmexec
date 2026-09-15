@@ -534,6 +534,63 @@
         </tbody>
       </table></div>
 
+      <h3 id="securityreport"><code>security report</code> — un informe Markdown de todo el clúster</h3>
+      <p>
+        El <a href="#tui">overlay de riesgos de seguridad</a> analiza las especificaciones
+        de los servicios y muestra el resultado en pantalla. Esta orden escribe ese mismo
+        análisis — más las comprobaciones que pertenecen al <strong>clúster</strong> y no a
+        ningún servicio concreto — en Markdown, para poder revisarlo lejos de la terminal,
+        adjuntarlo a un ticket, o guardarlo junto a tus ficheros de stack y compararlo
+        versión a versión. Sale por <strong>stdout</strong> salvo que se indique
+        <code>-o</code>, así que se canaliza tan fácilmente como se guarda.
+      </p>
+      <div class="cmd">swarmexec security report -o security.md</div>
+      <p>
+        Cuatro comprobaciones se ejecutan a nivel de clúster, y ninguna de ellas puede
+        responderla la especificación de un servicio:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Comprobación</th><th>Severidad</th><th>Qué señala</th></tr></thead>
+        <tbody>
+          <tr><td><code>network-unencrypted</code> — «el tráfico overlay no está cifrado»</td><td><span style="color:#f2cc60">medium</span></td><td>una <strong>red overlay que transporta tráfico de servicios</strong> sin cifrado del plano de datos. Swarm tuneliza el tráfico entre nodos sobre VXLAN <strong>en claro</strong> a menos que la red se creara con <code>--opt encrypted</code>, y el servicio en ejecución no se ve distinto en ningún caso. Las redes <strong>sin nada conectado</strong> no se señalan — no transportan nada — y tampoco <strong>ingress</strong>, que no puede cifrarse en absoluto, de modo que un hallazgo sobre ella jamás podría resolverse</td></tr>
+          <tr><td><code>autolock-disabled</code> — «los managers no tienen autolock»</td><td><span style="color:#f2cc60">medium</span></td><td>el almacén raft de los managers <strong>no está cifrado en reposo</strong>. Contiene cada secreto, cada config y la clave de la CA del clúster, y su clave está en el mismo disco: quien se lleve el disco de un manager se lo lleva todo. Actívalo con <code>docker swarm update --autolock=true</code> y <strong>guarda la clave de desbloqueo</strong>: un manager reiniciado la pedirá. Si no se puede leer la configuración del swarm, el informe dice <code>autolock-unknown</code> en lugar de suponer — dar por hecho «desactivado» inventaría un hallazgo y dar por hecho «activado» sería una falsa tranquilidad</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>el agente es lo que <strong>aplica la autorización</strong> en cada exec, cada log y cada port-forward, así que uno más antiguo que tu cliente puede no aplicar una regla que el cliente da por vigente. Una discrepancia de <strong>protocolo</strong> es <strong>high</strong> y pesa más que una diferencia de versión: los dos extremos discrepan sobre el contrato mismo, no sobre qué build lo implementa. Un agente que <strong>no respondió</strong> se reporta como <strong>laguna</strong>, no como aprobado. No se reporta desfase para un cliente sin publicar (<code>dev</code>), que difiere de todo agente publicado por construcción — la misma excepción que hace <code>doctor</code></td></tr>
+          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>un secreto o config al que <strong>ningún servicio hace referencia</strong>. Sigue distribuyéndose por el almacén raft y sigue siendo legible para cualquier cosa que alcance un manager — normalmente una credencial que alguien rotó y nunca eliminó, con lo cual el valor antiguo <strong>sigue vivo en el clúster</strong> mucho después de que todos lo den por ido</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Lo que el informe dice de sí mismo.</strong> Se lee lejos de la terminal,
+        por alguien que no estaba cuando se ejecutó, así que lleva su propio contexto:
+        <strong>qué clúster, cuándo y con qué build</strong>. También tiene una sección
+        <strong>Not covered</strong> — agentes inalcanzables, configuración del swarm
+        ilegible, lista de nodos vacía — porque el silencio en un informe de seguridad se
+        lee como una tranquilidad sobre terreno que nunca pisó. El orden depende
+        únicamente de los hallazgos, de modo que dos informes de un clúster sin cambios
+        sólo difieren en la marca de tiempo y pueden compararse entre sí; y eso sólo vale
+        algo porque un hallazgo ausente significa <em>no encontrado</em> y nunca <em>no
+        mirado</em>.
+      </p>
+      <p>
+        El fichero se escribe con <strong><code>0600</code></strong>, creando los
+        directorios padre con <code>0700</code>. Nombra cada servicio, cada red y cada
+        secreto del clúster junto con cada debilidad encontrada: es un mapa de por dónde
+        atacar, y no tiene por qué ser legible para cualquier cuenta de la máquina.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Por defecto</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr><td><code>-o</code>, <code>--output</code></td><td><em>stdout</em></td><td>escribir en este fichero en lugar de stdout</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>tiempo de conexión por nodo al comprobar los agentes</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>no contactar con los agentes de los nodos. Más rápido, y el desfase de agentes aparece entonces en <strong>Not covered</strong> en vez de omitirse en silencio</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        El mismo informe puede escribirse desde la TUI: pulsa <kbd>w</kbd> en el overlay de
+        riesgos de seguridad. Es una recogida nueva de todo el clúster, no un volcado de lo
+        que muestra el overlay, y se ejecuta fuera de la goroutine de la interfaz, de modo
+        que ésta sigue respondiendo mientras habla con cada nodo.
+      </p>
+
       <h3 id="reroll">Volver a desplegar los agentes sin cambiar el secreto</h3>
       <p>
         Tarde o temprano tendrás que volver a desplegar los agentes en un swarm ya
@@ -1117,7 +1174,10 @@
         principio de su fila en el árbol de servicios, en una ranura de ancho fijo
         delante del nombre, de modo que los escudos forman una columna vertical de
         exploración. Pulsa <kbd>!</kbd> para abrir el
-        <strong>overlay de riesgos de seguridad</strong>.
+        <strong>overlay de riesgos de seguridad</strong>, y <kbd>w</kbd> dentro de él para
+        escribir un <a href="#securityreport">informe Markdown de todo el clúster</a>, que
+        cubre más que el overlay: añade las comprobaciones que pertenecen al clúster y no a
+        un servicio.
       </p>
       <p>
         Las ocho comprobaciones que existen hoy. Primero las que pueden marcar un servicio;

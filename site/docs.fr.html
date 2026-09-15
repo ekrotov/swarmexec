@@ -547,6 +547,63 @@
         </tbody>
       </table></div>
 
+      <h3 id="securityreport"><code>security report</code> — un rapport Markdown sur tout le cluster</h3>
+      <p>
+        La <a href="#tui">surcouche des risques de sécurité</a> analyse les spécifications
+        des services et affiche le résultat à l'écran. Cette commande écrit la même analyse
+        — plus les contrôles qui relèvent du <strong>cluster</strong> et d'aucun service en
+        particulier — au format Markdown, pour la relire loin du terminal, la joindre à un
+        ticket, ou la committer à côté de vos fichiers de stack et la comparer d'une
+        version à l'autre. La sortie va sur <strong>stdout</strong> sauf si
+        <code>-o</code> est donné : elle se redirige aussi facilement qu'elle s'enregistre.
+      </p>
+      <div class="cmd">swarmexec security report -o security.md</div>
+      <p>
+        Quatre contrôles s'exécutent au niveau du cluster, et aucun ne peut être répondu
+        par la spécification d'un service :
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Contrôle</th><th>Gravité</th><th>Ce qu'il signale</th></tr></thead>
+        <tbody>
+          <tr><td><code>network-unencrypted</code> — « le trafic overlay n'est pas chiffré »</td><td><span style="color:#f2cc60">medium</span></td><td>un <strong>réseau overlay transportant du trafic de services</strong> sans chiffrement du plan de données. Swarm tunnellise le trafic entre nœuds sur VXLAN <strong>en clair</strong> à moins que le réseau n'ait été créé avec <code>--opt encrypted</code>, et le service en fonctionnement n'a pas l'air différent dans un cas ou dans l'autre. Les réseaux <strong>sans rien d'attaché</strong> ne sont pas signalés — ils ne transportent rien — ni <strong>ingress</strong>, qui ne peut pas être chiffré du tout : un constat le concernant ne pourrait jamais être levé</td></tr>
+          <tr><td><code>autolock-disabled</code> — « les managers ne sont pas autolockés »</td><td><span style="color:#f2cc60">medium</span></td><td>le magasin raft des managers <strong>n'est pas chiffré au repos</strong>. Il contient chaque secret, chaque config et la clé de l'autorité de certification du cluster, et sa clé se trouve sur le même disque : qui emporte le disque d'un manager emporte le tout. Activez-le avec <code>docker swarm update --autolock=true</code> et <strong>conservez la clé de déverrouillage</strong> : un manager redémarré la demandera. Si la configuration du swarm est illisible, le rapport indique <code>autolock-unknown</code> plutôt que de deviner — supposer « désactivé » inventerait un constat, et supposer « activé » serait un faux tout-va-bien</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>l'agent est ce qui <strong>applique l'autorisation</strong> à chaque exec, chaque log et chaque port-forward : un agent plus ancien que votre client peut ne pas appliquer une règle que le client tient pour acquise. Un désaccord de <strong>protocole</strong> est <strong>high</strong> et prime sur un écart de version : les deux extrémités ne s'accordent pas sur le contrat lui-même, et pas seulement sur le build qui l'implémente. Un agent qui <strong>n'a pas répondu</strong> est signalé comme une <strong>lacune</strong>, pas comme un succès. Aucun écart n'est signalé pour un client non publié (<code>dev</code>), qui diffère par construction de tout agent publié — la même exception que fait <code>doctor</code></td></tr>
+          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>un secret ou une config <strong>qu'aucun service ne référence</strong>. Il continue d'être distribué par le magasin raft et reste lisible par tout ce qui atteint un manager — le plus souvent un identifiant que quelqu'un a fait tourner sans jamais le supprimer, si bien que l'ancienne valeur est <strong>toujours vivante dans le cluster</strong> longtemps après que tout le monde la croit partie</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Ce que le rapport dit de lui-même.</strong> Il est lu loin du terminal, par
+        quelqu'un qui n'était pas là quand il a tourné : il porte donc son propre contexte
+        — <strong>quel cluster, quand, avec quel build</strong>. Il comporte aussi une
+        section <strong>Not covered</strong> — agents injoignables, configuration du swarm
+        illisible, liste de nœuds vide — parce que le silence dans un rapport de sécurité
+        se lit comme un tout-va-bien sur un terrain qu'il n'a jamais foulé. L'ordre ne
+        dépend que des constats : deux rapports d'un cluster inchangé ne diffèrent que par
+        l'horodatage et peuvent être comparés l'un à l'autre — ce qui ne vaut quelque chose
+        que parce qu'un constat absent signifie <em>non trouvé</em> et jamais <em>non
+        cherché</em>.
+      </p>
+      <p>
+        Le fichier est écrit en <strong><code>0600</code></strong>, les répertoires parents
+        créés en <code>0700</code>. Il nomme chaque service, chaque réseau et chaque secret
+        du cluster avec chaque faiblesse trouvée : c'est une carte des points d'attaque, et
+        elle n'a rien à faire en lecture pour tous les comptes de la machine.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Option</th><th>Défaut</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-o</code>, <code>--output</code></td><td><em>stdout</em></td><td>écrire dans ce fichier au lieu de stdout</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>délai de connexion par nœud lors de la vérification des agents</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>ne pas contacter les agents des nœuds. Plus rapide, et l'écart des agents figure alors dans <strong>Not covered</strong> au lieu d'être omis en silence</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Le même rapport s'écrit depuis la TUI : appuyez sur <kbd>w</kbd> dans la surcouche
+        des risques de sécurité. C'est une collecte neuve à l'échelle du cluster, pas un
+        vidage de ce que la surcouche affiche, et elle tourne hors de la goroutine de
+        l'interface — celle-ci reste réactive pendant qu'elle interroge chaque nœud.
+      </p>
+
       <h3 id="reroll">Redéployer les agents sans changer le secret</h3>
       <p>
         Tôt ou tard, vous devrez redéployer les agents sur un swarm déjà provisionné :
@@ -1152,7 +1209,11 @@
         <strong>🛡</strong> en tête de sa ligne dans l'arbre des services, dans un
         emplacement de largeur fixe devant le nom, de sorte que les boucliers forment une
         colonne verticale de lecture. Appuyez sur <kbd>!</kbd> pour ouvrir la
-        <strong>surcouche des risques de sécurité</strong>.
+        <strong>surcouche des risques de sécurité</strong>, et sur <kbd>w</kbd> à
+        l'intérieur pour écrire un
+        <a href="#securityreport">rapport Markdown sur tout le cluster</a> — qui couvre
+        davantage que la surcouche, puisqu'il ajoute les contrôles relevant du cluster et
+        non d'un service.
       </p>
       <p>
         Les huit contrôles livrés à ce jour. D'abord ceux qui peuvent marquer un service,

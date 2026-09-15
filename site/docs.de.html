@@ -541,6 +541,64 @@
         </tbody>
       </table></div>
 
+      <h3 id="securityreport"><code>security report</code> — ein Markdown-Bericht über den ganzen Cluster</h3>
+      <p>
+        Das <a href="#tui">Sicherheitsrisiken-Overlay</a> prüft Service-Specs und zeigt das
+        Ergebnis auf dem Bildschirm. Dieser Befehl schreibt dieselbe Prüfung — plus die
+        Checks, die dem <strong>Cluster</strong> gehören und keinem einzelnen Service — als
+        Markdown heraus. So lässt sie sich fern vom Terminal lesen, an ein Ticket hängen
+        oder neben die Stack-Dateien committen und von Release zu Release diffen. Die
+        Ausgabe geht nach <strong>stdout</strong>, solange kein <code>-o</code> angegeben
+        ist, ist also genauso gut pipebar wie speicherbar.
+      </p>
+      <div class="cmd">swarmexec security report -o security.md</div>
+      <p>
+        Vier Prüfungen laufen auf Cluster-Ebene, von denen keine ein Service-Spec
+        beantworten kann:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Prüfung</th><th>Schweregrad</th><th>Was sie meldet</th></tr></thead>
+        <tbody>
+          <tr><td><code>network-unencrypted</code> — „Overlay-Verkehr ist nicht verschlüsselt“</td><td><span style="color:#f2cc60">medium</span></td><td>ein <strong>Overlay-Netz, das Service-Verkehr trägt</strong>, ohne Verschlüsselung der Datenebene. Swarm tunnelt Container-Verkehr zwischen Nodes <strong>im Klartext</strong> über VXLAN, solange das Netz nicht mit <code>--opt encrypted</code> angelegt wurde — und am laufenden Service sieht man so oder so keinen Unterschied. Netze <strong>ohne angehängte Services</strong> werden nicht gemeldet (sie tragen nichts), und <strong>ingress</strong> ebenso wenig: es lässt sich gar nicht verschlüsseln, ein Befund darauf wäre nie abzustellen</td></tr>
+          <tr><td><code>autolock-disabled</code> — „Manager sind nicht autolocked“</td><td><span style="color:#f2cc60">medium</span></td><td>der Raft-Speicher der Manager ist <strong>nicht im Ruhezustand verschlüsselt</strong>. Er enthält jedes Secret, jede Config und den CA-Schlüssel des Clusters, und sein Schlüssel liegt auf derselben Platte — wer die Platte eines Managers mitnimmt, hat alles. Einschalten mit <code>docker swarm update --autolock=true</code>, und den <strong>Unlock-Key aufbewahren</strong>: ein neu gestarteter Manager fragt danach. Ist die Swarm-Konfiguration nicht lesbar, meldet der Bericht <code>autolock-unknown</code> statt zu raten — „aus“ anzunehmen erfände einen Befund, „an“ wäre eine Falschentwarnung</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>der Agent ist das, was bei jedem Exec, jedem Log und jedem Port-Forward die <strong>Autorisierung durchsetzt</strong> — ein Agent, der älter ist als dein Client, setzt womöglich eine Regel nicht durch, die der Client voraussetzt. Ein <strong>Protokoll</strong>-Mismatch ist <strong>high</strong> und wiegt schwerer als eine Versionsdifferenz: die beiden Seiten sind sich über den Vertrag selbst uneinig, nicht bloß über den Build. Ein Agent, der <strong>nicht geantwortet</strong> hat, wird als <strong>Lücke</strong> ausgewiesen, nicht als bestanden. Für einen unveröffentlichten (<code>dev</code>) Client wird kein Skew gemeldet — er weicht von jedem Release-Agenten naturgemäß ab, dieselbe Ausnahme macht <code>doctor</code></td></tr>
+          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>ein Secret oder eine Config, auf die <strong>kein Service verweist</strong>. Sie wird weiterhin über den Raft-Speicher verteilt und ist für alles lesbar, was einen Manager erreicht — meist ein Zugangsdatum, das jemand rotiert und nie entfernt hat. Der alte Wert ist also <strong>noch im Cluster</strong>, lange nachdem alle ihn für weg halten</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Was der Bericht über sich selbst sagt.</strong> Er wird fern vom Terminal
+        gelesen, von jemandem, der beim Lauf nicht dabei war — also trägt er seinen Kontext
+        mit: <strong>welcher Cluster, wann, mit welchem Build</strong>. Außerdem hat er
+        einen Abschnitt <strong>Not covered</strong> — nicht erreichte Agenten, unlesbare
+        Swarm-Konfiguration, leere Node-Liste —, denn Schweigen in einem Sicherheitsbericht
+        liest sich als Entwarnung für Boden, den er nie betreten hat. Die Reihenfolge hängt
+        allein von den Befunden ab, zwei Berichte eines unveränderten Clusters
+        unterscheiden sich also nur im Zeitstempel und lassen sich gegeneinander diffen —
+        was nur deshalb etwas wert ist, weil ein fehlender Befund <em>nicht gefunden</em>
+        heißt und nie <em>nicht geschaut</em>.
+      </p>
+      <p>
+        Die Datei wird <strong><code>0600</code></strong> geschrieben, eventuell nötige
+        Elternverzeichnisse <code>0700</code>. Sie nennt jeden Service, jedes Netz und
+        jedes Secret des Clusters samt jeder gefundenen Schwäche — das ist eine
+        Angriffskarte, und die hat nichts in einer für jedes Konto der Maschine lesbaren
+        Datei verloren.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>-o</code>, <code>--output</code></td><td><em>stdout</em></td><td>in diese Datei schreiben statt nach stdout</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Verbindungs-Timeout pro Node beim Prüfen der Agents</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>die Node-Agents nicht kontaktieren. Schneller; der Agent-Skew steht dann unter <strong>Not covered</strong>, statt stillschweigend zu fehlen</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Denselben Bericht schreibt auch das TUI: <kbd>w</kbd> im
+        Sicherheitsrisiken-Overlay. Er wird dabei frisch clusterweit erhoben, ist also kein
+        Abzug dessen, was das Overlay zeigt, und läuft außerhalb der UI-Goroutine — die
+        Oberfläche bleibt bedienbar, während er jeden Node abfragt.
+      </p>
+
       <h3 id="reroll">Agents neu ausrollen, ohne das Secret zu ändern</h3>
       <p>
         Früher oder später musst du die Agents in einem bereits provisionierten Swarm neu
@@ -1136,7 +1194,11 @@
         wird nichts ausgeführt. Ein Service mit einem Befund, der Handlung verdient, wird
         im Service-Baum mit einem vorangestellten <strong>🛡</strong> markiert — in einem
         Slot fester Breite vor dem Namen, sodass die Schilde eine senkrechte Scan-Spalte
-        bilden. <kbd>!</kbd> öffnet das <strong>Sicherheitsrisiken-Overlay</strong>.
+        bilden. <kbd>!</kbd> öffnet das <strong>Sicherheitsrisiken-Overlay</strong>, und
+        <kbd>w</kbd> darin schreibt einen
+        <a href="#securityreport">clusterweiten Markdown-Bericht</a> — der mehr abdeckt als
+        das Overlay, weil er die Prüfungen ergänzt, die dem Cluster gehören und keinem
+        Service.
       </p>
       <p>
         Die acht Prüfungen, die es heute gibt. Zuerst die, die einen Service markieren
