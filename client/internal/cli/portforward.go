@@ -73,7 +73,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 
 	ctx := cmdContext(cmd)
 
-	dcli, err := dockerEP.client()
+	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

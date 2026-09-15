@@ -5,8 +5,10 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"net"
 
+	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/client"
 
 	"swarmexec/client/internal/dockerctx"
@@ -65,6 +67,63 @@ func resolveEndpoint(contextName string) dockerEndpoint {
 		Host:      host,
 		ProxyJump: dockerctx.ResolveProxyJump(contextName),
 	}
+}
+
+// minDockerAPI is the oldest Docker Engine API swarmexec supports, and 1.40 is
+// Docker Engine 19.03 (2019).
+//
+// Three reasons for this number rather than a lower one. It is where the docker
+// client library is heading — the moby/moby line we will move to refuses
+// anything below it outright — so stating it now makes that migration a
+// non-event instead of a surprise. Nothing older is tested against. And the
+// alternative is what we had: no floor at all, a library fallback to API 1.24
+// (Docker 1.12, 2016), and a tool that connects and then fails one view at a
+// time, which is the failure mode this project keeps having to undo.
+//
+// Two features need MORE than this from the node's own daemon — resource usage
+// and the per-node image view, which want 1.41 and 1.42. Those degrade rather
+// than fail: they stay empty and say so. The floor here is about whether
+// swarmexec can do its job at all.
+const minDockerAPI = "1.40"
+
+// minDockerEngine is the release that speaks minDockerAPI, for an error message
+// an operator can act on. Nobody knows their API version by heart.
+const minDockerEngine = "19.03"
+
+// connect builds the manager client and refuses a daemon too old to serve it.
+//
+// The check lives here because this is the one door: every command reaches the
+// manager through it, so none of them can forget. It costs one Ping, which the
+// client's version negotiation performs on first contact anyway.
+func (e dockerEndpoint) connect(ctx context.Context) (*client.Client, error) {
+	c, err := e.client()
+	if err != nil {
+		return nil, err
+	}
+	if err := checkAPIVersion(ctx, c); err != nil {
+		c.Close()
+		return nil, err
+	}
+	return c, nil
+}
+
+// checkAPIVersion refuses a daemon below minDockerAPI.
+//
+// A Ping that fails for any OTHER reason is deliberately not treated as a
+// version problem: the daemon may simply be unreachable, and reporting that as
+// "too old" would send the operator looking in the wrong place. The real error
+// surfaces from whatever call comes next.
+func checkAPIVersion(ctx context.Context, c *client.Client) error {
+	ping, err := c.Ping(ctx)
+	if err != nil || ping.APIVersion == "" {
+		return nil
+	}
+	if versions.LessThan(ping.APIVersion, minDockerAPI) {
+		return fmt.Errorf(
+			"this Docker daemon speaks API %s; swarmexec needs at least API %s (Docker Engine %s or newer)",
+			ping.APIVersion, minDockerAPI, minDockerEngine)
+	}
+	return nil
 }
 
 // client builds the manager API client for this endpoint.

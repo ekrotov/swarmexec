@@ -6,6 +6,7 @@ package cli
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/docker/docker/api/types/versions"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,5 +109,39 @@ func TestUnresolvableEndpointFailsAtTheClient(t *testing.T) {
 	}
 	if d != nil {
 		t.Error("an unresolvable endpoint must not produce a tunnel")
+	}
+}
+
+// The floor is a promise, so it is pinned here rather than left to whoever next
+// edits the constant. 1.40 is Docker Engine 19.03, and the two must stay a pair
+// — an error naming an API version nobody knows by heart is not actionable.
+func TestMinimumDockerVersionIsStated(t *testing.T) {
+	if minDockerAPI != "1.40" {
+		t.Errorf("minDockerAPI = %q; if this moved on purpose, update the docs in all five languages too", minDockerAPI)
+	}
+	if minDockerEngine != "19.03" {
+		t.Errorf("minDockerEngine = %q, which must be the release that speaks API %s", minDockerEngine, minDockerAPI)
+	}
+}
+
+// apiVersionTooOld is the comparison the check rests on, exercised without a
+// daemon: the boundary itself must be INCLUSIVE, or a cluster running exactly
+// the documented minimum would be turned away by the tool that documents it.
+func TestVersionFloorBoundaryIsInclusive(t *testing.T) {
+	cases := []struct {
+		api string
+		old bool
+	}{
+		{"1.24", true},  // the library's old fallback — Docker 1.12
+		{"1.30", true},  // configs work here, but nothing else is tested
+		{"1.39", true},  // one below
+		{"1.40", false}, // exactly the minimum: must be accepted
+		{"1.41", false},
+		{"1.56", false}, // what the test cluster runs
+	}
+	for _, c := range cases {
+		if got := versions.LessThan(c.api, minDockerAPI); got != c.old {
+			t.Errorf("API %s: too old = %v, want %v", c.api, got, c.old)
+		}
 	}
 }

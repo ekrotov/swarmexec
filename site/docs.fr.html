@@ -214,6 +214,15 @@
 
       <!-- 2 -->
       <h2 id="install">2. Installation</h2>
+      <p id="requirements">
+        <strong>Nécessite Docker Engine 19.03 ou plus récent</strong> (API <strong>1.40</strong>)
+        sur le manager et sur chaque nœud. swarmexec refuse un démon plus ancien dès la
+        connexion, en nommant les deux versions, plutôt que de se connecter puis d'échouer vue
+        après vue. Deux fonctionnalités demandent un peu plus au démon <em>du nœud</em> :
+        l'utilisation des ressources en direct et la vue des images par nœud veulent
+        <strong>Docker 23.0</strong> (API 1.41/1.42) ; en dessous elles restent vides et le
+        disent, au lieu d'échouer.
+      </p>
       <p>Le client est un unique binaire statique. Récupérez le build de la dernière version pour votre plateforme :</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64

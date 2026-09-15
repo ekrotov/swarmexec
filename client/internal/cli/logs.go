@@ -80,7 +80,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 
 	ctx := cmdContext(cmd)
 
-	dcli, err := dockerEP.client()
+	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

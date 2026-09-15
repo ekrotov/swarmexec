@@ -71,7 +71,7 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 	}
 	ctx := cmdContext(cmd)
 
-	dcli, err := dockerEP.client()
+	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

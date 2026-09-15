@@ -93,7 +93,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	if cerr != nil {
 		return cerr
 	}
-	dcli, err := newDockerClient(tctx.Name)
+	dcli, err := newDockerClient(ctx, tctx.Name)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}

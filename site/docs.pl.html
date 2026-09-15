@@ -212,6 +212,14 @@
 
       <!-- 2 -->
       <h2 id="install">2. Instalacja</h2>
+      <p id="requirements">
+        <strong>Wymaga Docker Engine 19.03 lub nowszego</strong> (API <strong>1.40</strong>)
+        na menedżerze i na każdym węźle. swarmexec odrzuca starszego demona już przy
+        połączeniu, podając obie wersje, zamiast łączyć się i potem zawodzić widok po widoku.
+        Dwie funkcje wymagają nieco więcej od demona <em>węzła</em>: bieżące zużycie zasobów i
+        widok obrazów per węzeł potrzebują <strong>Dockera 23.0</strong> (API 1.41/1.42) —
+        poniżej pozostają puste i mówią o tym, zamiast zawodzić.
+      </p>
       <p>Klient to pojedynczy statyczny plik binarny. Pobierz najnowszą wersję dla swojej platformy:</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64

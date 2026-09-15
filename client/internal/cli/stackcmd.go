@@ -33,7 +33,7 @@ func newStackLsCmd(g *globalFlags) *cobra.Command {
 		Short: "List the stacks deployed on the cluster",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			dcli, err := newDockerClient(g.dockerContext)
+			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
 				return &cliError{code: session.TransportFailure, err: err}
 			}
@@ -61,7 +61,7 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 			"both are declared external. The file says so in its own header.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dcli, err := newDockerClient(g.dockerContext)
+			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
 				return &cliError{code: session.TransportFailure, err: err}
 			}
@@ -109,7 +109,7 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 			if name == "" {
 				name = stackNameFromPath(path)
 			}
-			dcli, err := newDockerClient(g.dockerContext)
+			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
 				return &cliError{code: session.TransportFailure, err: err}
 			}
