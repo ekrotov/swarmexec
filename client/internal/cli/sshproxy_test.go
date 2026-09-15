@@ -52,7 +52,7 @@ func TestSSHProxyDialerNonSSH(t *testing.T) {
 	// A tcp:// host must not get a proxy dialer (direct dial).
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
 	t.Setenv("DOCKER_CONTEXT", "")
-	dialer, err := sshProxyDialer("")
+	dialer, err := resolveEndpoint("").agentDialer()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

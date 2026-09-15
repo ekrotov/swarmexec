@@ -46,7 +46,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 		Short: "Print the effective client configuration (secret masked)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := g.resolveConfig(cmd)
+			cfg, err := g.resolveConfig(cmd, resolveEndpoint(g.dockerContext))
 			if err != nil {
 				return &cliError{code: usageExitCode, err: err}
 			}

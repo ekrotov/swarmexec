@@ -116,9 +116,14 @@ func nodeDisplayName(hostname, id string) string {
 // name is what the operator typed and recognises; the manager's own name is the
 // fallback, because a report that does not say which cluster it describes is a
 // hazard once two of them are in the same directory.
-func contextLabel(ctx context.Context, dcli *client.Client, g *globalFlags) string {
-	if g.dockerContext != "" {
-		return g.dockerContext
+//
+// contextName is passed in rather than read off the global flags, for the same
+// reason the agent tunnel now is: in the ui the flag and the cluster actually in
+// use come apart the moment someone switches context, and a report headed with
+// the wrong cluster is worse than one with no header at all.
+func contextLabel(ctx context.Context, dcli *client.Client, contextName string) string {
+	if contextName != "" {
+		return contextName
 	}
 	if info, err := dcli.Info(ctx); err == nil && info.Name != "" {
 		return info.Name

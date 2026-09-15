@@ -58,7 +58,8 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	target := args[0]
 	command := args[1:]
 
-	cfg, err := g.resolveConfig(cmd)
+	dockerEP := resolveEndpoint(g.dockerContext)
+	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
@@ -77,7 +78,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	}
 
 	// Resolve node + container via the manager.
-	dcli, err := newDockerClient(g.dockerContext)
+	dcli, err := dockerEP.client()
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}

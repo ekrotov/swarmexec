@@ -56,7 +56,8 @@ type doctorNode struct {
 }
 
 func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
-	cfg, err := g.resolveConfig(cmd)
+	dockerEP := resolveEndpoint(g.dockerContext)
+	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
@@ -66,7 +67,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
 
-	dcli, err := newDockerClient(g.dockerContext)
+	dcli, err := dockerEP.client()
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
