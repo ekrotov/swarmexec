@@ -289,6 +289,16 @@ So with an `ssh://root@manager` context (e.g. `docker context use pk`),
 `swarmexec ps` simply works from your workstation — no need to run on a manager
 or expose the API over TLS.
 
+Over an `ssh://` context the manager API and the node agents each get their own
+ssh connection, and there is one per exec, log stream, port-forward and refresh.
+They **share one transport** via OpenSSH's `ControlMaster`, so only the first
+pays for the handshake and the authentication — measured on a three-node cluster
+behind a jump host, `swarmexec doctor` went from 8 authentications and 3.6 s to
+2 and 1.0 s. The sockets live in `$XDG_RUNTIME_DIR/swarmexec/ssh/` (mode 0700)
+and the shared connection exits 60 s after the last command. Set
+`SWARMEXEC_SSH_MULTIPLEX=0` to turn it off; it is unavailable on Windows, whose
+OpenSSH does not implement connection sharing.
+
 ### Step 4.3 — Provide the mTLS material
 
 Via flags, env vars, or a config file (precedence: defaults → file → env →

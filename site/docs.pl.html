@@ -360,6 +360,7 @@
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>tożsamość w audycie</td></tr>
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>przyciemnienie tła pod nakładką (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_KEYS</code></td><td>ścieżkę do pliku mapowania klawiszy TUI (domyślnie <code>keys.yaml</code> obok konfiguracji)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> wyłącza współdzielone połączenia ssh (zob. <a href="#sshsharing">Współdzielone połączenia ssh</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>kontekst Dockera dla API menedżera</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>bazę domyślnej ścieżki konfiguracji</td></tr>
         </tbody>
@@ -977,6 +978,54 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
       <div class="prompt"><span class="c">$</span> swarmexec context create prod --docker-host ssh://ops@manager --use
 <span class="c">$</span> swarmexec context ls
 <span class="c">$</span> swarmexec --context prod ps</div>
+
+      <h3 id="sshsharing">Współdzielone połączenia ssh</h3>
+      <p>
+        Przy kontekście <code>ssh://</code> swarmexec sięga do klastra przez ssh
+        dwukrotnie: do API managera Dockera przez pomocnika połączeń ssh, a do każdego
+        agenta węzła własnym tunelem do tego samego hosta. Każdy exec, każdy strumień
+        logów, każde przekierowanie portu, każde odpytanie o statystyki i każdy cykl
+        odświeżania otwierał dotąd świeże połączenie ssh — uzgodnienie TCP, wymianę
+        kluczy i uwierzytelnienie na każde wywołanie, i tyle samo na każdy host
+        pośredniczący — do bastionu, który chwilę wcześniej był już połączony.
+      </p>
+      <p>
+        Teraz swarmexec pozwala im współdzielić jeden transport, korzystając z
+        <code>ControlMaster</code> samego OpenSSH: pierwsze połączenie do danego celu je
+        otwiera, a każde kolejne staje się kanałem na nim. Zmierzone na klastrze trzech
+        węzłów za hostem pośredniczącym: <code>swarmexec doctor</code> przeszedł z
+        <strong>8 uwierzytelnień i 3,6&nbsp;s</strong> do <strong>2 i 1,0&nbsp;s</strong>.
+        Sam ruch się nie zmienia, a efekt rośnie wraz z tym, ile robi się w jednej sesji.
+      </p>
+      <ul>
+        <li>
+          Gniazda sterujące znajdują się w <code>$XDG_RUNTIME_DIR/swarmexec/ssh/</code>
+          (zapasowo w katalogu pamięci podręcznej), tworzone z prawami <code>0700</code>
+          — gniazdo sterujące to żywa, uwierzytelniona sesja, więc zostaje we własnym
+          drzewie katalogów użytkownika, nigdy w <code>/tmp</code>.
+        </li>
+        <li>
+          Jedno gniazdo na <em>cel i trasę</em>: dwa konteksty sięgające do tego samego
+          managera przez różne hosty pośredniczące nie współdzielą niczego, bo to nie
+          jest to samo połączenie.
+        </li>
+        <li>
+          Współdzielone połączenie przeżywa polecenie o <strong>60&nbsp;s</strong>, dzięki
+          czemu następne jest tanie, a potem kończy się samo. Później nic ze swarmexeca
+          nie trzyma już połączenia.
+        </li>
+        <li>
+          Gniazdo pozostawione przez brutalnie zabity proces nadrzędny jest nieszkodliwe:
+          ssh stwierdza, że jest martwe, i otwiera zamiast niego zwykłe połączenie.
+        </li>
+        <li>
+          Niedostępne w systemie Windows, którego OpenSSH nie obsługuje współdzielenia
+          połączeń. Wszędzie indziej wyłącza je <code>SWARMEXEC_SSH_MULTIPLEX=0</code> —
+          warto o tym wiedzieć, jeśli samodzielnie konfigurujesz <code>ControlPath</code>,
+          bo ustawienie swarmexeca trafia do wiersza poleceń ssh i ma pierwszeństwo przed
+          <code>~/.ssh/config</code>.
+        </li>
+      </ul>
 
       <!-- 10 -->
       <h2 id="tui">10. TUI</h2>

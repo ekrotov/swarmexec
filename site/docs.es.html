@@ -361,6 +361,7 @@
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>identidad de auditoría</td></tr>
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>atenuación del fondo del overlay (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_KEYS</code></td><td>ruta del archivo de atajos de la TUI (por defecto <code>keys.yaml</code> junto a la configuración)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> desactiva las conexiones ssh compartidas (véase <a href="#sshsharing">Conexiones ssh compartidas</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>contexto de Docker para la API del manager</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base para la ruta de configuración por defecto</td></tr>
         </tbody>
@@ -989,6 +990,54 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       <div class="prompt"><span class="c">$</span> swarmexec context create prod --docker-host ssh://ops@manager --use
 <span class="c">$</span> swarmexec context ls
 <span class="c">$</span> swarmexec --context prod ps</div>
+
+      <h3 id="sshsharing">Conexiones ssh compartidas</h3>
+      <p>
+        Con un contexto <code>ssh://</code>, swarmexec llega al clúster dos veces por
+        ssh: la API del manager de Docker a través del asistente de conexión de ssh, y
+        cada agente de nodo por su propio túnel hacia el mismo host. Cada exec, cada flujo
+        de logs, cada redirección de puertos, cada sondeo de estadísticas y cada ciclo de
+        refresco abría hasta ahora una conexión ssh nueva — un saludo TCP, un intercambio
+        de claves y una autenticación por llamada, y otro tanto por host de salto —
+        contra un bastión que estaba conectado un instante antes.
+      </p>
+      <p>
+        swarmexec ahora les hace compartir un único transporte, usando el propio
+        <code>ControlMaster</code> de OpenSSH: la primera conexión a un destino lo abre y
+        cada una posterior pasa a ser un canal sobre él. Medido en un clúster de tres
+        nodos detrás de un host de salto, <code>swarmexec doctor</code> pasó de
+        <strong>8 autenticaciones y 3,6&nbsp;s</strong> a <strong>2 y 1,0&nbsp;s</strong>.
+        El tráfico en sí no cambia, y el efecto crece con lo que se haga en una sesión.
+      </p>
+      <ul>
+        <li>
+          Los sockets de control viven en <code>$XDG_RUNTIME_DIR/swarmexec/ssh/</code>
+          (o, en su defecto, en el directorio de caché), creados con <code>0700</code> —
+          un socket de control es una sesión autenticada viva, así que se queda en su
+          propio árbol de directorios y nunca en <code>/tmp</code>.
+        </li>
+        <li>
+          Un socket por <em>destino y ruta</em>: dos contextos que alcanzan el mismo
+          manager por hosts de salto distintos no comparten nada, porque no son la misma
+          conexión.
+        </li>
+        <li>
+          La conexión compartida sobrevive al comando <strong>60&nbsp;s</strong>, de modo
+          que el siguiente sale barato, y luego termina por sí sola. Después, nada de
+          swarmexec sigue reteniendo una conexión.
+        </li>
+        <li>
+          Un socket que deje atrás un maestro terminado de forma abrupta es inofensivo:
+          ssh detecta que está muerto y abre una conexión normal en su lugar.
+        </li>
+        <li>
+          No disponible en Windows, cuyo OpenSSH no implementa conexiones compartidas. En
+          el resto, <code>SWARMEXEC_SSH_MULTIPLEX=0</code> lo desactiva — conviene saberlo
+          si usted configura <code>ControlPath</code> por su cuenta, ya que el ajuste de
+          swarmexec va en la línea de comandos de ssh y por tanto tiene prioridad sobre
+          <code>~/.ssh/config</code>.
+        </li>
+      </ul>
 
       <!-- 10 -->
       <h2 id="tui">10. La TUI</h2>
