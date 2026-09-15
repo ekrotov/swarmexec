@@ -644,6 +644,64 @@ swarmexec stack diff postgres.yml postgres</div>
         </tbody>
       </table></div>
 
+      <h3 id="stackdeploy"><code>stack deploy</code> — wdrożenie pliku stacka, po sprawdzeniu</h3>
+      <p>
+        Wczytuje plik stacka, uruchamia <a href="#tui">kontrole bezpieczeństwa</a> na tym,
+        co naprawdę zostałoby wdrożone, i stosuje go. To, co czyni go wartościowym wobec
+        <code>docker stack deploy</code>, to <strong>bramka</strong>: plik jest sprawdzany,
+        <strong>zanim cokolwiek powstanie</strong>, a jeśli znajdzie się coś powyżej
+        informacyjnego, wdrożenie <strong>zatrzymuje się i pyta</strong>.
+      </p>
+      <div class="cmd">swarmexec stack deploy web.yml            # pyta, jeśli coś znaleziono
+swarmexec stack deploy web.yml --check    # tylko sprawdź, nigdy nie wdrażaj
+swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</div>
+      <p>
+        W TUI <kbd>E</kbd> → <em>Deploy a file</em> robi to samo: najpierw znaleziska,
+        <kbd>d</kbd> kontynuuje, <kbd>Esc</kbd> odchodzi. W tym momencie nic jeszcze nie
+        powstało — i właśnie po to jest ta pauza.
+      </p>
+      <p>
+        <strong>Kontrole nie są drugim zestawem reguł.</strong> Plik jest przekształcany
+        dokładnie w te wartości <code>ServiceSpec</code>, które wysłałoby wdrożenie, i na
+        nich działa <strong>osiem istniejących analizatorów</strong> — te same kontrole,
+        które stawiają tarczę w drzewie i wypełniają nakładkę <kbd>!</kbd> oraz raport
+        bezpieczeństwa. Dwa zestawy by się rozjechały: reguła zaostrzona w jednym miejscu, a
+        nie w drugim, oznacza, że bramka przepuszcza plik, który drzewo oznacza w chwili,
+        gdy ten zaczyna działać — a komu powiedziano <em>„nic nie znaleziono”</em>, temu
+        powiedziano nieprawdę. Dzięki temu kontrole widzą też, co klaster
+        <strong>zrobi</strong>, a nie co plik <strong>mówi</strong>; wartości domyślne i
+        skróty compose leżą pomiędzy.
+      </p>
+      <p>
+        <strong><code>--yes</code> nie znaczy „zignoruj znaleziska”.</strong> Znaczy „nie
+        pytaj”, a uruchomienie, które znajdzie coś powyżej informacyjnego, i tak
+        <strong>odmawia</strong> i kończy się kodem niezerowym. Inaczej bramka stałaby się
+        formalnością przy pierwszym wstawieniu do CI. Aby wdrożyć mimo znalezisk, trzeba
+        napisać <code>--force</code> — co innego się wpisuje i co innego potem tłumaczy.
+        Uruchomienie nieinteraktywne bez odpowiedzi na stdin liczy się jako
+        <strong>nie</strong>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--check</code></td><td>sprawdza i zatrzymuje się. Kończy kodem <strong>1</strong>, jeśli znaleziono coś powyżej informacyjnego — nadaje się jako bramka w pipeline</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>nie pytaj. Wdraża, gdy kontrole są czyste; <strong>odmawia</strong>, gdy nie są</td></tr>
+          <tr><td><code>--force</code></td><td>wdroż mimo znalezisk, bez pytania</td></tr>
+          <tr><td><code>--prune</code></td><td>usuwa usługi stacka, których plik już nie deklaruje. Domyślnie wyłączone, jak w dockerze: plik będący podzbiorem stacka to znacznie częściej przeoczenie niż polecenie usunięcia</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Co robi wdrożenie, w tej kolejności:</strong> sieci, potem sekrety, potem
+        configi, potem usługi — usługa odwołująca się do czegoś, czego jeszcze nie ma,
+        kończy się błędem, a stack zostaje wdrożony połowicznie. Sieci zewnętrzne są
+        sprawdzane <strong>najpierw</strong>, bo nieistniejąca sieć to najczęstszy powód
+        zatrzymania wdrożenia w połowie. Istniejący <strong>sekret nigdy nie jest
+        nadpisywany</strong>: jego wartość jest w swarmie niezmienna, więc zmiana oznacza
+        utworzenie nowego pod nową nazwą. Jeśli wdrożenie mimo to zawiedzie w trakcie, to,
+        co już zastosowano, jest raportowane wraz z błędem, a nie pozostawione do
+        odgadnięcia.
+      </p>
+
       <h3 id="reroll">Ponowne wdrożenie agentów bez zmiany sekretu</h3>
       <p>
         Prędzej czy później musisz wdrożyć agentów ponownie w swarmie, który jest już

@@ -23,7 +23,7 @@ func newStackCmd(g *globalFlags) *cobra.Command {
 		Use:   "stack",
 		Short: "Work with deployed stacks",
 	}
-	cmd.AddCommand(newStackExportCmd(g), newStackDiffCmd(g), newStackLsCmd(g))
+	cmd.AddCommand(newStackExportCmd(g), newStackDiffCmd(g), newStackDeployCmd(g), newStackLsCmd(g))
 	return cmd
 }
 

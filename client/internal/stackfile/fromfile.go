@@ -13,6 +13,7 @@ import (
 	"github.com/docker/cli/cli/compose/convert"
 	"github.com/docker/cli/cli/compose/loader"
 	composetypes "github.com/docker/cli/cli/compose/types"
+	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
 )
 
@@ -74,6 +75,18 @@ func FromFile(ctx context.Context, cli *client.Client, path, stackName string) (
 			owned[stackName+"_"+n] = true
 		}
 	}
+	// Compose invents a "default" network for services that name none, and the
+	// deploy creates it as "<stack>_default" with the overlay driver. The file
+	// never declares it, so without this the deployed side (which sees a real,
+	// stack-labelled network and strips the prefix) and the file side would
+	// disagree about its name and about whether it exists at all — a difference
+	// on every service of the most ordinary stack file there is. Caught by
+	// deploying a file and diffing it against what it had just produced.
+	if _, declared := cfg.Networks["default"]; !declared && usesImplicitDefault(specs, stackName) {
+		owned[stackName+"_default"] = true
+		st.Networks["default"] = &Network{Driver: defaultNetworkDriver}
+	}
+
 	names := Names{Namespace: stackName, Owned: owned}
 
 	gaps := map[string]bool{}
@@ -170,4 +183,18 @@ func UnsupportedProperties(path string) ([]string, error) {
 		return nil, err
 	}
 	return loader.GetUnsupportedProperties(dict), nil
+}
+
+// usesImplicitDefault reports whether any converted service attaches to the
+// stack's implicit default network.
+func usesImplicitDefault(specs map[string]swarm.ServiceSpec, stackName string) bool {
+	target := stackName + "_default"
+	for _, spec := range specs {
+		for _, n := range spec.TaskTemplate.Networks {
+			if n.Target == target {
+				return true
+			}
+		}
+	}
+	return false
 }
