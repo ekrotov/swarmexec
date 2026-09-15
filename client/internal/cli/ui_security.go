@@ -73,10 +73,17 @@ func (u *ui) showSecurityRisks() {
 	}
 
 	prev := app.GetFocus()
-	_, restore := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
+	overlayKeys := footerKeys("j/k", "scroll", "w", "write report", "Esc", "close")
+	setHelp, restore := u.pushOverlayHelp(overlayKeys)
 	closeIt := func() { restore(); pages.RemovePage(pageSecurity); app.SetFocus(prev) }
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
+			// The overlay shows the services half of the scan. The file is the
+			// whole cluster — networks, secrets, configs, nodes, the swarm — so
+			// writing it is a fresh gather, not a dump of what is on screen.
+			u.writeSecurityReportPrompt(tv, setHelp, overlayKeys)
+			return nil
 		// Close on Esc, on the configured quit key, and on the same key that
 		// opened the overlay — both are remappable, so read them from the keymap
 		// rather than hardcoding 'q' / '!'.

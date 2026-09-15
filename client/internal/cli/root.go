@@ -116,6 +116,7 @@ func Execute(v Version) int {
 	root.AddCommand(newLogsCmd(g))
 	root.AddCommand(newPortForwardCmd(g))
 	root.AddCommand(newVolumeCmd(g))
+	root.AddCommand(newSecurityCmd(g))
 	root.AddCommand(newUICmd(g))
 
 	err := root.Execute()

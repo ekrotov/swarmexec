@@ -113,6 +113,7 @@ const (
 	pageConfirm          = "confirm"
 	pageHelp             = "help"
 	pageSecurity         = "security"
+	pageSecurityReport   = "securityreport"
 	pageNodeAvail        = "nodeavail"
 	pageConfigDetail     = "configdetail"
 	pageMenu             = "menu"
