@@ -174,20 +174,25 @@
 
       <div class="slideshow" role="group" aria-roledescription="carrusel" aria-label="Demos de funciones" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="1 / 3">
+          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="1 / 4" data-play="15630">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="En lugar de docker node ls, encontrar el nodo, ssh node-3 y docker exec, basta con ejecutar: swarmexec exec web -- sh">
             <figcaption><b>exec en todo el clúster</b> — shell en cualquier tarea, desde una terminal</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="2 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="2 / 4" hidden data-play="9140">
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 abre un reenvío a una tarea en node-3 y luego curl localhost:9090 responde — sin SSH y sin puerto publicado">
             <figcaption><b>port-forward desde tu portátil</b> — alcanza el puerto de una tarea, sin SSH, sin ingress</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="3 / 3" hidden>
+          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="3 / 4" hidden data-play="9720">
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
                  alt="swarmexec ui: una interfaz de terminal que muestra el clúster como un árbol de stacks, servicios y contenedores; un servicio está desplegado con sus tareas en node-2, node-4 y node-5, y la capa de riesgos de seguridad enumera los servicios marcados">
             <figcaption><b>una interfaz de terminal para todo el clúster</b> — stacks, servicios, contenedores, logs y riesgos</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="diapositiva" aria-label="4 / 4" hidden data-play="13160">
+            <img class="demo" src="/report.gif" width="860" height="470" loading="eager"
+                 alt="swarmexec security report -o security.md escribe un informe Markdown: una tabla resumen con hallazgos altos, medios y bajos, y después hallazgos del clúster como una red overlay sin cifrar y managers sin autolock">
+            <figcaption><b>un informe de seguridad de todo el clúster</b> — servicios, redes, secretos y nodos, en Markdown</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -196,6 +201,7 @@
             <button class="dot" type="button" aria-label="Mostrar demo de exec en el clúster" aria-current="true"></button>
             <button class="dot" type="button" aria-label="Mostrar demo de port-forward" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Mostrar demo de la interfaz de terminal" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Mostrar demo del informe de seguridad" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Diapositiva siguiente">&#8250;</button>
         </div>
@@ -285,8 +291,28 @@
       // take focus on tap, so an auto-advancing carousel could not be stopped
       // (WCAG 2.2.2). Leave it on manual control there.
       var auto = mm && mm('(pointer: coarse)').matches;
+      // A gif behind display:none does not sit waiting at frame 0 — the browser
+      // pauses it where it was, or keeps running it unseen. Either way a slide
+      // opened a second time would start halfway through its own story, which
+      // is the thing per-slide timing is meant to prevent. Re-assigning the src
+      // rewinds it, and by then the file is served from cache or revalidated
+      // with a conditional request — nginx sends no Cache-Control for these, so
+      // it is a 304 at worst, not a re-download of the image.
+      // removeAttribute, NOT src='': an empty src resolves against the page URL
+      // and makes the browser fetch the DOCUMENT again, which is both a wasted
+      // request and a second set of analytics hits.
+      var seen = [];
+      function rewind(img) {
+        if (!img) return;
+        var src = img.getAttribute('src');
+        if (!src) return;
+        img.removeAttribute('src');
+        img.setAttribute('src', src);
+      }
       function show(n) {
         i = (n + slides.length) % slides.length;
+        if (seen[i]) rewind(slides[i].querySelector('img'));
+        seen[i] = true;
         slides.forEach(function (s, k) {
           var on = k === i;
           s.hidden = !on;
@@ -295,11 +321,24 @@
       }
       function next() { show(i + 1); }
       function prev() { show(i - 1); }
-      function stop() { if (timer) { clearInterval(timer); timer = null; } }
+      function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+      // Each gif is its own length, so one fixed interval was wrong for all of
+      // them: it cut the long ones off partway through their story and left the
+      // short ones sitting on a held last frame. The slide carries its own
+      // duration and the timer is armed per slide, one slide at a time.
+      function playtime() {
+        var v = parseInt(slides[i].getAttribute('data-play'), 10);
+        // The small tail absorbs timer and decode jitter, so the last frame is
+        // never clipped. No attribute (or a bad one) falls back to the old pace.
+        return v > 0 ? v + 250 : 6000;
+      }
       // paused counts the independent reasons to hold (hover, focus). start()
       // honours it, so restarting the timer after a click/arrow key cannot
       // resume auto-advance while the pointer or focus is still on the carousel.
-      function start() { if (!reduce && !auto && !paused && !timer) timer = setInterval(next, 6000); }
+      function start() {
+        if (reduce || auto || paused || timer) return;
+        timer = setTimeout(function () { timer = null; next(); start(); }, playtime());
+      }
       function restart() { stop(); start(); }
       function hold() { paused++; stop(); }
       function release() { paused = Math.max(0, paused - 1); start(); }

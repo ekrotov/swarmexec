@@ -528,6 +528,62 @@
         </tbody>
       </table></div>
 
+      <h3 id="securityreport"><code>security report</code> — raport Markdown o całym klastrze</h3>
+      <p>
+        <a href="#tui">Nakładka z ryzykami bezpieczeństwa</a> analizuje specyfikacje usług
+        i pokazuje wynik na ekranie. To polecenie zapisuje tę samą analizę — plus
+        kontrole, które należą do <strong>klastra</strong>, a nie do żadnej pojedynczej
+        usługi — w formacie Markdown, żeby dało się ją przejrzeć z dala od terminala,
+        dołączyć do zgłoszenia albo trzymać obok plików stacka i porównywać wydanie po
+        wydaniu. Wynik idzie na <strong>stdout</strong>, o ile nie podano <code>-o</code>,
+        więc równie łatwo go przekierować, jak zapisać.
+      </p>
+      <div class="cmd">swarmexec security report -o security.md</div>
+      <p>
+        Na poziomie klastra działają cztery kontrole i na żadną z nich specyfikacja usługi
+        nie potrafi odpowiedzieć:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Kontrola</th><th>Waga</th><th>Co zgłasza</th></tr></thead>
+        <tbody>
+          <tr><td><code>network-unencrypted</code> — „ruch overlay nie jest szyfrowany”</td><td><span style="color:#f2cc60">medium</span></td><td><strong>sieć overlay przenosząca ruch usług</strong> bez szyfrowania warstwy danych. Swarm tuneluje ruch między węzłami przez VXLAN <strong>jawnym tekstem</strong>, o ile sieci nie utworzono z <code>--opt encrypted</code> — a działająca usługa w obu przypadkach wygląda tak samo. Sieci, do których <strong>nic nie jest podłączone</strong>, nie są zgłaszane (nic nie przenoszą), podobnie jak <strong>ingress</strong>, której w ogóle nie da się zaszyfrować: takiego wpisu nikt nigdy by nie zamknął</td></tr>
+          <tr><td><code>autolock-disabled</code> — „menedżery nie mają autolocka”</td><td><span style="color:#f2cc60">medium</span></td><td>magazyn raft menedżerów <strong>nie jest szyfrowany w spoczynku</strong>. Zawiera każdy sekret, każdy config i klucz CA klastra, a jego klucz leży na tym samym dysku — kto zabierze dysk menedżera, zabierze wszystko. Włącz przez <code>docker swarm update --autolock=true</code> i <strong>zachowaj klucz odblokowujący</strong>: zrestartowany menedżer o niego poprosi. Jeśli konfiguracji swarma nie da się odczytać, raport podaje <code>autolock-unknown</code> zamiast zgadywać — przyjęcie „wyłączone” wymyśliłoby wpis, a przyjęcie „włączone” byłoby fałszywym uspokojeniem</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>to agent <strong>egzekwuje autoryzację</strong> przy każdym execu, każdym logu i każdym port-forwardzie, więc starszy od twojego klienta może nie egzekwować reguły, którą klient uznaje za obowiązującą. Niezgodność <strong>protokołu</strong> ma wagę <strong>high</strong> i przeważa nad różnicą wersji: obie strony nie zgadzają się co do samego kontraktu, a nie tylko co do tego, który build go realizuje. Agent, który <strong>nie odpowiedział</strong>, jest zgłaszany jako <strong>luka</strong>, a nie jako wynik pozytywny. Dla niewydanego klienta (<code>dev</code>) rozjazd nie jest zgłaszany — z założenia różni się od każdego wydanego agenta; ten sam wyjątek stosuje <code>doctor</code></td></tr>
+          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>sekret lub config, do którego <strong>nie odwołuje się żadna usługa</strong>. Nadal jest rozprowadzany przez magazyn raft i nadal czytelny dla wszystkiego, co dosięgnie menedżera — zwykle poświadczenie, które ktoś zrotował i nigdy nie usunął, więc stara wartość <strong>wciąż żyje w klastrze</strong> długo po tym, jak wszyscy uznali ją za zniknioną</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Co raport mówi sam o sobie.</strong> Czyta go ktoś z dala od terminala,
+        kogo nie było przy jego powstaniu — niesie więc własny kontekst:
+        <strong>który klaster, kiedy i jakim buildem</strong>. Ma też sekcję
+        <strong>Not covered</strong> — nieosiągalne agenty, nieczytelna konfiguracja
+        swarma, pusta lista węzłów — bo milczenie w raporcie bezpieczeństwa czyta się jak
+        uspokojenie co do terenu, na którym nigdy nie postał. Kolejność zależy wyłącznie od
+        znalezisk, więc dwa raporty z niezmienionego klastra różnią się tylko znacznikiem
+        czasu i dają się ze sobą porównać — a to jest coś warte tylko dlatego, że brak
+        wpisu znaczy <em>nie znaleziono</em>, a nigdy <em>nie sprawdzono</em>.
+      </p>
+      <p>
+        Plik zapisywany jest z prawami <strong><code>0600</code></strong>, a tworzone
+        katalogi nadrzędne z <code>0700</code>. Wymienia każdą usługę, każdą sieć i każdy
+        sekret w klastrze wraz z każdą znalezioną słabością — to mapa miejsc do ataku i nie
+        ma powodu, by była czytelna dla każdego konta na maszynie.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>-o</code>, <code>--output</code></td><td><em>stdout</em></td><td>zapisz do tego pliku zamiast na stdout</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia na węzeł przy sprawdzaniu agentów</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>nie kontaktuj się z agentami węzłów. Szybciej, a rozjazd agentów trafia wtedy do <strong>Not covered</strong>, zamiast zniknąć po cichu</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Ten sam raport zapiszesz z TUI: naciśnij <kbd>w</kbd> w nakładce z ryzykami
+        bezpieczeństwa. To świeże zebranie danych z całego klastra, a nie zrzut tego, co
+        pokazuje nakładka, i działa poza goroutine interfejsu — ten pozostaje responsywny,
+        gdy raport odpytuje kolejne węzły.
+      </p>
+
       <h3 id="reroll">Ponowne wdrożenie agentów bez zmiany sekretu</h3>
       <p>
         Prędzej czy później musisz wdrożyć agentów ponownie w swarmie, który jest już
@@ -1104,7 +1160,10 @@
         Usługa z ustaleniem, na które warto zareagować, jest oznaczona wiodącą
         <strong>🛡</strong> w drzewie usług, w polu o stałej szerokości przed nazwą, żeby
         tarcze układały się w pionową kolumnę do przejrzenia. Naciśnij <kbd>!</kbd>, żeby
-        otworzyć <strong>nakładkę z ryzykami bezpieczeństwa</strong>.
+        otworzyć <strong>nakładkę z ryzykami bezpieczeństwa</strong>, a w niej
+        <kbd>w</kbd>, żeby zapisać
+        <a href="#securityreport">raport Markdown o całym klastrze</a> — obejmuje on więcej
+        niż nakładka, bo dokłada kontrole należące do klastra, a nie do usługi.
       </p>
       <p>
         Osiem kontroli dostępnych dzisiaj. Najpierw te, które mogą oznaczyć usługę, na końcu

@@ -523,6 +523,60 @@
         </tbody>
       </table></div>
 
+      <h3 id="securityreport"><code>security report</code> — a Markdown report for the whole cluster</h3>
+      <p>
+        The <a href="#tui">security-risks overlay</a> scans service specs and shows the
+        result on screen. This writes the same scan — plus the checks that belong to the
+        <strong>cluster</strong> rather than to any one service — as Markdown, so it can be
+        reviewed away from the terminal, attached to a ticket, or committed next to your
+        stack files and diffed release over release. It goes to <strong>stdout</strong>
+        unless <code>-o</code> is given, so it pipes as readily as it saves.
+      </p>
+      <div class="cmd">swarmexec security report -o security.md</div>
+      <p>
+        Four checks run at the cluster level, none of which a service spec can answer for:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Severity</th><th>What it flags</th></tr></thead>
+        <tbody>
+          <tr><td><code>network-unencrypted</code> — “overlay traffic is not encrypted”</td><td><span style="color:#f2cc60">medium</span></td><td>an <strong>overlay network carrying service traffic</strong> without data-plane encryption. Swarm tunnels container traffic between nodes over VXLAN <strong>in the clear</strong> unless the network was created with <code>--opt encrypted</code>, and nothing about the running service looks any different either way. Networks with <strong>nothing attached</strong> are not flagged — they carry nothing — and neither is <strong>ingress</strong>, which cannot be encrypted at all, so a finding on it could never be cleared</td></tr>
+          <tr><td><code>autolock-disabled</code> — “managers are not autolocked”</td><td><span style="color:#f2cc60">medium</span></td><td>the managers' <strong>raft store is not encrypted at rest</strong>. It holds every secret, every config and the cluster CA key, and its key sits on the same disk — so a manager's disk yields the lot. Enable with <code>docker swarm update --autolock=true</code> and <strong>keep the unlock key</strong>: a restarted manager will ask for it. If the swarm configuration cannot be read, the report says <code>autolock-unknown</code> rather than guessing — assuming “off” would invent a finding and assuming “on” would be a false all-clear</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>the agent is what <strong>enforces authorization</strong> on every exec, log and port-forward, so one older than your client may not enforce a rule the client assumes. A <strong>protocol</strong> mismatch is <strong>high</strong> and outranks a version difference: the two ends disagree about the contract itself, not merely about which build implements it. An agent that <strong>did not answer</strong> is reported as a <strong>gap</strong>, not as a pass. Skew is <strong>not</strong> reported for an unreleased (<code>dev</code>) client, which differs from every released agent by construction — the same exemption <code>doctor</code> makes</td></tr>
+          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>a secret or config <strong>no service references</strong>. It is still distributed through the raft store and still readable by anything that reaches a manager — usually a credential someone rotated and never removed, which means the old value is <strong>still live in the cluster</strong> long after everyone believes it is gone</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>What the report says about itself.</strong> It is read away from the
+        terminal, by someone who was not there when it ran, so it carries its own context:
+        <strong>which cluster, when, and with which build</strong>. It also has a
+        <strong>Not covered</strong> section — unreachable agents, an unreadable swarm
+        configuration, an empty node list — because silence in a security report reads as
+        an all-clear for ground it never reached. The ordering depends only on the
+        findings, so two reports of an unchanged cluster differ only in their timestamp
+        and can be diffed against each other; that is worth having only because an absent
+        finding means <em>not found</em> and never <em>not looked at</em>.
+      </p>
+      <p>
+        The file is written <strong><code>0600</code></strong>, creating any parent
+        directories <code>0700</code>. It names every service, network and secret in the
+        cluster together with every weakness found in it — that is a map of where to
+        attack, and it has no business being readable by every account on the machine.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-o</code>, <code>--output</code></td><td><em>stdout</em></td><td>write to this file instead of stdout</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout when checking agents</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>do not contact the node agents. Faster, and agent skew is then listed under <strong>Not covered</strong> rather than silently omitted</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The same report can be written from the TUI: press <kbd>w</kbd> in the
+        security-risks overlay. It is a fresh cluster-wide gather, not a dump of what the
+        overlay is showing, and it runs off the ui goroutine so the interface stays
+        responsive while it talks to every node.
+      </p>
+
       <h3 id="reroll">Re-rolling the agents without changing the secret</h3>
       <p>
         Sooner or later you have to redeploy the agents on a swarm that is already
@@ -1076,7 +1130,11 @@
         nothing is executed inside your containers. A service with a finding worth acting
         on is marked with a leading <strong>🛡</strong> in the service tree, in a
         fixed-width slot ahead of the name, so the shields line up as a vertical scan
-        column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>.
+        column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>, and
+        <kbd>w</kbd> inside it to write a
+        <a href="#securityreport">cluster-wide Markdown report</a> — which covers more than
+        the overlay does, since it adds the checks that belong to the cluster rather than
+        to a service.
       </p>
       <p>
         The eight checks that ship today. The ones that can mark a service come first;
