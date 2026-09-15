@@ -23,7 +23,7 @@ type keybinds struct {
 	// containers + volumes
 	Search rune
 	// containers
-	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup rune
+	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup, StackFile rune
 	// volumes
 	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach, VolNew rune
 	// networks
@@ -60,6 +60,9 @@ var keyActions = []keyAction{
 	{"logs", []string{"containers"}, 'L', func(k *keybinds) *rune { return &k.Logs }},
 	{"security_risks", []string{"containers"}, '!', func(k *keybinds) *rune { return &k.SecurityRisks }},
 	{"stack_group", []string{"containers"}, 's', func(k *keybinds) *rune { return &k.StackGroup }},
+	// Capital E: the stack-file actions are one gesture away from the tree, and
+	// a capital keeps them clear of the single-letter navigation keys.
+	{"stack_file", []string{"containers"}, 'E', func(k *keybinds) *rune { return &k.StackFile }},
 	{"volume_select", []string{"volumes"}, ' ', func(k *keybinds) *rune { return &k.VolSelect }},
 	{"volume_select_all", []string{"volumes"}, 'a', func(k *keybinds) *rune { return &k.VolSelectAll }},
 	{"volume_delete", []string{"volumes"}, 'd', func(k *keybinds) *rune { return &k.VolDelete }},

@@ -114,6 +114,8 @@ const (
 	pageHelp             = "help"
 	pageSecurity         = "security"
 	pageSecurityReport   = "securityreport"
+	pageStackFile        = "stackfile"
+	pageStackDiff        = "stackdiff"
 	pageNodeAvail        = "nodeavail"
 	pageConfigDetail     = "configdetail"
 	pageMenu             = "menu"
@@ -650,6 +652,9 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 						}
 					}
 				}
+				return nil
+			case km.StackFile:
+				u.openStackFileMenu()
 				return nil
 			case km.StackGroup:
 				// Toggle stack grouping. Only meaningful once something carries a
@@ -1794,6 +1799,7 @@ func (u *ui) showHelp() {
 	line(kl(km.Forward), "port-forward the task under the cursor")
 	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
+	line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
 	line("X", "remove the service under the cursor (confirmed)")
 	line(kl(km.Search), "search services / containers / nodes")
 
