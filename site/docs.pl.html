@@ -584,6 +584,66 @@
         gdy raport odpytuje kolejne węzły.
       </p>
 
+      <h3 id="stackfile"><code>stack export</code> / <code>stack diff</code> — wdrożony stack jako plik</h3>
+      <p>
+        <code>stack export</code> odczytuje wdrożony stack z klastra i zapisuje go jako
+        YAML w formie compose. <code>stack diff</code> porównuje plik stacka z tym, co
+        naprawdę działa, i wypisuje <strong>diff zunifikowany</strong>: linia
+        <code>+</code> to coś, co wdrożenie pliku by <strong>dodało</strong>, a
+        <code>-</code> to coś, co by <strong>usunęło</strong>. Jak
+        <code>git diff --exit-code</code>, polecenie kończy się kodem <strong>1</strong>,
+        gdy cokolwiek się różni — nadaje się więc do CI.
+      </p>
+      <div class="cmd">swarmexec stack ls
+swarmexec stack export postgres -o postgres.yml
+swarmexec stack diff postgres.yml postgres</div>
+      <p>
+        W TUI <kbd>E</kbd> na zakładce Stacki/Usługi proponuje oba działania dla stacka
+        pod kursorem — wiersza stacka, jego usługi albo jednego z jej kontenerów.
+      </p>
+      <p>
+        <strong>Dlaczego nie porównanie tekstu.</strong> Wdrożony stack niesie rzeczy,
+        których plik nigdy nie miał: skrót obrazu rozwiązany przez demona przy wdrożeniu,
+        jego własne wartości domyślne polityki restartu i aktualizacji oraz przestrzeń
+        nazw stacka doklejoną do każdej sieci, sekretu i wolumenu. Porównanie obu jako
+        tekstu zgłasza dziesiątki różnic dla stacka, który jest dokładnie zsynchronizowany
+        — a to gorsze niż brak narzędzia, bo uczy ignorowania wyniku. Zamiast tego plik
+        przechodzi przez <strong>własny loader i konwerter compose dockera</strong>, ten
+        sam kod, którego używa <code>docker stack deploy</code>, a potem obie strony
+        redukuje <strong>ta sama</strong> funkcja. Odpowiadamy na pytanie <em>„czy
+        wdrożenie tego pliku coś by zmieniło?”</em>, a nie <em>„czy te dwa pliki są tak
+        samo zapisane?”</em>. Wartości domyślne demona są pomijane po obu stronach;
+        wartość, która <strong>nie</strong> jest domyślna, nadal się pokazuje, więc nic
+        prawdziwego nie zostaje ukryte.
+      </p>
+      <p>
+        <strong>Eksport to opis, nie kopia zapasowa.</strong> Wartość sekretu jest w API
+        silnika <strong>tylko do zapisu</strong> — nigdy nie da się jej odczytać — a
+        zawartość wolumenu leży na węzłach. Oba są więc deklarowane jako
+        <code>external</code>, a wyeksportowany plik mówi to we własnym nagłówku:
+        odtworzenie stacka gdzie indziej oznacza najpierw utworzenie sekretów. Pola
+        specyfikacji, których to odwzorowanie nie niesie (<code>tty</code>,
+        <code>ulimits</code>, ustawienia seccomp i AppArmor oraz kilka innych), są
+        wymienione w tym samym miejscu, bo groźną porażką narzędzia porównującego nie jest
+        zła odpowiedź, lecz pewne siebie milczenie: <em>„brak różnic”</em> przychodzi
+        zawsze wraz z zastrzeżeniami.
+      </p>
+      <p>
+        Zmienne są interpolowane z twojego środowiska, dokładnie tak jak robi to
+        <code>docker stack deploy</code>. Plik zawierający <code>${TAG}</code> opisuje
+        zatem inny stack dla innego <code>TAG</code>, a diff zależy od środowiska, w
+        którym działa — i tak jest poprawnie: udawanie inaczej zgłosiłoby „brak zmian” dla
+        wdrożenia, które podmieniłoby obraz.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Polecenie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>stack ls</code></td><td>stacki wdrożone na klastrze</td></tr>
+          <tr><td><code>stack export &lt;stack&gt;</code></td><td>zapisuje stack jako YAML compose; z <code>-o</code> do pliku, inaczej na stdout</td></tr>
+          <tr><td><code>stack diff &lt;plik&gt; [stack]</code></td><td>porównuje plik z wdrożonym stackiem. Nazwa stacka domyślnie pochodzi od nazwy pliku bez rozszerzenia; <code>--stack</code> albo drugi argument ją nadpisuje. Kończy się kodem <strong>1</strong> przy każdej różnicy</td></tr>
+        </tbody>
+      </table></div>
+
       <h3 id="reroll">Ponowne wdrożenie agentów bez zmiany sekretu</h3>
       <p>
         Prędzej czy później musisz wdrożyć agentów ponownie w swarmie, który jest już

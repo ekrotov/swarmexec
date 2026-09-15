@@ -591,6 +591,68 @@
         que ésta sigue respondiendo mientras habla con cada nodo.
       </p>
 
+      <h3 id="stackfile"><code>stack export</code> / <code>stack diff</code> — un stack desplegado como fichero</h3>
+      <p>
+        <code>stack export</code> lee un stack desplegado desde el clúster y lo escribe
+        como YAML con forma de compose. <code>stack diff</code> compara un fichero de
+        stack con lo que está realmente desplegado e imprime un
+        <strong>diff unificado</strong>: una línea <code>+</code> es algo que desplegar el
+        fichero <strong>añadiría</strong>, una <code>-</code> es algo que
+        <strong>quitaría</strong>. Como <code>git diff --exit-code</code>, termina con
+        <strong>1</strong> cuando hay cualquier diferencia, así que sirve en CI.
+      </p>
+      <div class="cmd">swarmexec stack ls
+swarmexec stack export postgres -o postgres.yml
+swarmexec stack diff postgres.yml postgres</div>
+      <p>
+        En la TUI, <kbd>E</kbd> en la pestaña Stacks/Servicios ofrece ambas cosas para el
+        stack bajo el cursor — la fila del stack, un servicio suyo o uno de sus
+        contenedores.
+      </p>
+      <p>
+        <strong>Por qué no compara texto.</strong> Un stack desplegado lleva cosas que el
+        fichero nunca tuvo: el digest de la imagen que el daemon resolvió al desplegar,
+        sus propios valores por defecto de política de reinicio y actualización, y el
+        espacio de nombres del stack antepuesto a cada red, secreto y volumen. Comparar
+        ambos como texto reporta decenas de diferencias para un stack que está exactamente
+        sincronizado — y eso es peor que no tener herramienta, porque enseña a ignorar la
+        salida. En su lugar el fichero pasa por <strong>el propio cargador y conversor de
+        compose de docker</strong>, el mismo código que usa
+        <code>docker stack deploy</code>, y después ambos lados se reducen con la
+        <strong>misma</strong> función. La pregunta que se responde es <em>«¿cambiaría
+        algo desplegar este fichero?»</em>, no <em>«¿están escritos igual estos dos
+        ficheros?»</em>. Los valores por defecto del daemon se descartan en ambos lados;
+        un valor que <strong>no</strong> es el predeterminado sigue apareciendo, así que
+        no se oculta nada real.
+      </p>
+      <p>
+        <strong>Un export es una descripción, no una copia de seguridad.</strong> El valor
+        de un secreto es <strong>de solo escritura</strong> en la API del engine —nunca
+        puede volver a leerse— y el contenido de un volumen vive en los nodos. Por eso
+        ambos se declaran <code>external</code>, y el fichero exportado lo dice en su
+        propia cabecera: recrear el stack en otro sitio significa crear antes los
+        secretos. Los campos de la especificación que este renderizado no transporta
+        (<code>tty</code>, <code>ulimits</code>, ajustes de seccomp y AppArmor y algunos
+        más) se nombran en el mismo lugar, porque el fallo peligroso de una herramienta de
+        comparación no es una respuesta equivocada sino un silencio confiado: <em>«sin
+        diferencias»</em> llega siempre con sus salvedades.
+      </p>
+      <p>
+        Las variables se interpolan desde tu entorno, exactamente como hace
+        <code>docker stack deploy</code>. Un fichero con <code>${TAG}</code> describe por
+        tanto un stack distinto para un <code>TAG</code> distinto, y el diff depende del
+        entorno en el que se ejecuta — lo cual es correcto: fingir lo contrario reportaría
+        «sin cambios» para un despliegue que cambiaría la imagen.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Orden</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr><td><code>stack ls</code></td><td>los stacks desplegados en el clúster</td></tr>
+          <tr><td><code>stack export &lt;stack&gt;</code></td><td>escribe el stack como YAML de compose; con <code>-o</code> a un fichero, si no a stdout</td></tr>
+          <tr><td><code>stack diff &lt;fichero&gt; [stack]</code></td><td>compara un fichero con el stack desplegado. El nombre del stack es por defecto el del fichero sin extensión; <code>--stack</code> o un segundo argumento lo sustituye. Termina con <strong>1</strong> ante cualquier diferencia</td></tr>
+        </tbody>
+      </table></div>
+
       <h3 id="reroll">Volver a desplegar los agentes sin cambiar el secreto</h3>
       <p>
         Tarde o temprano tendrás que volver a desplegar los agentes en un swarm ya

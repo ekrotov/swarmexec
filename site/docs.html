@@ -577,6 +577,64 @@
         responsive while it talks to every node.
       </p>
 
+      <h3 id="stackfile"><code>stack export</code> / <code>stack diff</code> — a deployed stack as a file</h3>
+      <p>
+        <code>stack export</code> reads a deployed stack back out of the cluster and
+        writes it as compose-shaped YAML. <code>stack diff</code> compares a stack file
+        against what is actually deployed and prints a <strong>unified diff</strong>: a
+        <code>+</code> line is something deploying the file would <strong>add</strong>, a
+        <code>-</code> is something it would <strong>remove</strong>. Like
+        <code>git diff --exit-code</code> it exits <strong>1</strong> when anything
+        differs, so it works in CI.
+      </p>
+      <div class="cmd">swarmexec stack ls
+swarmexec stack export postgres -o postgres.yml
+swarmexec stack diff postgres.yml postgres</div>
+      <p>
+        In the TUI, <kbd>E</kbd> on the Stacks/Services tab offers both for the stack
+        under the cursor — the stack row, a service in it, or a container of one.
+      </p>
+      <p>
+        <strong>Why it does not diff text.</strong> A deployed stack carries things the
+        file never had: the image digest the daemon resolved at deploy time, its own
+        defaults for restart and update policy, and the stack namespace prefixed onto
+        every network, secret and volume. Comparing the two as text reports dozens of
+        differences for a stack that is exactly in sync — which is worse than no tool at
+        all, because it teaches you to ignore the output. Instead the file is run through
+        <strong>docker's own compose loader and converter</strong>, the same code
+        <code>docker stack deploy</code> uses, and both sides are then reduced by the
+        <strong>same</strong> function. The question answered is <em>“would deploying
+        this file change anything?”</em>, not <em>“are these two files spelled the
+        same?”</em>. Daemon defaults are dropped from both sides; a value that is
+        <strong>not</strong> the default still shows, so nothing real is hidden.
+      </p>
+      <p>
+        <strong>An export is a description, not a backup.</strong> A secret's value is
+        <strong>write-only</strong> in the engine API — it can never be read back — and a
+        volume's contents live on the nodes. Both are therefore declared
+        <code>external</code>, and the exported file says so in its own header:
+        recreating the stack elsewhere means creating the secrets first. Spec fields the
+        rendering does not carry (<code>tty</code>, <code>ulimits</code>, seccomp and
+        AppArmor settings and a few others) are named in the same place, because the
+        dangerous failure of a comparison tool is not a wrong answer but a confident
+        silence — so <em>“no differences”</em> always arrives with its caveats attached.
+      </p>
+      <p>
+        Variables are interpolated from your environment, exactly as
+        <code>docker stack deploy</code> does. A file containing <code>${TAG}</code>
+        therefore describes a different stack for a different <code>TAG</code>, and the
+        diff depends on the environment it runs in — which is correct: pretending
+        otherwise would report no change for a deploy that would change the image.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>stack ls</code></td><td>the stacks deployed on the cluster</td></tr>
+          <tr><td><code>stack export &lt;stack&gt;</code></td><td>write the stack as compose YAML; <code>-o</code> to a file, otherwise stdout</td></tr>
+          <tr><td><code>stack diff &lt;file&gt; [stack]</code></td><td>compare a file against the deployed stack. The stack name defaults to the file's base name; <code>--stack</code> or a second argument overrides it. Exits <strong>1</strong> on any difference</td></tr>
+        </tbody>
+      </table></div>
+
       <h3 id="reroll">Re-rolling the agents without changing the secret</h3>
       <p>
         Sooner or later you have to redeploy the agents on a swarm that is already
