@@ -599,6 +599,67 @@
         Oberfläche bleibt bedienbar, während er jeden Node abfragt.
       </p>
 
+      <h3 id="stackfile"><code>stack export</code> / <code>stack diff</code> — ein deployter Stack als Datei</h3>
+      <p>
+        <code>stack export</code> liest einen deployten Stack aus dem Cluster zurück und
+        schreibt ihn als Compose-förmiges YAML. <code>stack diff</code> vergleicht eine
+        Stack-Datei mit dem, was tatsächlich läuft, und gibt einen
+        <strong>Unified Diff</strong> aus: eine <code>+</code>-Zeile ist etwas, das ein
+        Deploy der Datei <strong>hinzufügen</strong> würde, eine <code>-</code>-Zeile
+        etwas, das es <strong>entfernen</strong> würde. Wie
+        <code>git diff --exit-code</code> endet der Befehl mit <strong>1</strong>, sobald
+        es Unterschiede gibt — also auch in CI brauchbar.
+      </p>
+      <div class="cmd">swarmexec stack ls
+swarmexec stack export postgres -o postgres.yml
+swarmexec stack diff postgres.yml postgres</div>
+      <p>
+        Im TUI bietet <kbd>E</kbd> auf dem Stacks/Services-Tab beides für den Stack unter
+        dem Cursor an — die Stack-Zeile, ein Service darin oder einer seiner Container.
+      </p>
+      <p>
+        <strong>Warum kein Textvergleich.</strong> Ein deployter Stack trägt Dinge, die
+        die Datei nie hatte: den Image-Digest, den der Daemon beim Deploy aufgelöst hat,
+        seine eigenen Defaults für Restart- und Update-Policy, und den Stack-Namespace vor
+        jedem Netz, Secret und Volume. Beide als Text zu vergleichen meldet Dutzende
+        Unterschiede für einen Stack, der exakt synchron ist — und das ist schlimmer als
+        gar kein Werkzeug, weil man lernt, die Ausgabe zu ignorieren. Stattdessen läuft
+        die Datei durch <strong>Dockers eigenen Compose-Loader und -Converter</strong>,
+        denselben Code, den <code>docker stack deploy</code> nutzt, und beide Seiten
+        werden anschließend von <strong>derselben</strong> Funktion reduziert. Beantwortet
+        wird die Frage <em>„würde ein Deploy dieser Datei etwas ändern?“</em>, nicht
+        <em>„sind diese beiden Dateien gleich geschrieben?“</em>. Daemon-Defaults fallen
+        auf beiden Seiten weg; ein Wert, der <strong>nicht</strong> der Default ist,
+        erscheint weiterhin — es wird also nichts Echtes verborgen.
+      </p>
+      <p>
+        <strong>Ein Export ist eine Beschreibung, kein Backup.</strong> Der Wert eines
+        Secrets ist in der Engine-API <strong>nur schreibbar</strong> und nie wieder
+        auslesbar, und Volume-Inhalte liegen auf den Nodes. Beides wird deshalb als
+        <code>external</code> deklariert, und die exportierte Datei sagt das in ihrem
+        eigenen Kopf: den Stack anderswo neu aufzubauen heißt, zuerst die Secrets
+        anzulegen. Spec-Felder, die das Rendering nicht trägt (<code>tty</code>,
+        <code>ulimits</code>, seccomp- und AppArmor-Einstellungen und einige weitere),
+        stehen an derselben Stelle — denn der gefährliche Fehler eines
+        Vergleichswerkzeugs ist nicht die falsche Antwort, sondern das selbstsichere
+        Schweigen. <em>„Keine Unterschiede“</em> kommt daher immer mit seinen Vorbehalten.
+      </p>
+      <p>
+        Variablen werden aus deiner Umgebung interpoliert, genau wie bei
+        <code>docker stack deploy</code>. Eine Datei mit <code>${TAG}</code> beschreibt
+        also für ein anderes <code>TAG</code> einen anderen Stack, und der Diff hängt von
+        der Umgebung ab, in der er läuft — was richtig ist: alles andere würde „keine
+        Änderung“ melden für ein Deploy, das das Image austauscht.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Befehl</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>stack ls</code></td><td>die auf dem Cluster deployten Stacks</td></tr>
+          <tr><td><code>stack export &lt;stack&gt;</code></td><td>den Stack als Compose-YAML schreiben; mit <code>-o</code> in eine Datei, sonst nach stdout</td></tr>
+          <tr><td><code>stack diff &lt;datei&gt; [stack]</code></td><td>eine Datei mit dem deployten Stack vergleichen. Der Stack-Name ist standardmäßig der Dateiname ohne Endung; <code>--stack</code> oder ein zweites Argument überschreibt ihn. Endet bei jedem Unterschied mit <strong>1</strong></td></tr>
+        </tbody>
+      </table></div>
+
       <h3 id="reroll">Agents neu ausrollen, ohne das Secret zu ändern</h3>
       <p>
         Früher oder später musst du die Agents in einem bereits provisionierten Swarm neu

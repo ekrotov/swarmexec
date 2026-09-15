@@ -604,6 +604,69 @@
         l'interface — celle-ci reste réactive pendant qu'elle interroge chaque nœud.
       </p>
 
+      <h3 id="stackfile"><code>stack export</code> / <code>stack diff</code> — une stack déployée sous forme de fichier</h3>
+      <p>
+        <code>stack export</code> relit une stack déployée depuis le cluster et l'écrit en
+        YAML de forme compose. <code>stack diff</code> compare un fichier de stack à ce
+        qui tourne réellement et affiche un <strong>diff unifié</strong> : une ligne
+        <code>+</code> est ce que déployer le fichier <strong>ajouterait</strong>, une
+        <code>-</code> ce qu'il <strong>retirerait</strong>. Comme
+        <code>git diff --exit-code</code>, la commande sort en <strong>1</strong> dès
+        qu'il y a une différence : utilisable en CI.
+      </p>
+      <div class="cmd">swarmexec stack ls
+swarmexec stack export postgres -o postgres.yml
+swarmexec stack diff postgres.yml postgres</div>
+      <p>
+        Dans la TUI, <kbd>E</kbd> sur l'onglet Stacks/Services propose les deux pour la
+        stack sous le curseur — la ligne de la stack, un de ses services, ou un de ses
+        conteneurs.
+      </p>
+      <p>
+        <strong>Pourquoi pas une comparaison de texte.</strong> Une stack déployée porte
+        ce que le fichier n'a jamais eu : l'empreinte de l'image que le démon a résolue au
+        déploiement, ses propres valeurs par défaut de politique de redémarrage et de mise
+        à jour, et l'espace de noms de la stack préfixé à chaque réseau, secret et volume.
+        Comparer les deux comme du texte signale des dizaines de différences pour une
+        stack pourtant exactement à jour — ce qui est pire que pas d'outil du tout,
+        puisque cela apprend à ignorer la sortie. À la place, le fichier passe par
+        <strong>le chargeur et le convertisseur compose de docker eux-mêmes</strong>, le
+        code qu'utilise <code>docker stack deploy</code>, puis les deux côtés sont réduits
+        par la <strong>même</strong> fonction. La question à laquelle il est répondu est
+        <em>« déployer ce fichier changerait-il quelque chose ? »</em>, pas <em>« ces deux
+        fichiers sont-ils écrits pareil ? »</em>. Les valeurs par défaut du démon sont
+        retirées des deux côtés ; une valeur qui n'est <strong>pas</strong> la valeur par
+        défaut s'affiche toujours, donc rien de réel n'est masqué.
+      </p>
+      <p>
+        <strong>Un export est une description, pas une sauvegarde.</strong> La valeur d'un
+        secret est <strong>en écriture seule</strong> dans l'API du moteur — elle ne peut
+        jamais être relue — et le contenu d'un volume vit sur les nœuds. Les deux sont
+        donc déclarés <code>external</code>, et le fichier exporté le dit dans son propre
+        en-tête : recréer la stack ailleurs suppose de créer d'abord les secrets. Les
+        champs de spécification que ce rendu ne porte pas (<code>tty</code>,
+        <code>ulimits</code>, réglages seccomp et AppArmor, et quelques autres) sont
+        nommés au même endroit, car l'échec dangereux d'un outil de comparaison n'est pas
+        une réponse fausse mais un silence assuré : <em>« aucune différence »</em> arrive
+        toujours avec ses réserves.
+      </p>
+      <p>
+        Les variables sont interpolées depuis votre environnement, exactement comme le
+        fait <code>docker stack deploy</code>. Un fichier contenant <code>${TAG}</code>
+        décrit donc une stack différente pour un <code>TAG</code> différent, et le diff
+        dépend de l'environnement où il tourne — ce qui est correct : prétendre le
+        contraire signalerait « aucun changement » pour un déploiement qui changerait
+        l'image.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Commande</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>stack ls</code></td><td>les stacks déployées sur le cluster</td></tr>
+          <tr><td><code>stack export &lt;stack&gt;</code></td><td>écrit la stack en YAML compose ; avec <code>-o</code> dans un fichier, sinon sur stdout</td></tr>
+          <tr><td><code>stack diff &lt;fichier&gt; [stack]</code></td><td>compare un fichier à la stack déployée. Le nom de la stack vaut par défaut celui du fichier sans extension ; <code>--stack</code> ou un second argument le remplace. Sort en <strong>1</strong> à la moindre différence</td></tr>
+        </tbody>
+      </table></div>
+
       <h3 id="reroll">Redéployer les agents sans changer le secret</h3>
       <p>
         Tôt ou tard, vous devrez redéployer les agents sur un swarm déjà provisionné :
