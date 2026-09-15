@@ -667,6 +667,66 @@ swarmexec stack diff postgres.yml postgres</div>
         </tbody>
       </table></div>
 
+      <h3 id="stackdeploy"><code>stack deploy</code> — appliquer un fichier de stack, après vérification</h3>
+      <p>
+        Charge un fichier de stack, exécute les <a href="#tui">contrôles de sécurité</a>
+        sur ce qu'il déploierait réellement, puis l'applique. Ce qui en fait l'intérêt
+        face à <code>docker stack deploy</code>, c'est le <strong>garde-fou</strong> : le
+        fichier est vérifié <strong>avant que quoi que ce soit ne soit créé</strong>, et si
+        quelque chose au-dessus de l'informatif est trouvé, le déploiement
+        <strong>s'arrête et demande</strong>.
+      </p>
+      <div class="cmd">swarmexec stack deploy web.yml            # demande si quelque chose est trouvé
+swarmexec stack deploy web.yml --check    # vérifier seulement, jamais déployer
+swarmexec stack deploy web.yml --force    # déployer malgré les constats, délibérément</div>
+      <p>
+        Dans la TUI, <kbd>E</kbd> → <em>Deploy a file</em> fait de même : d'abord les
+        constats, <kbd>d</kbd> poursuit, <kbd>Esc</kbd> abandonne. À ce moment rien n'a été
+        créé, ce qui est précisément l'objet de cette pause.
+      </p>
+      <p>
+        <strong>Les contrôles ne sont pas un second jeu de règles.</strong> Le fichier est
+        converti exactement en les valeurs <code>ServiceSpec</code> que le déploiement
+        soumettrait, et les <strong>huit analyseurs existants</strong> tournent dessus — les
+        mêmes contrôles qui posent le bouclier dans l'arbre et remplissent la surcouche
+        <kbd>!</kbd> ainsi que le rapport de sécurité. Deux jeux dériveraient : une règle
+        durcie d'un côté et pas de l'autre signifie que le garde-fou laisse passer un
+        fichier que l'arbre signale dès qu'il tourne — et à qui on a dit <em>« rien
+        trouvé »</em>, on a dit quelque chose de faux. Cela fait aussi que les contrôles
+        voient ce que le cluster <strong>fera</strong>, pas ce que le fichier
+        <strong>dit</strong> ; les valeurs par défaut et raccourcis de compose sont entre
+        les deux.
+      </p>
+      <p>
+        <strong><code>--yes</code> ne veut pas dire « ignore les constats ».</strong> Cela
+        veut dire « ne demande pas », et une exécution qui trouve quelque chose au-dessus
+        de l'informatif <strong>refuse</strong> tout de même et sort avec un code non nul.
+        Autrement, le garde-fou deviendrait une formalité dès la première mise en CI. Pour
+        déployer malgré les constats il faut écrire <code>--force</code> : autre chose à
+        taper, autre chose à expliquer ensuite. Une exécution non interactive sans réponse
+        sur stdin compte comme <strong>non</strong>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Option</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--check</code></td><td>vérifie et s'arrête. Sort en <strong>1</strong> si quelque chose au-dessus de l'informatif a été trouvé : utilisable comme garde-fou de pipeline</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>ne pas demander. Déploie si les contrôles sont propres ; <strong>refuse</strong> sinon</td></tr>
+          <tr><td><code>--force</code></td><td>déployer malgré les constats, sans demander</td></tr>
+          <tr><td><code>--prune</code></td><td>supprime les services de la stack que le fichier ne déclare plus. Désactivé par défaut, comme dans docker : un fichier qui n'est qu'une partie de la stack est bien plus souvent un oubli qu'un ordre de suppression</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Ce que fait un déploiement, dans cet ordre :</strong> réseaux, puis
+        secrets, puis configs, puis services — un service qui référence quelque chose qui
+        n'existe pas encore échoue, et la stack reste à moitié appliquée. Les réseaux
+        externes sont vérifiés <strong>en premier</strong>, car un réseau inexistant est la
+        façon la plus courante pour un déploiement de s'arrêter à mi-chemin. Un
+        <strong>secret existant n'est jamais écrasé</strong> : sa valeur est immuable dans
+        swarm, le changer signifie en créer un nouveau sous un autre nom. Si un déploiement
+        échoue malgré tout en cours de route, ce qui a déjà été appliqué est rapporté avec
+        l'erreur plutôt que laissé à deviner.
+      </p>
+
       <h3 id="reroll">Redéployer les agents sans changer le secret</h3>
       <p>
         Tôt ou tard, vous devrez redéployer les agents sur un swarm déjà provisionné :

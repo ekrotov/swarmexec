@@ -660,6 +660,64 @@ swarmexec stack diff postgres.yml postgres</div>
         </tbody>
       </table></div>
 
+      <h3 id="stackdeploy"><code>stack deploy</code> — eine Stack-Datei einspielen, nach Prüfung</h3>
+      <p>
+        Lädt eine Stack-Datei, lässt die <a href="#tui">Sicherheitsprüfungen</a> über das
+        laufen, was tatsächlich ausgerollt würde, und spielt sie ein. Was das gegenüber
+        <code>docker stack deploy</code> wertvoll macht, ist der <strong>Gate</strong>: die
+        Datei wird geprüft, <strong>bevor irgendetwas angelegt ist</strong>, und wenn etwas
+        oberhalb von „informativ“ gefunden wird, <strong>hält der Deploy an und fragt</strong>.
+      </p>
+      <div class="cmd">swarmexec stack deploy web.yml            # fragt, wenn etwas gefunden wurde
+swarmexec stack deploy web.yml --check    # nur prüfen, nie ausrollen
+swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</div>
+      <p>
+        Im TUI macht <kbd>E</kbd> → <em>Deploy a file</em> dasselbe: zuerst die Befunde,
+        <kbd>d</kbd> fährt fort, <kbd>Esc</kbd> geht weg. Zu diesem Zeitpunkt ist nichts
+        angelegt — genau dafür ist die Pause da.
+      </p>
+      <p>
+        <strong>Die Prüfungen sind kein zweiter Regelsatz.</strong> Die Datei wird in genau
+        die <code>ServiceSpec</code>-Werte umgewandelt, die der Deploy einreichen würde, und
+        darauf laufen die <strong>vorhandenen acht Analyzer</strong> — dieselben Prüfungen,
+        die im Baum den Schild setzen und das <kbd>!</kbd>-Overlay sowie den Security-Report
+        füllen. Zwei Sätze würden auseinanderdriften: eine Regel, die an einer Stelle
+        verschärft wird und an der anderen nicht, heißt, dass der Gate eine Datei
+        durchlässt, die der Baum im selben Moment markiert, in dem sie läuft — und wem
+        <em>„nichts gefunden“</em> gesagt wurde, dem wurde etwas Falsches gesagt. Außerdem
+        sehen die Prüfungen so, was der Cluster <strong>tun</strong> wird, nicht was die
+        Datei <strong>sagt</strong>; Composes Defaults und Kurzschreibweisen liegen dazwischen.
+      </p>
+      <p>
+        <strong><code>--yes</code> heißt nicht „ignoriere die Befunde“.</strong> Es heißt
+        „frag nicht“, und ein Lauf, der etwas oberhalb von „informativ“ findet,
+        <strong>verweigert</strong> trotzdem und endet mit Exit ungleich null. Alles andere
+        würde den Gate zur Formalie machen, sobald ihn jemand in CI einbaut. Um trotz
+        Befunden auszurollen, muss man <code>--force</code> schreiben — anderer Tastendruck,
+        andere Rechtfertigung hinterher. Ein nicht-interaktiver Lauf ohne Antwort auf stdin
+        zählt als <strong>Nein</strong>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>--check</code></td><td>nur prüfen und anhalten. Endet mit <strong>1</strong>, wenn etwas oberhalb von „informativ“ gefunden wurde — damit lässt sich eine Pipeline absichern</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>nicht fragen. Rollt aus, wenn die Prüfungen sauber sind; <strong>verweigert</strong>, wenn nicht</td></tr>
+          <tr><td><code>--force</code></td><td>trotz Befunden ausrollen, ohne Rückfrage</td></tr>
+          <tr><td><code>--prune</code></td><td>Services des Stacks entfernen, die die Datei nicht mehr deklariert. Standardmäßig aus, wie bei docker: eine Datei, die nur ein Teil des Stacks ist, ist weit öfter ein Versehen als eine Löschanweisung</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Was ein Deploy tut, in dieser Reihenfolge:</strong> Netze, dann Secrets,
+        dann Configs, dann Services — ein Service, der auf etwas noch nicht Vorhandenes
+        verweist, scheitert, und der Stack bleibt halb angewandt zurück. Externe Netze
+        werden <strong>zuerst</strong> geprüft, denn ein nicht existierendes ist der
+        häufigste Grund, warum ein Deploy auf halber Strecke stehen bleibt. Ein vorhandenes
+        <strong>Secret wird nie überschrieben</strong>: sein Wert ist in Swarm unveränderlich,
+        ein Secret zu ändern heißt, ein neues unter neuem Namen anzulegen. Scheitert ein
+        Deploy doch mittendrin, wird das bereits Angewandte zusammen mit dem Fehler
+        gemeldet, statt es erraten zu lassen.
+      </p>
+
       <h3 id="reroll">Agents neu ausrollen, ohne das Secret zu ändern</h3>
       <p>
         Früher oder später musst du die Agents in einem bereits provisionierten Swarm neu

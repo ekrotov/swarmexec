@@ -68,7 +68,7 @@ type Service struct {
 	DNSSearch   []string              `yaml:"dns_search,omitempty"`
 	ExtraHosts  []string              `yaml:"extra_hosts,omitempty"`
 	Groups      []string              `yaml:"group_add,omitempty"`
-	Ports       []string              `yaml:"ports,omitempty"`
+	Ports       []any                 `yaml:"ports,omitempty"`
 	Volumes     []string              `yaml:"volumes,omitempty"`
 	Networks    map[string]*NetAttach `yaml:"networks,omitempty"`
 	Secrets     []*Mounted            `yaml:"secrets,omitempty"`
@@ -161,6 +161,16 @@ type UpdateConfig struct {
 	Monitor         string  `yaml:"monitor,omitempty"`
 	MaxFailureRatio float32 `yaml:"max_failure_ratio,omitempty"`
 	Order           string  `yaml:"order,omitempty"`
+}
+
+// Port is compose's long port syntax, used for anything the short "8080:80"
+// form cannot express. Host-mode publishing is the case that forced it: written
+// as a string it does not load again.
+type Port struct {
+	Target    uint32 `yaml:"target"`
+	Published uint32 `yaml:"published,omitempty"`
+	Protocol  string `yaml:"protocol,omitempty"`
+	Mode      string `yaml:"mode,omitempty"`
 }
 
 // Network is a stack network as compose declares it.

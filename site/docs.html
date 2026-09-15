@@ -635,6 +635,62 @@ swarmexec stack diff postgres.yml postgres</div>
         </tbody>
       </table></div>
 
+      <h3 id="stackdeploy"><code>stack deploy</code> — apply a stack file, after checking it</h3>
+      <p>
+        Loads a stack file, runs the <a href="#tui">security checks</a> over what it would
+        actually deploy, and applies it. What makes this worth having over
+        <code>docker stack deploy</code> is the <strong>gate</strong>: the file is checked
+        <strong>before anything is created</strong>, and if something above informational
+        is found the deploy <strong>stops and asks</strong>.
+      </p>
+      <div class="cmd">swarmexec stack deploy web.yml            # asks if anything is found
+swarmexec stack deploy web.yml --check    # only check, never deploy
+swarmexec stack deploy web.yml --force    # deploy despite findings, deliberately</div>
+      <p>
+        In the TUI, <kbd>E</kbd> → <em>Deploy a file</em> does the same: the findings are
+        shown first, <kbd>d</kbd> proceeds, <kbd>Esc</kbd> walks away. Nothing has been
+        created at that point, which is the whole purpose of the pause.
+      </p>
+      <p>
+        <strong>The checks are not a second set of rules.</strong> The file is converted
+        into the very <code>ServiceSpec</code> values the deploy would submit, and the
+        <strong>existing eight analyzers</strong> run on those — the same checks that put
+        a shield in the tree, fill the <kbd>!</kbd> overlay and the security report. Two
+        sets would drift: a rule tightened in one place and not the other means the gate
+        passes a file that the tree flags the moment it is running, and an operator who
+        was told <em>“nothing found”</em> was told something false. It also means the
+        checks see what the cluster will <strong>do</strong>, not what the file
+        <strong>says</strong> — compose's defaults and shorthands sit in between.
+      </p>
+      <p>
+        <strong><code>--yes</code> does not mean “ignore the findings”.</strong> It means
+        “do not ask”, and a run that finds something above informational still
+        <strong>refuses</strong> and exits non-zero. Anything else would turn the gate
+        into a formality the first time someone put it in CI. To deploy despite findings
+        you have to say <code>--force</code>, which is a different thing to type and a
+        different thing to explain afterwards. A non-interactive run with no answer on
+        stdin counts as <strong>no</strong>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--check</code></td><td>run the checks and stop. Exits <strong>1</strong> if anything above informational was found, so it gates a pipeline</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>do not ask. Deploys when the checks are clean; <strong>refuses</strong> when they are not</td></tr>
+          <tr><td><code>--force</code></td><td>deploy despite findings, without asking</td></tr>
+          <tr><td><code>--prune</code></td><td>remove services of the stack the file no longer declares. Off by default, as in docker: a file that is a subset of the stack is far more often an accident than an instruction to delete</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>What a deploy does, in order:</strong> networks, then secrets, then
+        configs, then services — a service that references something not yet there fails,
+        and the stack is left half-applied. External networks are checked
+        <strong>first</strong>, because one that does not exist is the most common way a
+        deploy stops halfway. An existing <strong>secret is never overwritten</strong>: a
+        secret's value is immutable in swarm, so changing one means creating a new one
+        under a new name. If a deploy does fail partway, what had already been applied is
+        reported alongside the error rather than left to be guessed at.
+      </p>
+
       <h3 id="reroll">Re-rolling the agents without changing the secret</h3>
       <p>
         Sooner or later you have to redeploy the agents on a swarm that is already

@@ -116,6 +116,7 @@ const (
 	pageSecurityReport   = "securityreport"
 	pageStackFile        = "stackfile"
 	pageStackDiff        = "stackdiff"
+	pageStackPlan        = "stackplan"
 	pageNodeAvail        = "nodeavail"
 	pageConfigDetail     = "configdetail"
 	pageMenu             = "menu"

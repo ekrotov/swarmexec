@@ -94,7 +94,7 @@ func ServiceFromSpec(ns string, spec swarm.ServiceSpec, names Names) *Service {
 	}
 	s.Ports = portStrings(spec.EndpointSpec)
 	s.Volumes = mountStrings(names, cs.Mounts)
-	s.Networks = networkAttachments(spec, names)
+	s.Networks = networkAttachments(spec, names, stripNamespace(ns, spec.Name))
 	s.Secrets = secretRefs(names, cs.Secrets)
 	s.Configs = configRefs(names, cs.Configs)
 	s.Healthcheck = healthcheck(cs.Healthcheck)
@@ -200,27 +200,46 @@ func sortedCopy(in []string) []string {
 
 // portStrings renders published ports in compose's long-ish short form. Sorted
 // by what is published, so adding one port does not rewrite the whole block.
-func portStrings(ep *swarm.EndpointSpec) []string {
+// portStrings renders published ports. The short "8080:80" form is used where
+// it suffices and compose's long mapping where it does not — host-mode
+// publishing has no short spelling, and writing one anyway produced a file that
+// would not load ("invalid containerPort: 5432 (host)"). Sorted by the rendered
+// text so adding one port does not rewrite the block.
+func portStrings(ep *swarm.EndpointSpec) []any {
 	if ep == nil || len(ep.Ports) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(ep.Ports))
+	type entry struct {
+		key string
+		val any
+	}
+	entries := make([]entry, 0, len(ep.Ports))
 	for _, p := range ep.Ports {
+		proto := string(p.Protocol)
+		if p.Protocol == swarm.PortConfigProtocolTCP {
+			proto = "" // the default; spelling it on one side only is a phantom
+		}
+		if p.PublishMode == swarm.PortConfigPublishModeHost {
+			entries = append(entries, entry{
+				key: fmt.Sprintf("%010d:%010d/host", p.PublishedPort, p.TargetPort),
+				val: &Port{Target: p.TargetPort, Published: p.PublishedPort, Protocol: proto, Mode: "host"},
+			})
+			continue
+		}
 		s := fmt.Sprintf("%d:%d", p.PublishedPort, p.TargetPort)
 		if p.PublishedPort == 0 {
 			s = fmt.Sprintf("%d", p.TargetPort)
 		}
-		if p.Protocol != "" && p.Protocol != swarm.PortConfigProtocolTCP {
-			s += "/" + string(p.Protocol)
+		if proto != "" {
+			s += "/" + proto
 		}
-		// Only "host" is worth spelling out; ingress is the default and saying
-		// so on one side only would be a phantom difference.
-		if p.PublishMode == swarm.PortConfigPublishModeHost {
-			s += " (host)"
-		}
-		out = append(out, s)
+		entries = append(entries, entry{key: fmt.Sprintf("%010d:%010d/%s", p.PublishedPort, p.TargetPort, proto), val: s})
 	}
-	sort.Strings(out)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+	out := make([]any, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.val)
+	}
 	return out
 }
 
@@ -255,7 +274,13 @@ func mountStrings(names Names, mounts []mount.Mount) []string {
 // networkAttachments reads the task template's networks, falling back to the
 // deprecated top-level field — older daemons and older specs put them there,
 // and a stack deployed years ago must still compare correctly.
-func networkAttachments(spec swarm.ServiceSpec, names Names) map[string]*NetAttach {
+//
+// selfName is dropped from the aliases. Docker's converter appends the
+// service's own short name to every network it joins, so the alias carries no
+// information — but a service deployed by some other route may not have it
+// recorded, and then the same stack would differ from itself depending on how
+// it was created.
+func networkAttachments(spec swarm.ServiceSpec, names Names, selfName string) map[string]*NetAttach {
 	nets := spec.TaskTemplate.Networks
 	if len(nets) == 0 {
 		nets = spec.Networks //nolint:staticcheck // deprecated, but still what old specs carry
@@ -265,7 +290,13 @@ func networkAttachments(spec swarm.ServiceSpec, names Names) map[string]*NetAtta
 	}
 	out := make(map[string]*NetAttach, len(nets))
 	for _, n := range nets {
-		out[names.network(n.Target)] = &NetAttach{Aliases: sortedCopy(n.Aliases)}
+		var aliases []string
+		for _, a := range n.Aliases {
+			if a != selfName {
+				aliases = append(aliases, a)
+			}
+		}
+		out[names.network(n.Target)] = &NetAttach{Aliases: sortedCopy(aliases)}
 	}
 	return out
 }
