@@ -1740,6 +1740,13 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         każdego klastra z tego samego powodu: identyfikator kontenera jest unikalny tylko
         w obrębie własnego demona.
       </p>
+      <p>
+        Dlatego lokalny port, którego już używasz, jest <strong>odrzucany z góry</strong> —
+        z nazwą przekierowania, które go trzyma, i klastra, do którego należy; okienko
+        pozostaje otwarte, żebyś wybrał inny port. Systemowe „address already in use"
+        zostaje na wypadek, gdy ma rację: port zajęty przez inny program, którego
+        swarmexec nie potrafi nazwać.
+      </p>
 
       <h3>Zakładka Networks</h3>
       <p>

@@ -17,7 +17,32 @@ import (
 	"github.com/rivo/tview"
 )
 
+// portConflict names the forward already holding a local port, if any, and
+// renders it as a sentence the operator can act on.
+//
+// The cluster is the part that matters and the part the operating system cannot
+// know: since forwards survive a cluster switch, the thing occupying port 8080
+// is quite often something you started on a cluster that is not on screen.
+func (u *ui) portConflict(local uint32) (string, bool) {
+	e, ok := u.forwards.byLocalPort(local)
+	if !ok {
+		return "", false
+	}
+	what := orDash(e.cand.Service)
+	if e.cand.Service == "" {
+		what = shortID(e.cand.ContainerID)
+	}
+	return fmt.Sprintf("port %d is already forwarded to %s on cluster %s", local, what, orDash(e.cluster)), true
+}
+
 func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
+	// Refuse a port we are already using, before anything is created — the
+	// backstop for every caller. The prompt checks too, so a typo can be
+	// corrected without this ever being reached.
+	if msg, clash := u.portConflict(local); clash {
+		u.info(msg + ".\n\nStop it on the Forwards tab, or pick another local port.")
+		return
+	}
 	app, cfg, f, forwards := u.app, u.cfg, u.f, u.forwards
 	// runCtx, NOT the cluster's context: a forward is a local listener the
 	// operator started deliberately, and it now survives a switch to another
@@ -80,6 +105,24 @@ func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
 	}()
 }
 
+// fwdPromptWidth is the port prompt's normal width: enough for the placeholder
+// that explains the "local:remote" spelling.
+const fwdPromptWidth = 54
+
+// promptWidthFor widens a prompt so a message fits inside its border, capped so
+// it cannot outgrow a modest terminal. Two columns for the border and two for
+// the spaces around the title.
+func promptWidthFor(msg string) int {
+	w := len([]rune(msg)) + 4
+	if w < fwdPromptWidth {
+		return fwdPromptWidth
+	}
+	if w > 100 {
+		return 100
+	}
+	return w
+}
+
 func (u *ui) portPrompt(c resolve.Candidate) {
 	app, pages, ctree := u.app, u.pages, u.ctree
 	input := tview.NewInputField().SetLabel(" port: ").SetFieldWidth(20)
@@ -100,11 +143,26 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 			input.SetTitle(fmt.Sprintf(" %v ", perr))
 			return
 		}
+		// Same treatment for an occupied local port: it is a correctable
+		// mistake, so the prompt stays open with the reason — including WHICH
+		// forward has it, which is the part the operator cannot see from here.
+		//
+		// The box is re-laid-out to fit that sentence. At the prompt's normal
+		// width the title is clipped, and what gets clipped is the tail — the
+		// cluster name, which is the entire reason for saying anything. A
+		// message that ends in "on cluste…" is worse than the kernel's.
+		if msg, clash := u.portConflict(local); clash {
+			input.SetTitle(" " + msg + " ")
+			pages.RemovePage(pageFwdPrompt)
+			pages.AddPage(pageFwdPrompt, centeredPrompt(input, promptWidthFor(msg)), true, true)
+			app.SetFocus(input)
+			return
+		}
 		closePrompt()
 		u.startForward(c, local, remote)
 		u.flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
 	})
-	pages.AddPage(pageFwdPrompt, centeredPrompt(input, 54), true, true)
+	pages.AddPage(pageFwdPrompt, centeredPrompt(input, fwdPromptWidth), true, true)
 	app.SetFocus(input)
 }
 

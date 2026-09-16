@@ -1826,6 +1826,13 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
         est par cluster pour la même raison : un identifiant de conteneur n'est unique
         qu'au sein de son propre démon.
       </p>
+      <p>
+        De ce fait, un port local que vous utilisez déjà est <strong>refusé d'emblée</strong>,
+        en nommant la redirection qui le détient et le cluster auquel elle appartient — le
+        message reste ouvert pour que vous en choisissiez un autre. Le « address already in
+        use » du système reste pour le cas où il a raison : un port détenu par un autre
+        programme, que swarmexec ne peut pas nommer.
+      </p>
 
       <h3>Onglet Networks</h3>
       <p>

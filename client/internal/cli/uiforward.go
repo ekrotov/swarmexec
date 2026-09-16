@@ -228,6 +228,32 @@ func (r *forwardRegistry) forContainer(cluster, containerID string) []forwardEnt
 	return out
 }
 
+// byLocalPort returns the forward holding a local port, if any.
+//
+// It exists so a second forward onto an occupied port can be refused with a
+// sentence that names the culprit. The kernel's "address already in use" is
+// true but useless here: the holder is usually THIS tool, on a cluster the
+// operator is not currently looking at, and nothing on that screen says so.
+//
+// Matched on the BOUND port, not the requested one, so a forward that asked for
+// 0 and was given 51234 by the kernel is protected too. A requested 0 never
+// matches — it means "any free port", which cannot collide with anything. And a
+// failed forward is skipped: it holds no listener (the bind never happened, or
+// Serve returned and Close ran), so it must not block the port it never got.
+func (r *forwardRegistry) byLocalPort(port uint32) (forwardEntry, bool) {
+	if port == 0 {
+		return forwardEntry{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, e := range r.entries {
+		if e.state != forwardFailed && e.boundPort() == port {
+			return *e, true
+		}
+	}
+	return forwardEntry{}, false
+}
+
 // get returns a live snapshot of one forward. The detail view uses it rather
 // than the rendered row, whose connErr is only as fresh as the last redraw.
 func (r *forwardRegistry) get(id int) (forwardEntry, bool) {
