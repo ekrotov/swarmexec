@@ -34,41 +34,28 @@ func newUICmd(g *globalFlags) *cobra.Command {
 		Short: "Interactive view of containers, volumes, networks, secrets and contexts",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Loop so activating a context in the Contexts tab restarts the UI
-			// cleanly against the chosen cluster; "" means a normal quit.
-			ctxOverride := g.dockerContext
-			for {
-				next, err := runUI(cmd, g, f, args, ctxOverride)
-				if err != nil {
-					return err
-				}
-				if next == "" {
-					return nil
-				}
-				ctxOverride = next
-			}
+			return runUI(cmd, g, f, args)
 		},
 	}
 	cmd.Flags().DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to an agent")
 	return cmd
 }
 
-// runUI runs one session of the UI against ctxOverride's docker context. It
-// returns the name of a context to switch to (the operator activated one in the
-// Contexts tab) so the caller can restart cleanly against it, or "" on a normal
-// quit.
+// runUI runs the UI. It starts on the context the flags/env select and stays up
+// across cluster switches: activating a context in the Contexts tab swaps the
+// visible cluster rather than rebuilding the screen (see switchCluster).
 //
-// A context switch restarts the UI rather than re-pointing it live, for two
-// reasons:
-//   - Data races: the docker client and resolver are read by many background
-//     goroutines (per-node volume/agent probes, the cluster-summary probe,
-//     container loads). Reassigning them under those in-flight reads would be a
-//     data race, so a live swap would need locking around every access.
-//   - Cluster-bound state: active port-forwards, open exec/logs streams, the
-//     async cluster summary and cached candidates all belong to the old cluster.
-//     A fresh run tears them down (the deferred cleanups fire, old goroutines
-//     drain) and rebuilds everything for the new cluster, so there is no
-//     half-switched state — e.g. a forward left pointing at an old-cluster node.
+// It used to restart instead, and the two reasons given for that are worth
+// recording because only one of them was real:
+//   - Data races, on the docker client and resolver being reassigned under
+//     in-flight background reads. That never needed locking around every
+//     access; it needed each cluster to own an immutable bundle and stale
+//     results to be dropped. That is clusterState and (*ui).onCluster.
+//   - Cluster-bound state — forwards, open streams, cached candidates. Real,
+//     and now held per cluster instead of being destroyed. The exception is
+//     forwards, which are deliberately NOT torn down: they are local listeners
+//     the operator started, and killing them for looking at another cluster is
+//     the behaviour this replaces.
 //
 // treeRefreshInterval is how often the UI re-polls the swarm so the container
 // tree reflects background changes (rolling updates, restarts, scaling).
@@ -159,89 +146,143 @@ const (
 	pageNodeImages       = "nodeimages"
 )
 
-func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string, ctxOverride string) (string, error) {
-	// ctxOverride, NOT g.dockerContext: after a cluster switch in the Contexts
-	// tab those two differ, and building the agent tunnel from the flag is what
-	// left exec, logs, port-forward, stats and volumes pointing at the previous
-	// cluster's bastion while the tree kept working.
-	dockerEP := resolveEndpoint(ctxOverride)
-	cfg, err := g.resolveConfig(cmd, dockerEP)
-	if err != nil {
-		return "", &cliError{code: usageExitCode, err: err}
-	}
-	if err := cfg.Validate(); err != nil {
-		return "", &cliError{code: usageExitCode, err: err}
-	}
+func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error {
 	if !cterm.IsTerminal(os.Stdout.Fd()) || !cterm.IsTerminal(os.Stdin.Fd()) {
-		return "", &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
+		return &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
 	}
 
-	// Install the global theme before any primitive is constructed: tview reads
-	// its palette at construction time and its border glyphs at draw time.
-	applyTheme(cfg.UI.Dim)
-
-	ctx := cmdContext(cmd)
-	// Per-run context so background goroutines (the auto-refresh ticker, the
-	// responsiveness watchdog, the log-viewer refresher, open streams, forwards)
-	// stop when this run returns — e.g. on a Contexts-tab cluster switch, where
-	// the caller restarts runUI with a fresh context.
-	ctx, cancelRun := context.WithCancel(ctx)
+	// Per-run context. It bounds what belongs to the SESSION — the forwards, the
+	// responsiveness watchdog, the log viewer — and outlives a cluster switch.
+	// Each cluster's own polling hangs off a child of it that is cancelled when
+	// the operator looks elsewhere (see clusterState.ctx).
+	runCtx, cancelRun := context.WithCancel(cmdContext(cmd))
 	defer cancelRun()
+
 	var service string
 	if len(args) == 1 {
 		service = args[0]
 	}
 
-	// switchTo is set when the operator activates a context in the Contexts tab;
-	// the UI then stops and the caller restarts against it.
-	var switchTo string
-
-	dcli, err := dockerEP.connect(ctx)
-	if err != nil {
-		return "", &cliError{code: session.TransportFailure, err: err}
-	}
-	r := resolve.New(dcli, addrModeOf(cfg))
-
 	// Configurable shortcut keys (keys.yaml). Never fails: invalid/conflicting
 	// bindings fall back to defaults with a warning shown once on startup.
 	km, keyWarnings := loadKeybinds("")
 
-	app := tview.NewApplication()
-	pages := tview.NewPages()   // overlays: menus, terminal, logs, volume nodes
-	content := tview.NewPages() // the two tabs
-
-	selStyle := tcell.StyleDefault.Background(tcell.ColorTeal).Foreground(tcell.ColorWhite)
-
 	u := &ui{
-		app: app, pages: pages, content: content,
-		dcli: dcli, r: r, cfg: cfg, km: km,
-		f: f, g: g, ctx: ctx, cancelRun: cancelRun,
-		ctxOverride: ctxOverride, service: service, switchTo: switchTo,
-		selStyle: selStyle,
+		app:       tview.NewApplication(),
+		pages:     tview.NewPages(), // overlays: menus, terminal, logs, volume nodes
+		content:   tview.NewPages(), // the per-tab pages
+		clusters:  map[string]*clusterState{},
+		km:        km,
+		f:         f,
+		g:         g,
+		cmd:       cmd,
+		runCtx:    runCtx,
+		cancelRun: cancelRun,
+		service:   service,
+		selStyle:  tcell.StyleDefault.Background(tcell.ColorTeal).Foreground(tcell.ColorWhite),
 		// Grouping is on by default; it only takes effect once something in the
 		// cluster actually carries a stack label (see anyStacked).
 		groupByStack: true,
-		statsGate:    newStatsGate(),
 	}
+
+	// The cluster the flags/env point at. This one must come up: there is no UI
+	// to show an error in yet, and a tool that opens onto nothing it can reach is
+	// worse than a message on stderr. Every LATER cluster is allowed to fail —
+	// by then there is a screen to report it on, and another cluster to go back
+	// to. See switchCluster.
+	first := u.cluster(effectiveContextName(g.dockerContext), g.dockerContext)
+	if err := u.connectCluster(first); err != nil {
+		return err
+	}
+	u.clusterState = first
+	u.activeCtx = first.name
+	u.filter = service // `swarmexec ui web` opens pre-narrowed
+
+	// Install the global theme before any primitive is constructed: tview reads
+	// its palette at construction time and its border glyphs at draw time.
+	applyTheme(u.cfg.UI.Dim)
+
 	return u.run(keyWarnings)
+}
+
+// effectiveContextName is what the session is pointed at, by name: the explicit
+// choice, else $DOCKER_CONTEXT, else docker's stored current, else "default".
+// It is the label the footer shows and the key a cluster is remembered under —
+// never the thing it is resolved from (see clusterState.ctxOverride).
+func effectiveContextName(override string) string {
+	name := firstNonEmpty(override, os.Getenv("DOCKER_CONTEXT"))
+	if name == "" {
+		name = dockerctx.Current()
+	}
+	if name == "" {
+		name = "default"
+	}
+	return name
+}
+
+// connectCluster brings a cluster online: ONE endpoint resolution feeding both
+// the manager client and the agent tunnel, the config that carries the tunnel's
+// dialer, and the context that bounds this cluster's background work.
+//
+// Called for the first cluster at startup and for each other one the first time
+// the operator switches to it. Everything that differs between clusters is
+// decided here and nowhere else, which is what keeps a switch from leaving one
+// channel pointed at the cluster we just left (the B4 bug, one level up).
+func (u *ui) connectCluster(c *clusterState) error {
+	ep := resolveEndpoint(c.ctxOverride)
+	cfg, err := u.g.resolveConfig(u.cmd, ep)
+	if err != nil {
+		return &cliError{code: usageExitCode, err: err}
+	}
+	if err := cfg.Validate(); err != nil {
+		return &cliError{code: usageExitCode, err: err}
+	}
+	dcli, err := ep.connect(u.runCtx)
+	if err != nil {
+		return &cliError{code: session.TransportFailure, err: err}
+	}
+	c.cfg = cfg
+	c.dcli = dcli
+	c.r = resolve.New(dcli, addrModeOf(cfg))
+	c.ctx, c.cancel = context.WithCancel(u.runCtx)
+	// The registry cache re-marks service rows when a background version check
+	// lands. It belongs to the cluster whose images it resolved, and the guard
+	// is pointer identity: if that cluster is no longer the visible one, the
+	// rows on screen are not its rows.
+	c.regCache = newRegistryCache(func() {
+		u.app.QueueUpdateDraw(func() {
+			if u.clusterState != c {
+				return
+			}
+			eachServiceNode(u.croot, u.markService)
+		})
+	})
+	c.err = nil
+	return nil
 }
 
 // run drives one UI session over the infrastructure runUI prepared on u. The
 // per-tab closures still live here (they will move to their own files in later
 // stages); the shared infra closures are now methods on *ui. The aliases below
 // keep those closure bodies referring to app/pages/… unchanged.
-func (u *ui) run(keyWarnings []string) (string, error) {
+func (u *ui) run(keyWarnings []string) error {
 	app, pages, content := u.app, u.pages, u.content
 	km := u.km
-	g, ctx := u.g, u.ctx
-	ctxOverride, service := u.ctxOverride, u.service
+	g := u.g
+	service := u.service
 	selStyle := u.selStyle
+	// The session context, NOT the cluster's: the loops below outlive a cluster
+	// switch. The tree ticker refreshes whichever cluster is visible at the time,
+	// and the watchdog is measuring this process, not a cluster.
+	ctx := u.runCtx
 
 	// forwards is the UI's only persistent background resource: a port forward
 	// outlives the overlay that started it, unlike every stream here.
 	forwards := newForwardRegistry()
 	u.forwards = forwards
 	defer forwards.stopAll()
+	// Every cluster this session touched, not only the visible one.
+	defer u.closeClusters()
 
 	// ---------------------------------------------------------------- containers
 	// A tree: services are parent nodes, their containers are children.
@@ -406,17 +447,9 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	// keys can be pasted as-is.
 
 	// ------------------------------------------------------------------ contexts
-	// activeCtx is this session's effective docker context (what the UI is
-	// connected to): the context the session was started with, else
-	// $DOCKER_CONTEXT, else the stored current, else "default". Shown in the
-	// footer and marked here.
-	u.activeCtx = firstNonEmpty(ctxOverride, os.Getenv("DOCKER_CONTEXT"))
-	if u.activeCtx == "" {
-		u.activeCtx = dockerctx.Current()
-	}
-	if u.activeCtx == "" {
-		u.activeCtx = "default"
-	}
+	// activeCtx (the name in the footer, and the row marked here) is set with the
+	// cluster it belongs to — runUI for the first one, activateCluster for every
+	// switch — so the name and the connection can never disagree.
 	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	cxtable.SetSelectedStyle(selStyle)
 	// Contexts come from docker's local store (no network), so load synchronously.
@@ -987,7 +1020,7 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	scr, serr := tcell.NewScreen()
 	if serr != nil {
-		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
+		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
 	}
 	screen = scr
 	u.screen = screen
@@ -1001,9 +1034,9 @@ func (u *ui) run(keyWarnings []string) (string, error) {
 	})
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
-		return "", &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
+		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
-	return u.switchTo, nil
+	return nil
 }
 
 // svcRef marks a service (group) node and carries its name. It is deliberately
@@ -1951,12 +1984,13 @@ func (u *ui) startSearch(mode string) {
 // summary. The agent probe (a Version RPC per node) can be slow, so it runs
 // off the UI goroutine and pushes the result back via QueueUpdateDraw.
 func (u *ui) refreshCluster() {
-	r, ctx, app := u.r, u.ctx, u.app
+	r, ctx := u.r, u.ctx
 	cfg, f := u.cfg, u.f
+	gen := u.generation()
 	go func() {
 		nodes, err := r.Nodes(ctx)
 		if err != nil {
-			app.QueueUpdateDraw(func() {
+			u.onCluster(gen, func() {
 				u.clusterText = "[red]cluster: unreachable[white]"
 				u.updateStatus()
 			})
@@ -1968,7 +2002,7 @@ func (u *ui) refreshCluster() {
 				agents++
 			}
 		}
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			u.clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", len(nodes), agents, len(nodes))
 			u.updateStatus()
 		})
@@ -2151,7 +2185,10 @@ func (u *ui) closeLogView() {
 }
 
 func (u *ui) openLogView() {
-	app, pages, ctx := u.app, u.pages, u.ctx
+	// runCtx: this overlay shows the CLIENT's log ring, which has nothing to do
+	// with any cluster — its refresher must not die because the operator
+	// switched cluster while it was open.
+	app, pages, ctx := u.app, u.pages, u.runCtx
 	u.logViewPrev = app.GetFocus()
 	_, u.logViewRestore = u.pushOverlayHelp(footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)

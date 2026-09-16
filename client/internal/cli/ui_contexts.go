@@ -27,8 +27,18 @@ func (u *ui) renderContexts() {
 	selRow := 1
 	for i, c := range u.ctxs {
 		label, color := "  "+c.Name, tcell.ColorWhite
-		if c.Name == u.activeCtx {
+		switch {
+		case c.Name == u.activeCtx:
 			label, color = "▶ "+c.Name, tcell.ColorAqua // the active session context
+		case u.clusters[c.Name] != nil && u.clusters[c.Name].dcli != nil:
+			// Visited and still connected: switching here is instant and lands
+			// where the operator left off.
+			label, color = "· "+c.Name, tcell.ColorGreen
+		case u.clusters[c.Name] != nil && u.clusters[c.Name].err != nil:
+			// Tried and refused. Saying so here is the difference between "I
+			// wonder why nothing happened" and "that one is down" — the switch
+			// itself deliberately leaves the operator where they were.
+			label, color = "✗ "+c.Name, tcell.ColorRed
 		}
 		cxtable.SetCell(i+1, 0, tview.NewTableCell(label).SetTextColor(color).SetExpansion(1))
 		cxtable.SetCell(i+1, 1, tview.NewTableCell(orDash(c.Host)).SetTextColor(tcell.ColorGray).SetExpansion(2))
@@ -196,17 +206,17 @@ func (u *ui) deleteContext(c dockerctx.Context) {
 }
 
 func (u *ui) activateContext(c dockerctx.Context) {
-	app := u.app
 	if c.Name == u.activeCtx {
 		u.flash(" [gray]already on[white] context " + c.Name)
 		return
 	}
-	if err := dockerctx.Use(c.Name); err != nil {
-		u.info("switch failed: " + err.Error())
-		return
-	}
-	u.switchTo = c.Name
-	app.Stop() // the caller restarts against switchTo
+	// Docker's stored current context is updated by the switch, once it has
+	// actually happened — not here. It used to be written first, which was
+	// harmless only because a failure then took the whole UI down with it. Now
+	// that a refused switch leaves the operator where they were, writing it
+	// first would leave `docker` pointed at a cluster the UI just declined to
+	// go to, and the footer and the shell would disagree.
+	u.switchCluster(c.Name)
 }
 
 func (u *ui) showContextDetail(c dockerctx.Context) {

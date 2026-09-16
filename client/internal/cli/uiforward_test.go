@@ -20,7 +20,7 @@ func cand(id, service, node string) resolve.Candidate {
 func TestForwardRegistry_Lifecycle(t *testing.T) {
 	r := newForwardRegistry()
 	stopped := false
-	e := r.add(cand("abc123456789def", "api", "node-1"), 9090, 8080, func() { stopped = true })
+	e := r.add("cs", cand("abc123456789def", "api", "node-1"), 9090, 8080, func() { stopped = true })
 
 	if e.state != forwardStarting {
 		t.Errorf("new entry state = %v, want starting", e.state)
@@ -54,7 +54,7 @@ func TestForwardRegistry_Lifecycle(t *testing.T) {
 // why it failed.
 func TestForwardRegistry_FailedStaysListed(t *testing.T) {
 	r := newForwardRegistry()
-	e := r.add(cand("abc", "api", "n1"), 9090, 8080, func() {})
+	e := r.add("cs", cand("abc", "api", "n1"), 9090, 8080, func() {})
 	r.markFailed(e.id, errors.New("connection refused"))
 
 	list := r.list()
@@ -76,7 +76,7 @@ func TestForwardRegistry_FailedStaysListed(t *testing.T) {
 // as a healthy "active" — that is what an outdated agent looks like.
 func TestForwardRegistry_ConnErrorKeepsForwardActive(t *testing.T) {
 	r := newForwardRegistry()
-	e := r.add(cand("abc", "api", "n1"), 9090, 8080, func() {})
+	e := r.add("cs", cand("abc", "api", "n1"), 9090, 8080, func() {})
 	r.markActive(e.id, "127.0.0.1:9090")
 	r.noteConnError(e.id, errors.New("agent is older than this client"))
 
@@ -114,7 +114,7 @@ func TestForwardEntry_BoundPortFromAddr(t *testing.T) {
 func TestForwardRegistry_ListIsStablyOrdered(t *testing.T) {
 	r := newForwardRegistry()
 	for i := 0; i < 5; i++ {
-		r.add(cand(fmt.Sprintf("c%d", i), "svc", "n1"), uint32(9000+i), 80, func() {})
+		r.add("cs", cand(fmt.Sprintf("c%d", i), "svc", "n1"), uint32(9000+i), 80, func() {})
 	}
 	for round := 0; round < 3; round++ {
 		list := r.list()
@@ -128,17 +128,17 @@ func TestForwardRegistry_ListIsStablyOrdered(t *testing.T) {
 
 func TestForwardRegistry_ForContainer(t *testing.T) {
 	r := newForwardRegistry()
-	r.add(cand("aaa", "api", "n1"), 1, 80, func() {})
-	r.add(cand("aaa", "api", "n1"), 2, 443, func() {})
-	r.add(cand("bbb", "db", "n2"), 3, 5432, func() {})
+	r.add("cs", cand("aaa", "api", "n1"), 1, 80, func() {})
+	r.add("cs", cand("aaa", "api", "n1"), 2, 443, func() {})
+	r.add("cs", cand("bbb", "db", "n2"), 3, 5432, func() {})
 
-	if got := r.forContainer("aaa"); len(got) != 2 {
+	if got := r.forContainer("cs", "aaa"); len(got) != 2 {
 		t.Errorf("forContainer(aaa) = %d entries, want 2", len(got))
 	}
-	if got := r.forContainer("bbb"); len(got) != 1 {
+	if got := r.forContainer("cs", "bbb"); len(got) != 1 {
 		t.Errorf("forContainer(bbb) = %d entries, want 1", len(got))
 	}
-	if got := r.forContainer("zzz"); len(got) != 0 {
+	if got := r.forContainer("cs", "zzz"); len(got) != 0 {
 		t.Errorf("forContainer(zzz) = %d entries, want 0", len(got))
 	}
 }
@@ -149,7 +149,7 @@ func TestForwardRegistry_StopAll(t *testing.T) {
 	var mu sync.Mutex
 	stopped := 0
 	for i := 0; i < 4; i++ {
-		r.add(cand("c", "svc", "n"), uint32(9000+i), 80, func() {
+		r.add("cs", cand("c", "svc", "n"), uint32(9000+i), 80, func() {
 			mu.Lock()
 			stopped++
 			mu.Unlock()
@@ -171,7 +171,7 @@ func TestForwardRegistry_StopAll(t *testing.T) {
 func TestForwardRegistry_RemoveIsIdempotent(t *testing.T) {
 	r := newForwardRegistry()
 	calls := 0
-	e := r.add(cand("c", "svc", "n"), 9090, 80, func() { calls++ })
+	e := r.add("cs", cand("c", "svc", "n"), 9090, 80, func() { calls++ })
 	r.remove(e.id)
 	r.remove(e.id)
 	if calls != 1 {
@@ -208,11 +208,11 @@ func TestForwardRegistry_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			e := r.add(cand(fmt.Sprintf("c%d", i), "svc", "n"), uint32(9000+i), 80, func() {})
+			e := r.add("cs", cand(fmt.Sprintf("c%d", i), "svc", "n"), uint32(9000+i), 80, func() {})
 			r.markActive(e.id, fmt.Sprintf("127.0.0.1:%d", 9000+i))
 			_ = r.list()
 			_, _ = r.counts()
-			_ = r.forContainer(fmt.Sprintf("c%d", i))
+			_ = r.forContainer("cs", fmt.Sprintf("c%d", i))
 			r.remove(e.id)
 		}(i)
 	}

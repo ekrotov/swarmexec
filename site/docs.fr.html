@@ -1812,8 +1812,14 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
       <p>
         Un conteneur en cours d'exécution est annoté dans l'arbre par
         <code>local→remote</code> (p. ex. <code>9090→8080</code>). Les redirections
-        continuent de fonctionner quand leur surcouche se ferme ; elles s'arrêtent sur
-        <kbd>d</kbd> ou quand vous quittez l'UI.
+        continuent de fonctionner quand leur surcouche se ferme <em>et</em> quand vous
+        changez de cluster ; elles s'arrêtent sur <kbd>d</kbd> ou quand vous quittez l'UI.
+        La colonne <code>CLUSTER</code> nomme le contexte auquel chacune appartient,
+        estompée pour celui que vous regardez — une redirection sur un autre cluster reste
+        la vôtre et continue d'écouter, mais ses colonnes <code>CONTAINER</code> et
+        <code>NODE</code> désignent des choses invisibles d'ici. L'annotation dans l'arbre
+        est par cluster pour la même raison : un identifiant de conteneur n'est unique
+        qu'au sein de son propre démon.
       </p>
 
       <h3>Onglet Networks</h3>
@@ -1881,15 +1887,34 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
 
       <h3>Onglet Contexts</h3>
       <p>
-        Liste vos contextes Docker (nom et point d'accès) avec l'actif marqué
-        <code>▶</code> — le même contexte affiché dans le pied de page. Vous pouvez
-        les gérer sans quitter l'UI ; le contexte <code>default</code> intégré est
-        protégé.
+        Liste vos contextes Docker (nom et point d'accès). L'actif est marqué
+        <code>▶</code> — le même contexte affiché dans le pied de page. Un contexte déjà
+        visité pendant cette session porte un <code>·</code> vert : il est toujours
+        connecté, donc y basculer est instantané. Un contexte qui a refusé la connexion
+        porte un <code>✗</code> rouge. Vous pouvez les gérer sans quitter l'UI ; le
+        contexte <code>default</code> intégré est protégé.
+      </p>
+      <p>
+        <strong>Changer de cluster conserve votre session.</strong> L'UI ne se reconstruit
+        pas : la position du curseur, les stacks et services dépliés et le filtre
+        <code>/</code> sont mémorisés <em>par cluster</em>, si bien qu'en revenant vous
+        retrouvez exactement l'endroit que vous aviez quitté. <strong>Les redirections de
+        port continuent de tourner</strong> ; l'onglet Forwards gagne une colonne
+        <code>CLUSTER</code> pour voir d'un coup d'œil lesquelles appartiennent au cluster
+        affiché et lesquelles non.
+      </p>
+      <p>
+        Seul le cluster que vous regardez est interrogé : en basculant ailleurs, l'autre
+        cesse de se rafraîchir et sa connexion ssh expire d'elle-même peu après. Le premier
+        passage vers un cluster prend le temps qu'il faut pour l'atteindre, car la connexion
+        est établie <em>avant</em> que quoi que ce soit change à l'écran — si elle échoue,
+        on vous dit de quel cluster il s'agit et vous restez sur celui qui fonctionne.
+        Chaque retour ultérieur est immédiat.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>active le contexte sélectionné — en fait le contexte courant et redémarre l'UI contre ce cluster (les redirections de port actives se terminent)</td></tr>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>active le contexte sélectionné — en fait le contexte courant (y compris le contexte courant stocké par docker) et bascule l'UI vers ce cluster, en conservant votre position, vos filtres et vos redirections de port</td></tr>
           <tr><td><kbd>n</kbd></td><td>crée un contexte — un formulaire <strong>guidé</strong>. Une case <strong>« Connect to Docker over SSH »</strong> décide du point d'accès : quand elle est cochée, vous renseignez <strong>utilisateur / hôte / port</strong> SSH et une seconde case <strong>« Use a jump host »</strong> révèle un champ <strong>jump host(s)</strong> (séparés par des virgules, <code>ProxyJump</code> multi-saut) — swarmexec les stocke sur le contexte et injecte <code>-J</code> dans <em>les deux</em> connexions ssh de l'API Docker et du tunnel de l'agent, pour que les bastions fonctionnent sans éditer <code>~/.ssh/config</code>. Quand elle est décochée, vous saisissez un hôte <code>tcp://</code> / <code>unix://</code> simple. Le formulaire assemble l'hôte docker pour vous, et <strong>Test</strong> teste le point d'accès assemblé avant que vous n'enregistriez. Aussi en CLI : <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>retire le contexte sélectionné (derrière une confirmation) ; retirer le contexte courant réinitialise la sélection à <code>default</code></td></tr>
         </tbody>

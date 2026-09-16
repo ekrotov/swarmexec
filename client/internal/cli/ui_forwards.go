@@ -18,10 +18,15 @@ import (
 )
 
 func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
-	app, cfg, f, ctx, forwards := u.app, u.cfg, u.f, u.ctx, u.forwards
-	fctx, fcancel := context.WithCancel(ctx)
+	app, cfg, f, forwards := u.app, u.cfg, u.f, u.forwards
+	// runCtx, NOT the cluster's context: a forward is a local listener the
+	// operator started deliberately, and it now survives a switch to another
+	// cluster the way it already survived closing the overlay that started it.
+	// Hanging it off the cluster context would cancel it the moment they looked
+	// somewhere else.
+	fctx, fcancel := context.WithCancel(u.runCtx)
 	var once sync.Once
-	entry := forwards.add(c, local, remote, func() { once.Do(fcancel) })
+	entry := forwards.add(u.activeCtx, c, local, remote, func() { once.Do(fcancel) })
 	u.refreshForwardViews()
 
 	go func() {
@@ -168,8 +173,16 @@ func (u *ui) renderForwards() {
 		ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.cand.ContainerID)))
 		ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.cand.Service)))
 		ftable.SetCell(row, 4, tview.NewTableCell(orDash(e.cand.NodeName)))
-		ftable.SetCell(row, 5, tview.NewTableCell(uptime(time.Since(e.started))))
-		ftable.SetCell(row, 6, tview.NewTableCell(state).SetTextColor(color))
+		// The cluster column is dimmed for the one you are looking at and plain
+		// for the others, so a glance answers "is any of this somewhere else?"
+		// without reading names.
+		ccell := tview.NewTableCell(orDash(e.cluster))
+		if e.cluster == u.activeCtx {
+			ccell.SetTextColor(tcell.ColorGray)
+		}
+		ftable.SetCell(row, 5, ccell)
+		ftable.SetCell(row, 6, tview.NewTableCell(uptime(time.Since(e.started))))
+		ftable.SetCell(row, 7, tview.NewTableCell(state).SetTextColor(color))
 	}
 	if len(u.fRows) == 0 {
 		ftable.SetCell(1, 0, tview.NewTableCell("(no forwards — press p on a container)").

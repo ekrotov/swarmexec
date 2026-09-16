@@ -1728,8 +1728,14 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
       </table></div>
       <p>
         Działający kontener jest opisany w drzewie jako <code>local→remote</code>
-        (np. <code>9090→8080</code>). Przekierowania działają dalej po zamknięciu nakładki;
-        zatrzymują się pod <kbd>d</kbd> albo gdy wyjdziesz z UI.
+        (np. <code>9090→8080</code>). Przekierowania działają dalej po zamknięciu nakładki
+        <em>oraz</em> po przełączeniu na inny klaster; zatrzymują się pod <kbd>d</kbd> albo
+        gdy wyjdziesz z UI. Kolumna <code>CLUSTER</code> nazywa kontekst, do którego każde
+        należy, przygaszona dla tego, który właśnie oglądasz — przekierowanie na innym
+        klastrze nadal jest twoje i nadal nasłuchuje, ale jego <code>CONTAINER</code> i
+        <code>NODE</code> nazywają rzeczy niewidoczne stąd. Opis w drzewie jest osobny dla
+        każdego klastra z tego samego powodu: identyfikator kontenera jest unikalny tylko
+        w obrębie własnego demona.
       </p>
 
       <h3>Zakładka Networks</h3>
@@ -1796,14 +1802,33 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
 
       <h3>Zakładka Contexts</h3>
       <p>
-        Wypisuje twoje konteksty Dockera (nazwa i punkt końcowy) z aktywnym oznaczonym
-        <code>▶</code> — tym samym kontekstem, który widać w stopce. Możesz nimi zarządzać bez
-        opuszczania UI; wbudowany kontekst <code>default</code> jest chroniony.
+        Wypisuje twoje konteksty Dockera (nazwa i punkt końcowy). Aktywny jest oznaczony
+        <code>▶</code> — tym samym kontekstem, który widać w stopce. Kontekst odwiedzony już
+        w tej sesji ma zieloną <code>·</code>: wciąż jest połączony, więc przełączenie na
+        niego jest natychmiastowe. Ten, który odmówił połączenia, ma czerwony
+        <code>✗</code>. Możesz nimi zarządzać bez opuszczania UI; wbudowany kontekst
+        <code>default</code> jest chroniony.
+      </p>
+      <p>
+        <strong>Przełączenie klastra zachowuje twoją sesję.</strong> UI nie buduje się od
+        nowa: położenie kursora, rozwinięte stacki i usługi oraz filtr <code>/</code> są
+        pamiętane <em>osobno dla każdego klastra</em>, więc wracając trafiasz dokładnie
+        tam, gdzie skończyłeś. <strong>Przekierowania portów działają dalej</strong>;
+        zakładka Forwards zyskuje kolumnę <code>CLUSTER</code>, żeby jednym spojrzeniem
+        odróżnić te z oglądanego klastra od pozostałych.
+      </p>
+      <p>
+        Odpytywany jest tylko klaster, który oglądasz: po przełączeniu drugi przestaje się
+        odświeżać, a jego połączenie ssh wygasa samo chwilę później. Pierwsze przejście do
+        klastra trwa tyle, ile trwa jego osiągnięcie, bo połączenie powstaje
+        <em>zanim</em> cokolwiek zmieni się na ekranie — jeśli się nie uda, dowiadujesz się
+        o który klaster chodzi i zostajesz na tym, który działa. Każdy kolejny powrót jest
+        natychmiastowy.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
-          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>aktywuj zaznaczony kontekst — czyni go bieżącym i restartuje UI wobec tamtego klastra (aktywne przekierowania portów się kończą)</td></tr>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>aktywuj zaznaczony kontekst — czyni go bieżącym (także dla zapisanego przez dockera bieżącego kontekstu) i przełącza UI na tamten klaster, zachowując twoje położenie, filtry i przekierowania portów</td></tr>
           <tr><td><kbd>n</kbd></td><td>utwórz kontekst — <strong>prowadzony</strong> formularz. Pole wyboru <strong>„Connect to Docker over SSH”</strong> decyduje o punkcie końcowym: gdy jest włączone, wypełniasz <strong>użytkownika / host / port</strong> SSH, a drugie pole wyboru <strong>„Use a jump host”</strong> odsłania pole <strong>host(y) pośredniczące</strong> (rozdzielone przecinkami, wieloetapowy <code>ProxyJump</code>) — swarmexec zapisuje je w kontekście i wstrzykuje <code>-J</code> w <em>oba</em> połączenia ssh: do API Dockera i do tunelu agenta, dzięki czemu bastiony działają bez edytowania <code>~/.ssh/config</code>. Gdy jest wyłączone, podajesz zwykły host <code>tcp://</code> / <code>unix://</code>. Formularz składa docker host za ciebie, a <strong>Test</strong> odpytuje złożony punkt końcowy, zanim zapiszesz. Także z CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>usuń zaznaczony kontekst (za potwierdzeniem); usunięcie bieżącego przywraca wybór na <code>default</code></td></tr>
         </tbody>

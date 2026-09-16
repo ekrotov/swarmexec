@@ -1679,8 +1679,14 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       </table></div>
       <p>
         A running container is annotated in the tree as <code>local→remote</code>
-        (e.g. <code>9090→8080</code>). Forwards keep running when their overlay closes;
-        they stop on <kbd>d</kbd> or when you quit the UI.
+        (e.g. <code>9090→8080</code>). Forwards keep running when their overlay closes
+        <em>and</em> when you switch to another cluster; they stop on <kbd>d</kbd> or
+        when you quit the UI. The <code>CLUSTER</code> column names the context each one
+        belongs to, dimmed for the cluster you are currently looking at — a forward on
+        another cluster is still yours and still listening, but its
+        <code>CONTAINER</code> and <code>NODE</code> name things you cannot see from
+        here. The tree annotation is per cluster for the same reason: a container id is
+        only unique within its own daemon.
       </p>
 
       <h3>Networks tab</h3>
@@ -1746,14 +1752,33 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
 
       <h3>Contexts tab</h3>
       <p>
-        Lists your Docker contexts (name and endpoint) with the active one marked
-        <code>▶</code> — the same context shown in the footer. You can manage them
-        without leaving the UI; the built-in <code>default</code> context is protected.
+        Lists your Docker contexts (name and endpoint). The active one is marked
+        <code>▶</code> — the same context shown in the footer. A context you have
+        already visited this session is marked <code>·</code> in green: it is still
+        connected, so switching to it is instant. One that refused a connection is
+        marked <code>✗</code> in red. You can manage them without leaving the UI; the
+        built-in <code>default</code> context is protected.
+      </p>
+      <p>
+        <strong>Switching cluster keeps your session.</strong> The UI does not rebuild
+        itself: where the cursor stood, which stacks and services were unfolded and the
+        <code>/</code> filter are remembered <em>per cluster</em>, so going back puts you
+        exactly where you left off. <strong>Port forwards keep running</strong> across a
+        switch — the Forwards tab gains a <code>CLUSTER</code> column so you can see at a
+        glance which ones belong to the cluster you are looking at and which do not.
+      </p>
+      <p>
+        Only the cluster you are looking at is polled: switching away stops the other
+        one's refresh, and its ssh connection expires on its own shortly after. The
+        first switch to a cluster takes as long as connecting to it does, because the
+        connection is made <em>before</em> anything on screen changes — if it fails, you
+        are told which cluster and stay on the one that works. Every later switch back
+        is immediate.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one and restarts the UI against that cluster (active port-forwards end)</td></tr>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one (docker's stored current context too) and switches the UI to that cluster, keeping your position, your filters and your port-forwards</td></tr>
           <tr><td><kbd>n</kbd></td><td>create a context — a <strong>guided</strong> form. A checkbox <strong>“Connect to Docker over SSH”</strong> decides the endpoint: when on, you fill in SSH <strong>user / host / port</strong> and a second checkbox <strong>“Use a jump host”</strong> reveals a <strong>jump host(s)</strong> field (comma-separated, multi-hop <code>ProxyJump</code>) — swarmexec stores them on the context and injects <code>-J</code> into <em>both</em> the Docker-API and the agent-tunnel ssh connections, so bastions work without editing <code>~/.ssh/config</code>. When off, you enter a plain <code>tcp://</code> / <code>unix://</code> host. The form assembles the docker host for you, and <strong>Test</strong> pings the assembled endpoint before you save. Also on the CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
         </tbody>

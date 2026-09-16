@@ -7,13 +7,11 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/docker/docker/client"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
-	"swarmexec/client/internal/resolve"
 )
 
 // uiTabList drives the tab bar: one list entry per tab instead of five
@@ -46,7 +44,7 @@ var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secr
 // render/load methods, so they live at package scope rather than as run() locals.
 var (
 	vHeaders  = []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
-	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "AGE", "STATE"}
+	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "CLUSTER", "AGE", "STATE"}
 	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
 	cfHeaders = []string{"CONFIG", "USED BY", "SIZE", "AGE", "UPDATED", "LABELS"}
@@ -71,23 +69,40 @@ var volSortCol = map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, vo
 // capture. runUI builds it and hands off to (*ui).run; the closures still living
 // in run() reference these fields, and the infra methods are methods on *ui.
 type ui struct {
+	// The visible cluster. Embedded by pointer so `u.dcli`, `u.vols`, `u.filter`
+	// and friends keep resolving; switching cluster assigns this one field.
+	*clusterState
+
+	// clusters is every cluster this session has visited, by docker context
+	// name. A switch away keeps the entry — that is what makes the switch back
+	// instant and land where the operator was.
+	clusters map[string]*clusterState
+
+	// gen rises on every switch; background loads capture it and drop their
+	// result if it has moved. See (*ui).onCluster.
+	gen atomic.Uint64
+
 	// run-wide infrastructure (created in runUI, before the event loop)
-	app         *tview.Application
-	pages       *tview.Pages // overlays: menus, terminal, logs, dialogs
-	content     *tview.Pages // the per-tab pages
-	dcli        *client.Client
-	r           *resolve.Resolver
-	cfg         config.Config
-	km          keybinds
-	f           *uiFlags
-	g           *globalFlags
-	ctx         context.Context
-	cancelRun   context.CancelFunc
-	ctxOverride string
-	service     string
-	switchTo    string // set when a Contexts-tab activation asks for a restart
-	selStyle    tcell.Style
-	forwards    *forwardRegistry
+	app      *tview.Application
+	pages    *tview.Pages // overlays: menus, terminal, logs, dialogs
+	content  *tview.Pages // the per-tab pages
+	km       keybinds
+	f        *uiFlags
+	g        *globalFlags
+	cmd      *cobra.Command // kept: a later cluster's config is resolved from the same flags
+	service  string
+	selStyle tcell.Style
+
+	// runCtx outlives a cluster switch and ends only when the UI does. Port
+	// forwards take it, so switching cluster no longer kills them.
+	runCtx    context.Context
+	cancelRun context.CancelFunc
+
+	// forwards is shared across clusters on purpose: a forward is a local
+	// listener the operator started and expects to keep, and tearing it down
+	// because they looked at another cluster is the behaviour this feature
+	// exists to remove. Each entry records which cluster it belongs to.
+	forwards *forwardRegistry
 
 	// shared widgets (built in run(), once the tree/tables exist)
 	ctree                                                *tview.TreeView
@@ -99,64 +114,34 @@ type ui struct {
 	footer, root                                         *tview.Flex
 	search                                               *tview.InputField
 
-	// containers tab caches
-	lastCands       []resolve.Candidate        // most recent candidate fetch (leaves)
-	lastSvcs        []resolve.Service          // most recent service fetch (tree rows)
-	svcByName       map[string]resolve.Service // current services, for fold re-marking
-	svcCols         svcColumns                 // service-row column widths
-	groupByStack    bool                       // nest services under their stack (toggled by the stack_group key)
-	regCache        *registryCache             // :latest version / newer-tag resolver
-	autoRefreshBusy atomic.Bool                // guards against overlapping tree refreshes
+	// Preferences that belong to the operator's session, not to a cluster —
+	// they must survive a switch rather than reset with it.
+	groupByStack bool // nest services under their stack (toggled by the stack_group key)
+	sortField    int  // volumes sort column
+	sortDesc     bool
 
-	// Live resource usage, from the node agents (see stats.go). Kept separate
-	// from the tree fetch because it comes from a different source and must
-	// never hold the tree up: it is an overlay on the rows, and an empty map
-	// simply means no badges.
-	usage     map[string]containerUsage // by container id
-	leafBase  map[string]string         // container id -> tree label without the badge
-	nodeUse   map[string]nodeUsage      // by node name
-	usageBusy atomic.Bool               // guards against overlapping usage fetches
-	statsGate *statsGate                // nodes whose agent cannot serve stats, so we stop asking
-
-	// shared tab state / caches
+	// shared tab state
 	active       string       // the selected tab
 	activeCtx    string       // active docker-context name
-	clusterText  string       // last cluster-probe summary for the footer
 	curHelp      string       // current tab's footer help
 	footerBase   string       // what the footer's owner wants shown; a flash returns to THIS
 	savedHelp    string       // footer help saved while search is open
 	searchMode   string       // what the "/" bar filters ("containers"/"volumes")
-	filter       string       // container-tree "/" query
-	volFilter    string       // volumes "/" query
 	mouseEnabled bool         // mirrors app.EnableMouse; toggled by 'm'
 	screen       tcell.Screen // owned screen, for OSC52 clipboard on yank
 	overlayDepth atomic.Int32 // open overlays (pauses the tree auto-refresh)
 
-	// volumes tab caches
-	selectedVols    map[string]bool
-	shownVols       []swarmVolume
-	vols            []swarmVolume
-	volUsage        map[string][]volumeConsumer
-	volSizes        map[string]int64
-	volErrs         map[string]error
-	volSizesLoading bool
-	sortField       int
-	sortDesc        bool
+	// switching guards the window between asking for a cluster and having it:
+	// the connect runs off the UI goroutine, and a second switch started in the
+	// meantime would race the first into the swap.
+	switching bool
 
 	// forwards tab cache: fRows mirrors the rendered table so a row maps to a forward.
 	fRows []forwardEntry
 
-	// networks / secrets / contexts tab caches
-	nets []swarmNetwork
-	secs []swarmSecret
-	cfgs []swarmConfig
+	// The docker context list is the same whichever cluster is visible, so it
+	// stays here rather than being fetched again per cluster.
 	ctxs []dockerctx.Context
-
-	// nodes tab caches
-	nodeInfos      []swarmNodeInfo
-	nodeVolCounts  map[string]int
-	nodeVolsLoaded bool
-	nodeImgs       map[string]nodeImages // by node hostname; absent = agent did not answer
 
 	// toggleable client-log overlay
 	logViewStop    chan struct{}

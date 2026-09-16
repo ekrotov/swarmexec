@@ -44,7 +44,13 @@ func (s forwardState) String() string {
 // explicitly or the UI exits. That is the whole point of the feature, and the
 // reason this registry exists at all.
 type forwardEntry struct {
-	id        int
+	id int
+	// cluster is the docker context this forward's container lives in. A
+	// forward now outlives a cluster switch, so the entry has to say which
+	// cluster it belongs to — otherwise the Forwards tab lists ports whose
+	// CONTAINER and NODE columns name things the visible cluster does not have,
+	// and the tree would annotate a same-named container on the wrong cluster.
+	cluster   string
 	cand      resolve.Candidate
 	local     uint32 // requested local port; 0 means "kernel picks"
 	remote    uint32
@@ -108,12 +114,13 @@ func newForwardRegistry() *forwardRegistry {
 }
 
 // add registers a forward in the starting state and returns it.
-func (r *forwardRegistry) add(cand resolve.Candidate, local, remote uint32, stop func()) *forwardEntry {
+func (r *forwardRegistry) add(cluster string, cand resolve.Candidate, local, remote uint32, stop func()) *forwardEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextID++
 	e := &forwardEntry{
 		id:      r.nextID,
+		cluster: cluster,
 		cand:    cand,
 		local:   local,
 		remote:  remote,
@@ -202,14 +209,18 @@ func (r *forwardRegistry) list() []forwardEntry {
 	return out
 }
 
-// forContainer returns the forwards attached to one container, for the tree
-// annotation.
-func (r *forwardRegistry) forContainer(containerID string) []forwardEntry {
+// forContainer returns the forwards attached to one container of one cluster,
+// for the tree annotation.
+//
+// The cluster is part of the question, not a refinement of it: forwards survive
+// a switch, and a container id is only unique within its own daemon. Matching on
+// the id alone would let one cluster's forward annotate another cluster's row.
+func (r *forwardRegistry) forContainer(cluster, containerID string) []forwardEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []forwardEntry
 	for _, e := range r.entries {
-		if e.cand.ContainerID == containerID {
+		if e.cluster == cluster && e.cand.ContainerID == containerID {
 			out = append(out, *e)
 		}
 	}

@@ -51,17 +51,18 @@ func (u *ui) renderSecrets() {
 }
 
 func (u *ui) loadSecrets() {
-	app, dcli, ctx, sectable := u.app, u.dcli, u.ctx, u.sectable
+	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
 	sectable.Clear()
 	for c, h := range sHeaders {
 		sectable.SetCell(0, c, headerCell(h))
 	}
 	sectable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	gen := u.generation()
 	go func() {
 		start := time.Now()
 		list, err := listSecrets(ctx, dcli)
 		clientlog.Timed("ui.loadSecrets", start, err)
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			if err != nil {
 				sectable.Clear()
 				for c, h := range sHeaders {

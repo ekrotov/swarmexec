@@ -1781,8 +1781,14 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       </table></div>
       <p>
         Ein laufender Container wird im Baum als <code>local→remote</code> annotiert
-        (z. B. <code>9090→8080</code>). Forwards laufen weiter, wenn ihr Overlay schließt;
-        sie stoppen bei <kbd>d</kbd> oder wenn du die UI beendest.
+        (z. B. <code>9090→8080</code>). Forwards laufen weiter, wenn ihr Overlay schließt
+        <em>und</em> wenn du auf einen anderen Cluster wechselst; sie stoppen bei
+        <kbd>d</kbd> oder wenn du die UI beendest. Die <code>CLUSTER</code>-Spalte nennt
+        den Context, zu dem jeder gehört, gedimmt für den gerade sichtbaren — ein Forward
+        auf einem anderen Cluster ist weiterhin deiner und lauscht weiter, aber sein
+        <code>CONTAINER</code> und <code>NODE</code> benennen Dinge, die du von hier aus
+        nicht sehen kannst. Die Baum-Annotation ist aus demselben Grund pro Cluster: eine
+        Container-ID ist nur innerhalb ihres eigenen Daemons eindeutig.
       </p>
 
       <h3>Networks-Tab</h3>
@@ -1848,15 +1854,33 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
 
       <h3>Contexts-Tab</h3>
       <p>
-        Listet deine Docker-Contexts (Name und Endpoint) mit dem aktiven markiert als
-        <code>▶</code> — derselbe Context, der im Footer angezeigt wird. Du kannst sie
-        verwalten, ohne die UI zu verlassen; der eingebaute <code>default</code>-Context ist
-        geschützt.
+        Listet deine Docker-Contexts (Name und Endpoint). Der aktive ist mit
+        <code>▶</code> markiert — derselbe Context, der im Footer steht. Ein Context, den
+        du in dieser Sitzung schon besucht hast, trägt ein grünes <code>·</code>: er ist
+        noch verbunden, der Wechsel dorthin ist also sofort da. Einer, der die Verbindung
+        verweigert hat, trägt ein rotes <code>✗</code>. Du kannst sie verwalten, ohne die
+        UI zu verlassen; der eingebaute <code>default</code>-Context ist geschützt.
+      </p>
+      <p>
+        <strong>Ein Cluster-Wechsel behält deine Sitzung.</strong> Die UI baut sich nicht
+        neu auf: wo der Cursor stand, welche Stacks und Services aufgeklappt waren und der
+        <code>/</code>-Filter werden <em>pro Cluster</em> gemerkt — du landest also wieder
+        genau dort, wo du aufgehört hast. <strong>Port-Forwards laufen weiter</strong>; der
+        Forwards-Tab bekommt dafür eine <code>CLUSTER</code>-Spalte, damit auf einen Blick
+        klar ist, welche zum gerade sichtbaren Cluster gehören und welche nicht.
+      </p>
+      <p>
+        Gepollt wird nur der Cluster, den du ansiehst: beim Wegschalten hört der andere auf
+        zu aktualisieren, und seine ssh-Verbindung läuft kurz darauf von selbst aus. Der
+        erste Wechsel zu einem Cluster dauert so lange, wie ihn zu erreichen dauert — die
+        Verbindung wird aufgebaut, <em>bevor</em> sich auf dem Bildschirm etwas ändert.
+        Scheitert sie, erfährst du, welcher Cluster es war, und bleibst auf dem, der
+        funktioniert. Jeder weitere Wechsel zurück ist sofort da.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>den ausgewählten Context aktivieren — macht ihn zum aktuellen und startet die UI gegen diesen Cluster neu (aktive Port-Forwards enden)</td></tr>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>den ausgewählten Context aktivieren — macht ihn zum aktuellen (auch für dockers gespeicherten current context) und schaltet die UI auf diesen Cluster um, mit deiner Position, deinen Filtern und deinen Port-Forwards</td></tr>
           <tr><td><kbd>n</kbd></td><td>einen Context erstellen — ein <strong>geführtes</strong> Formular. Eine Checkbox <strong>„Connect to Docker over SSH“</strong> entscheidet den Endpoint: wenn an, füllst du SSH-<strong>User / Host / Port</strong> aus, und eine zweite Checkbox <strong>„Use a jump host“</strong> zeigt ein Feld <strong>Jump-Host(s)</strong> (komma-separiert, Multi-Hop-<code>ProxyJump</code>) — swarmexec speichert sie am Context und injiziert <code>-J</code> in <em>beide</em> ssh-Verbindungen, die Docker-API und den Agent-Tunnel, sodass Bastions ohne Bearbeiten von <code>~/.ssh/config</code> funktionieren. Wenn aus, gibst du einen einfachen <code>tcp://</code> / <code>unix://</code>-Host ein. Das Formular setzt den Docker-Host für dich zusammen, und <strong>Test</strong> pingt den zusammengesetzten Endpoint, bevor du speicherst. Auch auf der CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>den ausgewählten Context entfernen (hinter einer Bestätigung); das Entfernen des aktuellen setzt die Auswahl auf <code>default</code> zurück</td></tr>
         </tbody>

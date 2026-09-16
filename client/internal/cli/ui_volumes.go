@@ -151,12 +151,13 @@ func (u *ui) renderVolumeTable() {
 }
 
 func (u *ui) loadVolumes() {
-	app, r, cfg, dcli, f, ctx, vtable := u.app, u.r, u.cfg, u.dcli, u.f, u.ctx, u.vtable
+	r, cfg, dcli, f, ctx, vtable := u.r, u.cfg, u.dcli, u.f, u.ctx, u.vtable
 	vtable.Clear()
 	for c, h := range vHeaders {
 		vtable.SetCell(0, c, headerCell(h))
 	}
 	vtable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	gen := u.generation()
 	go func() {
 		start := time.Now()
 		nodes, nerr := r.Nodes(ctx)
@@ -172,7 +173,7 @@ func (u *ui) loadVolumes() {
 			}
 		}
 		clientlog.Timed("ui.loadVolumes", start, nerr, "nodes", len(nodes), "vols", len(vs))
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			u.vols, u.volUsage, u.volErrs, u.volSizes = vs, usage, errs, nil
 			if nerr != nil {
 				vtable.Clear()
@@ -197,7 +198,7 @@ func (u *ui) loadVolumes() {
 		// fill the SIZE column in a second pass once the list is already shown.
 		// A spinner on the SIZE header makes clear the data is still loading.
 		if nerr == nil && !noAgent {
-			app.QueueUpdateDraw(func() {
+			u.onCluster(gen, func() {
 				u.volSizesLoading = true
 				u.renderVolumeTable()
 			})
@@ -212,7 +213,7 @@ func (u *ui) loadVolumes() {
 						return
 					case <-tk.C:
 						frame := frames[i%len(frames)]
-						app.QueueUpdateDraw(func() {
+						u.onCluster(gen, func() {
 							if u.volSizesLoading {
 								vtable.SetCell(0, volSortCol[volSortSize], headerCell("SIZE "+frame))
 							}
@@ -222,7 +223,7 @@ func (u *ui) loadVolumes() {
 			}()
 			sz := indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
 			close(stop)
-			app.QueueUpdateDraw(func() {
+			u.onCluster(gen, func() {
 				u.volSizesLoading = false
 				u.volSizes = sz
 				u.renderVolumeTable()

@@ -53,17 +53,18 @@ func (u *ui) renderNetworks() {
 }
 
 func (u *ui) loadNetworks() {
-	app, dcli, ctx, nettable := u.app, u.dcli, u.ctx, u.nettable
+	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
 	nettable.Clear()
 	for c, h := range nHeaders {
 		nettable.SetCell(0, c, headerCell(h))
 	}
 	nettable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	gen := u.generation()
 	go func() {
 		start := time.Now()
 		list, err := listNetworks(ctx, dcli)
 		clientlog.Timed("ui.loadNetworks", start, err)
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			if err != nil {
 				nettable.Clear()
 				for c, h := range nHeaders {

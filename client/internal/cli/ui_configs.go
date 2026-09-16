@@ -53,7 +53,7 @@ func (u *ui) renderConfigs() {
 }
 
 func (u *ui) loadConfigs() {
-	app, dcli, ctx, cfgtable := u.app, u.dcli, u.ctx, u.cfgtable
+	dcli, ctx, cfgtable := u.dcli, u.ctx, u.cfgtable
 	header := func() {
 		cfgtable.Clear()
 		for c, h := range cfHeaders {
@@ -62,11 +62,12 @@ func (u *ui) loadConfigs() {
 	}
 	header()
 	cfgtable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	gen := u.generation()
 	go func() {
 		start := time.Now()
 		list, err := listConfigs(ctx, dcli)
 		clientlog.Timed("ui.loadConfigs", start, err)
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			if err != nil {
 				header()
 				cfgtable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))

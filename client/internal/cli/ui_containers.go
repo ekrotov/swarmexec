@@ -51,39 +51,25 @@ func (u *ui) markService(n *tview.TreeNode) {
 
 func (u *ui) renderContainers() {
 	forwards, ctree, croot := u.forwards, u.ctree, u.croot
-	// Remember the cursor (a leaf by container id, else a service by name)
-	// and which services were expanded, so a refresh keeps both.
-	prevID, prevSvc := "", ""
-	if n := ctree.GetCurrentNode(); n != nil {
-		if ref, ok := n.GetReference().(resolve.Candidate); ok {
-			prevID = ref.ContainerID
-		} else if ref, ok := n.GetReference().(svcRef); ok {
-			prevSvc = ref.name
-		}
+	// Where to put the cursor and what to leave unfolded. Normally that is
+	// whatever the tree shows right now — this runs on every refresh, and the
+	// operator must not be moved by one.
+	//
+	// After a cluster switch it is NOT: the widget still holds the cluster we
+	// just left, and restoring from it would drop the cursor on a service of the
+	// wrong cluster (or nowhere). So the switch hands over the position it saved
+	// for THIS cluster, and that wins exactly once.
+	pos := u.treePosFromWidget()
+	if u.restorePos {
+		pos = u.pos
+		u.restorePos = false
 	}
-	prevStack := ""
-	if n := ctree.GetCurrentNode(); n != nil {
-		if ref, ok := n.GetReference().(stackRef); ok {
-			prevStack = ref.name
-		}
-	}
-	// Remember fold state for both levels. Stacks default to expanded (so the
-	// grouped tree shows the same services the flat one did), services stay
-	// collapsed by default as before.
-	wasExpanded := map[string]bool{}
-	stackExpanded := map[string]bool{}
+	prevID, prevSvc, prevStack := pos.container, pos.service, pos.stack
+	wasExpanded, stackExpanded := pos.svcFolds, pos.stackFold
 	seenStack := map[string]bool{}
-	croot.Walk(func(n, _ *tview.TreeNode) bool {
-		switch ref := n.GetReference().(type) {
-		case svcRef:
-			wasExpanded[ref.name] = n.IsExpanded()
-			return false
-		case stackRef:
-			stackExpanded[ref.name] = n.IsExpanded()
-			seenStack[ref.name] = true
-		}
-		return true
-	})
+	for name := range stackExpanded {
+		seenStack[name] = true
+	}
 	croot.ClearChildren()
 
 	// Group running containers by service for the leaves.
@@ -205,7 +191,7 @@ func (u *ui) renderContainers() {
 			} else {
 				label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
 			}
-			label = annotateForwards(label, forwards.forContainer(c.ContainerID))
+			label = annotateForwards(label, forwards.forContainer(u.activeCtx, c.ContainerID))
 			// Keep the badge-free label: re-marking a row when new readings land
 			// then just re-appends, instead of trying to cut the old marker back
 			// off a string that also carries the forward and update markers.
@@ -386,6 +372,7 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 	}
 	u.lastSvcs = svcs
 	u.lastCands = cands
+	u.loaded = true // this cluster has been looked at; "empty" now means empty
 	u.renderContainers()
 }
 
@@ -395,25 +382,26 @@ func (u *ui) loadContainersSync() {
 }
 
 func (u *ui) loadContainers() {
-	app := u.app
+	gen := u.generation()
 	go func() {
 		svcs, cands, err := u.fetchContainers()
-		app.QueueUpdateDraw(func() { u.applyContainers(svcs, cands, err) })
+		u.onCluster(gen, func() { u.applyContainers(svcs, cands, err) })
 	}()
 }
 
 func (u *ui) autoRefreshContainers() {
-	app, ctx := u.app, u.ctx
+	ctx := u.ctx
 	if u.overlayDepth.Load() > 0 || !u.autoRefreshBusy.CompareAndSwap(false, true) {
 		return
 	}
+	gen := u.generation()
 	go func() {
 		defer u.autoRefreshBusy.Store(false)
 		svcs, cands, err := u.fetchContainers()
 		if err != nil || ctx.Err() != nil || u.overlayDepth.Load() > 0 {
 			return // transient error, run ending, or an overlay opened meanwhile
 		}
-		app.QueueUpdateDraw(func() { u.applyContainers(svcs, cands, nil) })
+		u.onCluster(gen, func() { u.applyContainers(svcs, cands, nil) })
 	}()
 }
 
@@ -592,7 +580,7 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // and an agent too old to know the RPC would then break the view instead of
 // just leaving the badges off.
 func (u *ui) loadUsage() {
-	app, ctx, cfg := u.app, u.ctx, u.cfg
+	ctx, cfg := u.ctx, u.cfg
 	// Pause while an overlay is open, exactly as the tree refresh does. The log
 	// view is the case that matters: it is the one overlay under constant
 	// redraw, and a usage pass ends in remarkUsage walking the whole tree on the
@@ -602,6 +590,7 @@ func (u *ui) loadUsage() {
 	if u.overlayDepth.Load() > 0 || !u.usageBusy.CompareAndSwap(false, true) {
 		return
 	}
+	gen := u.generation()
 	go func() {
 		defer u.usageBusy.Store(false)
 		start := time.Now()
@@ -615,7 +604,7 @@ func (u *ui) loadUsage() {
 		if ctx.Err() != nil || u.overlayDepth.Load() > 0 {
 			return // an overlay opened while we were fanning out
 		}
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			u.usage, u.nodeUse = byContainer, byNode
 			// Re-mark rather than rebuild: the readings only change row text, and
 			// rebuilding would fight the operator's cursor and fold state.
