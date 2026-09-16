@@ -174,25 +174,30 @@
 
       <div class="slideshow" role="group" aria-roledescription="karuzela" aria-label="Demonstracje funkcji" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="1 / 4" data-play="15630">
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="1 / 5" data-play="15630">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="Zamiast docker node ls, szukania węzła, ssh node-3 i docker exec, wystarczy uruchomić: swarmexec exec web -- sh">
             <figcaption><b>exec w całym klastrze</b> — shell w dowolnym zadaniu, z jednego terminala</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="2 / 4" hidden data-play="9140">
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="2 / 5" hidden data-play="9140">
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 zestawia przekierowanie do zadania na node-3, a potem curl localhost:9090 kończy się powodzeniem — bez SSH i bez publikowanego portu">
             <figcaption><b>przekierowanie portu z laptopa</b> — dostań się do portu zadania, bez SSH, bez ingressu</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="3 / 4" hidden data-play="9720">
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="3 / 5" hidden data-play="9720">
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
                  alt="swarmexec ui: TUI w terminalu pokazująca klaster jako drzewo stacków, usług i kontenerów; jedna usługa jest rozwinięta do swoich zadań na node-2, node-4 i node-5, a nakładka z ryzykami bezpieczeństwa wypisuje oznaczone usługi">
             <figcaption><b>TUI dla całego klastra</b> — stacki, usługi, kontenery, logi i ryzyka</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="4 / 4" hidden data-play="13160">
+          <figure class="slide" role="group" aria-roledescription="slajd" aria-label="4 / 5" hidden data-play="13160">
             <img class="demo" src="/report.gif" width="860" height="470" loading="eager"
                  alt="swarmexec security report -o security.md zapisuje raport Markdown: tabelę podsumowania ze znaleziskami wysokimi, średnimi i niskimi, a potem znaleziska klastra, takie jak nieszyfrowana sieć overlay i menedżery bez autolocka">
             <figcaption><b>raport bezpieczeństwa o całym klastrze</b> — usługi, sieci, sekrety i węzły, jako Markdown</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="5 / 5" hidden data-play="15200">
+            <img class="demo" src="/contexts.gif" width="860" height="470" loading="lazy"
+                 alt="TUI z panelem bocznym kontekstów po prawej: c przenosi na niego klawiaturę, Enter przełącza z klastra prod na staging, a po powrocie kursor stoi na tej samej usłudze co wcześniej">
+            <figcaption><b>kilka klastrów, jedna sesja</b> — przełącz kontekst i zachowaj miejsce, filtry oraz przekierowania</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -202,6 +207,7 @@
             <button class="dot" type="button" aria-label="Pokaż demo: przekierowanie portów" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Pokaż demo: TUI w terminalu" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Pokaż demo: raport bezpieczeństwa" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Pokaż demo: przełączanie klastrów" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Następny slajd">&#8250;</button>
         </div>
@@ -214,10 +220,20 @@
         węzeł, który akurat uruchamia dane zadanie.
         Mały agent na każdym węźle, skryptowalne CLI/TUI, uwierzytelnianie mTLS i log audytu.
       </p>
+      <p class="lead">
+        Do tego <strong>audytuje klaster</strong>: jedno polecenie zapisuje
+        <strong>raport bezpieczeństwa</strong> w Markdown o każdej usłudze, plus
+        kontrole, na które nie odpowie żadna pojedyncza specyfikacja usługi —
+        nieszyfrowane sieci overlay z ruchem, menedżery bez autolocka, rozjazd wersji
+        agentów, nieużywane sekrety i configi. Podaje swoje pochodzenie i <em>czego nie
+        sprawdził</em>, a jego kolejność zależy wyłącznie od ustaleń, więc dwa raporty
+        czysto się porównują.
+      </p>
 
       <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># wdróż agenta na każdym węźle</span>
 <span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># shell w zadaniu, dowolny węzeł</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interaktywna TUI</span></div>
+<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interaktywna TUI</span>
+<span class="c">$</span> swarmexec security report      <span style="color:#484f58"># audyt całego klastra, jako Markdown</span></div>
 
       <div class="dhbox">
         Agent działający na każdym węźle jest na Docker Hubie:
