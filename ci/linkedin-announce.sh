@@ -120,9 +120,37 @@ commentary=$(printf '%s\n\n%s\n\nRelease notes: %s\nDocs & downloads: %s\n\n#Doc
 	"$RELEASE_URL" \
 	"$SITE_LINK")
 
+# LinkedIn refuses a commentary over 4000 characters outright, so a long tag
+# message has to be cut down to a lead-in plus a link.
+#
+# The cut goes through jq, and that is not decoration. This used to be
+# `cut -c1-$max`, which truncates EVERY LINE to that width rather than the text
+# as a whole: on a multi-line message no line is anywhere near the limit, so it
+# changed nothing and then appended the "read the rest" tail — making an
+# over-long post LONGER. It was a silent no-op for every release until one
+# finally exceeded 4000 and LinkedIn rejected it (v1.17.0, at 4193). jq's string
+# slice is over the whole value and counts codepoints, which is also what
+# LinkedIn counts — `cut`/`head -c` count bytes and would split a multibyte
+# character, and this text is full of them (🚀 — ▶ · ✗).
+# It also drops the final, half-finished paragraph rather than stopping
+# mid-word: this is a public post, and "…as far as API 1.24 (Dock" reads as a
+# mistake rather than as an excerpt. The trimmed version is only used if it
+# still fills 60% of the budget, so a message written as one long paragraph
+# keeps its allowance instead of being cut back to the headline.
+#
+# Done with split/join and NOT with rindex, deliberately: jq's string index
+# functions report BYTE offsets while `.[a:b]` slices CODEPOINTS, so feeding one
+# to the other overshoots by however many multibyte characters came before —
+# verified at 14 characters on this very release's notes, which are full of
+# them (🚀 — ▶ · ✗). It would have looked almost right, which is the worst way
+# for it to be wrong.
 max=2900
-if [ "$(printf '%s' "$commentary" | wc -m)" -gt "$max" ]; then
-	commentary=$(printf '%s' "$commentary" | cut -c1-"$max")
+if [ "$(printf '%s' "$commentary" | jq -Rs 'length')" -gt "$max" ]; then
+	commentary=$(printf '%s' "$commentary" | jq -Rrs --argjson n "$max" '
+		.[0:$n] as $head
+		| ($head | split("\n\n")) as $paras
+		| (if ($paras | length) > 1 then ($paras[0:-1] | join("\n\n")) else $head end) as $whole
+		| if ($whole | length) > ($n * 0.6) then $whole else $head end')
 	commentary="$commentary
 …
 Full notes: $RELEASE_URL"
