@@ -146,22 +146,33 @@ type forwarder struct {
 	remotePort  uint32
 }
 
-// startForwarder dials the agent and binds the local port. On success the
+// startForwarder binds the local port and dials the agent. On success the
 // caller owns the forwarder and must Close it.
+//
+// Bind first, dial second, and the order is the point: the local bind is the
+// cheap check that fails for a reason the operator can act on immediately (the
+// port is taken), while the dial goes over ssh to another machine and can take
+// the whole connect timeout. Doing it the other way round — as this did — meant
+// a forward that was never going to work still paid for a full agent connection
+// before saying so.
+//
+// The listener existing slightly before the agent is reachable is harmless:
+// Serve is a separate call, so nothing is accepted in between. Early arrivals
+// wait in the listen backlog and are reset if the dial fails and we close it.
 func startForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p forwardParams) (*forwarder, error) {
-	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
-	dcancel()
-	if err != nil {
-		return nil, err
-	}
-
 	bind := net.JoinHostPort(p.address, strconv.FormatUint(uint64(p.localPort), 10))
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", bind)
 	if err != nil {
-		conn.Close()
 		return nil, fmt.Errorf("listen on %s: %w", bind, err)
+	}
+
+	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
+	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+	dcancel()
+	if err != nil {
+		ln.Close()
+		return nil, err
 	}
 	return &forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.remotePort}, nil
 }

@@ -1793,6 +1793,14 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         nicht sehen kannst. Die Baum-Annotation ist aus demselben Grund pro Cluster: eine
         Container-ID ist nur innerhalb ihres eigenen Daemons eindeutig.
       </p>
+      <p>
+        Deshalb wird ein lokaler Port, den du schon benutzt, <strong>vorab
+        abgelehnt</strong> — mit Angabe des Forwards, der ihn hält, und des Clusters,
+        zu dem er gehört; der Prompt bleibt offen, damit du einen anderen Port wählen
+        kannst. Das „address already in use" des Betriebssystems bleibt für den Fall,
+        in dem es recht hat: ein Port, den ein anderes Programm hält und den swarmexec
+        nicht benennen kann.
+      </p>
 
       <h3>Networks-Tab</h3>
       <p>

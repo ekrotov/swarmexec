@@ -1756,6 +1756,13 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         árbol es por clúster por la misma razón: un id de contenedor solo es único dentro
         de su propio demonio.
       </p>
+      <p>
+        Por eso, un puerto local que ya estés usando se <strong>rechaza de entrada</strong>,
+        nombrando el reenvío que lo ocupa y el clúster al que pertenece — el diálogo sigue
+        abierto para que elijas otro puerto. El «address already in use» del sistema queda
+        para el caso en que acierta: un puerto ocupado por otro programa, al que swarmexec
+        no puede poner nombre.
+      </p>
 
       <h3>Pestaña Networks</h3>
       <p>

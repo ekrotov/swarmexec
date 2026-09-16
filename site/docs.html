@@ -1691,6 +1691,13 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         here. The tree annotation is per cluster for the same reason: a container id is
         only unique within its own daemon.
       </p>
+      <p>
+        Because of that, a local port you are already using is <strong>refused up
+        front</strong>, naming the forward that holds it and the cluster it belongs to
+        — the prompt stays open so you can pick another port. The operating system's
+        own "address already in use" is kept for the case it is right about: a port
+        held by some other program, which swarmexec cannot name.
+      </p>
 
       <h3>Networks tab</h3>
       <p>
