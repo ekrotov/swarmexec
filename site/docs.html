@@ -1011,25 +1011,28 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>
       <p>
-        <code>swarmexec ui</code> has eight tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> has seven tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
-        <strong>Configs&nbsp;(8)</strong> — and a two-line footer: the per-tab key
-        hints on top, then a status line with the active docker context
-        (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster you're
-        on), a live cluster summary, the forward count and — on the Volumes tab — how
-        many volumes you have selected. These keys work on every tab:
+        <strong>Nodes&nbsp;(6)</strong>, <strong>Configs&nbsp;(7)</strong> — a
+        <strong>context sidebar</strong> down the right-hand side, and a two-line
+        footer: the per-tab key hints on top, then a status line with the active docker
+        context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
+        you're on), a live cluster summary, the forward count and — on the Volumes tab —
+        how many volumes you have selected. These keys work on every tab:
       </p>
+      <div class="note">
+        <strong>Changed:</strong> the contexts used to be tab&nbsp;6, and are now the
+        sidebar (<kbd>c</kbd>). Nodes and Configs moved up to <strong>6</strong> and
+        <strong>7</strong>.
+      </div>
       <p>
-        The tab bar is <strong>responsive</strong>. The full names need 106 columns; on a
-        narrower terminal the bar switches to short labels —
-        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
-        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong>, <strong>Cfg</strong> — so all eight tabs stay visible instead
-        of the last ones being clipped. (<strong>Cfg</strong> is Configs;
-        <strong>Ctx</strong> is Contexts.) The shortcut digits and the mouse hit-boxes are
-        unaffected.
+        The tab bar is <strong>responsive</strong>: on a narrow terminal it switches to
+        short labels — <strong>St/Sv</strong>, <strong>Vol</strong>,
+        <strong>Fwd</strong>, <strong>Net</strong>, <strong>Sec</strong>,
+        <strong>Node</strong>, <strong>Cfg</strong> — so all seven tabs stay visible
+        instead of the last ones being clipped. (<strong>Cfg</strong> is Configs.) The
+        shortcut digits and the mouse hit-boxes are unaffected.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
@@ -1750,14 +1753,28 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         restarting the service's tasks.
       </p>
 
-      <h3>Contexts tab</h3>
+      <h3>Context sidebar</h3>
       <p>
-        Lists your Docker contexts (name and endpoint). The active one is marked
-        <code>▶</code> — the same context shown in the footer. A context you have
+        The clusters live in a column down the right-hand side, not in a tab. Switching
+        cluster is something you do <em>from</em> wherever you are — and the list of
+        clusters is what tells you where that is, so it belongs on screen rather than on
+        a page you have to travel to.
+      </p>
+      <p>
+        <kbd>c</kbd> gives it the keyboard from any tab; <kbd>c</kbd> again or
+        <kbd>Esc</kbd> hands it back to the tab you were on. The active cluster is
+        marked <code>▶</code> — the same name the footer shows. A cluster you have
         already visited this session is marked <code>·</code> in green: it is still
         connected, so switching to it is instant. One that refused a connection is
-        marked <code>✗</code> in red. You can manage them without leaving the UI; the
-        built-in <code>default</code> context is protected.
+        marked <code>✗</code> in red. The built-in <code>default</code> context is
+        protected.
+      </p>
+      <p>
+        The sidebar sizes itself to the longest context name and <strong>steps aside on a
+        narrow terminal</strong>: below roughly 92 columns it hides rather than clip the
+        tree, and reappears for as long as <kbd>c</kbd> holds it. Endpoints are not shown
+        in the column — there is no room for them there, and <kbd>i</kbd> shows the full
+        detail.
       </p>
       <p>
         <strong>Switching cluster keeps your session.</strong> The UI does not rebuild
@@ -1778,6 +1795,8 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>c</kbd></td><td>focus the sidebar from any tab; <kbd>c</kbd> again or <kbd>Esc</kbd> gives the keyboard back</td></tr>
+          <tr><td><kbd>i</kbd></td><td>context details — endpoint and jump hosts, which the column itself has no room for</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one (docker's stored current context too) and switches the UI to that cluster, keeping your position, your filters and your port-forwards</td></tr>
           <tr><td><kbd>n</kbd></td><td>create a context — a <strong>guided</strong> form. A checkbox <strong>“Connect to Docker over SSH”</strong> decides the endpoint: when on, you fill in SSH <strong>user / host / port</strong> and a second checkbox <strong>“Use a jump host”</strong> reveals a <strong>jump host(s)</strong> field (comma-separated, multi-hop <code>ProxyJump</code>) — swarmexec stores them on the context and injects <code>-J</code> into <em>both</em> the Docker-API and the agent-tunnel ssh connections, so bastions work without editing <code>~/.ssh/config</code>. When off, you enter a plain <code>tcp://</code> / <code>unix://</code> host. The form assembles the docker host for you, and <strong>Test</strong> pings the assembled endpoint before you save. Also on the CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>

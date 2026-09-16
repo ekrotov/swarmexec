@@ -1056,11 +1056,11 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       <!-- 10 -->
       <h2 id="tui">10. Die TUI</h2>
       <p>
-        <code>swarmexec ui</code> hat acht Tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> hat sieben Tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
-        <strong>Configs&nbsp;(8)</strong> — und einen
+        <strong>Nodes&nbsp;(6)</strong>, <strong>Configs&nbsp;(7)</strong> — eine
+        <strong>Context-Sidebar</strong> am rechten Rand und einen
         zweizeiligen Footer: oben die Tastenhinweise pro Tab, dann eine Statuszeile mit dem
         aktiven Docker-Context
         (<code>ctx&nbsp;&lt;name&gt;</code>, sodass immer klar ist, auf welchem Cluster du
@@ -1069,15 +1069,18 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         jedem Tab:
       </p>
       <p>
-        Die Tab-Leiste ist <strong>responsiv</strong>. Die vollen Namen brauchen 106 Spalten;
-        in einem schmaleren Terminal wechselt die Leiste auf Kurzlabels —
-        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
-        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong>, <strong>Cfg</strong> — damit alle acht Tabs sichtbar bleiben,
-        statt dass die letzten abgeschnitten werden. (<strong>Cfg</strong> ist Configs,
-        <strong>Ctx</strong> ist Contexts.) Die Zifferntasten und die Maus-Klickflächen
-        bleiben unverändert.
+        Die Tab-Leiste ist <strong>responsiv</strong>: in einem schmaleren Terminal
+        wechselt sie auf Kurzlabels — <strong>St/Sv</strong>, <strong>Vol</strong>,
+        <strong>Fwd</strong>, <strong>Net</strong>, <strong>Sec</strong>,
+        <strong>Node</strong>, <strong>Cfg</strong> — damit alle sieben Tabs sichtbar
+        bleiben, statt dass die letzten abgeschnitten werden. (<strong>Cfg</strong> ist
+        Configs.) Die Zifferntasten und die Maus-Klickflächen bleiben unverändert.
       </p>
+      <div class="note">
+        <strong>Geändert:</strong> die Contexts waren Tab&nbsp;6 und sind jetzt die
+        Sidebar (<kbd>c</kbd>). Nodes und Configs rücken auf <strong>6</strong> und
+        <strong>7</strong> vor.
+      </div>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
@@ -1852,14 +1855,28 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         auslöst, das die Tasks des Service neu startet.
       </p>
 
-      <h3>Contexts-Tab</h3>
+      <h3>Context-Sidebar</h3>
       <p>
-        Listet deine Docker-Contexts (Name und Endpoint). Der aktive ist mit
-        <code>▶</code> markiert — derselbe Context, der im Footer steht. Ein Context, den
-        du in dieser Sitzung schon besucht hast, trägt ein grünes <code>·</code>: er ist
-        noch verbunden, der Wechsel dorthin ist also sofort da. Einer, der die Verbindung
-        verweigert hat, trägt ein rotes <code>✗</code>. Du kannst sie verwalten, ohne die
-        UI zu verlassen; der eingebaute <code>default</code>-Context ist geschützt.
+        Die Cluster stehen in einer Spalte am rechten Rand, nicht in einem Tab. Den
+        Cluster zu wechseln ist etwas, das man <em>von dort aus</em> tut, wo man gerade
+        ist — und die Liste der Cluster ist das, was einem sagt, wo das ist. Sie gehört
+        also auf den Bildschirm und nicht auf eine Seite, zu der man erst hinreisen muss.
+      </p>
+      <p>
+        <kbd>c</kbd> gibt ihr aus jedem Tab die Tastatur; <kbd>c</kbd> erneut oder
+        <kbd>Esc</kbd> gibt sie an den Tab zurück, auf dem du warst. Der aktive Cluster
+        ist mit <code>▶</code> markiert — derselbe Name, den der Footer zeigt. Ein
+        Cluster, den du in dieser Sitzung schon besucht hast, trägt ein grünes
+        <code>·</code>: er ist noch verbunden, der Wechsel dorthin ist sofort da. Einer,
+        der die Verbindung verweigert hat, trägt ein rotes <code>✗</code>. Der eingebaute
+        <code>default</code>-Context ist geschützt.
+      </p>
+      <p>
+        Die Sidebar richtet ihre Breite nach dem längsten Context-Namen und
+        <strong>tritt auf schmalen Terminals beiseite</strong>: unter etwa 92 Spalten
+        blendet sie sich aus, statt den Baum abzuschneiden, und kommt zurück, solange
+        <kbd>c</kbd> sie hält. Endpoints stehen nicht in der Spalte — dort ist kein Platz
+        dafür, und <kbd>i</kbd> zeigt das vollständige Detail.
       </p>
       <p>
         <strong>Ein Cluster-Wechsel behält deine Sitzung.</strong> Die UI baut sich nicht
@@ -1880,6 +1897,8 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
+          <tr><td><kbd>c</kbd></td><td>die Sidebar aus jedem Tab fokussieren; <kbd>c</kbd> erneut oder <kbd>Esc</kbd> gibt die Tastatur zurück</td></tr>
+          <tr><td><kbd>i</kbd></td><td>Context-Details — Endpoint und Jump-Hosts, für die in der Spalte kein Platz ist</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>den ausgewählten Context aktivieren — macht ihn zum aktuellen (auch für dockers gespeicherten current context) und schaltet die UI auf diesen Cluster um, mit deiner Position, deinen Filtern und deinen Port-Forwards</td></tr>
           <tr><td><kbd>n</kbd></td><td>einen Context erstellen — ein <strong>geführtes</strong> Formular. Eine Checkbox <strong>„Connect to Docker over SSH“</strong> entscheidet den Endpoint: wenn an, füllst du SSH-<strong>User / Host / Port</strong> aus, und eine zweite Checkbox <strong>„Use a jump host“</strong> zeigt ein Feld <strong>Jump-Host(s)</strong> (komma-separiert, Multi-Hop-<code>ProxyJump</code>) — swarmexec speichert sie am Context und injiziert <code>-J</code> in <em>beide</em> ssh-Verbindungen, die Docker-API und den Agent-Tunnel, sodass Bastions ohne Bearbeiten von <code>~/.ssh/config</code> funktionieren. Wenn aus, gibst du einen einfachen <code>tcp://</code> / <code>unix://</code>-Host ein. Das Formular setzt den Docker-Host für dich zusammen, und <strong>Test</strong> pingt den zusammengesetzten Endpoint, bevor du speicherst. Auch auf der CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>den ausgewählten Context entfernen (hinter einer Bestätigung); das Entfernen des aktuellen setzt die Auswahl auf <code>default</code> zurück</td></tr>

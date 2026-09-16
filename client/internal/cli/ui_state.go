@@ -32,13 +32,16 @@ var uiTabList = []uiTab{
 	{"forwards", "Forwards", "Fwd"},
 	{"networks", "Networks", "Net"},
 	{"secrets", "Secrets", "Sec"},
-	{"contexts", "Contexts", "Ctx"},
+	// Contexts is deliberately NOT a tab. Switching cluster is something you do
+	// from wherever you are, not a place you travel to — and since the switch
+	// stopped rebuilding the session (F14) it became frequent enough that making
+	// it a destination read as a detour. It lives in the sidebar instead.
 	{"nodes", "Nodes", "Node"},
 	{"configs", "Configs", "Cfg"},
 }
 
 // uiTabOrder drives Tab cycling; every tab joins it.
-var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secrets", "contexts", "nodes", "configs"}
+var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secrets", "nodes", "configs"}
 
 // Column headers for the per-tab tables — constant data shared by each tab's
 // render/load methods, so they live at package scope rather than as run() locals.
@@ -48,6 +51,10 @@ var (
 	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
 	cfHeaders = []string{"CONFIG", "USED BY", "SIZE", "AGE", "UPDATED", "LABELS"}
+	// The sidebar is narrow and its rows are self-explanatory, so it carries no
+	// header at all; the endpoint each name resolves to is one keystroke away in
+	// the detail overlay. cxHeaders survives for the clipboard export, which is
+	// a table and does want columns.
 	cxHeaders = []string{"CONTEXT", "DOCKER HOST"}
 	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
 )
@@ -113,6 +120,15 @@ type ui struct {
 	help, status                                         *tview.TextView
 	footer, root                                         *tview.Flex
 	search                                               *tview.InputField
+
+	// The context sidebar: `body` is the horizontal split holding the tab
+	// content and `sidebar` (the framed context list) side by side.
+	body, sidebar *tview.Flex
+	// sidebarReturn is the footer text to put back when the sidebar gives the
+	// keyboard up again; sidebarHasFocus mirrors where the keyboard is (see
+	// sidebarFocused — the draw path cannot ask the application).
+	sidebarReturn   string
+	sidebarHasFocus bool
 
 	// Preferences that belong to the operator's session, not to a cluster —
 	// they must survive a switch rather than reset with it.

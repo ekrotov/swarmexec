@@ -1042,26 +1042,30 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       <!-- 10 -->
       <h2 id="tui">10. La TUI</h2>
       <p>
-        <code>swarmexec ui</code> tiene ocho pestañas — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <code>swarmexec ui</code> tiene siete pestañas — <strong>Stacks/Services&nbsp;(1)</strong>,
         <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
-        <strong>Contexts&nbsp;(6)</strong>, <strong>Nodes&nbsp;(7)</strong>,
-        <strong>Configs&nbsp;(8)</strong> — y un pie de dos líneas: arriba las
+        <strong>Nodes&nbsp;(6)</strong>, <strong>Configs&nbsp;(7)</strong> — una
+        <strong>barra lateral de contextos</strong> en el borde derecho, y un pie de dos
+        líneas: arriba las
         indicaciones de teclas por pestaña, y luego una línea de estado con el contexto de docker activo
         (<code>ctx&nbsp;&lt;name&gt;</code>, para que siempre quede claro en qué clúster
         estás), un resumen del clúster en vivo, el recuento de reenvíos y —en la pestaña Volumes— cuántos
         volúmenes tienes seleccionados. Estas teclas funcionan en todas las pestañas:
       </p>
       <p>
-        La barra de pestañas es <strong>adaptable</strong>. Los nombres completos necesitan
-        106 columnas; en un terminal más estrecho la barra cambia a etiquetas cortas —
-        <strong>St/Sv</strong>, <strong>Vol</strong>, <strong>Fwd</strong>,
-        <strong>Net</strong>, <strong>Sec</strong>, <strong>Ctx</strong>,
-        <strong>Node</strong>, <strong>Cfg</strong>— para que las ocho pestañas sigan
+        La barra de pestañas es <strong>adaptable</strong>: en un terminal más estrecho
+        cambia a etiquetas cortas — <strong>St/Sv</strong>, <strong>Vol</strong>,
+        <strong>Fwd</strong>, <strong>Net</strong>, <strong>Sec</strong>,
+        <strong>Node</strong>, <strong>Cfg</strong> — para que las siete pestañas sigan
         visibles en lugar de que las últimas queden recortadas. (<strong>Cfg</strong> es
-        Configs; <strong>Ctx</strong> es Contexts.) Los dígitos de atajo y las zonas de clic
-        del ratón no cambian.
+        Configs.) Los dígitos de atajo y las zonas de clic del ratón no cambian.
       </p>
+      <div class="note">
+        <strong>Cambio:</strong> los contextos eran la pestaña&nbsp;6 y ahora son la barra
+        lateral (<kbd>c</kbd>). Nodes y Configs pasan a <strong>6</strong> y
+        <strong>7</strong>.
+      </div>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
@@ -1815,14 +1819,26 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         <strong>actualización progresiva</strong> que reinicia las tareas del servicio.
       </p>
 
-      <h3>Pestaña Contexts</h3>
+      <h3>Barra lateral de contextos</h3>
       <p>
-        Lista tus contextos de Docker (nombre y endpoint). El activo está marcado con
-        <code>▶</code> — el mismo contexto mostrado en el pie. Un contexto ya visitado en
-        esta sesión lleva un <code>·</code> verde: sigue conectado, así que cambiar a él es
-        instantáneo. Uno que rechazó la conexión lleva una <code>✗</code> roja. Puedes
-        gestionarlos sin salir de la UI; el contexto integrado <code>default</code> está
-        protegido.
+        Los clústeres ocupan una columna en el borde derecho, no una pestaña. Cambiar de
+        clúster es algo que se hace <em>desde</em> donde uno está — y la lista de clústeres
+        es justo lo que dice dónde es eso. Le corresponde estar en pantalla, no en una
+        página a la que haya que viajar.
+      </p>
+      <p>
+        <kbd>c</kbd> le da el teclado desde cualquier pestaña; <kbd>c</kbd> otra vez o
+        <kbd>Esc</kbd> lo devuelve a la pestaña en la que estabas. El clúster activo está
+        marcado con <code>▶</code> — el mismo nombre que muestra el pie. Un clúster ya
+        visitado en esta sesión lleva un <code>·</code> verde: sigue conectado, así que
+        cambiar a él es instantáneo. Uno que rechazó la conexión lleva una <code>✗</code>
+        roja. El contexto integrado <code>default</code> está protegido.
+      </p>
+      <p>
+        La barra lateral se ajusta al nombre de contexto más largo y <strong>se aparta en
+        un terminal estrecho</strong>: por debajo de unas 92 columnas se oculta en lugar
+        de recortar el árbol, y vuelve mientras <kbd>c</kbd> la sostenga. Los endpoints no
+        aparecen en la columna — no hay sitio, y <kbd>i</kbd> muestra el detalle completo.
       </p>
       <p>
         <strong>Cambiar de clúster conserva tu sesión.</strong> La UI no se reconstruye:
@@ -1842,6 +1858,8 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
+          <tr><td><kbd>c</kbd></td><td>enfocar la barra lateral desde cualquier pestaña; <kbd>c</kbd> otra vez o <kbd>Esc</kbd> devuelve el teclado</td></tr>
+          <tr><td><kbd>i</kbd></td><td>detalles del contexto — endpoint y jump hosts, para los que la columna no tiene sitio</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activa el contexto seleccionado — lo convierte en el actual (también el contexto actual almacenado por docker) y cambia la UI a ese clúster, conservando tu posición, tus filtros y tus reenvíos de puertos</td></tr>
           <tr><td><kbd>n</kbd></td><td>crea un contexto — un formulario <strong>guiado</strong>. Una casilla <strong>«Connect to Docker over SSH»</strong> decide el endpoint: cuando está activada, rellenas <strong>usuario / host / puerto</strong> de SSH y una segunda casilla <strong>«Use a jump host»</strong> revela un campo de <strong>jump host(s)</strong> (separados por comas, <code>ProxyJump</code> de múltiples saltos) — swarmexec los almacena en el contexto e inyecta <code>-J</code> en <em>ambas</em> conexiones ssh, la de la API de Docker y la del túnel del agente, para que los bastiones funcionen sin editar <code>~/.ssh/config</code>. Cuando está desactivada, introduces un host <code>tcp://</code> / <code>unix://</code> simple. El formulario ensambla el docker host por ti, y <strong>Test</strong> hace ping al endpoint ensamblado antes de que guardes. También en la CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>elimina el contexto seleccionado (tras una confirmación); eliminar el actual restablece la selección a <code>default</code></td></tr>

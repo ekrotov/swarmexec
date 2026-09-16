@@ -297,6 +297,11 @@ func (u *ui) activateCluster(c *clusterState) {
 	// From cache first: if this cluster has been visited, the operator is back
 	// where they were before the network is touched at all.
 	u.renderContainers()
+	// The sidebar is the thing that says WHERE you are, so it has to be
+	// repainted by the switch itself. It used to be a tab, and repainting came
+	// free with activating that tab; now nothing else would do it, and the
+	// markers would keep pointing at the cluster you just left.
+	u.renderContexts()
 	u.updateStatus()
 	u.setTab(u.active) // re-renders the visible tab and kicks its own load
 

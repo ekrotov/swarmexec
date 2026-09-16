@@ -450,7 +450,10 @@ func (u *ui) run(keyWarnings []string) error {
 	// activeCtx (the name in the footer, and the row marked here) is set with the
 	// cluster it belongs to — runUI for the first one, activateCluster for every
 	// switch — so the name and the connection can never disagree.
-	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	// No fixed header row: in the sidebar the first row is already a context
+	// (see renderContexts), and SetFixed(1,0) would pin it out of reach of the
+	// cursor.
+	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false)
 	cxtable.SetSelectedStyle(selStyle)
 	// Contexts come from docker's local store (no network), so load synchronously.
 	// showCreateContext opens a guided form to add a docker context. The operator
@@ -495,7 +498,6 @@ func (u *ui) run(keyWarnings []string) error {
 	content.AddPage("forwards", ftable, true, false)
 	content.AddPage("networks", nettable, true, false)
 	content.AddPage("secrets", sectable, true, false)
-	content.AddPage("contexts", cxtable, true, false)
 	content.AddPage("nodes", notable, true, false)
 	content.AddPage("configs", cfgtable, true, false)
 
@@ -515,9 +517,31 @@ func (u *ui) run(keyWarnings []string) error {
 	// tree live by service / container id / node.
 	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
 		SetPlaceholder("filter services / containers / nodes")
+	// The context list is a column beside the content, not a tab (see
+	// ui_sidebar.go). It is framed so it reads as chrome rather than as a second
+	// table competing with the one in the middle.
+	sidebar := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(cxtable, 0, 1, true)
+	sidebar.SetBorder(true).SetTitle(" contexts ").SetBorderColor(palette.border)
+	body := tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(content, 0, 1, true).
+		// One blank column so the content's rightmost characters do not run
+		// into the sidebar's border; tview clips rather than wraps, and without
+		// it a long image or port list ends flush against the frame.
+		AddItem(nil, 0, 0, false).
+		AddItem(sidebar, 0, 0, false)
+	u.body, u.sidebar = body, sidebar
+	// The width is decided at draw time from the space we actually have: tview
+	// runs this before the Flex lays its items out, so the new width applies to
+	// the very frame that measured it — no resize events to listen for, and no
+	// stale width after a terminal resize.
+	body.SetDrawFunc(func(_ tcell.Screen, x, y, w, h int) (int, int, int, int) {
+		u.resizeSidebar(w)
+		return x, y, w, h
+	})
+
 	root := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tabBar, 2, 0, false). // labels row + active-tab underline indicator
-		AddItem(content, 0, 1, true).
+		AddItem(body, 0, 1, true).
 		AddItem(search, 0, 0, false).
 		AddItem(footer, 2, 0, false)
 	pages.AddPage(pageMain, root, true, true)
@@ -882,10 +906,13 @@ func (u *ui) run(keyWarnings []string) error {
 		}
 		return u.tabKeys(ev)
 	})
-	// showContextDetail is the read-only "i" view for a context, so inspect works
-	// on the contexts tab like every other tab. Enter/u still activate (switch).
-	// On the contexts table: Enter/u activate (switch), i details, n creates, d removes.
+	// The context sidebar's keys: Enter/u switch cluster, i details, n creates,
+	// d removes, Esc hands the keyboard back to the tab you were on.
 	cxtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape {
+			u.blurSidebar()
+			return nil
+		}
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case 'i':
@@ -953,6 +980,9 @@ func (u *ui) run(keyWarnings []string) error {
 		return u.tabKeys(ev)
 	})
 
+	// The sidebar is visible from the first frame, so its content is loaded
+	// before it: it comes from docker's local store, no network involved.
+	u.loadContexts()
 	u.loadContainersSync() // startup: before app.Run, so fetch+apply inline
 	// Arm the agents' samplers right away: the first reading carries memory but
 	// no CPU (a percentage needs two), so asking at startup means the numbers are
@@ -1795,7 +1825,11 @@ func (u *ui) helpFor(name string) string {
 	case "secrets":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
 	case "contexts":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] use  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
+		// The sidebar's footer, shown while it holds the keyboard. Esc is first
+		// after the movement keys because it is the way back out — the sidebar
+		// is the one focusable thing here that is not a tab, so "how do I get
+		// back" is the question it has to answer.
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Esc[white] back  [yellow]Enter/%s[white] switch  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
 			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
 	case "nodes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  [yellow]%s[white] reclaim images",
@@ -1826,7 +1860,8 @@ func (u *ui) showHelp() {
 	line(kl(km.Copy), "copy the current list to the clipboard")
 	line(kl(km.ToggleMouse), "toggle mouse on/off")
 	line("Tab", "next tab")
-	line("1–8", "jump to a tab by number")
+	line("1–7", "jump to a tab by number")
+	line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
 	line("`", "toggle the client log view")
 	line("Esc", "close the current overlay / dialog")
 
@@ -1874,10 +1909,12 @@ func (u *ui) showHelp() {
 	line("Enter / i", "details")
 	line(kl(km.SecNew)+"/"+kl(km.SecDelete), "new / delete")
 
-	sec("Contexts")
-	line("Enter / "+kl(km.CtxUse), "use (switch cluster)")
-	line("i", "context details")
+	sec("Contexts (sidebar, not a tab)")
+	line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
+	line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
+	line("i", "context details (endpoint, jump hosts)")
 	line(kl(km.CtxNew)+"/"+kl(km.CtxDelete), "new / delete")
+	line("▶ · ✗", "active · connected (instant) · last attempt refused")
 
 	sec("Nodes")
 	line("Enter / i", "details")
@@ -1930,10 +1967,15 @@ func (u *ui) setTab(name string) {
 	content, app := u.content, u.app
 	ctree, vtable, ftable := u.ctree, u.vtable, u.ftable
 	nettable, sectable := u.nettable, u.sectable
-	cxtable, notable := u.cxtable, u.notable
+	notable := u.notable
 	u.active = name
 	content.SwitchToPage(name)
 	u.curHelp = u.helpFor(name)
+	// Switching tab takes the keyboard back from the sidebar, so the footer it
+	// borrowed goes back too rather than being restored over the new tab's.
+	u.sidebarReturn = ""
+	u.sidebarHasFocus = false
+	u.sidebar.SetBorderColor(palette.border)
 	u.setFooter(u.curHelp)
 	u.renderTabBar(name)
 	u.updateStatus() // the selection count shows only on the volumes tab
@@ -1952,9 +1994,6 @@ func (u *ui) setTab(name string) {
 	case "secrets":
 		app.SetFocus(sectable)
 		u.loadSecrets()
-	case "contexts":
-		app.SetFocus(cxtable)
-		u.loadContexts()
 	case "nodes":
 		app.SetFocus(notable)
 		u.loadNodes()
@@ -2023,6 +2062,12 @@ func (u *ui) refreshForwardViews() {
 func (u *ui) yankCurrent() {
 	screen := u.screen
 	active, activeCtx := u.active, u.activeCtx
+	// The context list is no longer a tab, so "what is on screen" is no longer
+	// the same question as "which tab is this": when the sidebar holds the
+	// keyboard, that is what the operator means by copy.
+	if u.sidebarFocused() {
+		active = "contexts"
+	}
 	croot := u.croot
 	forwards := u.forwards
 	nets, secs, ctxs := u.nets, u.secs, u.ctxs
@@ -2139,14 +2184,16 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 				u.loadNetworks()
 			case "secrets":
 				u.loadSecrets()
-			case "contexts":
-				u.loadContexts()
 			case "nodes":
 				u.loadNodes()
 				u.loadUsage() // the node detail shows measured usage next to reservations
 			default:
 				u.renderForwards()
 			}
+			// The context list comes from docker's local store, so it costs
+			// nothing and is refreshed whatever tab you are on — it is always
+			// on screen now.
+			u.loadContexts()
 			u.refreshCluster()
 			return nil
 		case km.Copy:
@@ -2154,6 +2201,9 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case km.ToggleMouse:
 			u.toggleMouse()
+			return nil
+		case km.CtxFocus:
+			u.focusSidebar()
 			return nil
 		case 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
