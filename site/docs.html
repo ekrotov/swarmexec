@@ -359,6 +359,7 @@
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>audit identity</td></tr>
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>overlay backdrop dim (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_KEYS</code></td><td>path to the TUI keymap file (default <code>keys.yaml</code> next to the config)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> switches ssh connection sharing off (see <a href="#sshsharing">ssh connection sharing</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>Docker context for the manager API</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base for the default config path</td></tr>
         </tbody>
@@ -959,6 +960,53 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       <div class="prompt"><span class="c">$</span> swarmexec context create prod --docker-host ssh://ops@manager --use
 <span class="c">$</span> swarmexec context ls
 <span class="c">$</span> swarmexec --context prod ps</div>
+
+      <h3 id="sshsharing">ssh connection sharing</h3>
+      <p>
+        With an <code>ssh://</code> context, swarmexec reaches the cluster over ssh twice
+        over: the Docker manager API through ssh's connection helper, and every node
+        agent through its own tunnel to the same host. Each exec, log stream,
+        port-forward, stats poll and refresh cycle used to open a fresh ssh connection
+        — a TCP handshake, a key exchange and an authentication per dial, and again per
+        jump host — against a bastion that was connected a moment earlier.
+      </p>
+      <p>
+        swarmexec now lets them share one transport, using OpenSSH's own
+        <code>ControlMaster</code>: the first connection to a destination opens it, and
+        every later one becomes a channel on it. Measured on a three-node cluster behind
+        a jump host, <code>swarmexec doctor</code> went from <strong>8 authentications
+        and 3.6&nbsp;s</strong> to <strong>2 and 1.0&nbsp;s</strong>. Nothing about the
+        traffic itself changes, and the effect grows with how much you do in one session.
+      </p>
+      <ul>
+        <li>
+          The control sockets live in <code>$XDG_RUNTIME_DIR/swarmexec/ssh/</code>
+          (falling back to your cache directory), created <code>0700</code> — a control
+          socket is a live authenticated session, so it stays inside your own tree and
+          never in <code>/tmp</code>.
+        </li>
+        <li>
+          One socket per <em>destination and route</em>: two contexts reaching the same
+          manager through different jump hosts do not share, because they are not the
+          same connection.
+        </li>
+        <li>
+          The shared connection outlives the command by <strong>60&nbsp;s</strong>, so
+          the next one is cheap, and then it exits on its own. Nothing of swarmexec's is
+          left holding a connection afterwards.
+        </li>
+        <li>
+          A socket left behind by a master that was killed is harmless: ssh finds it
+          dead and opens an ordinary connection instead.
+        </li>
+        <li>
+          Not available on Windows, whose OpenSSH does not implement connection sharing.
+          Set <code>SWARMEXEC_SSH_MULTIPLEX=0</code> to switch it off everywhere else —
+          worth knowing if you configure <code>ControlPath</code> yourself, since
+          swarmexec's setting is passed on the ssh command line and takes precedence over
+          <code>~/.ssh/config</code>.
+        </li>
+      </ul>
 
       <!-- 10 -->
       <h2 id="tui">10. The TUI</h2>

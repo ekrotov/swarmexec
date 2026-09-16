@@ -45,9 +45,15 @@ func sshDialerForHost(host, jump string) (func(context.Context, string) (net.Con
 	}, nil
 }
 
-// sshForwardArgs builds `ssh [-l user] [-p port] [-J jump] -W <target> -- <host>`,
+// sshForwardArgs builds `ssh [-l user] [-p port] [-J jump] [sharing] -W <target> -- <host>`,
 // which forwards this process's stdio to target through the ssh host (via the
 // jump host(s) when set) — exactly the net.Conn commandconn wraps.
+//
+// The sharing options are what make this cheap when it is called often, and it
+// is called very often: once per exec, per log stream, per port-forward, per
+// stats poll, per node, every refresh. Without them each of those repeated a
+// full handshake and authentication against a bastion that was already
+// connected. See sshMuxOpts.
 func sshForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
 	var args []string
 	if sp.User != "" {
@@ -59,6 +65,7 @@ func sshForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
 	if pj := strings.TrimSpace(proxyJump); pj != "" {
 		args = append(args, "-J", pj)
 	}
+	args = append(args, sshMuxOpts(sp, proxyJump)...)
 	args = append(args, "-W", target, "--", sp.Host)
 	return args
 }

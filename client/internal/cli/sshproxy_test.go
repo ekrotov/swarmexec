@@ -10,7 +10,11 @@ import (
 	"github.com/docker/cli/cli/connhelper/ssh"
 )
 
+// The route args are asserted exactly, so sharing is switched off here — which
+// makes this test do double duty: it is also the proof that the opt-out leaves
+// precisely the argv that existed before sharing was added.
 func TestSSHForwardArgs(t *testing.T) {
+	t.Setenv(sshMuxEnv, "0")
 	tests := []struct {
 		name   string
 		spec   *ssh.Spec

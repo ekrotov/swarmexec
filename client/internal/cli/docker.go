@@ -32,8 +32,10 @@ func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 		// ssh endpoints need a connection helper (it tunnels the Docker API over
 		// ssh, the same way `docker --context <ssh-ctx>` does). Inject the
 		// context's ProxyJump (-J) so the API hop goes through the same bastion(s)
-		// as the agent tunnel — no ~/.ssh/config needed.
-		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, proxyJumpFlags(proxyJump))
+		// as the agent tunnel — no ~/.ssh/config needed — plus the connection
+		// sharing that lets the API and the agent tunnel ride ONE transport to
+		// that bastion instead of opening one each.
+		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, sshEndpointOpts(host, proxyJump))
 		if err != nil {
 			return nil, fmt.Errorf("set up ssh connection to %s: %w", host, err)
 		}
@@ -59,11 +61,10 @@ func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 func pingDockerHost(ctx context.Context, host, proxyJump string) error {
 	opts := []client.Opt{client.WithAPIVersionNegotiation()}
 	if strings.HasPrefix(host, "ssh://") {
-		var flags []string
-		if pj := strings.TrimSpace(proxyJump); pj != "" {
-			flags = []string{"-J", pj}
-		}
-		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, flags)
+		// Same flags as the real client, not a second hand-rolled copy: a probe
+		// that connects differently from the thing it is probing for is a probe
+		// that can pass for a setup which then fails.
+		helper, err := connhelper.GetConnectionHelperWithSSHOpts(host, sshEndpointOpts(host, proxyJump))
 		if err != nil {
 			return fmt.Errorf("set up ssh connection: %w", err)
 		}
