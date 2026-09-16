@@ -33,6 +33,7 @@ type keybinds struct {
 	// secrets
 	SecDelete, SecNew rune
 	// contexts
+	CtxFocus                  rune
 	CtxUse, CtxNew, CtxDelete rune
 	// forwards
 	FwdStop, FwdCopyURL rune
@@ -81,6 +82,10 @@ var keyActions = []keyAction{
 	{"node_prune_images", []string{"nodes"}, 'P', func(k *keybinds) *rune { return &k.NodeImages }},
 	{"secret_delete", []string{"secrets"}, 'd', func(k *keybinds) *rune { return &k.SecDelete }},
 	{"secret_new", []string{"secrets"}, 'n', func(k *keybinds) *rune { return &k.SecNew }},
+	// "contexts" is a scope, not a tab, since the context list moved into the
+	// sidebar: these three apply while it has the keyboard. context_focus is the
+	// one that reaches it, so it is global.
+	{"context_focus", []string{"*"}, 'c', func(k *keybinds) *rune { return &k.CtxFocus }},
 	{"context_use", []string{"contexts"}, 'u', func(k *keybinds) *rune { return &k.CtxUse }},
 	{"context_new", []string{"contexts"}, 'n', func(k *keybinds) *rune { return &k.CtxNew }},
 	{"context_delete", []string{"contexts"}, 'd', func(k *keybinds) *rune { return &k.CtxDelete }},

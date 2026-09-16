@@ -15,25 +15,35 @@ import (
 func (u *ui) renderContexts() {
 	cxtable := u.cxtable
 	selName := ""
-	if row, _ := cxtable.GetSelection(); row >= 1 {
+	if row, _ := cxtable.GetSelection(); row >= 0 {
 		if c := cxtable.GetCell(row, 0); c != nil {
-			selName = strings.TrimLeft(c.Text, "▶ ")
+			selName = strings.TrimLeft(c.Text, "▶·✗ ")
 		}
 	}
 	cxtable.Clear()
-	for c, h := range cxHeaders {
-		cxtable.SetCell(0, c, headerCell(h))
-	}
-	selRow := 1
+	// No header row and no endpoint column: the sidebar is a navigation list,
+	// not a table. A "CONTEXT" header over a framed box titled "contexts" says
+	// nothing twice, and the endpoint never fit in this width — it is in the
+	// detail overlay (i), where there is room to read it.
+	selRow := 0
 	for i, c := range u.ctxs {
 		label, color := "  "+c.Name, tcell.ColorWhite
-		if c.Name == u.activeCtx {
+		switch {
+		case c.Name == u.activeCtx:
 			label, color = "▶ "+c.Name, tcell.ColorAqua // the active session context
+		case u.clusters[c.Name] != nil && u.clusters[c.Name].dcli != nil:
+			// Visited and still connected: switching here is instant and lands
+			// where the operator left off.
+			label, color = "· "+c.Name, tcell.ColorGreen
+		case u.clusters[c.Name] != nil && u.clusters[c.Name].err != nil:
+			// Tried and refused. Saying so here is the difference between "I
+			// wonder why nothing happened" and "that one is down" — the switch
+			// itself deliberately leaves the operator where they were.
+			label, color = "✗ "+c.Name, tcell.ColorRed
 		}
-		cxtable.SetCell(i+1, 0, tview.NewTableCell(label).SetTextColor(color).SetExpansion(1))
-		cxtable.SetCell(i+1, 1, tview.NewTableCell(orDash(c.Host)).SetTextColor(tcell.ColorGray).SetExpansion(2))
+		cxtable.SetCell(i, 0, tview.NewTableCell(label).SetTextColor(color).SetExpansion(1))
 		if c.Name == selName {
-			selRow = i + 1
+			selRow = i
 		}
 	}
 	if len(u.ctxs) > 0 {
@@ -46,19 +56,25 @@ func (u *ui) loadContexts() {
 	list, err := dockerctx.List()
 	if err != nil {
 		cxtable.Clear()
-		for c, h := range cxHeaders {
-			cxtable.SetCell(0, c, headerCell(h))
-		}
-		cxtable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+		cxtable.SetCell(0, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
 		return
 	}
 	u.ctxs = list
 	u.renderContexts()
 }
 
+// selectedContext maps the cursor row to a context.
+//
+// Deliberately NOT the shared selectedRow: that one subtracts the header row
+// every other table has, and the sidebar has none. Reusing it here would return
+// the context ABOVE the one under the cursor — switching to the wrong cluster
+// on every keystroke, which is the worst possible way to be off by one.
 func (u *ui) selectedContext() (dockerctx.Context, bool) {
-	cxtable := u.cxtable
-	return selectedRow(cxtable, u.ctxs)
+	row, _ := u.cxtable.GetSelection()
+	if row < 0 || row >= len(u.ctxs) {
+		return dockerctx.Context{}, false
+	}
+	return u.ctxs[row], true
 }
 
 func (u *ui) showCreateContext() {
@@ -196,17 +212,17 @@ func (u *ui) deleteContext(c dockerctx.Context) {
 }
 
 func (u *ui) activateContext(c dockerctx.Context) {
-	app := u.app
 	if c.Name == u.activeCtx {
 		u.flash(" [gray]already on[white] context " + c.Name)
 		return
 	}
-	if err := dockerctx.Use(c.Name); err != nil {
-		u.info("switch failed: " + err.Error())
-		return
-	}
-	u.switchTo = c.Name
-	app.Stop() // the caller restarts against switchTo
+	// Docker's stored current context is updated by the switch, once it has
+	// actually happened — not here. It used to be written first, which was
+	// harmless only because a failure then took the whole UI down with it. Now
+	// that a refused switch leaves the operator where they were, writing it
+	// first would leave `docker` pointed at a cluster the UI just declined to
+	// go to, and the footer and the shell would disagree.
+	u.switchCluster(c.Name)
 }
 
 func (u *ui) showContextDetail(c dockerctx.Context) {

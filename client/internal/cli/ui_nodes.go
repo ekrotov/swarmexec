@@ -59,17 +59,18 @@ func (u *ui) renderNodes() {
 }
 
 func (u *ui) loadNodes() {
-	app, r, cfg, dcli, f, ctx, notable := u.app, u.r, u.cfg, u.dcli, u.f, u.ctx, u.notable
+	r, cfg, dcli, f, ctx, notable := u.r, u.cfg, u.dcli, u.f, u.ctx, u.notable
 	notable.Clear()
 	for c, h := range noHeaders {
 		notable.SetCell(0, c, headerCell(h))
 	}
 	notable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	gen := u.generation()
 	go func() {
 		start := time.Now()
 		list, err := listNodeInfos(ctx, dcli)
 		clientlog.Timed("ui.loadNodes", start, err)
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			if err != nil {
 				notable.Clear()
 				for c, h := range noHeaders {
@@ -99,7 +100,7 @@ func (u *ui) loadNodes() {
 				}
 			}
 		}
-		app.QueueUpdateDraw(func() { u.nodeImgs = imgs })
+		u.onCluster(gen, func() { u.nodeImgs = imgs })
 	}()
 	// Per-node volume counts are node-local (agent fan-out), so fill them in
 	// asynchronously — the VOLS column shows "…" until they arrive.
@@ -109,7 +110,7 @@ func (u *ui) loadNodes() {
 			vs, _ := indexVolumes(ctx, cfg, ns, f.connectTimeout)
 			counts = volumeCountsByNode(vs)
 		}
-		app.QueueUpdateDraw(func() {
+		u.onCluster(gen, func() {
 			// Mark loaded even on failure so VOLS shows a number, not "…" forever.
 			u.nodeVolCounts, u.nodeVolsLoaded = counts, true
 			u.renderNodes()

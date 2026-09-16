@@ -349,7 +349,7 @@ func TestHealthBadges(t *testing.T) {
 // stack row is what an operator scans first, so it must not read as calm while
 // every service under it is failing its probes.
 func TestStackHealthRollsUp(t *testing.T) {
-	u := &ui{
+	u := &ui{clusterState: &clusterState{
 		lastCands: []resolve.Candidate{
 			usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
 		},
@@ -358,7 +358,7 @@ func TestStackHealthRollsUp(t *testing.T) {
 			"c2": {Health: healthHealthy},
 			"c3": {Health: healthUnhealthy},
 		},
-	}
+	}}
 	svcs := []resolve.Service{{Name: "web"}, {Name: "api"}}
 
 	h := u.stackHealth(svcs)
@@ -370,7 +370,7 @@ func TestStackHealthRollsUp(t *testing.T) {
 	}
 
 	// With no readings at all the stack keeps the count's own colour.
-	empty := (&ui{}).stackHealth(svcs)
+	empty := (&ui{clusterState: &clusterState{}}).stackHealth(svcs)
 	if empty.Total() != 0 {
 		t.Errorf("no readings should roll up to nothing, got %+v", empty)
 	}
