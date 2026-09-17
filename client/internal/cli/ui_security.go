@@ -31,43 +31,14 @@ func (u *ui) showSecurityRisks() {
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetRegions(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" security risks ")
+	tv.SetText(securityOverlayText(len(u.lastSvcs), flagged))
 
-	switch {
-	case len(u.lastSvcs) == 0:
-		// No service list yet (first fetch pending, or it failed). Saying "no
-		// risks" here would be a false all-clear — we simply have no data.
-		tv.SetText("\n  [yellow]No services loaded — nothing has been scanned yet.[-]\n\n" +
-			"  [gray]Refresh the containers tab (r) once the manager is reachable.[-]")
-	case len(flagged) == 0:
-		// Name what was actually checked, so "nothing found" is informative
-		// rather than a bare claim. The list comes from the analyzer registry,
-		// so it cannot drift as checks are added.
-		tv.SetText(fmt.Sprintf("\n  [green]No security risks identified[-] [gray]across %d service(s).[-]\n\n"+
-			"  [gray]Checked: %s.[-]", len(u.lastSvcs), strings.Join(secscan.Checks(), ", ")))
-	default:
-		var b strings.Builder
-		fmt.Fprintf(&b, "  [gray]%d of %d service(s) flagged  ·  %d checks[-]\n",
-			len(flagged), len(u.lastSvcs), len(secscan.Checks()))
+	// Pre-select the service under the cursor if it is among the flagged ones.
+	if sel := u.currentServiceName(); sel != "" {
 		for i, s := range flagged {
-			// Region id (index-based, so odd service names can't break the tag).
-			// Every spec-derived string is escaped: Docker does not restrict env
-			// key or User characters, so a "[" run would otherwise be parsed as a
-			// colour tag and swallow the rest of the overlay.
-			fmt.Fprintf(&b, "\n[\"s%d\"][aqua]%s[-]  %s[\"\"]\n", i, tview.Escape(s.Name), sevMarker(secscan.MaxSeverity(s.Risks)))
-			for _, f := range s.Risks {
-				fmt.Fprintf(&b, "  %s  [white]%s[-] — [gray]%s[-]\n",
-					sevMarker(f.Severity), tview.Escape(f.Title), tview.Escape(f.Detail))
-			}
-		}
-		tv.SetText(strings.TrimLeft(b.String(), "\n"))
-
-		// Pre-select the service under the cursor if it is among the flagged ones.
-		if sel := u.currentServiceName(); sel != "" {
-			for i, s := range flagged {
-				if s.Name == sel {
-					tv.Highlight(fmt.Sprintf("s%d", i)).ScrollToHighlight()
-					break
-				}
+			if s.Name == sel {
+				tv.Highlight(fmt.Sprintf("s%d", i)).ScrollToHighlight()
+				break
 			}
 		}
 	}
@@ -100,6 +71,46 @@ func (u *ui) showSecurityRisks() {
 	})
 	pages.AddPage(pageSecurity, centered(tv, 84, 26), true, true)
 	app.SetFocus(tv)
+}
+
+// securityOverlayText renders the body of the risks overlay: scanned is how
+// many services were examined, flagged the ones with an actionable finding.
+//
+// Split out of showSecurityRisks so the markup can be tested as a value. The
+// escaping below is the whole defence of this view, and a test that only checks
+// what tview.Escape does proves nothing about whether this function calls it —
+// which is exactly how the omission got here the first time.
+func securityOverlayText(scanned int, flagged []resolve.Service) string {
+	switch {
+	case scanned == 0:
+		// No service list yet (first fetch pending, or it failed). Saying "no
+		// risks" here would be a false all-clear — we simply have no data.
+		return "\n  [yellow]No services loaded — nothing has been scanned yet.[-]\n\n" +
+			"  [gray]Refresh the containers tab (r) once the manager is reachable.[-]"
+	case len(flagged) == 0:
+		// Name what was actually checked, so "nothing found" is informative
+		// rather than a bare claim. The list comes from the analyzer registry,
+		// so it cannot drift as checks are added.
+		return fmt.Sprintf("\n  [green]No security risks identified[-] [gray]across %d service(s).[-]\n\n"+
+			"  [gray]Checked: %s.[-]", scanned, strings.Join(secscan.Checks(), ", "))
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "  [gray]%d of %d service(s) flagged  ·  %d checks[-]\n",
+		len(flagged), scanned, len(secscan.Checks()))
+	for i, s := range flagged {
+		// Region id (index-based, so odd service names can't break the tag).
+		// Every spec-derived string is escaped: Docker does not restrict env
+		// key or User characters, so a "[" run would otherwise be parsed as a
+		// colour tag and swallow the rest of the overlay — including the
+		// findings of every service rendered after this one.
+		fmt.Fprintf(&b, "\n[\"s%d\"][aqua]%s[-]  %s[\"\"]\n", i, tview.Escape(s.Name), sevMarker(secscan.MaxSeverity(s.Risks)))
+		for _, f := range s.Risks {
+			fmt.Fprintf(&b, "  %s  [white]%s[-] — [gray]%s[-]\n",
+				sevMarker(f.Severity), tview.Escape(f.Title), tview.Escape(f.Detail))
+		}
+	}
+	return strings.TrimLeft(b.String(), "\n")
 }
 
 // currentServiceName returns the service name under the tree cursor — the
