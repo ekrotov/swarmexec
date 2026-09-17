@@ -31,6 +31,16 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new sessions")
 	}
 
+	// Take a stream slot BEFORE the first Recv, which blocks until the client
+	// sends. Counting only established sessions would leave the cheapest attack
+	// uncapped: open streams and never speak, holding a goroutine each.
+	release, err := s.streams.acquire()
+	if err != nil {
+		s.log.Warn("exec refused: stream limit reached", "in_use", s.streams.inUse())
+		return err
+	}
+	defer release()
+
 	// (1) The first message MUST be StartExec (CONTRACT §4.2).
 	first, err := stream.Recv()
 	if err != nil {

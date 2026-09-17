@@ -141,10 +141,12 @@ func run(args []string) error {
 	secretAuthIdentity := cfg.SelfSigned && cfg.CACert == ""
 
 	srv := server.New(dockerCli, auth.AllowAll{}, auditLog, log, sink, server.Options{
-		IdleTimeout:    cfg.IdleTimeout,
-		MaxSessionTime: cfg.MaxSessionTime,
-		SecretAuth:     secretAuthIdentity,
-		ForwardImage:   cfg.ForwardImage,
+		IdleTimeout:        cfg.IdleTimeout,
+		MaxSessionTime:     cfg.MaxSessionTime,
+		SecretAuth:         secretAuthIdentity,
+		ForwardImage:       cfg.ForwardImage,
+		MaxStreams:         cfg.MaxStreams,
+		MaxForwardSidecars: cfg.MaxForwardSidecars,
 	})
 
 	// Background volume-size cache: scans at startup, then refreshes on volume

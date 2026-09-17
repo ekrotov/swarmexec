@@ -410,8 +410,10 @@ non-interactive, lists the candidates and exits).
 | `-server-key` | `SWARMEXEC_SERVER_KEY` | *(required)* | server private key |
 | `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
-| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `0` (off) | per-session idle timeout |
-| `-max-session` | `SWARMEXEC_MAX_SESSION` | `0` (off) | per-session max duration |
+| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` = off) | per-session idle timeout |
+| `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` = off) | per-session max duration |
+| `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent exec/logs/port-forward streams; negative = unlimited |
+| `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers; negative = unlimited |
 | `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |

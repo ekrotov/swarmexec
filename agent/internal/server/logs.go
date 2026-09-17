@@ -29,6 +29,12 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	if req.GetContainerId() == "" {
 		return status.Error(codes.InvalidArgument, "LogsRequest requires container_id")
 	}
+	release, err := s.streams.acquire()
+	if err != nil {
+		s.log.Warn("logs refused: stream limit reached", "in_use", s.streams.inUse())
+		return err
+	}
+	defer release()
 	ctx := stream.Context()
 
 	identity, service, err := s.authorize(ctx, auth.Request{

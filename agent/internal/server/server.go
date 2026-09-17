@@ -51,6 +51,12 @@ type Options struct {
 	// also the resolution of every CPU percentage, which is a delta between two
 	// of them. Zero uses the default (statsInterval).
 	StatsInterval time.Duration
+	// MaxStreams caps concurrent Exec + Logs + PortForward streams on this node.
+	// Zero uses the default (defaultMaxStreams); negative disables the cap.
+	MaxStreams int
+	// MaxForwardSidecars caps live port-forward sidecar containers on this node.
+	// Zero uses the default (defaultMaxForwardSidecars); negative disables it.
+	MaxForwardSidecars int
 }
 
 // Server is the Agent gRPC service implementation.
@@ -77,6 +83,12 @@ type Server struct {
 
 	active atomic.Int64
 
+	// streams caps concurrent streaming RPCs; sidecars caps the containers a
+	// port-forward creates. Two limits because they bound different things: a
+	// stream costs a goroutine, a sidecar costs a container on the node.
+	streams  *limiter
+	sidecars *limiter
+
 	// The agent's own image, resolved once by self-inspection and reused by
 	// every port-forward sidecar. See forwardImage.
 	forwardImageOnce sync.Once
@@ -99,6 +111,9 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	}
 	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
 	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
+	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
+	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
+		"port-forward sidecars", "-max-forward-sidecars")
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {

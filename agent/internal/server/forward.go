@@ -49,6 +49,17 @@ func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
 		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new forwards")
 	}
 
+	// Stream slot before the first Recv, which blocks on the client. The sidecar
+	// slot is taken later, in openSidecarChannel: only the sidecar path creates a
+	// container, and a forward that reaches the port directly must not consume
+	// from the container budget.
+	release, err := s.streams.acquire()
+	if err != nil {
+		s.log.Warn("port-forward refused: stream limit reached", "in_use", s.streams.inUse())
+		return err
+	}
+	defer release()
+
 	// (1) The first message MUST be StartForward.
 	first, err := stream.Recv()
 	if err != nil {
@@ -105,7 +116,7 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 		s.audit.ForwardEnd(identity, sf.GetContainerId(), sf.GetPort(), time.Since(begin), 0, 0)
 		s.log.Error("port-forward setup failed",
 			"container_id", sf.GetContainerId(), "port", sf.GetPort(), "err", err)
-		return status.Error(codes.Internal, err.Error())
+		return forwardStatus(err)
 	}
 	defer ch.Close()
 
@@ -190,6 +201,17 @@ type forwardChannel interface {
 	Close()
 }
 
+// forwardStatus keeps a gRPC code the setup already chose, and supplies
+// Internal only for a plain error. Without it the sidecar cap would reach the
+// client as Internal — "the agent is broken" — instead of ResourceExhausted,
+// which says the node is busy and the call is worth retrying.
+func forwardStatus(err error) error {
+	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
+		return err
+	}
+	return status.Error(codes.Internal, err.Error())
+}
+
 // openForwardChannel reaches the target port. It reports whether a sidecar was
 // used so the audit record can distinguish the two paths.
 func (s *Server) openForwardChannel(ctx context.Context, containerID string, port uint32) (forwardChannel, bool, error) {
@@ -215,6 +237,11 @@ type sidecarChannel struct {
 	stdoutR *io.PipeReader
 	// ready delivers the sidecar's first control line exactly once.
 	ready chan error
+
+	// release returns this sidecar's slot in the node's container budget. It is
+	// called from Close, so the slot is held for exactly as long as the
+	// container can exist — not merely while the stream is being set up.
+	release func()
 
 	closeOnce sync.Once
 }
@@ -269,14 +296,31 @@ func (c *sidecarChannel) Close() {
 				c.log.Warn("sidecar removal failed; it may linger", "sidecar", c.id, "err", err)
 			}
 		}
+		// Last: the slot is only free once the container is actually gone.
+		if c.release != nil {
+			c.release()
+		}
 	})
 }
 
 // openSidecarChannel creates a container in the target's network namespace,
 // attaches to its stdio, and waits for it to report a successful dial.
 func (s *Server) openSidecarChannel(ctx context.Context, containerID string, port uint32) (*sidecarChannel, error) {
+	// A container budget of its own, taken before anything is created. This is
+	// the expensive resource on the node: today one TCP connection through a
+	// forward is one container, so "open many connections" is literally "start
+	// many containers", and the node runs out of PIDs and memory long before it
+	// runs out of gRPC streams.
+	releaseSlot, err := s.sidecars.acquire()
+	if err != nil {
+		s.log.Warn("port-forward refused: sidecar limit reached",
+			"in_use", s.sidecars.inUse(), "container_id", containerID, "port", port)
+		return nil, err
+	}
+
 	image, err := s.forwardImage(ctx)
 	if err != nil {
+		releaseSlot()
 		return nil, err
 	}
 
@@ -311,10 +355,14 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 
 	created, err := s.docker.ContainerCreate(sctx, cfg, hostCfg, nil, nil, "")
 	if err != nil {
+		releaseSlot()
 		return nil, fmt.Errorf("create forward sidecar: %w", err)
 	}
 
-	ch := &sidecarChannel{docker: s.docker, id: created.ID, log: s.log}
+	// From here the slot is owned by the channel: every failure path below goes
+	// through ch.Close, which releases it. Releasing here as well would return
+	// the slot twice — hence the idempotent release from limiter.acquire.
+	ch := &sidecarChannel{docker: s.docker, id: created.ID, log: s.log, release: releaseSlot}
 
 	// Attach before start so no output is missed.
 	attach, err := s.docker.ContainerAttach(sctx, created.ID, container.AttachOptions{
