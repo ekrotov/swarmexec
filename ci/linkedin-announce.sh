@@ -114,6 +114,13 @@ notes=$(printf '%s\n' "$message" | awk '
 	{started=1; print}
 ')
 
+# LinkedIn posts are PLAIN TEXT — the Posts API renders no markup at all. Tag
+# messages use Markdown emphasis (**bold**, `code`), and it was going out
+# literally: readers saw "**A security report over the whole cluster.**",
+# asterisks and all. Strip the two markers rather than ban them from tag
+# messages, which are also the release notes and do render them.
+notes=$(printf '%s\n' "$notes" | sed -e 's/\*\*\([^*]*\)\*\*/\1/g' -e 's/`\([^`]*\)`/\1/g')
+
 commentary=$(printf '%s\n\n%s\n\nRelease notes: %s\nDocs & downloads: %s\n\n#DockerSwarm #Docker #DevOps #CLI #OpenSource' \
 	"🚀 swarmexec $CI_COMMIT_TAG is out — cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal." \
 	"$notes" \

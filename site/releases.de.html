@@ -195,10 +195,16 @@
         return String(s)
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
-      // Inline `code` on already-escaped text. Backticks can't appear in escaped
-      // output except literally, so this is safe.
+      // Inline `code` and **bold** on already-escaped text. Neither backticks nor
+      // asterisks can appear in escaped output except literally, so this is safe.
+      //
+      // Bold was missing, and tag messages have used it for years: every release
+      // note on this page has been rendering "**Cluster switching keeps your
+      // session.**" with the asterisks showing. The page has always escaped the
+      // text and then un-escaped exactly one construct; this adds the second.
       function inlineCode(s) {
-        return s.replace(/`([^`]+)`/g, '<code>$1</code>');
+        return s.replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
       }
 
       function heading(s) { return '<h3 class="section">' + inlineCode(esc(s.trim())) + '</h3>'; }

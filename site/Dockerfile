@@ -13,7 +13,15 @@
 # fall back to an empty array so the build (and the page's fallback) still work.
 FROM alpine:3.20 AS notes
 ARG RELEASES_API=https://gitlab.logle.io/api/v4/projects/242/repository/tags?per_page=100
+# VERSION is repeated here only to key this layer to the release being built.
+# Without it the fetch is one cacheable RUN whose inputs never change, so any
+# build with a warm layer cache serves whatever the tag list looked like the
+# first time it ran — locally that produced a /releases page that stopped at
+# v1.8.1, nine releases behind. CI usually has no such cache, which is exactly
+# why it would go unnoticed until the day it does.
+ARG VERSION=dev
 RUN apk add --no-cache wget jq ca-certificates && \
+    echo "building release data for ${VERSION}" && \
     ( wget -qO- "$RELEASES_API" \
       | jq '[ .[] | select(.name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | { version: .name, date: .commit.created_at, message: (.message // "") } ] | sort_by(.date) | reverse' > /releases.json ) \
     || echo '[]' > /releases.json
