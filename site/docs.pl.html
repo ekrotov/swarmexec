@@ -1623,6 +1623,8 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         otwiera dokładnie to samo, co klawisz bezpośredni, więc oba są
         <strong>równoważne</strong>, a nie są wariantami o różnym działaniu. Pozycje, w
         kolejności:
+        <em>Update image version…</em> (<em>Set image version…</em>, gdy nie ma nowszej —
+        przypięcie dowolnego tagu albo powrót do niego jest równie uprawnione),
         <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
         <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
         <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
@@ -1632,8 +1634,13 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         klawiszami <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> skaczą do
         pierwszej/ostatniej pozycji), <kbd>Enter</kbd> wybiera; <kbd>Esc</kbd> — albo
         pozycja <em>Cancel</em> — zamyka menu, nic nie robiąc. Poza menu zostaje tylko
-        wybór wersji obrazu (<kbd>u</kbd>), w samej inspekcji — gdzie działa z dowolnego
-        wiersza, niezależnie od tego, czy znaleziono nowszą wersję (patrz wyżej).
+        wybór wersji obrazu jest <strong>pierwszy</strong>,
+        bo ustawienie wersji to najzwyklejsza zmiana usługi, jaka istnieje; jego
+        bezpośredni klawisz <kbd>u</kbd> nadal działa z dowolnego wiersza inspekcji. Jeśli
+        obraz jest taki, dla którego nie da się wybrać wersji — referencja bez tagu albo
+        rejestr, który nie wypisze tagów repozytorium, zwykle prywatny bez poświadczeń —
+        pozycja zostaje na liście i <strong>mówi o tym</strong>, zamiast po cichu zniknąć,
+        oraz wskazuje na <code>docker service update --image</code>, które zadziała.
         Klawisz bezpośredni dla każdej pozycji:
       </p>
       <div class="tablewrap"><table>
