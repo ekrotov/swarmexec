@@ -53,6 +53,11 @@ type Config struct {
 	// secret at /run/secrets/swarmexec_agent_secret).
 	AgentSecretFile string
 
+	// AllowLegacySecret accepts the RAW shared secret from clients that predate
+	// connection-bound authentication. On by default so an agent upgrade does
+	// not strand older clients; turn it off once they are rolled forward.
+	AllowLegacySecret bool
+
 	DockerHost string // docker daemon endpoint
 
 	// ForwardImage overrides the image port-forward sidecars run from; empty
@@ -136,6 +141,7 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.StringVar(&c.CertSANs, "cert-sans", env("SWARMEXEC_CERT_SANS", ""), "extra SANs for the self-signed cert, e.g. \"DNS:swarmexec-agent,IP:10.0.0.5\" (env SWARMEXEC_CERT_SANS)")
 	fs.StringVar(&c.AgentSecret, "agent-secret", env("SWARMEXEC_AGENT_SECRET", ""), "shared secret clients must present; empty disables (env SWARMEXEC_AGENT_SECRET)")
 	fs.StringVar(&c.AgentSecretFile, "agent-secret-file", env("SWARMEXEC_AGENT_SECRET_FILE", ""), "file to read the shared secret from, e.g. a Docker secret (env SWARMEXEC_AGENT_SECRET_FILE)")
+	fs.BoolVar(&c.AllowLegacySecret, "allow-legacy-secret", envBool("SWARMEXEC_ALLOW_LEGACY_SECRET", true), "accept the raw shared secret from clients predating connection-bound auth; disable once clients are upgraded (env SWARMEXEC_ALLOW_LEGACY_SECRET)")
 	fs.StringVar(&c.DockerHost, "docker-host", env("SWARMEXEC_DOCKER_HOST", "unix:///var/run/docker.sock"), "docker daemon endpoint (env SWARMEXEC_DOCKER_HOST)")
 	fs.DurationVar(&c.DrainTimeout, "drain-timeout", envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
 	// Non-zero by default. These used to be 0/disabled, which meant an exec

@@ -22,6 +22,18 @@
 # Optional: to ALSO keep per-operator client-cert identity, additionally provide
 # a client CA as the swarmexec_ca secret and add -ca-cert=/run/secrets/swarmexec_ca
 # to the command; clients then present their operator cert as usual.
+#
+# What `insecure: true` means here. The client does NOT send the shared secret:
+# it sends a proof derived from the secret and the certificate of the connection
+# it travels on, so a server answering an unverified connection learns nothing
+# that works against a real agent. What it still means is that the agent is not
+# authenticated to the client — someone on the path can terminate the connection
+# and read what that session sends them. Use this mode on a network you trust;
+# on one you do not, provision a CA and drop `insecure`.
+#
+# Once every client is on a version that sends the bound proof, add
+# -allow-legacy-secret=false below: the agent then refuses the raw secret
+# outright, so no client can put the credential on the wire by accident.
 
 services:
   agent:

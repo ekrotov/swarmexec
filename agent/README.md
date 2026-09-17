@@ -88,12 +88,31 @@ build and protocol version.
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
 | `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` disables) | per-session idle timeout |
 | `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` disables) | per-session max duration |
+| `-allow-legacy-secret` | `SWARMEXEC_ALLOW_LEGACY_SECRET` | `true` | accept the raw shared secret from pre-binding clients |
 | `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent exec/logs/port-forward streams; negative = unlimited |
 | `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers; negative = unlimited |
 | `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |
 | `-metrics-addr` | `SWARMEXEC_METRICS_ADDR` | — (disabled) | Prometheus listen addr, e.g. `:9100` |
+
+### Shared-secret authentication
+
+The client does not send the secret. It sends a proof computed from the secret
+and the certificate of the connection carrying it, so the credential itself
+never reaches the wire. That matters because in self-signed mode the client has
+nothing to verify the agent against — the cert is regenerated on every restart,
+on every node — and the old behaviour handed the raw secret to whatever server
+answered. One capture was one credential valid on **every** node, each of which
+holds the Docker socket.
+
+`-allow-legacy-secret` (default on) still accepts the raw form so an agent
+upgrade does not strand older clients; each agent logs a warning once when it
+does. Turn it off once the clients are rolled forward.
+
+Binding defeats credential theft and replay. It does not authenticate the agent
+to the client: on an unverified connection, someone on the path still sees what
+that session sends them. For an untrusted network, use a CA.
 
 ### Limits
 
