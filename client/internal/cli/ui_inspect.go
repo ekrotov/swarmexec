@@ -531,20 +531,68 @@ func rollbackConfirmText(svc string, diffLines []string) string {
 	return b.String()
 }
 
-// showActions groups every service editor/action behind one menu (opened with
-// "a"), so the footer needn't spell out ~14 case-sensitive keys (d/D, s/S, p/P
-// …). The direct keys still work for power users and are listed under "?"; this
-// is the discoverable, no-Shift path. Service-only.
-func (iv *inspectView) showActions() {
-	u := iv.u
-	app, pages := u.app, u.pages
-	editSvc, table := iv.editSvc, iv.table
-	list := tview.NewList().ShowSecondaryText(false)
-	list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", editSvc))
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-	closeActions := func() { restoreHelp(); pages.RemovePage(pageInspectActions); app.SetFocus(table) }
-	add := func(label string, fn func()) {
-		list.AddItem(label, "", 0, func() { closeActions(); fn() })
+// openVersionPicker opens the image-version picker for this service. Shared by
+// the "u" key, Enter on the upgrade row, and the actions menu, so all three
+// reach the same flow rather than three spellings of it.
+func (iv *inspectView) openVersionPicker() {
+	if iv.upInfo == nil || iv.editSvc == "" {
+		return
+	}
+	iv.u.openImageVersionPicker(iv.editSvc, *iv.upInfo, iv.table, iv.reload)
+}
+
+// explainNoVersionPicker says why a version cannot be chosen for this image.
+//
+// Both causes are outside the operator's view, which is exactly why silence was
+// the wrong answer: either the reference is not one that names a version we can
+// resolve, or the registry would not list the repo's tags — commonly a private
+// registry the client has no credentials for.
+func (iv *inspectView) explainNoVersionPicker() {
+	iv.u.info("No version can be set for this image.\n\n" +
+		"Setting a version needs two things: an image reference that names a tag " +
+		"(or a digest-pinned :latest), and a registry that will list the repo's " +
+		"tags. One of them is missing here — most often the registry: a private " +
+		"one the client has no credentials for returns nothing, and swarmexec " +
+		"will not guess which versions exist.\n\n" +
+		"The image can still be changed from the CLI:\n" +
+		"  docker service update --image <repo>:<tag> " + iv.editSvc)
+}
+
+// serviceAction is one entry of the actions menu: what it is called and what it
+// does. Separated from the widget so the menu's CONTENTS can be asserted — the
+// bug this structure exists to prevent was an action that simply was not in the
+// list, which no test of the list widget would have caught.
+type serviceAction struct {
+	label string
+	run   func()
+}
+
+// serviceActions is everything the actions menu offers, in order.
+func (iv *inspectView) serviceActions() []serviceAction {
+	u, editSvc, table := iv.u, iv.editSvc, iv.table
+	var out []serviceAction
+	add := func(label string, fn func()) { out = append(out, serviceAction{label, fn}) }
+
+	// Changing the image version is the most ordinary service change there is,
+	// and until now it had no entry here — it was reachable only from the bare
+	// "u" key, which is named in the inspect footer and nowhere else. Someone
+	// looking for "how do I put this service on version X" opens this menu,
+	// finds "Roll back to the previous version" (a different thing: the previous
+	// SPEC, not a version you choose) and concludes it cannot be done.
+	//
+	// It sits first because it is the most-wanted, and its label distinguishes
+	// the two cases the footer already distinguishes: a newer version exists, or
+	// you are pinning/rolling back to one of your choosing.
+	switch {
+	case iv.upInfo != nil && iv.hasUpgrade:
+		add("Update image version…", iv.openVersionPicker)
+	case iv.upInfo != nil:
+		add("Set image version…", iv.openVersionPicker)
+	default:
+		// Deliberately listed rather than hidden. An absent entry is what sent
+		// the operator looking in the first place; this one answers the question
+		// instead of leaving the menu silent about it.
+		add("Set image version — unavailable for this image", iv.explainNoVersionPicker)
 	}
 	add("Diff spec (previous → current)", iv.openDiff)
 	add("Roll back to the previous version", iv.openRollback)
@@ -559,7 +607,28 @@ func (iv *inspectView) showActions() {
 	add("Edit mounts", func() { u.openMountsEditor(editSvc, table, iv.reload) })
 	add("Edit resources", func() { u.openResourcesEditor(editSvc, table, iv.reload) })
 	add("Edit placement", func() { u.openPlacementMenu(editSvc, table, iv.reload) })
-	add("[red]Remove service[white]", func() { u.openRemoveService(editSvc, table, func() { iv.close(); u.loadContainers() }) })
+	add("[red]Remove service[white]", func() {
+		u.openRemoveService(editSvc, table, func() { iv.close(); u.loadContainers() })
+	})
+	return out
+}
+
+// showActions groups every service editor/action behind one menu (opened with
+// "a"), so the footer needn't spell out ~14 case-sensitive keys (d/D, s/S, p/P
+// …). The direct keys still work for power users and are listed under "?"; this
+// is the discoverable, no-Shift path. Service-only.
+func (iv *inspectView) showActions() {
+	u := iv.u
+	app, pages := u.app, u.pages
+	table := iv.table
+	list := tview.NewList().ShowSecondaryText(false)
+	list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", iv.editSvc))
+	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeActions := func() { restoreHelp(); pages.RemovePage(pageInspectActions); app.SetFocus(table) }
+	for _, a := range iv.serviceActions() {
+		run := a.run
+		list.AddItem(a.label, "", 0, func() { closeActions(); run() })
+	}
 	list.AddItem("Cancel", "", 0, closeActions)
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {
@@ -594,7 +663,7 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			iv.expanded[net] = !iv.expanded[net]
 			iv.populate()
 		} else if _, ok := iv.rowUpgrade[r]; ok && editSvc != "" && iv.upInfo != nil {
-			u.openImageVersionPicker(editSvc, *iv.upInfo, table, iv.reload)
+			iv.openVersionPicker()
 		} else {
 			iv.copyLine()
 		}
@@ -602,9 +671,7 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'u':
 		// Available from any row, not just the (top) upgrade row — the hint
 		// sits at the top precisely so the operator never has to hunt for it.
-		if iv.upInfo != nil {
-			u.openImageVersionPicker(editSvc, *iv.upInfo, table, iv.reload)
-		}
+		iv.openVersionPicker()
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':
 		iv.copyLine()

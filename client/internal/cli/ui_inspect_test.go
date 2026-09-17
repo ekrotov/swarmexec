@@ -192,3 +192,55 @@ func TestInspectDigitsMatchTheStripOrder(t *testing.T) {
 		}
 	}
 }
+
+// The actions menu is where an operator looks up what can be done to a service.
+// Changing the image version was reachable only from the bare "u" key, named in
+// the inspect footer and nowhere else — so the menu's fourteen entries implied
+// it could not be done, and "Roll back to the previous version" (the previous
+// SPEC, not a version you choose) read like the closest thing on offer.
+func TestActionsMenuOffersTheVersionPicker(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		info    *upgradeInfo
+		upgrade bool
+		want    string
+	}{
+		{"a newer version exists", &upgradeInfo{repo: "acme/api"}, true, "Update image version…"},
+		{"pin or roll back to any tag", &upgradeInfo{repo: "acme/api"}, false, "Set image version…"},
+		// Not hidden: an absent entry is what sent the operator looking in the
+		// first place. It stays listed and explains itself when chosen.
+		{"nothing to pick from", nil, false, "Set image version — unavailable for this image"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			iv := inspectViewFor(nil)
+			iv.editSvc = "acme_api"
+			iv.upInfo, iv.hasUpgrade = tc.info, tc.upgrade
+
+			var got []string
+			for _, a := range iv.serviceActions() {
+				got = append(got, a.label)
+			}
+			if len(got) == 0 || got[0] != tc.want {
+				t.Fatalf("first action = %v, want %q (all: %v)", got[:1], tc.want, got)
+			}
+			for _, l := range got[1:] {
+				if strings.Contains(l, "image version") {
+					t.Errorf("the version entry is listed twice: %v", got)
+				}
+			}
+		})
+	}
+}
+
+// The three ways in have to reach one flow, not three spellings of it.
+func TestVersionPickerIsANoOpWithoutData(t *testing.T) {
+	iv := inspectViewFor(nil)
+	iv.editSvc = "acme_api"
+	iv.upInfo = nil
+	iv.openVersionPicker() // must not panic or dereference a nil upInfo
+
+	iv2 := inspectViewFor(nil)
+	iv2.upInfo = &upgradeInfo{repo: "acme/api"}
+	iv2.editSvc = "" // a task/container inspect has no service to update
+	iv2.openVersionPicker()
+}
