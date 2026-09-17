@@ -174,25 +174,30 @@
 
       <div class="slideshow" role="group" aria-roledescription="carrousel" aria-label="Démos des fonctionnalités" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="1 / 4" data-play="15630">
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="1 / 5" data-play="15630">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="Au lieu de docker node ls, trouver le nœud, ssh node-3 et docker exec, il suffit d'exécuter : swarmexec exec web -- sh">
             <figcaption><b>exec à l'échelle du cluster</b> — un shell dans n'importe quelle tâche, depuis un seul terminal</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="2 / 4" hidden data-play="9140">
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="2 / 5" hidden data-play="9140">
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 ouvre un transfert vers une tâche sur node-3, puis curl localhost:9090 répond — sans SSH et sans port publié">
             <figcaption><b>port-forward depuis votre portable</b> — atteignez le port d'une tâche, sans SSH, sans ingress</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="3 / 4" hidden data-play="9720">
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="3 / 5" hidden data-play="9720">
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
                  alt="swarmexec ui : une interface terminal qui montre le cluster sous forme d'arbre de stacks, services et conteneurs ; un service est déplié sur ses tâches réparties sur node-2, node-4 et node-5, et la fenêtre des risques de sécurité liste les services signalés">
             <figcaption><b>une interface terminal pour tout le cluster</b> — stacks, services, conteneurs, logs et risques</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="4 / 4" hidden data-play="13160">
+          <figure class="slide" role="group" aria-roledescription="diapositive" aria-label="4 / 5" hidden data-play="13160">
             <img class="demo" src="/report.gif" width="860" height="470" loading="eager"
                  alt="swarmexec security report -o security.md écrit un rapport Markdown : un tableau de synthèse des constats hauts, moyens et bas, puis des constats de cluster comme un réseau overlay non chiffré et des managers sans autolock">
             <figcaption><b>un rapport de sécurité sur tout le cluster</b> — services, réseaux, secrets et nœuds, en Markdown</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="5 / 5" hidden data-play="15200">
+            <img class="demo" src="/contexts.gif" width="860" height="470" loading="lazy"
+                 alt="La TUI avec une barre latérale des contextes à droite : c lui donne le clavier, Entrée bascule du cluster prod vers staging, et au retour le curseur est resté sur le même service">
+            <figcaption><b>plusieurs clusters, une seule session</b> — changez de contexte sans perdre votre place, vos filtres ni vos redirections</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -202,6 +207,7 @@
             <button class="dot" type="button" aria-label="Afficher la démo port-forward" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Afficher la démo de l'interface terminal" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Afficher la démo du rapport de sécurité" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Afficher la démo du changement de cluster" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Diapositive suivante">&#8250;</button>
         </div>
@@ -215,10 +221,20 @@
         Un petit agent par nœud, une CLI/TUI scriptable, une authentification mTLS
         et un journal d'audit.
       </p>
+      <p class="lead">
+        Il <strong>audite aussi le cluster</strong> : une commande écrit un
+        <strong>rapport de sécurité</strong> en Markdown sur chaque service, plus des
+        vérifications qu'aucune spec de service ne peut fournir — réseaux overlay non
+        chiffrés portant du trafic, managers sans autolock, écarts de version des
+        agents, secrets et configs inutilisés. Il indique d'où il vient et
+        <em>ce qu'il n'a pas examiné</em>, et son ordre ne dépend que des constats :
+        deux rapports se comparent proprement.
+      </p>
 
       <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># déployer l'agent sur chaque nœud</span>
 <span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># ouvrir un shell dans une tâche, n'importe quel nœud</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># TUI interactive</span></div>
+<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># TUI interactive</span>
+<span class="c">$</span> swarmexec security report      <span style="color:#484f58"># auditer tout le cluster, en Markdown</span></div>
 
       <div class="dhbox">
         L'agent (par nœud) est sur Docker Hub :

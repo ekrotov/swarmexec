@@ -174,25 +174,30 @@
 
       <div class="slideshow" role="group" aria-roledescription="carousel" aria-label="Feature demos" tabindex="0">
         <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="1 / 4" data-play="15630">
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="1 / 5" data-play="15630">
             <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
                  alt="Instead of docker node ls, finding the node, ssh node-3 and docker exec, just run: swarmexec exec web -- sh">
             <figcaption><b>cluster-wide exec</b> — shell into any task, from one terminal</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="2 / 4" hidden data-play="9140">
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="2 / 5" hidden data-play="9140">
             <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
                  alt="swarmexec port-forward web 9090:8080 brings up a forward to a task on node-3, then curl localhost:9090 succeeds — no SSH and no published port">
             <figcaption><b>port-forward from your laptop</b> — reach a task's port, no SSH, no ingress</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="3 / 4" hidden data-play="9720">
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="3 / 5" hidden data-play="9720">
             <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
                  alt="swarmexec ui: a terminal UI showing the cluster as a tree of stacks, services and containers; a service is expanded to its tasks on node-2, node-4 and node-5, and the security-risks overlay lists the flagged services">
             <figcaption><b>a terminal UI for the whole cluster</b> — stacks, services, containers, logs and risks</figcaption>
           </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="4 / 4" hidden data-play="13160">
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="4 / 5" hidden data-play="13160">
             <img class="demo" src="/report.gif" width="860" height="470" loading="eager"
                  alt="swarmexec security report -o security.md writes a Markdown report: a summary table of high, medium and low findings, then cluster findings such as an unencrypted overlay network and managers that are not autolocked">
             <figcaption><b>a security report for the whole cluster</b> — services, networks, secrets and nodes, as Markdown</figcaption>
+          </figure>
+          <figure class="slide" role="group" aria-roledescription="slide" aria-label="5 / 5" hidden data-play="15200">
+            <img class="demo" src="/contexts.gif" width="860" height="470" loading="lazy"
+                 alt="The TUI with a contexts sidebar on the right: pressing c focuses it, Enter switches from the prod cluster to staging, and switching back leaves the cursor on the same service it was on before">
+            <figcaption><b>several clusters, one session</b> — switch context and keep your place, filters and forwards</figcaption>
           </figure>
         </div>
         <div class="slide-nav">
@@ -202,6 +207,7 @@
             <button class="dot" type="button" aria-label="Show port-forward demo" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Show terminal UI demo" aria-current="false"></button>
             <button class="dot" type="button" aria-label="Show security report demo" aria-current="false"></button>
+            <button class="dot" type="button" aria-label="Show cluster switching demo" aria-current="false"></button>
           </div>
           <button class="arrow sl-next" type="button" aria-label="Next slide">&#8250;</button>
         </div>
@@ -213,10 +219,19 @@
         single terminal, without SSHing to the node that happens to run the task.
         A small per-node agent, a scriptable CLI/TUI, mTLS auth and an audit log.
       </p>
+      <p class="lead">
+        It also <strong>audits the cluster</strong>: one command writes a Markdown
+        <strong>security report</strong> over every service, plus checks no single
+        service can answer — unencrypted overlay networks carrying traffic, managers
+        that are not autolocked, agent version skew, unused secrets and configs. It
+        states where it came from and <em>what it did not look at</em>, and its order
+        depends only on the findings, so two reports diff cleanly.
+      </p>
 
       <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># deploy the agent on every node</span>
 <span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># shell into a task, any node</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interactive TUI</span></div>
+<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interactive TUI</span>
+<span class="c">$</span> swarmexec security report      <span style="color:#484f58"># audit the whole cluster, as Markdown</span></div>
 
       <div class="dhbox">
         The per-node agent ships on Docker Hub:
