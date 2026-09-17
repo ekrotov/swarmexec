@@ -1,11 +1,17 @@
 #!/bin/sh
-# Announce a swarmexec release on LinkedIn as a DRAFT (four-eyes).
+# Build the LinkedIn post for a swarmexec release, and save it as a CI artifact.
 #
-# Run by the `linkedin-announce` CI job on a stable semver tag. It builds an
-# English post from the release notes (the annotated git-tag message) and
-# creates it on LinkedIn as a DRAFT via the REST Posts API. The draft is NOT
-# public: a page admin reviews it in LinkedIn (Page > Drafts) and clicks
-# Publish. Pipeline authors, a human publishes → four-eyes.
+# Run by the `linkedin-announce` CI job on a stable semver tag. It composes an
+# English post from the release notes (the annotated git-tag message), writes it
+# to $LINKEDIN_POST_FILE — kept as a job artifact and printed to the log — and
+# then, if configured, also creates it on LinkedIn as a DRAFT via the REST Posts
+# API. Pipeline composes, a human publishes → four-eyes.
+#
+# The ARTIFACT is the deliverable; the API call is a convenience. That is the
+# lesson of v1.17.1: the API returned 201 and a share URN, and the draft could
+# not be found anywhere in the LinkedIn Page admin UI, which does not list
+# API-created drafts. Nothing that has to be published should depend on it.
+# LINKEDIN_POST=0 builds the artifact and sends nothing.
 #
 # Auth — pick ONE:
 #   Preferred (survives token expiry): a refresh-token flow. Set
@@ -15,19 +21,22 @@
 #   programmatic refresh; renew by re-authorising once a year.)
 #   Fallback: a static short-lived token, LINKEDIN_ACCESS_TOKEN (~60 days).
 #
-# Also required:
-#   LINKEDIN_AUTHOR_URN    urn:li:organization:<id> (company page — recommended,
-#                          drafts are first-class there) or urn:li:person:<id>.
+# Required to post (the artifact is built without any of it):
+#   LINKEDIN_AUTHOR_URN    urn:li:organization:<id> (company page) or
+#                          urn:li:person:<id>.
 # Optional:
+#   LINKEDIN_POST=0        build the artifact only, call no API.
+#   LINKEDIN_POST_FILE     where to write the post (default
+#                          linkedin-post-<tag>.txt, the artifact path in CI).
 #   LINKEDIN_LIFECYCLE     DRAFT (default) or PUBLISHED (skip the human gate).
-#   LINKEDIN_API_VERSION   LinkedIn-Version header, YYYYMM (default 202401).
+#   LINKEDIN_API_VERSION   LinkedIn-Version header, YYYYMM (default: this month).
 #   SITE_URL               link in the post (default swarm-exec.cloud-surfers.net);
 #                          utm_* tracking parameters are appended to it.
-#   LINKEDIN_DRY_RUN=1     compose and print the post + payload, do NOT call the API.
+#   LINKEDIN_DRY_RUN=1     build the artifact and print the payload, send nothing.
 #
 # Scopes: w_organization_social (company page) or w_member_social (personal).
-# The job is opt-in (skips when unconfigured) and allow_failure, so it never
-# blocks a release.
+# The job is allow_failure, so neither a LinkedIn outage nor missing credentials
+# can fail a release — and the artifact is written before either can happen.
 set -eu
 
 : "${CI_COMMIT_TAG:?must run on a tag}"
@@ -37,89 +46,25 @@ case "$CI_COMMIT_TAG" in
 	*-*) echo "prerelease $CI_COMMIT_TAG — skipping LinkedIn announce." ; exit 0 ;;
 esac
 
-have_refresh=
-if [ -n "${LINKEDIN_CLIENT_ID:-}" ] && [ -n "${LINKEDIN_CLIENT_SECRET:-}" ] && [ -n "${LINKEDIN_REFRESH_TOKEN:-}" ]; then
-	have_refresh=1
-fi
-if [ -z "${LINKEDIN_AUTHOR_URN:-}" ] || { [ -z "$have_refresh" ] && [ -z "${LINKEDIN_ACCESS_TOKEN:-}" ]; }; then
-	echo "LinkedIn not configured (need LINKEDIN_AUTHOR_URN plus either the refresh-token"
-	echo "trio LINKEDIN_CLIENT_ID/SECRET/REFRESH_TOKEN or LINKEDIN_ACCESS_TOKEN) — skipping."
-	echo "See ci/linkedin-announce.sh for setup."
-	exit 0
-fi
+. "$(dirname "$0")/release-post-lib.sh"
 
-# LinkedIn-Version is a YYYYMM stamp and only a narrow window of them stays
-# active — a pinned default rots (the old 202401 did, and even a three-month-old
-# 202506 was rejected with 426 NONEXISTENT_VERSION). Track the current month, so
-# the job keeps working without anyone maintaining a constant. Right after a
-# month rolls over the new stamp may not be live yet; the post retries once with
-# the previous month in that case. Override with LINKEDIN_API_VERSION if needed.
-API_VERSION="${LINKEDIN_API_VERSION:-$(date -u +%Y%m)}"
-# Previous month, computed arithmetically: this job runs on alpine, whose busybox
-# date supports neither GNU's -d "… -1 month" nor BSD's -v-1m.
-_y=$(date -u +%Y)
-_m=$(date -u +%m)
-_m=${_m#0} # 09 -> 9, so it isn't read as octal
-if [ "$_m" = "1" ]; then
-	API_VERSION_PREV=$(printf '%04d12' $((_y - 1)))
-else
-	API_VERSION_PREV=$(printf '%04d%02d' "$_y" $((_m - 1)))
-fi
-LIFECYCLE="${LINKEDIN_LIFECYCLE:-DRAFT}"
 SITE_URL="${SITE_URL:-https://swarm-exec.cloud-surfers.net}"
 RELEASE_URL="$CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG"
+SITE_LINK=$(tracked_link "$SITE_URL" linkedin)
+# A fixed path, not one carrying the tag: the tag is already in the artifact URL
+# (/-/jobs/artifacts/<tag>/raw/release-posts/linkedin.txt), so the filename would
+# only repeat it — and a constant path makes the link for any release
+# predictable instead of something to look up.
+#
+# In its own directory because the repository root already holds hand-written
+# marketing working documents with the obvious names; a job that writes
+# ./reddit-post.md would overwrite one the first time someone runs it locally.
+POST_FILE="${LINKEDIN_POST_FILE:-release-posts/linkedin.txt}"
 
-# Tag the site link for Umami. Referrer alone undercounts LinkedIn badly — its
-# in-app browser strips it — but utm_* travels in the URL itself, so the visit is
-# still attributed. utm_content carries the version (dots to dashes, since a
-# tidier value reads better in reports). The release link stays untagged: it goes
-# to GitLab, which Umami does not measure.
-utm_content=$(printf '%s' "$CI_COMMIT_TAG" | tr '.' '-')
-utm="utm_source=linkedin&utm_medium=social&utm_campaign=release&utm_content=${utm_content}"
-case "$SITE_URL" in
-	*\?*) SITE_LINK="${SITE_URL}&${utm}" ;; # an overridden SITE_URL may carry a query
-	*) SITE_LINK="${SITE_URL}?${utm}" ;;
-esac
-
-# Mint a fresh access token from the refresh token when available; otherwise use
-# the static one. (Not needed for a dry run.)
-access_token="${LINKEDIN_ACCESS_TOKEN:-}"
-if [ -n "$have_refresh" ] && [ "${LINKEDIN_DRY_RUN:-}" != "1" ]; then
-	echo "exchanging refresh token for a fresh access token…"
-	tok_resp=$(curl -sS --fail -X POST "https://www.linkedin.com/oauth/v2/accessToken" \
-		--data-urlencode "grant_type=refresh_token" \
-		--data-urlencode "refresh_token=$LINKEDIN_REFRESH_TOKEN" \
-		--data-urlencode "client_id=$LINKEDIN_CLIENT_ID" \
-		--data-urlencode "client_secret=$LINKEDIN_CLIENT_SECRET") || {
-		echo "refresh-token exchange failed" >&2; exit 1; }
-	access_token=$(printf '%s' "$tok_resp" | jq -r '.access_token // empty')
-	[ -n "$access_token" ] || { echo "no access_token in refresh response" >&2; exit 1; }
-fi
-
-# Release notes = the annotated tag message from the GitLab API (the git-tag body
-# is the real changelog; the GitLab Release description is boilerplate).
-tag_json=$(curl -sS --fail -H "JOB-TOKEN: $CI_JOB_TOKEN" \
-	"$CI_API_V4_URL/projects/$CI_PROJECT_ID/repository/tags/$CI_COMMIT_TAG") || {
-	echo "could not read tag $CI_COMMIT_TAG from the API" >&2; exit 1; }
-message=$(printf '%s' "$tag_json" | jq -r '.message // ""')
-
-# Drop the tag message's title line and the blank lines after it — the headline
-# below already states the version. Both conventions are stripped: the old
-# "swarmexec vX.Y.Z …" form and the current "vX.Y.Z — summary" one (previously
-# only the former matched, so every post repeated its own title).
-notes=$(printf '%s\n' "$message" | awk '
-	NR==1 && /^swarmexec /               {next}
-	NR==1 && /^v?[0-9]+\.[0-9]+\.[0-9]+/ {next}
-	!started && /^[[:space:]]*$/         {next}
-	{started=1; print}
-')
-
-# LinkedIn posts are PLAIN TEXT — the Posts API renders no markup at all. Tag
-# messages use Markdown emphasis (**bold**, `code`), and it was going out
-# literally: readers saw "**A security report over the whole cluster.**",
-# asterisks and all. Strip the two markers rather than ban them from tag
-# messages, which are also the release notes and do render them.
-notes=$(printf '%s\n' "$notes" | sed -e 's/\*\*\([^*]*\)\*\*/\1/g' -e 's/`\([^`]*\)`/\1/g')
+# LinkedIn posts are PLAIN TEXT — the Posts API renders no markup at all, and
+# tag messages use Markdown emphasis, which was going out literally: readers saw
+# "**A security report over the whole cluster.**", asterisks and all.
+notes=$(release_notes | strip_markdown)
 
 commentary=$(printf '%s\n\n%s\n\nRelease notes: %s\nDocs & downloads: %s\n\n#DockerSwarm #Docker #DevOps #CLI #OpenSource' \
 	"🚀 swarmexec $CI_COMMIT_TAG is out — cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal." \
@@ -163,6 +108,73 @@ if [ "$(printf '%s' "$commentary" | jq -Rs 'length')" -gt "$max" ]; then
 Full notes: $RELEASE_URL"
 fi
 
+# Save the post BEFORE anything is sent, and before the credential check — the
+# text is the deliverable, the API call is only one way to use it.
+#
+# This order exists because the other one failed. The job used to compose the
+# post in memory and hand it straight to LinkedIn as a DRAFT, on the assumption
+# that a page admin would find it under Page > Drafts. For v1.17.1 the API
+# returned 201 with a share URN and the draft was nowhere in the LinkedIn UI —
+# the admin draft view does not list posts created through the API. A post that
+# exists but cannot be found is not a four-eyes gate; it is a dead end.
+#
+# So the artifact is now the primary output: it is produced even when LinkedIn
+# is unconfigured, unreachable or refuses the post, and a human publishes from
+# it by hand. Whatever the API does afterwards is a bonus, not the product.
+write_post "$POST_FILE" "$commentary"
+
+have_refresh=
+if [ -n "${LINKEDIN_CLIENT_ID:-}" ] && [ -n "${LINKEDIN_CLIENT_SECRET:-}" ] && [ -n "${LINKEDIN_REFRESH_TOKEN:-}" ]; then
+	have_refresh=1
+fi
+if [ -z "${LINKEDIN_AUTHOR_URN:-}" ] || { [ -z "$have_refresh" ] && [ -z "${LINKEDIN_ACCESS_TOKEN:-}" ]; }; then
+	echo "LinkedIn not configured (need LINKEDIN_AUTHOR_URN plus either the refresh-token"
+	echo "trio LINKEDIN_CLIENT_ID/SECRET/REFRESH_TOKEN or LINKEDIN_ACCESS_TOKEN)."
+	echo "The post is in $POST_FILE — publish it by hand. See ci/linkedin-announce.sh."
+	exit 0
+fi
+
+# Posting to the API is opt-OUT now (LINKEDIN_POST=0 to build the artifact only),
+# since the draft it creates has proven hard to reach from the UI.
+if [ "${LINKEDIN_POST:-1}" = "0" ]; then
+	echo "LINKEDIN_POST=0 — artifact only, nothing sent."
+	exit 0
+fi
+
+# LinkedIn-Version is a YYYYMM stamp and only a narrow window of them stays
+# active — a pinned default rots (the old 202401 did, and even a three-month-old
+# 202506 was rejected with 426 NONEXISTENT_VERSION). Track the current month, so
+# the job keeps working without anyone maintaining a constant. Right after a
+# month rolls over the new stamp may not be live yet; the post retries once with
+# the previous month in that case. Override with LINKEDIN_API_VERSION if needed.
+API_VERSION="${LINKEDIN_API_VERSION:-$(date -u +%Y%m)}"
+# Previous month, computed arithmetically: this job runs on alpine, whose busybox
+# date supports neither GNU's -d "… -1 month" nor BSD's -v-1m.
+_y=$(date -u +%Y)
+_m=$(date -u +%m)
+_m=${_m#0} # 09 -> 9, so it isn't read as octal
+if [ "$_m" = "1" ]; then
+	API_VERSION_PREV=$(printf '%04d12' $((_y - 1)))
+else
+	API_VERSION_PREV=$(printf '%04d%02d' "$_y" $((_m - 1)))
+fi
+LIFECYCLE="${LINKEDIN_LIFECYCLE:-DRAFT}"
+
+# Mint a fresh access token from the refresh token when available; otherwise use
+# the static one. (Not needed for a dry run.)
+access_token="${LINKEDIN_ACCESS_TOKEN:-}"
+if [ -n "$have_refresh" ] && [ "${LINKEDIN_DRY_RUN:-}" != "1" ]; then
+	echo "exchanging refresh token for a fresh access token…"
+	tok_resp=$(curl -sS --fail -X POST "https://www.linkedin.com/oauth/v2/accessToken" \
+		--data-urlencode "grant_type=refresh_token" \
+		--data-urlencode "refresh_token=$LINKEDIN_REFRESH_TOKEN" \
+		--data-urlencode "client_id=$LINKEDIN_CLIENT_ID" \
+		--data-urlencode "client_secret=$LINKEDIN_CLIENT_SECRET") || {
+		echo "refresh-token exchange failed" >&2; exit 1; }
+	access_token=$(printf '%s' "$tok_resp" | jq -r '.access_token // empty')
+	[ -n "$access_token" ] || { echo "no access_token in refresh response" >&2; exit 1; }
+fi
+
 payload=$(jq -n --arg author "$LINKEDIN_AUTHOR_URN" --arg text "$commentary" --arg life "$LIFECYCLE" '{
 	author: $author,
 	commentary: $text,
@@ -173,10 +185,8 @@ payload=$(jq -n --arg author "$LINKEDIN_AUTHOR_URN" --arg text "$commentary" --a
 }')
 
 if [ "${LINKEDIN_DRY_RUN:-}" = "1" ]; then
-	echo "── LinkedIn dry run ($LIFECYCLE) — the post that WOULD be created: ──"
-	printf '%s\n' "$commentary"
-	echo "── payload ──"
-	printf '%s\n' "$payload"
+	echo "── LinkedIn dry run ($LIFECYCLE) — payload that WOULD be sent ──"
+	printf '%s\n' "$payload" # the post itself was printed and saved above
 	exit 0
 fi
 
@@ -208,8 +218,18 @@ case "$code" in
 	2*)
 		echo "✓ LinkedIn $LIFECYCLE created${post_id:+ ($post_id)}."
 		if [ "$LIFECYCLE" = "DRAFT" ]; then
-			echo "  → review & publish it from the LinkedIn Page > Drafts (four-eyes)."
+			# Deliberately not "find it under Page > Drafts": for v1.17.1 it was
+			# not there. The API confirms the draft exists; the admin UI does not
+			# list API-created ones. Point at the copy that can actually be
+			# opened instead of at a view that may be empty.
+			echo "  → a DRAFT now exists on LinkedIn, but the Page admin UI does not"
+			echo "    reliably list drafts created through the API. Publish from the"
+			echo "    artifact $POST_FILE instead (four-eyes)."
 		fi
 		;;
-	*)  echo "✗ LinkedIn post failed (HTTP $code)." >&2 ; exit 1 ;;
+	*)
+		echo "✗ LinkedIn post failed (HTTP $code) — the post itself is fine." >&2
+		echo "  Publish $POST_FILE by hand; the artifact is kept regardless." >&2
+		exit 1
+		;;
 esac

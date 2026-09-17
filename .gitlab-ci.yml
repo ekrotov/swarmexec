@@ -494,15 +494,16 @@ deploy-site:
         "$CI_API_V4_URL/projects/infrastruktur%2Fswar-exec-site/trigger/pipeline"
 
 # ----------------------------------------------------------------------------
-# linkedin-announce — create a LinkedIn DRAFT of the release notes on a stable
-# semver tag (four-eyes: a page admin reviews & publishes it in LinkedIn).
-# Opt-in: the script skips (exit 0) unless LINKEDIN_AUTHOR_URN plus an auth
-# method are set (preferred: the refresh-token trio LINKEDIN_CLIENT_ID/SECRET/
-# REFRESH_TOKEN; fallback: LINKEDIN_ACCESS_TOKEN), and skips prereleases.
-# allow_failure so a LinkedIn outage never fails the release. LINKEDIN_DRY_RUN=1
-# previews without calling the API. See ci/linkedin-announce.sh for full setup.
+# Release announcements. Both jobs COMPOSE a post from the annotated tag message
+# and keep it as an artifact; a human publishes it. The artifact is the point:
+# for v1.17.1 the LinkedIn API accepted a DRAFT, returned its URN, and the draft
+# was not findable in the Page admin UI, which does not list API-created drafts.
+# An announcement nobody can open is not a four-eyes gate.
+#
+# artifacts:when: always, because the text is worth keeping precisely when the
+# posting step failed — that is when someone has to publish it by hand.
 # ----------------------------------------------------------------------------
-linkedin-announce:
+.release-post:
   stage: deploy
   image: alpine:3
   needs:
@@ -511,6 +512,35 @@ linkedin-announce:
     - *semver-tag
   before_script:
     - apk add --no-cache curl jq >/dev/null
+  # Never fails a release: the tag is already published by the time these run.
+  allow_failure: true
+
+# linkedin-announce — builds linkedin-post-<tag>.txt, then additionally creates
+# a DRAFT via the REST Posts API when LINKEDIN_AUTHOR_URN plus an auth method
+# are configured (preferred: the refresh-token trio LINKEDIN_CLIENT_ID/SECRET/
+# REFRESH_TOKEN; fallback: LINKEDIN_ACCESS_TOKEN). LINKEDIN_POST=0 builds the
+# artifact only; LINKEDIN_DRY_RUN=1 also prints the payload. Prereleases skip.
+linkedin-announce:
+  extends: .release-post
   script:
     - sh ci/linkedin-announce.sh
-  allow_failure: true
+  artifacts:
+    when: always
+    expire_in: 1 year
+    expose_as: "LinkedIn post"
+    paths:
+      - release-posts/linkedin.txt
+
+# reddit-post — builds reddit-post-<tag>.md and posts NOTHING. Which subreddit,
+# which flair and whether a release is worth a post at all is a judgement call,
+# and whoever posts has to be there for the comments. See ci/reddit-post.sh.
+reddit-post:
+  extends: .release-post
+  script:
+    - sh ci/reddit-post.sh
+  artifacts:
+    when: always
+    expire_in: 1 year
+    expose_as: "Reddit post"
+    paths:
+      - release-posts/reddit.md
