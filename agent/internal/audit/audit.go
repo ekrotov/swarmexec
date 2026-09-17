@@ -125,7 +125,6 @@ func (l *Logger) VolumeCreate(identity, name string, ok bool, errMsg string) {
 	)
 }
 
-// AuthDecision records an authorization allow/deny along with the reason.
 // ImagePrune records a reclaim on this node. The `all` flag is recorded
 // separately because the two modes are different acts: one removes untagged
 // leftovers, the other removes images a stopped service still needs.
@@ -140,6 +139,25 @@ func (l *Logger) ImagePrune(identity string, all bool, reclaimed int64, deleted 
 	)
 }
 
+// ContainerList records an enumeration of the node's containers.
+//
+// Discovery is the one thing an attacker needs before anything else: container
+// ids and service names are the input to exec, logs and port-forward. It used
+// to be the single RPC that produced no audit record at all, so mapping every
+// container on every node left no trace. Only the shape of the answer is
+// recorded — the filter and how many containers matched — never the listing
+// itself, which would put the node's whole topology in the audit log on every
+// refresh.
+func (l *Logger) ContainerList(identity, filter string, matched int) {
+	l.log.Info("container_list",
+		"event", "container_list",
+		"identity", identity,
+		"filter", filter,
+		"matched", matched,
+	)
+}
+
+// AuthDecision records an authorization allow/deny along with the reason.
 func (l *Logger) AuthDecision(identity, containerID, service string, allow bool, reason string) {
 	l.log.Info("auth_decision",
 		"event", "auth_decision",

@@ -124,7 +124,30 @@ func (s *Server) StartStatsCache(ctx context.Context) {
 
 // ListContainers lists running containers on the local node, optionally
 // filtered by a service-name or container-name substring.
+//
+// Authorized and audited like every other RPC, which it once was not. It is
+// gated by transport auth either way, but skipping the policy hook meant the
+// pluggable Authorizer could never restrict discovery — and discovery is what
+// an operator needs before they can target anything: this call returns the
+// container ids and service names that exec, logs and port-forward take as
+// input. It is also the cheapest possible reconnaissance, since it inspects
+// nothing.
+//
+// It does not go through s.authorize: that helper resolves the swarm service by
+// inspecting a container, and this RPC has no container to inspect. The
+// identity → authorize → audit sequence is the same one, without that step.
 func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
+	identity, err := s.identityFn(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+	}
+	decision := s.authz.Authorize(ctx, auth.Request{Action: "container.list", Identity: identity})
+	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
+	if !decision.Allow {
+		s.metrics.AuthDenied()
+		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	}
+
 	containers, err := s.docker.ContainerList(ctx, container.ListOptions{All: false})
 	if err != nil {
 		s.log.Error("ContainerList failed", "err", err)
@@ -146,6 +169,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 			Volumes: namedVolumes(c.Mounts),
 		})
 	}
+	s.audit.ContainerList(identity, filter, len(resp.Containers))
 	return resp, nil
 }
 

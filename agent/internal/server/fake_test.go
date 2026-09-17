@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -76,6 +77,10 @@ type fakeDocker struct {
 	createdVolOpts  volume.CreateOptions
 	diskUsageErr    error
 
+	// listCalls counts ContainerList calls, so a test can assert that a refused
+	// enumeration never reached Docker in the first place.
+	listCalls atomic.Int64
+
 	// port-forward sidecar state
 	createContainerErr error
 	startErr           error
@@ -100,6 +105,7 @@ func newFakeDocker() *fakeDocker {
 func (f *fakeDocker) waitAttach() net.Conn { return <-f.attachedCh }
 
 func (f *fakeDocker) ContainerList(_ context.Context, _ container.ListOptions) ([]types.Container, error) {
+	f.listCalls.Add(1)
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
