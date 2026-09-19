@@ -47,13 +47,13 @@ var errNoAgent = errors.New("no swarmexec agent found in this swarm — run `swa
 // errAgentTooOld is shown when an agent rejects an RPC with Unimplemented.
 var errAgentTooOld = errors.New("agent is older than this client (missing RPC) — update it with `swarmexec init --force`")
 
-// errSecretRejected explains an Unauthenticated status, which since v1.18.0 has
+// errSecretRejected explains an Unauthenticated status, which since v1.17.3 has
 // a new and far more likely cause than a wrong secret: this client sends a proof
 // bound to the connection instead of the secret itself, and an agent predating
 // that does not recognise it. The bare "invalid or missing agent secret" the
 // agent returns is actively misleading in that case — the secret is fine.
 var errSecretRejected = errors.New("agent rejected the shared secret.\n" +
-	"  Most likely the agents predate connection-bound authentication (v1.18.0):\n" +
+	"  Most likely the agents predate connection-bound authentication (v1.17.3):\n" +
 	"  update them with `swarmexec init --force`, or set `legacy_secret: true` in\n" +
 	"  the client config to send the raw secret meanwhile.\n" +
 	"  Otherwise the configured secret does not match the one the agents hold.")

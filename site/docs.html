@@ -318,6 +318,7 @@
           <tr><td><code>agent_secret</code></td><td>string</td><td>shared secret for a self-signed agent</td></tr>
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>read the secret from this file (takes precedence over <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>skip agent server-cert verification (self-signed agents)</td></tr>
+          <tr><td><code>legacy_secret</code></td><td>bool</td><td>also send the <em>raw</em> shared secret, for agents older than v1.17.3 — off by default; see below</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>audit identity when no client cert is used (default: OS username)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>default log format for <code>logs</code> and the TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (empty = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>default minimum level: <code>trace</code>..<code>fatal</code> (omit for no level filter)</td></tr>
@@ -389,10 +390,27 @@
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec --agent-secret "$SECRET" --insecure ps</div>
       <div class="warn">
-        <strong>insecure</strong> skips the agent's server-certificate check: trust then
-        rests on the shared secret and your network path. Prefer a <code>ca</code> when
-        you can, and keep the secret out of your shell history (use
-        <code>agent_secret_file</code> or the config file).
+        <strong>insecure</strong> skips the agent's server-certificate check. It does
+        <em>not</em> put the secret at risk: the client never sends it, only a proof
+        computed from the secret and the certificate of the connection it travels on, so
+        a server you did not verify receives nothing that works against a real agent.
+        What remains is that the agent is <strong>not authenticated to you</strong> —
+        whoever answers can read what that session sends them. Prefer a <code>ca</code>
+        on any network you do not trust, and keep the secret out of your shell history
+        (use <code>agent_secret_file</code> or the config file).
+      </div>
+
+      <h3>Upgrading to v1.17.3 — update the agents first</h3>
+      <div class="warn">
+        <strong>A v1.17.3 client cannot authenticate to an older agent.</strong> It sends
+        only the connection-bound proof, and agents before v1.17.3 do not recognise that
+        form — they answer <code>invalid or missing agent secret</code> even though your
+        secret is correct. Update them first:
+        <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+        While a fleet is mixed, <code>legacy_secret: true</code> in the client config
+        also sends the raw secret, with the exposure described above. Remove it once the
+        agents are current, and add <code>-allow-legacy-secret=false</code> to the agent
+        so no client can put the credential on the wire by accident.
       </div>
 
       <!-- 7 -->
