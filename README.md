@@ -260,7 +260,7 @@ did not verify — receives nothing that works against a real agent. That closes
 the attack that mattered: capture one credential, replay it to every node, get
 Docker-socket access on each.
 
-**Upgrading from before v1.18.0.** A v1.18.0 client sends only the bound proof,
+**Upgrading from before v1.17.3.** A v1.17.3 client sends only the bound proof,
 so it cannot authenticate to an older agent, which does not know that form.
 Update the agents first:
 
