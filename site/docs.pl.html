@@ -319,6 +319,7 @@
           <tr><td><code>agent_secret</code></td><td>string</td><td>współdzielony sekret dla agenta z certyfikatem samopodpisanym</td></tr>
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>wczytaj sekret z tego pliku (ma pierwszeństwo przed <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>pomiń weryfikację certyfikatu serwera agenta (agenci z certyfikatem samopodpisanym)</td></tr>
+          <tr><td><code>legacy_secret</code></td><td>bool</td><td>wysyła dodatkowo <em>surowy</em> sekret, dla agentów starszych niż v1.17.3 — domyślnie wyłączone; patrz niżej</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>tożsamość w audycie, gdy nie używasz certyfikatu klienta (domyślnie: nazwa użytkownika systemu)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>domyślny format logów dla <code>logs</code> i TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (puste = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>domyślny minimalny poziom: <code>trace</code>..<code>fatal</code> (pomiń, żeby nie filtrować po poziomie)</td></tr>
@@ -391,10 +392,27 @@
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec --agent-secret "$SECRET" --insecure ps</div>
       <div class="warn">
-        <strong>insecure</strong> pomija sprawdzenie certyfikatu serwera agenta: zaufanie
-        opiera się wtedy na współdzielonym sekrecie i na twojej ścieżce sieciowej. Kiedy
-        tylko możesz, wybierz <code>ca</code> i trzymaj sekret poza historią powłoki (użyj
+        <strong>insecure</strong> pomija sprawdzenie certyfikatu serwera agenta. Sekret
+        <em>nie</em> jest przez to zagrożony: klient nigdy go nie wysyła, tylko dowód
+        wyliczony z sekretu i certyfikatu połączenia, którym podróżuje — serwer, którego
+        nie zweryfikowałeś, nie dostaje więc niczego, co zadziała wobec prawdziwego agenta.
+        Pozostaje to, że agent <strong>nie jest uwierzytelniony wobec ciebie</strong>: ten,
+        kto odpowie, przeczyta to, co ta sesja mu wyśle. W sieci, której nie ufasz, wybierz
+        <code>ca</code> i trzymaj sekret poza historią powłoki (użyj
         <code>agent_secret_file</code> albo pliku konfiguracyjnego).
+      </div>
+
+      <h3>Przejście na v1.17.3 — najpierw zaktualizuj agentów</h3>
+      <div class="warn">
+        <strong>Klient v1.17.3 nie uwierzytelni się wobec starszego agenta.</strong>
+        Wysyła wyłącznie dowód związany z połączeniem, a agenci sprzed v1.17.3 nie znają
+        tej formy — odpowiadają <code>invalid or missing agent secret</code>, mimo że twój
+        sekret jest poprawny. Zaktualizuj ich najpierw:
+        <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+        Dopóki flota jest mieszana, <code>legacy_secret: true</code> w konfiguracji klienta
+        wysyła też surowy sekret, z ekspozycją opisaną wyżej. Usuń to, gdy agenci będą
+        aktualni, i dodaj agentowi <code>-allow-legacy-secret=false</code>, aby żaden
+        klient nie położył przypadkiem poświadczenia na kablu.
       </div>
 
       <!-- 7 -->

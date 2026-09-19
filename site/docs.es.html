@@ -319,6 +319,7 @@
           <tr><td><code>agent_secret</code></td><td>string</td><td>secreto compartido para un agente autofirmado</td></tr>
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>lee el secreto de este archivo (tiene prioridad sobre <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>omite la verificación del certificado de servidor del agente (agentes autofirmados)</td></tr>
+          <tr><td><code>legacy_secret</code></td><td>bool</td><td>envía además el secreto <em>en bruto</em>, para agentes anteriores a v1.17.3 — desactivado por defecto; ver abajo</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>identidad de auditoría cuando no se usa certificado de cliente (por defecto: usuario del SO)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>formato de log por defecto para <code>logs</code> y la TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (vacío = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>nivel mínimo por defecto: <code>trace</code>..<code>fatal</code> (omítelo para no filtrar por nivel)</td></tr>
@@ -393,9 +394,29 @@
       <div class="prompt"><span class="c">$</span> swarmexec --agent-secret "$SECRET" --insecure ps</div>
       <div class="warn">
         <strong>insecure</strong> omite la comprobación del certificado de servidor del
-        agente: la confianza recae entonces en el secreto compartido y en tu ruta de red.
-        Prefiere una <code>ca</code> cuando puedas, y mantén el secreto fuera del historial
-        de tu shell (usa <code>agent_secret_file</code> o el archivo de configuración).
+        agente. Esto <em>no</em> pone en riesgo el secreto: el cliente nunca lo envía, solo
+        una prueba calculada a partir del secreto y del certificado de la conexión por la
+        que viaja, de modo que un servidor que no verificaste no recibe nada que sirva
+        contra un agente real. Lo que queda es que el agente <strong>no está autenticado
+        ante ti</strong>: quien responda puede leer lo que esa sesión le envía. Prefiere
+        una <code>ca</code> en cualquier red en la que no confíes, y mantén el secreto
+        fuera del historial de tu shell (usa <code>agent_secret_file</code> o el archivo
+        de configuración).
+      </div>
+
+      <h3>Actualizar a v1.17.3 — primero los agentes</h3>
+      <div class="warn">
+        <strong>Un cliente v1.17.3 no puede autenticarse ante un agente más
+        antiguo.</strong> Envía solo la prueba ligada a la conexión, y los agentes
+        anteriores a v1.17.3 no reconocen esa forma: responden
+        <code>invalid or missing agent secret</code> aunque tu secreto sea correcto.
+        Actualízalos primero:
+        <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+        Mientras la flota esté mezclada, <code>legacy_secret: true</code> en la
+        configuración del cliente envía también el secreto en bruto, con la exposición
+        descrita arriba. Quítalo en cuanto los agentes estén al día, y añade
+        <code>-allow-legacy-secret=false</code> al agente para que ningún cliente pueda
+        poner la credencial en el cable por accidente.
       </div>
 
       <!-- 7 -->

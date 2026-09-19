@@ -326,6 +326,7 @@
           <tr><td><code>agent_secret</code></td><td>string</td><td>secret partagé pour un agent auto-signé</td></tr>
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>lit le secret depuis ce fichier (prioritaire sur <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>ignore la vérification du certificat serveur de l'agent (agents auto-signés)</td></tr>
+          <tr><td><code>legacy_secret</code></td><td>bool</td><td>envoie en plus le secret <em>brut</em>, pour les agents antérieurs à v1.17.3 — désactivé par défaut ; voir ci-dessous</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>identité d'audit lorsqu'aucun certificat client n'est utilisé (par défaut : nom d'utilisateur du système)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>format de log par défaut pour <code>logs</code> et la TUI : <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (vide = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>niveau minimum par défaut : <code>trace</code>..<code>fatal</code> (omettez pour aucun filtre de niveau)</td></tr>
@@ -402,10 +403,29 @@
       <div class="prompt"><span class="c">$</span> swarmexec --agent-secret "$SECRET" --insecure ps</div>
       <div class="warn">
         <strong>insecure</strong> ignore la vérification du certificat serveur de
-        l'agent : la confiance repose alors sur le secret partagé et votre chemin
-        réseau. Préférez un <code>ca</code> quand vous le pouvez, et gardez le secret
-        hors de l'historique de votre shell (utilisez
-        <code>agent_secret_file</code> ou le fichier de configuration).
+        l'agent. Cela ne met <em>pas</em> le secret en danger : le client ne l'envoie
+        jamais, seulement une preuve calculée à partir du secret et du certificat de la
+        connexion qu'elle emprunte — un serveur que vous n'avez pas vérifié ne reçoit
+        donc rien qui fonctionne contre un vrai agent. Il reste que l'agent <strong>n'est
+        pas authentifié auprès de vous</strong> : celui qui répond peut lire ce que cette
+        session lui envoie. Préférez un <code>ca</code> sur tout réseau auquel vous ne
+        faites pas confiance, et gardez le secret hors de l'historique de votre shell
+        (utilisez <code>agent_secret_file</code> ou le fichier de configuration).
+      </div>
+
+      <h3>Passage à v1.17.3 — mettez d'abord les agents à jour</h3>
+      <div class="warn">
+        <strong>Un client v1.17.3 ne peut pas s'authentifier auprès d'un agent plus
+        ancien.</strong> Il n'envoie que la preuve liée à la connexion, et les agents
+        antérieurs à v1.17.3 ne connaissent pas cette forme : ils répondent
+        <code>invalid or missing agent secret</code> alors même que votre secret est
+        correct. Mettez-les à jour d'abord :
+        <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+        Tant que le parc est mixte, <code>legacy_secret: true</code> dans la configuration
+        du client envoie aussi le secret brut, avec l'exposition décrite ci-dessus.
+        Retirez-le dès que les agents sont à jour, et ajoutez
+        <code>-allow-legacy-secret=false</code> à l'agent pour qu'aucun client ne puisse
+        mettre l'identifiant sur le câble par accident.
       </div>
 
       <!-- 7 -->
