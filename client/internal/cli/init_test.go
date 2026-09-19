@@ -4,10 +4,13 @@
 package cli
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types/swarm"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestRegistryHost(t *testing.T) {
@@ -67,5 +70,22 @@ func TestAgentServiceSpec(t *testing.T) {
 	p := spec.EndpointSpec.Ports
 	if len(p) != 1 || p[0].PublishedPort != 9443 || p[0].PublishMode != swarm.PortConfigPublishModeHost {
 		t.Errorf("port config wrong: %+v", p)
+	}
+}
+
+// An upgraded client talking to an agent that predates connection-bound
+// authentication gets Unauthenticated with "invalid or missing agent secret" —
+// true from the agent's side, and misleading from the operator's, because their
+// secret is correct. The hint has to name the upgrade first.
+func TestEnrichAgentError_ExplainsARejectedSecret(t *testing.T) {
+	err := enrichAgentError(context.Background(), nil,
+		status.Error(codes.Unauthenticated, "invalid or missing agent secret"))
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"swarmexec init --force", "legacy_secret", "does not match"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("hint does not mention %q: %v", want, err)
+		}
 	}
 }
