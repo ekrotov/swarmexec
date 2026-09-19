@@ -86,15 +86,58 @@ build and protocol version.
 | `-server-key` | `SWARMEXEC_SERVER_KEY` | — (required) | server private key |
 | `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
-| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `0` (disabled) | per-session idle timeout |
-| `-max-session` | `SWARMEXEC_MAX_SESSION` | `0` (disabled) | per-session max duration |
+| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` disables) | per-session idle timeout |
+| `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` disables) | per-session max duration |
+| `-allow-legacy-secret` | `SWARMEXEC_ALLOW_LEGACY_SECRET` | `true` | accept the raw shared secret from pre-binding clients |
+| `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent exec/logs/port-forward streams; negative = unlimited |
+| `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers; negative = unlimited |
 | `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |
 | `-metrics-addr` | `SWARMEXEC_METRICS_ADDR` | — (disabled) | Prometheus listen addr, e.g. `:9100` |
 
-Idle/max-session timeouts default to **disabled** because interactive shells
-idle legitimately.
+### Shared-secret authentication
+
+The client does not send the secret. It sends a proof computed from the secret
+and the certificate of the connection carrying it, so the credential itself
+never reaches the wire. That matters because in self-signed mode the client has
+nothing to verify the agent against — the cert is regenerated on every restart,
+on every node — and the old behaviour handed the raw secret to whatever server
+answered. One capture was one credential valid on **every** node, each of which
+holds the Docker socket.
+
+`-allow-legacy-secret` (default on) still accepts the raw form so an agent
+upgrade does not strand older clients; each agent logs a warning once when it
+does. Turn it off once the clients are rolled forward.
+
+Binding defeats credential theft and replay. It does not authenticate the agent
+to the client: on an unverified connection, someone on the path still sees what
+that session sends them. For an untrusted network, use a CA.
+
+### Limits
+
+The four limits above bound what a single node can be made to do. They exist
+for blast radius, not rationing: a person driving a terminal holds a handful of
+streams, and a busy TUI with several forwards and a log follow stays far below
+the caps.
+
+They matter because **every port-forward connection creates a container** on the
+node. Without a cap, a client that only ever spoke the protocol correctly could
+open streams in a loop and exhaust the node's PIDs and memory, taking down every
+Swarm workload sharing that machine. Over the cap the agent answers
+`ResourceExhausted` and names the flag to raise — it refuses rather than queues,
+because a queue turns a resource limit into unbounded waiting that the person on
+the other end cannot tell apart from a hang.
+
+The session timeouts end **abandoned** sessions: half an hour of silence in both
+directions is not someone thinking, and a shell open for twelve hours is a shell
+someone forgot. Set either to `0` to turn the check off — which is what they
+used to default to, so a forgotten exec held a Docker attach for as long as the
+agent ran.
+
+Logs and port-forwards deliberately have **no** maximum lifetime: following a
+log or holding a forward open for hours is the normal way to use them, and the
+concurrency caps already bound the damage.
 
 ## Deploy
 

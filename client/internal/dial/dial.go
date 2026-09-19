@@ -76,7 +76,11 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 		return nil, err
 	}
 	if secret != "" {
-		opts = append(opts, grpc.WithPerRPCCredentials(bearer{secret: secret, operator: cfg.Operator}))
+		opts = append(opts, grpc.WithPerRPCCredentials(bearer{
+			secret:   secret,
+			operator: cfg.Operator,
+			legacy:   cfg.LegacySecret,
+		}))
 	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
@@ -101,11 +105,21 @@ func loadTLS(cfg config.Config) (*tls.Config, error) {
 		tlsCfg.Certificates = []tls.Certificate{cert}
 	}
 
-	// Server verification: skip when --insecure or when no CA is provided
-	// (self-signed agent). Otherwise verify against the CA.
-	if cfg.Insecure || cfg.CA == "" {
+	// Server verification is skipped ONLY on the explicit --insecure opt-in.
+	//
+	// It used to also trigger on an empty CA, which made "I did not configure a
+	// CA" indistinguishable from "I accept an unverified server". Validate
+	// rejects that combination today, so the two agreed — but any caller that
+	// built a Config without going through Validate got MITM exposure with
+	// nothing in the configuration saying so. A dangerous mode should have
+	// exactly one way to reach it, and it should be spelled out.
+	if cfg.Insecure {
 		tlsCfg.InsecureSkipVerify = true
 		return tlsCfg, nil
+	}
+	if cfg.CA == "" {
+		return nil, fmt.Errorf("no CA configured and --insecure not set: " +
+			"set ca in the config to verify the agent, or opt in explicitly")
 	}
 	caPEM, err := os.ReadFile(cfg.CA)
 	if err != nil {
@@ -119,19 +133,69 @@ func loadTLS(cfg config.Config) (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// bearer attaches the shared secret and operator identity as per-RPC metadata.
-// It requires transport security (TLS), which the agent always uses.
+// bearer authenticates each RPC with the shared secret and carries the operator
+// identity for audit. It requires transport security (TLS), which the agent
+// always uses.
+//
+// It sends a proof BOUND to the connection, not the secret. RequireTransportSecurity
+// returning true is not the protection it looks like: InsecureSkipVerify still
+// counts as "transport security", so the old behaviour handed the raw secret to
+// whatever server answered — and in the documented self-signed mode the client
+// verifies nothing. See authmeta.Bind.
+//
+// legacy sends the raw secret as well, for agents predating the bound form. It
+// is opt-in and off by default: a downgrade an attacker can trigger is not a
+// compatibility feature.
 type bearer struct {
 	secret   string
 	operator string
+	legacy   bool
 }
 
-func (b bearer) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
-	m := map[string]string{authmeta.SecretKey: b.secret}
+func (b bearer) GetRequestMetadata(ctx context.Context, _ ...string) (map[string]string, error) {
+	m := map[string]string{}
 	if b.operator != "" {
 		m[authmeta.OperatorKey] = b.operator
 	}
+
+	cert, err := peerCert(ctx)
+	if err != nil {
+		// No certificate means no binding is possible. Refuse rather than fall
+		// back to the raw secret: silently sending the credential in the one
+		// situation we cannot reason about is how this was broken before.
+		if !b.legacy {
+			return nil, err
+		}
+		m[authmeta.SecretKey] = b.secret
+		return m, nil
+	}
+
+	m[authmeta.BindingKey] = authmeta.Bind(b.secret, cert)
+	if b.legacy {
+		m[authmeta.SecretKey] = b.secret
+	}
 	return m, nil
+}
+
+// peerCert returns the DER of the server certificate this RPC travels to. gRPC
+// exposes it through the per-RPC RequestInfo, which is the supported way to
+// bind a credential to the channel carrying it.
+func peerCert(ctx context.Context) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("no call context; cannot bind credentials to the connection")
+	}
+	ri, ok := credentials.RequestInfoFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no TLS information for this call; cannot authenticate the agent securely")
+	}
+	tlsInfo, ok := ri.AuthInfo.(credentials.TLSInfo)
+	if !ok {
+		return nil, fmt.Errorf("connection is not TLS; refusing to send credentials")
+	}
+	if len(tlsInfo.State.PeerCertificates) == 0 {
+		return nil, fmt.Errorf("agent presented no certificate; refusing to send credentials")
+	}
+	return tlsInfo.State.PeerCertificates[0].Raw, nil
 }
 
 func (b bearer) RequireTransportSecurity() bool { return true }

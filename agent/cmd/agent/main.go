@@ -141,10 +141,12 @@ func run(args []string) error {
 	secretAuthIdentity := cfg.SelfSigned && cfg.CACert == ""
 
 	srv := server.New(dockerCli, auth.AllowAll{}, auditLog, log, sink, server.Options{
-		IdleTimeout:    cfg.IdleTimeout,
-		MaxSessionTime: cfg.MaxSessionTime,
-		SecretAuth:     secretAuthIdentity,
-		ForwardImage:   cfg.ForwardImage,
+		IdleTimeout:        cfg.IdleTimeout,
+		MaxSessionTime:     cfg.MaxSessionTime,
+		SecretAuth:         secretAuthIdentity,
+		ForwardImage:       cfg.ForwardImage,
+		MaxStreams:         cfg.MaxStreams,
+		MaxForwardSidecars: cfg.MaxForwardSidecars,
 	})
 
 	// Background volume-size cache: scans at startup, then refreshes on volume
@@ -174,11 +176,25 @@ func run(args []string) error {
 		}),
 	}
 	if secret != "" {
+		// The certificate a client's proof is computed over. Taken from the TLS
+		// config actually in use, so it is right for both the self-signed and
+		// the provisioned-cert paths.
+		var certDER []byte
+		if len(tlsCfg.Certificates) > 0 && len(tlsCfg.Certificates[0].Certificate) > 0 {
+			certDER = tlsCfg.Certificates[0].Certificate[0]
+		}
+		secretAuth := &server.SecretAuth{
+			Secret:      secret,
+			CertDER:     certDER,
+			AllowLegacy: cfg.AllowLegacySecret,
+			Log:         log,
+		}
 		serverOpts = append(serverOpts,
-			grpc.ChainUnaryInterceptor(server.SecretUnaryInterceptor(secret)),
-			grpc.ChainStreamInterceptor(server.SecretStreamInterceptor(secret)),
+			grpc.ChainUnaryInterceptor(secretAuth.UnaryInterceptor()),
+			grpc.ChainStreamInterceptor(secretAuth.StreamInterceptor()),
 		)
-		log.Info("shared-secret authentication enabled")
+		log.Info("shared-secret authentication enabled",
+			"connection_bound", len(certDER) > 0, "legacy_raw_secret_accepted", cfg.AllowLegacySecret)
 	}
 	grpcSrv := grpc.NewServer(serverOpts...)
 	pb.RegisterAgentServer(grpcSrv, srv)

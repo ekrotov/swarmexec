@@ -51,6 +51,12 @@ type Options struct {
 	// also the resolution of every CPU percentage, which is a delta between two
 	// of them. Zero uses the default (statsInterval).
 	StatsInterval time.Duration
+	// MaxStreams caps concurrent Exec + Logs + PortForward streams on this node.
+	// Zero uses the default (defaultMaxStreams); negative disables the cap.
+	MaxStreams int
+	// MaxForwardSidecars caps live port-forward sidecar containers on this node.
+	// Zero uses the default (defaultMaxForwardSidecars); negative disables it.
+	MaxForwardSidecars int
 }
 
 // Server is the Agent gRPC service implementation.
@@ -77,6 +83,12 @@ type Server struct {
 
 	active atomic.Int64
 
+	// streams caps concurrent streaming RPCs; sidecars caps the containers a
+	// port-forward creates. Two limits because they bound different things: a
+	// stream costs a goroutine, a sidecar costs a container on the node.
+	streams  *limiter
+	sidecars *limiter
+
 	// The agent's own image, resolved once by self-inspection and reused by
 	// every port-forward sidecar. See forwardImage.
 	forwardImageOnce sync.Once
@@ -99,6 +111,9 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	}
 	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
 	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
+	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
+	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
+		"port-forward sidecars", "-max-forward-sidecars")
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {
@@ -124,7 +139,30 @@ func (s *Server) StartStatsCache(ctx context.Context) {
 
 // ListContainers lists running containers on the local node, optionally
 // filtered by a service-name or container-name substring.
+//
+// Authorized and audited like every other RPC, which it once was not. It is
+// gated by transport auth either way, but skipping the policy hook meant the
+// pluggable Authorizer could never restrict discovery — and discovery is what
+// an operator needs before they can target anything: this call returns the
+// container ids and service names that exec, logs and port-forward take as
+// input. It is also the cheapest possible reconnaissance, since it inspects
+// nothing.
+//
+// It does not go through s.authorize: that helper resolves the swarm service by
+// inspecting a container, and this RPC has no container to inspect. The
+// identity → authorize → audit sequence is the same one, without that step.
 func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
+	identity, err := s.identityFn(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+	}
+	decision := s.authz.Authorize(ctx, auth.Request{Action: "container.list", Identity: identity})
+	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
+	if !decision.Allow {
+		s.metrics.AuthDenied()
+		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	}
+
 	containers, err := s.docker.ContainerList(ctx, container.ListOptions{All: false})
 	if err != nil {
 		s.log.Error("ContainerList failed", "err", err)
@@ -146,6 +184,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 			Volumes: namedVolumes(c.Mounts),
 		})
 	}
+	s.audit.ContainerList(identity, filter, len(resp.Containers))
 	return resp, nil
 }
 

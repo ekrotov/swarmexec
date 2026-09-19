@@ -4,10 +4,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,6 +52,56 @@ func newTestServer(d DockerClient, az auth.Authorizer, opts Options) (*Server, *
 	s := New(d, az, al, log, m, opts)
 	s.identityFn = func(context.Context) (string, error) { return "test-user", nil }
 	return s, m
+}
+
+// auditedTestServer is newTestServer with the audit stream captured, for the
+// tests that assert an action leaves a record — the claim being tested is about
+// the audit log itself, so discarding it would test nothing.
+func auditedTestServer(d DockerClient, az auth.Authorizer) (*Server, *syncBuffer) {
+	buf := &syncBuffer{}
+	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	s := New(d, az, audit.New(slog.New(slog.NewJSONHandler(buf, nil))), log, &testMetrics{}, Options{})
+	s.identityFn = func(context.Context) (string, error) { return "test-user", nil }
+	return s, buf
+}
+
+// syncBuffer is a bytes.Buffer safe for a handler writing from another
+// goroutine; slog gives no ordering guarantee about who calls Write.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// findAuditEvent returns the first audit record with the given event name,
+// failing the test when there is none.
+func findAuditEvent(t *testing.T, out, event string) map[string]any {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		if rec["event"] == event {
+			return rec
+		}
+	}
+	t.Fatalf("no %q audit record in:\n%s", event, out)
+	return nil
 }
 
 func startExec(containerID string, cmd []string, tty bool) *pb.StartExec {
@@ -441,6 +495,80 @@ func TestListContainers_Error(t *testing.T) {
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
 	if _, err := srv.ListContainers(context.Background(), &pb.ListRequest{}); statusCode(err) != codes.Internal {
 		t.Fatalf("want Internal, got %v", err)
+	}
+}
+
+// Discovery must be refusable. It used to be the one RPC the Authorizer never
+// saw, so a policy could restrict exec and logs while still handing out every
+// container id and service name needed to aim them.
+func TestListContainers_HonoursTheAuthorizer(t *testing.T) {
+	d := newFakeDocker()
+	d.containers = []types.Container{{ID: "a1", Names: []string{"/web.1"}}}
+	srv, m := newTestServer(d, denyAuth{}, Options{})
+
+	if _, err := srv.ListContainers(context.Background(), &pb.ListRequest{}); statusCode(err) != codes.PermissionDenied {
+		t.Fatalf("want PermissionDenied, got %v", err)
+	}
+	if m.denied.Load() != 1 {
+		t.Errorf("denial not counted: %d", m.denied.Load())
+	}
+	// A refused enumeration must not reach Docker at all — otherwise the answer
+	// was computed and merely withheld.
+	if d.listCalls.Load() != 0 {
+		t.Errorf("Docker was queried despite the denial (%d calls)", d.listCalls.Load())
+	}
+}
+
+// The action name is what a policy is written against, so it is part of the
+// contract, not an implementation detail.
+func TestListContainers_AuthorizerSeesTheAction(t *testing.T) {
+	d := newFakeDocker()
+	var got auth.Request
+	az := authFunc(func(_ context.Context, r auth.Request) auth.Decision {
+		got = r
+		return auth.Decision{Allow: true}
+	})
+	srv, _ := newTestServer(d, az, Options{})
+
+	if _, err := srv.ListContainers(context.Background(), &pb.ListRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if got.Action != "container.list" {
+		t.Errorf("action = %q, want container.list", got.Action)
+	}
+	if got.Identity != "test-user" {
+		t.Errorf("identity = %q, want test-user", got.Identity)
+	}
+}
+
+// The audit gap was the part that bit today, with AllowAll in place: mapping
+// every container on every node left no record whatsoever.
+func TestListContainers_IsAudited(t *testing.T) {
+	d := newFakeDocker()
+	d.containers = []types.Container{
+		{ID: "a1", Names: []string{"/web.1"}, Labels: map[string]string{swarmServiceLabel: "web"}},
+		{ID: "b2", Names: []string{"/db.1"}, Labels: map[string]string{swarmServiceLabel: "db"}},
+	}
+	srv, log := auditedTestServer(d, auth.AllowAll{})
+
+	if _, err := srv.ListContainers(context.Background(), &pb.ListRequest{ServiceFilter: "web"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := findAuditEvent(t, log.String(), "container_list")
+	if rec["identity"] != "test-user" {
+		t.Errorf("identity = %v", rec["identity"])
+	}
+	if rec["filter"] != "web" {
+		t.Errorf("filter = %v, want web", rec["filter"])
+	}
+	if rec["matched"] != float64(1) {
+		t.Errorf("matched = %v, want 1", rec["matched"])
+	}
+	// The listing itself must never be in the record: one refresh cycle would
+	// otherwise write the node's whole topology into the audit log.
+	if strings.Contains(log.String(), "a1") {
+		t.Error("audit record leaks container ids")
 	}
 }
 

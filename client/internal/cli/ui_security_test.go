@@ -95,3 +95,60 @@ func TestSecurityOverlayEscapesSpecMarkup(t *testing.T) {
 			tview.TaggedStringWidth(esc), tview.TaggedStringWidth(raw))
 	}
 }
+
+// …and the same, through the function that actually builds the overlay. The
+// test above only proves what tview.Escape does; it would keep passing if the
+// renderer stopped calling it. This one fails in that case.
+//
+// The attack it pins down: a service deployed with an env key or User carrying
+// a colour tag recolours the rest of the overlay, hiding its own finding and
+// every finding of every service rendered after it — suppressing the output of
+// the tool whose whole job is to surface risk.
+func TestSecurityOverlayTextNeutralisesInjectedTags(t *testing.T) {
+	inject := func(name, user string, env []string) resolve.Service {
+		svc := swarm.Service{}
+		svc.Spec.Name = name
+		svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{User: user, Env: env}
+		return resolve.Service{Name: name, Risks: secscan.Scan(svc)}
+	}
+
+	attacker := inject("aaa-evil", `root:0[black:black]`, []string{`[:white]DB_PASSWORD=hunter2`})
+	victim := inject("zzz-victim", "root", nil)
+	if !secscan.Actionable(attacker.Risks) || !secscan.Actionable(victim.Risks) {
+		t.Fatal("test premise broken: both services must be flagged")
+	}
+
+	out := securityOverlayText(2, []resolve.Service{attacker, victim})
+
+	// Every tag the attacker supplied must arrive inert. tview's escape form is
+	// "[" + text + "[]", so the opening bracket is no longer a tag start.
+	for _, injected := range []string{"[:white]", "[black:black]"} {
+		if strings.Contains(out, injected) {
+			t.Errorf("overlay carries an active injected tag %q:\n%s", injected, out)
+		}
+	}
+	// The victim's finding must still be rendered — the point is that it stays
+	// visible, not merely that the attacker's string changed.
+	if !strings.Contains(out, "zzz-victim") {
+		t.Errorf("the later service disappeared from the overlay:\n%s", out)
+	}
+	// A region tag injected through the service NAME would misdirect
+	// Highlight/ScrollToHighlight; ids are index-based and names are escaped.
+	if strings.Count(out, `["s`) != 2 {
+		t.Errorf("want exactly 2 region tags, got %d:\n%s", strings.Count(out, `["s`), out)
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("overlay leaks a secret value:\n%s", out)
+	}
+}
+
+// The empty and all-clear states must not claim more than they know.
+func TestSecurityOverlayTextStatesItsGaps(t *testing.T) {
+	if out := securityOverlayText(0, nil); !strings.Contains(out, "nothing has been scanned") {
+		t.Errorf("no data must not read as an all-clear: %q", out)
+	}
+	out := securityOverlayText(7, nil)
+	if !strings.Contains(out, "No security risks identified") || !strings.Contains(out, "Checked:") {
+		t.Errorf("an all-clear must name what was checked: %q", out)
+	}
+}

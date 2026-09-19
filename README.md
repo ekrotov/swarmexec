@@ -246,12 +246,26 @@ operator: eugen       # reported in the agent audit log (default: OS username)
 ```
 
 Trade-off vs. full mTLS: the shared secret is one fleet-wide credential, and
-`insecure: true` skips server-cert verification (trust rests on the secret + a
-trusted overlay network). You lose per-operator certificate identity — though
-the client still reports an `operator` name for audit. To keep per-operator
-identity, additionally provide a client CA (`swarmexec_ca` secret +
-`-ca-cert=/run/secrets/swarmexec_ca`): the agent then self-signs its server cert
-**and** verifies operator client certs.
+`insecure: true` skips server-cert verification. You lose per-operator
+certificate identity — though the client still reports an `operator` name for
+audit. To keep per-operator identity, additionally provide a client CA
+(`swarmexec_ca` secret + `-ca-cert=/run/secrets/swarmexec_ca`): the agent then
+self-signs its server cert **and** verifies operator client certs.
+
+**What `insecure: true` does and does not cost you.** It does *not* put the
+secret at risk: the client never sends it. It sends a proof computed from the
+secret and the certificate of the connection it is travelling on, so a server
+that answered the connection — including one that presented a certificate you
+did not verify — receives nothing that works against a real agent. That closes
+the attack that mattered: capture one credential, replay it to every node, get
+Docker-socket access on each.
+
+What remains is that the agent is **not authenticated to you**. Someone who can
+place themselves on the path can terminate the connection and see what that
+session sends them — a command line, whatever you type into a shell. Binding
+defeats credential theft, not eavesdropping on a session you chose not to
+verify. So: self-signed + secret is fine on a network you trust; on one you do
+not, provision a CA and drop `insecure`.
 
 The two modes use different agent flags:
 
@@ -410,8 +424,10 @@ non-interactive, lists the candidates and exits).
 | `-server-key` | `SWARMEXEC_SERVER_KEY` | *(required)* | server private key |
 | `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
-| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `0` (off) | per-session idle timeout |
-| `-max-session` | `SWARMEXEC_MAX_SESSION` | `0` (off) | per-session max duration |
+| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` = off) | per-session idle timeout |
+| `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` = off) | per-session max duration |
+| `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent exec/logs/port-forward streams; negative = unlimited |
+| `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers; negative = unlimited |
 | `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |

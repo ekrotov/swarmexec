@@ -413,6 +413,15 @@ func TestPortForward_RemovesSidecarOnTeardown(t *testing.T) {
 	if got := d.RemovedContainers(); len(got) != 1 || got[0] != "sidecar-1" {
 		t.Errorf("removed containers = %v, want [sidecar-1]", got)
 	}
+	// The node's container budget has to come back with the container. A slot
+	// held past teardown is a slow leak that only shows up as an agent refusing
+	// forwards after a day of normal use.
+	if got := srv.sidecars.inUse(); got != 0 {
+		t.Errorf("sidecar slot not released on teardown: in use = %d", got)
+	}
+	if got := srv.streams.inUse(); got != 0 {
+		t.Errorf("stream slot not released after the RPC returned: in use = %d", got)
+	}
 }
 
 func TestPortForward_SidecarCreateFailureIsReported(t *testing.T) {

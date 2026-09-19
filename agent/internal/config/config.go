@@ -18,6 +18,15 @@ import (
 // DefaultPort is the agent's gRPC/TLS port (CONTRACT.md §2).
 const DefaultPort = 9443
 
+// Session lifetime defaults. Chosen to end ABANDONED sessions without
+// interrupting working ones: half an hour of complete silence in both
+// directions is not someone thinking, and a shell open for twelve hours is a
+// shell someone forgot. Both are configurable, and 0 still means "no check".
+const (
+	DefaultIdleTimeout    = 30 * time.Minute
+	DefaultMaxSessionTime = 12 * time.Hour
+)
+
 // Config holds all runtime configuration for the agent.
 type Config struct {
 	Port       int    // gRPC listen port (default 9443); used to derive ListenAddr
@@ -44,6 +53,11 @@ type Config struct {
 	// secret at /run/secrets/swarmexec_agent_secret).
 	AgentSecretFile string
 
+	// AllowLegacySecret accepts the RAW shared secret from clients that predate
+	// connection-bound authentication. On by default so an agent upgrade does
+	// not strand older clients; turn it off once they are rolled forward.
+	AllowLegacySecret bool
+
 	DockerHost string // docker daemon endpoint
 
 	// ForwardImage overrides the image port-forward sidecars run from; empty
@@ -53,6 +67,12 @@ type Config struct {
 	DrainTimeout   time.Duration // graceful-shutdown drain window
 	IdleTimeout    time.Duration // per-session idle timeout (0 = disabled)
 	MaxSessionTime time.Duration // per-session max duration (0 = disabled)
+
+	// MaxStreams caps concurrent Exec/Logs/PortForward streams on this node and
+	// MaxForwardSidecars caps live port-forward sidecar containers. 0 = the
+	// built-in default, negative = no limit.
+	MaxStreams         int
+	MaxForwardSidecars int
 
 	LogLevel  string // debug|info|warn|error
 	LogFormat string // json|text
@@ -121,10 +141,18 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.StringVar(&c.CertSANs, "cert-sans", env("SWARMEXEC_CERT_SANS", ""), "extra SANs for the self-signed cert, e.g. \"DNS:swarmexec-agent,IP:10.0.0.5\" (env SWARMEXEC_CERT_SANS)")
 	fs.StringVar(&c.AgentSecret, "agent-secret", env("SWARMEXEC_AGENT_SECRET", ""), "shared secret clients must present; empty disables (env SWARMEXEC_AGENT_SECRET)")
 	fs.StringVar(&c.AgentSecretFile, "agent-secret-file", env("SWARMEXEC_AGENT_SECRET_FILE", ""), "file to read the shared secret from, e.g. a Docker secret (env SWARMEXEC_AGENT_SECRET_FILE)")
+	fs.BoolVar(&c.AllowLegacySecret, "allow-legacy-secret", envBool("SWARMEXEC_ALLOW_LEGACY_SECRET", true), "accept the raw shared secret from clients predating connection-bound auth; disable once clients are upgraded (env SWARMEXEC_ALLOW_LEGACY_SECRET)")
 	fs.StringVar(&c.DockerHost, "docker-host", env("SWARMEXEC_DOCKER_HOST", "unix:///var/run/docker.sock"), "docker daemon endpoint (env SWARMEXEC_DOCKER_HOST)")
 	fs.DurationVar(&c.DrainTimeout, "drain-timeout", envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
-	fs.DurationVar(&c.IdleTimeout, "idle-timeout", envDuration("SWARMEXEC_IDLE_TIMEOUT", 0), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
-	fs.DurationVar(&c.MaxSessionTime, "max-session", envDuration("SWARMEXEC_MAX_SESSION", 0), "per-session max duration, 0=disabled (env SWARMEXEC_MAX_SESSION)")
+	// Non-zero by default. These used to be 0/disabled, which meant an exec
+	// session that nobody ever closed lived as long as the agent — a forgotten
+	// shell on a production node, holding a docker attach, indefinitely. The
+	// values are deliberately generous: they end abandoned sessions, they do not
+	// ration working ones. Set them to 0 to turn the checks off again.
+	fs.DurationVar(&c.IdleTimeout, "idle-timeout", envDuration("SWARMEXEC_IDLE_TIMEOUT", DefaultIdleTimeout), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
+	fs.DurationVar(&c.MaxSessionTime, "max-session", envDuration("SWARMEXEC_MAX_SESSION", DefaultMaxSessionTime), "per-session max duration, 0=disabled (env SWARMEXEC_MAX_SESSION)")
+	fs.IntVar(&c.MaxStreams, "max-streams", envInt("SWARMEXEC_MAX_STREAMS", 0), "max concurrent exec/logs/port-forward streams, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_STREAMS)")
+	fs.IntVar(&c.MaxForwardSidecars, "max-forward-sidecars", envInt("SWARMEXEC_MAX_FORWARD_SIDECARS", 0), "max live port-forward sidecar containers, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_FORWARD_SIDECARS)")
 	fs.StringVar(&c.ForwardImage, "forward-image", env("SWARMEXEC_FORWARD_IMAGE", ""), "image for port-forward sidecars; empty = the agent's own image (env SWARMEXEC_FORWARD_IMAGE)")
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")
 	fs.StringVar(&c.LogFormat, "log-format", env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")

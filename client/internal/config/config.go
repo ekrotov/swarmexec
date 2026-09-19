@@ -57,7 +57,19 @@ type Config struct {
 	// Insecure skips verification of the agent's server certificate. Required
 	// when connecting to a self-signed agent (no CA to verify against); trust
 	// then rests on the shared secret and the network.
+	//
+	// It protects the secret even so: the client sends a proof bound to the
+	// connection rather than the secret itself, so an unverified server cannot
+	// capture a credential that works elsewhere (authmeta.Bind). It does NOT
+	// authenticate the agent — on a network you do not trust, configure a CA.
 	Insecure bool `yaml:"insecure"`
+
+	// LegacySecret additionally sends the RAW shared secret, for agents that
+	// predate connection-bound authentication. Off by default, because a
+	// downgrade an attacker can trigger is not a compatibility feature: with it
+	// on, an unverified server receives the credential itself. Turn it on only
+	// while agents are being rolled forward, on a network you trust.
+	LegacySecret bool `yaml:"legacy_secret"`
 
 	// Operator is the identity reported for audit when no client certificate is
 	// used. Defaults to the local OS username.

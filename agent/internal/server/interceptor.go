@@ -6,6 +6,8 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"log/slog"
+	"sync/atomic"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -23,30 +25,79 @@ func firstMD(md metadata.MD, key string) string {
 	return ""
 }
 
-// checkSecret verifies the incoming shared secret in constant time.
-func checkSecret(ctx context.Context, want string) error {
-	md, _ := metadata.FromIncomingContext(ctx)
-	got := firstMD(md, authmeta.SecretKey)
-	if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
-		return status.Error(codes.Unauthenticated, "invalid or missing agent secret")
-	}
-	return nil
+// SecretAuth verifies the shared secret on every RPC.
+//
+// It accepts two forms. The current one is a proof bound to this connection's
+// server certificate (authmeta.Bind): the secret itself never crosses the wire,
+// so an on-path attacker who terminates an unverified TLS connection captures
+// nothing that works against a real agent. The legacy form is the raw secret,
+// which an agent accepts only while AllowLegacy is set — every acceptance is
+// logged, because it means some client is still handing the credential to
+// whatever answers.
+type SecretAuth struct {
+	Secret string
+	// CertDER is this server's leaf certificate, the value a client's proof is
+	// computed over. Without it only the legacy form can be verified.
+	CertDER []byte
+	// AllowLegacy accepts the raw secret from clients that predate binding.
+	AllowLegacy bool
+	Log         *slog.Logger
+
+	warnedLegacy atomic.Bool
 }
 
-// SecretUnaryInterceptor rejects unary RPCs without the matching shared secret.
-func SecretUnaryInterceptor(secret string) grpc.UnaryServerInterceptor {
+// check verifies the incoming credentials in constant time.
+func (a *SecretAuth) check(ctx context.Context) error {
+	md, _ := metadata.FromIncomingContext(ctx)
+
+	if proof := firstMD(md, authmeta.BindingKey); proof != "" {
+		if len(a.CertDER) == 0 {
+			return status.Error(codes.Unauthenticated,
+				"connection-bound authentication is unavailable on this agent")
+		}
+		want := authmeta.Bind(a.Secret, a.CertDER)
+		if subtle.ConstantTimeCompare([]byte(proof), []byte(want)) != 1 {
+			return status.Error(codes.Unauthenticated, "invalid agent secret")
+		}
+		return nil
+	}
+
+	if raw := firstMD(md, authmeta.SecretKey); raw != "" {
+		if !a.AllowLegacy {
+			return status.Error(codes.Unauthenticated,
+				"this client sends the raw shared secret, which this agent no longer accepts; "+
+					"upgrade the client, or start the agent with -allow-legacy-secret")
+		}
+		if subtle.ConstantTimeCompare([]byte(raw), []byte(a.Secret)) != 1 {
+			return status.Error(codes.Unauthenticated, "invalid agent secret")
+		}
+		// Once per agent lifetime: a line per RPC would bury it, and the fact
+		// being reported is a standing condition, not an event.
+		if a.Log != nil && a.warnedLegacy.CompareAndSwap(false, true) {
+			a.Log.Warn("accepted a RAW shared secret from a legacy client",
+				"why", "the credential travelled on the wire and can be captured on an unverified connection",
+				"fix", "upgrade the clients, then drop -allow-legacy-secret")
+		}
+		return nil
+	}
+
+	return status.Error(codes.Unauthenticated, "missing agent secret")
+}
+
+// UnaryInterceptor rejects unary RPCs without valid credentials.
+func (a *SecretAuth) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if err := checkSecret(ctx, secret); err != nil {
+		if err := a.check(ctx); err != nil {
 			return nil, err
 		}
 		return handler(ctx, req)
 	}
 }
 
-// SecretStreamInterceptor rejects streaming RPCs without the matching shared secret.
-func SecretStreamInterceptor(secret string) grpc.StreamServerInterceptor {
+// StreamInterceptor rejects streaming RPCs without valid credentials.
+func (a *SecretAuth) StreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if err := checkSecret(ss.Context(), secret); err != nil {
+		if err := a.check(ss.Context()); err != nil {
 			return err
 		}
 		return handler(srv, ss)

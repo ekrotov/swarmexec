@@ -40,6 +40,26 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
   signed by the trusted CA).
 - Default agent port: **9443** (gRPC, TLS).
 
+### 2.1 Shared-secret authentication (self-signed agents)
+
+When the agent runs with a shared secret instead of a client CA, every RPC
+carries credentials in gRPC metadata:
+
+| Key | Meaning |
+|---|---|
+| `x-swarmexec-binding` | **Current.** `base64url(HMAC-SHA256(secret, "swarmexec-channel-binding-v1" ‖ SHA-256(server leaf certificate DER)))`. |
+| `x-swarmexec-secret` | **Legacy.** The raw secret. Accepted only while the agent runs with `-allow-legacy-secret`. |
+| `x-swarmexec-operator` | Optional operator identity for audit when no client certificate is presented. Unauthenticated — see §2.2. |
+
+Clients send the binding, never the raw secret. The binding is per-connection:
+the agent recomputes it over its own certificate, so a proof collected from any
+other connection — including one an on-path attacker terminated — does not
+authenticate. The secret itself never travels.
+
+This authenticates the *client* to the agent. It does not authenticate the agent
+to the client: on a connection the client chose not to verify (`insecure`), the
+peer still sees what that session sends it.
+
 ## 3. Protocol Definition (proto3)
 
 This is the authoritative `.proto`. Both components generate Go code from it.
