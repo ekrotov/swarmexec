@@ -260,6 +260,20 @@ did not verify — receives nothing that works against a real agent. That closes
 the attack that mattered: capture one credential, replay it to every node, get
 Docker-socket access on each.
 
+**Upgrading from before v1.18.0.** A v1.18.0 client sends only the bound proof,
+so it cannot authenticate to an older agent, which does not know that form.
+Update the agents first:
+
+```sh
+swarmexec init --force
+```
+
+If you need the client working against not-yet-updated agents in the meantime,
+add `legacy_secret: true` to the client config — it then also sends the raw
+secret, with the exposure described above. Remove it once the agents are
+current, and add `-allow-legacy-secret=false` to the agent command so no client
+can put the credential on the wire by accident.
+
 What remains is that the agent is **not authenticated to you**. Someone who can
 place themselves on the path can terminate the connection and see what that
 session sends them — a command line, whatever you type into a shell. Binding
