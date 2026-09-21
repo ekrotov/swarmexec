@@ -1339,9 +1339,37 @@ func serviceColor(running, desired int) tcell.Color {
 }
 
 // svcColumns holds the padding widths that align the service rows in the
-// containers tree, computed once per render across all services.
+// containers tree, computed across all services — not just the filtered ones,
+// so the alignment stays stable while filtering.
+//
+// The widths also stay stable over TIME, which is the same argument on the
+// other axis. Recomputing them from scratch on every refresh made the layout
+// follow whatever happened to exist at that instant: a swarm that runs a
+// `replicated-job` every minute has a mode column that is 14 wide for one
+// frame and 10 for the next, and everything to the right of it jumps four
+// columns, twice a minute, forever. See growTo.
 type svcColumns struct {
 	name, mode, repl, image int
+}
+
+// svcColumnFloors are the minimum widths, so the first frame is not narrower
+// than the second and then visibly settles.
+var svcColumnFloors = svcColumns{repl: len("0/0")}
+
+// growTo widens each column to fit other and never narrows — the whole point.
+// A column shrinks only when something explicit happens (a manual refresh, a
+// structural change, a different cluster), never because a transient service
+// came and went.
+//
+// Deliberately not "shrink after N quiet cycles": the service that causes this
+// is periodic, and any delay shorter than its period just makes the same two
+// jumps per minute slower. The period is set by someone else's cron, so there
+// is no safe value to pick.
+func (c *svcColumns) growTo(other svcColumns) {
+	c.name = max(c.name, max(other.name, svcColumnFloors.name))
+	c.mode = max(c.mode, max(other.mode, svcColumnFloors.mode))
+	c.repl = max(c.repl, max(other.repl, svcColumnFloors.repl))
+	c.image = max(c.image, max(other.image, svcColumnFloors.image))
 }
 
 // serviceRow renders a service group node like a docker service ls line —

@@ -89,10 +89,15 @@ type clusterState struct {
 	regCache  *registryCache // :latest version / newer-tag resolver
 
 	// containers tab
-	lastCands       []resolve.Candidate
-	lastSvcs        []resolve.Service
-	svcByName       map[string]resolve.Service
-	svcCols         svcColumns
+	lastCands []resolve.Candidate
+	lastSvcs  []resolve.Service
+	svcByName map[string]resolve.Service
+	svcCols   svcColumns
+	// resetCols lets the next render start the column widths over. Set by the
+	// explicit loaders only: an operator asking for a refresh, a service being
+	// removed, a stack being deployed. The background poll must never set it,
+	// or the widths follow every transient service again.
+	resetCols       bool
 	autoRefreshBusy atomic.Bool
 
 	// live resource usage, from this cluster's node agents
