@@ -411,7 +411,8 @@
         <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
         Dopóki flota jest mieszana, <code>legacy_secret: true</code> w konfiguracji klienta
         wysyła też surowy sekret, z ekspozycją opisaną wyżej. Usuń to, gdy agenci będą
-        aktualni, i dodaj agentowi <code>-allow-legacy-secret=false</code>, aby żaden
+        aktualni, a potem uruchom ponownie
+        <code>swarmexec init --force --allow-legacy-secret=false</code>, aby żaden
         klient nie położył przypadkiem poświadczenia na kablu.
       </div>
 
@@ -508,6 +509,7 @@
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nazwa usługi agenta</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>port hosta publikowany przez agenta</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>zaktualizuj usługę, jeśli już istnieje</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akceptuje surowy sekret od klientów sprzed uwierzytelniania związanego z połączeniem; ustaw <code>=false</code>, gdy wszyscy klienci są zaktualizowani</td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>zapisz konfigurację klienta</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>przekaż lokalne poświadczenia rejestru, żeby węzły mogły pobrać prywatny obraz</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>poczekaj, aż agenci wstaną, i raportuj postęp</td></tr>

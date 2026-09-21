@@ -64,6 +64,7 @@ type initFlags struct {
 	serviceName    string
 	port           int
 	force          bool
+	allowLegacy    bool
 	saveConfig     bool
 	registryAuth   bool
 	wait           bool
@@ -90,6 +91,12 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 	fl.StringVar(&f.serviceName, "service-name", defaultServiceNm, "name for the agent service")
 	fl.IntVar(&f.port, "port", config.DefaultPort, "host port the agent publishes")
 	fl.BoolVar(&f.force, "force", false, "update the service if it already exists")
+	// Default true to match the agent's own default, so `init` never silently
+	// locks out a client the operator has not upgraded yet. Passing false is the
+	// deprecation lever: once every client sends the connection-bound proof, the
+	// agent should stop accepting the raw secret at all.
+	fl.BoolVar(&f.allowLegacy, "allow-legacy-secret", true,
+		"accept the raw shared secret from clients predating connection-bound auth; pass=false once all clients are upgraded")
 	fl.BoolVar(&f.saveConfig, "save-config", true, "write the client config (~/.config/swarmexec/config.yaml)")
 	fl.BoolVar(&f.registryAuth, "registry-auth", true, "pass local registry credentials so nodes can pull a private image")
 	fl.BoolVar(&f.wait, "wait", true, "wait for the agents to come up and report progress")
@@ -411,6 +418,12 @@ func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 		"-drain-timeout=5s",
 		"-log-format=json",
 		"-audit-dest=stdout",
+	}
+	// Only emitted when turning the legacy path OFF. Leaving it out otherwise
+	// keeps the deployed command identical to what earlier versions produced, so
+	// a re-roll does not show a spurious spec change.
+	if !f.allowLegacy {
+		args = append(args, "-allow-legacy-secret=false")
 	}
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{

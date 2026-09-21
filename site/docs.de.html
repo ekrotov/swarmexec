@@ -420,9 +420,9 @@
         <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
         Solange die Flotte gemischt ist, sendet <code>legacy_secret: true</code> in der
         Client-Konfiguration zusätzlich das rohe Secret — mit der oben beschriebenen
-        Preisgabe. Entferne es, sobald die Agents aktuell sind, und setze am Agent
-        <code>-allow-legacy-secret=false</code>, damit kein Client das Credential
-        versehentlich aufs Kabel legen kann.
+        Preisgabe. Entferne es, sobald die Agents aktuell sind, und rolle mit
+        <code>swarmexec init --force --allow-legacy-secret=false</code> nach, damit kein
+        Client das Credential versehentlich aufs Kabel legen kann.
       </div>
 
       <!-- 7 -->
@@ -522,6 +522,7 @@
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>Name für den Agent-Service</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>Host-Port, den der Agent veröffentlicht</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>den Service aktualisieren, falls er bereits existiert</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akzeptiert das rohe Secret von Clients vor der verbindungsgebundenen Authentifizierung; <code>=false</code> setzen, sobald alle Clients aktuell sind</td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>die Client-Konfiguration schreiben</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>lokale Registry-Anmeldedaten weitergeben, damit Nodes ein privates Image pullen können</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>warten, bis die Agents hochkommen, und Fortschritt melden</td></tr>

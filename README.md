@@ -96,6 +96,7 @@ swarmexec init                 # deploys the agent on every node + writes your c
 swarmexec init --image <reg>/agent:v1.0.7   # pin a specific image
 swarmexec init --port 8443     # use a custom port everywhere (default 9443)
 swarmexec init --force         # update an already-deployed agent
+swarmexec init --force --allow-legacy-secret=false   # …and stop accepting the raw secret
 ```
 
 `init` first shows **which Docker context** it will deploy into. If you have
@@ -271,8 +272,14 @@ swarmexec init --force
 If you need the client working against not-yet-updated agents in the meantime,
 add `legacy_secret: true` to the client config — it then also sends the raw
 secret, with the exposure described above. Remove it once the agents are
-current, and add `-allow-legacy-secret=false` to the agent command so no client
-can put the credential on the wire by accident.
+current, then close the door behind you:
+
+```sh
+swarmexec init --force --allow-legacy-secret=false
+```
+
+After that the agents refuse the raw secret outright, so no client can put the
+credential on the wire by accident.
 
 What remains is that the agent is **not authenticated to you**. Someone who can
 place themselves on the path can terminate the connection and see what that
