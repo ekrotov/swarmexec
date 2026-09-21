@@ -31,7 +31,12 @@ func (u *ui) showSecurityRisks() {
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetRegions(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" security risks ")
-	tv.SetText(securityOverlayText(len(u.lastSvcs), flagged))
+	tv.SetText(securityOverlayText(securityOverlayState{
+		scanned:  len(u.lastSvcs),
+		flagged:  flagged,
+		loaded:   u.loaded,
+		staleErr: u.fetchErr,
+	}))
 
 	// Pre-select the service under the cursor if it is among the flagged ones.
 	if sel := u.currentServiceName(); sel != "" {
@@ -73,29 +78,64 @@ func (u *ui) showSecurityRisks() {
 	app.SetFocus(tv)
 }
 
-// securityOverlayText renders the body of the risks overlay: scanned is how
-// many services were examined, flagged the ones with an actionable finding.
+// securityOverlayState is what the overlay needs to describe itself honestly.
+type securityOverlayState struct {
+	scanned  int               // services in the last successful fetch
+	flagged  []resolve.Service // those with an actionable finding
+	loaded   bool              // a fetch has completed at least once
+	staleErr error             // the MOST RECENT fetch failed with this
+}
+
+// securityOverlayText renders the body of the risks overlay.
+//
+// Every branch here exists to stop the view claiming more than it knows. The
+// old version keyed the empty state purely on the number of services, so a
+// cluster whose fetch had failed — leaving the list empty or, worse, holding
+// the previous answer — got a green "No security risks identified". An
+// all-clear for data that was never read is the one output a security view must
+// never produce, because it is indistinguishable from a real one.
 //
 // Split out of showSecurityRisks so the markup can be tested as a value. The
 // escaping below is the whole defence of this view, and a test that only checks
 // what tview.Escape does proves nothing about whether this function calls it —
 // which is exactly how the omission got here the first time.
-func securityOverlayText(scanned int, flagged []resolve.Service) string {
+func securityOverlayText(st securityOverlayState) string {
+	scanned, flagged := st.scanned, st.flagged
+
 	switch {
-	case scanned == 0:
-		// No service list yet (first fetch pending, or it failed). Saying "no
-		// risks" here would be a false all-clear — we simply have no data.
-		return "\n  [yellow]No services loaded — nothing has been scanned yet.[-]\n\n" +
+	case !st.loaded:
+		// Nothing has ever been read. Name the reason when we have one, so the
+		// operator knows whether to retry or to fix their connection.
+		msg := "\n  [yellow]No services loaded — nothing has been scanned yet.[-]\n\n" +
 			"  [gray]Refresh the containers tab (r) once the manager is reachable.[-]"
-	case len(flagged) == 0:
+		if st.staleErr != nil {
+			msg += fmt.Sprintf("\n\n  [gray]Last attempt failed: %s[-]", tview.Escape(st.staleErr.Error()))
+		}
+		return msg
+	case scanned == 0:
+		// Read successfully, and there is genuinely nothing here. Distinct from
+		// the case above: "no services" is not "no risks".
+		return "\n  [gray]This cluster has no services — nothing to scan.[-]"
+	}
+
+	// A failed refresh does not discard what we last read, but it does mean the
+	// screen is a snapshot of unknown age. Say so above everything else rather
+	// than presenting it as current.
+	var b strings.Builder
+	if st.staleErr != nil {
+		fmt.Fprintf(&b, "  [yellow]⚠ The last refresh failed — this is the previous scan, not the current state.[-]\n"+
+			"  [gray]%s[-]\n\n", tview.Escape(st.staleErr.Error()))
+	}
+
+	if len(flagged) == 0 {
 		// Name what was actually checked, so "nothing found" is informative
 		// rather than a bare claim. The list comes from the analyzer registry,
 		// so it cannot drift as checks are added.
-		return fmt.Sprintf("\n  [green]No security risks identified[-] [gray]across %d service(s).[-]\n\n"+
+		fmt.Fprintf(&b, "\n  [green]No security risks identified[-] [gray]across %d service(s).[-]\n\n"+
 			"  [gray]Checked: %s.[-]", scanned, strings.Join(secscan.Checks(), ", "))
+		return b.String()
 	}
 
-	var b strings.Builder
 	fmt.Fprintf(&b, "  [gray]%d of %d service(s) flagged  ·  %d checks[-]\n",
 		len(flagged), scanned, len(secscan.Checks()))
 	for i, s := range flagged {

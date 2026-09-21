@@ -365,6 +365,7 @@ func (u *ui) fetchContainers() ([]resolve.Service, []resolve.Candidate, error) {
 
 func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, err error) {
 	croot := u.croot
+	u.fetchErr = err
 	if err != nil {
 		croot.ClearChildren()
 		croot.AddChild(tview.NewTreeNode("error: " + err.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
