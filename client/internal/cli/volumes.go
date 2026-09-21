@@ -16,7 +16,6 @@ import (
 	"github.com/docker/docker/client"
 	units "github.com/docker/go-units"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
@@ -615,10 +614,7 @@ func wrapGRPC(err error) error {
 	if agentTooOld(err) {
 		return errAgentTooOld
 	}
-	if st, ok := status.FromError(err); ok {
-		return fmt.Errorf("%s: %s", st.Code(), st.Message())
-	}
-	return err
+	return session.WrapStatus(err)
 }
 
 func nodeNames(nodes []resolve.Node) []string {

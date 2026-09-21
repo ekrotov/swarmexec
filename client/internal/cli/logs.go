@@ -185,10 +185,7 @@ func streamLogs(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p l
 			if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
 				return nil
 			}
-			if st, ok := status.FromError(err); ok {
-				return fmt.Errorf("%s: %s", st.Code(), st.Message())
-			}
-			return err
+			return session.WrapStatus(err)
 		}
 		switch pl := chunk.Payload.(type) {
 		case *pb.LogChunk_Stdout:
