@@ -8,11 +8,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
@@ -549,4 +551,36 @@ func (f authFunc) Authorize(ctx context.Context, r auth.Request) auth.Decision {
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// ContainerInspect's Config is a pointer and the daemon does not guarantee it.
+// Dereferencing it blind panicked the RPC goroutine inside a sync.Once, so the
+// crash was also cached: every later forward on that agent hit the same nil.
+func TestForwardImage_NilConfigIsAnErrorNotAPanic(t *testing.T) {
+	d := newFakeDocker()
+	host, _ := os.Hostname()
+	d.inspect[host] = types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{ID: host},
+		Config:            nil, // what the guard is for
+	}
+	srv, _ := newTestServer(d, auth.AllowAll{}, Options{}) // no ForwardImage override
+
+	img, err := srv.forwardImage(context.Background())
+	if err == nil {
+		t.Fatalf("want an error, got image %q", img)
+	}
+	if !strings.Contains(err.Error(), "-forward-image") {
+		t.Errorf("the error should name the way out: %v", err)
+	}
+
+	// An empty image is the same failure wearing a different hat.
+	d2 := newFakeDocker()
+	d2.inspect[host] = types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{ID: host},
+		Config:            &container.Config{Image: ""},
+	}
+	srv2, _ := newTestServer(d2, auth.AllowAll{}, Options{})
+	if _, err := srv2.forwardImage(context.Background()); err == nil {
+		t.Error("an empty image must be refused too")
+	}
 }

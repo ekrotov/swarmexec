@@ -469,6 +469,16 @@ func (s *Server) forwardImage(ctx context.Context) (string, error) {
 					"port-forward runs sidecars from it; set -forward-image to override", host, err)
 			return
 		}
+		// Config is a pointer and the daemon is not contractually obliged to
+		// populate it; every other inspect call site here guards it. Without the
+		// guard a malformed response panics the RPC goroutine inside a sync.Once,
+		// so the failure is both a crash and permanently cached.
+		if self.Config == nil || self.Config.Image == "" {
+			s.forwardImageErr = fmt.Errorf(
+				"cannot determine the agent's own image (inspect %q returned no image) — "+
+					"port-forward runs sidecars from it; set -forward-image to override", host)
+			return
+		}
 		s.forwardImageVal = self.Config.Image
 	})
 	if s.forwardImageErr != nil {

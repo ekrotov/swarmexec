@@ -18,9 +18,17 @@ type Logger struct {
 
 // New returns an audit Logger writing through the given slog.Logger. Every
 // record is tagged with component=audit so it can be filtered from operational
-// logs even when they share a destination.
-func New(l *slog.Logger) *Logger {
-	return &Logger{log: l.With("component", "audit")}
+// logs even when they share a destination, and with identity_verified so a
+// reader can tell what the identity field is worth.
+//
+// identityVerified must be false wherever the operator name is client-supplied
+// — shared-secret mode without a client CA, where every operator holds the same
+// credential and the `operator` header is simply believed. An audit trail that
+// prints a colleague's name with the same authority as a certificate CN is
+// worse than one that admits it cannot tell: it invites an accountability claim
+// it cannot support. Per-operator attribution needs client certs (-ca-cert).
+func New(l *slog.Logger, identityVerified bool) *Logger {
+	return &Logger{log: l.With("component", "audit", "identity_verified", identityVerified)}
 }
 
 // SessionStart records the beginning of an exec session. Payload bytes are
