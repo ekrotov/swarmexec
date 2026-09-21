@@ -78,7 +78,11 @@ func run(args []string) error {
 		return err
 	}
 	defer closeAudit()
-	auditLog := audit.New(slog.New(slog.NewJSONHandler(auditWriter, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	// Identity is only verifiable when a client certificate is required and
+	// checked against a CA. In self-signed shared-secret mode the operator name
+	// is whatever the client put in a header, so say so on every record.
+	identityVerified := !(cfg.SelfSigned && cfg.CACert == "")
+	auditLog := audit.New(slog.New(slog.NewJSONHandler(auditWriter, &slog.HandlerOptions{Level: slog.LevelInfo})), identityVerified)
 
 	dockerCli, err := client.NewClientWithOpts(
 		client.WithHost(cfg.DockerHost),

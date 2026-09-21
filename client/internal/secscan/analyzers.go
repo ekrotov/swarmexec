@@ -27,9 +27,9 @@ func (rootUserAnalyzer) Analyze(svc swarm.Service) []Finding {
 	raw := strings.TrimSpace(cs.User)
 	// User is "name[:group]" or "uid[:gid]"; only the user part matters. Trim
 	// each part: Docker tolerates "root : root" and passes the user through.
-	name := raw
+	name, group := raw, ""
 	if i := strings.IndexByte(name, ':'); i >= 0 {
-		name = name[:i]
+		name, group = name[:i], strings.TrimSpace(name[i+1:])
 	}
 	name = strings.TrimSpace(name)
 
@@ -40,6 +40,17 @@ func (rootUserAnalyzer) Analyze(svc swarm.Service) []Finding {
 			Title:    "runs as root",
 			Detail:   "the service explicitly runs its container as root (User=" + raw + ")",
 			Severity: SevHigh,
+		}}
+	case name == "" && isRootUser(group):
+		// ":root" / ":0" — no user, but an explicit root GROUP. Reporting this
+		// as a plain "no user set" hides the deliberate part: someone wrote the
+		// root group down on purpose, and group root grants access to every
+		// root-group-owned path in the image.
+		return []Finding{{
+			Rule:     "root-user",
+			Title:    "runs in the root group",
+			Detail:   "no user is set and the group is explicitly root (User=" + raw + ")",
+			Severity: SevMedium,
 		}}
 	case name == "":
 		return []Finding{{

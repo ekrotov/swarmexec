@@ -78,6 +78,13 @@ type clusterState struct {
 	// distinguishable.
 	loaded bool
 
+	// fetchErr is the outcome of the MOST RECENT service fetch, kept separately
+	// from err/loaded: a refresh can fail long after the first one succeeded, and
+	// then lastSvcs still holds the previous answer. Views that make a claim
+	// about the cluster need to know the difference between "this is current"
+	// and "this is the last thing we managed to read".
+	fetchErr error
+
 	statsGate *statsGate     // nodes whose agent cannot serve stats, so we stop asking
 	regCache  *registryCache // :latest version / newer-tag resolver
 

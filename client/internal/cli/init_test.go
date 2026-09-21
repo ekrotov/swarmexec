@@ -89,3 +89,32 @@ func TestEnrichAgentError_ExplainsARejectedSecret(t *testing.T) {
 		}
 	}
 }
+
+// The deprecation lever for the raw shared secret has to be reachable from the
+// path operators actually use. It was not: agentServiceSpec had a hard-wired
+// argument list, so the only way to set it was editing the service by hand —
+// and the next `init --force` overwrites the whole spec and drops it again.
+func TestAgentServiceSpec_LegacySecretSwitch(t *testing.T) {
+	args := func(allowLegacy bool) []string {
+		f := &initFlags{image: "reg/agent:1", serviceName: "swarmexec_agent", port: 9443, allowLegacy: allowLegacy}
+		return agentServiceSpec(f, "sec-123").TaskTemplate.ContainerSpec.Args
+	}
+
+	// Default: nothing emitted, so a re-roll produces the same command earlier
+	// versions did and no client is locked out by surprise.
+	for _, a := range args(true) {
+		if strings.Contains(a, "allow-legacy-secret") {
+			t.Errorf("default must not emit the flag, got %q", a)
+		}
+	}
+
+	var found bool
+	for _, a := range args(false) {
+		if a == "-allow-legacy-secret=false" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("--allow-legacy-secret=false must reach the agent command, got %v", args(false))
+	}
+}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -118,7 +119,7 @@ func TestSecurityOverlayTextNeutralisesInjectedTags(t *testing.T) {
 		t.Fatal("test premise broken: both services must be flagged")
 	}
 
-	out := securityOverlayText(2, []resolve.Service{attacker, victim})
+	out := securityOverlayText(securityOverlayState{scanned: 2, flagged: []resolve.Service{attacker, victim}, loaded: true})
 
 	// Every tag the attacker supplied must arrive inert. tview's escape form is
 	// "[" + text + "[]", so the opening bracket is no longer a tag start.
@@ -142,13 +143,60 @@ func TestSecurityOverlayTextNeutralisesInjectedTags(t *testing.T) {
 	}
 }
 
-// The empty and all-clear states must not claim more than they know.
+// The empty and all-clear states must not claim more than they know. A green
+// "no risks" for data that was never read is the one output a security view
+// must never produce: it is indistinguishable from a real all-clear.
 func TestSecurityOverlayTextStatesItsGaps(t *testing.T) {
-	if out := securityOverlayText(0, nil); !strings.Contains(out, "nothing has been scanned") {
+	// Never fetched.
+	out := securityOverlayText(securityOverlayState{})
+	if !strings.Contains(out, "nothing has been scanned") {
 		t.Errorf("no data must not read as an all-clear: %q", out)
 	}
-	out := securityOverlayText(7, nil)
+	if strings.Contains(out, "No security risks identified") {
+		t.Errorf("unscanned state must not contain an all-clear: %q", out)
+	}
+
+	// Never fetched, and we know why — name it.
+	out = securityOverlayText(securityOverlayState{staleErr: errors.New("manager unreachable")})
+	if !strings.Contains(out, "manager unreachable") {
+		t.Errorf("the reason should be shown: %q", out)
+	}
+
+	// Fetched, genuinely empty cluster: "no services" is not "no risks".
+	out = securityOverlayText(securityOverlayState{loaded: true})
+	if strings.Contains(out, "No security risks identified") {
+		t.Errorf("an empty cluster must not read as an all-clear: %q", out)
+	}
+	if !strings.Contains(out, "no services") {
+		t.Errorf("want the empty-cluster wording: %q", out)
+	}
+
+	// Fetched and clean: an all-clear, naming what was checked.
+	out = securityOverlayText(securityOverlayState{scanned: 7, loaded: true})
 	if !strings.Contains(out, "No security risks identified") || !strings.Contains(out, "Checked:") {
 		t.Errorf("an all-clear must name what was checked: %q", out)
+	}
+}
+
+// A refresh that failed after an earlier success leaves the previous answer on
+// screen. Presenting it as current is the subtler half of the same mistake.
+func TestSecurityOverlayTextMarksStaleData(t *testing.T) {
+	st := securityOverlayState{scanned: 3, loaded: true, staleErr: errors.New("manager unreachable")}
+
+	out := securityOverlayText(st)
+	if !strings.Contains(out, "last refresh failed") {
+		t.Errorf("a stale all-clear must be marked: %q", out)
+	}
+	if !strings.Contains(out, "manager unreachable") {
+		t.Errorf("the reason should be shown: %q", out)
+	}
+
+	// Also when there ARE findings — the list is just as stale as the all-clear.
+	svc := swarm.Service{}
+	svc.Spec.Name = "web"
+	svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{User: "root"}
+	st.flagged = []resolve.Service{{Name: "web", Risks: secscan.Scan(svc)}}
+	if out := securityOverlayText(st); !strings.Contains(out, "last refresh failed") {
+		t.Errorf("stale findings must be marked too: %q", out)
 	}
 }

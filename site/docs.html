@@ -409,8 +409,9 @@
         <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
         While a fleet is mixed, <code>legacy_secret: true</code> in the client config
         also sends the raw secret, with the exposure described above. Remove it once the
-        agents are current, and add <code>-allow-legacy-secret=false</code> to the agent
-        so no client can put the credential on the wire by accident.
+        agents are current, then re-run
+        <code>swarmexec init --force --allow-legacy-secret=false</code> so no client can
+        put the credential on the wire by accident.
       </div>
 
       <!-- 7 -->
@@ -504,6 +505,7 @@
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>name for the agent service</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>host port the agent publishes</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>update the service if it already exists</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accept the raw shared secret from clients predating connection-bound auth; pass <code>=false</code> once every client is upgraded</td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>write the client config</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>pass local registry credentials so nodes can pull a private image</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>wait for the agents to come up and report progress</td></tr>

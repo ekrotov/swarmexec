@@ -423,9 +423,9 @@
         <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
         Tant que le parc est mixte, <code>legacy_secret: true</code> dans la configuration
         du client envoie aussi le secret brut, avec l'exposition décrite ci-dessus.
-        Retirez-le dès que les agents sont à jour, et ajoutez
-        <code>-allow-legacy-secret=false</code> à l'agent pour qu'aucun client ne puisse
-        mettre l'identifiant sur le câble par accident.
+        Retirez-le dès que les agents sont à jour, et relancez
+        <code>swarmexec init --force --allow-legacy-secret=false</code> pour qu'aucun client
+        ne puisse mettre l'identifiant sur le câble par accident.
       </div>
 
       <!-- 7 -->
@@ -528,6 +528,7 @@
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nom du service de l'agent</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>port hôte que l'agent publie</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>met à jour le service s'il existe déjà</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accepte le secret brut des clients antérieurs à l'authentification liée à la connexion ; passez <code>=false</code> une fois tous les clients à jour</td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>écrit la configuration client</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>transmet les identifiants de registre locaux pour que les nœuds puissent récupérer une image privée</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>attend que les agents démarrent et signale la progression</td></tr>

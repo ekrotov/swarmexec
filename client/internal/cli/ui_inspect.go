@@ -369,7 +369,12 @@ func (iv *inspectView) copyLine() {
 		return
 	}
 	iv.u.screen.SetClipboard([]byte(txt))
-	clientlog.L().Debug("inspect copy", "text", txt)
+	// Never the text itself. In the raw-JSON view every line of the service
+	// inspect is selectable, including "Env": ["POSTGRES_PASSWORD=hunter2" ],
+	// so logging the row verbatim persists a secret in cleartext to
+	// swarmexec.log — where it outlives the session and travels with any log
+	// collection. The row index and length are enough to trace a copy.
+	clientlog.L().Debug("inspect copy", "row", r, "chars", len([]rune(txt)))
 	iv.setFooter("[green]✓ copied to clipboard[white]")
 }
 

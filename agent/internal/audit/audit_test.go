@@ -14,7 +14,7 @@ import (
 
 func newCapture() (*Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
-	l := New(slog.New(slog.NewJSONHandler(&buf, nil)))
+	l := New(slog.New(slog.NewJSONHandler(&buf, nil)), true)
 	return l, &buf
 }
 
@@ -54,5 +54,28 @@ func TestSessionEnd(t *testing.T) {
 	}
 	if rec["event"] != "session_end" {
 		t.Errorf("event = %v", rec["event"])
+	}
+}
+
+// Every record has to say what the identity field is worth. In shared-secret
+// mode the operator name is whatever the client put in a header — believing it
+// and printing it like a certificate CN invites an accountability claim the
+// trail cannot support.
+func TestNew_TagsIdentityVerification(t *testing.T) {
+	for _, verified := range []bool{true, false} {
+		var buf bytes.Buffer
+		New(slog.New(slog.NewJSONHandler(&buf, nil)), verified).
+			SessionStart("alice", "c1", "svc", []string{"sh"}, true, "1.2.3.4")
+
+		var rec map[string]any
+		if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec); err != nil {
+			t.Fatal(err)
+		}
+		if rec["identity_verified"] != verified {
+			t.Errorf("identity_verified = %v, want %v", rec["identity_verified"], verified)
+		}
+		if rec["identity"] != "alice" {
+			t.Errorf("identity = %v", rec["identity"])
+		}
 	}
 }

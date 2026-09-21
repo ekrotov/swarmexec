@@ -205,3 +205,42 @@ type stubAnalyzer struct{}
 func (stubAnalyzer) Analyze(swarm.Service) []Finding {
 	return []Finding{{Rule: "stub", Title: "stub", Severity: SevLow}}
 }
+
+// ":root" means no user and an explicit root GROUP. Reporting it as a plain
+// "no user set" hid the deliberate part — someone wrote the root group down,
+// and group root reaches every root-group-owned path in the image.
+func TestRootUserAnalyzer_ExplicitRootGroup(t *testing.T) {
+	scan := func(user string) []Finding {
+		s := swarm.Service{}
+		s.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{User: user}
+		return Scan(s)
+	}
+	pick := func(fs []Finding) Finding {
+		for _, f := range fs {
+			if f.Rule == "root-user" {
+				return f
+			}
+		}
+		t.Fatal("no root-user finding")
+		return Finding{}
+	}
+
+	for _, u := range []string{":root", ":0", " : root "} {
+		f := pick(scan(u))
+		if f.Title != "runs in the root group" {
+			t.Errorf("User=%q -> %q, want the root-group finding", u, f.Title)
+		}
+		if f.Severity != SevMedium {
+			t.Errorf("User=%q severity = %v, want medium", u, f.Severity)
+		}
+	}
+
+	// A non-root group with no user stays the plain low-severity note.
+	if f := pick(scan(":app")); f.Title != "no user set" {
+		t.Errorf(`User=":app" -> %q, want "no user set"`, f.Title)
+	}
+	// And an explicit root USER still outranks it.
+	if f := pick(scan("root:root")); f.Title != "runs as root" || f.Severity != SevHigh {
+		t.Errorf(`User="root:root" -> %q/%v`, f.Title, f.Severity)
+	}
+}

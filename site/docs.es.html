@@ -414,9 +414,9 @@
         <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
         Mientras la flota esté mezclada, <code>legacy_secret: true</code> en la
         configuración del cliente envía también el secreto en bruto, con la exposición
-        descrita arriba. Quítalo en cuanto los agentes estén al día, y añade
-        <code>-allow-legacy-secret=false</code> al agente para que ningún cliente pueda
-        poner la credencial en el cable por accidente.
+        descrita arriba. Quítalo en cuanto los agentes estén al día, y vuelve a desplegar con
+        <code>swarmexec init --force --allow-legacy-secret=false</code> para que ningún
+        cliente pueda poner la credencial en el cable por accidente.
       </div>
 
       <!-- 7 -->
@@ -515,6 +515,7 @@
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nombre del servicio del agente</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>puerto de host que publica el agente</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>actualiza el servicio si ya existe</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>acepta el secreto en bruto de clientes anteriores a la autenticación ligada a la conexión; usa <code>=false</code> cuando todos los clientes estén actualizados</td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>escribe la configuración de cliente</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>pasa las credenciales locales de registro para que los nodos puedan descargar una imagen privada</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>espera a que los agentes arranquen e informa del progreso</td></tr>
