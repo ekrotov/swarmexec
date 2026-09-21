@@ -75,7 +75,7 @@ func Run(ctx context.Context, stream Stream, opts Options) (int, error) {
 				err = rerr
 			}
 		}
-		return TransportFailure, fmt.Errorf("start exec: %w", wrapStatus(err))
+		return TransportFailure, fmt.Errorf("start exec: %w", WrapStatus(err))
 	}
 
 	snd := &sender{stream: stream}
@@ -101,7 +101,7 @@ func recvLoop(stream Stream, opts Options) (int, error) {
 			if errors.Is(err, io.EOF) {
 				return TransportFailure, errors.New("stream closed before exit code was received")
 			}
-			return TransportFailure, wrapStatus(err)
+			return TransportFailure, WrapStatus(err)
 		}
 		switch p := msg.Payload.(type) {
 		case *pb.ServerMessage_Stdout:
@@ -188,11 +188,30 @@ func (s *sender) closeSend() error {
 	return s.stream.CloseSend()
 }
 
-// wrapStatus turns a gRPC status error into a readable message while preserving
-// the underlying error for callers that want it.
-func wrapStatus(err error) error {
+// WrapStatus turns a gRPC status error into a readable message — "Unauthenticated:
+// invalid or missing agent secret" rather than grpc's "rpc error: code = ... desc
+// = ..." — while genuinely preserving the original for callers that inspect it.
+//
+// The previous version claimed to preserve it and did not: it built the message
+// with fmt.Errorf("%s: %s", ...), no %w, so the status was flattened into a plain
+// string. Every downstream check then saw codes.Unknown — agentTooOld never
+// matched on these paths, and neither did the v1.17.3 hint that explains a
+// rejected shared secret. Verified live against a not-yet-updated cluster: the
+// operator got the agent's bare "invalid or missing agent secret" and no hint,
+// which is exactly the misdirection that hint exists to prevent.
+func WrapStatus(err error) error {
 	if st, ok := status.FromError(err); ok {
-		return fmt.Errorf("%s: %s", st.Code(), st.Message())
+		return statusError{msg: fmt.Sprintf("%s: %s", st.Code(), st.Message()), err: err}
 	}
 	return err
 }
+
+// statusError carries a human-readable message and still unwraps to the gRPC
+// status, so status.FromError (which uses errors.As) keeps finding the code.
+type statusError struct {
+	msg string
+	err error
+}
+
+func (e statusError) Error() string { return e.msg }
+func (e statusError) Unwrap() error { return e.err }

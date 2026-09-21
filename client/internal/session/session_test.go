@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -188,5 +189,36 @@ func TestSenderNoSendAfterClose(t *testing.T) {
 	}
 	if err := snd.send(&pb.ClientMessage{}); err == nil {
 		t.Error("send after close should fail")
+	}
+}
+
+// The readable message must not cost the status. This used to build the text
+// with fmt.Errorf("%s: %s", …) and no %w, so every downstream status.Code saw
+// Unknown — agentTooOld stopped matching, and so did the hint that explains a
+// rejected shared secret. It was only caught against a real cluster running
+// older agents, because the unit tests all called the classifier directly.
+func TestWrapStatus_KeepsTheCodeInspectable(t *testing.T) {
+	orig := status.Error(codes.Unauthenticated, "invalid or missing agent secret")
+	wrapped := WrapStatus(orig)
+
+	if got := wrapped.Error(); got != "Unauthenticated: invalid or missing agent secret" {
+		t.Errorf("message = %q", got)
+	}
+	if got := status.Code(wrapped); got != codes.Unauthenticated {
+		t.Errorf("status.Code = %v, want Unauthenticated — the code must survive wrapping", got)
+	}
+	// And it must still survive one more layer, which is how callers pass it on.
+	outer := fmt.Errorf("open logs stream: %w", wrapped)
+	if got := status.Code(outer); got != codes.Unauthenticated {
+		t.Errorf("status.Code through an outer wrap = %v, want Unauthenticated", got)
+	}
+}
+
+// A non-status error passes through untouched, so nothing gains a misleading
+// "Unknown:" prefix.
+func TestWrapStatus_LeavesPlainErrorsAlone(t *testing.T) {
+	plain := errors.New("dial tcp: connection refused")
+	if got := WrapStatus(plain); got != plain {
+		t.Errorf("plain error was rewritten: %v", got)
 	}
 }
