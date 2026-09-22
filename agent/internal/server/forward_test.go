@@ -424,8 +424,17 @@ func TestPortForward_BridgesBothDirections(t *testing.T) {
 		t.Errorf("container received %s %q, want data \"ping\"", forwardmux.KindName(f.Kind), f.Payload)
 	}
 
-	stream.queueEOF()
-	_ = mux.conn.Close()
+	// Wait for the payload to arrive before tearing anything down. It travels
+	// the stdcopy demux and two pipes to get here, and killing the sidecar
+	// underneath it drops whatever is still in flight — which is fair for a
+	// sidecar that died, and was a race this test lost about once in fifty runs.
+	waitUntil(t, "the target's payload to reach the client", func() bool {
+		return len(forwardPayload(stream.sentMessages())) == len(payload)
+	})
+
+	// The target closes its end: that, not the client, is what ends the read
+	// direction.
+	mux.send(forwardmux.Frame{Conn: id, Kind: forwardmux.KindClose})
 	<-done
 
 	msgs := stream.sentMessages()
@@ -440,6 +449,53 @@ func TestPortForward_BridgesBothDirections(t *testing.T) {
 	}
 	if m.out.Load() != int64(len(payload)) {
 		t.Errorf("bytes out = %d, want %d", m.out.Load(), len(payload))
+	}
+}
+
+// The half-close case: send the request, shut down the write direction, read
+// the answer — what curl, nc -N and every HTTP/1.0 client do. The client's EOF
+// ends the WRITE direction only. It used to cancel the whole session, so the
+// answer was torn out of the channel while it was still on its way: a `defer
+// cancel()` in the client-reading goroutine, directly under a comment promising
+// to keep reading back.
+func TestPortForward_HalfCloseKeepsReadingBack(t *testing.T) {
+	d := newFakeDocker()
+	srv, _ := forwardTestServer(d, auth.AllowAll{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeForwardStream(ctx)
+	stream.queueStart("target-abc", 8080)
+
+	done := make(chan error, 1)
+	go func() { done <- srv.PortForward(stream) }()
+
+	mux := newMuxSide(t, d.waitAttach())
+	id := mux.acceptOpen()
+
+	stream.queueData([]byte("GET / HTTP/1.0\r\n\r\n"))
+	if f := mux.recv(); f.Kind != forwardmux.KindData {
+		t.Fatalf("container received %s, want the request", forwardmux.KindName(f.Kind))
+	}
+
+	// The client half-closes. The target must be told — and only told.
+	stream.queueEOF()
+	if f := mux.recv(); f.Kind != forwardmux.KindCloseWrite {
+		t.Fatalf("container received %s, want a half-close", forwardmux.KindName(f.Kind))
+	}
+
+	// And the answer, sent after the half-close, must still reach the client.
+	answer := []byte("HTTP/1.0 200 OK\r\n\r\nhello")
+	mux.send(forwardmux.Frame{Conn: id, Kind: forwardmux.KindData, Payload: answer})
+	waitUntil(t, "the answer to reach the client", func() bool {
+		return string(forwardPayload(stream.sentMessages())) == string(answer)
+	})
+
+	mux.send(forwardmux.Frame{Conn: id, Kind: forwardmux.KindClose})
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the forward did not end when the target closed")
 	}
 }
 
