@@ -295,6 +295,9 @@ func (u *ui) activateCluster(c *clusterState) {
 	if c.ctx == nil || c.ctx.Err() != nil {
 		c.ctx, c.cancel = context.WithCancel(u.runCtx)
 	}
+	// One topology watcher per activation, on this cluster's context — so it
+	// dies with the switch away, exactly like the polling does.
+	go u.watchTopology(c.ctx, c)
 	u.activeCtx = c.name
 	u.restorePos = true
 
