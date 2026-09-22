@@ -991,9 +991,16 @@ func (u *ui) run(keyWarnings []string) error {
 	u.setTab("containers")
 	u.refreshCluster()
 
-	// Poll the swarm so the container tree notices background changes (rolling
-	// updates, restarts, scaling) on its own. The client learns topology from the
-	// manager; the agents are node-local and cannot push such events.
+	// React to the manager's own account of what changed, so the tree follows a
+	// rolling update or a scaled service in well under a second instead of
+	// somewhere within the poll interval. Started here for the cluster the UI
+	// opened on; every later cluster gets its own in activateCluster.
+	go u.watchTopology(u.ctx, u.clusterState)
+
+	// And poll anyway. The client learns topology from the manager; the agents
+	// are node-local and cannot push such events. This is the net under the
+	// event stream, not a leftover — see ui_events.go for why removing it would
+	// turn a dropped connection into a tree that silently stops updating.
 	go func() {
 		t := time.NewTicker(treeRefreshInterval)
 		defer t.Stop()
