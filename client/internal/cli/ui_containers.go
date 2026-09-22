@@ -27,18 +27,23 @@ func (u *ui) matchesFilter(c resolve.Candidate) bool {
 		strings.Contains(strings.ToLower(c.NodeName), q)
 }
 
+// versionSuffixFor is the "↑ 2.12.0" annotation for a service, or "". One
+// helper because the width calculation and the row rendering must agree: when
+// they disagreed, the suffix overflowed the cell it was measured out of.
+func (u *ui) versionSuffixFor(s resolve.Service) string {
+	if u.regCache == nil {
+		return ""
+	}
+	return versionSuffix(u.regCache.status(u.ctx, s.ImageRef))
+}
+
 func (u *ui) markService(n *tview.TreeNode) {
-	ctx := u.ctx
 	ref, ok := n.GetReference().(svcRef)
 	if !ok {
 		return
 	}
 	svc := u.svcByName[ref.name]
-	suffix := ""
-	if u.regCache != nil {
-		suffix = versionSuffix(u.regCache.status(ctx, svc.ImageRef))
-	}
-	row := serviceRow(svc, u.svcCols, suffix, u.svcUsageBadge(ref.name))
+	row := serviceRow(svc, u.svcCols, u.versionSuffixFor(svc), u.svcUsageBadge(ref.name))
 	switch {
 	case len(n.GetChildren()) == 0:
 		n.SetText("  " + row)
@@ -95,27 +100,39 @@ func (u *ui) renderContainers() {
 		}
 	}
 
-	// Column widths for the docker service ls-style service rows, computed
-	// over every service so the alignment stays stable while filtering.
-	u.svcCols = svcColumns{}
+	// Column widths for the docker service ls-style service rows, computed over
+	// every service so the alignment stays stable while filtering — and merged
+	// into the widths already in use, so it stays stable over time too. Only an
+	// explicit reload starts over.
+	fresh := svcColumns{}
+	if u.resetCols {
+		u.svcCols = svcColumns{}
+		u.resetCols = false
+	}
 	u.svcByName = make(map[string]resolve.Service, len(u.lastSvcs))
 	// Rebuilt with the tree, so a container that has gone leaves no entry behind.
 	u.leafBase = make(map[string]string, len(u.lastCands))
 	for _, s := range u.lastSvcs {
 		u.svcByName[s.Name] = s
-		if w := len(orDash(s.Name)); w > u.svcCols.name {
-			u.svcCols.name = w
+		if w := len(orDash(s.Name)); w > fresh.name {
+			fresh.name = w
 		}
-		if w := len(orDash(s.Mode)); w > u.svcCols.mode {
-			u.svcCols.mode = w
+		if w := len(orDash(s.Mode)); w > fresh.mode {
+			fresh.mode = w
 		}
-		if w := len(fmt.Sprintf("%d/%d", s.Running, s.Desired)); w > u.svcCols.repl {
-			u.svcCols.repl = w
+		if w := len(fmt.Sprintf("%d/%d", s.Running, s.Desired)); w > fresh.repl {
+			fresh.repl = w
 		}
-		if w := len(s.Image); w > u.svcCols.image {
-			u.svcCols.image = w
+		// The image cell renders image+suffix (the "↑ 2.12.0" annotation), so the
+		// width has to measure both. Measuring only the image let the suffix
+		// overflow its cell and shove that row's ports sideways — and since the
+		// registry cache re-checks a failed lookup every minute, the suffix could
+		// appear and vanish on its own.
+		if w := len(s.Image) + len(u.versionSuffixFor(s)); w > fresh.image {
+			fresh.image = w
 		}
 	}
+	u.svcCols.growTo(fresh)
 
 	q := strings.ToLower(strings.TrimSpace(u.filter))
 	var firstSvc, targetSvc, targetLeaf, targetStack *tview.TreeNode
@@ -378,11 +395,16 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 }
 
 func (u *ui) loadContainersSync() {
+	u.resetCols = true
 	svcs, cands, err := u.fetchContainers()
 	u.applyContainers(svcs, cands, err)
 }
 
+// loadContainers is the EXPLICIT reload: the refresh key, a removed service, a
+// deployed stack, a closed terminal, a cluster becoming visible. Those may
+// narrow the columns again; the background poll may not.
 func (u *ui) loadContainers() {
+	u.resetCols = true
 	gen := u.generation()
 	go func() {
 		svcs, cands, err := u.fetchContainers()
