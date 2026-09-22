@@ -25,17 +25,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Agent_ListContainers_FullMethodName = "/swarmexec.Agent/ListContainers"
-	Agent_Exec_FullMethodName           = "/swarmexec.Agent/Exec"
-	Agent_Logs_FullMethodName           = "/swarmexec.Agent/Logs"
-	Agent_ListVolumes_FullMethodName    = "/swarmexec.Agent/ListVolumes"
-	Agent_RemoveVolume_FullMethodName   = "/swarmexec.Agent/RemoveVolume"
-	Agent_CreateVolume_FullMethodName   = "/swarmexec.Agent/CreateVolume"
-	Agent_PortForward_FullMethodName    = "/swarmexec.Agent/PortForward"
-	Agent_Stats_FullMethodName          = "/swarmexec.Agent/Stats"
-	Agent_ListImages_FullMethodName     = "/swarmexec.Agent/ListImages"
-	Agent_PruneImages_FullMethodName    = "/swarmexec.Agent/PruneImages"
-	Agent_Version_FullMethodName        = "/swarmexec.Agent/Version"
+	Agent_ListContainers_FullMethodName       = "/swarmexec.Agent/ListContainers"
+	Agent_Exec_FullMethodName                 = "/swarmexec.Agent/Exec"
+	Agent_Logs_FullMethodName                 = "/swarmexec.Agent/Logs"
+	Agent_WatchContainerEvents_FullMethodName = "/swarmexec.Agent/WatchContainerEvents"
+	Agent_ListVolumes_FullMethodName          = "/swarmexec.Agent/ListVolumes"
+	Agent_RemoveVolume_FullMethodName         = "/swarmexec.Agent/RemoveVolume"
+	Agent_CreateVolume_FullMethodName         = "/swarmexec.Agent/CreateVolume"
+	Agent_PortForward_FullMethodName          = "/swarmexec.Agent/PortForward"
+	Agent_Stats_FullMethodName                = "/swarmexec.Agent/Stats"
+	Agent_ListImages_FullMethodName           = "/swarmexec.Agent/ListImages"
+	Agent_PruneImages_FullMethodName          = "/swarmexec.Agent/PruneImages"
+	Agent_Version_FullMethodName              = "/swarmexec.Agent/Version"
 )
 
 // AgentClient is the client API for Agent service.
@@ -51,6 +52,16 @@ type AgentClient interface {
 	// logs on its own node and forwards them as LogChunks until the request is
 	// satisfied (or, with follow=true, until the client cancels the stream).
 	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogChunk], error)
+	// Stream one container's runtime events from THIS node: health transitions,
+	// OOM kills, exits with their code, starts and restarts. The manager carries
+	// none of these — a task reads "running" while its container fails every
+	// probe — so they can only come from the node.
+	//
+	// Deliberately ONE container, not the node's stream: the client opens this
+	// over the connection it already holds for the view the operator has open, so
+	// there is no fan-out, and nothing about the node's other containers (swarm
+	// or not) crosses the wire.
+	WatchContainerEvents(ctx context.Context, in *WatchContainerEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ContainerEvent], error)
 	// List volumes on THIS node. Swarm volumes are node-local, so the cli queries
 	// every node and aggregates the results.
 	ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error)
@@ -135,6 +146,25 @@ func (c *agentClient) Logs(ctx context.Context, in *LogsRequest, opts ...grpc.Ca
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_LogsClient = grpc.ServerStreamingClient[LogChunk]
 
+func (c *agentClient) WatchContainerEvents(ctx context.Context, in *WatchContainerEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ContainerEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[2], Agent_WatchContainerEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchContainerEventsRequest, ContainerEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_WatchContainerEventsClient = grpc.ServerStreamingClient[ContainerEvent]
+
 func (c *agentClient) ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListVolumesResponse)
@@ -167,7 +197,7 @@ func (c *agentClient) CreateVolume(ctx context.Context, in *CreateVolumeRequest,
 
 func (c *agentClient) PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardClientMessage, ForwardServerMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[2], Agent_PortForward_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[3], Agent_PortForward_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -231,6 +261,16 @@ type AgentServer interface {
 	// logs on its own node and forwards them as LogChunks until the request is
 	// satisfied (or, with follow=true, until the client cancels the stream).
 	Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error
+	// Stream one container's runtime events from THIS node: health transitions,
+	// OOM kills, exits with their code, starts and restarts. The manager carries
+	// none of these — a task reads "running" while its container fails every
+	// probe — so they can only come from the node.
+	//
+	// Deliberately ONE container, not the node's stream: the client opens this
+	// over the connection it already holds for the view the operator has open, so
+	// there is no fan-out, and nothing about the node's other containers (swarm
+	// or not) crosses the wire.
+	WatchContainerEvents(*WatchContainerEventsRequest, grpc.ServerStreamingServer[ContainerEvent]) error
 	// List volumes on THIS node. Swarm volumes are node-local, so the cli queries
 	// every node and aggregates the results.
 	ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error)
@@ -281,6 +321,9 @@ func (UnimplementedAgentServer) Exec(grpc.BidiStreamingServer[ClientMessage, Ser
 }
 func (UnimplementedAgentServer) Logs(*LogsRequest, grpc.ServerStreamingServer[LogChunk]) error {
 	return status.Errorf(codes.Unimplemented, "method Logs not implemented")
+}
+func (UnimplementedAgentServer) WatchContainerEvents(*WatchContainerEventsRequest, grpc.ServerStreamingServer[ContainerEvent]) error {
+	return status.Errorf(codes.Unimplemented, "method WatchContainerEvents not implemented")
 }
 func (UnimplementedAgentServer) ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListVolumes not implemented")
@@ -362,6 +405,17 @@ func _Agent_Logs_Handler(srv interface{}, stream grpc.ServerStream) error {
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_LogsServer = grpc.ServerStreamingServer[LogChunk]
+
+func _Agent_WatchContainerEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchContainerEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServer).WatchContainerEvents(m, &grpc.GenericServerStream[WatchContainerEventsRequest, ContainerEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_WatchContainerEventsServer = grpc.ServerStreamingServer[ContainerEvent]
 
 func _Agent_ListVolumes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListVolumesRequest)
@@ -546,6 +600,11 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Logs",
 			Handler:       _Agent_Logs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchContainerEvents",
+			Handler:       _Agent_WatchContainerEvents_Handler,
 			ServerStreams: true,
 		},
 		{

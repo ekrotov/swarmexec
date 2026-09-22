@@ -20,6 +20,17 @@ service Agent {
   // satisfied (or, with follow=true, until the client cancels the stream).
   rpc Logs(LogsRequest) returns (stream LogChunk);
 
+  // Stream one container's runtime events from THIS node: health transitions,
+  // OOM kills, exits with their code, starts and restarts. The manager carries
+  // none of these — a task reads "running" while its container fails every
+  // probe — so they can only come from the node.
+  //
+  // Deliberately ONE container, not the node's stream: the client opens this
+  // over the connection it already holds for the view the operator has open, so
+  // there is no fan-out, and nothing about the node's other containers (swarm
+  // or not) crosses the wire.
+  rpc WatchContainerEvents(WatchContainerEventsRequest) returns (stream ContainerEvent);
+
   // List volumes on THIS node. Swarm volumes are node-local, so the cli queries
   // every node and aggregates the results.
   rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
@@ -117,6 +128,21 @@ message LogsRequest {
   uint32 since_seconds = 5;  // only logs newer than N seconds ago; 0 = no limit
 }
 
+message WatchContainerEventsRequest {
+  string container_id = 1;  // full container ID to watch; exactly one
+}
+// ContainerEvent carries a typed SUBSET of a Docker event, not the event.
+// Docker attaches the container's full label set to every event, and labels are
+// operator-supplied strings that routinely hold things nobody meant to stream;
+// forwarding them wholesale would make this RPC an exfiltration path for
+// whatever a deployer happened to put in a label.
+message ContainerEvent {
+  string action = 1;          // raw docker action: "die", "oom", "start", "health_status: healthy"
+  int64 time_unix_nano = 2;   // when the daemon recorded it
+  int32 exit_code = 3;        // only meaningful when action is "die"; 0 otherwise
+  string health = 4;          // healthy|unhealthy|starting — only for health_status actions
+  string error = 5;           // terminal error; the stream ends after this
+}
 message LogChunk {
   oneof payload {
     bytes stdout = 1;  // stdout bytes (also carries all output for TTY containers)

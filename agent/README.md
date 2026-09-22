@@ -135,6 +135,10 @@ someone forgot. Set either to `0` to turn the check off — which is what they
 used to default to, so a forgotten exec held a Docker attach for as long as the
 agent ran.
 
+Container-event watches count against `-max-streams` too. One is held open for
+as long as an operator has a log view open, so exempting them would be a quiet
+way around the cap.
+
 Logs and port-forwards deliberately have **no** maximum lifetime: following a
 log or holding a forward open for hours is the normal way to use them, and the
 concurrency caps already bound the damage.

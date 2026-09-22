@@ -147,6 +147,33 @@ func (l *Logger) ImagePrune(identity string, all bool, reclaimed int64, deleted 
 	)
 }
 
+// EventWatchStart records the beginning of a container event watch. The watch
+// itself reveals nothing an operator could not see with logs on the same
+// container, but it is a long-lived subscription to a container's lifecycle and
+// belongs in the trail like every other stream.
+func (l *Logger) EventWatchStart(identity, containerID, service, clientAddr string) {
+	l.log.Info("event_watch_start",
+		"event", "event_watch_start",
+		"identity", identity,
+		"container_id", containerID,
+		"service", service,
+		"client_addr", clientAddr,
+	)
+}
+
+// EventWatchEnd records the end of a container event watch. Only the COUNT of
+// events is recorded, never their content: the audit log is not a second copy
+// of the node's container lifecycle.
+func (l *Logger) EventWatchEnd(identity, containerID string, dur time.Duration, events int64) {
+	l.log.Info("event_watch_end",
+		"event", "event_watch_end",
+		"identity", identity,
+		"container_id", containerID,
+		"duration_ms", dur.Milliseconds(),
+		"events", events,
+	)
+}
+
 // ContainerList records an enumeration of the node's containers.
 //
 // Discovery is the one thing an attacker needs before anything else: container
