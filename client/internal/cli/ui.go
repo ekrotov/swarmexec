@@ -2028,6 +2028,7 @@ func (u *ui) showHelp() {
 	sec("Log view (`)")
 	line("f", "follow on/off")
 	line("F", "cycle format")
+	line("a", "auto-detect format")
 	line("l", "cycle min level")
 	line("/", "filter message")
 	line("↑/↓", "scroll")

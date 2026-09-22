@@ -8,19 +8,30 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"sync"
+	"time"
 
 	"swarmexec/client/internal/logfmt"
 )
 
+// logFormatAuto reports whether a configured format name asks for content
+// detection rather than naming a format. It is answered separately from
+// buildLogFilter because what "auto" resolves to is not known until lines have
+// arrived: until then the stream is parsed by the default, exactly as before.
+func logFormatAuto(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), logfmt.AutoName)
+}
+
 // buildLogFilter resolves a format name, min-level and grep into a Format and
-// Filter, validating each. An empty formatName yields the default format.
+// Filter, validating each. An empty formatName — or "auto", whose verdict comes
+// later from the content — yields the default format.
 func buildLogFilter(formatName, minLevel, grep string) (logfmt.Format, logfmt.Filter, error) {
 	format := logfmt.DefaultFormat()
-	if formatName != "" {
+	if formatName != "" && !logFormatAuto(formatName) {
 		f, ok := logfmt.ByName(formatName)
 		if !ok {
-			return nil, logfmt.Filter{}, fmt.Errorf("unknown log format %q (want: classic, json, logfmt, gelf, raw)", formatName)
+			return nil, logfmt.Filter{}, fmt.Errorf("unknown log format %q (want: auto, classic, json, logfmt, gelf, raw)", formatName)
 		}
 		format = f
 	}
@@ -52,6 +63,24 @@ func filteringActive(format logfmt.Format, filter logfmt.Filter) bool {
 // the lines the Filter rejects, and writes the rendered survivors to dst. It
 // buffers partial lines across writes. Shared by the `logs` command and the TUI
 // log view.
+// Auto-detection holds the first lines back until the content says what they
+// are. Emitting them through the default format and switching afterwards would
+// print one stream in two shapes — and the lines most worth reading correctly
+// are the first ones, which is where the error that made someone open the log
+// usually is.
+const (
+	// autoHoldLines is the most lines held while undecided. Reaching it means
+	// the stream is not one the detector recognises; holding more would only
+	// delay a log it is never going to explain.
+	autoHoldLines = 40
+)
+
+// autoHoldFor bounds the wait in time as well as in lines, because a stream
+// that goes quiet after two lines would otherwise hold them forever. A log
+// nobody can see is worse than one parsed plainly. A var so a test can stop
+// waiting a real second for it.
+var autoHoldFor = time.Second
+
 type filterWriter struct {
 	dst    io.Writer
 	format logfmt.Format
@@ -60,6 +89,20 @@ type filterWriter struct {
 
 	mu  sync.Mutex
 	buf []byte
+
+	// auto is set while the format is still being detected; held carries the
+	// lines that arrived meanwhile, and timer bounds how long they wait.
+	auto  bool
+	held  []string
+	timer *time.Timer
+}
+
+// detectFormat arms content detection: the writer holds its first lines, picks
+// the format they are in, and emits everything through it.
+func (w *filterWriter) detectFormat() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.auto = true
 }
 
 func newFilterWriter(dst io.Writer, f logfmt.Format, flt logfmt.Filter, render func(logfmt.Format, logfmt.Entry) string) *filterWriter {
@@ -85,19 +128,67 @@ func (w *filterWriter) Write(p []byte) (int, error) {
 }
 
 // Flush renders any buffered partial line (a final line without a trailing
-// newline). Call it once after the stream ends.
+// newline) and releases anything detection is still holding. Call it once after
+// the stream ends.
 func (w *filterWriter) Flush() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if len(w.buf) == 0 {
-		return
+	if len(w.buf) > 0 {
+		line := string(w.buf)
+		w.buf = nil
+		_ = w.emit(line)
 	}
-	line := string(w.buf)
-	w.buf = nil
-	_ = w.emit(line)
+	if w.auto {
+		w.decideLocked()
+	}
 }
 
+// emit renders one line, or holds it while the format is still being detected.
+// Caller holds mu.
 func (w *filterWriter) emit(line string) error {
+	if w.auto {
+		w.held = append(w.held, line)
+		if _, ok := logfmt.Detect(w.held); ok || len(w.held) >= autoHoldLines {
+			return w.decideLocked()
+		}
+		if w.timer == nil {
+			w.timer = time.AfterFunc(autoHoldFor, w.decideAfterWait)
+		}
+		return nil
+	}
+	return w.write(line)
+}
+
+// decideLocked settles the format from whatever has arrived and releases the
+// held lines. An undecided sample keeps the default, which is what the stream
+// would have been parsed as anyway. Caller holds mu.
+func (w *filterWriter) decideLocked() error {
+	f, _ := logfmt.Detect(w.held)
+	w.format = f
+	w.auto = false
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	held := w.held
+	w.held = nil
+	for _, l := range held {
+		if err := w.write(l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *filterWriter) decideAfterWait() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.auto {
+		_ = w.decideLocked()
+	}
+}
+
+func (w *filterWriter) write(line string) error {
 	e := w.format.Parse(line)
 	if !w.filter.Match(e) {
 		return nil
