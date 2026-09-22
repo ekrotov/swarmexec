@@ -79,11 +79,32 @@ That is tolerable for a debugging tool and invisible for a long-lived connection
 but a browser opening six parallel connections pays it six times, and a client
 with a connection pool pays it per pooled connection.
 
-**Start with one sidecar per connection.** It reuses the existing streaming
-machinery almost entirely and is the smallest correct thing. If the latency
-proves annoying in practice, the upgrade path is one sidecar per *forward
-session* speaking a small framed multiplexing protocol over its stdio — a known,
-contained change that does not affect the wire protocol between cli and agent.
+**Started with one sidecar per connection.** It reused the existing streaming
+machinery almost entirely and was the smallest correct thing.
+
+**Now one sidecar per forward** (`agent/internal/server/forwardmux.go`,
+`internal/forwardmux`). The container start is paid once per (container, port)
+rather than once per TCP connection, and the sidecar lingers for a couple of
+minutes after its last connection so a browser reload or a reconnecting pool
+does not pay it again. As predicted, the gRPC protocol between cli and agent is
+untouched — still one stream per TCP connection; only what the agent hangs that
+stream on changed.
+
+Three consequences worth knowing:
+
+- **The sidecar's stdout carries frames, not payload.** There are now two
+  framing layers on this path: docker's stdcopy separating stdout from stderr,
+  and ours separating the connections inside stdout. Both sides call the same
+  codec so they cannot drift.
+- **Half-close needs its own frame.** Closing the stdio would end every
+  connection on the sidecar, not one.
+- **Connections on one forward share a writer.** A target that stops reading
+  applies backpressure to the others on the same sidecar — head-of-line
+  blocking that the per-connection design did not have. Accepted deliberately:
+  per-connection flow control is a much larger protocol, and a forward is
+  normally a handful of connections to one service. The writer is a goroutine
+  with a bounded queue rather than a mutex, so a wedged sidecar costs its own
+  connections and never the agent.
 
 ## 4. Wire protocol
 

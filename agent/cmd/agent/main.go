@@ -43,7 +43,16 @@ func main() {
 
 func run(args []string) error {
 	// Sidecar mode short-circuits everything below: a forward sidecar has no
-	// docker socket, no secrets and no listener — it only pipes one connection.
+	// docker socket, no secrets and no listener — it only moves bytes.
+	//
+	// Mux mode first: it is what the agent asks for now, and a binary that
+	// understands both must not mistake one for the other.
+	if addr, ok := forwardMuxTarget(args); ok {
+		if err := runForwardMuxSidecar(addr); err != nil {
+			os.Exit(1)
+		}
+		return nil
+	}
 	if addr, ok := forwardTarget(args); ok {
 		if err := runForwardSidecar(addr); err != nil {
 			// The control line on stderr already reported the reason to the

@@ -90,7 +90,7 @@ build and protocol version.
 | `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` disables) | per-session max duration |
 | `-allow-legacy-secret` | `SWARMEXEC_ALLOW_LEGACY_SECRET` | `true` | accept the raw shared secret from pre-binding clients |
 | `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent exec/logs/port-forward streams; negative = unlimited |
-| `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers; negative = unlimited |
+| `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers (one per forward, not per connection); negative = unlimited |
 | `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |
@@ -121,8 +121,10 @@ for blast radius, not rationing: a person driving a terminal holds a handful of
 streams, and a busy TUI with several forwards and a log follow stays far below
 the caps.
 
-They matter because **every port-forward connection creates a container** on the
-node. Without a cap, a client that only ever spoke the protocol correctly could
+They matter because a port-forward creates a **container** on the node. One per
+forward — that is, per target container and port — shared by every TCP
+connection through it, and kept for a couple of minutes after the last one so a
+reconnecting client does not pay the start again. Without a cap, a client that only ever spoke the protocol correctly could
 open streams in a loop and exhaust the node's PIDs and memory, taking down every
 Swarm workload sharing that machine. Over the cap the agent answers
 `ResourceExhausted` and names the flag to raise — it refuses rather than queues,

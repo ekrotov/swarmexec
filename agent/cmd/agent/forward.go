@@ -22,18 +22,26 @@ const forwardFlag = "-forward-to"
 // nothing is listening behind a firewall rule, not a slow network.
 const forwardDialTimeout = 10 * time.Second
 
-// forwardTarget returns the address to forward to when args select sidecar mode,
-// accepting both "-forward-to addr" and "-forward-to=addr".
+// forwardTarget returns the address to forward to when args select
+// single-connection sidecar mode.
 func forwardTarget(args []string) (string, bool) {
+	return flagValue(args, forwardFlag)
+}
+
+// flagValue finds "name value" or "name=value" in args. Shared by both sidecar
+// modes; the presence of the flag is reported separately from its value so an
+// empty one is a reported error rather than "not in sidecar mode", which would
+// silently start a second agent.
+func flagValue(args []string, name string) (string, bool) {
 	for i, a := range args {
 		switch {
-		case a == forwardFlag:
+		case a == name:
 			if i+1 < len(args) {
 				return args[i+1], true
 			}
-			return "", true // present but empty; runForward reports it
-		case len(a) > len(forwardFlag)+1 && a[:len(forwardFlag)+1] == forwardFlag+"=":
-			return a[len(forwardFlag)+1:], true
+			return "", true
+		case len(a) > len(name)+1 && a[:len(name)+1] == name+"=":
+			return a[len(name)+1:], true
 		}
 	}
 	return "", false

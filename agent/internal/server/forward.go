@@ -28,8 +28,13 @@ import (
 )
 
 const (
-	// forwardLabel marks sidecar containers so a restarted agent can sweep the
-	// ones its predecessor leaked, and so they are obvious in `docker ps`.
+	// forwardLabel marks sidecar containers so they are obvious in `docker ps`.
+	//
+	// This comment used to also claim that a restarted agent sweeps the ones its
+	// predecessor leaked. No such sweep exists anywhere in the code — it was a
+	// description of an intention, and it read as a guarantee. Sidecars are
+	// removed on teardown and again on graceful shutdown; a killed agent can
+	// still leak one per forward, and the label is how an operator finds those.
 	forwardLabel = "swarmexec.role"
 	forwardValue = "port-forward"
 
@@ -215,8 +220,14 @@ func forwardStatus(err error) error {
 // openForwardChannel reaches the target port. It reports whether a sidecar was
 // used so the audit record can distinguish the two paths.
 func (s *Server) openForwardChannel(ctx context.Context, containerID string, port uint32) (forwardChannel, bool, error) {
-	ch, err := s.openSidecarChannel(ctx, containerID, port)
-	return ch, true, err
+	// One sidecar per (container, port), shared by every connection of that
+	// forward — so the ~300 ms container start is paid once per forward instead
+	// of once per TCP connection. See forwardmux.go.
+	c, err := s.muxes.openConn(ctx, s, containerID, port)
+	if err != nil {
+		return nil, true, err
+	}
+	return c, true, nil
 }
 
 // sidecarChannel bridges to a container joined to the target's network
@@ -256,6 +267,11 @@ func (c *sidecarChannel) CloseWrite() {
 		c.log.Debug("sidecar close-write failed", "sidecar", c.id, "err", err)
 	}
 }
+
+// Read consumes the sidecar's stdout, already separated from its stderr by the
+// stdcopy demux. In mux mode those bytes are FRAMES, not payload — the reader
+// is internal/forwardmux, not a copier.
+func (c *sidecarChannel) Read(p []byte) (int, error) { return c.stdoutR.Read(p) }
 
 func (c *sidecarChannel) CopyTo(w io.Writer) error {
 	_, err := io.Copy(w, c.stdoutR)
@@ -328,8 +344,11 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 	defer cancel()
 
 	cfg := &container.Config{
-		Image:        image,
-		Cmd:          []string{"-forward-to", fmt.Sprintf("127.0.0.1:%d", port)},
+		Image: image,
+		// Mux mode: this one container serves every connection of the forward.
+		// Its stdout therefore carries FRAMES, not payload (internal/forwardmux)
+		// — the single most important thing to remember on this path.
+		Cmd:          []string{"-forward-mux-to", fmt.Sprintf("127.0.0.1:%d", port)},
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
@@ -429,7 +448,7 @@ func (w *sidecarControl) Write(p []byte) (int, error) {
 		w.once.Do(func() {
 			reported = true
 			switch {
-			case line == "ok":
+			case line == "ok", line == "mux ok":
 				w.ready <- nil
 			case strings.HasPrefix(line, "error: "):
 				w.ready <- errors.New(strings.TrimPrefix(line, "error: "))
