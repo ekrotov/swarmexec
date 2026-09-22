@@ -152,10 +152,13 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	// Only in the single-container view. The service view already holds one log
 	// stream per replica; a second stream each would double that for a signal
 	// that is mostly noise when it arrives from one of fifty containers.
-	go watchContainerEvents(lctx, cfg, ep, f.connectTimeout, lv.addNote)
+	// Buffered by one: the follower only ever needs to know THAT something
+	// happened, not how often.
+	wake := make(chan struct{}, 1)
+	go watchContainerEvents(lctx, cfg, ep, f.connectTimeout, lv.addNote, wake)
 	go func() {
 		lerr := streamServiceLogs(lctx, cfg, r, target, ep,
-			logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},
+			logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout, wake: wake},
 			&logIngest{v: lv}, &logIngest{v: lv, stderr: true}, lv.addNote)
 		if lerr != nil && lctx.Err() == nil {
 			app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })

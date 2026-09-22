@@ -57,9 +57,23 @@ func newUICmd(g *globalFlags) *cobra.Command {
 //     the operator started, and killing them for looking at another cluster is
 //     the behaviour this replaces.
 //
-// treeRefreshInterval is how often the UI re-polls the swarm so the container
-// tree reflects background changes (rolling updates, restarts, scaling).
-const treeRefreshInterval = 10 * time.Second
+// How often the UI re-polls the swarm so the container tree reflects background
+// changes (rolling updates, restarts, scaling).
+//
+// Two rates, chosen by whether the manager's event stream is actually feeding
+// us (see ui_events.go). With events flowing the poll is only a safety net and
+// a third of the manager traffic is enough; without them it is the sole
+// mechanism and has to stay quick.
+//
+// The distinction is not decoration. A dropped event stream is easy to detect —
+// but one whose TCP connection dies silently is not, because the Docker events
+// endpoint sends nothing while idle. That is why the watcher re-subscribes on a
+// timer rather than trusting a connection that has merely not complained: the
+// "events are live" answer is never older than topologyResubscribe.
+const (
+	treeRefreshFast = 10 * time.Second
+	treeRefreshSlow = 30 * time.Second
+)
 
 // listEntryAction is an optional per-entry action a staged list editor exposes:
 // pressing key on the selected entry closes the editor and runs the action with
@@ -1002,13 +1016,20 @@ func (u *ui) run(keyWarnings []string) error {
 	// event stream, not a leftover — see ui_events.go for why removing it would
 	// turn a dropped connection into a tree that silently stops updating.
 	go func() {
-		t := time.NewTicker(treeRefreshInterval)
+		t := time.NewTicker(treeRefreshFast)
 		defer t.Stop()
+		rate := treeRefreshFast
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				// Re-rated on each tick rather than on a change, so a stream
+				// that dies takes at most one slow interval to be noticed.
+				if want := u.pollInterval(); want != rate {
+					rate = want
+					t.Reset(rate)
+				}
 				u.autoRefreshContainers()
 				// Usage rides the same tick but on its own goroutine, so a slow or
 				// unreachable agent delays only the badges, never the tree.

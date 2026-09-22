@@ -13,24 +13,31 @@ import (
 	"swarmexec/client/internal/clientlog"
 )
 
-// The tree has always learned about background changes by re-listing every
-// treeRefreshInterval. That is correct and slow: a rolling update, a scaled
+// The tree has always learned about background changes by re-listing on a
+// timer. That is correct and slow: a rolling update, a scaled
 // service or a removed stack shows up somewhere between instantly and ten
 // seconds later, and the operator cannot tell which.
 //
 // The manager already knows the moment it happens, so this watches its event
 // stream and asks for the same re-list as soon as the swarm's shape changes.
 //
-// The poll STAYS, unchanged, and that is a deliberate refusal to do what the
-// plan said ("replaces the 10s poll"). A silently dead event stream is not
-// detectable from here: the Docker events endpoint sends nothing while idle, so
-// an ssh tunnel or NAT that drops the connection produces a read that blocks
-// forever instead of an error. The watcher would look alive and be deaf, and
-// with the poll removed the tree would simply stop updating — a worse failure
-// than the one being fixed, and a silent one. Events are therefore a latency
-// improvement layered on a mechanism that still works when they fail.
-// Lengthening the poll once the stream has proven itself in production is a
-// separate, measurable change.
+// The poll STAYS — the plan said "replaces the 10s poll" and that would be
+// wrong. A silently dead event stream is not detectable by waiting: the Docker
+// events endpoint sends nothing while idle, so an ssh tunnel or NAT dropping
+// the connection produces a read that blocks forever instead of an error. The
+// watcher would look alive and be deaf, and with the poll removed the tree
+// would simply stop updating — a worse failure than the one being fixed, and a
+// silent one.
+//
+// What the poll does instead is change RATE: treeRefreshSlow while events are
+// live, treeRefreshFast when they are not. That makes the saving conditional on
+// the thing that earns it, so a cluster where the stream never works is no
+// worse off than before.
+//
+// "Live" has to mean something a dead connection cannot claim, which is why the
+// watcher re-subscribes every topologyResubscribe regardless of how healthy the
+// stream looks. A silent death then costs at most one such window, and the
+// liveness flag is never older than that.
 const (
 	// topologyDebounce coalesces a burst into one re-list. A rolling update
 	// emits an event per state transition per task; without this, a ten-replica
@@ -48,6 +55,13 @@ const (
 	// matter (the poll covers the gap anyway).
 	topologyRetryMin = 1 * time.Second
 	topologyRetryMax = 30 * time.Second
+
+	// topologyResubscribe recycles a healthy-looking subscription. Nothing about
+	// the connection tells us it still works — an idle event stream and a dead
+	// one look identical — so the only honest answer is to keep proving it. The
+	// cost is one cheap HTTP request every few minutes; the benefit is that
+	// "events are live" is a measurement rather than an assumption.
+	topologyResubscribe = 4 * time.Minute
 )
 
 // topologyTiming is the coalescing behaviour, injectable so the tests can drive
@@ -82,10 +96,22 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
 
 	backoff := topologyRetryMin
 	for ctx.Err() == nil {
-		connected := u.streamTopology(ctx, c, f)
+		// Bounded, so a connection that died without saying so is replaced
+		// instead of being trusted forever.
+		sctx, scancel := context.WithTimeout(ctx, topologyResubscribe)
+		connected := u.streamTopology(sctx, c, f)
+		expired := sctx.Err() != nil && ctx.Err() == nil
+		scancel()
 		if ctx.Err() != nil {
 			return
 		}
+		if expired {
+			// A full window without trouble: re-subscribe at once, and keep
+			// counting the stream as live across the gap.
+			backoff = topologyRetryMin
+			continue
+		}
+		u.eventsLive.Store(false)
 		if connected {
 			// The stream carried at least one event before it ended, so the
 			// endpoint works and this was a hiccup, not a misconfiguration.
@@ -108,6 +134,11 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
 // it, and a rule that cannot be tested without a live swarm would not be.
 func (u *ui) streamTopology(ctx context.Context, c *clusterState, f filters.Args) bool {
 	msgs, errs := c.dcli.Events(ctx, events.ListOptions{Filters: f})
+	// Subscribed without error: from here the poll may take the slow rate.
+	// Dialling is what fails on a cluster where this does not work at all — an
+	// old daemon, a blocked socket — and that is the case the fast rate exists
+	// for.
+	u.eventsLive.Store(true)
 	return consumeTopology(ctx, msgs, errs, defaultTopologyTiming, func(ev events.Message) {
 		clientlog.L().Debug("topology event",
 			"cluster", c.name, "type", ev.Type, "action", ev.Action)
@@ -176,4 +207,13 @@ func consumeTopology(
 			refresh()
 		}
 	}
+}
+
+// pollInterval is how often the tree should re-list right now: slowly while the
+// manager's events are reaching us, quickly when they are not.
+func (u *ui) pollInterval() time.Duration {
+	if u.eventsLive.Load() {
+		return treeRefreshSlow
+	}
+	return treeRefreshFast
 }

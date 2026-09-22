@@ -59,3 +59,21 @@ func TestDescribeContainerEventShowsUnknownHealthVerdicts(t *testing.T) {
 		t.Errorf("an unfamiliar verdict must still be reported, got %q", got)
 	}
 }
+
+// The wake channel is what makes the reconnect reactive: a lifecycle event has
+// to reach the log follower, and the events that merely describe the container
+// must not.
+func TestLifecycleEventsAreTheOnesThatWake(t *testing.T) {
+	for _, a := range []string{"die", "kill", "oom", "restart", "start", "stop"} {
+		if !lifecycleEvents[a] {
+			t.Errorf("%q should wake the follower", a)
+		}
+	}
+	// A health transition is worth a LINE but not a reconnect — the container
+	// is still the same one, and re-listing would be work for nothing.
+	for _, a := range []string{"health_status: unhealthy", "pause", "unpause", "exec_start", "attach"} {
+		if lifecycleEvents[a] {
+			t.Errorf("%q must not wake the follower", a)
+		}
+	}
+}

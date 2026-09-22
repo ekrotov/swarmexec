@@ -154,6 +154,13 @@ type logsParams struct {
 	timestamps     bool
 	since          time.Duration
 	connectTimeout time.Duration
+
+	// wake, when non-nil, cuts the wait between attempts to find a replacement
+	// container short. The TUI feeds it from the container's own event stream,
+	// so a restart is noticed by the node telling us rather than by asking the
+	// manager again a second later. Nothing depends on it: with a nil channel,
+	// or none arriving, the polling below behaves exactly as before.
+	wake <-chan struct{}
 }
 
 // streamLogs dials the agent and streams the container's logs into stdout/stderr.
@@ -218,7 +225,7 @@ func streamServiceLogs(ctx context.Context, cfg config.Config, r *resolve.Resolv
 
 		// The container ended while following. Wait for its successor — during a
 		// rolling update the replacement may still be scheduling.
-		c, ok, err := waitForSuccessor(ctx, r, t, notify)
+		c, ok, err := waitForSuccessor(ctx, r, t, p.wake, notify)
 		if !ok {
 			return err
 		}
@@ -237,7 +244,7 @@ func streamServiceLogs(ctx context.Context, cfg config.Config, r *resolve.Resolv
 // is running, the service is gone, the wait window elapses, or ctx is cancelled.
 // It returns ok=false (with a nil error on a clean stop) when following should
 // end; err is non-nil only for an unrecovered resolve error.
-func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.FollowTarget, notify func(string)) (resolve.Candidate, bool, error) {
+func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.FollowTarget, wake <-chan struct{}, notify func(string)) (resolve.Candidate, bool, error) {
 	var lastErr error
 	for waited := time.Duration(0); ; waited += logReconnectDelay {
 		c, ok, err := r.Successor(ctx, t)
@@ -262,6 +269,15 @@ func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.Follow
 		select {
 		case <-ctx.Done():
 			return resolve.Candidate{}, false, nil
+		case <-wake:
+			// The node reported that the container started, died or restarted.
+			// Ask again now instead of sitting out the rest of the delay.
+			//
+			// The gain is bounded by logReconnectDelay — up to a second, not the
+			// "sub-second reconnect" the plan promised, because the wait was
+			// already a second. What it does remove is the case that looks
+			// worst: a container that restarts in place, where the replacement
+			// exists immediately and the view still paused before showing it.
 		case <-time.After(logReconnectDelay):
 		}
 	}
