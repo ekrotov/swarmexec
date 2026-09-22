@@ -186,8 +186,40 @@ func TestTopologyTimingIsCoherent(t *testing.T) {
 			defaultTopologyTiming.debounce, defaultTopologyTiming.minInterval)
 	}
 	// The whole point is being faster than the poll it supplements.
-	if defaultTopologyTiming.minInterval >= treeRefreshInterval {
+	if defaultTopologyTiming.minInterval >= treeRefreshFast {
 		t.Errorf("floor %v is not an improvement over the %v poll",
-			defaultTopologyTiming.minInterval, treeRefreshInterval)
+			defaultTopologyTiming.minInterval, treeRefreshFast)
+	}
+}
+
+// The saving has to be conditional on the thing that earns it. A cluster whose
+// event stream never works — an old daemon, a blocked socket — must keep the
+// fast poll, or this change is a pure regression there.
+func TestPollIntervalFollowsTheEventStream(t *testing.T) {
+	u := &ui{}
+	if got := u.pollInterval(); got != treeRefreshFast {
+		t.Errorf("without events the poll must stay fast, got %v", got)
+	}
+	u.eventsLive.Store(true)
+	if got := u.pollInterval(); got != treeRefreshSlow {
+		t.Errorf("with events live the poll should slow down, got %v", got)
+	}
+	u.eventsLive.Store(false)
+	if got := u.pollInterval(); got != treeRefreshFast {
+		t.Errorf("a lost stream must restore the fast poll, got %v", got)
+	}
+}
+
+// The rates only make sense in one order, and the slow one must still be a net
+// under the event stream rather than a replacement for it.
+func TestPollRatesAreCoherent(t *testing.T) {
+	if treeRefreshSlow <= treeRefreshFast {
+		t.Fatalf("slow (%v) must be slower than fast (%v)", treeRefreshSlow, treeRefreshFast)
+	}
+	// Liveness is re-proven on this cadence, so a silent death cannot leave the
+	// poll slow for longer than one window.
+	if topologyResubscribe < treeRefreshSlow {
+		t.Errorf("resubscribe (%v) shorter than the slow poll (%v) would re-dial for nothing",
+			topologyResubscribe, treeRefreshSlow)
 	}
 }

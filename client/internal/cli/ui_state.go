@@ -89,6 +89,11 @@ type ui struct {
 	// result if it has moved. See (*ui).onCluster.
 	gen atomic.Uint64
 
+	// eventsLive says whether the manager's topology event stream is currently
+	// subscribed. It picks the poll rate, so it lives on the session rather than
+	// on a cluster: the ticker is one, and it always follows the visible one.
+	eventsLive atomic.Bool
+
 	// run-wide infrastructure (created in runUI, before the event loop)
 	app      *tview.Application
 	pages    *tview.Pages // overlays: menus, terminal, logs, dialogs

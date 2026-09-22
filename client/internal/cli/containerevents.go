@@ -58,11 +58,22 @@ var interestingEvents = map[string]bool{
 // ctx ends. It never returns an error: this is an enrichment of the log view,
 // and an agent that is too old to serve it, or a node that drops the
 // connection, must not take the logs down with it.
-func watchContainerEvents(ctx context.Context, cfg config.Config, ep resolve.Endpoint, connectTimeout time.Duration, note func(string)) {
+// lifecycleEvents are the actions that mean "the container you are following is
+// not the one you were following a moment ago". They wake the log follower so
+// it re-checks immediately instead of sitting out the rest of its delay.
+var lifecycleEvents = map[string]bool{
+	"die": true, "kill": true, "oom": true, "restart": true, "start": true, "stop": true,
+}
+
+// watchContainerEvents streams one container's runtime events into note() until
+// ctx ends. wake, when non-nil, is nudged on lifecycle events; it must be
+// buffered, and a full buffer is simply skipped — one pending wake-up is as
+// good as five.
+func watchContainerEvents(ctx context.Context, cfg config.Config, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) {
 	backoff := eventRetryMin
 	reported := false
 	for ctx.Err() == nil {
-		err := streamContainerEvents(ctx, cfg, ep, connectTimeout, note)
+		err := streamContainerEvents(ctx, cfg, ep, connectTimeout, note, wake)
 		if ctx.Err() != nil {
 			return
 		}
@@ -89,7 +100,7 @@ func watchContainerEvents(ctx context.Context, cfg config.Config, ep resolve.End
 	}
 }
 
-func streamContainerEvents(ctx context.Context, cfg config.Config, ep resolve.Endpoint, connectTimeout time.Duration, note func(string)) error {
+func streamContainerEvents(ctx context.Context, cfg config.Config, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) error {
 	dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
 	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
 	dcancel()
@@ -116,6 +127,12 @@ func streamContainerEvents(ctx context.Context, cfg config.Config, ep resolve.En
 		}
 		if line := describeContainerEvent(ev); line != "" {
 			note(line)
+		}
+		if wake != nil && lifecycleEvents[ev.GetAction()] {
+			select {
+			case wake <- struct{}{}:
+			default: // a wake-up is already pending; one is enough
+			}
 		}
 	}
 }
