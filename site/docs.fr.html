@@ -1232,6 +1232,18 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
         l'overlay d'inspection du service ; il disparaît dès que la mise à jour est terminée.
       </p>
       <p>
+        <strong>Un job se compte à ce qu'il a terminé, pas à ce qui tourne.</strong>
+        Un <code>replicated-job</code> ou un <code>global-job</code> n'a pas vocation à rester
+        actif : sa ligne affiche donc <strong>terminées/total</strong> plutôt qu'en cours
+        d'exécution/souhaité. Un job allé au bout s'affiche en <strong>3/3</strong> aqua là où
+        il s'affichait en <strong>0/1</strong> rouge — l'image d'une panne pour un service qui
+        a fait exactement ce qu'on lui demandait. Swarm rapporte le nombre <em>souhaité</em>
+        d'un replicated job comme son <code>MaxConcurrent</code>, ce qui explique que le
+        compte en direct ne dise plus rien d'utile une fois le job terminé. La ligne de stack
+        au-dessus le compte de la même façon : une sauvegarde nocturne ne tire plus toute sa
+        stack vers l'orange entre deux exécutions.
+      </p>
+      <p>
         <strong>Colorée par le healthcheck, et pas seulement par le nombre de
         réplicas.</strong> La couleur d'une ligne de service venait du seul rapport en cours
         d'exécution / souhaité : un service dont <em>tous</em> les conteneurs échouaient à

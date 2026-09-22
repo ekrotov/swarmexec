@@ -1159,6 +1159,17 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         in the service inspect overlay; it clears once the update completes.
       </p>
       <p>
+        <strong>A job is counted by what it finished, not by what is running.</strong>
+        A <code>replicated-job</code> or <code>global-job</code> is not meant to stay up, so
+        its row shows <strong>completed/total</strong> instead of running/desired: a job that
+        ran through reads <strong>3/3</strong> in aqua where it used to read
+        <strong>0/1</strong> in red — the display of an outage, for a service that did
+        exactly what it was asked to do. Swarm reports a replicated job's <em>desired</em>
+        count as its <code>MaxConcurrent</code>, which is why the live count says nothing
+        useful once the job is done. The stack row above it counts the job the same way, so a
+        nightly backup no longer drags its whole stack into orange between runs.
+      </p>
+      <p>
         <strong>Coloured by healthcheck, not only by replica count.</strong> A service
         row's colour used to come from running vs desired alone — so a service whose
         <em>every</em> container was failing its healthcheck still rendered as a calm aqua

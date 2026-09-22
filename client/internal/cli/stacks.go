@@ -21,8 +21,8 @@ const noStackLabel = "(no stack)"
 type stackRow struct {
 	Name     string            // stack name, or noStackLabel
 	Services []resolve.Service // members, sorted by name
-	Running  int               // summed running tasks
-	Desired  int               // summed desired tasks
+	Running  int               // summed tasks that are there (job: completed)
+	Desired  int               // summed tasks that are wanted (job: completions)
 	Updating int               // services in an active rolling update
 	Risky    int               // services with an actionable security finding
 	Ports    int               // services publishing at least one port
@@ -45,8 +45,12 @@ func groupByStack(svcs []resolve.Service) []stackRow {
 			byName[name] = row
 		}
 		row.Services = append(row.Services, s)
-		row.Running += s.Running
-		row.Desired += s.Desired
+		// A job contributes its completions, not its live tasks. A nightly backup
+		// that ran successfully has nothing running, and a stack that counted it
+		// as missing would read as degraded every day between runs.
+		have, want := s.Progress()
+		row.Running += have
+		row.Desired += want
 		if _, _, active := updateStatusLabel(s.UpdateState); active {
 			row.Updating++
 		}

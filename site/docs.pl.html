@@ -1186,6 +1186,18 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         się w nakładce inspekcji usługi; znika po zakończeniu aktualizacji.
       </p>
       <p>
+        <strong>Zadanie (job) liczy się tym, co skończyło, a nie tym, co działa.</strong>
+        <code>replicated-job</code> ani <code>global-job</code> nie ma zostawać na stałe,
+        więc jego wiersz pokazuje <strong>ukończone/łącznie</strong> zamiast
+        działających/żądanych: job, który przebiegł do końca, czyta się jako turkusowe
+        <strong>3/3</strong> tam, gdzie wcześniej czytał się jako czerwone
+        <strong>0/1</strong> — obraz awarii dla usługi, która zrobiła dokładnie to, o co ją
+        poproszono. Swarm raportuje <em>żądaną</em> liczbę zadań replicated joba jako jego
+        <code>MaxConcurrent</code>, dlatego licznik na żywo nic już nie mówi, gdy job się
+        zakończy. Wiersz stacka powyżej liczy go tak samo, więc nocna kopia zapasowa nie
+        ściąga już całego stacka w pomarańcz między przebiegami.
+      </p>
+      <p>
         <strong>Kolor z healthchecku, nie tylko z liczby replik.</strong> Kolor wiersza
         usługi brał się wyłącznie z relacji działające do żądanych — więc usługa, której
         <em>każdy</em> kontener oblewał healthcheck, nadal rysowała się jako spokojne,
