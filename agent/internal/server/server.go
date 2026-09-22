@@ -89,6 +89,10 @@ type Server struct {
 	streams  *limiter
 	sidecars *limiter
 
+	// muxes holds one port-forward sidecar per (container, port), shared by
+	// every connection of that forward.
+	muxes *muxPool
+
 	// The agent's own image, resolved once by self-inspection and reused by
 	// every port-forward sidecar. See forwardImage.
 	forwardImageOnce sync.Once
@@ -111,6 +115,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	}
 	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
 	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
+	s.muxes = newMuxPool()
 	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
 	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
 		"port-forward sidecars", "-max-forward-sidecars")
@@ -256,7 +261,13 @@ func (s *Server) StartDrain() {
 
 // WaitForSessions blocks until all in-flight Exec sessions have ended or ctx is
 // cancelled. It returns true if all sessions drained, false on ctx timeout.
+//
+// Forward sidecars are torn down either way: they are containers on the node,
+// and a shutdown that left them running would leak one per forward the agent
+// ever served. They linger for muxIdleLinger by design, so "no connections" is
+// not the same as "nothing to clean up".
 func (s *Server) WaitForSessions(ctx context.Context) bool {
+	defer s.muxes.closeAll()
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()

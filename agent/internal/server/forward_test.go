@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/internal/forwardmux"
 	"swarmexec/internal/pb"
 )
 
@@ -127,20 +129,69 @@ func forwardTestServer(d DockerClient, az auth.Authorizer) (*Server, *testMetric
 	return newTestServer(d, az, Options{ForwardImage: "test-agent:latest"})
 }
 
-// sidecarSpeak plays the sidecar side of the attach pipe: it writes a
-// stdcopy-framed control line on stderr, then optional payload on stdout.
-func sidecarSpeak(t *testing.T, conn io.Writer, control string, payload []byte) {
+// sidecarSpeak writes the sidecar's stdcopy-framed control line on stderr.
+// "mux ok" is what a multiplexing sidecar reports; the single-connection "ok"
+// is still accepted and still used by the tests that only need readiness.
+func sidecarSpeak(t *testing.T, conn io.Writer, control string, _ []byte) {
 	t.Helper()
 	w := stdcopy.NewStdWriter(conn, stdcopy.Stderr)
 	if _, err := w.Write([]byte(control + "\n")); err != nil {
 		t.Fatalf("write control line: %v", err)
 	}
-	if payload != nil {
-		o := stdcopy.NewStdWriter(conn, stdcopy.Stdout)
-		if _, err := o.Write(payload); err != nil {
-			t.Fatalf("write payload: %v", err)
-		}
+}
+
+// muxSide plays the sidecar end of a multiplexing forward: stdout carries
+// FRAMES now, not payload, so a test that writes raw bytes there is writing
+// something the agent will correctly refuse to understand.
+type muxSide struct {
+	t    *testing.T
+	conn net.Conn
+	out  io.Writer // stdcopy stdout writer, carrying frames
+}
+
+func newMuxSide(t *testing.T, conn net.Conn) *muxSide {
+	t.Helper()
+	sidecarSpeak(t, conn, "mux ok", nil)
+	return &muxSide{t: t, conn: conn, out: stdcopy.NewStdWriter(conn, stdcopy.Stdout)}
+}
+
+// recv reads one frame the agent sent on the sidecar's stdin.
+func (m *muxSide) recv() forwardmux.Frame {
+	m.t.Helper()
+	f, err := forwardmux.Read(m.conn)
+	if err != nil {
+		m.t.Fatalf("read frame from agent: %v", err)
 	}
+	return f
+}
+
+func (m *muxSide) send(f forwardmux.Frame) {
+	m.t.Helper()
+	if err := forwardmux.Write(m.out, f); err != nil {
+		m.t.Fatalf("write frame to agent: %v", err)
+	}
+}
+
+// acceptOpen answers the agent's next KindOpen, and returns the connection id.
+func (m *muxSide) acceptOpen() uint32 {
+	m.t.Helper()
+	f := m.recv()
+	if f.Kind != forwardmux.KindOpen {
+		m.t.Fatalf("want an open frame, got %s", forwardmux.KindName(f.Kind))
+	}
+	m.send(forwardmux.Frame{Conn: f.Conn, Kind: forwardmux.KindOpenOK})
+	return f.Conn
+}
+
+// refuseOpen answers the next KindOpen with a dial failure.
+func (m *muxSide) refuseOpen(reason string) uint32 {
+	m.t.Helper()
+	f := m.recv()
+	if f.Kind != forwardmux.KindOpen {
+		m.t.Fatalf("want an open frame, got %s", forwardmux.KindName(f.Kind))
+	}
+	m.send(forwardmux.Frame{Conn: f.Conn, Kind: forwardmux.KindOpenErr, Payload: []byte(reason)})
+	return f.Conn
 }
 
 // --- protocol ---
@@ -285,7 +336,7 @@ func TestPortForward_SidecarJoinsTargetNetnsWithoutPrivileges(t *testing.T) {
 	if d.createdConfig.Image != "test-agent:latest" {
 		t.Errorf("Image = %q", d.createdConfig.Image)
 	}
-	if got := strings.Join(d.createdConfig.Cmd, " "); got != "-forward-to 127.0.0.1:8080" {
+	if got := strings.Join(d.createdConfig.Cmd, " "); got != "-forward-mux-to 127.0.0.1:8080" {
 		t.Errorf("Cmd = %q", got)
 	}
 	if d.createdConfig.Labels[forwardLabel] != forwardValue {
@@ -359,24 +410,22 @@ func TestPortForward_BridgesBothDirections(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.PortForward(stream) }()
 
-	conn := d.waitAttach()
+	mux := newMuxSide(t, d.waitAttach())
+	id := mux.acceptOpen()
 
-	// Container -> client, including a NUL byte: the tunnel must be binary-safe.
+	// Container -> client, including NUL and 0xff: the tunnel must stay
+	// byte-transparent now that the payload rides inside frames.
 	payload := []byte{0x00, 0x01, 'H', 'T', 'T', 'P', 0xff}
-	sidecarSpeak(t, conn, "ok", payload)
+	mux.send(forwardmux.Frame{Conn: id, Kind: forwardmux.KindData, Payload: payload})
 
 	// Client -> container.
 	stream.queueData([]byte("ping"))
-	got := make([]byte, 4)
-	if _, err := io.ReadFull(conn, got); err != nil {
-		t.Fatalf("read client->container bytes: %v", err)
-	}
-	if string(got) != "ping" {
-		t.Errorf("container received %q, want %q", got, "ping")
+	if f := mux.recv(); f.Kind != forwardmux.KindData || string(f.Payload) != "ping" {
+		t.Errorf("container received %s %q, want data \"ping\"", forwardmux.KindName(f.Kind), f.Payload)
 	}
 
 	stream.queueEOF()
-	_ = conn.Close()
+	_ = mux.conn.Close()
 	<-done
 
 	msgs := stream.sentMessages()
