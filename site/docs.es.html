@@ -1198,6 +1198,18 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         de inspección del servicio; desaparece en cuanto la actualización se completa.
       </p>
       <p>
+        <strong>Un job se cuenta por lo que terminó, no por lo que está en ejecución.</strong>
+        Un <code>replicated-job</code> o un <code>global-job</code> no está pensado para
+        seguir arriba, así que su fila muestra <strong>completadas/total</strong> en lugar de
+        en ejecución/deseado: un job que llegó al final se lee como un <strong>3/3</strong>
+        aqua donde antes se leía como un <strong>0/1</strong> rojo —la imagen de una caída
+        para un servicio que hizo exactamente lo que se le pidió—. Swarm informa el recuento
+        <em>deseado</em> de un replicated job como su <code>MaxConcurrent</code>, y por eso el
+        recuento en vivo ya no dice nada útil una vez que el job ha terminado. La fila de
+        stack que está encima lo cuenta igual, de modo que una copia de seguridad nocturna ya
+        no arrastra a su stack al naranja entre ejecuciones.
+      </p>
+      <p>
         <strong>Coloreada por el healthcheck, no solo por el recuento de réplicas.</strong>
         El color de una fila de servicio salía únicamente de en ejecución frente a deseado:
         así, un servicio con <em>todos</em> sus contenedores fallando el healthcheck seguía

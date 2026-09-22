@@ -285,10 +285,15 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 			out = append(out, "mount: "+formatServiceMount(m))
 		}
 	}
-	if spec.Mode.Replicated != nil && spec.Mode.Replicated.Replicas != nil {
+	switch {
+	case spec.Mode.Replicated != nil && spec.Mode.Replicated.Replicas != nil:
 		out = append(out, fmt.Sprintf("mode: replicated %d", *spec.Mode.Replicated.Replicas))
-	} else if spec.Mode.Global != nil {
+	case spec.Mode.Global != nil:
 		out = append(out, "mode: global")
+	case spec.Mode.ReplicatedJob != nil:
+		out = append(out, fmt.Sprintf("mode: replicated-job %d", jobCompletions(spec.Mode.ReplicatedJob)))
+	case spec.Mode.GlobalJob != nil:
+		out = append(out, "mode: global-job")
 	}
 	for k, v := range spec.Labels {
 		out = append(out, "label: "+k+"="+v)
@@ -982,14 +987,40 @@ func servicePortLines(svc swarm.Service) []string {
 	return out
 }
 
+// serviceModeStr describes a service's mode for the inspect overlay. Jobs are
+// spelled out too: they used to fall through to "-", which read as "swarmexec
+// does not know what this is" for a perfectly ordinary service.
 func serviceModeStr(svc swarm.Service) string {
-	if r := svc.Spec.Mode.Replicated; r != nil && r.Replicas != nil {
-		return fmt.Sprintf("replicated (%d replicas)", *r.Replicas)
-	}
-	if svc.Spec.Mode.Global != nil {
+	m := svc.Spec.Mode
+	switch {
+	case m.Replicated != nil && m.Replicated.Replicas != nil:
+		return fmt.Sprintf("replicated (%d replicas)", *m.Replicated.Replicas)
+	case m.Global != nil:
 		return "global"
+	case m.ReplicatedJob != nil:
+		return fmt.Sprintf("replicated-job (%d completions, %d at a time)",
+			jobCompletions(m.ReplicatedJob), jobConcurrency(m.ReplicatedJob))
+	case m.GlobalJob != nil:
+		return "global-job (one task per node)"
 	}
 	return "-"
+}
+
+// jobCompletions and jobConcurrency apply the API's documented defaults: an
+// unset TotalCompletions means MaxConcurrent, and an unset MaxConcurrent means
+// one.
+func jobCompletions(j *swarm.ReplicatedJob) uint64 {
+	if j.TotalCompletions != nil {
+		return *j.TotalCompletions
+	}
+	return jobConcurrency(j)
+}
+
+func jobConcurrency(j *swarm.ReplicatedJob) uint64 {
+	if j.MaxConcurrent != nil {
+		return *j.MaxConcurrent
+	}
+	return 1
 }
 
 func resourceLines(rr *swarm.ResourceRequirements) []string {

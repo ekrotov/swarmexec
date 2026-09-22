@@ -540,3 +540,128 @@ func TestServicesCarriesStackLabel(t *testing.T) {
 		t.Errorf("lone stack = %q, want empty", by["lone"])
 	}
 }
+
+// A finished job is the case that broke: swarm reports a replicated job's
+// desired count as its MaxConcurrent, so a job that ran to completion has zero
+// tasks running against a desired count of one — the counters of an outage, for
+// a success. The completions are the only pair that says what happened.
+func TestServicesReportsJobCompletions(t *testing.T) {
+	f := newFake()
+	total, concurrent := uint64(5), uint64(2)
+	job := svcStatus("s-backup", "backup", 0, 2, false)
+	job.Spec.Mode = swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{
+		MaxConcurrent: &concurrent, TotalCompletions: &total,
+	}}
+	job.ServiceStatus.CompletedTasks = 5
+	f.services = []swarm.Service{job}
+
+	got, err := New(f, AddrHostname).Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	if got[0].Mode != ModeReplicatedJob || !got[0].IsJob() {
+		t.Fatalf("mode = %q, want a job", got[0].Mode)
+	}
+	if got[0].Completed != 5 || got[0].JobTotal != 5 {
+		t.Errorf("completions = %d/%d, want 5/5", got[0].Completed, got[0].JobTotal)
+	}
+	if have, want := got[0].Progress(); have != 5 || want != 5 {
+		t.Errorf("Progress() = %d/%d, want 5/5 — a finished job must not read as 0/2", have, want)
+	}
+}
+
+// Without TotalCompletions the API's documented default is MaxConcurrent, and
+// without either it is one completion.
+func TestServicesJobTotalDefaults(t *testing.T) {
+	concurrent := uint64(3)
+	cases := map[string]struct {
+		mode *swarm.ReplicatedJob
+		want int
+	}{
+		"max concurrent": {&swarm.ReplicatedJob{MaxConcurrent: &concurrent}, 3},
+		"neither set":    {&swarm.ReplicatedJob{}, 1},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFake()
+			job := svcStatus("s-j", "j", 0, 0, false)
+			job.Spec.Mode = swarm.ServiceMode{ReplicatedJob: c.mode}
+			f.services = []swarm.Service{job}
+			got, err := New(f, AddrHostname).Services(context.Background())
+			if err != nil {
+				t.Fatalf("Services: %v", err)
+			}
+			if got[0].JobTotal != c.want {
+				t.Errorf("JobTotal = %d, want %d", got[0].JobTotal, c.want)
+			}
+		})
+	}
+}
+
+// A global job has no total in its spec — swarm reports what is still to finish
+// — so the total is what is left plus what is already done.
+func TestServicesGlobalJobTotalIsOutstandingPlusDone(t *testing.T) {
+	f := newFake()
+	job := svcStatus("s-scan", "scan", 1, 2, false) // 2 tasks still to finish
+	job.Spec.Mode = swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}}
+	job.ServiceStatus.CompletedTasks = 1
+	f.services = []swarm.Service{job}
+
+	got, err := New(f, AddrHostname).Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	if got[0].Mode != ModeGlobalJob || got[0].JobTotal != 3 || got[0].Completed != 1 {
+		t.Errorf("global job = %s %d/%d, want global-job 1/3",
+			got[0].Mode, got[0].Completed, got[0].JobTotal)
+	}
+}
+
+// The fallback path (no ServiceStatus from the manager) has to scope a job's
+// tasks to its current execution: swarm keeps the tasks of every earlier run,
+// and counting them would report a nightly backup as having completed sixty
+// times.
+func TestServicesFallbackCountsOnlyTheCurrentJobIteration(t *testing.T) {
+	f := newFake()
+	total := uint64(2)
+	job := svc("s-backup", "backup")
+	job.Spec.Mode = swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{TotalCompletions: &total}}
+	job.JobStatus = &swarm.JobStatus{JobIteration: swarm.Version{Index: 7}}
+	f.services = []swarm.Service{job}
+
+	old, now := swarm.Version{Index: 6}, swarm.Version{Index: 7}
+	mk := func(id string, iter swarm.Version, state swarm.TaskState) swarm.Task {
+		t := task(id, "s-backup", "node-a", 1, "c"+id)
+		t.JobIteration = &iter
+		t.Status.State = state
+		return t
+	}
+	f.tasks = []swarm.Task{
+		mk("t1", old, swarm.TaskStateComplete), // yesterday's run
+		mk("t2", old, swarm.TaskStateComplete),
+		mk("t3", now, swarm.TaskStateComplete),
+		mk("t4", now, swarm.TaskStateRunning),
+	}
+
+	got, err := New(f, AddrHostname).Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	if got[0].Completed != 1 || got[0].JobTotal != 2 {
+		t.Errorf("completions = %d/%d, want 1/2 (this run only)", got[0].Completed, got[0].JobTotal)
+	}
+	if got[0].Running != 1 {
+		t.Errorf("Running = %d, want 1", got[0].Running)
+	}
+}
+
+// A long-running service keeps the counters it always had.
+func TestProgressIsRunningDesiredForAService(t *testing.T) {
+	s := Service{Mode: ModeReplicated, Running: 1, Desired: 3}
+	if have, want := s.Progress(); have != 1 || want != 3 {
+		t.Errorf("Progress() = %d/%d, want 1/3", have, want)
+	}
+	if s.IsJob() {
+		t.Error("a replicated service is not a job")
+	}
+}

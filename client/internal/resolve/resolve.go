@@ -106,7 +106,7 @@ type Service struct {
 	Running  int
 	Desired  int
 	Global   bool
-	Mode     string // replicated | global | replicated-job | global-job
+	Mode     string // one of the Mode* constants
 	Image    string // container image, digest stripped for display
 	ImageRef string // full container image as pinned in the spec (digest kept)
 	Ports    string // published ports, e.g. "*:80->80/tcp"; "" if none
@@ -126,6 +126,43 @@ type Service struct {
 	// none). Computed from the spec during the list fetch, so the UI can mark a
 	// risky service and list its findings without a second call.
 	Risks []secscan.Finding
+
+	// Completed and JobTotal track a job's progress: how many tasks of its
+	// current execution have run to completion, and how many completions it was
+	// asked for. Both are zero for a service that is meant to stay up.
+	//
+	// A job needs its own pair because Running/Desired describe it wrongly once
+	// it is done. Swarm reports a replicated job's desired count as its
+	// MaxConcurrent — how many tasks may run at once, not how many are wanted —
+	// so a job that finished perfectly reads 0/1: the shape of an outage.
+	Completed int
+	JobTotal  int
+}
+
+// Service modes, spelled as `docker service ls` spells them.
+const (
+	ModeReplicated    = "replicated"
+	ModeGlobal        = "global"
+	ModeReplicatedJob = "replicated-job"
+	ModeGlobalJob     = "global-job"
+)
+
+// IsJob reports whether the service is a one-off job rather than something
+// meant to stay up. The distinction decides what its counters mean: a job with
+// nothing running is not down, it is finished.
+func (s Service) IsJob() bool {
+	return s.Mode == ModeReplicatedJob || s.Mode == ModeGlobalJob
+}
+
+// Progress returns the pair that says how much of the service is there:
+// running/desired for a long-running service, completed/total for a job. It is
+// what every count the UI shows — row, colour, stack roll-up — is derived from,
+// so a job is never read as an outage in one place and a success in another.
+func (s Service) Progress() (have, want int) {
+	if s.IsJob() {
+		return s.Completed, s.JobTotal
+	}
+	return s.Running, s.Desired
 }
 
 // stackNamespaceLabel is the label `docker stack deploy` stamps on every service
@@ -472,9 +509,11 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 		if st := s.ServiceStatus; st != nil {
 			svc.Running = int(st.RunningTasks)
 			svc.Desired = int(st.DesiredTasks)
+			svc.Completed = int(st.CompletedTasks)
 		} else {
-			svc.Running, svc.Desired = r.serviceCounts(ctx, s)
+			svc.Running, svc.Desired, svc.Completed = r.serviceCounts(ctx, s)
 		}
+		svc.JobTotal = jobTotal(s, svc.Desired, svc.Completed)
 		if us := s.UpdateStatus; us != nil {
 			svc.UpdateState = string(us.State)
 		}
@@ -485,11 +524,12 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 	return out, nil
 }
 
-// serviceCounts computes running/desired task counts when the manager did not
-// return a ServiceStatus. Desired is the replica count for a replicated
-// service, or the number of not-shutdown tasks for a global one; running counts
-// tasks actually in the running state with a container.
-func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running, desired int) {
+// serviceCounts computes the task counts when the manager did not return a
+// ServiceStatus. Desired is the replica count for a replicated service, the
+// number of not-shutdown tasks for a global one, and what is still outstanding
+// for a job; running counts tasks actually in the running state with a
+// container; completed counts finished job tasks.
+func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running, desired, completed int) {
 	if rep := s.Spec.Mode.Replicated; rep != nil && rep.Replicas != nil {
 		desired = int(*rep.Replicas)
 	}
@@ -497,31 +537,81 @@ func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running,
 		Filters: filters.NewArgs(filters.Arg("service", s.ID)),
 	})
 	if err != nil {
-		return running, desired
+		return running, desired, completed
 	}
 	global := s.Spec.Mode.Global != nil
+	// A job's counters belong to its current execution. Swarm keeps the tasks of
+	// every earlier run, so counting them all would report a nightly backup as
+	// having completed sixty times.
+	iter := jobIteration(s)
 	for _, t := range tasks {
-		if global && t.DesiredState != swarm.TaskStateShutdown {
+		if iter != nil && (t.JobIteration == nil || t.JobIteration.Index != iter.Index) {
+			continue
+		}
+		switch {
+		case global && t.DesiredState != swarm.TaskStateShutdown:
+			desired++
+		case iter != nil && t.Status.State != swarm.TaskStateComplete:
+			// For a job, "desired" is what is still outstanding — the same thing
+			// swarm reports for a global job.
 			desired++
 		}
 		if t.Status.State == swarm.TaskStateRunning && containerID(t) != "" {
 			running++
 		}
+		if iter != nil && t.Status.State == swarm.TaskStateComplete {
+			completed++
+		}
 	}
-	return running, desired
+	return running, desired, completed
+}
+
+// jobIteration returns the execution a job service is currently on, or nil when
+// the service is not a job.
+func jobIteration(s swarm.Service) *swarm.Version {
+	if s.JobStatus == nil {
+		return nil
+	}
+	return &s.JobStatus.JobIteration
+}
+
+// jobTotal returns how many task completions a job is asking for, or 0 for a
+// service that is not a job.
+//
+// The two job modes need different arithmetic, because swarm reports their
+// desired count differently (swarmkit, ListServiceStatuses): for a replicated
+// job it is MaxConcurrent, so the total only exists in the spec; for a global
+// job it is how many tasks are still to finish, so the total is what is left
+// plus what is already done.
+func jobTotal(s swarm.Service, desired, completed int) int {
+	switch {
+	case s.Spec.Mode.ReplicatedJob != nil:
+		j := s.Spec.Mode.ReplicatedJob
+		switch {
+		case j.TotalCompletions != nil:
+			return int(*j.TotalCompletions)
+		case j.MaxConcurrent != nil:
+			return int(*j.MaxConcurrent) // the API's documented default
+		default:
+			return 1
+		}
+	case s.Spec.Mode.GlobalJob != nil:
+		return desired + completed
+	}
+	return 0
 }
 
 // serviceMode maps a swarm service mode to the docker service ls MODE string.
 func serviceMode(m swarm.ServiceMode) string {
 	switch {
 	case m.Global != nil:
-		return "global"
+		return ModeGlobal
 	case m.GlobalJob != nil:
-		return "global-job"
+		return ModeGlobalJob
 	case m.ReplicatedJob != nil:
-		return "replicated-job"
+		return ModeReplicatedJob
 	default:
-		return "replicated"
+		return ModeReplicated
 	}
 }
 

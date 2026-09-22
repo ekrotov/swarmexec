@@ -1366,6 +1366,45 @@ func serviceColor(running, desired int) tcell.Color {
 	}
 }
 
+// jobColor is the same verdict for a job, where "nothing running" is not an
+// outage: grey when it asks for nothing, aqua when every wanted completion
+// happened, orange while it is still working, and red only when it has neither
+// finished nor started anything.
+func jobColor(completed, total, running int) tcell.Color {
+	switch {
+	case total == 0:
+		return tcell.ColorGray
+	case completed >= total:
+		return tcell.ColorAqua
+	case completed > 0 || running > 0:
+		return tcell.ColorOrange
+	default:
+		return tcell.ColorRed
+	}
+}
+
+// progressColor is the colour of a service row: the running/desired verdict for
+// something meant to stay up, the completion verdict for a job.
+func progressColor(s resolve.Service) tcell.Color {
+	have, want := s.Progress()
+	if s.IsJob() {
+		return jobColor(have, want, s.Running)
+	}
+	return serviceColor(have, want)
+}
+
+// progressCount renders the counter column: how much of the service is up, or —
+// for a job — how much of it is done.
+//
+// Deliberately narrower than `docker service ls`, which prints both pairs for a
+// job ("0/1 (3/3 completed)"). The mode column right beside it already says
+// this is a job, and the live count of a finished job is noise the column can
+// not afford: it is the widest cell in a fixed-width row.
+func progressCount(s resolve.Service) string {
+	have, want := s.Progress()
+	return fmt.Sprintf("%d/%d", have, want)
+}
+
 // svcColumns holds the padding widths that align the service rows in the
 // containers tree, computed across all services — not just the filtered ones,
 // so the alignment stays stable while filtering.
@@ -1401,8 +1440,8 @@ func (c *svcColumns) growTo(other svcColumns) {
 }
 
 // serviceRow renders a service group node like a docker service ls line —
-// "name  mode  running/desired  image  ports" — padded to the shared column
-// widths. Image and ports are appended only when present, and trailing padding
+// "name  mode  running/desired  image  ports", or completed/total for a job —
+// padded to the shared column widths. Image and ports are appended only when present, and trailing padding
 // is trimmed so a selected row's highlight does not run past the text.
 func serviceRow(s resolve.Service, c svcColumns, imageSuffix, usage string) string {
 	var b strings.Builder
@@ -1412,7 +1451,7 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix, usage string) stri
 	// port list pushes the end of the row past the right edge.
 	b.WriteString(securityBadge(s.Risks))
 	fmt.Fprintf(&b, "%-*s  %-*s  %-*s",
-		c.name, orDash(s.Name), c.mode, orDash(s.Mode), c.repl, fmt.Sprintf("%d/%d", s.Running, s.Desired))
+		c.name, orDash(s.Name), c.mode, orDash(s.Mode), c.repl, progressCount(s))
 	if c.image > 0 {
 		// The resolved-version / ↑ annotation sits inside the image cell so it
 		// reads right next to the image URI, not far off in the ports column.

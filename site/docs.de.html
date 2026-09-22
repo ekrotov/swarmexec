@@ -1214,6 +1214,18 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         im Service-Inspect-Overlay; es verschwindet, sobald das Update abgeschlossen ist.
       </p>
       <p>
+        <strong>Ein Job zählt nach dem, was er fertig hat, nicht nach dem, was läuft.</strong>
+        Ein <code>replicated-job</code> oder <code>global-job</code> soll nicht oben bleiben,
+        deshalb zeigt seine Zeile <strong>abgeschlossen/gesamt</strong> statt
+        laufend/gewünscht: Ein durchgelaufener Job steht als aquafarbenes
+        <strong>3/3</strong> da, wo er vorher als rotes <strong>0/1</strong> stand — das Bild
+        eines Ausfalls für einen Service, der genau das getan hat, worum man ihn gebeten hat.
+        Swarm meldet die <em>gewünschte</em> Anzahl eines Replicated Job als dessen
+        <code>MaxConcurrent</code>; deshalb sagt die Live-Zahl nichts mehr aus, sobald der Job
+        fertig ist. Die Stack-Zeile darüber zählt den Job genauso, sodass ein nächtliches
+        Backup seinen Stack zwischen den Läufen nicht mehr ins Orange zieht.
+      </p>
+      <p>
         <strong>Eingefärbt nach Healthcheck, nicht nur nach Replica-Zahl.</strong> Die Farbe
         einer Service-Zeile kam bisher allein aus laufend gegen gewünscht — ein Service,
         dessen <em>sämtliche</em> Container ihren Healthcheck rissen, stand also weiterhin

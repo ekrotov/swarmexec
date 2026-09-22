@@ -120,7 +120,7 @@ func (u *ui) renderContainers() {
 		if w := len(orDash(s.Mode)); w > fresh.mode {
 			fresh.mode = w
 		}
-		if w := len(fmt.Sprintf("%d/%d", s.Running, s.Desired)); w > fresh.repl {
+		if w := len(progressCount(s)); w > fresh.repl {
 			fresh.repl = w
 		}
 		// The image cell renders image+suffix (the "↑ 2.12.0" annotation), so the
@@ -584,10 +584,10 @@ func (u *ui) stackHealth(services []resolve.Service) serviceHealth {
 	return out
 }
 
-// svcColor is the tree colour for a service row: the running/desired verdict,
+// svcColor is the tree colour for a service row: the progress verdict,
 // overridden when the healthchecks disagree with it.
 func (u *ui) svcColor(s resolve.Service) tcell.Color {
-	base := serviceColor(s.Running, s.Desired)
+	base := progressColor(s)
 	if len(u.usage) == 0 {
 		return base
 	}
