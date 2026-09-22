@@ -81,6 +81,12 @@ type fakeDocker struct {
 	// enumeration never reached Docker in the first place.
 	listCalls atomic.Int64
 
+	// Event subscription, for the container-event watch. nil channels mean "no
+	// events", which is what every other test expects.
+	eventCh    chan events.Message
+	eventErrCh chan error
+	eventOpts  []events.ListOptions
+
 	// port-forward sidecar state
 	createContainerErr error
 	startErr           error
@@ -298,9 +304,29 @@ func (f *fakeDocker) DiskUsage(_ context.Context, opts types.DiskUsageOptions) (
 	return types.DiskUsage{Volumes: f.volumes}, nil
 }
 
-func (f *fakeDocker) Events(_ context.Context, _ events.ListOptions) (<-chan events.Message, <-chan error) {
-	// No events in tests; the volume-size cache is exercised via refresh().
-	return make(chan events.Message), make(chan error)
+func (f *fakeDocker) Events(_ context.Context, opts events.ListOptions) (<-chan events.Message, <-chan error) {
+	f.mu.Lock()
+	f.eventOpts = append(f.eventOpts, opts)
+	ch, errCh := f.eventCh, f.eventErrCh
+	f.mu.Unlock()
+	if ch == nil {
+		// Default: no events, as the volume-size cache's tests expect.
+		return make(chan events.Message), make(chan error)
+	}
+	return ch, errCh
+}
+
+// eventFilters returns the filters the last Events subscription asked for, so a
+// test can assert that narrowing happens at the DAEMON rather than in the agent
+// — the difference between "we do not forward other containers' events" and "we
+// receive them and mean to drop them".
+func (f *fakeDocker) eventFilters() filters.Args {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.eventOpts) == 0 {
+		return filters.NewArgs()
+	}
+	return f.eventOpts[len(f.eventOpts)-1].Filters
 }
 
 func (f *fakeDocker) Resizes() []container.ResizeOptions {

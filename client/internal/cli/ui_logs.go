@@ -144,6 +144,15 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
 	tv.SetInputCapture(u.logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 	target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
+	// The container's own account of what happened to it, woven into the same
+	// buffer as its output: health transitions, OOM kills, exits with their
+	// code. None of that is in the log stream, and none of it reaches the
+	// manager — a task reads "running" while its container fails every probe.
+	//
+	// Only in the single-container view. The service view already holds one log
+	// stream per replica; a second stream each would double that for a signal
+	// that is mostly noise when it arrives from one of fifty containers.
+	go watchContainerEvents(lctx, cfg, ep, f.connectTimeout, lv.addNote)
 	go func() {
 		lerr := streamServiceLogs(lctx, cfg, r, target, ep,
 			logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout},

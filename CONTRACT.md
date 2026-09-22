@@ -82,6 +82,10 @@ service Agent {
   // satisfied (or, with follow=true, until the client cancels the stream).
   rpc Logs(LogsRequest) returns (stream LogChunk);
 
+  // Stream ONE container's runtime events from the node it runs on: health
+  // transitions, OOM kills, exits with their code, starts and restarts.
+  rpc WatchContainerEvents(WatchContainerEventsRequest) returns (stream ContainerEvent);
+
   // List volumes on THIS node. Swarm volumes are node-local, so the cli queries
   // every node and aggregates the results.
   rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
@@ -179,6 +183,20 @@ message LogsRequest {
   uint32 since_seconds = 5;  // only logs newer than N seconds ago; 0 = no limit
 }
 
+message WatchContainerEventsRequest {
+  string container_id = 1;  // full container ID to watch; exactly one
+}
+// ContainerEvent carries a typed SUBSET of a Docker event, not the event.
+// Docker attaches the container's full label set to every event, and labels are
+// operator-supplied strings; forwarding them wholesale would make this RPC an
+// exfiltration path for whatever a deployer happened to put in a label.
+message ContainerEvent {
+  string action = 1;          // raw docker action: "die", "oom", "start", "health_status: healthy"
+  int64 time_unix_nano = 2;   // when the daemon recorded it
+  int32 exit_code = 3;        // only meaningful when action is "die"; 0 otherwise
+  string health = 4;          // healthy|unhealthy|starting — only for health_status actions
+  string error = 5;           // terminal error; the stream ends after this
+}
 message LogChunk {
   oneof payload {
     bytes stdout = 1;  // stdout bytes (also carries all output for TTY containers)
@@ -502,3 +520,30 @@ that send the live read buffer are non-conformant.
   an explicit version field; do not silently repurpose field numbers.
 - Both binaries SHOULD expose `--version` and log the protocol/proto version on
   startup.
+
+### 3.5 Container events (normative)
+
+`WatchContainerEvents` exists because the manager cannot answer the question.
+A task reads `running` while its container fails every health probe, is
+OOM-killed, or exits and is restarted; only the daemon on the node knows, and
+it knows immediately.
+
+- **One container per stream.** The request names a container id and the agent
+  subscribes with that filter at the DAEMON. An agent that received the node's
+  whole event stream and discarded most of it would be doing the narrowing in
+  the one place where a mistake leaks another container's lifecycle — including
+  containers that are not part of any swarm service.
+- **A typed subset crosses the wire, not the event.** Docker attaches the
+  container's full label set to every event, and labels are operator-supplied
+  strings. `ContainerEvent` therefore carries only `action`, `time_unix_nano`,
+  `exit_code`, `health` and `error`; `Actor.Attributes` is never forwarded.
+- `exit_code` is meaningful only when `action` is `die`, and is 0 otherwise.
+  `health` is set only for `health_status:` actions and carries the verdict
+  alone (`healthy` / `unhealthy` / `starting`).
+- The RPC is authorized as `container.events` and audited at start and end. The
+  audit record counts events; it never contains them.
+- It counts against the agent's stream cap like Exec, Logs and PortForward. It
+  is held open for as long as a view is open, so exempting it would be a quiet
+  way around the limit.
+- A client must treat this as an ENRICHMENT. An agent that predates the RPC
+  answers `Unimplemented`, and the view it decorates has to keep working.
