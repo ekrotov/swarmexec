@@ -697,7 +697,7 @@ swarmexec stack diff postgres.yml postgres</div>
 swarmexec stack deploy web.yml --check    # solo comprobar, nunca desplegar
 swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a conciencia</div>
       <p>
-        En la TUI, <kbd>E</kbd> → <em>Deploy a file</em> hace lo mismo: primero los
+        En la TUI, <kbd>E</kbd> → <em>deploy a file</em> hace lo mismo: primero los
         hallazgos, <kbd>d</kbd> continúa, <kbd>Esc</kbd> se retira. En ese momento no se ha
         creado nada, que es justamente para lo que sirve la pausa.
       </p>
@@ -1383,11 +1383,11 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       </p>
 
       <p>
-        El menú de acciones ofrece <strong>Logs</strong>, <strong>Bash</strong>,
-        <strong>Sh</strong>, <strong>Shell as user…</strong> (pide un usuario/UID, como
+        El menú de acciones ofrece <strong>logs</strong>, <strong>bash</strong>,
+        <strong>sh</strong>, <strong>shell as user…</strong> (pide un usuario/UID, como
         <code>docker exec -u</code>, para imágenes cuyo usuario por defecto no tiene las
         herramientas o los permisos que necesitas) y
-        <strong>Port forward</strong> (las shells no disponibles se
+        <strong>port forward</strong> (las shells no disponibles se
         muestran atenuadas tras un sondeo). En la barra de búsqueda, <kbd>Enter</kbd>
         conserva el filtro y vuelve a la lista; <kbd>Esc</kbd> borra el filtro y cierra la
         barra.
@@ -1686,13 +1686,13 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         abre exactamente lo mismo que la tecla directa, así que ambos son
         <strong>equivalentes</strong>, no variantes con comportamientos distintos. Las
         entradas, en orden:
-        <em>Update image version…</em> (<em>Set image version…</em> cuando no hay una más
+        <em>update image version…</em> (<em>set image version…</em> cuando no hay una más
         nueva — fijar una versión a tu elección o volver a ella es igual de válido),
-        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
-        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
-        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
-        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
-        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        <em>diff spec (previous → current)</em>, <em>roll back to the previous version</em>,
+        <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
+        <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
+        <em>edit secrets</em>, <em>edit mounts</em>, <em>edit resources</em>,
+        <em>edit placement</em>, <span style="color:#f85149"><em>remove service</em></span>
         — la destructiva, marcada en rojo — y <em>Cancel</em>. Te mueves con
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> saltan a la primera/última
         entrada), <kbd>Enter</kbd> selecciona; <kbd>Esc</kbd>, o la entrada <em>Cancel</em>,
@@ -1943,7 +1943,7 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>detalles del nodo — un overlay de solo lectura con hostname, id, rol/líder, disponibilidad, estado, dirección, engine, plataforma, CPUs, memoria, recuento de tareas en ejecución, los bloques de <strong>recursos reservados</strong>, de <strong>uso real</strong> y de <strong>imágenes en este nodo</strong> (véase más abajo), recuento de volúmenes y la lista completa de etiquetas</td></tr>
           <tr><td><kbd>l</kbd></td><td>edita las <strong>etiquetas</strong> del nodo seleccionado — un editor de lista por etapas (<kbd>a</kbd> añadir / <kbd>e</kbd> editar / <kbd>d</kbd> eliminar / <kbd>w</kbd> aplicar / <kbd>Esc</kbd> cancelar) sobre entradas <code>key=value</code>. Aplicar hace un <code>NodeUpdate</code> — a diferencia de un servicio, una actualización de nodo <strong>se aplica de inmediato</strong> (sin actualización progresiva). Las etiquetas de nodo se usan comúnmente como objetivos de restricción de colocación (<code>node.labels.&lt;k&gt;</code>)</td></tr>
-          <tr><td><kbd>a</kbd></td><td>fija la <strong>disponibilidad</strong> del nodo — un menú con <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> que marca el estado en el que está el nodo ahora mismo. <em>Active</em> programa tareas aquí con normalidad; <em>Pause</em> conserva las tareas en ejecución y solo impide colocaciones <strong>nuevas</strong>; <em>Drain</em> saca <strong>todas</strong> las tareas del nodo. Active y Pause se aplican al instante; Drain pasa por una confirmación que indica cuántas tareas en ejecución detendrá el swarm y reprogramará en otros nodos (los servicios cuyas tareas no puedan colocarse en ningún otro sitio quedarán unschedulable). Igual que un cambio de etiquetas, es un único <code>NodeUpdate</code> (lectura-modificación-escritura sobre la spec del nodo) y <strong>se aplica de inmediato</strong>: los nodos no tienen actualización progresiva. Reasignable como <code>node_availability</code></td></tr>
+          <tr><td><kbd>a</kbd></td><td>fija la <strong>disponibilidad</strong> del nodo — un menú con <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong> que marca el estado en el que está el nodo ahora mismo. <em>active</em> programa tareas aquí con normalidad; <em>pause</em> conserva las tareas en ejecución y solo impide colocaciones <strong>nuevas</strong>; <em>drain</em> saca <strong>todas</strong> las tareas del nodo. Active y Pause se aplican al instante; Drain pasa por una confirmación que indica cuántas tareas en ejecución detendrá el swarm y reprogramará en otros nodos (los servicios cuyas tareas no puedan colocarse en ningún otro sitio quedarán unschedulable). Igual que un cambio de etiquetas, es un único <code>NodeUpdate</code> (lectura-modificación-escritura sobre la spec del nodo) y <strong>se aplica de inmediato</strong>: los nodos no tienen actualización progresiva. Reasignable como <code>node_availability</code></td></tr>
           <tr><td><kbd>P</kbd></td><td>recupera espacio de disco de imágenes en el nodo (<kbd>P</kbd> mayúscula, es decir Shift+p — el mismo gesto que la pestaña Volumes usa para su prune). Abre un pequeño menú con los <strong>dos</strong> modos que se describen más abajo, cada uno tras su propia confirmación; conviene leer cuál es cuál antes de elegir. El pie de página termina con <em>P reclaim images</em> y el overlay <kbd>?</kbd> lo lista como <em>reclaim image disk space on the node</em>. Reasignable como <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
@@ -2017,8 +2017,8 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       <div class="tablewrap"><table>
         <thead><tr><th>Entrada</th><th>Qué elimina</th></tr></thead>
         <tbody>
-          <tr><td><strong>Untagged leftovers</strong></td><td>las capas que dejan atrás las reconstrucciones y desde las que no se puede arrancar nada. <strong>Seguro</strong>: no puede parar un servicio ni forzar una descarga</td></tr>
-          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>elimina además imágenes <strong>etiquetadas</strong> que ningún contenedor está ejecutando <em>ahora mismo</em>. En un nodo de swarm eso incluye todo servicio <strong>escalado a cero</strong> y toda tarea <strong>entre reinicios</strong>: cada una tendrá que <strong>volver a descargar su imagen</strong></td></tr>
+          <tr><td><strong>untagged leftovers</strong></td><td>las capas que dejan atrás las reconstrucciones y desde las que no se puede arrancar nada. <strong>Seguro</strong>: no puede parar un servicio ni forzar una descarga</td></tr>
+          <tr><td><strong style="color:#f85149">every unused image</strong></td><td>elimina además imágenes <strong>etiquetadas</strong> que ningún contenedor está ejecutando <em>ahora mismo</em>. En un nodo de swarm eso incluye todo servicio <strong>escalado a cero</strong> y toda tarea <strong>entre reinicios</strong>: cada una tendrá que <strong>volver a descargar su imagen</strong></td></tr>
         </tbody>
       </table></div>
       <div class="warn">

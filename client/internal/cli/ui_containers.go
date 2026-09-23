@@ -239,7 +239,7 @@ func (u *ui) renderContainers() {
 		croot.SetChildren(kept)
 	}
 	if len(croot.GetChildren()) == 0 {
-		empty := "(no services)"
+		empty := emptyText("services", "nothing is deployed on this swarm")
 		if q != "" {
 			empty = fmt.Sprintf("(no matches for %q)", u.filter)
 		}
@@ -385,7 +385,7 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 	u.fetchErr = err
 	if err != nil {
 		croot.ClearChildren()
-		croot.AddChild(tview.NewTreeNode("error: " + err.Error()).SetColor(tcell.ColorRed).SetSelectable(false))
+		croot.AddChild(tview.NewTreeNode(errorText(err)).SetColor(tcell.ColorRed).SetSelectable(false))
 		return
 	}
 	u.lastSvcs = svcs
@@ -494,14 +494,14 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 	render := func() {
 		cur := list.GetCurrentItem()
 		list.Clear()
-		list.AddItem("Logs", "", 0, func() { closeMenu(); u.showLogs(c) })
-		list.AddItem(shellLabel("Bash", bashOK, probed), "", 0, func() {
+		list.AddItem("logs", "", 0, func() { closeMenu(); u.showLogs(c) })
+		list.AddItem(shellLabel("bash", bashOK, probed), "", 0, func() {
 			if bashOK {
 				closeMenu()
 				u.openTerminal(c, []string{"bash"}, true, "")
 			}
 		})
-		list.AddItem(shellLabel("Sh", shOK, probed), "", 0, func() {
+		list.AddItem(shellLabel("sh", shOK, probed), "", 0, func() {
 			if shOK {
 				closeMenu()
 				// tty=true: an interactive sh needs a PTY so its line discipline
@@ -512,7 +512,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 		})
 		// Shell in as a specific user/UID (docker exec -u), for images whose
 		// default user lacks the tools or permissions you need.
-		list.AddItem("Shell as user…", "", 0, func() {
+		list.AddItem("shell as user…", "", 0, func() {
 			closeMenu()
 			u.userPrompt(c, func(usr string) {
 				if bashOK {
@@ -522,8 +522,8 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 				}
 			})
 		})
-		list.AddItem("Port forward", "", 0, func() { closeMenu(); u.portPrompt(c) })
-		list.AddItem("Cancel", "", 0, closeMenu)
+		list.AddItem("port forward", "", 0, func() { closeMenu(); u.portPrompt(c) })
+		list.AddItem("cancel", "", 0, closeMenu)
 		if cur >= 0 && cur < list.GetItemCount() {
 			list.SetCurrentItem(cur)
 		}

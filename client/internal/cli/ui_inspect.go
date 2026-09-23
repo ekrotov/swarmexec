@@ -201,7 +201,7 @@ func (iv *inspectView) populate() {
 	iv.hasUpgrade = false
 	iv.upInfo = nil
 	if !iv.loaded {
-		table.SetCell(0, 0, tview.NewTableCell("loading…").SetSelectable(false))
+		table.SetCell(0, 0, loadingCell())
 		iv.plain = append(iv.plain, "")
 		iv.setFooter("")
 		return
@@ -422,7 +422,7 @@ func (iv *inspectView) openDiff() {
 		}
 		return ev
 	})
-	tv.SetText("loading…")
+	tv.SetText(loadingText)
 	pages.AddPage(pageInspectDiff, centered(tv, 100, 32), true, true)
 	app.SetFocus(tv)
 	go func() {
@@ -590,29 +590,29 @@ func (iv *inspectView) serviceActions() []serviceAction {
 	// you are pinning/rolling back to one of your choosing.
 	switch {
 	case iv.upInfo != nil && iv.hasUpgrade:
-		add("Update image version…", iv.openVersionPicker)
+		add("update image version…", iv.openVersionPicker)
 	case iv.upInfo != nil:
-		add("Set image version…", iv.openVersionPicker)
+		add("set image version…", iv.openVersionPicker)
 	default:
 		// Deliberately listed rather than hidden. An absent entry is what sent
 		// the operator looking in the first place; this one answers the question
 		// instead of leaving the menu silent about it.
-		add("Set image version — unavailable for this image", iv.explainNoVersionPicker)
+		add("set image version — unavailable for this image", iv.explainNoVersionPicker)
 	}
-	add("Diff spec (previous → current)", iv.openDiff)
-	add("Roll back to the previous version", iv.openRollback)
-	add("Why — placement diagnosis", func() { u.showPlacementDiagnosis(editSvc, table) })
-	add("Scale", func() { u.openScalePrompt(editSvc, table, iv.reload) })
-	add("Force-update", func() { u.openForceUpdate(editSvc, table, iv.reload) })
-	add("Edit ports", func() { u.openPortsEditor(editSvc, table, iv.reload) })
-	add("Edit labels", func() { u.openLabelsEditor(editSvc, table, iv.reload) })
-	add("Edit env", func() { u.openEnvEditor(editSvc, table, iv.reload) })
-	add("Edit networks", func() { u.openNetworksEditor(editSvc, table, iv.reload) })
-	add("Edit secrets", func() { u.openSecretsEditor(editSvc, table, iv.reload) })
-	add("Edit mounts", func() { u.openMountsEditor(editSvc, table, iv.reload) })
-	add("Edit resources", func() { u.openResourcesEditor(editSvc, table, iv.reload) })
-	add("Edit placement", func() { u.openPlacementMenu(editSvc, table, iv.reload) })
-	add("[red]Remove service[white]", func() {
+	add("diff spec (previous → current)", iv.openDiff)
+	add("roll back to the previous version", iv.openRollback)
+	add("placement diagnosis — why a task is missing", func() { u.showPlacementDiagnosis(editSvc, table) })
+	add("scale", func() { u.openScalePrompt(editSvc, table, iv.reload) })
+	add("force-update", func() { u.openForceUpdate(editSvc, table, iv.reload) })
+	add("edit ports", func() { u.openPortsEditor(editSvc, table, iv.reload) })
+	add("edit labels", func() { u.openLabelsEditor(editSvc, table, iv.reload) })
+	add("edit env", func() { u.openEnvEditor(editSvc, table, iv.reload) })
+	add("edit networks", func() { u.openNetworksEditor(editSvc, table, iv.reload) })
+	add("edit secrets", func() { u.openSecretsEditor(editSvc, table, iv.reload) })
+	add("edit mounts", func() { u.openMountsEditor(editSvc, table, iv.reload) })
+	add("edit resources", func() { u.openResourcesEditor(editSvc, table, iv.reload) })
+	add("edit placement", func() { u.openPlacementMenu(editSvc, table, iv.reload) })
+	add("[red]remove service[white]", func() {
 		u.openRemoveService(editSvc, table, func() { iv.close(); u.loadContainers() })
 	})
 	return out
@@ -634,7 +634,7 @@ func (iv *inspectView) showActions() {
 		run := a.run
 		list.AddItem(a.label, "", 0, func() { closeActions(); run() })
 	}
-	list.AddItem("Cancel", "", 0, closeActions)
+	list.AddItem("cancel", "", 0, closeActions)
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {
 			closeActions()
@@ -765,7 +765,7 @@ func (iv *inspectView) open() {
 			}
 			if err != nil {
 				table.Clear()
-				table.SetCell(0, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+				table.SetCell(0, 0, errorCell(err))
 				iv.setFooter("")
 				return
 			}

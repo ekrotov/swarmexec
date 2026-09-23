@@ -22,9 +22,10 @@ func (u *ui) renderSecrets() {
 			selName = c.Text
 		}
 	}
-	sectable.Clear()
-	for c, h := range sHeaders {
-		sectable.SetCell(0, c, headerCell(h))
+	tableHeaders(sectable, sHeaders)
+	if len(u.secs) == 0 {
+		sectable.SetCell(1, 0, emptyCell(emptyText("secrets", keyHint(u.km.SecNew, "to create one"))))
+		return
 	}
 	selRow := 1
 	for i, s := range u.secs {
@@ -52,11 +53,7 @@ func (u *ui) renderSecrets() {
 
 func (u *ui) loadSecrets() {
 	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
-	sectable.Clear()
-	for c, h := range sHeaders {
-		sectable.SetCell(0, c, headerCell(h))
-	}
-	sectable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	tableState(sectable, sHeaders, loadingCell())
 	gen := u.generation()
 	go func() {
 		start := time.Now()
@@ -64,11 +61,7 @@ func (u *ui) loadSecrets() {
 		clientlog.Timed("ui.loadSecrets", start, err)
 		u.onCluster(gen, func() {
 			if err != nil {
-				sectable.Clear()
-				for c, h := range sHeaders {
-					sectable.SetCell(0, c, headerCell(h))
-				}
-				sectable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+				tableState(sectable, sHeaders, errorCell(err))
 				return
 			}
 			u.secs = list

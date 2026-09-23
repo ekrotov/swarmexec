@@ -66,19 +66,19 @@ func (u *ui) openStackFileMenu() {
 	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
 	closeMenu := func() { restoreHelp(); pages.RemovePage(pageMenu); app.SetFocus(ctree) }
 
-	list.AddItem("Export to a file", "write the deployed stack as compose YAML", 0, func() {
+	list.AddItem("export to a file", "write the deployed stack as compose YAML", 0, func() {
 		closeMenu()
 		u.promptStackPath(" export "+stack+" to ", defaultStackPath(stack), func(path string) {
 			u.exportStack(stack, path)
 		})
 	})
-	list.AddItem("Compare with a file", "show what deploying that file would change", 0, func() {
+	list.AddItem("compare with a file", "show what deploying that file would change", 0, func() {
 		closeMenu()
 		u.promptStackPath(" compare "+stack+" with ", defaultStackPath(stack), func(path string) {
 			u.diffStack(stack, path)
 		})
 	})
-	list.AddItem("Deploy a file", "check it for antipatterns, then apply it", 0, func() {
+	list.AddItem("deploy a file", "check it for antipatterns, then apply it", 0, func() {
 		closeMenu()
 		u.promptStackPath(" deploy into "+stack+" from ", defaultStackPath(stack), func(path string) {
 			u.planStack(stack, path)

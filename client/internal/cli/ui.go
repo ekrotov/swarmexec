@@ -1200,7 +1200,11 @@ func networkTypeColor(n swarmNetwork) tcell.Color {
 	case n.Internal:
 		return tcell.ColorYellow
 	case n.Ingress:
-		return tcell.ColorGray
+		// The routing mesh gets the same dim as the other networks nobody
+		// created. It used to have a gray of its own, one shade off the gray
+		// everything dim already uses — asking the eye to tell two grays apart
+		// for something the TYPE column says in words.
+		return tcell.ColorDimGray
 	case n.Driver == "overlay" || n.Scope == "swarm":
 		return tcell.ColorAqua
 	default:
@@ -1334,8 +1338,12 @@ func nodeStateColor(s string) tcell.Color {
 	switch s {
 	case "ready":
 		return tcell.ColorGreen
-	case "down", "disconnected", "unknown":
+	case "down", "disconnected":
 		return tcell.ColorRed
+	case "unknown":
+		// Not red: red is a confirmed failure, and this is the manager saying
+		// it does not know. Yellow is the honest colour for missing news.
+		return tcell.ColorYellow
 	default:
 		return tcell.ColorYellow
 	}

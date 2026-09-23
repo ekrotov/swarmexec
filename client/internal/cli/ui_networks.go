@@ -21,9 +21,10 @@ func (u *ui) renderNetworks() {
 			selName = c.Text
 		}
 	}
-	nettable.Clear()
-	for c, h := range nHeaders {
-		nettable.SetCell(0, c, headerCell(h))
+	tableHeaders(nettable, nHeaders)
+	if len(u.nets) == 0 {
+		nettable.SetCell(1, 0, emptyCell(emptyText("networks", keyHint(u.km.NetNew, "to create one"))))
+		return
 	}
 	selRow := 1
 	for i, n := range u.nets {
@@ -54,11 +55,7 @@ func (u *ui) renderNetworks() {
 
 func (u *ui) loadNetworks() {
 	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
-	nettable.Clear()
-	for c, h := range nHeaders {
-		nettable.SetCell(0, c, headerCell(h))
-	}
-	nettable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	tableState(nettable, nHeaders, loadingCell())
 	gen := u.generation()
 	go func() {
 		start := time.Now()
@@ -66,11 +63,7 @@ func (u *ui) loadNetworks() {
 		clientlog.Timed("ui.loadNetworks", start, err)
 		u.onCluster(gen, func() {
 			if err != nil {
-				nettable.Clear()
-				for c, h := range nHeaders {
-					nettable.SetCell(0, c, headerCell(h))
-				}
-				nettable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+				tableState(nettable, nHeaders, errorCell(err))
 				return
 			}
 			u.nets = list
@@ -194,7 +187,7 @@ func (v *netMembersView) render() {
 		if v.loaded {
 			list.AddItem("(no services attached)", "", 0, nil)
 		} else {
-			list.AddItem("loading…", "", 0, nil)
+			list.AddItem(loadingText, "", 0, nil)
 		}
 		meta("")
 	}
