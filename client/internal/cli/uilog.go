@@ -34,7 +34,7 @@ const logBufferCap = 5000
 // the same reason.
 func logViewHelp(following bool) string {
 	return " [yellow]f[white] follow " + followHint(following) +
-		"  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
+		"  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]a[white] auto-detect format  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
 }
 
 // followHint marks the active half of the on/off pair. Both halves stay visible
@@ -95,6 +95,14 @@ type logViewer struct {
 	format logfmt.Format
 	filter logfmt.Filter
 
+	// auto is set while the format is being detected from the lines themselves.
+	// It stays set until a verdict is reached, so a view opened on a silent
+	// container settles as soon as it says anything. onFormat, when set, is
+	// called on the main loop after the detector changes the format — the view
+	// title names the format, and it would otherwise keep naming the old one.
+	auto     bool
+	onFormat func()
+
 	// pending holds rendered output waiting for the next flush. Stream
 	// goroutines write here; only the flusher touches the widget.
 	pending bytes.Buffer
@@ -108,6 +116,79 @@ func newLogViewer(app *tview.Application, tv *tview.TextView, follow *atomic.Boo
 	// rendered lines to match the ring cap, keeping redraws constant-time.
 	tv.SetMaxLines(logBufferCap)
 	return &logViewer{app: app, tv: tv, follow: follow, format: format, filter: filter}
+}
+
+// armAutoDetect turns on content detection. It is how both entry points work:
+// `logs.format: auto` in the config arms the view before the first line, and
+// the `a` key arms it on an operator who has looked at the output and does not
+// want to guess which of five formats it is. Arming is all it does — the
+// verdict comes from the flusher, off the main loop, as lines arrive.
+func (v *logViewer) armAutoDetect() {
+	v.mu.Lock()
+	v.auto = true
+	v.mu.Unlock()
+}
+
+// autoDetectNow arms detection and tries immediately against what is already
+// buffered, so pressing the key on a view full of lines answers at once instead
+// of at the next flush. It returns what to tell the operator. Main loop only:
+// it re-renders directly.
+func (v *logViewer) autoDetectNow() string {
+	v.mu.Lock()
+	v.auto = true
+	f, msg, ok := v.autoVerdictLocked()
+	if !ok {
+		n := len(v.sampleLocked())
+		v.mu.Unlock()
+		return fmt.Sprintf("log format: cannot tell yet from %d line(s) — still watching", n)
+	}
+	v.settleLocked(f, msg)
+	v.mu.Unlock()
+	v.rebuild()
+	return msg
+}
+
+// autoVerdictLocked asks the detector and turns its answer into something to
+// say. ok is "the question is settled", which includes settling it against the
+// detector: a full sample it cannot explain is an answer too, and stopping there
+// is what keeps a view nobody can classify from rescanning its whole buffer ten
+// times a second for as long as it stays open. The `a` key asks again.
+//
+// A verdict that agrees with the current format still counts, and is still
+// worth saying, because "it is classic" and "I could not tell" look identical
+// on screen otherwise. Caller holds mu.
+func (v *logViewer) autoVerdictLocked() (logfmt.Format, string, bool) {
+	sample := v.sampleLocked()
+	if f, decided := logfmt.Detect(sample); decided {
+		return f, "log format detected: " + f.Name(), true
+	}
+	if len(sample) >= logfmt.DetectSample {
+		return v.format, fmt.Sprintf("log format: could not tell from %d lines — staying on %s",
+			len(sample), v.format.Name()), true
+	}
+	return v.format, "", false
+}
+
+// sampleLocked collects the raw lines the detector may look at. Notes are ours,
+// not the container's — feeding the view's own reconnect and event lines to the
+// detector would have it classify swarmexec. Caller holds mu.
+func (v *logViewer) sampleLocked() []string {
+	out := make([]string, 0, min(len(v.rows), logfmt.DetectSample))
+	for i := len(v.rows) - 1; i >= 0 && len(out) < logfmt.DetectSample; i-- {
+		if !v.rows[i].note {
+			out = append(out, v.rows[i].line)
+		}
+	}
+	return out
+}
+
+// settleLocked ends detection: it switches to f and records why in the buffer,
+// so the line that explains why the view suddenly looks different scrolls with
+// the output it belongs to. Caller holds mu.
+func (v *logViewer) settleLocked(f logfmt.Format, msg string) {
+	v.format = f
+	v.auto = false
+	v.rows = append(v.rows, logRow{note: true, line: "── " + msg + " ──"})
 }
 
 // logFlushInterval bounds how often the view redraws while streaming.
@@ -187,6 +268,29 @@ func (v *logViewer) start(ctx context.Context) {
 
 func (v *logViewer) flush() {
 	v.mu.Lock()
+	// The detector runs here rather than where lines arrive: this goroutine is
+	// already the one allowed to repaint the widget (via QueueUpdateDraw), and
+	// it is rate-limited, so sniffing costs one pass per flush at most.
+	if v.auto {
+		if f, msg, ok := v.autoVerdictLocked(); ok {
+			v.settleLocked(f, msg)
+			out := v.renderAllLocked()
+			v.pending.Reset()
+			onFormat := v.onFormat
+			v.mu.Unlock()
+			v.app.QueueUpdateDraw(func() {
+				v.tv.Clear()
+				fmt.Fprint(v.tv, out)
+				if v.follow == nil || v.follow.Load() {
+					v.tv.ScrollToEnd()
+				}
+				if onFormat != nil {
+					onFormat()
+				}
+			})
+			return
+		}
+	}
 	if v.pending.Len() == 0 {
 		v.mu.Unlock()
 		return
@@ -226,6 +330,22 @@ func (v *logViewer) addNote(text string) {
 // cycle.
 func (v *logViewer) rebuild() {
 	v.mu.Lock()
+	out := v.renderAllLocked()
+	follow := v.follow == nil || v.follow.Load()
+	// rows already contains everything queued, so anything pending would be
+	// appended a second time after this re-render.
+	v.pending.Reset()
+	v.mu.Unlock()
+	v.tv.Clear()
+	fmt.Fprint(v.tv, out)
+	if follow {
+		v.tv.ScrollToEnd()
+	}
+}
+
+// renderAllLocked renders the whole buffer through the current format and
+// filter. Caller holds mu.
+func (v *logViewer) renderAllLocked() string {
 	var b bytes.Buffer
 	for i := range v.rows {
 		if v.rows[i].note {
@@ -239,17 +359,7 @@ func (v *logViewer) rebuild() {
 			b.WriteByte('\n')
 		}
 	}
-	out := b.String()
-	follow := v.follow == nil || v.follow.Load()
-	// rows already contains everything queued, so anything pending would be
-	// appended a second time after this re-render.
-	v.pending.Reset()
-	v.mu.Unlock()
-	v.tv.Clear()
-	fmt.Fprint(v.tv, out)
-	if follow {
-		v.tv.ScrollToEnd()
-	}
+	return b.String()
 }
 
 // cycleFormat advances to the next built-in format and re-renders.
@@ -264,6 +374,9 @@ func (v *logViewer) cycleFormat() {
 		}
 	}
 	v.format = fs[(idx+1)%len(fs)]
+	// An explicit choice ends the guessing: nothing is more irritating than a
+	// format that changes back under a cursor that just set it.
+	v.auto = false
 	v.mu.Unlock()
 	v.rebuild()
 }
@@ -308,7 +421,11 @@ func (v *logViewer) status() string {
 	if v.filter.Grep != nil {
 		grep = v.filter.Grep.String()
 	}
-	return fmt.Sprintf("fmt:%s lvl:%s grep:%s", v.format.Name(), lvl, grep)
+	name := v.format.Name()
+	if v.auto {
+		name = logfmt.AutoName + "→" + name
+	}
+	return fmt.Sprintf("fmt:%s lvl:%s grep:%s", name, lvl, grep)
 }
 
 // logIngest splits streamed bytes into lines and feeds them to a logViewer.

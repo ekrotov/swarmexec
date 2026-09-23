@@ -332,7 +332,7 @@
         <code>--min-level</code> del comando <code>logs</code> los sobrescriben:
       </p>
       <div class="cmd">logs:
-  format: json        <span class="k"># classic | json | logfmt | gelf | raw</span>
+  format: auto        <span class="k"># auto | classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal; omítelo para no filtrar por nivel</span></div>
       <p>Inspecciona la configuración efectiva y combinada (con el secreto enmascarado) con:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># o: --json</span></div>
@@ -841,7 +841,7 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>líneas desde el final con las que empezar (<code>0</code> = todas)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>antepone una marca de tiempo a cada línea</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>solo logs más nuevos que esto (p. ej. <code>10m</code>, <code>1h</code>)</td></tr>
-          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>analiza las líneas como <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (por defecto desde la configuración, si no <code>classic</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>analiza las líneas como <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> lo decide a partir de las propias líneas (por defecto desde la configuración, si no <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>solo muestra este nivel y superiores: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>solo muestra las líneas cuyo mensaje (analizado) coincide con esta expresión regular de Go</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>pista/anulación de nodo para destinos de tipo container-id</td></tr>
@@ -890,11 +890,24 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
+<span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># que decidan las líneas</span>
 <span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
       <div class="note">
-        De cara al futuro: la selección de formato está diseñada para admitir más adelante la
-        detección automática de formato por servicio a través de un servicio en línea (aún no
-        implementado).
+        <strong>Detectar el formato.</strong> <code>--log-format auto</code> —y <kbd>a</kbd>
+        en la vista de logs de la TUI— puntúa las propias líneas contra cada formato
+        integrado y toma el primero, del más específico al menos, que explique al menos dos
+        de cada tres líneas. GELF se comprueba antes que JSON porque toda línea GELF también
+        es JSON válido; una línea <code>key=value</code> cuenta como <code>logfmt</code> solo
+        si lleva una clave <code>msg</code> o <code>level</code>, de modo que una cadena de
+        consulta de una URL o un access log no lo hacen. Se muestrean las líneas
+        <em>más recientes</em>, no las primeras: esas son el banner de arranque de un
+        framework, no la aplicación. Si la muestra es demasiado pequeña o demasiado mezclada,
+        lo dice y se queda con el valor por defecto en vez de adivinar: un formato equivocado
+        es peor que ninguno, porque <code>--min-level</code> sobre un flujo mal parseado no
+        filtra nada. En la tubería las primeras líneas se retienen hasta el veredicto (como
+        mucho 40, como mucho un segundo), para que la salida nunca se imprima en dos formas.
+        Queda pendiente: la detección por servicio desde un catálogo en línea indexado por
+        imagen —la misma costura, otra fuente de la respuesta—.
       </div>
 
       <h3><code>port-forward</code> (alias <code>pf</code>) — reenviar un puerto local</h3>
@@ -2104,6 +2117,7 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         <tbody>
           <tr><td><kbd>f</kbd></td><td>alterna el seguimiento</td></tr>
           <tr><td><kbd>F</kbd></td><td>cicla el formato de log (classic → json → logfmt → gelf → raw)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>detecta el formato de log a partir de las líneas en pantalla — lo dice cuando no puede saberlo y sigue mirando</td></tr>
           <tr><td><kbd>l</kbd></td><td>cicla el filtro de nivel mínimo (off → trace → … → fatal → off)</td></tr>
           <tr><td><kbd>/</kbd></td><td>introduce una expresión regular grep sobre el mensaje (vacía la borra)</td></tr>
           <tr><td><kbd>m</kbd></td><td>alterna la captura del ratón (off = selección/copia propia de tu terminal)</td></tr>

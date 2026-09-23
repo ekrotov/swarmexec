@@ -40,7 +40,7 @@ type logsFlags struct {
 	since          time.Duration
 	node           string
 	connectTimeout time.Duration
-	logFormat      string // classic | json | logfmt | gelf | raw
+	logFormat      string // auto | classic | json | logfmt | gelf | raw
 	minLevel       string // trace..fatal; "" = no level filter
 	grep           string // regexp on the (parsed) message; "" = no text filter
 }
@@ -62,7 +62,7 @@ func newLogsCmd(g *globalFlags) *cobra.Command {
 	fl.DurationVar(&f.since, "since", 0, "only logs newer than this (e.g. 10m, 1h; 0 = no limit)")
 	fl.StringVar(&f.node, "node", "", "node hint/override for container-id targets")
 	fl.DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the agent")
-	fl.StringVar(&f.logFormat, "log-format", "", "parse lines as: classic | json | logfmt | gelf | raw (default from config, else classic)")
+	fl.StringVar(&f.logFormat, "log-format", "", "parse lines as: auto | classic | json | logfmt | gelf | raw (auto detects it from the lines themselves; default from config, else classic)")
 	fl.StringVar(&f.minLevel, "min-level", "", "only show this level and above: trace|debug|info|warn|error|fatal")
 	fl.StringVar(&f.grep, "grep", "", "only show lines whose message matches this regexp")
 	return cmd
@@ -96,19 +96,28 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	}
 
 	// Optional format-aware parsing + filtering (flags override config defaults).
+	formatName := firstNonEmpty(f.logFormat, cfg.Logs.Format)
 	format, filter, ferr := buildLogFilter(
-		firstNonEmpty(f.logFormat, cfg.Logs.Format),
+		formatName,
 		firstNonEmpty(f.minLevel, cfg.Logs.MinLevel),
 		f.grep,
 	)
 	if ferr != nil {
 		return &cliError{code: usageExitCode, err: ferr}
 	}
+	auto := logFormatAuto(formatName)
 	var stdout, stderr io.Writer = os.Stdout, os.Stderr
 	var flushers []*filterWriter
-	if filteringActive(format, filter) {
+	if auto || filteringActive(format, filter) {
 		fo := newFilterWriter(os.Stdout, format, filter, renderPlain)
 		fe := newFilterWriter(os.Stderr, format, filter, renderPlain)
+		if auto {
+			// Each stream is sniffed on its own: an app that logs JSON on stdout
+			// and a runtime that prints plain panics on stderr is the normal
+			// case, not an exotic one.
+			fo.detectFormat()
+			fe.detectFormat()
+		}
 		stdout, stderr, flushers = fo, fe, []*filterWriter{fo, fe}
 	}
 

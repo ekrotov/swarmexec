@@ -331,7 +331,7 @@
         <code>--min-level</code> flags override them:
       </p>
       <div class="cmd">logs:
-  format: json        <span class="k"># classic | json | logfmt | gelf | raw</span>
+  format: auto        <span class="k"># auto | classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
       <p>Inspect the effective, merged configuration (secret masked) with:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
@@ -815,7 +815,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>lines from the end to start with (<code>0</code> = all)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
-          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (default from config, else <code>classic</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decides from the lines themselves (default from config, else <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
@@ -861,10 +861,23 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
+<span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># let the lines decide</span>
 <span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
       <div class="note">
-        Forward-looking: the format selection is designed to later support automatic
-        per-service format detection via an online service (not implemented yet).
+        <strong>Detecting the format.</strong> <code>--log-format auto</code> — and
+        <kbd>a</kbd> in the TUI log view — scores the lines themselves against every
+        built-in and takes the first one, most specific first, that explains at least two
+        lines in three. GELF is checked before JSON because every GELF line is also valid
+        JSON; a <code>key=value</code> line counts as <code>logfmt</code> only if it carries
+        a <code>msg</code> or <code>level</code> key, so a URL query string and an access log
+        do not. It samples the <em>most recent</em> lines, not the first ones, which are a
+        framework's startup banner rather than the application. When the sample is too small
+        or too mixed it says so and keeps the default instead of guessing: a wrong format is
+        worse than none, because <code>--min-level</code> on a stream parsed wrongly filters
+        nothing. On the pipe the first lines are held back until the verdict (at most 40, at
+        most a second), so the output is never printed in two shapes. Still ahead:
+        per-service detection from an online catalogue keyed by image — the same seam, a
+        different source of the answer.
       </div>
 
       <h3><code>port-forward</code> (alias <code>pf</code>) — forward a local port</h3>
@@ -2028,6 +2041,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         <tbody>
           <tr><td><kbd>f</kbd></td><td>toggle follow</td></tr>
           <tr><td><kbd>F</kbd></td><td>cycle log format (classic → json → logfmt → gelf → raw)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>auto-detect the log format from the lines on screen — it says so when it cannot tell, and keeps watching</td></tr>
           <tr><td><kbd>l</kbd></td><td>cycle minimum level filter (off → trace → … → fatal → off)</td></tr>
           <tr><td><kbd>/</kbd></td><td>enter a grep regexp on the message (empty clears it)</td></tr>
           <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>

@@ -337,7 +337,7 @@
         <code>--min-level</code> des <code>logs</code>-Befehls überschreiben sie:
       </p>
       <div class="cmd">logs:
-  format: json        <span class="k"># classic | json | logfmt | gelf | raw</span>
+  format: auto        <span class="k"># auto | classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
       <p>Inspiziere die effektive, zusammengeführte Konfiguration (Secret maskiert) mit:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
@@ -850,7 +850,7 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>Anzahl der Zeilen vom Ende, mit denen begonnen wird (<code>0</code> = alle)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>jeder Zeile einen Zeitstempel voranstellen</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>nur Logs neuer als dies (z. B. <code>10m</code>, <code>1h</code>)</td></tr>
-          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>Zeilen parsen als <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (Standard aus der Konfiguration, sonst <code>classic</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>Zeilen parsen als <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> entscheidet anhand der Zeilen selbst (Standard aus der Konfiguration, sonst <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>nur diese Stufe und höher anzeigen: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>nur Zeilen anzeigen, deren (geparste) Nachricht diesem Go-Regexp entspricht</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>Node-Hinweis/-Override für container-id-Ziele</td></tr>
@@ -900,11 +900,24 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
+<span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># die Zeilen entscheiden lassen</span>
 <span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
       <div class="note">
-        Ausblick: Die Formatauswahl ist so ausgelegt, dass sie später eine automatische
-        Formaterkennung pro Service über einen Onlinedienst unterstützt (noch nicht
-        implementiert).
+        <strong>Format erkennen.</strong> <code>--log-format auto</code> — und in der
+        TUI-Logansicht <kbd>a</kbd> — bewertet die Zeilen selbst gegen jedes eingebaute
+        Format und nimmt das erste, vom spezifischsten an, das mindestens zwei von drei
+        Zeilen erklärt. GELF wird vor JSON geprüft, weil jede GELF-Zeile auch gültiges JSON
+        ist; eine <code>key=value</code>-Zeile gilt nur dann als <code>logfmt</code>, wenn
+        sie einen <code>msg</code>- oder <code>level</code>-Schlüssel trägt — eine URL mit
+        Query-String und ein Access-Log also nicht. Gesucht wird in den <em>neuesten</em>
+        Zeilen, nicht in den ersten: Die sind das Startbanner eines Frameworks und nicht die
+        Anwendung. Ist die Stichprobe zu klein oder zu gemischt, sagt es das und bleibt beim
+        Standard, statt zu raten: Ein falsches Format ist schlimmer als keines, weil
+        <code>--min-level</code> auf einem falsch geparsten Strom gar nichts filtert. In der
+        Pipe werden die ersten Zeilen bis zum Urteil zurückgehalten (höchstens 40, höchstens
+        eine Sekunde), damit die Ausgabe nie in zwei Gestalten erscheint. Weiterhin offen:
+        Erkennung pro Service aus einem Online-Katalog über das Image — dieselbe Nahtstelle,
+        eine andere Quelle der Antwort.
       </div>
 
       <h3><code>port-forward</code> (Alias <code>pf</code>) — einen lokalen Port weiterleiten</h3>
@@ -2145,6 +2158,7 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         <tbody>
           <tr><td><kbd>f</kbd></td><td>Follow umschalten</td></tr>
           <tr><td><kbd>F</kbd></td><td>Log-Format durchschalten (classic → json → logfmt → gelf → raw)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>Log-Format aus den Zeilen auf dem Schirm erkennen — sagt es, wenn es sich nicht sicher ist, und schaut weiter zu</td></tr>
           <tr><td><kbd>l</kbd></td><td>Mindeststufen-Filter durchschalten (off → trace → … → fatal → off)</td></tr>
           <tr><td><kbd>/</kbd></td><td>ein Grep-Regexp auf die Nachricht eingeben (leer löscht es)</td></tr>
           <tr><td><kbd>m</kbd></td><td>Maus-Capture umschalten (aus = das eigene Auswählen/Kopieren deines Terminals)</td></tr>

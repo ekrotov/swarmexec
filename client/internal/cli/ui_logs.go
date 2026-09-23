@@ -18,14 +18,28 @@ import (
 )
 
 // logDefaults resolves the log view's initial format+filter from config,
-// falling back to sane defaults when the config values are invalid.
-func (u *ui) logDefaults() (logfmt.Format, logfmt.Filter) {
+// falling back to sane defaults when the config values are invalid. The bool
+// reports `logs.format: auto` — the view then decides from the lines instead of
+// from the config.
+func (u *ui) logDefaults() (logfmt.Format, logfmt.Filter, bool) {
 	cfg := u.cfg
 	format, filter, err := buildLogFilter(cfg.Logs.Format, cfg.Logs.MinLevel, "")
 	if err != nil {
-		return logfmt.DefaultFormat(), logfmt.Filter{}
+		return logfmt.DefaultFormat(), logfmt.Filter{}, false
 	}
-	return format, filter
+	return format, filter, logFormatAuto(cfg.Logs.Format)
+}
+
+// newLogView builds the viewer both log views share: format+filter from the
+// config, detection armed when the config asks for it, and the title kept in
+// step with a format the detector changes on its own.
+func (u *ui) newLogView(tv *tview.TextView, follow *atomic.Bool) *logViewer {
+	format, filter, auto := u.logDefaults()
+	lv := newLogViewer(u.app, tv, follow, format, filter)
+	if auto {
+		lv.armAutoDetect()
+	}
+	return lv
 }
 
 // logGrepPrompt asks for a message regexp and applies it to a log view.
@@ -72,7 +86,8 @@ func (u *ui) logFooterText(following bool) string {
 }
 
 // logViewKeys is the shared input capture for a log view: close, follow,
-// cycle format (F) / min-level (l), grep (/) and mouse capture (m).
+// cycle format (F) / auto-detect it (a) / min-level (l), grep (/) and mouse
+// capture (m).
 func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
 	return func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
@@ -87,6 +102,11 @@ func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView,
 			refreshHint() // the footer names the state too, not just the title
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'F':
 			lv.cycleFormat()
+			setTitle()
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+			// Five formats and no way to know which one this container uses is
+			// a question the output can answer better than the operator can.
+			u.info(lv.autoDetectNow())
 			setTitle()
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
 			lv.cycleLevel()
@@ -126,8 +146,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	follow := &atomic.Bool{}
 	follow.Store(true)
-	format, filter := u.logDefaults()
-	lv := newLogViewer(app, tv, follow, format, filter)
+	lv := u.newLogView(tv, follow)
 	setTitle := func() {
 		state := "on"
 		if !follow.Load() {
@@ -138,6 +157,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	}
 	tv.SetBorder(true)
 	setTitle()
+	lv.onFormat = setTitle // the detector can change the format without a keypress
 	page, refreshHint := u.logPage(tv, follow)
 	lctx, lcancel := context.WithCancel(ctx)
 	lv.start(lctx) // bounded redraw rate; see logFlushInterval
@@ -176,8 +196,7 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	follow := &atomic.Bool{}
 	follow.Store(true)
-	format, filter := u.logDefaults()
-	lv := newLogViewer(app, tv, follow, format, filter)
+	lv := u.newLogView(tv, follow)
 	setTitle := func() {
 		state := "on"
 		if !follow.Load() {
@@ -188,6 +207,7 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 	}
 	tv.SetBorder(true)
 	setTitle()
+	lv.onFormat = setTitle // the detector can change the format without a keypress
 	page, refreshHint := u.logPage(tv, follow)
 	lctx, lcancel := context.WithCancel(ctx)
 	lv.start(lctx) // bounded redraw rate; see logFlushInterval
