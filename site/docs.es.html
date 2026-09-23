@@ -851,7 +851,10 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
       <p>
         <strong>Análisis y filtrado según formato.</strong> <code>--log-format</code> le
         dice al cliente cómo leer cada línea para poder extraer un <em>nivel</em> y un
-        <em>mensaje</em>: <code>classic</code> extrae un nivel de una línea de texto plano,
+        <em>mensaje</em>: <code>classic</code> extrae un nivel de una línea de texto plano —un campo entre
+        corchetes (<code>[error]</code>, <code>[ info]</code>), una palabra en MAYÚSCULAS o
+        una cerrada por dos puntos (<code>error:</code>), que es lo que impide que un nodo
+        llamado <code>node-error-2</code> tiña de rojo cada línea que lo menciona—,
         <code>json</code> analiza JSON estilo logstash (campos
         <code>level</code>/<code>message</code>), <code>logfmt</code> analiza el estilo
         <code>clave=valor</code> que usan muchas aplicaciones Go, el daemon de Docker y las

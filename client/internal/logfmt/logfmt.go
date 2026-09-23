@@ -147,8 +147,6 @@ var Raw Format = format{name: "raw", parse: func(line string) Entry {
 	return Entry{Message: line, Raw: line}
 }}
 
-var classicLevelRe = regexp.MustCompile(`(?i)\b(trace|debug|info|warn(?:ing)?|error|err|fatal|critical|crit|panic)\b`)
-
 // Classic reads a plain-text line and extracts a level from a common word
 // (INFO/WARN/ERROR/…); the whole line stays as the message. A leading
 // --timestamps prefix, if present, is captured but left in the displayed line.
@@ -157,11 +155,111 @@ var Classic Format = format{name: "classic", parse: func(line string) Entry {
 	if ts, _ := stripLeadingTimestamp(line); !ts.IsZero() {
 		e.Timestamp = ts
 	}
-	if m := classicLevelRe.FindString(line); m != "" {
-		e.Level = ParseLevel(m)
-	}
+	e.Level = classicLevel(line)
 	return e
 }}
+
+// classicLevel reads the severity out of a plain-text line, or LevelUnknown.
+//
+// A classic line has no structure, so the level can only be recognised by the
+// SHAPE of the token — and the shape is what keeps a log from being coloured by
+// its own prose. It used to be a word search over the whole line, which read
+// "restarting after an error" as an error, and turned a node called
+// `node-error-2` into a failure on every line that mentioned it.
+//
+// Two shapes count, in this order:
+//
+//	[error]  [ info]  (warn)  <err>   a bracketed field, on its own
+//	ERROR    WARN     error:          an all-caps word, or one closed by a colon
+//
+// A bare lowercase word never counts. Some logger somewhere writes a bare
+// lowercase level with nothing around it, and that one is now read as levelless
+// — the trade for not calling every line that mentions trouble an error.
+func classicLevel(line string) Level {
+	if lvl := bracketedLevel(line); lvl != LevelUnknown {
+		return lvl
+	}
+	return bareLevel(line)
+}
+
+// bracketedLevel takes a level that is the entire content of a [...], (...) or
+// <...> group. This is the shape most plain-text loggers use — nginx, apache,
+// MySQL, spdlog, Fluent Bit — and the only one that is unambiguous, because the
+// brackets say where the field ends. "(see the error)" is not a level; "[error]"
+// is.
+func bracketedLevel(line string) Level {
+	for i := 0; i < len(line); i++ {
+		closer, ok := bracketCloser(line[i])
+		if !ok {
+			continue
+		}
+		end := strings.IndexByte(line[i+1:], closer)
+		if end < 0 {
+			continue
+		}
+		if lvl := ParseLevel(line[i+1 : i+1+end]); lvl != LevelUnknown {
+			return lvl
+		}
+		i += end // resume after this group, not inside it
+	}
+	return LevelUnknown
+}
+
+func bracketCloser(open byte) (byte, bool) {
+	switch open {
+	case '[':
+		return ']', true
+	case '(':
+		return ')', true
+	case '<':
+		return '>', true
+	}
+	return 0, false
+}
+
+// bareLevel takes a level standing as its own word, but only when its shape
+// says field rather than prose: ALL CAPS, or the head of a colon-separated
+// field.
+func bareLevel(line string) Level {
+	for _, field := range strings.Fields(line) {
+		tok, colon := field, false
+		if i := strings.IndexByte(tok, ':'); i >= 0 {
+			// "ERROR: relation does not exist", and python's default
+			// "WARNING:root:be careful": the level is the head of a
+			// colon-separated field.
+			tok, colon = tok[:i], true
+		}
+		// logrus writes "INFO[0000] msg": the group is the timestamp, and the
+		// level is what precedes it.
+		if i := strings.IndexByte(tok, '['); i > 0 {
+			tok = tok[:i]
+		}
+		// A token joined to something else is a name, not a level:
+		// node-error-2, error_handler, /var/log/error, app.error.
+		if tok == "" || strings.ContainsAny(tok, "-_./@\\") {
+			continue
+		}
+		lvl := ParseLevel(tok)
+		if lvl == LevelUnknown {
+			continue
+		}
+		if colon || isUpperASCII(tok) {
+			return lvl
+		}
+	}
+	return LevelUnknown
+}
+
+// isUpperASCII reports whether s has no lowercase letters — "INFO" and "WARN"
+// shout, prose does not.
+func isUpperASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'a' && s[i] <= 'z' {
+			return false
+		}
+	}
+	return true
+}
 
 // JSON is the logstash-style structured format: a JSON object whose message is
 // message/msg/@message/log and level is level/severity/loglevel/lvl/@level. A

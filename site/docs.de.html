@@ -861,7 +861,10 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         <strong>Formatbewusstes Parsen &amp; Filtern.</strong> <code>--log-format</code>
         sagt dem Client, wie er jede Zeile lesen soll, damit er eine <em>Stufe</em> und
         eine <em>Nachricht</em> herausziehen kann: <code>classic</code> extrahiert eine
-        Stufe aus einer reinen Textzeile, <code>json</code> parst JSON im
+        Stufe aus einer reinen Textzeile — ein Feld in Klammern
+        (<code>[error]</code>, <code>[ info]</code>), ein Wort in GROSSBUCHSTABEN oder
+        eines mit Doppelpunkt (<code>error:</code>), womit ein Knoten namens
+        <code>node-error-2</code> nicht mehr jede Zeile rot färbt, die ihn erwähnt; <code>json</code> parst JSON im
         Logstash-Stil (<code>level</code>/<code>message</code>-Felder), <code>logfmt</code>
         parst den <code>key=value</code>-Stil, den viele Go-Anwendungen, der Docker-Daemon
         und HashiCorp-Tools verwenden (<code>msg</code>/<code>message</code>,
