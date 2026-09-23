@@ -140,10 +140,12 @@ func claimsLogfmt(line string) bool {
 	return false
 }
 
-// claimsClassic is a level word in a plain line — the same evidence the classic
+// claimsClassic is a level FIELD in a plain line — the same evidence the classic
 // parser itself uses, so a sample it claims is a sample it can actually read.
+// That it is the same test is the point: when the parser got stricter about what
+// counts as a level, the detector could not drift away from it.
 func claimsClassic(line string) bool {
-	return classicLevelRe.MatchString(line)
+	return classicLevel(line) != LevelUnknown
 }
 
 // objectOf decodes a line as a JSON object, past a `docker logs --timestamps`

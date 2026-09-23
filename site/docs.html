@@ -825,7 +825,10 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       <p>
         <strong>Format-aware parsing &amp; filtering.</strong> <code>--log-format</code>
         tells the client how to read each line so it can pull out a <em>level</em> and a
-        <em>message</em>: <code>classic</code> extracts a level from a plain text line,
+        <em>message</em>: <code>classic</code> extracts a level from a plain text line — a bracketed
+        field (<code>[error]</code>, <code>[ info]</code>), an ALL-CAPS word, or one
+        closed by a colon (<code>error:</code>), which is what keeps a node called
+        <code>node-error-2</code> from turning every line that mentions it red;
         <code>json</code> parses logstash-style JSON (<code>level</code>/<code>message</code>
         fields), <code>logfmt</code> parses the <code>key=value</code> style used by many Go
         apps, the Docker daemon and HashiCorp tools (<code>msg</code>/<code>message</code>,

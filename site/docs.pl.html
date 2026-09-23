@@ -838,7 +838,10 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
       <p>
         <strong>Parsowanie i filtrowanie świadome formatu.</strong> <code>--log-format</code>
         mówi klientowi, jak czytać każdą linię, żeby mógł wyciągnąć z niej <em>poziom</em>
-        i <em>komunikat</em>: <code>classic</code> wyciąga poziom ze zwykłej linii tekstu,
+        i <em>komunikat</em>: <code>classic</code> wyciąga poziom ze zwykłej linii tekstu — pole w nawiasach
+        (<code>[error]</code>, <code>[ info]</code>), słowo WERSALIKAMI albo zamknięte
+        dwukropkiem (<code>error:</code>), dzięki czemu węzeł o nazwie
+        <code>node-error-2</code> nie barwi już na czerwono każdej linii, która go wspomina;
         <code>json</code> parsuje JSON w stylu logstash (pola
         <code>level</code>/<code>message</code>), <code>logfmt</code> parsuje styl
         <code>key=value</code> używany przez wiele aplikacji w Go, demona Dockera i narzędzia
