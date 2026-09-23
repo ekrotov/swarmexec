@@ -145,14 +145,24 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 
 	// Client -> target.
 	go func() {
-		defer cancel()
 		for {
 			msg, rerr := stream.Recv()
 			if rerr != nil {
 				if errors.Is(rerr, io.EOF) {
-					// Client half-closed: EOF to the target, keep reading back.
+					// Client half-closed: EOF to the target, and keep reading
+					// back. This goroutine must NOT cancel here, which is what
+					// it used to do — a request/response exchange ends exactly
+					// this way (send, shutdown(WR), read the answer), and
+					// cancelling tore down the channel while the answer was
+					// still in it. The read direction now ends where it should:
+					// when the target closes, or when the client disconnects
+					// for real and the stream context is cancelled.
 					ch.CloseWrite()
+					return
 				}
+				// Anything else means the client is gone, so nothing is coming
+				// back either.
+				cancel()
 				return
 			}
 			d, ok := msg.Payload.(*pb.ForwardClientMessage_Data)
@@ -168,6 +178,7 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 			// read the counter before this goroutine got to update it.
 			bytesIn.Add(int64(len(d.Data)))
 			if _, werr := ch.Write(d.Data); werr != nil {
+				cancel()
 				return
 			}
 		}
