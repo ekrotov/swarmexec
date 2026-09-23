@@ -192,10 +192,7 @@ func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
 func (u *ui) renderForwards() {
 	forwards, ftable := u.forwards, u.ftable
 	prev, _ := ftable.GetSelection()
-	ftable.Clear()
-	for i, h := range fHeaders {
-		ftable.SetCell(0, i, headerCell(h))
-	}
+	tableHeaders(ftable, fHeaders)
 	u.fRows = forwards.list()
 	for i, e := range u.fRows {
 		row := i + 1
@@ -243,8 +240,11 @@ func (u *ui) renderForwards() {
 		ftable.SetCell(row, 7, tview.NewTableCell(state).SetTextColor(color))
 	}
 	if len(u.fRows) == 0 {
-		ftable.SetCell(1, 0, tview.NewTableCell("(no forwards — press p on a container)").
-			SetTextColor(tcell.ColorGray).SetSelectable(false))
+		// The state every other tab's empty now follows. It used to name the
+		// key as a literal "p", which was quietly wrong for anyone who had
+		// remapped it — the hint now comes from the live keymap like every
+		// other key this program prints.
+		ftable.SetCell(1, 0, emptyCell(emptyText("forwards", keyHint(u.km.Forward, "on a container starts one"))))
 		return
 	}
 	if prev > 0 && prev <= len(u.fRows) {

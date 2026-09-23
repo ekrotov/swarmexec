@@ -703,7 +703,7 @@ swarmexec stack diff postgres.yml postgres</div>
 swarmexec stack deploy web.yml --check    # nur prüfen, nie ausrollen
 swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</div>
       <p>
-        Im TUI macht <kbd>E</kbd> → <em>Deploy a file</em> dasselbe: zuerst die Befunde,
+        Im TUI macht <kbd>E</kbd> → <em>deploy a file</em> dasselbe: zuerst die Befunde,
         <kbd>d</kbd> fährt fort, <kbd>Esc</kbd> geht weg. Zu diesem Zeitpunkt ist nichts
         angelegt — genau dafür ist die Pause da.
       </p>
@@ -1402,11 +1402,11 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       </p>
 
       <p>
-        Das Aktionsmenü bietet <strong>Logs</strong>, <strong>Bash</strong>,
-        <strong>Sh</strong>, <strong>Shell as user…</strong> (fragt nach einem
+        Das Aktionsmenü bietet <strong>logs</strong>, <strong>bash</strong>,
+        <strong>sh</strong>, <strong>shell as user…</strong> (fragt nach einem
         Benutzer/einer UID, wie <code>docker exec -u</code> — für Images, deren
         Standardbenutzer die benötigten Werkzeuge oder Rechte nicht hat) und
-        <strong>Port forward</strong> (nicht verfügbare Shells
+        <strong>port forward</strong> (nicht verfügbare Shells
         werden nach einem Test ausgegraut). In der Suchleiste behält <kbd>Enter</kbd> den
         Filter und kehrt zur Liste zurück; <kbd>Esc</kbd> löscht den Filter und schließt
         die Leiste.
@@ -1718,13 +1718,13 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         und öffnet genau das, was auch die direkte Taste öffnet, beide sind also
         <strong>gleichwertig</strong> und keine Varianten mit unterschiedlichem Verhalten.
         Die Einträge in ihrer Reihenfolge:
-        <em>Update image version…</em> (<em>Set image version…</em>, wenn es keine neuere
+        <em>update image version…</em> (<em>set image version…</em>, wenn es keine neuere
         gibt — auf einen Tag deiner Wahl pinnen oder zurückgehen ist genauso legitim),
-        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
-        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
-        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
-        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
-        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        <em>diff spec (previous → current)</em>, <em>roll back to the previous version</em>,
+        <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
+        <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
+        <em>edit secrets</em>, <em>edit mounts</em>, <em>edit resources</em>,
+        <em>edit placement</em>, <span style="color:#f85149"><em>remove service</em></span>
         — der destruktive, deshalb rot markiert — und <em>Cancel</em>. Navigiert wird mit
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> springen zum ersten/letzten
         Eintrag), <kbd>Enter</kbd> wählt aus; <kbd>Esc</kbd> — oder der Eintrag
@@ -1981,7 +1981,7 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, den Blöcken <strong>reservierte Ressourcen</strong>, <strong>tatsächliche Nutzung</strong> und <strong>Images auf diesem Node</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
           <tr><td><kbd>l</kbd></td><td>die <strong>Labels</strong> des ausgewählten Nodes bearbeiten — ein gestagter Listeneditor (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen) über <code>key=value</code>-Einträge. Das Anwenden macht ein <code>NodeUpdate</code> — anders als bei einem Service <strong>greift ein Node-Update sofort</strong> (kein Rolling Update). Node-Labels werden häufig als Ziele von Placement-Constraints verwendet (<code>node.labels.&lt;k&gt;</code>)</td></tr>
-          <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>Active</em> plant Tasks hier normal ein; <em>Pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>Drain</em> verschiebt <strong>jeden</strong> Task vom Node herunter. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umlegbar als <code>node_availability</code></td></tr>
+          <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>active</em> plant Tasks hier normal ein; <em>pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>drain</em> verschiebt <strong>jeden</strong> Task vom Node herunter. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umlegbar als <code>node_availability</code></td></tr>
           <tr><td><kbd>P</kbd></td><td>Image-Plattenplatz auf dem Node freiräumen (großes <kbd>P</kbd>, also Shift+p — dieselbe Geste, die der Volumes-Tab für sein Prune verwendet). Öffnet ein kleines Menü mit den <strong>zwei</strong> unten beschriebenen Modi, jeder hinter einer eigenen Bestätigung; es lohnt sich, vorher zu lesen, welcher welcher ist. Die Fußzeile endet mit <em>P reclaim images</em>, das <kbd>?</kbd>-Overlay führt es als <em>reclaim image disk space on the node</em>. Umlegbar als <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
@@ -2055,8 +2055,8 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       <div class="tablewrap"><table>
         <thead><tr><th>Eintrag</th><th>Was entfernt wird</th></tr></thead>
         <tbody>
-          <tr><td><strong>Untagged leftovers</strong></td><td>die Layer, die Rebuilds zurücklassen und aus denen sich nichts starten lässt. <strong>Sicher</strong>: Das kann keinen Service stoppen und keinen Pull erzwingen</td></tr>
-          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>entfernt zusätzlich <strong>getaggte</strong> Images, die <em>gerade jetzt</em> kein Container benutzt. Auf einem Swarm-Node gehören dazu jeder Service, der aktuell auf <strong>null skaliert</strong> ist, und jede Task <strong>zwischen zwei Restarts</strong> — jede davon muss ihr Image <strong>erneut ziehen</strong></td></tr>
+          <tr><td><strong>untagged leftovers</strong></td><td>die Layer, die Rebuilds zurücklassen und aus denen sich nichts starten lässt. <strong>Sicher</strong>: Das kann keinen Service stoppen und keinen Pull erzwingen</td></tr>
+          <tr><td><strong style="color:#f85149">every unused image</strong></td><td>entfernt zusätzlich <strong>getaggte</strong> Images, die <em>gerade jetzt</em> kein Container benutzt. Auf einem Swarm-Node gehören dazu jeder Service, der aktuell auf <strong>null skaliert</strong> ist, und jede Task <strong>zwischen zwei Restarts</strong> — jede davon muss ihr Image <strong>erneut ziehen</strong></td></tr>
         </tbody>
       </table></div>
       <div class="warn">

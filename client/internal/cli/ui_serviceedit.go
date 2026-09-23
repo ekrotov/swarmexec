@@ -1037,7 +1037,7 @@ func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tvi
 func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	tv.SetBorder(true).SetTitle(fmt.Sprintf(" why? — placement of %s ", svcName))
+	tv.SetBorder(true).SetTitle(fmt.Sprintf(" placement of %s ", svcName))
 	tv.SetText("  [gray]diagnosing…[-]")
 	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
 	closeDiag := func() { restoreHelp(); pages.RemovePage(pagePlaceDiag); app.SetFocus(back) }

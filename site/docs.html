@@ -676,7 +676,7 @@ swarmexec stack diff postgres.yml postgres</div>
 swarmexec stack deploy web.yml --check    # only check, never deploy
 swarmexec stack deploy web.yml --force    # deploy despite findings, deliberately</div>
       <p>
-        In the TUI, <kbd>E</kbd> → <em>Deploy a file</em> does the same: the findings are
+        In the TUI, <kbd>E</kbd> → <em>deploy a file</em> does the same: the findings are
         shown first, <kbd>d</kbd> proceeds, <kbd>Esc</kbd> walks away. Nothing has been
         created at that point, which is the whole purpose of the pause.
       </p>
@@ -1331,10 +1331,10 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       </p>
 
       <p>
-        The action menu offers <strong>Logs</strong>, <strong>Bash</strong>,
-        <strong>Sh</strong>, <strong>Shell as user…</strong> (prompts for a user/UID,
+        The action menu offers <strong>logs</strong>, <strong>bash</strong>,
+        <strong>sh</strong>, <strong>shell as user…</strong> (prompts for a user/UID,
         like <code>docker exec -u</code>, for images whose default user lacks the tools
-        or permissions you need) and <strong>Port forward</strong> (unavailable shells are
+        or permissions you need) and <strong>port forward</strong> (unavailable shells are
         greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
         and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
       </p>
@@ -1620,13 +1620,13 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         <strong>no-Shift</strong> path — and not a reduced one: choosing an entry closes the
         menu and opens exactly what the direct key opens, so the two are <strong>equivalent</strong>,
         not variants with different behaviour. The entries, in order:
-        <em>Update image version…</em> (<em>Set image version…</em> when no newer one was
+        <em>update image version…</em> (<em>set image version…</em> when no newer one was
         found — pinning or rolling back to a tag of your choosing is just as valid),
-        <em>Diff spec (previous → current)</em>, <em>Roll back to the previous version</em>,
-        <em>Why — placement diagnosis</em>, <em>Scale</em>, <em>Force-update</em>,
-        <em>Edit ports</em>, <em>Edit labels</em>, <em>Edit env</em>, <em>Edit networks</em>,
-        <em>Edit secrets</em>, <em>Edit mounts</em>, <em>Edit resources</em>,
-        <em>Edit placement</em>, <span style="color:#f85149"><em>Remove service</em></span>
+        <em>diff spec (previous → current)</em>, <em>roll back to the previous version</em>,
+        <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
+        <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
+        <em>edit secrets</em>, <em>edit mounts</em>, <em>edit resources</em>,
+        <em>edit placement</em>, <span style="color:#f85149"><em>remove service</em></span>
         — the destructive one, marked in red — and <em>Cancel</em>. Move with
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> jump to the first/last entry),
         <kbd>Enter</kbd> selects; <kbd>Esc</kbd>, or the <em>Cancel</em> entry, closes the
@@ -1875,7 +1875,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong>, <strong>in-use</strong> and <strong>images on this node</strong> blocks (see below), volume count and the full label list</td></tr>
           <tr><td><kbd>l</kbd></td><td>edit the selected node's <strong>labels</strong> — a staged list editor (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel) over <code>key=value</code> entries. Applying does one <code>NodeUpdate</code> — unlike a service, a node update <strong>applies immediately</strong> (no rolling update). Node labels are commonly used as placement-constraint targets (<code>node.labels.&lt;k&gt;</code>)</td></tr>
-          <tr><td><kbd>a</kbd></td><td>set the node's <strong>availability</strong> — a menu of <strong>Active</strong> / <strong>Pause</strong> / <strong>Drain</strong> that marks the state the node is currently in. <em>Active</em> schedules tasks here normally; <em>Pause</em> keeps the running tasks and only stops <strong>new</strong> placements; <em>Drain</em> moves <strong>every</strong> task off the node. Active and Pause apply straight away; Drain goes through a confirm naming how many running tasks swarm will stop and reschedule elsewhere (services whose tasks can't be placed anywhere else go unschedulable). Like a label change it is one <code>NodeUpdate</code> (read-modify-write on the node spec) and <strong>applies immediately</strong> — nodes have no rolling update. Remappable as <code>node_availability</code></td></tr>
+          <tr><td><kbd>a</kbd></td><td>set the node's <strong>availability</strong> — a menu of <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong> that marks the state the node is currently in. <em>active</em> schedules tasks here normally; <em>pause</em> keeps the running tasks and only stops <strong>new</strong> placements; <em>drain</em> moves <strong>every</strong> task off the node. Active and Pause apply straight away; Drain goes through a confirm naming how many running tasks swarm will stop and reschedule elsewhere (services whose tasks can't be placed anywhere else go unschedulable). Like a label change it is one <code>NodeUpdate</code> (read-modify-write on the node spec) and <strong>applies immediately</strong> — nodes have no rolling update. Remappable as <code>node_availability</code></td></tr>
           <tr><td><kbd>P</kbd></td><td>reclaim image disk space on the node (capital <kbd>P</kbd>, i.e. Shift+p — the same gesture the Volumes tab uses for its prune). Opens a small menu with the <strong>two</strong> reclaim modes described below, each behind its own confirm; it is worth reading which is which before picking one. The footer ends with <em>P reclaim images</em> and the <kbd>?</kbd> overlay lists it as <em>reclaim image disk space on the node</em>. Remappable as <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
@@ -1944,8 +1944,8 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
       <div class="tablewrap"><table>
         <thead><tr><th>Entry</th><th>What it removes</th></tr></thead>
         <tbody>
-          <tr><td><strong>Untagged leftovers</strong></td><td>the layers left behind by rebuilds, which nothing can start from. <strong>Safe</strong>: it cannot stop a service and it cannot force a pull</td></tr>
-          <tr><td><strong style="color:#f85149">Every unused image</strong></td><td>also removes <strong>tagged</strong> images that no container is running <em>right now</em>. On a swarm node that includes every service currently <strong>scaled to zero</strong> and every task <strong>between restarts</strong> — each of them will have to <strong>pull its image again</strong></td></tr>
+          <tr><td><strong>untagged leftovers</strong></td><td>the layers left behind by rebuilds, which nothing can start from. <strong>Safe</strong>: it cannot stop a service and it cannot force a pull</td></tr>
+          <tr><td><strong style="color:#f85149">every unused image</strong></td><td>also removes <strong>tagged</strong> images that no container is running <em>right now</em>. On a swarm node that includes every service currently <strong>scaled to zero</strong> and every task <strong>between restarts</strong> — each of them will have to <strong>pull its image again</strong></td></tr>
         </tbody>
       </table></div>
       <div class="warn">

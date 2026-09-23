@@ -24,9 +24,12 @@ func (u *ui) renderNodes() {
 			selName = strings.TrimPrefix(c.Text, "★ ")
 		}
 	}
-	notable.Clear()
-	for c, h := range noHeaders {
-		notable.SetCell(0, c, headerCell(h))
+	tableHeaders(notable, noHeaders)
+	if len(u.nodeInfos) == 0 {
+		// No advice to give: a swarm you are talking to has nodes, so an empty
+		// list is a statement about the cluster, not something to act on here.
+		notable.SetCell(1, 0, emptyCell(emptyText("nodes", "the manager reported none")))
+		return
 	}
 	selRow := 1
 	for i, n := range u.nodeInfos {
@@ -60,11 +63,7 @@ func (u *ui) renderNodes() {
 
 func (u *ui) loadNodes() {
 	r, cfg, dcli, f, ctx, notable := u.r, u.cfg, u.dcli, u.f, u.ctx, u.notable
-	notable.Clear()
-	for c, h := range noHeaders {
-		notable.SetCell(0, c, headerCell(h))
-	}
-	notable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	tableState(notable, noHeaders, loadingCell())
 	gen := u.generation()
 	go func() {
 		start := time.Now()
@@ -72,11 +71,7 @@ func (u *ui) loadNodes() {
 		clientlog.Timed("ui.loadNodes", start, err)
 		u.onCluster(gen, func() {
 			if err != nil {
-				notable.Clear()
-				for c, h := range noHeaders {
-					notable.SetCell(0, c, headerCell(h))
-				}
-				notable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed))
+				tableState(notable, noHeaders, errorCell(err))
 				return
 			}
 			u.nodeInfos, u.nodeVolsLoaded = list, false
@@ -261,12 +256,12 @@ func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after f
 			u.confirm(confirmMsg, "Drain", back, func() { apply(to) })
 		})
 	}
-	add("Active", "schedule tasks here normally", swarm.NodeAvailabilityActive, "")
-	add("Pause", "keep running tasks, place no new ones", swarm.NodeAvailabilityPause, "")
-	add("[red]Drain[-]", "move every task off this node", swarm.NodeAvailabilityDrain,
+	add("active", "schedule tasks here normally", swarm.NodeAvailabilityActive, "")
+	add("pause", "keep running tasks, place no new ones", swarm.NodeAvailabilityPause, "")
+	add("[red]drain[-]", "move every task off this node", swarm.NodeAvailabilityDrain,
 		fmt.Sprintf("Drain %q?\n\nSwarm will stop this node's %d running task(s) and reschedule them on other nodes. Services whose tasks cannot be placed elsewhere will go unschedulable.",
 			n.Hostname, n.Tasks))
-	list.AddItem("Cancel", "", 0, closeMenu)
+	list.AddItem("cancel", "", 0, closeMenu)
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {
 			closeMenu()
@@ -512,11 +507,11 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 		})
 	}
 
-	list.AddItem(fmt.Sprintf("Untagged leftovers — frees %s", formatMemBytes(ni.Dangling)),
+	list.AddItem(fmt.Sprintf("untagged leftovers — frees %s", formatMemBytes(ni.Dangling)),
 		"safe: nothing can start from an untagged image", 0, func() { run(false) })
-	list.AddItem(fmt.Sprintf("[red]Every unused image[white] — frees %s", formatMemBytes(ni.Dangling+ni.Unused)),
+	list.AddItem(fmt.Sprintf("[red]every unused image[white] — frees %s", formatMemBytes(ni.Dangling+ni.Unused)),
 		"also removes images a stopped service still needs", 0, func() { run(true) })
-	list.AddItem("Cancel", "", 0, closeIt)
+	list.AddItem("cancel", "", 0, closeIt)
 
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {

@@ -22,9 +22,12 @@ func (u *ui) renderConfigs() {
 			selName = c.Text
 		}
 	}
-	cfgtable.Clear()
-	for c, h := range cfHeaders {
-		cfgtable.SetCell(0, c, headerCell(h))
+	tableHeaders(cfgtable, cfHeaders)
+	if len(u.cfgs) == 0 {
+		// Nothing in this tab creates a config: swarmexec reads them, docker
+		// writes them. Saying so beats an empty box that looks broken.
+		cfgtable.SetCell(1, 0, emptyCell(emptyText("configs", "docker config create adds one")))
+		return
 	}
 	selRow := 1
 	for i, c := range u.cfgs {
@@ -54,14 +57,7 @@ func (u *ui) renderConfigs() {
 
 func (u *ui) loadConfigs() {
 	dcli, ctx, cfgtable := u.dcli, u.ctx, u.cfgtable
-	header := func() {
-		cfgtable.Clear()
-		for c, h := range cfHeaders {
-			cfgtable.SetCell(0, c, headerCell(h))
-		}
-	}
-	header()
-	cfgtable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	tableState(cfgtable, cfHeaders, loadingCell())
 	gen := u.generation()
 	go func() {
 		start := time.Now()
@@ -69,8 +65,7 @@ func (u *ui) loadConfigs() {
 		clientlog.Timed("ui.loadConfigs", start, err)
 		u.onCluster(gen, func() {
 			if err != nil {
-				header()
-				cfgtable.SetCell(1, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+				tableState(cfgtable, cfHeaders, errorCell(err))
 				return
 			}
 			u.cfgs = list
@@ -115,7 +110,7 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 			fmt.Fprintf(&b, "    %s\n", tview.Escape(l))
 		}
 	}
-	b.WriteString("\n  [gray]content[-]\n    [gray]loading…[-]\n")
+	b.WriteString("\n  [gray]content[-]\n    [gray]" + loadingText + "[-]\n")
 	head := b.String()
 	tv.SetText(head)
 
@@ -143,7 +138,7 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 			if !pages.HasPage(pageConfigDetail) {
 				return
 			}
-			body := head[:strings.LastIndex(head, "    [gray]loading…[-]\n")]
+			body := head[:strings.LastIndex(head, "    [gray]"+loadingText+"[-]\n")]
 			switch {
 			case err != nil:
 				tv.SetText(body + "    [red]could not read: " + tview.Escape(err.Error()) + "[-]\n")

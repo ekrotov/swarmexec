@@ -25,6 +25,10 @@ func (u *ui) renderContexts() {
 	// not a table. A "CONTEXT" header over a framed box titled "contexts" says
 	// nothing twice, and the endpoint never fit in this width — it is in the
 	// detail overlay (i), where there is room to read it.
+	if len(u.ctxs) == 0 {
+		cxtable.SetCell(0, 0, emptyCell(emptyText("contexts", keyHint(u.km.CtxNew, "to add one"))))
+		return
+	}
 	selRow := 0
 	for i, c := range u.ctxs {
 		label, color := "  "+c.Name, tcell.ColorWhite
@@ -56,7 +60,7 @@ func (u *ui) loadContexts() {
 	list, err := dockerctx.List()
 	if err != nil {
 		cxtable.Clear()
-		cxtable.SetCell(0, 0, tview.NewTableCell("error: "+err.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+		cxtable.SetCell(0, 0, errorCell(err))
 		return
 	}
 	u.ctxs = list

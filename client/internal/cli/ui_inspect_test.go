@@ -196,7 +196,7 @@ func TestInspectDigitsMatchTheStripOrder(t *testing.T) {
 // The actions menu is where an operator looks up what can be done to a service.
 // Changing the image version was reachable only from the bare "u" key, named in
 // the inspect footer and nowhere else — so the menu's fourteen entries implied
-// it could not be done, and "Roll back to the previous version" (the previous
+// it could not be done, and "roll back to the previous version" (the previous
 // SPEC, not a version you choose) read like the closest thing on offer.
 func TestActionsMenuOffersTheVersionPicker(t *testing.T) {
 	for _, tc := range []struct {
@@ -205,11 +205,11 @@ func TestActionsMenuOffersTheVersionPicker(t *testing.T) {
 		upgrade bool
 		want    string
 	}{
-		{"a newer version exists", &upgradeInfo{repo: "acme/api"}, true, "Update image version…"},
-		{"pin or roll back to any tag", &upgradeInfo{repo: "acme/api"}, false, "Set image version…"},
+		{"a newer version exists", &upgradeInfo{repo: "acme/api"}, true, "update image version…"},
+		{"pin or roll back to any tag", &upgradeInfo{repo: "acme/api"}, false, "set image version…"},
 		// Not hidden: an absent entry is what sent the operator looking in the
 		// first place. It stays listed and explains itself when chosen.
-		{"nothing to pick from", nil, false, "Set image version — unavailable for this image"},
+		{"nothing to pick from", nil, false, "set image version — unavailable for this image"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			iv := inspectViewFor(nil)

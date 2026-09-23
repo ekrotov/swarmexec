@@ -99,7 +99,7 @@ func (u *ui) renderVolumeTable() {
 		// While the (slow) size scan runs, show a loading marker on the SIZE
 		// header; the spinner goroutine animates this cell.
 		if c == volSortCol[volSortSize] && u.volSizesLoading {
-			h += " loading…"
+			h += " " + loadingText
 		}
 		vtable.SetCell(0, c, headerCell(h))
 	}
@@ -145,18 +145,25 @@ func (u *ui) renderVolumeTable() {
 	if len(u.shownVols) > 0 {
 		vtable.Select(selRow, 0)
 	}
+	// Row 1 when the list is empty, so the note does not land on top of the
+	// empty state below it.
+	noteRow := len(u.shownVols) + 1
+	if len(u.shownVols) == 0 {
+		text := emptyText("volumes", keyHint(u.km.VolNew, "to create one"))
+		if u.volFilter != "" {
+			text = fmt.Sprintf("(no matches for %q)", u.volFilter)
+		}
+		vtable.SetCell(1, 0, emptyCell(text))
+		noteRow = 2
+	}
 	if len(u.volErrs) > 0 {
-		vtable.SetCell(len(u.shownVols)+1, 0, tview.NewTableCell(fmt.Sprintf("(%d node(s) unreachable)", len(u.volErrs))).SetTextColor(tcell.ColorYellow).SetSelectable(false))
+		vtable.SetCell(noteRow, 0, stateCell(fmt.Sprintf("(%d node(s) unreachable)", len(u.volErrs)), tcell.ColorYellow))
 	}
 }
 
 func (u *ui) loadVolumes() {
 	r, cfg, dcli, f, ctx, vtable := u.r, u.cfg, u.dcli, u.f, u.ctx, u.vtable
-	vtable.Clear()
-	for c, h := range vHeaders {
-		vtable.SetCell(0, c, headerCell(h))
-	}
-	vtable.SetCell(1, 0, tview.NewTableCell("loading…").SetTextColor(tcell.ColorGray))
+	tableState(vtable, vHeaders, loadingCell())
 	gen := u.generation()
 	go func() {
 		start := time.Now()
@@ -176,19 +183,11 @@ func (u *ui) loadVolumes() {
 		u.onCluster(gen, func() {
 			u.vols, u.volUsage, u.volErrs, u.volSizes = vs, usage, errs, nil
 			if nerr != nil {
-				vtable.Clear()
-				for c, h := range vHeaders {
-					vtable.SetCell(0, c, headerCell(h))
-				}
-				vtable.SetCell(1, 0, tview.NewTableCell("error: "+nerr.Error()).SetTextColor(tcell.ColorRed))
+				tableState(vtable, vHeaders, errorCell(nerr))
 				return
 			}
 			if noAgent {
-				vtable.Clear()
-				for c, h := range vHeaders {
-					vtable.SetCell(0, c, headerCell(h))
-				}
-				vtable.SetCell(1, 0, tview.NewTableCell(errNoAgent.Error()).SetTextColor(tcell.ColorRed).SetSelectable(false))
+				tableState(vtable, vHeaders, stateCell(errNoAgent.Error(), tcell.ColorRed))
 				return
 			}
 			u.renderVolumeTable()
