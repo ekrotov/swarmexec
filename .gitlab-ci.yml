@@ -494,6 +494,68 @@ deploy-site:
         "$CI_API_V4_URL/projects/infrastruktur%2Fswar-exec-site/trigger/pipeline"
 
 # ----------------------------------------------------------------------------
+# mirror-github — push the released state to the public GitHub mirror.
+#
+# Deliberately NOT GitLab's built-in push mirroring (Settings > Repository >
+# Mirroring repositories), which would copy every push. This runs on a semver
+# tag only, so the mirror shows released states and nothing else: no in-flight
+# branches, no half-finished work, and every commit visible there is one that
+# passed the release gate.
+#
+# Pushes the default branch plus all tags, never `--mirror` and never `--force`:
+# a mirror that deletes or overwrites is one accepted pull request away from
+# destroying someone's commit. If GitHub has diverged the push FAILS, which is
+# the honest outcome — it means somebody committed there and that has to be
+# resolved by a human, not silently discarded.
+#
+# Needs two CI/CD variables:
+#   GITHUB_MIRROR_REPO   owner/name of the target repo, e.g. cloud-surfers/swarmexec
+#   GITHUB_MIRROR_TOKEN  a fine-grained PAT for that repo with Contents: write,
+#                        masked AND protected (semver tags are protected refs)
+# The token reaches git through a credential file rather than the remote URL, so
+# it cannot turn up in a log line or in a git error message.
+# ----------------------------------------------------------------------------
+mirror-github:
+  stage: deploy
+  image: alpine:3
+  needs:
+    - job: release-publish
+  rules:
+    - *semver-tag
+  variables:
+    GIT_DEPTH: "0" # a mirror needs the whole history, not the CI clone's slice
+  before_script:
+    - apk add --no-cache git ca-certificates >/dev/null
+  # The tag is already published by the time this runs, so a GitHub outage must
+  # not turn a finished release red.
+  allow_failure: true
+  script:
+    - |
+      if [ -z "$GITHUB_MIRROR_REPO" ] || [ -z "$GITHUB_MIRROR_TOKEN" ]; then
+        echo "GITHUB_MIRROR_REPO and/or GITHUB_MIRROR_TOKEN not set - nothing mirrored."
+        echo "Create the repository on GitHub, then add both as CI/CD variables"
+        echo "(Settings > CI/CD > Variables); the token masked and protected."
+        exit 1
+      fi
+    - |
+      set +x
+      git config --global credential.helper store
+      printf 'https://x-access-token:%s@github.com\n' "$GITHUB_MIRROR_TOKEN" > ~/.git-credentials
+      chmod 600 ~/.git-credentials
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+    # The CI checkout is a detached HEAD at the tag; fetch the branch itself so
+    # the mirror gets a branch and not an orphaned commit.
+    - git fetch --no-tags origin "+refs/heads/${CI_DEFAULT_BRANCH}:refs/remotes/origin/${CI_DEFAULT_BRANCH}"
+    - |
+      TARGET="https://github.com/${GITHUB_MIRROR_REPO}.git"
+      echo "mirroring $CI_COMMIT_TAG to $GITHUB_MIRROR_REPO"
+      git push "$TARGET" "refs/remotes/origin/${CI_DEFAULT_BRANCH}:refs/heads/${CI_DEFAULT_BRANCH}"
+      git push "$TARGET" --tags
+      echo "mirrored ${CI_DEFAULT_BRANCH} and all tags"
+  after_script:
+    - rm -f ~/.git-credentials
+
+# ----------------------------------------------------------------------------
 # Release announcements. Both jobs COMPOSE a post from the annotated tag message
 # and keep it as an artifact; a human publishes it. The artifact is the point:
 # for v1.17.1 the LinkedIn API accepted a DRAFT, returned its URN, and the draft
