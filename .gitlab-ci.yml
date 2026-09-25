@@ -494,7 +494,16 @@ deploy-site:
         "$CI_API_V4_URL/projects/infrastruktur%2Fswar-exec-site/trigger/pipeline"
 
 # ----------------------------------------------------------------------------
-# mirror-github — push the released state to the public GitHub mirror.
+# mirror-github — push the released state to the public GitHub mirror, then
+# publish the SAME binaries there as a GitHub Release.
+#
+# Why not a GitHub Action for the release half: an Action would have to REBUILD
+# the binaries on GitHub, and two builds of one version are two different files.
+# The SHA256SUMS on GitHub would then not match the SHA256SUMS on GitLab, for a
+# release that is nominally the same — and a checksum that depends on where you
+# downloaded from is worse than no checksum. This uploads the exact artifacts
+# build-cli produced, so both places serve identical bytes and one checksum file
+# is true in both. It also keeps the token count at one and the CI in one place.
 #
 # Deliberately NOT GitLab's built-in push mirroring (Settings > Repository >
 # Mirroring repositories), which would copy every push. This runs on a semver
@@ -520,12 +529,14 @@ mirror-github:
   image: alpine:3
   needs:
     - job: release-publish
+    - job: build-cli
+      artifacts: true # dist/ — the exact files GitLab released
   rules:
     - *semver-tag
   variables:
     GIT_DEPTH: "0" # a mirror needs the whole history, not the CI clone's slice
   before_script:
-    - apk add --no-cache git ca-certificates >/dev/null
+    - apk add --no-cache git ca-certificates curl jq >/dev/null
   # The tag is already published by the time this runs, so a GitHub outage must
   # not turn a finished release red.
   allow_failure: true
@@ -552,8 +563,63 @@ mirror-github:
       git push "$TARGET" "refs/remotes/origin/${CI_DEFAULT_BRANCH}:refs/heads/${CI_DEFAULT_BRANCH}"
       git push "$TARGET" --tags
       echo "mirrored ${CI_DEFAULT_BRANCH} and all tags"
+    # The release comes after the push, and in the same job, because a release
+    # for a tag GitHub does not have yet would create a second, unreviewed tag
+    # out of thin air. Ordering by `needs` would make that a pipeline detail; in
+    # one job it is the order of two lines.
+    - |
+      set +x
+      # The token goes in a curl config file rather than on the command line:
+      # an argv is readable by every other process on the runner, a 0600 file
+      # is not.
+      umask 077
+      printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_MIRROR_TOKEN" > /tmp/gh.curlrc
+      printf 'header = "Accept: application/vnd.github+json"\n' >> /tmp/gh.curlrc
+      printf 'header = "X-GitHub-Api-Version: 2022-11-28"\n' >> /tmp/gh.curlrc
+    - |
+      . "$CI_PROJECT_DIR/ci/release-post-lib.sh"
+      API="https://api.github.com/repos/${GITHUB_MIRROR_REPO}"
+      GH() { curl --silent --show-error --config /tmp/gh.curlrc "$@"; }
+
+      # A semver prerelease carries a "-suffix" — the same rule the image jobs
+      # use to decide whether :latest moves.
+      case "$CI_COMMIT_TAG" in
+        *-*) PRE=true ;;
+        *)   PRE=false ;;
+      esac
+
+      # The annotated tag message, exactly as the GitLab release and both
+      # announcement posts use it. One changelog, four places.
+      NOTES="$(release_notes)"
+
+      # Re-runnable: a retried pipeline must not fail on "release already
+      # exists", so an existing release for this tag is reused.
+      ID="$(GH "$API/releases/tags/$CI_COMMIT_TAG" | jq -r '.id // empty')"
+      if [ -z "$ID" ]; then
+        echo "creating GitHub release $CI_COMMIT_TAG (prerelease=$PRE)"
+        ID="$(jq -n --arg tag "$CI_COMMIT_TAG" --arg name "swarmexec $CI_COMMIT_TAG" \
+                    --arg body "$NOTES" --argjson pre "$PRE" \
+                    '{tag_name:$tag, name:$name, body:$body, prerelease:$pre, draft:false}' \
+              | GH --fail --request POST --data @- "$API/releases" | jq -r '.id')"
+      else
+        echo "GitHub release $CI_COMMIT_TAG exists (id $ID) — reusing it"
+      fi
+      [ -n "$ID" ] || { echo "could not create or find the release"; exit 1; }
+
+      for f in dist/*; do
+        name="$(basename "$f")"
+        # Same name twice is a 422, so a re-run replaces rather than appends.
+        old="$(GH "$API/releases/$ID/assets" | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
+        [ -n "$old" ] && GH --request DELETE "$API/releases/assets/$old" >/dev/null
+        echo "  -> $name"
+        GH --fail --request POST \
+           --header "Content-Type: application/octet-stream" \
+           --data-binary "@$f" \
+           "https://uploads.github.com/repos/${GITHUB_MIRROR_REPO}/releases/$ID/assets?name=$name" >/dev/null
+      done
+      echo "published $CI_COMMIT_TAG on GitHub with $(ls dist | wc -l) assets"
   after_script:
-    - rm -f ~/.git-credentials
+    - rm -f ~/.git-credentials /tmp/gh.curlrc
 
 # ----------------------------------------------------------------------------
 # Release announcements. Both jobs COMPOSE a post from the annotated tag message
