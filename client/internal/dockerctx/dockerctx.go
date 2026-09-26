@@ -16,6 +16,8 @@ import (
 	"sort"
 
 	"github.com/docker/docker/client"
+
+	"swarmexec/client/internal/clientlog"
 )
 
 // ResolveHost returns the Docker daemon URL to dial. Precedence (matching the
@@ -162,7 +164,13 @@ func currentContextName() string {
 	var c struct {
 		CurrentContext string `json:"currentContext"`
 	}
-	_ = json.Unmarshal(b, &c)
+	if err := json.Unmarshal(b, &c); err != nil {
+		// Falls back to the default context like docker does, but says why:
+		// "you are on default" is otherwise indistinguishable from a broken file.
+		clientlog.L().Warn("docker config.json unreadable; using the default context",
+			"path", filepath.Join(configDir(), "config.json"), "err", err)
+		return ""
+	}
 	return c.CurrentContext
 }
 

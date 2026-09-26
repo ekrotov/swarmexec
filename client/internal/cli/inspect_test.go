@@ -401,6 +401,7 @@ func TestServiceNetDNS_DeduplicatesByName(t *testing.T) {
 	var svc swarm.Service
 	svc.Spec.Name = "web"
 	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	svc.Spec.Networks = []swarm.NetworkAttachmentConfig{{Target: "frontend-net"}}
 
 	info := netInfo{

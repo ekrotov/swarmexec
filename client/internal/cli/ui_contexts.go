@@ -81,6 +81,12 @@ func (u *ui) selectedContext() (dockerctx.Context, bool) {
 	return u.ctxs[row], true
 }
 
+// showCreateContext opens a guided form to add a docker context. The operator
+// explicitly decides whether to connect over SSH and, if so, whether to go
+// through a jump host — the relevant fields appear only when opted in. For SSH
+// the jump host(s) are stored on the context and injected as -J into both the
+// Docker-API and agent-tunnel ssh connections (no ~/.ssh/config needed).
+// "Test" verifies the assembled endpoint (a live daemon ping) before saving.
 func (u *ui) showCreateContext() {
 	app, ctx, cxtable := u.app, u.ctx, u.cxtable
 	var (
@@ -193,6 +199,8 @@ func (u *ui) showCreateContext() {
 	ov.show(centered(form, 76, 22), form)
 }
 
+// deleteContext removes the selected context behind a confirm. "default" is
+// protected; removing the current one resets the selection to default.
 func (u *ui) deleteContext(c dockerctx.Context) {
 	cxtable := u.cxtable
 	if c.Name == "default" {
@@ -214,6 +222,9 @@ func (u *ui) deleteContext(c dockerctx.Context) {
 	})
 }
 
+// activateContext makes c the current docker context and restarts the UI so
+// it reconnects to that cluster. Restarting (rather than swapping the client
+// live) avoids racing the in-flight background loads.
 func (u *ui) activateContext(c dockerctx.Context) {
 	if c.Name == u.activeCtx {
 		u.flash(" [gray]already on[white] context " + c.Name)

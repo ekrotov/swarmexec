@@ -232,6 +232,7 @@ func attachServiceToNetwork(ctx context.Context, dcli *client.Client, serviceNam
 			return fmt.Errorf("service %q is already attached to network %q", serviceName, networkName)
 		}
 	}
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	for _, a := range svc.Spec.Networks {
 		if a.Target == networkID || a.Target == networkName {
 			return fmt.Errorf("service %q is already attached to network %q", serviceName, networkName)
@@ -294,11 +295,13 @@ func detachServiceFromNetwork(ctx context.Context, dcli *client.Client, serviceN
 	matches := func(target string) bool { return target == networkID || target == networkName }
 	spec := svc.Spec
 	tt, n1 := dropNetwork(spec.TaskTemplate.Networks, matches)
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	sn, n2 := dropNetwork(spec.Networks, matches)
 	if n1+n2 == 0 {
 		return fmt.Errorf("service %q is not attached to network %q", serviceName, networkName)
 	}
 	spec.TaskTemplate.Networks = tt
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	spec.Networks = sn
 	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
 	return err
@@ -382,6 +385,7 @@ func serviceNetworkMembership(svcs []swarm.Service) map[string][]string {
 		for _, a := range s.Spec.TaskTemplate.Networks {
 			add(a.Target)
 		}
+		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 		for _, a := range s.Spec.Networks {
 			add(a.Target)
 		}
@@ -502,6 +506,7 @@ func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
 			return append([]string{}, a.Aliases...)
 		}
 	}
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	for _, a := range s.Spec.Networks {
 		if match(a) && len(a.Aliases) > 0 {
 			return append([]string{}, a.Aliases...)

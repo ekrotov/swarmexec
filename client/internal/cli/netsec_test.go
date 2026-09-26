@@ -20,6 +20,7 @@ func svc(name string, taskNets, specNets []string) swarm.Service {
 		s.Spec.TaskTemplate.Networks = append(s.Spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: n})
 	}
 	for _, n := range specNets {
+		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 		s.Spec.Networks = append(s.Spec.Networks, swarm.NetworkAttachmentConfig{Target: n})
 	}
 	return s
@@ -57,6 +58,7 @@ func TestServiceAliasesOnNetwork(t *testing.T) {
 		{Target: "net-id-1", Aliases: []string{"web", "frontend"}},
 	}
 	// A second attachment referenced by NAME on the deprecated spec field.
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	s.Spec.Networks = []swarm.NetworkAttachmentConfig{
 		{Target: "backend", Aliases: []string{"api"}},
 	}

@@ -99,16 +99,17 @@ func applyTheme(dim float64) {
 // overlay on top), which is why it must run inside the overlay's Draw.
 func dimBehind(screen tcell.Screen, x, y, w, h int) {
 	for cy := y; cy < y+h; cy++ {
-		for cx := x; cx < x+w; cx++ {
-			r, comb, style, cw := screen.GetContent(cx, cy)
-			if cw == 0 {
-				continue // continuation cell of a wide rune; its primary cell restyles it
-			}
+		// Get reports a wide rune once, with its width, and its continuation
+		// cell as a plain one-wide space — so step by the width, or the space
+		// gets written over the rune's second half.
+		for cx := x; cx < x+w; {
+			str, style, cw := screen.Get(cx, cy)
 			fg, bg, _ := style.Decompose()
 			dimmed := tcell.StyleDefault.
 				Foreground(blendToward(fg, palette.text, palette.bg)).
 				Background(blendToward(bg, palette.bg, palette.bg))
-			screen.SetContent(cx, cy, r, comb, dimmed)
+			screen.Put(cx, cy, str, dimmed)
+			cx += max(cw, 1)
 		}
 	}
 }

@@ -33,6 +33,8 @@ func (u *ui) volMatches(v swarmVolume) bool {
 	return false
 }
 
+// sortVolumes orders rows by the active field; for size/age an unknown value
+// always sorts last (regardless of direction), with name as the tiebreaker.
 func (u *ui) sortVolumes(rows []swarmVolume) {
 	known := func(v swarmVolume) bool {
 		switch u.sortField {
@@ -336,6 +338,9 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 	ov.show(centered(box, 64, len(v.Nodes)+5+labelH), list)
 }
 
+// showCreateVolume opens a form to create a volume (default driver local) with
+// labels, targeting one node or (blank) all nodes — volumes are node-local, so
+// creation goes to each target node's agent.
 func (u *ui) showCreateVolume() {
 	app, r, cfg, f, ctx, vtable := u.app, u.r, u.cfg, u.f, u.ctx, u.vtable
 	o := newVolumeOpts{Driver: "local"}
@@ -426,6 +431,7 @@ func (u *ui) showCreateVolume() {
 	ov.show(centered(form, 66, 15), form)
 }
 
+// showVolumeConsumers lists the services/containers that mount a volume.
 func (u *ui) showVolumeConsumers(v swarmVolume) {
 	vtable := u.vtable
 	consumers := u.volUsage[v.Name]
@@ -463,6 +469,9 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 	ov.show(centered(list, 72, rows+4), list)
 }
 
+// deleteVolumes removes each target volume on every node that holds it, behind
+// a single confirm. Volumes are node-local, so a volume is removed across all
+// its v.Nodes. Shared by the multi-select delete and prune.
 func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 	app, cfg, f, ctx, vtable := u.app, u.cfg, u.f, u.ctx, u.vtable
 	if len(targets) == 0 {
@@ -545,6 +554,9 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 	})
 }
 
+// pruneVolumes deletes every volume that no running container mounts and no
+// service declares (service-declared volumes are spared even with no running
+// task). The service check needs a ServiceList, so it runs off the UI goroutine.
 func (u *ui) pruneVolumes() {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {

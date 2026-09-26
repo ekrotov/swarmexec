@@ -144,7 +144,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 			}
 			cons := make([]consumerRow, 0, len(usage[v.Name]))
 			for _, c := range usage[v.Name] {
-				cons = append(cons, consumerRow{Service: c.Service, Container: c.Container, Node: c.Node})
+				cons = append(cons, consumerRow(c))
 			}
 			row := volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons}
 			if !v.Created.IsZero() {

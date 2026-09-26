@@ -35,6 +35,10 @@ func (u *ui) portConflict(local uint32) (string, bool) {
 	return fmt.Sprintf("port %d is already forwarded to %s on cluster %s", local, what, orDash(e.cluster)), true
 }
 
+// startForward brings a forward up off the UI goroutine: dialling the agent
+// can take up to the connect timeout, and blocking the UI for that would
+// freeze the whole app. The entry is registered immediately in the starting
+// state so the operator sees that something is happening.
 func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
 	// Refuse a port we are already using, before anything is created — the
 	// backstop for every caller. The prompt checks too, so a typo can be
@@ -123,6 +127,10 @@ func promptWidthFor(msg string) int {
 	return w
 }
 
+// portPrompt asks which port to forward. There is deliberately no list of
+// exposed ports to pick from: the manager API cannot inspect a container on
+// another node, and the services worth forwarding are exactly the ones that
+// publish nothing — so a suggestion list would be empty where it matters.
 func (u *ui) portPrompt(c resolve.Candidate) {
 	ctree := u.ctree
 	input := tview.NewInputField().SetLabel(" port: ").SetFieldWidth(20)
@@ -166,6 +174,8 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 	ov.show(centeredPrompt(input, fwdPromptWidth), input)
 }
 
+// userPrompt asks which user/UID to exec as, then calls open with it. Mirrors
+// the CLI's `exec -u`: a name, a UID, or UID:GID.
 func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
 	ctree := u.ctree
 	input := tview.NewInputField().SetLabel(" user: ").SetFieldWidth(28)
@@ -254,6 +264,7 @@ func (u *ui) renderForwards() {
 	}
 }
 
+// selectedForward maps the cursor row back to a forward.
 func (u *ui) selectedForward() (forwardEntry, bool) {
 	ftable := u.ftable
 	return selectedRow(ftable, u.fRows)

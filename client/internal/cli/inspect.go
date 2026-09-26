@@ -626,6 +626,7 @@ func serviceNetDNS(svc swarm.Service, info netInfo) []netDNS {
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a)
 	}
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	for _, a := range svc.Spec.Networks {
 		add(a)
 	}
@@ -965,14 +966,6 @@ func shortDigest(d string) string {
 		return d[:12]
 	}
 	return d
-}
-
-// stripDigest removes an "@sha256:…" suffix from an image ref, leaving repo:tag.
-func stripDigest(ref string) string {
-	if i := strings.IndexByte(ref, '@'); i >= 0 {
-		return ref[:i]
-	}
-	return ref
 }
 
 func servicePortLines(svc swarm.Service) []string {

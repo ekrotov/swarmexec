@@ -48,9 +48,6 @@ func (s *fakeStream) queueResize(w, h uint32) {
 // queueEOF signals client half-close (CloseSend).
 func (s *fakeStream) queueEOF() { s.recvCh <- recvItem{err: io.EOF} }
 
-// queueErr signals a client disconnect / stream error.
-func (s *fakeStream) queueErr(err error) { s.recvCh <- recvItem{err: err} }
-
 func (s *fakeStream) Recv() (*pb.ClientMessage, error) {
 	select {
 	case <-s.ctx.Done():

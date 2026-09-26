@@ -24,7 +24,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -336,22 +335,6 @@ func (f *fakeDocker) Resizes() []container.ResizeOptions {
 	copy(out, f.resizes)
 	return out
 }
-
-// containerWriteTTY writes raw bytes to the container side (TTY mode).
-func (f *fakeDocker) containerWriteTTY(p []byte) (int, error) {
-	return f.containerConn.Write(p)
-}
-
-// containerWriteStd writes a stdcopy-framed chunk to the container side
-// (non-TTY mode) on the given stream.
-func (f *fakeDocker) containerWriteStd(stream stdcopy.StdType, p []byte) error {
-	w := stdcopy.NewStdWriter(f.containerConn, stream)
-	_, err := w.Write(p)
-	return err
-}
-
-// closeContainer signals process exit / output EOF.
-func (f *fakeDocker) closeContainer() { _ = f.containerConn.Close() }
 
 var _ DockerClient = (*fakeDocker)(nil)
 var _ io.Writer = (*msgWriter)(nil)
