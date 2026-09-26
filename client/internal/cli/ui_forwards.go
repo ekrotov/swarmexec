@@ -330,3 +330,37 @@ func (u *ui) showForwardDetail() {
 	lines := strings.Count(b.String(), "\n") + 1
 	ov.show(centered(tv, 66, lines+2), tv)
 }
+
+// forwardKeys is the key handler of the Forwards table.
+//
+// On the forwards table: Enter/i details, d stops the forward, o copies its URL.
+func (u *ui) forwardKeys(ev *tcell.EventKey) *tcell.EventKey {
+	km, forwards, screen := u.km, u.forwards, u.screen
+	if ev.Key() == tcell.KeyRune {
+		switch ev.Rune() {
+		case 'i':
+			u.showForwardDetail()
+			return nil
+		case km.FwdStop:
+			if e, ok := u.selectedForward(); ok {
+				forwards.remove(e.id)
+				u.refreshForwardViews()
+				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+			}
+			return nil
+		case km.FwdCopyURL:
+			// Copy rather than launch a browser: the UI often runs over
+			// ssh, where opening a local browser would target the wrong
+			// machine — and the forward is bound on the operator's side.
+			if e, ok := u.selectedForward(); ok && e.state == forwardActive {
+				url := fmt.Sprintf("http://127.0.0.1:%d", e.boundPort())
+				if screen != nil {
+					screen.SetClipboard([]byte(url))
+				}
+				u.flash(" [green]copied[white] " + url)
+			}
+			return nil
+		}
+	}
+	return u.tabKeys(ev)
+}

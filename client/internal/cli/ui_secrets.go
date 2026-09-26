@@ -245,3 +245,26 @@ func (u *ui) showCreateSecret() {
 	})
 	ov.show(centered(form, formWidth, 18), form)
 }
+
+// secretKeys is the key handler of the Secrets table.
+func (u *ui) secretKeys(ev *tcell.EventKey) *tcell.EventKey {
+	km := u.km
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecNew {
+		u.showCreateSecret()
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecDelete {
+		if s, ok := u.selectedSecret(); ok {
+			u.openDeleteSecret(s)
+		}
+		return nil
+	}
+	// "i" opens the same detail as Enter — inspect means the same on every tab.
+	if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+		if s, ok := u.selectedSecret(); ok {
+			u.showSecretDetail(s)
+		}
+		return nil
+	}
+	return u.tabKeys(ev)
+}

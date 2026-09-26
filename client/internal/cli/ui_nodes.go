@@ -520,3 +520,33 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 	})
 	ov.show(centered(list, 66, 9), list)
 }
+
+// nodeKeys is the key handler of the Nodes table.
+func (u *ui) nodeKeys(ev *tcell.EventKey) *tcell.EventKey {
+	km, notable := u.km, u.notable
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeAvail {
+		if n, ok := u.selectedNode(); ok {
+			u.openNodeAvailability(n, notable, u.loadNodes)
+		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeImages {
+		if n, ok := u.selectedNode(); ok {
+			u.openNodeImagePrune(n, notable, u.loadNodes)
+		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeLabels {
+		if n, ok := u.selectedNode(); ok {
+			u.editNodeLabels(n, u.loadNodes)
+		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+		if n, ok := u.selectedNode(); ok {
+			u.showNodeDetail(n)
+		}
+		return nil
+	}
+	return u.tabKeys(ev)
+}
