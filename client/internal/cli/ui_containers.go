@@ -305,10 +305,11 @@ func (u *ui) markStack(n *tview.TreeNode) {
 	n.SetColor(healthColor(serviceColor(summary.Running, summary.Desired), health))
 }
 
-// removeServiceUnderCursor removes the service the tree cursor is on, so a
-// service can be deleted from the tree itself rather than only from inside the
-// inspect overlay (i → X). A container leaf resolves to its owning service; a
-// stack row says what it would take rather than silently doing nothing.
+// removeServiceUnderCursor removes whatever the tree cursor is on, so it can be
+// deleted from the tree itself rather than only from inside the inspect overlay
+// (i → X). Each row removes what it IS: a container leaf resolves to its owning
+// service, because a task alone cannot be removed; a stack row removes the
+// stack, with `docker stack rm`'s reach.
 func (u *ui) removeServiceUnderCursor() {
 	n := u.ctree.GetCurrentNode()
 	if n == nil {
@@ -325,8 +326,7 @@ func (u *ui) removeServiceUnderCursor() {
 		}
 		u.openRemoveService(ref.Service, u.ctree, u.loadContainers)
 	case stackRef:
-		u.flash(fmt.Sprintf(" [gray]%s is a stack — remove its services individually, or use `docker stack rm %s`[white]",
-			ref.name, ref.name))
+		u.openRemoveStack(ref.name, u.ctree, u.loadContainers)
 	}
 }
 

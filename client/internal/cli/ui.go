@@ -1977,7 +1977,7 @@ func (u *ui) showHelp() {
 	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
 	line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
-	line("X", "remove the service under the cursor (confirmed)")
+	line("X", "remove: service · container’s service · whole stack (confirmed)")
 	line(kl(km.Search), "search services / containers / nodes")
 
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
