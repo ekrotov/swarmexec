@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 
 	"github.com/gdamore/tcell/v2"
@@ -150,7 +151,20 @@ type ui struct {
 	searchMode   string       // what the "/" bar filters ("containers"/"volumes")
 	mouseEnabled bool         // mirrors app.EnableMouse; toggled by 'm'
 	screen       tcell.Screen // owned screen, for OSC52 clipboard on yank
-	overlayDepth atomic.Int32 // open overlays (pauses the tree auto-refresh)
+
+	// overlays names every overlay currently open, so the background refreshers
+	// can pause while one is.
+	//
+	// A SET, not a counter, and that is the whole point. Two notices racing from
+	// two background goroutines both call info(): the second AddPage REPLACES
+	// the first page, so only one modal is ever dismissed and only one release
+	// ever runs. A counter would be incremented twice and decremented once, and
+	// would never reach zero again — the tree would stop refreshing for the rest
+	// of the session, silently. Keyed by page name, the second open is simply
+	// the same entry.
+	overlayMu  sync.Mutex
+	overlays   map[string]bool
+	overlaySeq atomic.Uint64 // unique keys for overlays that share no page name
 
 	// switching guards the window between asking for a cluster and having it:
 	// the connect runs off the UI goroutine, and a second switch started in the

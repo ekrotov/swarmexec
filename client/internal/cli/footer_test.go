@@ -12,7 +12,7 @@ import (
 
 // footerUI is enough of a ui to exercise the footer ownership rules: they touch
 // only the help widget and the baseline field.
-func footerUI() *ui { return &ui{help: tview.NewTextView()} }
+func footerUI() *ui { return &ui{help: tview.NewTextView(), overlays: map[string]bool{}} }
 
 func footerText(u *ui) string { return u.help.GetText(false) }
 
@@ -58,16 +58,16 @@ func TestOverlayHelpRestoresTheOwnerNotAFlash(t *testing.T) {
 	if got := footerText(u); got != "overlay keys" {
 		t.Errorf("overlay should own the footer: %q", got)
 	}
-	if u.overlayDepth.Load() != 1 {
-		t.Errorf("overlay depth = %d, want 1", u.overlayDepth.Load())
+	if !u.anyOverlayOpen() {
+		t.Error("an open overlay must be counted, or the tree refresh runs underneath it")
 	}
 
 	restore()
 	if got := footerText(u); got != "tab keys" {
 		t.Errorf("closing the overlay restored %q, want the tab's keys", got)
 	}
-	if u.overlayDepth.Load() != 0 {
-		t.Errorf("overlay depth = %d, want 0 after restore", u.overlayDepth.Load())
+	if u.anyOverlayOpen() {
+		t.Error("a closed overlay must release its entry")
 	}
 }
 
@@ -98,7 +98,7 @@ func TestOverlayHelpNests(t *testing.T) {
 	if got := footerText(u); got != "tab keys" {
 		t.Errorf("after both close: %q, want the tab's keys", got)
 	}
-	if d := u.overlayDepth.Load(); d != 0 {
+	if d := len(u.overlays); d != 0 {
 		t.Errorf("overlay depth = %d, want 0", d)
 	}
 }
