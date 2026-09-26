@@ -86,7 +86,7 @@ func (u *ui) serviceNamesFromCache() []string {
 }
 
 func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions []string, back tview.Primitive, do func(string) error, onDone func()) {
-	app, pages := u.app, u.pages
+	app := u.app
 	in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(46)
 	in.SetPlaceholder("type or ↓ to pick; Enter confirms, Esc cancels")
 	in.SetAutocompleteFunc(func(text string) []string {
@@ -99,14 +99,16 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 		}
 		return out
 	})
+	ov := u.overlayFor(pageSvcPrompt, back, "")
 	in.SetDoneFunc(func(key tcell.Key) {
 		name := strings.TrimSpace(in.GetText())
 		if key != tcell.KeyEnter || name == "" {
-			pages.RemovePage(pageSvcPrompt)
-			app.SetFocus(back)
+			ov.Close()
 			return
 		}
-		pages.RemovePage(pageSvcPrompt)
+		// Closed without restoring focus: the confirm below takes it, and
+		// bouncing focus off `back` on the way would flicker the selection.
+		ov.Close()
 		u.confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
 			go func() {
 				err := do(name)
@@ -122,8 +124,7 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 		})
 	})
 	in.SetBorder(true).SetTitle(" " + title + " ")
-	pages.AddPage(pageSvcPrompt, centeredPrompt(in, 66), true, true)
-	app.SetFocus(in)
+	ov.show(centeredPrompt(in, 66), in)
 }
 
 // netMembersView is the "attached services" overlay for one network: a
@@ -140,7 +141,7 @@ type netMembersView struct {
 	expanded map[string]bool
 	loaded   bool
 
-	restoreHelp func()
+	ov *overlay
 }
 
 func (u *ui) showNetworkMembers(n swarmNetwork) {
@@ -235,11 +236,7 @@ func (v *netMembersView) render() {
 	}
 }
 
-func (v *netMembersView) close() {
-	v.restoreHelp()
-	v.u.pages.RemovePage(pageNetMembers)
-	v.u.app.SetFocus(v.u.nettable)
-}
+func (v *netMembersView) close() { v.ov.Close() }
 
 func (v *netMembersView) reload() {
 	u := v.u
@@ -322,19 +319,18 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 func (v *netMembersView) open() {
 	u, n, list := v.u, v.n, v.list
 	v.render()
-	_, v.restoreHelp = u.pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
+	v.ov = u.overlayFor(pageNetMembers, u.nettable, footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
 	list.SetInputCapture(v.handleKey)
 	height := len(n.Services) + 6
 	if height > 22 {
 		height = 22
 	}
-	u.pages.AddPage(pageNetMembers, centered(list, 78, height), true, true)
-	u.app.SetFocus(list)
+	v.ov.show(centered(list, 78, height), list)
 	v.reload()
 }
 
 func (u *ui) showCreateNetwork() {
-	app, pages, dcli, ctx, nettable := u.app, u.pages, u.dcli, u.ctx, u.nettable
+	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
 	o := newNetworkOpts{Driver: "overlay"}
 	var labels string
 	form := tview.NewForm()
@@ -349,8 +345,8 @@ func (u *ui) showCreateNetwork() {
 	form.AddInputField("Subnet (optional, e.g. 10.10.0.0/24)", "", 22, nil, func(t string) { o.Subnet = t })
 	form.AddInputField("Gateway (optional)", "", 22, nil, func(t string) { o.Gateway = t })
 	form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
-	closeForm := func() { restoreHelp(); pages.RemovePage(pageNetForm); app.SetFocus(nettable) }
+	ov := u.overlayFor(pageNetForm, nettable, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+	closeForm := ov.Close
 	form.AddButton("Create", func() {
 		lbls, err := parseKVList(labels)
 		if err != nil {
@@ -375,6 +371,5 @@ func (u *ui) showCreateNetwork() {
 		}
 		return ev
 	})
-	pages.AddPage(pageNetForm, centered(form, formWidth, 22), true, true)
-	app.SetFocus(form)
+	ov.show(centered(form, formWidth, 22), form)
 }

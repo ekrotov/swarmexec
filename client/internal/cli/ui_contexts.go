@@ -82,7 +82,7 @@ func (u *ui) selectedContext() (dockerctx.Context, bool) {
 }
 
 func (u *ui) showCreateContext() {
-	app, pages, ctx, cxtable := u.app, u.pages, u.ctx, u.cxtable
+	app, ctx, cxtable := u.app, u.ctx, u.cxtable
 	var (
 		name, desc                      string
 		useSSH                          = true
@@ -109,8 +109,8 @@ func (u *ui) showCreateContext() {
 	form := tview.NewForm()
 	form.SetItemPadding(1) // one blank row between fields (the overlay has ample height)
 	form.SetBorder(true).SetTitle(" new context ")
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
-	closeForm := func() { restoreHelp(); pages.RemovePage(pageCtxForm); app.SetFocus(cxtable) }
+	ov := u.overlayFor(pageCtxForm, cxtable, footerKeys("Tab", "move", "Space", "toggle", "Enter", "confirm", "Esc", "cancel"))
+	closeForm := ov.Close
 
 	var render func()
 	render = func() {
@@ -190,8 +190,7 @@ func (u *ui) showCreateContext() {
 		}
 		return ev
 	})
-	pages.AddPage(pageCtxForm, centered(form, 76, 22), true, true)
-	app.SetFocus(form)
+	ov.show(centered(form, 76, 22), form)
 }
 
 func (u *ui) deleteContext(c dockerctx.Context) {
@@ -230,7 +229,7 @@ func (u *ui) activateContext(c dockerctx.Context) {
 }
 
 func (u *ui) showContextDetail(c dockerctx.Context) {
-	app, pages, km, cxtable := u.app, u.pages, u.km, u.cxtable
+	km, cxtable := u.km, u.cxtable
 	active := "no"
 	if c.Name == u.activeCtx {
 		active = "yes (this session)"
@@ -244,8 +243,8 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 	}
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" context %s ", c.Name))
-	_, restore := u.pushOverlayHelp(footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
-	closeDetail := func() { restore(); pages.RemovePage(pageCtxDetail); app.SetFocus(cxtable) }
+	ov := u.overlayFor(pageCtxDetail, cxtable, footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
+	closeDetail := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -258,6 +257,5 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 		}
 		return ev
 	})
-	pages.AddPage(pageCtxDetail, centered(tv, 64, 8), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 64, 8), tv)
 }

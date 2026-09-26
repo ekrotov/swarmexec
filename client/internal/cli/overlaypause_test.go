@@ -115,14 +115,14 @@ func TestOverlayReleaseIsIdempotent(t *testing.T) {
 // one keeps the refresh paused after the inner one closes.
 func TestNestedFooterOverlaysEachHoldTheirOwn(t *testing.T) {
 	u := overlayUI()
-	_, restoreOuter := u.pushOverlayHelp("outer")
-	_, restoreInner := u.pushOverlayHelp("inner")
+	outer := u.overlayFor("outer", nil, "outer keys")
+	inner := u.overlayFor("inner", nil, "inner keys")
 
-	restoreInner()
+	inner.Close()
 	if !u.anyOverlayOpen() {
 		t.Error("the outer overlay is still open")
 	}
-	restoreOuter()
+	outer.Close()
 	if u.anyOverlayOpen() {
 		t.Errorf("both closed, got %v", u.overlays)
 	}

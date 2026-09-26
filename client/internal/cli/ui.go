@@ -1763,8 +1763,8 @@ func (s *scrim) PasteHandler() func(string, func(p tview.Primitive)) {
 }
 
 // footerKeys builds the markup for the bottom footer from key,description pairs
-// (dynamic-colour tags, as the footer is a TextView). Overlays feed it to
-// pushOverlayHelp so the single bottom footer describes the active view's keys.
+// (dynamic-colour tags, as the footer is a TextView). Overlays hand it to
+// overlayFor so the single bottom footer describes the active view's keys.
 func footerKeys(pairs ...string) string {
 	var b strings.Builder
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -1776,18 +1776,13 @@ func footerKeys(pairs ...string) string {
 // generic info modal. Every message is also logged (with context) so the log
 // viewer / file has a record of what the operator was shown.
 func (u *ui) info(msg string) {
-	app, pages := u.app, u.pages
 	clientlog.L().Info("ui notice", "msg", msg)
 	m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"})
-	pages.AddPage(pageInfo, newScrim(m), true, true)
-	app.SetFocus(m)
-	// Counted like every other overlay. It was not, and a notice left open while
-	// the tree refreshed behind it had its focus pulled out from under it.
-	release := u.markOverlay(pageInfo)
-	m.SetDoneFunc(func(int, string) {
-		pages.RemovePage(pageInfo)
-		release()
-	})
+	// A notice takes no footer and gives focus back to nobody in particular:
+	// whatever opens next focuses itself, and there is usually something.
+	ov := u.overlayFor(pageInfo, nil, "")
+	m.SetDoneFunc(func(int, string) { ov.Close() })
+	ov.show(newScrim(m), m)
 }
 
 // confirm shows a two-button confirmation modal (confirmLabel + "Cancel") and
@@ -1798,24 +1793,23 @@ func (u *ui) info(msg string) {
 // so it must handle its own focus. Only one confirm is ever open at a time, so
 // a single shared page name is safe.
 func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm func()) {
-	app, pages := u.app, u.pages
+	app := u.app
 	m := tview.NewModal().
 		SetText(msg).
 		AddButtons([]string{confirmLabel, "Cancel"})
-	pages.AddPage(pageConfirm, newScrim(m), true, true)
-	app.SetFocus(m)
-	release := u.markOverlay(pageConfirm)
+	// Close before onConfirm runs, not after: onConfirm routinely opens the next
+	// overlay, and that one has to be able to take the page and the focus.
+	// Cancel is the path that wants `back`, so Close only restores focus there.
+	ov := u.overlayFor(pageConfirm, nil, "")
 	m.SetDoneFunc(func(_ int, label string) {
-		pages.RemovePage(pageConfirm)
-		// Released before onConfirm runs, not after: onConfirm routinely opens
-		// the next overlay, and that one has to be able to register its own.
-		release()
+		ov.Close()
 		if label != confirmLabel {
 			app.SetFocus(back)
 			return
 		}
 		onConfirm()
 	})
+	ov.show(newScrim(m), m)
 }
 
 // flash briefly replaces the footer with a status message, then puts the
@@ -1900,7 +1894,7 @@ func (u *ui) toggleMouse() {
 //     overlay, including the ones that register nothing. It is the invariant,
 //     and it guards the expensive half (the apply). tview's page list may only
 //     be read from the UI goroutine, so this is main-loop only.
-//   - anyOverlayOpen reads the set that info/confirm/pushOverlayHelp maintain.
+//   - anyOverlayOpen reads the set that every overlay registers in.
 //     It is readable from any goroutine, and it guards the cheap half (skipping
 //     the fetch, which fans out to every node). Being a best-effort optimisation
 //     is exactly why a stale answer here costs nothing.
@@ -1935,32 +1929,6 @@ func (u *ui) markOverlay(key string) func() {
 			u.overlayMu.Unlock()
 		})
 	}
-}
-
-// pushOverlayHelp points the single bottom footer at an overlay's keys. It
-// saves the current footer text and returns a setter (to update while open)
-// and a restore (to call on close). Because each call captures the then-
-// current text, nested overlays restore correctly. It also tracks how many
-// overlays are open (overlayDepth) so the background tree refresh can pause —
-// otherwise its periodic renderContainers on the UI goroutine competes with
-// keystrokes in an overlay and makes them feel laggy.
-func (u *ui) pushOverlayHelp(markup string) (func(string), func()) {
-	// The baseline, not the widget's current text: opening an overlay while a
-	// flash is showing must not adopt the flash message as what to restore.
-	prev := u.footerBase
-	u.setFooter(markup)
-	// A key of its own: this is called by overlays that own the footer, and two
-	// of them can be open at once (nested), so the entry cannot be keyed by
-	// anything they share.
-	release := u.markOverlay(fmt.Sprintf("help#%d", u.overlaySeq.Add(1)))
-	var once sync.Once
-	restore := func() {
-		once.Do(func() {
-			release()
-			u.setFooter(prev)
-		})
-	}
-	return u.setFooter, restore
 }
 
 // helpFor builds the footer key hints from the live keymap, so remapped keys
@@ -2012,7 +1980,7 @@ func (u *ui) helpFor(name string) string {
 // reference the single-row footer cannot hold. It is generated from the live
 // keymap, so remapped keys show correctly. Bound to "?" on every tab.
 func (u *ui) showHelp() {
-	km, app, pages := u.km, u.app, u.pages
+	km, app := u.km, u.app
 	kl := keyLabel
 	var b strings.Builder
 	sec := func(title string) { fmt.Fprintf(&b, "\n[aqua]%s[-]\n", title) }
@@ -2107,8 +2075,8 @@ func (u *ui) showHelp() {
 	tv.SetText(strings.TrimLeft(b.String(), "\n"))
 	tv.SetBorder(true).SetTitle(" keybindings ")
 	prev := app.GetFocus()
-	_, restore := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
-	closeHelp := func() { restore(); pages.RemovePage(pageHelp); app.SetFocus(prev) }
+	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "close"))
+	closeHelp := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '?')):
@@ -2121,8 +2089,7 @@ func (u *ui) showHelp() {
 		}
 		return ev
 	})
-	pages.AddPage(pageHelp, centered(tv, 60, 24), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 60, 24), tv)
 }
 
 func (u *ui) renderTabBar(active string) {
@@ -2383,20 +2350,17 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 // The toggleable log viewer (closeLogView/openLogView/toggleLogView) is an
 // overlay showing the in-memory log ring, refreshed live while open; it is
 // opened/closed with the backtick key from any tab. Its state (logViewStop /
-// logViewPrev / logViewRestore) lives on u.
+// logViewPrev / logViewOverlay) lives on u.
 func (u *ui) closeLogView() {
-	pages, app := u.pages, u.app
 	if u.logViewStop != nil {
 		close(u.logViewStop)
 		u.logViewStop = nil
 	}
-	if u.logViewRestore != nil {
-		u.logViewRestore()
-		u.logViewRestore = nil
-	}
-	pages.RemovePage(pageLogView)
-	if u.logViewPrev != nil {
-		app.SetFocus(u.logViewPrev)
+	// Close gives the footer back and returns focus to logViewPrev, which it
+	// was opened with.
+	if u.logViewOverlay != nil {
+		u.logViewOverlay.Close()
+		u.logViewOverlay = nil
 	}
 }
 
@@ -2404,9 +2368,10 @@ func (u *ui) openLogView() {
 	// runCtx: this overlay shows the CLIENT's log ring, which has nothing to do
 	// with any cluster — its refresher must not die because the operator
 	// switched cluster while it was open.
-	app, pages, ctx := u.app, u.pages, u.runCtx
+	app, ctx := u.app, u.runCtx
 	u.logViewPrev = app.GetFocus()
-	_, u.logViewRestore = u.pushOverlayHelp(footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
+	u.logViewOverlay = u.overlayFor(pageLogView, u.logViewPrev,
+		footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
 	refresh := func() {
@@ -2435,8 +2400,7 @@ func (u *ui) openLogView() {
 	})
 	stop := make(chan struct{})
 	u.logViewStop = stop
-	pages.AddPage(pageLogView, tv, true, true)
-	app.SetFocus(tv)
+	u.logViewOverlay.show(tv, tv)
 	go func() {
 		tk := time.NewTicker(700 * time.Millisecond)
 		defer tk.Stop()

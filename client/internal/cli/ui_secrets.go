@@ -131,8 +131,8 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 		init = append(init, netService{Name: name})
 	}
 	render(init, true)
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
-	closeSecret := func() { restoreHelp(); pages.RemovePage(pageSecDetail); app.SetFocus(sectable) }
+	ov := u.overlayFor(pageSecDetail, sectable, footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
+	closeSecret := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -172,8 +172,7 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 	if height > 24 {
 		height = 24
 	}
-	pages.AddPage(pageSecDetail, centered(tv, 72, height), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 72, height), tv)
 	go func() {
 		members := secretMembers(ctx, dcli, s)
 		app.QueueUpdateDraw(func() {
@@ -207,15 +206,15 @@ func (u *ui) openDeleteSecret(s swarmSecret) {
 }
 
 func (u *ui) showCreateSecret() {
-	app, pages, dcli, ctx, sectable := u.app, u.pages, u.dcli, u.ctx, u.sectable
+	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
 	var name, value, labels string
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" new secret ")
 	form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
 	form.AddTextArea("Value", "", 40, 6, 0, func(t string) { value = t })
 	form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "next field", "Esc", "cancel"))
-	closeForm := func() { restoreHelp(); pages.RemovePage(pageSecForm); app.SetFocus(sectable) }
+	ov := u.overlayFor(pageSecForm, sectable, footerKeys("Tab", "next field", "Esc", "cancel"))
+	closeForm := ov.Close
 	form.AddButton("Create", func() {
 		lbls, err := parseKVList(labels)
 		if err != nil {
@@ -239,6 +238,5 @@ func (u *ui) showCreateSecret() {
 		}
 		return ev
 	})
-	pages.AddPage(pageSecForm, centered(form, formWidth, 18), true, true)
-	app.SetFocus(form)
+	ov.show(centered(form, formWidth, 18), form)
 }

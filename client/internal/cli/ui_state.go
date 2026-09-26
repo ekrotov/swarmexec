@@ -152,8 +152,9 @@ type ui struct {
 	mouseEnabled bool         // mirrors app.EnableMouse; toggled by 'm'
 	screen       tcell.Screen // owned screen, for OSC52 clipboard on yank
 
-	// overlays names every overlay currently open, so the background refreshers
-	// can pause while one is.
+	// overlays names every overlay currently open — by its page name, which is
+	// also how the overlay type addresses it — so the background refreshers can
+	// pause while one is up.
 	//
 	// A SET, not a counter, and that is the whole point. Two notices racing from
 	// two background goroutines both call info(): the second AddPage REPLACES
@@ -162,9 +163,8 @@ type ui struct {
 	// would never reach zero again — the tree would stop refreshing for the rest
 	// of the session, silently. Keyed by page name, the second open is simply
 	// the same entry.
-	overlayMu  sync.Mutex
-	overlays   map[string]bool
-	overlaySeq atomic.Uint64 // unique keys for overlays that share no page name
+	overlayMu sync.Mutex
+	overlays  map[string]bool
 
 	// switching guards the window between asking for a cluster and having it:
 	// the connect runs off the UI goroutine, and a second switch started in the
@@ -181,5 +181,5 @@ type ui struct {
 	// toggleable client-log overlay
 	logViewStop    chan struct{}
 	logViewPrev    tview.Primitive
-	logViewRestore func()
+	logViewOverlay *overlay
 }

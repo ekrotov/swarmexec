@@ -44,12 +44,11 @@ func (u *ui) newLogView(tv *tview.TextView, follow *atomic.Bool) *logViewer {
 
 // logGrepPrompt asks for a message regexp and applies it to a log view.
 func (u *ui) logGrepPrompt(lv *logViewer, back tview.Primitive, after func()) {
-	pages, app := u.pages, u.app
 	in := tview.NewInputField().SetLabel("grep: ").SetFieldWidth(44).
 		SetPlaceholder("regexp on the message — empty clears")
+	ov := u.overlayFor(pageLogGrep, back, "")
 	in.SetDoneFunc(func(key tcell.Key) {
-		pages.RemovePage(pageLogGrep)
-		app.SetFocus(back)
+		ov.Close()
 		if key == tcell.KeyEscape {
 			return
 		}
@@ -68,8 +67,7 @@ func (u *ui) logGrepPrompt(lv *logViewer, back tview.Primitive, after func()) {
 		after()
 	})
 	in.SetBorder(true).SetTitle(" filter logs ")
-	pages.AddPage(pageLogGrep, centeredPrompt(in, 64), true, true)
-	app.SetFocus(in)
+	ov.show(centeredPrompt(in, 64), in)
 }
 
 // logFooterText is the log view's footer hint. It appends the mouse state
@@ -140,7 +138,7 @@ func (u *ui) logPage(tv *tview.TextView, follow *atomic.Bool) (tview.Primitive, 
 }
 
 func (u *ui) showLogs(c resolve.Candidate) {
-	app, ctree, pages := u.app, u.ctree, u.pages
+	app, ctree := u.app, u.ctree
 	cfg, r, ctx, f := u.cfg, u.r, u.ctx, u.f
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
@@ -161,7 +159,10 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	page, refreshHint := u.logPage(tv, follow)
 	lctx, lcancel := context.WithCancel(ctx)
 	lv.start(lctx) // bounded redraw rate; see logFlushInterval
-	closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageLogs, ctree, "")
+	// The stream dies with the view, so the cancel rides along with the close
+	// rather than being a second thing every exit has to remember.
+	closeLogs := func() { lcancel(); ov.Close() }
 	tv.SetInputCapture(u.logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 	target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
 	// The container's own account of what happened to it, woven into the same
@@ -184,14 +185,13 @@ func (u *ui) showLogs(c resolve.Candidate) {
 			app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 		}
 	}()
-	pages.AddPage(pageLogs, page, true, true)
-	app.SetFocus(tv)
+	ov.show(page, tv)
 }
 
 // showServiceLogs streams the logs of every container of a service into one
 // viewer, each line prefixed with [container@node].
 func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
-	app, ctree, pages := u.app, u.ctree, u.pages
+	app, ctree := u.app, u.ctree
 	cfg, r, ctx, f := u.cfg, u.r, u.ctx, u.f
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	follow := &atomic.Bool{}
@@ -211,7 +211,10 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 	page, refreshHint := u.logPage(tv, follow)
 	lctx, lcancel := context.WithCancel(ctx)
 	lv.start(lctx) // bounded redraw rate; see logFlushInterval
-	closeLogs := func() { lcancel(); pages.RemovePage(pageLogs); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageLogs, ctree, "")
+	// The stream dies with the view, so the cancel rides along with the close
+	// rather than being a second thing every exit has to remember.
+	closeLogs := func() { lcancel(); ov.Close() }
 	tv.SetInputCapture(u.logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
 	for _, c := range members {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
@@ -236,8 +239,7 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 			}
 		}(ep, target, prefix)
 	}
-	pages.AddPage(pageLogs, page, true, true)
-	app.SetFocus(tv)
+	ov.show(page, tv)
 }
 
 // showLogsForNode opens logs for the tree cursor: a container leaf shows that

@@ -42,8 +42,8 @@ type inspectView struct {
 	loaded     bool
 	mode       inspMode
 
-	setHelp     func(string)
-	restoreHelp func()
+	setHelp func(string)
+	ov      *overlay
 }
 
 // newInspectWidgets builds the overlay's three widgets and their nesting. The
@@ -379,11 +379,9 @@ func (iv *inspectView) copyLine() {
 }
 
 func (iv *inspectView) close() {
-	if iv.restoreHelp != nil {
-		iv.restoreHelp()
+	if iv.ov != nil {
+		iv.ov.Close()
 	}
-	iv.u.pages.RemovePage(pageInspect)
-	iv.u.app.SetFocus(iv.u.ctree)
 }
 
 // reload re-fetches the inspect (after an edit) and refreshes the tree.
@@ -409,12 +407,8 @@ func (iv *inspectView) openDiff() {
 	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" diff %s — previous → current ", iv.editSvc))
-	_, restoreDiff := u.pushOverlayHelp(footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
-	closeDiff := func() {
-		restoreDiff()
-		pages.RemovePage(pageInspectDiff)
-		app.SetFocus(iv.table)
-	}
+	dov := u.overlayFor(pageInspectDiff, iv.table, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
+	closeDiff := dov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'd')) {
 			closeDiff()
@@ -423,8 +417,7 @@ func (iv *inspectView) openDiff() {
 		return ev
 	})
 	tv.SetText(loadingText)
-	pages.AddPage(pageInspectDiff, centered(tv, 100, 32), true, true)
-	app.SetFocus(tv)
+	dov.show(centered(tv, 100, 32), tv)
 	go func() {
 		lines, hasPrev, derr := serviceDiffLines(ctx, dcli, iv.editSvc)
 		app.QueueUpdateDraw(func() {
@@ -624,12 +617,11 @@ func (iv *inspectView) serviceActions() []serviceAction {
 // is the discoverable, no-Shift path. Service-only.
 func (iv *inspectView) showActions() {
 	u := iv.u
-	app, pages := u.app, u.pages
 	table := iv.table
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", iv.editSvc))
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-	closeActions := func() { restoreHelp(); pages.RemovePage(pageInspectActions); app.SetFocus(table) }
+	ov := u.overlayFor(pageInspectActions, table, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeActions := ov.Close
 	for _, a := range iv.serviceActions() {
 		run := a.run
 		list.AddItem(a.label, "", 0, func() { closeActions(); run() })
@@ -642,8 +634,7 @@ func (iv *inspectView) showActions() {
 		}
 		return vimListKeys(ev)
 	})
-	pages.AddPage(pageInspectActions, centered(list, 54, 17), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 54, 17), list)
 }
 
 // handleKey is the table's input capture — the input half of the overlay.
@@ -751,10 +742,10 @@ func (iv *inspectView) open() {
 	table := iv.table
 	table.SetSelectionChangedFunc(func(int, int) { iv.setFooter("") })
 	table.SetInputCapture(iv.handleKey)
-	iv.setHelp, iv.restoreHelp = u.pushOverlayHelp(iv.keysText())
+	iv.ov = u.overlayFor(pageInspect, u.ctree, iv.keysText())
+	iv.setHelp = iv.ov.setHelp
 	iv.populate() // shows "loading…"
-	pages.AddPage(pageInspect, centered(iv.frame, 110, 40), true, true)
-	app.SetFocus(table)
+	iv.ov.show(centered(iv.frame, 110, 40), table)
 	go func() {
 		start := time.Now()
 		f, raw, err := iv.fetch()

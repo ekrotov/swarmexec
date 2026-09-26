@@ -60,11 +60,11 @@ func (u *ui) openStackFileMenu() {
 		u.flash("no stack under the cursor — select a stack, service or container")
 		return
 	}
-	app, pages, ctree := u.app, u.pages, u.ctree
+	ctree := u.ctree
 	list := tview.NewList().ShowSecondaryText(true)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" stack %s ", stack))
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-	closeMenu := func() { restoreHelp(); pages.RemovePage(pageMenu); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageMenu, ctree, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeMenu := ov.Close
 
 	list.AddItem("export to a file", "write the deployed stack as compose YAML", 0, func() {
 		closeMenu()
@@ -91,16 +91,15 @@ func (u *ui) openStackFileMenu() {
 		}
 		return ev
 	})
-	pages.AddPage(pageMenu, centered(list, 56, 10), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 56, 10), list)
 }
 
 func (u *ui) promptStackPath(title, preset string, then func(string)) {
-	pages, app, ctree := u.pages, u.app, u.ctree
+	ctree := u.ctree
 	in := tview.NewInputField().SetLabel("file: ").SetFieldWidth(52).SetText(preset)
+	ov := u.overlayFor(pageStackFile, ctree, "")
 	in.SetDoneFunc(func(key tcell.Key) {
-		pages.RemovePage(pageStackFile)
-		app.SetFocus(ctree)
+		ov.Close()
 		if key == tcell.KeyEscape {
 			return
 		}
@@ -109,8 +108,7 @@ func (u *ui) promptStackPath(title, preset string, then func(string)) {
 		}
 	})
 	in.SetBorder(true).SetTitle(title)
-	pages.AddPage(pageStackFile, centeredPrompt(in, 72), true, true)
-	app.SetFocus(in)
+	ov.show(centeredPrompt(in, 72), in)
 }
 
 func (u *ui) exportStack(stack, path string) {
@@ -169,7 +167,7 @@ func (u *ui) diffStack(stack, path string) {
 // a stack file is user data and may contain anything, including tview's own
 // colour tags.
 func (u *ui) showStackDiff(stack, path string, d *stackfile.Diff) {
-	app, pages, ctree := u.app, u.pages, u.ctree
+	ctree := u.ctree
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" %s  vs  deployed %s ", path, stack))
 
@@ -201,8 +199,8 @@ func (u *ui) showStackDiff(stack, path string, d *stackfile.Diff) {
 	}
 	tv.SetText(b.String())
 
-	_, restore := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
-	closeIt := func() { restore(); pages.RemovePage(pageStackDiff); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageStackDiff, ctree, footerKeys("j/k", "scroll", "Esc", "close"))
+	closeIt := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
@@ -215,8 +213,7 @@ func (u *ui) showStackDiff(stack, path string, d *stackfile.Diff) {
 		}
 		return ev
 	})
-	pages.AddPage(pageStackDiff, centered(tv, 100, 32), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 100, 32), tv)
 }
 
 // defaultStackPath is what the prompt offers: the stack's own name, in the
@@ -246,7 +243,7 @@ func (u *ui) planStack(stack, path string) {
 
 // showStackPlan is what the operator reads before anything is created.
 func (u *ui) showStackPlan(plan *stackfile.Plan) {
-	app, pages, ctree := u.app, u.pages, u.ctree
+	ctree := u.ctree
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" deploy %s from %s ", plan.Stack, plan.Path))
 
@@ -277,8 +274,8 @@ func (u *ui) showStackPlan(plan *stackfile.Plan) {
 	tv.SetText(b.String())
 
 	keys := footerKeys("j/k", "scroll", "d", "deploy", "Esc", "cancel")
-	_, restore := u.pushOverlayHelp(keys)
-	closeIt := func() { restore(); pages.RemovePage(pageStackPlan); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageStackPlan, ctree, keys)
+	closeIt := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
@@ -295,8 +292,7 @@ func (u *ui) showStackPlan(plan *stackfile.Plan) {
 		}
 		return ev
 	})
-	pages.AddPage(pageStackPlan, centered(tv, 96, 26), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 96, 26), tv)
 }
 
 // confirmAndApply asks once more when something was found, then deploys.

@@ -48,26 +48,21 @@ func TestFlashDoesNotBecomeTheFooterBaseline(t *testing.T) {
 }
 
 // The same flaw hit overlays: one opened while a flash was showing captured the
-// flash message and restored it on close.
+// flash message and restored it on close. (The counting half is tested in
+// overlaypause_test.go; this is the footer half.)
 func TestOverlayHelpRestoresTheOwnerNotAFlash(t *testing.T) {
 	u := footerUI()
 	u.setFooter("tab keys")
 	u.help.SetText("grouped by stack") // a flash is up
 
-	_, restore := u.pushOverlayHelp("overlay keys")
+	_, restore := u.footerTakeover("overlay keys")
 	if got := footerText(u); got != "overlay keys" {
 		t.Errorf("overlay should own the footer: %q", got)
-	}
-	if !u.anyOverlayOpen() {
-		t.Error("an open overlay must be counted, or the tree refresh runs underneath it")
 	}
 
 	restore()
 	if got := footerText(u); got != "tab keys" {
 		t.Errorf("closing the overlay restored %q, want the tab's keys", got)
-	}
-	if u.anyOverlayOpen() {
-		t.Error("a closed overlay must release its entry")
 	}
 }
 
@@ -77,8 +72,8 @@ func TestOverlayHelpNests(t *testing.T) {
 	u := footerUI()
 	u.setFooter("tab keys")
 
-	setOuter, restoreOuter := u.pushOverlayHelp("outer")
-	_, restoreInner := u.pushOverlayHelp("inner")
+	setOuter, restoreOuter := u.footerTakeover("outer")
+	_, restoreInner := u.footerTakeover("inner")
 	if got := footerText(u); got != "inner" {
 		t.Errorf("innermost overlay should own the footer: %q", got)
 	}
@@ -97,9 +92,6 @@ func TestOverlayHelpNests(t *testing.T) {
 	restoreOuter() // idempotent
 	if got := footerText(u); got != "tab keys" {
 		t.Errorf("after both close: %q, want the tab's keys", got)
-	}
-	if d := len(u.overlays); d != 0 {
-		t.Errorf("overlay depth = %d, want 0", d)
 	}
 }
 

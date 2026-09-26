@@ -10,7 +10,6 @@ import (
 	"strings"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
-	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -439,7 +438,7 @@ func (u *ui) autoRefreshContainers() {
 }
 
 func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user string) {
-	app, pages, cfg, dcli, f, ctx, ctree := u.app, u.pages, u.cfg, u.dcli, u.f, u.ctx, u.ctree
+	app, cfg, dcli, f, ctx, ctree := u.app, u.cfg, u.dcli, u.f, u.ctx, u.ctree
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	tctx, tcancel := context.WithCancel(ctx)
 	tv := newTerminalView(app)
@@ -454,15 +453,15 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 	// pane forwards no mouse of its own. Restored to the operator's setting on
 	// close.
 	prevMouse := u.mouseEnabled
-	var once sync.Once
+	ov := u.overlayFor(pageTerm, ctree, "")
+	// Close is already idempotent, so the sync.Once this used to need is the
+	// overlay's. What stays here is what is specific to a terminal: the mouse
+	// goes back to the app, the session is cancelled, the tree reloads.
 	closeTerm := func() {
-		once.Do(func() {
-			app.EnableMouse(prevMouse)
-			tcancel()
-			pages.RemovePage(pageTerm)
-			app.SetFocus(ctree)
-			u.loadContainers()
-		})
+		app.EnableMouse(prevMouse)
+		tcancel()
+		ov.Close()
+		u.loadContainers()
 	}
 	tv.detach = closeTerm
 	tv.run(tctx, cfg, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
@@ -487,17 +486,16 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 		})
 	})
 	app.EnableMouse(false) // hand the mouse to the terminal for native copy
-	pages.AddPage(pageTerm, tv, true, true)
-	app.SetFocus(tv)
+	ov.show(tv, tv)
 }
 
 func (u *ui) containerMenu(c resolve.Candidate) {
-	app, pages, cfg, f, ctx, ctree := u.app, u.pages, u.cfg, u.f, u.ctx, u.ctree
+	app, cfg, f, ctx, ctree := u.app, u.cfg, u.f, u.ctx, u.ctree
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-	closeMenu := func() { restoreHelp(); pages.RemovePage(pageMenu); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageMenu, ctree, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeMenu := ov.Close
 
 	// Optimistic until the shell probe returns; then unavailable shells grey.
 	bashOK, shOK, probed := true, true, false
@@ -557,8 +555,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 	}()
 
 	// Height tracks the item count: 6 items plus the border.
-	pages.AddPage(pageMenu, centered(list, 48, 8), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 48, 8), list)
 }
 
 // svcUsageBadge is the resource marker for a service row: the worst reading
