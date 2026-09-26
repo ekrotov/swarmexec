@@ -183,6 +183,8 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 	}()
 }
 
+// openDeleteSecret permanently removes a secret after a confirm. Docker refuses
+// to remove a secret a service still references, so warn up front when in use.
 func (u *ui) openDeleteSecret(s swarmSecret) {
 	app, dcli, ctx, sectable := u.app, u.dcli, u.ctx, u.sectable
 	msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
@@ -205,6 +207,9 @@ func (u *ui) openDeleteSecret(s swarmSecret) {
 	})
 }
 
+// showCreateSecret creates a new swarm secret from a name, a (multi-line)
+// value and optional labels. The value is entered in a text area so certs and
+// keys can be pasted as-is.
 func (u *ui) showCreateSecret() {
 	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
 	var name, value, labels string

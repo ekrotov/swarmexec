@@ -444,14 +444,6 @@ func (c *muxConn) Close() {
 	})
 }
 
-// muxConns reports how many connections a sidecar is carrying, for tests and
-// diagnostics.
-func (sc *muxSidecar) muxConns() int {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	return len(sc.conns)
-}
-
 // liveSidecars reports how many sidecars the pool holds.
 func (p *muxPool) liveSidecars() int {
 	p.mu.Lock()

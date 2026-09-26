@@ -283,7 +283,8 @@ func mountStrings(names Names, mounts []mount.Mount) []string {
 func networkAttachments(spec swarm.ServiceSpec, names Names, selfName string) map[string]*NetAttach {
 	nets := spec.TaskTemplate.Networks
 	if len(nets) == 0 {
-		nets = spec.Networks //nolint:staticcheck // deprecated, but still what old specs carry
+		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
+		nets = spec.Networks
 	}
 	if len(nets) == 0 {
 		return nil

@@ -359,6 +359,9 @@ func (u *ui) sortCands(cands []resolve.Candidate) {
 	})
 }
 
+// fetchContainers does the two manager round-trips (off the UI goroutine) and
+// returns sorted results. It is instrumented so a slow manager shows up in the
+// log viewer.
 func (u *ui) fetchContainers() ([]resolve.Service, []resolve.Candidate, error) {
 	r, ctx := u.r, u.ctx
 	start := time.Now()
@@ -379,6 +382,7 @@ func (u *ui) fetchContainers() ([]resolve.Service, []resolve.Candidate, error) {
 	return svcs, cands, nil
 }
 
+// applyContainers updates the tree from a fetch result. UI-goroutine only.
 func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, err error) {
 	croot := u.croot
 	u.fetchErr = err
@@ -393,13 +397,19 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 	u.renderContainers()
 }
 
+// loadContainersSync fetches and applies on the caller's goroutine — used at
+// startup, before app.Run, where QueueUpdateDraw would deadlock.
 func (u *ui) loadContainersSync() {
 	u.resetCols = true
 	svcs, cands, err := u.fetchContainers()
 	u.applyContainers(svcs, cands, err)
 }
 
-// loadContainers is the EXPLICIT reload: the refresh key, a removed service, a
+// loadContainers refreshes without freezing the event loop: it fetches off the
+// UI goroutine (two manager round-trips that used to run inline and stall the
+// whole TUI) and applies the result via QueueUpdateDraw.
+//
+// It is the EXPLICIT reload: the refresh key, a removed service, a
 // deployed stack, a closed terminal, a cluster becoming visible. Those may
 // narrow the columns again; the background poll may not.
 func (u *ui) loadContainers() {
@@ -411,6 +421,16 @@ func (u *ui) loadContainers() {
 	}()
 }
 
+// autoRefreshContainers re-lists services/containers off the UI goroutine on a
+// timer so a container replaced by a rolling update (or a scaled service) shows
+// up without pressing r. renderContainers restores the cursor and expanded
+// services, so the refresh is unobtrusive. A transient probe error is ignored
+// rather than clobbering the tree with an error node.
+//
+// It skips while an overlay is open — the tree is hidden, and its periodic
+// renderContainers on the UI goroutine would compete with keystrokes in the
+// overlay (laggy input) — and never overlaps itself (a slow probe over ssh can
+// outlast the tick).
 func (u *ui) autoRefreshContainers() {
 	ctx := u.ctx
 	// Cheap gate: skip the fetch when an overlay is known to be open. Best

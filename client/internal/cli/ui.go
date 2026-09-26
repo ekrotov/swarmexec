@@ -309,16 +309,6 @@ func (u *ui) run(keyWarnings []string) error {
 	// id or node (case-insensitive). It starts from the optional `ui [service]`
 	// argument so `swarmexec ui web` opens pre-narrowed to matching services.
 	u.filter = service
-	// lastCands / lastSvcs cache the most recent fetch so the "/" filter can
-	// re-render locally without hitting the docker API on every keystroke (a
-	// remote call over the ssh tunnel — doing it per keystroke makes typing
-	// crawl). lastSvcs drives the tree so every service shows, even one with no
-	// running task; lastCands supplies the container leaves.
-	// svcByName / svcCols cache the current services and the column widths so the
-	// fold marker (▸/▾) can be rebuilt on a fold — and the docker service ls-style
-	// row (mode, replicas, image, ports) stays aligned — without re-rendering the
-	// whole tree. A service with no containers gets no marker (nothing to expand),
-	// just padding so the rows still line up.
 	// regCache resolves the real version behind a service's :latest tag and whether
 	// the registry has a newer one; assigned just below. Its result is appended to
 	// the service row (e.g. "(1.2.3) ↑").
@@ -329,39 +319,6 @@ func (u *ui) run(keyWarnings []string) error {
 			eachServiceNode(croot, u.markService)
 		})
 	})
-
-	// fetchContainers does the two manager round-trips (off the UI goroutine) and
-	// returns sorted results. It is instrumented so a slow manager shows up in the
-	// log viewer.
-	// applyContainers updates the tree from a fetch result. UI-goroutine only.
-	// loadContainersSync fetches and applies on the caller's goroutine — used at
-	// startup, before app.Run, where QueueUpdateDraw would deadlock.
-	// loadContainers refreshes without freezing the event loop: it fetches off the
-	// UI goroutine (two manager round-trips that used to run inline and stall the
-	// whole TUI) and applies the result via QueueUpdateDraw.
-	// autoRefreshContainers re-lists services/containers off the UI goroutine on a
-	// timer so a container replaced by a rolling update (or a scaled service) shows
-	// up without pressing r. renderContainers restores the cursor and expanded
-	// services, so the refresh is unobtrusive. A transient probe error is ignored
-	// rather than clobbering the tree with an error node.
-	//
-	// It skips while an overlay is open — the tree is hidden, and its periodic
-	// renderContainers on the UI goroutine would compete with keystrokes in the
-	// overlay (laggy input) — and never overlaps itself (a slow probe over ssh can
-	// outlast the tick).
-
-	// startForward brings a forward up off the UI goroutine: dialling the agent
-	// can take up to the connect timeout, and blocking the UI for that would
-	// freeze the whole app. The entry is registered immediately in the starting
-	// state so the operator sees that something is happening.
-
-	// portPrompt asks which port to forward. There is deliberately no list of
-	// exposed ports to pick from: the manager API cannot inspect a container on
-	// another node, and the services worth forwarding are exactly the ones that
-	// publish nothing — so a suggestion list would be empty where it matters.
-
-	// userPrompt asks which user/UID to exec as, then calls open with it. Mirrors
-	// the CLI's `exec -u`: a name, a UID, or UID:GID.
 
 	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
 		if ref, ok := node.GetReference().(resolve.Candidate); ok {
@@ -387,48 +344,20 @@ func (u *ui) run(keyWarnings []string) error {
 	// selectedVols holds the volumes marked with space for a bulk delete, keyed
 	// by name so the selection survives sorting and re-render.
 	u.selectedVols = map[string]bool{}
-	// shownVols is the filtered + sorted subset currently displayed; it is what
-	// selectedVolume() and "select all" index. volFilter is the "/" search query.
-	// sortVolumes orders rows by the active field; for size/age an unknown value
-	// always sorts last (regardless of direction), with name as the tiebreaker.
 
 	vtable.SetSelectedFunc(func(int, int) {
 		if v, ok := u.selectedVolume(); ok && len(v.Nodes) > 0 {
 			u.showVolumeNodes(v)
 		}
 	})
-	// showCreateVolume opens a form to create a volume (default driver local) with
-	// labels, targeting one node or (blank) all nodes — volumes are node-local, so
-	// creation goes to each target node's agent.
-
-	// showVolumeConsumers lists the services/containers that mount a volume.
-
-	// deleteVolumes removes each target volume on every node that holds it, behind
-	// a single confirm. Volumes are node-local, so a volume is removed across all
-	// its v.Nodes. Shared by the multi-select delete and prune.
-
-	// pruneVolumes deletes every volume that no running container mounts and no
-	// service declares (service-declared volumes are spared even with no running
-	// task). The service check needs a ServiceList, so it runs off the UI goroutine.
 
 	// ------------------------------------------------------------------ forwards
 	ftable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	ftable.SetSelectedStyle(selStyle)
-	// selectedForward maps the cursor row back to a forward.
 
 	// ------------------------------------------------------------------ networks
 	nettable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	nettable.SetSelectedStyle(selStyle)
-	// serviceNamesFromCache returns the known service names (the containers-tab
-	// cache), used to seed the attach autocomplete. It is only a suggestion list —
-	// the actual attach resolves the name live, so a just-created service that is
-	// not cached yet can still be typed in.
-	// servicePrompt opens an autocomplete input to choose a service, then a
-	// confirmation (the change triggers a rolling update of that service), then
-	// runs do(service) off the UI goroutine and calls onDone on success. It backs
-	// both attach and detach: actionLabel is the confirm button ("Attach" /
-	// "Detach"), confirmVerb the sentence lead-in, suggestions feed the
-	// autocomplete only, and back gets focus when the operator cancels.
 
 	// showNetworkMembers lists the services attached to a network with the
 	// containers of each service nested under it. Service membership is known
@@ -439,9 +368,6 @@ func (u *ui) run(keyWarnings []string) error {
 			u.showNetworkMembers(n)
 		}
 	})
-	// showCreateNetwork opens a form to create a network (default driver overlay)
-	// with the common swarm options — attachable, encrypted, internal, IPv6, MTU
-	// and an optional subnet/gateway and labels.
 
 	// ------------------------------------------------------------------- secrets
 	sectable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
@@ -455,11 +381,6 @@ func (u *ui) run(keyWarnings []string) error {
 			u.showSecretDetail(s)
 		}
 	})
-	// openDeleteSecret permanently removes a secret after a confirm. Docker refuses
-	// to remove a secret a service still references, so warn up front when in use.
-	// showCreateSecret creates a new swarm secret from a name, a (multi-line)
-	// value and optional labels. The value is entered in a text area so certs and
-	// keys can be pasted as-is.
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx (the name in the footer, and the row marked here) is set with the
@@ -470,18 +391,6 @@ func (u *ui) run(keyWarnings []string) error {
 	// cursor.
 	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false)
 	cxtable.SetSelectedStyle(selStyle)
-	// Contexts come from docker's local store (no network), so load synchronously.
-	// showCreateContext opens a guided form to add a docker context. The operator
-	// explicitly decides whether to connect over SSH and, if so, whether to go
-	// through a jump host — the relevant fields appear only when opted in. For SSH
-	// the jump host(s) are stored on the context and injected as -J into both the
-	// Docker-API and agent-tunnel ssh connections (no ~/.ssh/config needed).
-	// "Test" verifies the assembled endpoint (a live daemon ping) before saving.
-	// deleteContext removes the selected context behind a confirm. "default" is
-	// protected; removing the current one resets the selection to default.
-	// activateContext makes c the current docker context and restarts the UI so
-	// it reconnects to that cluster. Restarting (rather than swapping the client
-	// live) avoids racing the in-flight background loads.
 
 	// -------------------------------------------------------------------- nodes
 	notable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
@@ -607,70 +516,9 @@ func (u *ui) run(keyWarnings []string) error {
 	u.mouseEnabled = true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 
-	// On the tree, "/" opens search; h/l collapse/expand the service under the
-	// cursor; j/k stay down/up via the shared keys.
-	// showInspect renders an inspect in a scrollable overlay with two views: a
-	// tabular, operator-first summary (default) and the raw daemon JSON, toggled
-	// with `t`. fetch runs off the UI goroutine so a slow manager cannot freeze
-	// the loop. It returns (formatted, rawJSON).
-	// editList is a staged list editor: it shows the current entries and lets the
-	// operator add/edit/delete locally, then apply them all at once (one
-	// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
-	// the final list; after runs on success. Used for a service's ports and labels.
-	// formPrompt (optional) replaces the default single-line add/edit prompt with
-	// a custom form: it receives the current entry (empty when adding), a submit
-	// callback that validates+stages+closes on success (returning an error to show
-	// otherwise), and a cancel callback; it returns the primitive to display.
-	// openPortsEditor / openLabelsEditor fetch the service's current ports/labels
-	// off the UI goroutine, then open the staged editor.
-	// openAliasEditorForNet edits a service's DNS aliases on one network. Reached
-	// from the networks editor (select a network, press A), so aliases only show
-	// in that context, not as a top-level inspect key.
-	// openNetworksEditor edits the networks a service is attached to, with
-	// autocomplete of network names (add/remove), applied in one ServiceUpdate.
-	// Selecting a network and pressing A edits that network's DNS aliases.
-	// openSecretsEditor edits the secrets a service references, with autocomplete
-	// of secret names (add/remove), applied in one ServiceUpdate. Works even when
-	// the service has none yet.
-	// openMountsEditor edits a service's mounts (volumes + binds, with a
-	// read-only flag). For bind mounts it can't verify the host path (no host
-	// access), so on apply it warns which nodes the service could run on and that
-	// each bind source must already exist on all of them.
-	// openEnvEditor edits a service's environment variables (KEY=VALUE), with
-	// edit allowed (adjust a value in place), add and remove.
-	// placementListEditor opens a staged list editor whose add/edit input
-	// autocompletes cluster-derived candidates (excluding ones already staged).
-	// Shared by the constraints and the spread-preferences editors.
-	// openPlacementConstraintsEditor edits the service's hard placement
-	// constraints (node.* / engine.* == / !=) with node-derived autocomplete.
-	// openSpreadEditor edits the service's spread placement preferences — bare
-	// node attributes (e.g. node.labels.zone) that Swarm spreads tasks over — in
-	// priority order, with node-derived autocomplete.
-	// openPlacementMenu groups the two placement concerns (hard constraints and
-	// soft spread preferences) under one key so the inspect footer stays short.
-	// openScalePrompt asks for a new replica count and scales the service.
-	// openForceUpdate redeploys a service (docker service update --force) after a
-	// confirm — every task is restarted/rescheduled, which unsticks a service in
-	// an incomplete state (e.g. 1/2). No spec change beyond bumping ForceUpdate.
-	// promptDeleteOrphanSecrets asks whether to also delete secrets that the
-	// just-removed service was the only user of (nothing references them now).
-	// openRemoveService permanently deletes a service after a confirm. onRemoved is
-	// called on success (the caller closes the inspect overlay and refreshes the
-	// tree, since the service no longer exists). If the service was the sole user
-	// of any secret, it then offers to delete those now-orphaned secrets.
-	// openImageVersionPicker updates a service's image after a confirm: for a
-	// version-pinned service it prompts for a target version (newer ones suggested,
-	// any existing tag typeable, downgrades warned); for a :latest service it
-	// confirms the current-digest target. Rolling update.
-	// showPlacementDiagnosis explains why a service is not running everywhere it is
-	// expected to — per-node exclusion reasons for a global service, and the
-	// scheduler's own message on each non-running task for a replicated one.
-	// openResourcesEditor sets/edits/clears the service's CPU and memory limits
-	// (and reservations) in a form. An empty field clears that limit; applying
-	// does one ServiceUpdate (rolling update).
-
-	// inspectCurrent shows service inspect on a service node, task inspect on a
-	// container leaf (both from the manager).
+	// On the tree the search key opens search and fold/unfold (h/l by default)
+	// collapse/expand the service under the cursor; j/k stay down/up via the
+	// shared keys.
 	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {

@@ -135,6 +135,7 @@ func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, t
 			nets = append(nets, swarm.NetworkAttachmentConfig{Target: id})
 		}
 		spec.TaskTemplate.Networks = nets
+		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 		spec.Networks = nil
 		return nil
 	})
@@ -192,6 +193,7 @@ func serviceAttachedNetworks(ctx context.Context, dcli *client.Client, name stri
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a)
 	}
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	for _, a := range svc.Spec.Networks {
 		add(a)
 	}
@@ -209,9 +211,12 @@ func setNetworkAliases(ctx context.Context, dcli *client.Client, name, target st
 				found = true
 			}
 		}
-		for i := range spec.Networks {
-			if spec.Networks[i].Target == target {
-				spec.Networks[i].Aliases = aliases
+		// Same backing array as spec.Networks, so the aliases land in the spec.
+		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
+		legacy := spec.Networks
+		for i := range legacy {
+			if legacy[i].Target == target {
+				legacy[i].Aliases = aliases
 				found = true
 			}
 		}
@@ -247,6 +252,7 @@ func currentServiceNetworks(ctx context.Context, dcli *client.Client, name strin
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a.Target)
 	}
+	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
 	for _, a := range svc.Spec.Networks {
 		add(a.Target)
 	}
@@ -288,19 +294,6 @@ func removeService(ctx context.Context, dcli *client.Client, name string) error 
 		return fmt.Errorf("no service named %q", name)
 	}
 	return dcli.ServiceRemove(ctx, svc.ID)
-}
-
-// serviceHasPreviousSpec reports whether a service has a previous spec to roll
-// back to — false for one that has never been updated since it was created.
-func serviceHasPreviousSpec(ctx context.Context, dcli *client.Client, name string) (bool, error) {
-	svc, err := serviceByName(ctx, dcli, name)
-	if err != nil {
-		return false, err
-	}
-	if svc == nil {
-		return false, fmt.Errorf("no service named %q", name)
-	}
-	return svc.PreviousSpec != nil, nil
 }
 
 // rollbackService asks the manager to roll a service back to its previous spec.

@@ -55,6 +55,8 @@ var errAgentTooOld = errors.New("agent is older than this client (missing RPC) â
 // bound to the connection instead of the secret itself, and an agent predating
 // that does not recognise it. The bare "invalid or missing agent secret" the
 // agent returns is actively misleading in that case â€” the secret is fine.
+//
+//lint:ignore ST1005 shown verbatim to the operator; the layout is the message
 var errSecretRejected = errors.New("agent rejected the shared secret.\n" +
 	"  Most likely the agents predate connection-bound authentication (v1.17.3):\n" +
 	"  update them with `swarmexec init --force`, or set `legacy_secret: true` in\n" +

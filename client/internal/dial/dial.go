@@ -47,8 +47,14 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
+		// Dial now, fail now, and with the real reason: an unreachable agent is
+		// reported at connect time, not on the first RPC. NewClient has no
+		// equivalent, so these stay until that change is made deliberately.
+		//lint:ignore SA1019 see above
 		grpc.WithBlock(),
+		//lint:ignore SA1019 see above
 		grpc.WithReturnConnectionError(),
+		//lint:ignore SA1019 see above
 		grpc.FailOnNonTempDialError(true),
 		// Keep the connection warm with periodic pings. A long, silent RPC (e.g.
 		// the disk-usage scan behind volume sizes) sends no application bytes, so
@@ -85,7 +91,8 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	start := time.Now()
-	conn, err := grpc.DialContext(ctx, addr, opts...) //nolint:staticcheck // WithBlock needs DialContext
+	//lint:ignore SA1019 WithBlock needs DialContext; moving to NewClient changes when dial errors surface
+	conn, err := grpc.DialContext(ctx, addr, opts...)
 	clientlog.Timed("dial.agent", start, err, "addr", addr)
 	if err != nil {
 		return nil, fmt.Errorf("cannot reach agent on %s (mTLS/connection error: %w)", addr, err)

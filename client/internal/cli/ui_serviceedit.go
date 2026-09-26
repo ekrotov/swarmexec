@@ -15,6 +15,14 @@ import (
 	"github.com/rivo/tview"
 )
 
+// editList is a staged list editor: it shows the current entries and lets the
+// operator add/edit/delete locally, then apply them all at once (one
+// ServiceUpdate). validate normalizes/validates a single entry; onApply gets
+// the final list; after runs on success. Used for a service's ports and labels.
+// formPrompt (optional) replaces the default single-line add/edit prompt with
+// a custom form: it receives the current entry (empty when adding), a submit
+// callback that validates+stages+closes on success (returning an error to show
+// otherwise), and a cancel callback; it returns the primitive to display.
 func (u *ui) editList(cfg editListConfig) {
 	app := u.app
 	title, applyVerb, items := cfg.title, cfg.applyVerb, cfg.items
@@ -273,6 +281,8 @@ func (u *ui) editList(cfg editListConfig) {
 	ov.show(centered(list, 72, 18), list)
 }
 
+// openPortsEditor / openLabelsEditor fetch the service's current ports/labels
+// off the UI goroutine, then open the staged editor.
 func (u *ui) openPortsEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -343,6 +353,9 @@ func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()
 	}()
 }
 
+// openAliasEditorForNet edits a service's DNS aliases on one network. Reached
+// from the networks editor (select a network, press A), so aliases only show
+// in that context, not as a top-level inspect key.
 func (u *ui) openAliasEditorForNet(svcName, netName, target string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -384,6 +397,9 @@ func (u *ui) openAliasEditorForNet(svcName, netName, target string, back tview.P
 	}()
 }
 
+// openNetworksEditor edits the networks a service is attached to, with
+// autocomplete of network names (add/remove), applied in one ServiceUpdate.
+// Selecting a network and pressing A edits that network's DNS aliases.
 func (u *ui) openNetworksEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -447,6 +463,9 @@ func (u *ui) openNetworksEditor(svcName string, back tview.Primitive, after func
 	}()
 }
 
+// openSecretsEditor edits the secrets a service references, with autocomplete
+// of secret names (add/remove), applied in one ServiceUpdate. Works even when
+// the service has none yet.
 func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -496,6 +515,8 @@ func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func(
 	}()
 }
 
+// openEnvEditor edits a service's environment variables (KEY=VALUE), with
+// edit allowed (adjust a value in place), add and remove.
 func (u *ui) openEnvEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -532,6 +553,9 @@ func (u *ui) openEnvEditor(svcName string, back tview.Primitive, after func()) {
 	}()
 }
 
+// placementListEditor opens a staged list editor whose add/edit input
+// autocompletes cluster-derived candidates (excluding ones already staged).
+// Shared by the constraints and the spread-preferences editors.
 func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, validate func(string) (string, error), apply func([]string) error, back tview.Primitive, after func()) {
 	have := map[string]bool{}
 	for _, it := range items {
@@ -562,6 +586,8 @@ func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, 
 	})
 }
 
+// openPlacementConstraintsEditor edits the service's hard placement
+// constraints (node.* / engine.* == / !=) with node-derived autocomplete.
 func (u *ui) openPlacementConstraintsEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -583,6 +609,9 @@ func (u *ui) openPlacementConstraintsEditor(svcName string, back tview.Primitive
 	}()
 }
 
+// openSpreadEditor edits the service's spread placement preferences — bare
+// node attributes (e.g. node.labels.zone) that Swarm spreads tasks over — in
+// priority order, with node-derived autocomplete.
 func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -604,6 +633,8 @@ func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()
 	}()
 }
 
+// openPlacementMenu groups the two placement concerns (hard constraints and
+// soft spread preferences) under one key so the inspect footer stays short.
 func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func()) {
 	app := u.app
 	// Every branch opens the next editor, which takes focus itself; only the
@@ -626,6 +657,10 @@ func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func(
 	mov.show(newScrim(m), m)
 }
 
+// openMountsEditor edits a service's mounts (volumes + binds, with a
+// read-only flag). For bind mounts it can't verify the host path (no host
+// access), so on apply it warns which nodes the service could run on and that
+// each bind source must already exist on all of them.
 func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()) {
 	app, r, cfg, dcli, f, ctx := u.app, u.r, u.cfg, u.dcli, u.f, u.ctx
 	go func() {
@@ -772,6 +807,7 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 	}()
 }
 
+// openScalePrompt asks for a new replica count and scales the service.
 func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -818,6 +854,9 @@ func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func())
 	}()
 }
 
+// openForceUpdate redeploys a service (docker service update --force) after a
+// confirm — every task is restarted/rescheduled, which unsticks a service in
+// an incomplete state (e.g. 1/2). No spec change beyond bumping ForceUpdate.
 func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	u.confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
@@ -838,6 +877,8 @@ func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func())
 	})
 }
 
+// promptDeleteOrphanSecrets asks whether to also delete secrets that the
+// just-removed service was the only user of (nothing references them now).
 func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 	app, dcli, ctx, ctree := u.app, u.dcli, u.ctx, u.ctree
 	names := make([]string, 0, len(orphans))
@@ -872,6 +913,10 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 	oov.show(newScrim(m), m)
 }
 
+// openRemoveService permanently deletes a service after a confirm. onRemoved is
+// called on success (the caller closes the inspect overlay and refreshes the
+// tree, since the service no longer exists). If the service was the sole user
+// of any secret, it then offers to delete those now-orphaned secrets.
 func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	u.confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
@@ -930,6 +975,10 @@ type upgradeInfo struct {
 // known tag can mean hundreds of entries on a busy repo.
 const versionSuggestionLimit = 25
 
+// openImageVersionPicker updates a service's image after a confirm: for a
+// version-pinned service it prompts for a target version (newer ones suggested,
+// any existing tag typeable, downgrades warned); for a :latest service it
+// confirms the current-digest target. Rolling update.
 func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview.Primitive, after func()) {
 	// A :latest service with an update available has a digest-pinned target and
 	// no version to pick between — keep the one-shot confirm. Routing it through
@@ -1027,6 +1076,9 @@ func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tvi
 	})
 }
 
+// showPlacementDiagnosis explains why a service is not running everywhere it is
+// expected to — per-node exclusion reasons for a global service, and the
+// scheduler's own message on each non-running task for a replicated one.
 func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
@@ -1062,6 +1114,9 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 	}()
 }
 
+// openResourcesEditor sets/edits/clears the service's CPU and memory limits
+// (and reservations) in a form. An empty field clears that limit; applying
+// does one ServiceUpdate (rolling update).
 func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {

@@ -77,6 +77,10 @@ func (u *ui) selectedNetwork() (swarmNetwork, bool) {
 	return selectedRow(nettable, u.nets)
 }
 
+// serviceNamesFromCache returns the known service names (the containers-tab
+// cache), used to seed the attach autocomplete. It is only a suggestion list —
+// the actual attach resolves the name live, so a just-created service that is
+// not cached yet can still be typed in.
 func (u *ui) serviceNamesFromCache() []string {
 	names := make([]string, 0, len(u.lastSvcs))
 	for _, s := range u.lastSvcs {
@@ -85,6 +89,12 @@ func (u *ui) serviceNamesFromCache() []string {
 	return names
 }
 
+// servicePrompt opens an autocomplete input to choose a service, then a
+// confirmation (the change triggers a rolling update of that service), then
+// runs do(service) off the UI goroutine and calls onDone on success. It backs
+// both attach and detach: actionLabel is the confirm button ("Attach" /
+// "Detach"), confirmVerb the sentence lead-in, suggestions feed the
+// autocomplete only, and back gets focus when the operator cancels.
 func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions []string, back tview.Primitive, do func(string) error, onDone func()) {
 	app := u.app
 	in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(46)
@@ -329,6 +339,9 @@ func (v *netMembersView) open() {
 	v.reload()
 }
 
+// showCreateNetwork opens a form to create a network (default driver overlay)
+// with the common swarm options — attachable, encrypted, internal, IPv6, MTU
+// and an optional subnet/gateway and labels.
 func (u *ui) showCreateNetwork() {
 	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
 	o := newNetworkOpts{Driver: "overlay"}

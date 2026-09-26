@@ -89,6 +89,18 @@ type clusterState struct {
 	regCache  *registryCache // :latest version / newer-tag resolver
 
 	// containers tab
+	//
+	// lastCands / lastSvcs cache the most recent fetch so the "/" filter can
+	// re-render locally without hitting the docker API on every keystroke (a
+	// remote call over the ssh tunnel — doing it per keystroke makes typing
+	// crawl). lastSvcs drives the tree so every service shows, even one with no
+	// running task; lastCands supplies the container leaves.
+	//
+	// svcByName / svcCols cache the current services and the column widths so the
+	// fold marker (▸/▾) can be rebuilt on a fold — and the docker service ls-style
+	// row (mode, replicas, image, ports) stays aligned — without re-rendering the
+	// whole tree. A service with no containers gets no marker (nothing to expand),
+	// just padding so the rows still line up.
 	lastCands []resolve.Candidate
 	lastSvcs  []resolve.Service
 	svcByName map[string]resolve.Service
@@ -120,7 +132,9 @@ type clusterState struct {
 	clusterText string // last cluster-probe summary for the footer
 
 	// volumes tab
-	selectedVols    map[string]bool
+	selectedVols map[string]bool
+	// shownVols is the filtered + sorted subset currently displayed; it is what
+	// selectedVolume() and "select all" index.
 	shownVols       []swarmVolume
 	vols            []swarmVolume
 	volUsage        map[string][]volumeConsumer

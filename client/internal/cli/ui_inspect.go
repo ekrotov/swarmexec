@@ -67,6 +67,10 @@ func newInspectWidgets() (*tview.Table, *tview.TextView, *tview.Flex) {
 // logging labels; editSvc is the service name for a service inspect (enabling the
 // editor keys) or "" for a task/container; fetch yields the structured + raw
 // views. It builds an inspectView and hands off to its methods.
+//
+// The overlay has two views: a tabular, operator-first summary (default) and
+// the raw daemon JSON, toggled with `t`. fetch runs off the UI goroutine so a
+// slow manager cannot freeze the loop.
 func (u *ui) showInspect(title string, op string, editSvc string, subject statsSubject, fetch func() ([]inspLine, string, error)) {
 	table, tabs, frame := newInspectWidgets()
 	iv := &inspectView{
@@ -766,6 +770,8 @@ func (iv *inspectView) open() {
 	}()
 }
 
+// inspectCurrent shows service inspect on a service node, task inspect on a
+// container leaf (both from the manager).
 func (u *ui) inspectCurrent() {
 	dcli, ctx, ctree := u.dcli, u.ctx, u.ctree
 	n := ctree.GetCurrentNode()

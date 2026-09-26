@@ -52,11 +52,9 @@ var (
 	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
 	cfHeaders = []string{"CONFIG", "USED BY", "SIZE", "AGE", "UPDATED", "LABELS"}
-	// The sidebar is narrow and its rows are self-explanatory, so it carries no
-	// header at all; the endpoint each name resolves to is one keystroke away in
-	// the detail overlay. cxHeaders survives for the clipboard export, which is
-	// a table and does want columns.
-	cxHeaders = []string{"CONTEXT", "DOCKER HOST"}
+	// The context sidebar is narrow and its rows are self-explanatory, so it
+	// carries no header at all; the endpoint each name resolves to is one
+	// keystroke away in the detail overlay.
 	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
 )
 
