@@ -2228,6 +2228,13 @@ forward_stop: d  forward_copy_url: o</div>
         Aktion oder zwei Aktionen, die auf einem Tab an dieselbe Taste gebunden sind, fallen
         jeweils auf den Standard zurück, und die UI zeigt die Warnungen einmalig beim Start.
       </p>
+      <p>
+        <code>quit</code> und <code>copy</code> gelten auch in jedem Dialog — im
+        Inspect-Overlay, in den Detailansichten, im Log-Viewer —, eine umgelegte Taste
+        schließt und kopiert also auch dort. Aus demselben Grund dürfen sie keine Taste
+        belegen, die ein Dialog selbst verwendet, etwa <kbd>t</kbd>, <kbd>d</kbd> oder
+        <kbd>i</kbd>: Eine solche Belegung behält den Standard, mit einer Warnung.
+      </p>
 
       <!-- 11 -->
       <h2 id="exit">11. Exit-Codes</h2>

@@ -2109,6 +2109,13 @@ forward_stop: d  forward_copy_url: o</div>
         actions bound to the same key on one tab each fall back to the default, and the
         UI shows the warnings once on startup.
       </p>
+      <p>
+        <code>quit</code> and <code>copy</code> also apply inside every dialog — the
+        inspect overlay, the detail views, the log viewer — so a remapped key closes and
+        copies there too. For the same reason they cannot take a key a dialog uses for
+        itself, such as <kbd>t</kbd>, <kbd>d</kbd> or <kbd>i</kbd>: that remap keeps the
+        default, with a warning.
+      </p>
 
       <!-- 11 -->
       <h2 id="exit">11. Exit codes</h2>

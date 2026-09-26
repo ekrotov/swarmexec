@@ -150,7 +150,7 @@ type statsSubject struct {
 
 // keysText builds the footer key hints for the current mode.
 func (iv *inspectView) keysText() string {
-	// Front-load the escape hatches ("? help" and "Esc/q close") so that,
+	// Front-load the escape hatches ("? help" and "Esc/<quit> close") so that,
 	// when this dense line overflows a narrow terminal, it is the tail of
 	// actions that clips — never the way out or the pointer to the full key
 	// list. "?" opens the complete reference (showHelp).
@@ -159,7 +159,9 @@ func (iv *inspectView) keysText() string {
 	// only has to say how to reach them. It used to name the next one instead,
 	// which was the only place they were named at all — and it could never show
 	// more than one of the three.
-	parts := []string{"[yellow]?[white] help", "[yellow]Esc/q[white] close", "[yellow]j/k[white] move", "[yellow]y/Enter[white] copy line", "[yellow]1-3/t[white] view"}
+	km := iv.u.km
+	parts := []string{"[yellow]?[white] help", "[yellow]Esc/" + keyLabel(km.Quit) + "[white] close", "[yellow]j/k[white] move",
+		"[yellow]" + keyLabel(km.Copy) + "/Enter[white] copy line", "[yellow]1-3/t[white] view"}
 	if iv.editSvc != "" {
 		// The ~14 editor actions live behind the "a" menu (showActions);
 		// the footer stays short. X (destructive) stays a bare key.
@@ -414,7 +416,7 @@ func (iv *inspectView) openDiff() {
 	dov := u.overlayFor(pageInspectDiff, iv.table, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
 	closeDiff := dov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'd')) {
+		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == iv.u.km.Quit || ev.Rune() == 'd')) {
 			closeDiff()
 			return nil
 		}
@@ -646,7 +648,7 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	u := iv.u
 	editSvc, table := iv.editSvc, iv.table
 	switch {
-	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == iv.u.km.Quit || ev.Rune() == 'i')):
 		iv.close()
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == '?':
@@ -673,7 +675,7 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		// sits at the top precisely so the operator never has to hunt for it.
 		iv.openVersionPicker()
 		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':
+	case ev.Key() == tcell.KeyRune && ev.Rune() == iv.u.km.Copy:
 		iv.copyLine()
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 't':

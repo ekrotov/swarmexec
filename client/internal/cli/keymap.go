@@ -93,6 +93,23 @@ var keyActions = []keyAction{
 	{"forward_copy_url", []string{"forwards"}, 'o', func(k *keybinds) *rune { return &k.FwdCopyURL }},
 }
 
+// dialogActions are the configurable keys that also apply INSIDE dialogs:
+// every overlay closes on the quit key and copies with the copy key, so a
+// remapped key works there too instead of only on the tabs.
+var dialogActions = map[string]bool{"quit": true, "copy": true}
+
+// dialogRunes are the fixed keys dialogs and tab detail views handle
+// themselves (inspect's t/1-3 views and its editor actions, the i that closes
+// what it opened, …). quit and copy may not take one: the dialog would answer
+// with its own action, and the remap would silently do something else there.
+// TestDialogRunesMatchTheSource keeps this list equal to what the code checks.
+var dialogRunes = map[rune]bool{
+	'?': true, '`': true, '/': true, ' ': true, '+': true, '-': true,
+	'a': true, 'd': true, 'e': true, 'f': true, 'i': true, 'l': true, 'm': true,
+	'n': true, 'p': true, 'r': true, 's': true, 't': true, 'u': true, 'v': true, 'w': true,
+	'A': true, 'D': true, 'F': true, 'P': true, 'R': true, 'S': true, 'X': true,
+}
+
 // reservedRunes are the fixed structural keys a configurable binding must not
 // steal (the tab-number keys and the vim movement aliases).
 // Every digit a tab can occupy is reserved, not just the tabs that exist today:
@@ -191,6 +208,10 @@ func loadKeybinds(path string) (keybinds, []string) {
 		}
 		if reservedRunes[r] {
 			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a reserved key; kept default %q", name, raw[name], keyLabel(a.def)))
+			continue
+		}
+		if dialogActions[name] && dialogRunes[r] {
+			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a key dialogs use themselves; kept default %q", name, raw[name], keyLabel(a.def)))
 			continue
 		}
 		// Defaults are collision-free per tab, so a conflict can only come from an

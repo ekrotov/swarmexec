@@ -311,7 +311,7 @@ func (u *ui) showForwardDetail() {
 		case ev.Key() == tcell.KeyEscape, ev.Key() == tcell.KeyEnter:
 			closeDetail()
 			return nil
-		case ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i'):
+		case ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i'):
 			closeDetail()
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':

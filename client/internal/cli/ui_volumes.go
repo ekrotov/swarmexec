@@ -456,7 +456,7 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 	ov := u.overlayFor(pageVolUsers, vtable, footerKeys("j/k", "move", "Esc", "back"))
 	closeUsers := ov.Close
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
+		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')) {
 			closeUsers()
 			return nil
 		}

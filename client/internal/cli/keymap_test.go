@@ -6,6 +6,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -122,5 +123,66 @@ func TestParseKeyAndLabel(t *testing.T) {
 	}
 	if keyLabel(' ') != "space" || keyLabel('q') != "q" {
 		t.Error("keyLabel wrong")
+	}
+}
+
+// quit and copy apply inside dialogs, so they may not take a key a dialog
+// answers itself — with quit=t, inspect's view toggle would have won and the
+// remap would have done nothing there.
+func TestLoadKeybinds_DialogKeysAreRefusedForQuitAndCopy(t *testing.T) {
+	km, warns := loadKeybinds(writeKeys(t, "quit: t\ncopy: i\n"))
+	if km.Quit != 'q' || km.Copy != 'y' {
+		t.Errorf("dialog keys must keep the defaults, got quit=%q copy=%q", km.Quit, km.Copy)
+	}
+	if len(warns) != 2 || !strings.Contains(warns[0], "dialogs use themselves") {
+		t.Errorf("want two dialog-key warnings, got %v", warns)
+	}
+
+	km, warns = loadKeybinds(writeKeys(t, "quit: x\ncopy: c\ncontext_focus: C\n"))
+	if km.Quit != 'x' || km.Copy != 'c' || len(warns) != 0 {
+		t.Errorf("free keys must be accepted, got quit=%q copy=%q warnings=%v", km.Quit, km.Copy, warns)
+	}
+}
+
+var runeLiteral = regexp.MustCompile(`ev\.Rune\(\) == '(.)'|case '(.)'|ev\.Rune\(\) >= '(.)' && ev\.Rune\(\) <= '(.)'`)
+
+// dialogRunes is a claim about the source — "these are the keys the UI
+// handles itself" — so it is checked against the source. A fixed key added to
+// a dialog without being listed would let quit or copy be remapped onto it;
+// a listed key nothing uses any more only narrows the choice for nothing.
+func TestDialogRunesMatchTheSource(t *testing.T) {
+	files, _ := filepath.Glob("ui*.go")
+	used := map[rune]bool{}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range runeLiteral.FindAllStringSubmatch(string(b), -1) {
+			if m[3] != "" { // a range such as '1'..'9'
+				for r := []rune(m[3])[0]; r <= []rune(m[4])[0]; r++ {
+					used[r] = true
+				}
+				continue
+			}
+			used[[]rune(m[1] + m[2])[0]] = true
+		}
+	}
+	for r := range used {
+		if r == 'q' || r == 'y' {
+			t.Errorf("a dialog checks %q literally; use u.km.Quit / u.km.Copy so a remap reaches it", r)
+			continue
+		}
+		if !dialogRunes[r] && !reservedRunes[r] {
+			t.Errorf("fixed key %q is handled in the UI but missing from dialogRunes", r)
+		}
+	}
+	for r := range dialogRunes {
+		if !used[r] {
+			t.Errorf("dialogRunes lists %q, which no dialog handles any more", r)
+		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 func inspectViewFor(lines []inspLine) *inspectView {
 	table, tabs, frame := newInspectWidgets()
 	return &inspectView{
+		u:          &ui{km: defaultKeybinds()}, // the footer names the configured keys
 		table:      table,
 		tabs:       tabs,
 		frame:      frame,

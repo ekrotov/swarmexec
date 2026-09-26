@@ -1927,7 +1927,7 @@ func (u *ui) showHelp() {
 	closeHelp := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == '?')):
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?')):
 			closeHelp()
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
@@ -2219,7 +2219,7 @@ func (u *ui) openLogView() {
 	app, ctx := u.app, u.runCtx
 	u.logViewPrev = app.GetFocus()
 	u.logViewOverlay = u.overlayFor(pageLogView, u.logViewPrev,
-		footerKeys("`", "toggle/close", "Esc/q", "close", "↑/↓", "scroll"))
+		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll"))
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
 	refresh := func() {
@@ -2240,7 +2240,7 @@ func (u *ui) openLogView() {
 	}
 	refresh()
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == 'q')) {
+		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == u.km.Quit)) {
 			u.closeLogView()
 			return nil
 		}

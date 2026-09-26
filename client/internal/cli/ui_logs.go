@@ -89,7 +89,7 @@ func (u *ui) logFooterText(following bool) string {
 func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
 	return func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == 'q'):
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
 			closeLogs()
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
 			follow.Store(!follow.Load())
