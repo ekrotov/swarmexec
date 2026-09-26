@@ -137,7 +137,8 @@ func (l *Logger) VolumeCreate(identity, name string, ok bool, errMsg string) {
 // separately because the two modes are different acts: one removes untagged
 // leftovers, the other removes images a stopped service still needs.
 func (l *Logger) ImagePrune(identity string, all bool, reclaimed int64, deleted int, ok bool, errMsg string) {
-	l.log.Info("image.prune",
+	l.log.Info("image_prune",
+		"event", "image_prune",
 		"identity", identity,
 		"all", all,
 		"reclaimed_bytes", reclaimed,

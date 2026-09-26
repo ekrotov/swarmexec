@@ -216,9 +216,21 @@ exec bridge is untouched. Every decision (allow/deny + reason) is audited.
 
 ## Audit & observability
 
-- **Audit log** (`-audit-dest`): one structured JSON line per event —
-  `session_start`, `session_end` (exit code, duration, bytes in/out), and
-  `auth_decision`. Payload bytes are never logged.
+- **Audit log** (`-audit-dest`): one structured JSON line per event, each with
+  `component=audit`, `identity`, `identity_verified` and an `event` field to
+  filter on:
+  - `auth_decision` — every allow/deny, with the reason
+  - `session_start` / `session_end` — exec (command, tty; exit code, duration,
+    bytes in/out)
+  - `logs_start` / `logs_end` — log streams (follow; duration, bytes out)
+  - `forward_start` / `forward_end` — port-forwards (port, sidecar; duration,
+    bytes in/out)
+  - `event_watch_start` / `event_watch_end` — container event watches (the
+    count of events, never their content)
+  - `container_list` — discovery (filter and match count, never the listing)
+  - `volume_create`, `volume_remove`, `image_prune` — with outcome and error
+
+  Payload bytes are never logged.
 - **Operational logs** go to stderr at the configured level/format.
 - **Metrics** (optional, `-metrics-addr`): `/metrics` exposes active/total
   sessions, auth denials, and bytes transferred.
