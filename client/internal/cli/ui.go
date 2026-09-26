@@ -182,6 +182,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	km, keyWarnings := loadKeybinds("")
 
 	u := &ui{
+		overlays:  map[string]bool{},
 		app:       tview.NewApplication(),
 		pages:     tview.NewPages(), // overlays: menus, terminal, logs, volume nodes
 		content:   tview.NewPages(), // the per-tab pages
@@ -1777,10 +1778,16 @@ func footerKeys(pairs ...string) string {
 func (u *ui) info(msg string) {
 	app, pages := u.app, u.pages
 	clientlog.L().Info("ui notice", "msg", msg)
-	m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).
-		SetDoneFunc(func(int, string) { pages.RemovePage(pageInfo) })
+	m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"})
 	pages.AddPage(pageInfo, newScrim(m), true, true)
 	app.SetFocus(m)
+	// Counted like every other overlay. It was not, and a notice left open while
+	// the tree refreshed behind it had its focus pulled out from under it.
+	release := u.markOverlay(pageInfo)
+	m.SetDoneFunc(func(int, string) {
+		pages.RemovePage(pageInfo)
+		release()
+	})
 }
 
 // confirm shows a two-button confirmation modal (confirmLabel + "Cancel") and
@@ -1794,17 +1801,21 @@ func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm f
 	app, pages := u.app, u.pages
 	m := tview.NewModal().
 		SetText(msg).
-		AddButtons([]string{confirmLabel, "Cancel"}).
-		SetDoneFunc(func(_ int, label string) {
-			pages.RemovePage(pageConfirm)
-			if label != confirmLabel {
-				app.SetFocus(back)
-				return
-			}
-			onConfirm()
-		})
+		AddButtons([]string{confirmLabel, "Cancel"})
 	pages.AddPage(pageConfirm, newScrim(m), true, true)
 	app.SetFocus(m)
+	release := u.markOverlay(pageConfirm)
+	m.SetDoneFunc(func(_ int, label string) {
+		pages.RemovePage(pageConfirm)
+		// Released before onConfirm runs, not after: onConfirm routinely opens
+		// the next overlay, and that one has to be able to register its own.
+		release()
+		if label != confirmLabel {
+			app.SetFocus(back)
+			return
+		}
+		onConfirm()
+	})
 }
 
 // flash briefly replaces the footer with a status message, then puts the
@@ -1878,6 +1889,54 @@ func (u *ui) toggleMouse() {
 	}
 }
 
+// The background refreshers must not run while an overlay is open: their
+// renderContainers / remarkUsage pass walks the whole tree on the UI goroutine
+// — the same goroutine that services keystrokes in the overlay — and it rebuilds
+// and reselects the tree underneath whatever the operator is looking at.
+//
+// Two gates, because one cannot do both jobs:
+//
+//   - overlayOpen is DERIVED from the page stack, so it is true for EVERY
+//     overlay, including the ones that register nothing. It is the invariant,
+//     and it guards the expensive half (the apply). tview's page list may only
+//     be read from the UI goroutine, so this is main-loop only.
+//   - anyOverlayOpen reads the set that info/confirm/pushOverlayHelp maintain.
+//     It is readable from any goroutine, and it guards the cheap half (skipping
+//     the fetch, which fans out to every node). Being a best-effort optimisation
+//     is exactly why a stale answer here costs nothing.
+
+// overlayOpen reports whether anything floats over the main page. UI goroutine
+// only.
+func (u *ui) overlayOpen() bool {
+	name, _ := u.pages.GetFrontPage()
+	return name != pageMain
+}
+
+// anyOverlayOpen reports whether a registered overlay is open. Safe from any
+// goroutine.
+func (u *ui) anyOverlayOpen() bool {
+	u.overlayMu.Lock()
+	defer u.overlayMu.Unlock()
+	return len(u.overlays) > 0
+}
+
+// markOverlay records an open overlay under key and returns its release, which
+// is idempotent: a modal dismissed twice, or a page replaced by a second one of
+// the same name, must not take the entry away from whoever still holds it.
+func (u *ui) markOverlay(key string) func() {
+	u.overlayMu.Lock()
+	u.overlays[key] = true
+	u.overlayMu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			u.overlayMu.Lock()
+			delete(u.overlays, key)
+			u.overlayMu.Unlock()
+		})
+	}
+}
+
 // pushOverlayHelp points the single bottom footer at an overlay's keys. It
 // saves the current footer text and returns a setter (to update while open)
 // and a restore (to call on close). Because each call captures the then-
@@ -1890,11 +1949,14 @@ func (u *ui) pushOverlayHelp(markup string) (func(string), func()) {
 	// flash is showing must not adopt the flash message as what to restore.
 	prev := u.footerBase
 	u.setFooter(markup)
-	u.overlayDepth.Add(1)
+	// A key of its own: this is called by overlays that own the footer, and two
+	// of them can be open at once (nested), so the entry cannot be keyed by
+	// anything they share.
+	release := u.markOverlay(fmt.Sprintf("help#%d", u.overlaySeq.Add(1)))
 	var once sync.Once
 	restore := func() {
 		once.Do(func() {
-			u.overlayDepth.Add(-1)
+			release()
 			u.setFooter(prev)
 		})
 	}

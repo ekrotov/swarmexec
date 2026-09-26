@@ -414,17 +414,27 @@ func (u *ui) loadContainers() {
 
 func (u *ui) autoRefreshContainers() {
 	ctx := u.ctx
-	if u.overlayDepth.Load() > 0 || !u.autoRefreshBusy.CompareAndSwap(false, true) {
+	// Cheap gate: skip the fetch when an overlay is known to be open. Best
+	// effort by design — the invariant is enforced below, on the UI goroutine.
+	if u.anyOverlayOpen() || !u.autoRefreshBusy.CompareAndSwap(false, true) {
 		return
 	}
 	gen := u.generation()
 	go func() {
 		defer u.autoRefreshBusy.Store(false)
 		svcs, cands, err := u.fetchContainers()
-		if err != nil || ctx.Err() != nil || u.overlayDepth.Load() > 0 {
-			return // transient error, run ending, or an overlay opened meanwhile
+		if err != nil || ctx.Err() != nil {
+			return // transient error, or the run is ending
 		}
-		u.onCluster(gen, func() { u.applyContainers(svcs, cands, nil) })
+		u.onCluster(gen, func() {
+			// The gate that matters, asked where the answer is exact: an
+			// overlay may have opened while we were fetching, and rebuilding
+			// the tree underneath one is what pulls its focus away.
+			if u.overlayOpen() {
+				return
+			}
+			u.applyContainers(svcs, cands, nil)
+		})
 	}()
 }
 
@@ -610,7 +620,7 @@ func (u *ui) loadUsage() {
 	// main loop — competing with the log stream for the loop that also handles
 	// keystrokes. Nobody is looking at the tree's badges from inside an overlay
 	// anyway.
-	if u.overlayDepth.Load() > 0 || !u.usageBusy.CompareAndSwap(false, true) {
+	if u.anyOverlayOpen() || !u.usageBusy.CompareAndSwap(false, true) {
 		return
 	}
 	gen := u.generation()
@@ -624,10 +634,13 @@ func (u *ui) loadUsage() {
 		}
 		byContainer, byNode := collectUsage(ctx, cfg, nodes, u.f.connectTimeout, u.statsGate)
 		clientlog.Timed("ui.loadUsage", start, nil)
-		if ctx.Err() != nil || u.overlayDepth.Load() > 0 {
-			return // an overlay opened while we were fanning out
+		if ctx.Err() != nil {
+			return
 		}
 		u.onCluster(gen, func() {
+			if u.overlayOpen() {
+				return // an overlay opened while we were fanning out
+			}
 			u.usage, u.nodeUse = byContainer, byNode
 			// Re-mark rather than rebuild: the readings only change row text, and
 			// rebuilding would fight the operator's cursor and fold state.
