@@ -517,15 +517,19 @@ func TestPortForward_RemovesSidecarOnTeardown(t *testing.T) {
 	_ = conn.Close()
 	<-done
 
-	if got := d.RemovedContainers(); len(got) != 1 || got[0] != "sidecar-1" {
-		t.Errorf("removed containers = %v, want [sidecar-1]", got)
-	}
+	// Removal runs right AFTER the RPC returns, not before: a dead sidecar
+	// first fails its connections (which ends the RPC) and then evicts itself
+	// from the pool, which removes the container and frees the slot. So wait
+	// for it; a leak still fails, because waitUntil gives up. Checking at once
+	// failed about once in a thousand runs on a loaded CI runner.
+	waitUntil(t, "the sidecar to be removed", func() bool {
+		got := d.RemovedContainers()
+		return len(got) == 1 && got[0] == "sidecar-1"
+	})
 	// The node's container budget has to come back with the container. A slot
 	// held past teardown is a slow leak that only shows up as an agent refusing
 	// forwards after a day of normal use.
-	if got := srv.sidecars.inUse(); got != 0 {
-		t.Errorf("sidecar slot not released on teardown: in use = %d", got)
-	}
+	waitUntil(t, "the sidecar slot to be released", func() bool { return srv.sidecars.inUse() == 0 })
 	if got := srv.streams.inUse(); got != 0 {
 		t.Errorf("stream slot not released after the RPC returned: in use = %d", got)
 	}

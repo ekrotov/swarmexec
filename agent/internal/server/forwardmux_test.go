@@ -207,3 +207,43 @@ func TestForwardMux_SidecarCapCountsForwardsNotConnections(t *testing.T) {
 	<-done2
 	stop()
 }
+
+// The race behind a rare CI failure: the sidecar answers an open and dies
+// before dial looks, so dial's select finds the open result AND the sidecar's
+// death ready at once and picks at random. Picking death reported a successful
+// open as failed, and openConn re-dialled it on a brand-new sidecar — which, in
+// production, silently moved an established connection to another container.
+// The hook holds dial until the sidecar is dead, so both are always ready; the
+// loop makes a coin flip fail the old code with certainty.
+func TestForwardMux_OpenThatSucceededIsNotRedialledWhenTheSidecarDies(t *testing.T) {
+	waitForDeath := func(sc *muxSidecar) { <-sc.done }
+	defer muxBeforeOpenWait.Store(nil)
+	for i := 0; i < 20; i++ {
+		d := newFakeDocker()
+		srv, _ := forwardTestServer(d, auth.AllowAll{})
+		_, mux, stop1 := startForward(t, srv, d, "target-abc", 8080)
+		mux.acceptOpen()
+
+		muxBeforeOpenWait.Store(&waitForDeath)
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		s2 := newFakeForwardStream(ctx2)
+		s2.queueStart("target-abc", 8080)
+		done2 := make(chan error, 1)
+		go func() { done2 <- srv.PortForward(s2) }()
+		mux.acceptOpen()
+		_ = mux.conn.Close() // answered, then gone
+
+		select {
+		case <-done2:
+		case <-time.After(3 * time.Second):
+			cancel2()
+			t.Fatalf("run %d: the connection was re-dialled on a new sidecar instead of ending", i)
+		}
+		muxBeforeOpenWait.Store(nil)
+		cancel2()
+		stop1()
+		if n := d.createdCount(); n != 1 {
+			t.Fatalf("run %d: %d sidecars created, want 1 — the open was retried", i, n)
+		}
+	}
+}
