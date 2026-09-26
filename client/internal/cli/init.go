@@ -31,14 +31,17 @@ import (
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
+	"swarmexec/internal/deploy"
 )
 
+// The deployment vocabulary lives in internal/deploy, which the agent imports
+// too; these are local names for it, so the call sites below stay readable.
 const (
 	defaultAgentImage = "docker.io/logleio/swarmexec-agent:latest"
-	defaultServiceNm  = "swarmexec_agent"
-	agentSecretName   = "swarmexec_agent_secret"
-	agentRoleLabel    = "swarmexec.role"
-	agentRoleValue    = "agent"
+	defaultServiceNm  = deploy.ServiceName
+	agentSecretName   = deploy.SecretName
+	agentRoleLabel    = deploy.RoleLabel
+	agentRoleValue    = deploy.RoleAgent
 )
 
 // errNoAgent is shown when an agent-needing command finds no agent deployed.
@@ -408,23 +411,15 @@ func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith str
 	return resp.ID, true, nil
 }
 
-// agentServiceSpec mirrors deploy/agent-stack-selfsigned.yml.
+// agentServiceSpec is the service `swarmexec init` deploys.
+//
+// It is the same agent as agent/deploy/agent-stack-selfsigned.yml provisions,
+// not the same spec: the stack file binds with -listen=:9443 and attaches an
+// overlay network, this publishes -port in host mode. The command line comes
+// from internal/deploy, which the agent parses its flags from — see there for
+// why that is not decoration.
 func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
-	args := []string{
-		fmt.Sprintf("-port=%d", f.port),
-		"-self-signed",
-		"-agent-secret-file=/run/secrets/" + agentSecretName,
-		"-docker-host=unix:///var/run/docker.sock",
-		"-drain-timeout=5s",
-		"-log-format=json",
-		"-audit-dest=stdout",
-	}
-	// Only emitted when turning the legacy path OFF. Leaving it out otherwise
-	// keeps the deployed command identical to what earlier versions produced, so
-	// a re-roll does not show a spurious spec change.
-	if !f.allowLegacy {
-		args = append(args, "-allow-legacy-secret=false")
-	}
+	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy})
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
 			Name:   f.serviceName,
@@ -439,8 +434,8 @@ func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 				Args:  args,
 				Mounts: []mount.Mount{{
 					Type:   mount.TypeBind,
-					Source: "/var/run/docker.sock",
-					Target: "/var/run/docker.sock",
+					Source: deploy.SocketPath,
+					Target: deploy.SocketPath,
 				}},
 				Secrets: []*swarm.SecretReference{{
 					SecretID:   secretID,

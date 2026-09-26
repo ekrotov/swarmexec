@@ -13,10 +13,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"swarmexec/internal/deploy"
 )
 
 // DefaultPort is the agent's gRPC/TLS port (CONTRACT.md §2).
-const DefaultPort = 9443
+// DefaultPort is the agent's listen port. It lives in internal/deploy because
+// the client dials it and `swarmexec init` publishes it; three copies of 9443
+// is exactly the kind of drift that package exists to prevent.
+const DefaultPort = deploy.DefaultPort
 
 // Session lifetime defaults. Chosen to end ABANDONED sessions without
 // interrupting working ones: half an hour of complete silence in both
@@ -132,18 +137,21 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.SetOutput(out)
 
 	c := &Config{}
-	fs.IntVar(&c.Port, "port", envInt("SWARMEXEC_PORT", DefaultPort), "gRPC listen port (env SWARMEXEC_PORT)")
+	// The flags named from deploy.Flag* are the ones `swarmexec init` writes:
+	// they are a contract with the client, not just this binary's interface.
+	// The literal ones below are the agent's own.
+	fs.IntVar(&c.Port, deploy.FlagPort, envInt("SWARMEXEC_PORT", DefaultPort), "gRPC listen port (env SWARMEXEC_PORT)")
 	fs.StringVar(&c.ListenAddr, "listen", env("SWARMEXEC_LISTEN", ""), "gRPC listen address; overrides -port when set, e.g. \":9443\" (env SWARMEXEC_LISTEN)")
 	fs.StringVar(&c.CACert, "ca-cert", env("SWARMEXEC_CA_CERT", ""), "path to CA certificate for verifying client certs (env SWARMEXEC_CA_CERT)")
 	fs.StringVar(&c.ServerCert, "server-cert", env("SWARMEXEC_SERVER_CERT", ""), "path to server certificate (env SWARMEXEC_SERVER_CERT)")
 	fs.StringVar(&c.ServerKey, "server-key", env("SWARMEXEC_SERVER_KEY", ""), "path to server private key (env SWARMEXEC_SERVER_KEY)")
-	fs.BoolVar(&c.SelfSigned, "self-signed", envBool("SWARMEXEC_SELF_SIGNED", false), "generate a self-signed server cert at startup (no server cert/key needed) (env SWARMEXEC_SELF_SIGNED)")
+	fs.BoolVar(&c.SelfSigned, deploy.FlagSelfSigned, envBool("SWARMEXEC_SELF_SIGNED", false), "generate a self-signed server cert at startup (no server cert/key needed) (env SWARMEXEC_SELF_SIGNED)")
 	fs.StringVar(&c.CertSANs, "cert-sans", env("SWARMEXEC_CERT_SANS", ""), "extra SANs for the self-signed cert, e.g. \"DNS:swarmexec-agent,IP:10.0.0.5\" (env SWARMEXEC_CERT_SANS)")
 	fs.StringVar(&c.AgentSecret, "agent-secret", env("SWARMEXEC_AGENT_SECRET", ""), "shared secret clients must present; empty disables (env SWARMEXEC_AGENT_SECRET)")
-	fs.StringVar(&c.AgentSecretFile, "agent-secret-file", env("SWARMEXEC_AGENT_SECRET_FILE", ""), "file to read the shared secret from, e.g. a Docker secret (env SWARMEXEC_AGENT_SECRET_FILE)")
-	fs.BoolVar(&c.AllowLegacySecret, "allow-legacy-secret", envBool("SWARMEXEC_ALLOW_LEGACY_SECRET", true), "accept the raw shared secret from clients predating connection-bound auth; disable once clients are upgraded (env SWARMEXEC_ALLOW_LEGACY_SECRET)")
-	fs.StringVar(&c.DockerHost, "docker-host", env("SWARMEXEC_DOCKER_HOST", "unix:///var/run/docker.sock"), "docker daemon endpoint (env SWARMEXEC_DOCKER_HOST)")
-	fs.DurationVar(&c.DrainTimeout, "drain-timeout", envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
+	fs.StringVar(&c.AgentSecretFile, deploy.FlagAgentSecretFile, env("SWARMEXEC_AGENT_SECRET_FILE", ""), "file to read the shared secret from, e.g. a Docker secret (env SWARMEXEC_AGENT_SECRET_FILE)")
+	fs.BoolVar(&c.AllowLegacySecret, deploy.FlagAllowLegacySecret, envBool("SWARMEXEC_ALLOW_LEGACY_SECRET", true), "accept the raw shared secret from clients predating connection-bound auth; disable once clients are upgraded (env SWARMEXEC_ALLOW_LEGACY_SECRET)")
+	fs.StringVar(&c.DockerHost, deploy.FlagDockerHost, env("SWARMEXEC_DOCKER_HOST", deploy.SocketURL), "docker daemon endpoint (env SWARMEXEC_DOCKER_HOST)")
+	fs.DurationVar(&c.DrainTimeout, deploy.FlagDrainTimeout, envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
 	// Non-zero by default. These used to be 0/disabled, which meant an exec
 	// session that nobody ever closed lived as long as the agent — a forgotten
 	// shell on a production node, holding a docker attach, indefinitely. The
@@ -155,8 +163,8 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.IntVar(&c.MaxForwardSidecars, "max-forward-sidecars", envInt("SWARMEXEC_MAX_FORWARD_SIDECARS", 0), "max live port-forward sidecar containers, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_FORWARD_SIDECARS)")
 	fs.StringVar(&c.ForwardImage, "forward-image", env("SWARMEXEC_FORWARD_IMAGE", ""), "image for port-forward sidecars; empty = the agent's own image (env SWARMEXEC_FORWARD_IMAGE)")
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")
-	fs.StringVar(&c.LogFormat, "log-format", env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")
-	fs.StringVar(&c.AuditDest, "audit-dest", env("SWARMEXEC_AUDIT_DEST", "stdout"), "audit log destination: stdout|stderr|<file path> (env SWARMEXEC_AUDIT_DEST)")
+	fs.StringVar(&c.LogFormat, deploy.FlagLogFormat, env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")
+	fs.StringVar(&c.AuditDest, deploy.FlagAuditDest, env("SWARMEXEC_AUDIT_DEST", "stdout"), "audit log destination: stdout|stderr|<file path> (env SWARMEXEC_AUDIT_DEST)")
 	fs.StringVar(&c.MetricsAddr, "metrics-addr", env("SWARMEXEC_METRICS_ADDR", ""), "Prometheus metrics listen address, empty=disabled (env SWARMEXEC_METRICS_ADDR)")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 

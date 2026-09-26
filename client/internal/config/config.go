@@ -18,10 +18,14 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"swarmexec/internal/deploy"
 )
 
-// DefaultPort is the agent's gRPC/TLS port (CONTRACT.md §2).
-const DefaultPort = 9443
+// DefaultPort is the agent's gRPC/TLS port (CONTRACT.md §2). Defined in
+// internal/deploy because the same number has to be the one `init` publishes
+// and the one the agent listens on.
+const DefaultPort = deploy.DefaultPort
 
 // Address selection modes for dialing the node that hosts the target task.
 const (

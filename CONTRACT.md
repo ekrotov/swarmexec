@@ -547,3 +547,44 @@ it knows immediately.
   way around the limit.
 - A client must treat this as an ENRICHMENT. An agent that predates the RPC
   answers `Unimplemented`, and the view it decorates has to keep working.
+
+## 8. Deployment (normative)
+
+§2 and §3 govern the bytes between a client and a running agent. This section
+governs how the agent comes to exist, because that is a contract too: the client
+writes the agent's command line, its secret mount, its socket mount and its
+label, and the agent has to be the binary that accepts all four.
+
+Every constant below lives in `internal/deploy`, which both halves import. Go's
+`internal` rule makes a client↔agent import unconstructible, so a shared package
+is the only place this vocabulary can be stated once — and stating it twice is
+exactly how it used to drift: renaming an agent flag passed build, test and
+review, then broke `swarmexec init` against every cluster.
+
+| Fact | Value | Constant |
+| --- | --- | --- |
+| Service name | `swarmexec_agent` | `deploy.ServiceName` |
+| Docker secret | `swarmexec_agent_secret` | `deploy.SecretName` |
+| Secret path in the container | `/run/secrets/swarmexec_agent_secret` | `deploy.SecretPath` |
+| Docker socket mount | `/var/run/docker.sock` | `deploy.SocketPath` |
+| Docker endpoint flag value | `unix:///var/run/docker.sock` | `deploy.SocketURL` |
+| Object label | `swarmexec.role` = `agent` / `port-forward` | `deploy.RoleLabel`, `deploy.RoleAgent`, `deploy.RoleForward` |
+| Default port | 9443 | `deploy.DefaultPort` |
+
+- The deployed command line is `deploy.AgentArgs`, and the agent registers those
+  flags from the same `deploy.Flag*` constants. The flags in that set —
+  `-port`, `-self-signed`, `-agent-secret-file`, `-docker-host`,
+  `-drain-timeout`, `-log-format`, `-audit-dest`, `-allow-legacy-secret` — are
+  part of this contract and MUST NOT be renamed or repurposed on one side alone.
+  Every other agent flag is the agent's own interface and carries no such
+  promise.
+- `-allow-legacy-secret` is written out only when turning the path OFF, so an
+  agent deployed by an older client and one deployed by a current client carry
+  identical command lines unless the operator asked for the change.
+- A round-trip test in `agent/internal/config` parses what `deploy.AgentArgs`
+  produces and asserts the resulting `Config`. A rename is therefore a compile
+  error on one side or a red test on the other — never a broken deployment.
+- `agent/deploy/agent-stack-selfsigned.yml` provisions the same agent, not the
+  same spec: it binds with `-listen` and attaches an overlay network where
+  `swarmexec init` publishes `-port` in host mode. Both are valid deployments;
+  only the vocabulary above is normative.

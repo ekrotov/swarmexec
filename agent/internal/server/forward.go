@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/internal/deploy"
 	"swarmexec/internal/pb"
 )
 
@@ -35,8 +36,8 @@ const (
 	// description of an intention, and it read as a guarantee. Sidecars are
 	// removed on teardown and again on graceful shutdown; a killed agent can
 	// still leak one per forward, and the label is how an operator finds those.
-	forwardLabel = "swarmexec.role"
-	forwardValue = "port-forward"
+	forwardLabel = deploy.RoleLabel
+	forwardValue = deploy.RoleForward
 
 	// forwardStartTimeout bounds sidecar creation and the target dial. Sidecar
 	// start measured ~300ms on a warm node (DESIGN-port-forward.md §3).
