@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"swarmexec/internal/forwardmux"
@@ -257,6 +258,10 @@ func (sc *muxSidecar) sendBestEffort(f forwardmux.Frame) {
 	}
 }
 
+// muxBeforeOpenWait is a test seam: it runs just before dial waits for the
+// open result, so a test can let the sidecar answer and die first.
+var muxBeforeOpenWait atomic.Pointer[func(*muxSidecar)]
+
 // dial opens one connection through this sidecar.
 func (sc *muxSidecar) dial(ctx context.Context) (*muxConn, error) {
 	pr, pw := io.Pipe()
@@ -283,6 +288,9 @@ func (sc *muxSidecar) dial(ctx context.Context) (*muxConn, error) {
 
 	octx, cancel := context.WithTimeout(ctx, muxOpenTimeout)
 	defer cancel()
+	if hook := muxBeforeOpenWait.Load(); hook != nil {
+		(*hook)(sc)
+	}
 	select {
 	case err := <-c.open:
 		if err != nil {
@@ -291,6 +299,18 @@ func (sc *muxSidecar) dial(ctx context.Context) (*muxConn, error) {
 		}
 		return c, nil
 	case <-sc.done:
+		// The answer may have arrived just before the sidecar died, with both
+		// cases ready at once — and select picks at random. An open that
+		// succeeded is a connection: it must end with the sidecar like every
+		// other one, not be reported as "never opened", which made openConn
+		// silently re-dial it on a fresh sidecar.
+		select {
+		case err := <-c.open:
+			if err == nil {
+				return c, nil
+			}
+		default:
+		}
 		sc.drop(c.id)
 		return nil, sc.errOrDefault()
 	case <-octx.Done():

@@ -90,6 +90,7 @@ type fakeDocker struct {
 	createContainerErr error
 	startErr           error
 	createdConfig      *container.Config
+	created            int
 	createdHostConfig  *container.HostConfig
 	removedContainers  []string
 }
@@ -156,7 +157,15 @@ func (f *fakeDocker) ContainerCreate(_ context.Context, cfg *container.Config, h
 		return container.CreateResponse{}, f.createContainerErr
 	}
 	f.createdConfig, f.createdHostConfig = cfg, hostCfg
+	f.created++
 	return container.CreateResponse{ID: "sidecar-1"}, nil
+}
+
+// createdCount reports how many sidecar containers were created.
+func (f *fakeDocker) createdCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.created
 }
 
 func (f *fakeDocker) ContainerStart(_ context.Context, _ string, _ container.StartOptions) error {
