@@ -2186,6 +2186,13 @@ forward_stop: d  forward_copy_url: o</div>
         acciones vinculadas a la misma tecla en una pestaña recaen cada una en el valor por
         defecto, y la UI muestra las advertencias una vez al arrancar.
       </p>
+      <p>
+        <code>quit</code> y <code>copy</code> también valen dentro de cada diálogo — el
+        overlay de inspect, las vistas de detalle, el visor de logs —, así que una tecla
+        reasignada cierra y copia también allí. Por la misma razón no pueden tomar una
+        tecla que un diálogo usa por sí mismo, como <kbd>t</kbd>, <kbd>d</kbd> o
+        <kbd>i</kbd>: esa reasignación conserva el valor por defecto, con una advertencia.
+      </p>
 
       <!-- 11 -->
       <h2 id="exit">11. Códigos de salida</h2>

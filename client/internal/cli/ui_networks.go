@@ -264,7 +264,7 @@ func (v *netMembersView) curSvc() string {
 func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	u, n, list := v.u, v.n, v.list
 	switch {
-	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
 		v.close()
 		return nil
 	case ev.Key() == tcell.KeyEnter:

@@ -247,7 +247,7 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 	closeDetail := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
 			closeDetail()
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == km.CtxUse:

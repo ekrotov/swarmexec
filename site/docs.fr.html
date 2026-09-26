@@ -2270,6 +2270,14 @@ forward_stop: d  forward_copy_url: o</div>
         chacune sur le défaut, et l'UI affiche les avertissements une fois au
         démarrage.
       </p>
+      <p>
+        <code>quit</code> et <code>copy</code> s'appliquent aussi dans chaque dialogue —
+        l'overlay d'inspection, les vues de détail, le visualiseur de logs —, une touche
+        remappée ferme et copie donc aussi là. Pour la même raison, elles ne peuvent pas
+        prendre une touche qu'un dialogue utilise lui-même, comme <kbd>t</kbd>,
+        <kbd>d</kbd> ou <kbd>i</kbd> : ce remappage garde le défaut, avec un
+        avertissement.
+      </p>
 
       <!-- 11 -->
       <h2 id="exit">11. Codes de sortie</h2>

@@ -29,7 +29,7 @@ func (u *ui) editList(cfg editListConfig) {
 	if allowEdit {
 		keyPairs = append(keyPairs, "e", "edit")
 	}
-	keyPairs = append(keyPairs, "d", "delete", "y", "copy")
+	keyPairs = append(keyPairs, "d", "delete", keyLabel(u.km.Copy), "copy")
 	if entryAction != nil {
 		keyPairs = append(keyPairs, string(entryAction.key), entryAction.label)
 	}
@@ -248,7 +248,7 @@ func (u *ui) editList(cfg editListConfig) {
 				render()
 			}
 			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'y':
+		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Copy:
 			if i := list.GetCurrentItem(); i >= 0 && i < len(cur) && u.screen != nil {
 				u.screen.SetClipboard([]byte(cur[i]))
 				setHelp(" [green]✓ copied[white] · " + footerKeys(keyPairs...))
@@ -1036,7 +1036,7 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 	closeDiag := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
 			closeDiag()
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
