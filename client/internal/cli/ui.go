@@ -282,7 +282,6 @@ func (u *ui) connectCluster(c *clusterState) error {
 // keep those closure bodies referring to app/pages/… unchanged.
 func (u *ui) run(keyWarnings []string) error {
 	app, pages, content := u.app, u.pages, u.content
-	km := u.km
 	g := u.g
 	service := u.service
 	selStyle := u.selStyle
@@ -516,332 +515,23 @@ func (u *ui) run(keyWarnings []string) error {
 	u.mouseEnabled = true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 
-	// On the tree the search key opens search and fold/unfold (h/l by default)
-	// collapse/expand the service under the cursor; j/k stay down/up via the
-	// shared keys.
-	ctree.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune {
-			switch ev.Rune() {
-			case km.Search:
-				u.startSearch("containers")
-				return nil
-			case km.ContainerInspect:
-				u.inspectCurrent()
-				return nil
-			case km.Logs:
-				if n := ctree.GetCurrentNode(); n != nil {
-					u.showLogsForNode(n)
-				}
-				return nil
-			case km.SecurityRisks:
-				u.showSecurityRisks()
-				return nil
-			case 'X':
-				// Remove the service under the cursor, without the detour through
-				// the inspect overlay. Destructive, so it is a fixed capital key
-				// (like X in the inspect) and always behind a confirm.
-				u.removeServiceUnderCursor()
-				return nil
-			case km.Fold:
-				// Collapse. tview's TreeView has no fold key — Left/Right only
-				// move the cursor — so fold explicitly. On a node that cannot
-				// fold (a container leaf, or an already-closed service inside a
-				// stack), step out to the parent instead, so repeated presses
-				// walk up: container → service → stack.
-				if n := ctree.GetCurrentNode(); n != nil {
-					switch {
-					case isStackNode(n):
-						n.SetExpanded(false)
-						u.markStack(n)
-					case isServiceNode(n) && n.IsExpanded():
-						n.SetExpanded(false)
-						u.markService(n)
-					default:
-						if p := parentOf(croot, n); p != nil && p != croot {
-							ctree.SetCurrentNode(p)
-						}
-					}
-				}
-				return nil
-			case km.Unfold:
-				// Expand the node under the cursor; if it is already open,
-				// descend into it.
-				if n := ctree.GetCurrentNode(); n != nil && (isServiceNode(n) || isStackNode(n)) {
-					if n.IsExpanded() && len(n.GetChildren()) > 0 {
-						ctree.SetCurrentNode(n.GetChildren()[0])
-					} else {
-						n.SetExpanded(true)
-						if isStackNode(n) {
-							u.markStack(n)
-						} else {
-							u.markService(n)
-						}
-					}
-				}
-				return nil
-			case km.StackFile:
-				u.openStackFileMenu()
-				return nil
-			case km.StackGroup:
-				// Toggle stack grouping. Only meaningful once something carries a
-				// stack label; say so rather than redrawing an identical tree.
-				if !anyStacked(u.lastSvcs) {
-					u.flash(" [gray]no service carries a stack label[white]")
-					return nil
-				}
-				u.groupByStack = !u.groupByStack
-				u.renderContainers()
-				if u.groupByStack {
-					u.flash(" [green]grouped by stack[white]")
-				} else {
-					u.flash(" [green]flat service list[white]")
-				}
-				return nil
-			case km.Forward:
-				// On a service node, forward to the task under the cursor —
-				// exactly one, like kubectl does with a pod. Forwarding "the
-				// service" would have to load-balance, which makes debugging
-				// misleading.
-				if n := ctree.GetCurrentNode(); n != nil {
-					if c, ok := n.GetReference().(resolve.Candidate); ok {
-						u.portPrompt(c)
-					} else if kids := n.GetChildren(); len(kids) > 0 {
-						if c, ok := kids[0].GetReference().(resolve.Candidate); ok {
-							u.portPrompt(c)
-						}
-					}
-				}
-				return nil
-			}
-		}
-		return u.tabKeys(ev)
-	})
+	ctree.SetInputCapture(u.containerTreeKeys)
 	// Enter shows the full detail of a forward. The table truncates the state
 	// column, so this is where a failure reason is actually readable.
 	ftable.SetSelectedFunc(func(int, int) { u.showForwardDetail() })
-	// On the forwards table: Enter/i details, d stops the forward, o copies its URL.
-	ftable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune {
-			switch ev.Rune() {
-			case 'i':
-				u.showForwardDetail()
-				return nil
-			case km.FwdStop:
-				if e, ok := u.selectedForward(); ok {
-					forwards.remove(e.id)
-					u.refreshForwardViews()
-					u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
-				}
-				return nil
-			case km.FwdCopyURL:
-				// Copy rather than launch a browser: the UI often runs over
-				// ssh, where opening a local browser would target the wrong
-				// machine — and the forward is bound on the operator's side.
-				if e, ok := u.selectedForward(); ok && e.state == forwardActive {
-					url := fmt.Sprintf("http://127.0.0.1:%d", e.boundPort())
-					if screen != nil {
-						screen.SetClipboard([]byte(url))
-					}
-					u.flash(" [green]copied[white] " + url)
-				}
-				return nil
-			}
-		}
-		return u.tabKeys(ev)
-	})
-	// On the volumes table, "i" shows which services/containers use the volume.
-	// attachVolumeToService mounts a volume into a service from the Volumes tab:
-	// pick a service (autocomplete), enter the container target path, choose
-	// read-only or not, then a ServiceUpdate adds the mount.
-	vtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune {
-			switch ev.Rune() {
-			case km.Search:
-				u.startSearch("volumes")
-				return nil
-			case km.VolNew:
-				u.showCreateVolume()
-				return nil
-			case km.VolAttach:
-				if v, ok := u.selectedVolume(); ok {
-					u.attachVolumeToService(v.Name)
-				}
-				return nil
-			case km.VolSelect:
-				// Toggle the current volume's selection for a bulk delete.
-				if v, ok := u.selectedVolume(); ok {
-					if u.selectedVols[v.Name] {
-						delete(u.selectedVols, v.Name)
-					} else {
-						u.selectedVols[v.Name] = true
-					}
-					u.renderVolumeTable()
-					u.updateStatus()
-				}
-				return nil
-			case km.VolSelectAll:
-				// Select or deselect all currently displayed volumes.
-				all := len(u.shownVols) > 0
-				for _, v := range u.shownVols {
-					if !u.selectedVols[v.Name] {
-						all = false
-						break
-					}
-				}
-				for _, v := range u.shownVols {
-					if all {
-						delete(u.selectedVols, v.Name)
-					} else {
-						u.selectedVols[v.Name] = true
-					}
-				}
-				u.renderVolumeTable()
-				u.updateStatus()
-				return nil
-			case km.VolDelete:
-				// Delete the selected volumes, or the one under the cursor.
-				var targets []swarmVolume
-				if len(u.selectedVols) > 0 {
-					for _, v := range u.vols {
-						if u.selectedVols[v.Name] {
-							targets = append(targets, v)
-						}
-					}
-				} else if v, ok := u.selectedVolume(); ok {
-					targets = []swarmVolume{v}
-				}
-				u.deleteVolumes(targets, fmt.Sprintf("Remove %d volume(s) on every node that holds them?", len(targets)))
-				return nil
-			case km.VolPrune:
-				u.pruneVolumes()
-				return nil
-			case km.VolUsedBy:
-				if v, ok := u.selectedVolume(); ok {
-					u.showVolumeConsumers(v)
-				}
-				return nil
-			case km.VolSort:
-				// Cycle the sort field; pick a sensible default direction for it.
-				u.sortField = (u.sortField + 1) % 5
-				u.sortDesc = u.sortField != volSortName && u.sortField != volSortAge
-				u.renderVolumeTable()
-				return nil
-			case km.VolSortRev:
-				u.sortDesc = !u.sortDesc
-				u.renderVolumeTable()
-				return nil
-			}
-		}
-		return u.tabKeys(ev)
-	})
-	// On the networks table, "i" (like the volumes tab) shows the attached
-	// services/containers; Enter does the same.
-	nettable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetAttached {
-			if n, ok := u.selectedNetwork(); ok {
-				u.showNetworkMembers(n)
-			}
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetNew {
-			u.showCreateNetwork()
-			return nil
-		}
-		return u.tabKeys(ev)
-	})
-	sectable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecNew {
-			u.showCreateSecret()
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecDelete {
-			if s, ok := u.selectedSecret(); ok {
-				u.openDeleteSecret(s)
-			}
-			return nil
-		}
-		// "i" opens the same detail as Enter — inspect means the same on every tab.
-		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-			if s, ok := u.selectedSecret(); ok {
-				u.showSecretDetail(s)
-			}
-			return nil
-		}
-		return u.tabKeys(ev)
-	})
-	// The context sidebar's keys: Enter/u switch cluster, i details, n creates,
-	// d removes, Esc hands the keyboard back to the tab you were on.
-	cxtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape {
-			u.blurSidebar()
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune {
-			switch ev.Rune() {
-			case 'i':
-				if c, ok := u.selectedContext(); ok {
-					u.showContextDetail(c)
-				}
-				return nil
-			case km.CtxNew:
-				u.showCreateContext()
-				return nil
-			case km.CtxDelete:
-				if c, ok := u.selectedContext(); ok {
-					u.deleteContext(c)
-				}
-				return nil
-			case km.CtxUse:
-				if c, ok := u.selectedContext(); ok {
-					u.activateContext(c)
-				}
-				return nil
-			}
-		}
-		return u.tabKeys(ev)
-	})
+	ftable.SetInputCapture(u.forwardKeys)
+	vtable.SetInputCapture(u.volumeKeys)
+	nettable.SetInputCapture(u.networkKeys)
+	sectable.SetInputCapture(u.secretKeys)
+	cxtable.SetInputCapture(u.contextKeys)
 	cxtable.SetSelectedFunc(func(int, int) {
 		if c, ok := u.selectedContext(); ok {
 			u.activateContext(c)
 		}
 	})
-	cfgtable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-			if c, ok := u.selectedConfig(); ok {
-				u.showConfigDetail(c)
-			}
-			return nil
-		}
-		return u.tabKeys(ev)
-	})
+	cfgtable.SetInputCapture(u.configKeys)
 
-	notable.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeAvail {
-			if n, ok := u.selectedNode(); ok {
-				u.openNodeAvailability(n, notable, u.loadNodes)
-			}
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeImages {
-			if n, ok := u.selectedNode(); ok {
-				u.openNodeImagePrune(n, notable, u.loadNodes)
-			}
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeLabels {
-			if n, ok := u.selectedNode(); ok {
-				u.editNodeLabels(n, u.loadNodes)
-			}
-			return nil
-		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-			if n, ok := u.selectedNode(); ok {
-				u.showNodeDetail(n)
-			}
-			return nil
-		}
-		return u.tabKeys(ev)
-	})
+	notable.SetInputCapture(u.nodeKeys)
 
 	// The sidebar is visible from the first frame, so its content is loaded
 	// before it: it comes from docker's local store, no network involved.
@@ -864,65 +554,16 @@ func (u *ui) run(keyWarnings []string) error {
 	// are node-local and cannot push such events. This is the net under the
 	// event stream, not a leftover — see ui_events.go for why removing it would
 	// turn a dropped connection into a tree that silently stops updating.
-	go func() {
-		t := time.NewTicker(treeRefreshFast)
-		defer t.Stop()
-		rate := treeRefreshFast
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				// Re-rated on each tick rather than on a change, so a stream
-				// that dies takes at most one slow interval to be noticed.
-				if want := u.pollInterval(); want != rate {
-					rate = want
-					t.Reset(rate)
-				}
-				u.autoRefreshContainers()
-				// Usage rides the same tick but on its own goroutine, so a slow or
-				// unreachable agent delays only the badges, never the tree.
-				u.loadUsage()
-			}
-		}
-	}()
+	go u.pollTopology(ctx)
 
 	// Surface any keys.yaml problems once, non-fatally, over the started UI.
 	if len(keyWarnings) > 0 {
 		u.info("keys.yaml:\n\n" + strings.Join(keyWarnings, "\n"))
 	}
 
-	// Responsiveness watchdog: time how long the event loop takes to service a
-	// no-op; a stall means something is blocking the loop (the "UI reagiert nicht"
-	// symptom). Logged so the viewer/file shows it. QueueUpdate runs in its own
-	// goroutine so a stuck loop cannot block the measurement.
+	// Responsiveness watchdog: a stall means something is blocking the loop.
 	clientlog.L().Info("ui started", "log_level", g.logLevel)
-	go func() {
-		tk := time.NewTicker(2 * time.Second)
-		defer tk.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tk.C:
-				sent := time.Now()
-				done := make(chan struct{})
-				go func() { app.QueueUpdate(func() {}); close(done) }()
-				select {
-				case <-done:
-					if d := time.Since(sent); d > uiStallWarn {
-						clientlog.L().Warn("ui event loop was busy", "blocked_ms", d.Milliseconds())
-					}
-				case <-time.After(uiStallWarn):
-					clientlog.L().Warn("ui event loop stalled", "over_ms", uiStallWarn.Milliseconds())
-					<-done
-					clientlog.L().Warn("ui event loop recovered", "after_ms", time.Since(sent).Milliseconds())
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
+	go u.watchdog(ctx)
 
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	scr, serr := tcell.NewScreen()

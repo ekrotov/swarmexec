@@ -270,3 +270,38 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 	})
 	ov.show(centered(tv, 64, 8), tv)
 }
+
+// contextKeys is the key handler of the context sidebar.
+//
+// The context sidebar's keys: Enter/u switch cluster, i details, n creates,
+// d removes, Esc hands the keyboard back to the tab you were on.
+func (u *ui) contextKeys(ev *tcell.EventKey) *tcell.EventKey {
+	km := u.km
+	if ev.Key() == tcell.KeyEscape {
+		u.blurSidebar()
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune {
+		switch ev.Rune() {
+		case 'i':
+			if c, ok := u.selectedContext(); ok {
+				u.showContextDetail(c)
+			}
+			return nil
+		case km.CtxNew:
+			u.showCreateContext()
+			return nil
+		case km.CtxDelete:
+			if c, ok := u.selectedContext(); ok {
+				u.deleteContext(c)
+			}
+			return nil
+		case km.CtxUse:
+			if c, ok := u.selectedContext(); ok {
+				u.activateContext(c)
+			}
+			return nil
+		}
+	}
+	return u.tabKeys(ev)
+}

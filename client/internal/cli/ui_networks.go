@@ -386,3 +386,22 @@ func (u *ui) showCreateNetwork() {
 	})
 	ov.show(centered(form, formWidth, 22), form)
 }
+
+// networkKeys is the key handler of the Networks table.
+//
+// On the networks table, "i" (like the volumes tab) shows the attached
+// services/containers; Enter does the same.
+func (u *ui) networkKeys(ev *tcell.EventKey) *tcell.EventKey {
+	km := u.km
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetAttached {
+		if n, ok := u.selectedNetwork(); ok {
+			u.showNetworkMembers(n)
+		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetNew {
+		u.showCreateNetwork()
+		return nil
+	}
+	return u.tabKeys(ev)
+}

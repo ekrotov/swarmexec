@@ -203,3 +203,14 @@ func isProbablyText(data []byte) bool {
 	}
 	return true
 }
+
+// configKeys is the key handler of the Configs table.
+func (u *ui) configKeys(ev *tcell.EventKey) *tcell.EventKey {
+	if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
+		if c, ok := u.selectedConfig(); ok {
+			u.showConfigDetail(c)
+		}
+		return nil
+	}
+	return u.tabKeys(ev)
+}

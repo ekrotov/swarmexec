@@ -245,3 +245,30 @@ func TestVersionPickerIsANoOpWithoutData(t *testing.T) {
 	iv2.editSvc = "" // a task/container inspect has no service to update
 	iv2.openVersionPicker()
 }
+
+// Every editor action has one key, each key one action, and none of them
+// shadows a key the inspect view handles before it consults the list.
+func TestServiceActionKeysAreUniqueAndFree(t *testing.T) {
+	iv := inspectViewFor(nil)
+	iv.editSvc = "web"
+	km := defaultKeybinds()
+	fixed := map[rune]string{
+		km.Quit: "close", 'i': "close", '?': "help", 'a': "actions menu",
+		km.Copy: "copy", 't': "next view", '1': "view", '2': "view", '3': "view",
+		'j': "down", 'k': "up",
+	}
+	seen := map[rune]string{}
+	for _, a := range iv.serviceActions() {
+		if a.key == 0 {
+			t.Errorf("action %q has no key", a.label)
+			continue
+		}
+		if other, dup := seen[a.key]; dup {
+			t.Errorf("%q is bound to both %q and %q", a.key, other, a.label)
+		}
+		if what, taken := fixed[a.key]; taken {
+			t.Errorf("%q (%s) is shadowed by the fixed %s key", a.key, a.label, what)
+		}
+		seen[a.key] = a.label
+	}
+}

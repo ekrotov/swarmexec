@@ -217,3 +217,29 @@ func (u *ui) pollInterval() time.Duration {
 	}
 	return treeRefreshFast
 }
+
+// pollTopology is the net under the manager's event stream: it re-lists the
+// tree on a timer (fast while no events arrive, slow while they do) and rides
+// the agents' usage sampling on the same tick. It runs until the session ends.
+func (u *ui) pollTopology(ctx context.Context) {
+	t := time.NewTicker(treeRefreshFast)
+	defer t.Stop()
+	rate := treeRefreshFast
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			// Re-rated on each tick rather than on a change, so a stream
+			// that dies takes at most one slow interval to be noticed.
+			if want := u.pollInterval(); want != rate {
+				rate = want
+				t.Reset(rate)
+			}
+			u.autoRefreshContainers()
+			// Usage rides the same tick but on its own goroutine, so a slow or
+			// unreachable agent delays only the badges, never the tree.
+			u.loadUsage()
+		}
+	}
+}

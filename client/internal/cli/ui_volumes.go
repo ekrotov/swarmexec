@@ -645,3 +645,92 @@ func (u *ui) attachVolumeToService(volName string) {
 	in.SetBorder(true).SetTitle(fmt.Sprintf(" attach volume %q to service ", volName))
 	ov.show(centeredPrompt(in, 64), in)
 }
+
+// volumeKeys is the key handler of the Volumes table.
+//
+// On the volumes table, "i" shows which services/containers use the volume.
+// attachVolumeToService mounts a volume into a service from the Volumes tab:
+// pick a service (autocomplete), enter the container target path, choose
+// read-only or not, then a ServiceUpdate adds the mount.
+func (u *ui) volumeKeys(ev *tcell.EventKey) *tcell.EventKey {
+	km := u.km
+	if ev.Key() == tcell.KeyRune {
+		switch ev.Rune() {
+		case km.Search:
+			u.startSearch("volumes")
+			return nil
+		case km.VolNew:
+			u.showCreateVolume()
+			return nil
+		case km.VolAttach:
+			if v, ok := u.selectedVolume(); ok {
+				u.attachVolumeToService(v.Name)
+			}
+			return nil
+		case km.VolSelect:
+			// Toggle the current volume's selection for a bulk delete.
+			if v, ok := u.selectedVolume(); ok {
+				if u.selectedVols[v.Name] {
+					delete(u.selectedVols, v.Name)
+				} else {
+					u.selectedVols[v.Name] = true
+				}
+				u.renderVolumeTable()
+				u.updateStatus()
+			}
+			return nil
+		case km.VolSelectAll:
+			// Select or deselect all currently displayed volumes.
+			all := len(u.shownVols) > 0
+			for _, v := range u.shownVols {
+				if !u.selectedVols[v.Name] {
+					all = false
+					break
+				}
+			}
+			for _, v := range u.shownVols {
+				if all {
+					delete(u.selectedVols, v.Name)
+				} else {
+					u.selectedVols[v.Name] = true
+				}
+			}
+			u.renderVolumeTable()
+			u.updateStatus()
+			return nil
+		case km.VolDelete:
+			// Delete the selected volumes, or the one under the cursor.
+			var targets []swarmVolume
+			if len(u.selectedVols) > 0 {
+				for _, v := range u.vols {
+					if u.selectedVols[v.Name] {
+						targets = append(targets, v)
+					}
+				}
+			} else if v, ok := u.selectedVolume(); ok {
+				targets = []swarmVolume{v}
+			}
+			u.deleteVolumes(targets, fmt.Sprintf("Remove %d volume(s) on every node that holds them?", len(targets)))
+			return nil
+		case km.VolPrune:
+			u.pruneVolumes()
+			return nil
+		case km.VolUsedBy:
+			if v, ok := u.selectedVolume(); ok {
+				u.showVolumeConsumers(v)
+			}
+			return nil
+		case km.VolSort:
+			// Cycle the sort field; pick a sensible default direction for it.
+			u.sortField = (u.sortField + 1) % 5
+			u.sortDesc = u.sortField != volSortName && u.sortField != volSortAge
+			u.renderVolumeTable()
+			return nil
+		case km.VolSortRev:
+			u.sortDesc = !u.sortDesc
+			u.renderVolumeTable()
+			return nil
+		}
+	}
+	return u.tabKeys(ev)
+}
