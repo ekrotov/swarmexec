@@ -50,7 +50,13 @@ func newLogsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs [flags] <service|service.slot|task-id|container-id>",
 		Short: "Stream a container's logs from anywhere in the swarm",
-		Args:  cobra.MinimumNArgs(1),
+		// Exactly one, because exactly one is what runLogs reads. It used to
+		// accept more and then ignore everything past the first, so
+		// `swarmexec logs api worker` followed api and said nothing about
+		// worker — a silence that reads as a bug in the operator's own setup.
+		// If this ever follows several targets at once, the loop comes first
+		// and this goes back to MinimumNArgs.
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLogs(cmd, g, f, args)
 		},

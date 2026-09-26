@@ -69,6 +69,31 @@ func cmdContext(cmd *cobra.Command) context.Context {
 // Execute builds and runs the root command, returning a process exit code.
 func Execute(v Version) int {
 	g := &globalFlags{version: v}
+	root := newRootCmd(g, v)
+
+	err := root.Execute()
+	if err == nil {
+		return 0
+	}
+	var ce *cliError
+	if errors.As(err, &ce) {
+		if !ce.silent && ce.err != nil {
+			fmt.Fprintln(os.Stderr, "swarmexec: "+ce.err.Error())
+		}
+		return ce.code
+	}
+	// cobra usage / flag-parse errors.
+	fmt.Fprintln(os.Stderr, "swarmexec: "+err.Error())
+	return usageExitCode
+}
+
+// newRootCmd assembles the whole command tree.
+//
+// Split out of Execute so the tree can be built without running it: a test can
+// then walk every command and check the things that are declared twice and have
+// to agree — the Use line's placeholders against the Args validator, which is
+// where `logs api worker` came from.
+func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	var showInfo bool
 	root := &cobra.Command{
 		Use:           "swarmexec",
@@ -119,21 +144,7 @@ func Execute(v Version) int {
 	root.AddCommand(newSecurityCmd(g))
 	root.AddCommand(newStackCmd(g))
 	root.AddCommand(newUICmd(g))
-
-	err := root.Execute()
-	if err == nil {
-		return 0
-	}
-	var ce *cliError
-	if errors.As(err, &ce) {
-		if !ce.silent && ce.err != nil {
-			fmt.Fprintln(os.Stderr, "swarmexec: "+ce.err.Error())
-		}
-		return ce.code
-	}
-	// cobra usage / flag-parse errors.
-	fmt.Fprintln(os.Stderr, "swarmexec: "+err.Error())
-	return usageExitCode
+	return root
 }
 
 // initLogging sets up the shared logger for every subcommand: an in-memory ring
