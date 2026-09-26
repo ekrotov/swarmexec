@@ -580,6 +580,12 @@ mirror-github:
       . "$CI_PROJECT_DIR/ci/release-post-lib.sh"
       API="https://api.github.com/repos/${GITHUB_MIRROR_REPO}"
       GH() { curl --silent --show-error --config /tmp/gh.curlrc "$@"; }
+      # GHW is GH for writes: it fails on an HTTP error and prints GitHub's reason.
+      # A bare --fail drops the body, and "422" alone is how v1.19.0 was lost.
+      GHW() {
+        _out="$(GH --fail-with-body "$@")" || { printf '%s\n' "$_out" >&2; return 22; }
+        printf '%s' "$_out"
+      }
 
       # A semver prerelease carries a "-suffix" — the same rule the image jobs
       # use to decide whether :latest moves.
@@ -587,37 +593,65 @@ mirror-github:
         *-*) PRE=true ;;
         *)   PRE=false ;;
       esac
+      WANT="$(ls dist | wc -l)"
 
-      # The annotated tag message, exactly as the GitLab release and both
-      # announcement posts use it. One changelog, four places.
-      NOTES="$(release_notes)"
+      # GitHub's immutable releases take no assets once published: v1.19.0 was
+      # published first and then refused every upload with a 422. So the release
+      # is built as a draft, filled, and published last — the order GitHub
+      # prescribes, and harmless where immutability is off.
+      #
+      # A published release is therefore final. Re-running the job over one is
+      # fine when it is complete, and an error with the reason when it is not:
+      # nothing this job can do adds the missing files.
+      PUB="$(GH "$API/releases/tags/$CI_COMMIT_TAG")"
+      if [ -n "$(printf '%s' "$PUB" | jq -r '.id // empty')" ]; then
+        HAVE="$(printf '%s' "$PUB" | jq '.assets | length')"
+        if [ "$HAVE" -ge "$WANT" ]; then
+          echo "GitHub release $CI_COMMIT_TAG is already published with $HAVE assets - nothing to do"
+          exit 0
+        fi
+        echo "GitHub release $CI_COMMIT_TAG is published with $HAVE of $WANT assets."
+        echo "immutable=$(printf '%s' "$PUB" | jq -r '.immutable') - a published immutable release"
+        echo "takes no further assets; the binaries are on the GitLab release."
+        exit 1
+      fi
 
-      # Re-runnable: a retried pipeline must not fail on "release already
-      # exists", so an existing release for this tag is reused.
-      ID="$(GH "$API/releases/tags/$CI_COMMIT_TAG" | jq -r '.id // empty')"
+      # Re-runnable: a draft left by an interrupted run is picked up rather than
+      # doubled. /releases/tags/ never returns drafts, so they are found in the
+      # list.
+      ID="$(GH "$API/releases?per_page=100" \
+            | jq -r --arg t "$CI_COMMIT_TAG" '[.[] | select(.draft and .tag_name == $t)][0].id // empty')"
       if [ -z "$ID" ]; then
-        echo "creating GitHub release $CI_COMMIT_TAG (prerelease=$PRE)"
+        echo "creating draft GitHub release $CI_COMMIT_TAG (prerelease=$PRE)"
+        # The annotated tag message, exactly as the GitLab release and both
+        # announcement posts use it. One changelog, four places.
+        NOTES="$(release_notes)"
         ID="$(jq -n --arg tag "$CI_COMMIT_TAG" --arg name "swarmexec $CI_COMMIT_TAG" \
                     --arg body "$NOTES" --argjson pre "$PRE" \
-                    '{tag_name:$tag, name:$name, body:$body, prerelease:$pre, draft:false}' \
-              | GH --fail --request POST --data @- "$API/releases" | jq -r '.id')"
+                    '{tag_name:$tag, name:$name, body:$body, prerelease:$pre, draft:true}' \
+              | GHW --request POST --data @- "$API/releases" | jq -r '.id')"
       else
-        echo "GitHub release $CI_COMMIT_TAG exists (id $ID) — reusing it"
+        echo "draft GitHub release $CI_COMMIT_TAG exists (id $ID) - reusing it"
       fi
-      [ -n "$ID" ] || { echo "could not create or find the release"; exit 1; }
+      [ -n "$ID" ] && [ "$ID" != null ] || { echo "could not create or find the draft release"; exit 1; }
 
       for f in dist/*; do
         name="$(basename "$f")"
         # Same name twice is a 422, so a re-run replaces rather than appends.
+        # (Only a draft allows that, which is the other reason to stay one.)
         old="$(GH "$API/releases/$ID/assets" | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
-        [ -n "$old" ] && GH --request DELETE "$API/releases/assets/$old" >/dev/null
+        [ -n "$old" ] && GHW --request DELETE "$API/releases/assets/$old" >/dev/null
         echo "  -> $name"
-        GH --fail --request POST \
-           --header "Content-Type: application/octet-stream" \
-           --data-binary "@$f" \
-           "https://uploads.github.com/repos/${GITHUB_MIRROR_REPO}/releases/$ID/assets?name=$name" >/dev/null
+        GHW --request POST \
+            --header "Content-Type: application/octet-stream" \
+            --data-binary "@$f" \
+            "https://uploads.github.com/repos/${GITHUB_MIRROR_REPO}/releases/$ID/assets?name=$name" >/dev/null
       done
-      echo "published $CI_COMMIT_TAG on GitHub with $(ls dist | wc -l) assets"
+
+      # Publishing is the last step: from here on the release is what it is.
+      jq -n --argjson pre "$PRE" '{draft:false, prerelease:$pre}' \
+        | GHW --request PATCH --data @- "$API/releases/$ID" >/dev/null
+      echo "published $CI_COMMIT_TAG on GitHub with $WANT assets"
   after_script:
     - rm -f ~/.git-credentials /tmp/gh.curlrc
 
