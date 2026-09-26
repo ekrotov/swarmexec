@@ -115,8 +115,8 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 	tv.SetText(head)
 
 	prev := app.GetFocus()
-	_, restore := u.pushOverlayHelp(footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
-	closeIt := func() { restore(); pages.RemovePage(pageConfigDetail); app.SetFocus(prev) }
+	ov := u.overlayFor(pageConfigDetail, prev, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
+	closeIt := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
@@ -129,8 +129,7 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 		}
 		return ev
 	})
-	pages.AddPage(pageConfigDetail, centered(tv, 96, 28), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 96, 28), tv)
 
 	go func() {
 		data, err := configContent(ctx, dcli, c.ID)

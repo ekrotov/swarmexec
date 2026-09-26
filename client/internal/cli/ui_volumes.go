@@ -237,7 +237,7 @@ func (u *ui) selectedVolume() (swarmVolume, bool) {
 }
 
 func (u *ui) showVolumeNodes(v swarmVolume) {
-	app, pages, cfg, f, ctx, vtable := u.app, u.pages, u.cfg, u.f, u.ctx, u.vtable
+	app, cfg, f, ctx, vtable := u.app, u.cfg, u.f, u.ctx, u.vtable
 	list := tview.NewList().ShowSecondaryText(false)
 	title := fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
 	if !v.Created.IsZero() {
@@ -260,7 +260,8 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 		}
 	}
 	render()
-	closeNodes := func() { pages.RemovePage(pageVolNodes); app.SetFocus(vtable) }
+	ov := u.overlayFor(pageVolNodes, vtable, "")
+	closeNodes := ov.Close
 
 	runDelete := func(targets []resolve.Node) {
 		go func() {
@@ -332,12 +333,11 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 		box.AddItem(lv, labelH, 0, false)
 	}
 	box.AddItem(list, 0, 1, true).AddItem(help, 1, 0, false)
-	pages.AddPage(pageVolNodes, centered(box, 64, len(v.Nodes)+5+labelH), true, true)
-	app.SetFocus(list)
+	ov.show(centered(box, 64, len(v.Nodes)+5+labelH), list)
 }
 
 func (u *ui) showCreateVolume() {
-	app, pages, r, cfg, f, ctx, vtable := u.app, u.pages, u.r, u.cfg, u.f, u.ctx, u.vtable
+	app, r, cfg, f, ctx, vtable := u.app, u.r, u.cfg, u.f, u.ctx, u.vtable
 	o := newVolumeOpts{Driver: "local"}
 	var labels, nodeSel string
 	var allNodes []resolve.Node // fetched on open, for autocomplete + targeting
@@ -367,8 +367,8 @@ func (u *ui) showCreateVolume() {
 			}
 		})
 	}()
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
-	closeForm := func() { restoreHelp(); pages.RemovePage(pageVolForm); app.SetFocus(vtable) }
+	ov := u.overlayFor(pageVolForm, vtable, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+	closeForm := ov.Close
 	form.AddButton("Create", func() {
 		lbls, err := parseKVList(labels)
 		if err != nil {
@@ -423,12 +423,11 @@ func (u *ui) showCreateVolume() {
 		}
 		return ev
 	})
-	pages.AddPage(pageVolForm, centered(form, 66, 15), true, true)
-	app.SetFocus(form)
+	ov.show(centered(form, 66, 15), form)
 }
 
 func (u *ui) showVolumeConsumers(v swarmVolume) {
-	app, pages, vtable := u.app, u.pages, u.vtable
+	vtable := u.vtable
 	consumers := u.volUsage[v.Name]
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — used by %d ", v.Name, len(consumers)))
@@ -448,8 +447,8 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 			list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, orDash(c.Service), contW, orDash(c.Container), orDash(c.Node)), "", 0, nil)
 		}
 	}
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Esc", "back"))
-	closeUsers := func() { restoreHelp(); pages.RemovePage(pageVolUsers); app.SetFocus(vtable) }
+	ov := u.overlayFor(pageVolUsers, vtable, footerKeys("j/k", "move", "Esc", "back"))
+	closeUsers := ov.Close
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')) {
 			closeUsers()
@@ -461,12 +460,11 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 	if rows == 0 {
 		rows = 1
 	}
-	pages.AddPage(pageVolUsers, centered(list, 72, rows+4), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 72, rows+4), list)
 }
 
 func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
-	app, pages, cfg, f, ctx, vtable := u.app, u.pages, u.cfg, u.f, u.ctx, u.vtable
+	app, cfg, f, ctx, vtable := u.app, u.cfg, u.f, u.ctx, u.vtable
 	if len(targets) == 0 {
 		return
 	}
@@ -488,8 +486,9 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 		prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 		prog.SetBorder(true).SetTitle(" deleting volumes ")
 		prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
-		pages.AddPage(pageVolProgress, centered(prog, 60, 5), true, true)
-		app.SetFocus(prog)
+		// No focus to give back: the summary notice that replaces it takes it.
+		pov := u.overlayFor(pageVolProgress, nil, "")
+		pov.show(centered(prog, 60, 5), prog)
 		go func() {
 			// Delete volumes with bounded parallelism: each volume already
 			// fans out across its nodes, so a small volume-level pool keeps
@@ -532,7 +531,7 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 			}
 			wg.Wait()
 			app.QueueUpdateDraw(func() {
-				pages.RemovePage(pageVolProgress)
+				pov.Close()
 				u.selectedVols = map[string]bool{}
 				u.loadVolumes()
 				u.updateStatus()
@@ -567,7 +566,7 @@ func (u *ui) pruneVolumes() {
 }
 
 func (u *ui) attachVolumeToService(volName string) {
-	app, pages, dcli, ctx, vtable := u.app, u.pages, u.dcli, u.ctx, u.vtable
+	app, dcli, ctx, vtable := u.app, u.dcli, u.ctx, u.vtable
 	in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(42).
 		SetPlaceholder("type or ↓ to pick; Enter next, Esc cancel")
 	names := u.serviceNamesFromCache()
@@ -581,17 +580,19 @@ func (u *ui) attachVolumeToService(volName string) {
 		}
 		return out
 	})
+	ov := u.overlayFor(pageVolAttach, nil, "")
 	in.SetDoneFunc(func(key tcell.Key) {
 		svc := strings.TrimSpace(in.GetText())
-		pages.RemovePage(pageVolAttach)
+		ov.Close()
 		if key != tcell.KeyEnter || svc == "" {
 			app.SetFocus(vtable)
 			return
 		}
 		tin := tview.NewInputField().SetLabel("target path: ").SetFieldWidth(42).SetPlaceholder("/data")
+		tov := u.overlayFor(pageVolAttachTgt, nil, "")
 		tin.SetDoneFunc(func(k tcell.Key) {
 			target := strings.TrimSpace(tin.GetText())
-			pages.RemovePage(pageVolAttachTgt)
+			tov.Close()
 			if k != tcell.KeyEnter || target == "" {
 				app.SetFocus(vtable)
 				return
@@ -600,11 +601,12 @@ func (u *ui) attachVolumeToService(volName string) {
 				u.info("target must be an absolute path")
 				return
 			}
+			cov := u.overlayFor(pageVolAttachConfirm, nil, "")
 			m := tview.NewModal().
 				SetText(fmt.Sprintf("Attach volume %q to service %q at %s?\n\nThis triggers a rolling update of the service.", volName, svc, target)).
 				AddButtons([]string{"Attach", "Attach read-only", "Cancel"}).
 				SetDoneFunc(func(_ int, lbl string) {
-					pages.RemovePage(pageVolAttachConfirm)
+					cov.Close()
 					if lbl == "Cancel" || lbl == "" {
 						app.SetFocus(vtable)
 						return
@@ -623,14 +625,11 @@ func (u *ui) attachVolumeToService(volName string) {
 						})
 					}()
 				})
-			pages.AddPage(pageVolAttachConfirm, newScrim(m), true, true)
-			app.SetFocus(m)
+			cov.show(newScrim(m), m)
 		})
 		tin.SetBorder(true).SetTitle(fmt.Sprintf(" attach %s → %s ", volName, svc))
-		pages.AddPage(pageVolAttachTgt, centeredPrompt(tin, 64), true, true)
-		app.SetFocus(tin)
+		tov.show(centeredPrompt(tin, 64), tin)
 	})
 	in.SetBorder(true).SetTitle(fmt.Sprintf(" attach volume %q to service ", volName))
-	pages.AddPage(pageVolAttach, centeredPrompt(in, 64), true, true)
-	app.SetFocus(in)
+	ov.show(centeredPrompt(in, 64), in)
 }

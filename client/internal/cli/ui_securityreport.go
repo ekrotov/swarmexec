@@ -24,12 +24,11 @@ import (
 // message can hand the footer back when it is done — a transient message that
 // keeps the footer is how the shortcuts disappear.
 func (u *ui) writeSecurityReportPrompt(back tview.Primitive, setHelp func(string), keys string) {
-	pages, app := u.pages, u.app
 	in := tview.NewInputField().SetLabel("file: ").SetFieldWidth(52).
 		SetText(defaultReportPath(u.contextName()))
+	ov := u.overlayFor(pageSecurityReport, back, "")
 	in.SetDoneFunc(func(key tcell.Key) {
-		pages.RemovePage(pageSecurityReport)
-		app.SetFocus(back)
+		ov.Close()
 		if key == tcell.KeyEscape {
 			return
 		}
@@ -40,8 +39,7 @@ func (u *ui) writeSecurityReportPrompt(back tview.Primitive, setHelp func(string
 		u.writeSecurityReport(path, setHelp, keys)
 	})
 	in.SetBorder(true).SetTitle(" write security report ")
-	pages.AddPage(pageSecurityReport, centeredPrompt(in, 72), true, true)
-	app.SetFocus(in)
+	ov.show(centeredPrompt(in, 72), in)
 }
 
 // writeSecurityReport gathers and writes in the background.

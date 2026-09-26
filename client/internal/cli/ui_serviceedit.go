@@ -16,7 +16,7 @@ import (
 )
 
 func (u *ui) editList(cfg editListConfig) {
-	app, pages := u.app, u.pages
+	app := u.app
 	title, applyVerb, items := cfg.title, cfg.applyVerb, cfg.items
 	validate, onApply, suggest := cfg.validate, cfg.onApply, cfg.suggest
 	allowEdit, multiline := cfg.allowEdit, cfg.multiline
@@ -85,8 +85,9 @@ func (u *ui) editList(cfg editListConfig) {
 		history = history[:len(history)-1]
 		render()
 	}
-	setHelp, restoreHelp := u.pushOverlayHelp(footerKeys(keyPairs...))
-	closeEd := func() { restoreHelp(); pages.RemovePage(pageListEdit); app.SetFocus(back) }
+	ov := u.overlayFor(pageListEdit, back, footerKeys(keyPairs...))
+	closeEd := ov.Close
+	setHelp := ov.setHelp
 	// commit validates a typed entry and applies it via done.
 	commit := func(raw string, done func(string)) {
 		txt := strings.TrimSpace(raw)
@@ -102,10 +103,13 @@ func (u *ui) editList(cfg editListConfig) {
 		render()
 	}
 	prompt := func(label, initial string, done func(string)) {
+		// One prompt overlay per invocation, whichever of the three shapes
+		// below it takes; all of them go back to the list.
+		pov := u.overlayFor(pageListEditPrompt, list, "")
 		if formPrompt != nil {
 			// Custom form: submit validates+stages+closes on success; the form
 			// keeps focus on failure (it surfaces the error itself).
-			cancel := func() { pages.RemovePage(pageListEditPrompt); app.SetFocus(list) }
+			cancel := pov.Close
 			submit := func(raw string) error {
 				norm, err := validate(strings.TrimSpace(raw))
 				if err != nil {
@@ -113,13 +117,11 @@ func (u *ui) editList(cfg editListConfig) {
 				}
 				done(norm)
 				render()
-				pages.RemovePage(pageListEditPrompt)
-				app.SetFocus(list)
+				pov.Close()
 				return nil
 			}
 			form := formPrompt(initial, submit, cancel)
-			pages.AddPage(pageListEditPrompt, centered(form, 78, 15), true, true)
-			app.SetFocus(form)
+			pov.show(centered(form, 78, 15), form)
 			return
 		}
 		if multiline {
@@ -134,20 +136,17 @@ func (u *ui) editList(cfg editListConfig) {
 			ta.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 				switch ev.Key() {
 				case tcell.KeyEscape:
-					pages.RemovePage(pageListEditPrompt)
-					app.SetFocus(list)
+					pov.Close()
 					return nil
 				case tcell.KeyCtrlS:
 					txt := ta.GetText()
-					pages.RemovePage(pageListEditPrompt)
-					app.SetFocus(list)
+					pov.Close()
 					commit(txt, done)
 					return nil
 				}
 				return ev
 			})
-			pages.AddPage(pageListEditPrompt, centered(ta, 96, 22), true, true)
-			app.SetFocus(ta)
+			pov.show(centered(ta, 96, 22), ta)
 			return
 		}
 		in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
@@ -155,16 +154,14 @@ func (u *ui) editList(cfg editListConfig) {
 			in.SetAutocompleteFunc(suggest)
 		}
 		in.SetDoneFunc(func(k tcell.Key) {
-			pages.RemovePage(pageListEditPrompt)
-			app.SetFocus(list)
+			pov.Close()
 			if k != tcell.KeyEnter {
 				return
 			}
 			commit(in.GetText(), done)
 		})
 		in.SetBorder(true)
-		pages.AddPage(pageListEditPrompt, centeredPrompt(in, 60), true, true)
-		app.SetFocus(in)
+		pov.show(centeredPrompt(in, 60), in)
 	}
 	// hasChanges reports whether anything is staged but not yet applied (cur
 	// differs from the original set — order included; j/k only navigate here).
@@ -197,8 +194,7 @@ func (u *ui) editList(cfg editListConfig) {
 						app.SetFocus(list)
 						return
 					}
-					restoreHelp()
-					pages.RemovePage(pageListEdit)
+					ov.Close()
 					u.info("service updated — rolling update started")
 					if after != nil {
 						after()
@@ -212,11 +208,12 @@ func (u *ui) editList(cfg editListConfig) {
 		case ev.Key() == tcell.KeyEscape:
 			if hasChanges() {
 				// Don't silently drop staged edits — make the operator choose.
+				lov := u.overlayFor(pageListEditLeave, nil, "")
 				leave := tview.NewModal().
 					SetText("You have unapplied changes.\n\nApply them now, discard them, or keep editing?\n(Esc discards and leaves.)").
 					AddButtons([]string{"Apply", "Discard", "Keep editing"}).
 					SetDoneFunc(func(_ int, lbl string) {
-						pages.RemovePage(pageListEditLeave)
+						lov.Close()
 						switch lbl {
 						case "Apply":
 							applyFlow()
@@ -231,8 +228,7 @@ func (u *ui) editList(cfg editListConfig) {
 							closeEd()
 						}
 					})
-				pages.AddPage(pageListEditLeave, newScrim(leave), true, true)
-				app.SetFocus(leave)
+				lov.show(newScrim(leave), leave)
 				return nil
 			}
 			closeEd()
@@ -274,8 +270,7 @@ func (u *ui) editList(cfg editListConfig) {
 		}
 		return vimListKeys(ev)
 	})
-	pages.AddPage(pageListEdit, centered(list, 72, 18), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 72, 18), list)
 }
 
 func (u *ui) openPortsEditor(svcName string, back tview.Primitive, after func()) {
@@ -610,12 +605,15 @@ func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()
 }
 
 func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func()) {
-	app, pages := u.app, u.pages
+	app := u.app
+	// Every branch opens the next editor, which takes focus itself; only the
+	// default branch hands it back, and it does that explicitly.
+	mov := u.overlayFor(pagePlacementMenu, nil, "")
 	m := tview.NewModal().
 		SetText("Edit placement for " + svcName).
 		AddButtons([]string{"Constraints", "Spread preferences", "Cancel"}).
 		SetDoneFunc(func(_ int, lbl string) {
-			pages.RemovePage(pagePlacementMenu)
+			mov.Close()
 			switch lbl {
 			case "Constraints":
 				u.openPlacementConstraintsEditor(svcName, back, after)
@@ -625,8 +623,7 @@ func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func(
 				app.SetFocus(back)
 			}
 		})
-	pages.AddPage(pagePlacementMenu, newScrim(m), true, true)
-	app.SetFocus(m)
+	mov.show(newScrim(m), m)
 }
 
 func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()) {
@@ -776,7 +773,7 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 }
 
 func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func()) {
-	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
 		cur, replicated, err := currentServiceReplicas(ctx, dcli, svcName)
 		app.QueueUpdateDraw(func() {
@@ -790,9 +787,9 @@ func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func())
 			}
 			in := tview.NewInputField().SetLabel("replicas: ").SetText(fmt.Sprintf("%d", cur)).
 				SetFieldWidth(8).SetAcceptanceFunc(tview.InputFieldInteger)
+			sov := u.overlayFor(pageScalePrompt, back, "")
 			in.SetDoneFunc(func(k tcell.Key) {
-				pages.RemovePage(pageScalePrompt)
-				app.SetFocus(back)
+				sov.Close()
 				if k != tcell.KeyEnter {
 					return
 				}
@@ -816,8 +813,7 @@ func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func())
 				}()
 			})
 			in.SetBorder(true).SetTitle(" scale service ")
-			pages.AddPage(pageScalePrompt, centeredPrompt(in, 50), true, true)
-			app.SetFocus(in)
+			sov.show(centeredPrompt(in, 50), in)
 		})
 	}()
 }
@@ -843,17 +839,17 @@ func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func())
 }
 
 func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
-	app, pages, dcli, ctx, ctree := u.app, u.pages, u.dcli, u.ctx, u.ctree
+	app, dcli, ctx, ctree := u.app, u.dcli, u.ctx, u.ctree
 	names := make([]string, 0, len(orphans))
 	for _, o := range orphans {
 		names = append(names, o.Name)
 	}
+	oov := u.overlayFor(pageOrphanSecrets, ctree, "")
 	m := tview.NewModal().
 		SetText(fmt.Sprintf("The removed service used %d secret(s) that no other service references:\n\n%s\n\nDelete them too?", len(orphans), strings.Join(names, ", "))).
 		AddButtons([]string{"Delete secrets", "Keep"}).
 		SetDoneFunc(func(_ int, lbl string) {
-			pages.RemovePage(pageOrphanSecrets)
-			app.SetFocus(ctree)
+			oov.Close()
 			if lbl != "Delete secrets" {
 				return
 			}
@@ -873,8 +869,7 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 				})
 			}()
 		})
-	pages.AddPage(pageOrphanSecrets, newScrim(m), true, true)
-	app.SetFocus(m)
+	oov.show(newScrim(m), m)
 }
 
 func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved func()) {
@@ -956,7 +951,6 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 		return
 	}
 
-	app, pages := u.app, u.pages
 	in := tview.NewInputField().SetLabel("version: ").SetFieldWidth(24)
 	if len(info.newer) > 0 {
 		in.SetText(info.newer[0]) // default to the highest newer version
@@ -985,9 +979,9 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 		}
 		return out
 	})
+	iov := u.overlayFor(pageImageVersion, back, "")
 	in.SetDoneFunc(func(k tcell.Key) {
-		pages.RemovePage(pageImageVersion)
-		app.SetFocus(back)
+		iov.Close()
 		if k != tcell.KeyEnter {
 			return
 		}
@@ -1004,8 +998,7 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 		u.confirmImageUpdate(svcName, info.repo+":"+tag, isDowngrade(info.current, tag), back, after)
 	})
 	in.SetBorder(true).SetTitle(fmt.Sprintf(" update %s — running %s ", svcName, info.current))
-	pages.AddPage(pageImageVersion, centeredPrompt(in, 60), true, true)
-	app.SetFocus(in)
+	iov.show(centeredPrompt(in, 60), in)
 }
 
 // confirmImageUpdate confirms and applies an image change (rolling update). When
@@ -1039,8 +1032,8 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" placement of %s ", svcName))
 	tv.SetText("  [gray]diagnosing…[-]")
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "scroll", "Esc", "close"))
-	closeDiag := func() { restoreHelp(); pages.RemovePage(pagePlaceDiag); app.SetFocus(back) }
+	ov := u.overlayFor(pagePlaceDiag, back, footerKeys("j/k", "scroll", "Esc", "close"))
+	closeDiag := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -1053,8 +1046,7 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 		}
 		return ev
 	})
-	pages.AddPage(pagePlaceDiag, centered(tv, 90, 24), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 90, 24), tv)
 	go func() {
 		rep, err := diagnoseServicePlacement(ctx, dcli, svcName)
 		app.QueueUpdateDraw(func() {
@@ -1071,7 +1063,7 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 }
 
 func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after func()) {
-	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
 		rc, err := currentServiceResources(ctx, dcli, svcName)
 		app.QueueUpdateDraw(func() {
@@ -1085,12 +1077,8 @@ func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after fun
 			cpuR := tview.NewInputField().SetLabel("CPU reservation").SetText(rc.CPUReservation).SetFieldWidth(16).SetPlaceholder("optional")
 			memR := tview.NewInputField().SetLabel("Memory reservation").SetText(rc.MemReservation).SetFieldWidth(16).SetPlaceholder("optional")
 			setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
-			_, restoreHelp := u.pushOverlayHelp(footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
-			closeForm := func() {
-				restoreHelp()
-				pages.RemovePage(pageResEdit)
-				app.SetFocus(back)
-			}
+			rov := u.overlayFor(pageResEdit, back, footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
+			closeForm := rov.Close
 			apply := func() {
 				cl, e1 := parseCPUCores(cpuL.GetText())
 				ml, e2 := parseMemBytes(memL.GetText())
@@ -1137,8 +1125,7 @@ func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after fun
 			form.SetCancelFunc(closeForm)
 			form.SetBorder(true)
 			setTitle(" resource limits of " + svcName + " — empty clears a limit ")
-			pages.AddPage(pageResEdit, centered(form, 70, 15), true, true)
-			app.SetFocus(form)
+			rov.show(centered(form, 70, 15), form)
 		})
 	}()
 }

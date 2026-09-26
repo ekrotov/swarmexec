@@ -20,7 +20,7 @@ import (
 // analyzers surface here automatically. Bound to '!' on the containers tab. The
 // service under the cursor, if flagged, is pre-highlighted and scrolled into view.
 func (u *ui) showSecurityRisks() {
-	app, pages := u.app, u.pages
+	app := u.app
 
 	var flagged []resolve.Service
 	for _, s := range u.lastSvcs {
@@ -50,8 +50,9 @@ func (u *ui) showSecurityRisks() {
 
 	prev := app.GetFocus()
 	overlayKeys := footerKeys("j/k", "scroll", "w", "write report", "Esc", "close")
-	setHelp, restore := u.pushOverlayHelp(overlayKeys)
-	closeIt := func() { restore(); pages.RemovePage(pageSecurity); app.SetFocus(prev) }
+	ov := u.overlayFor(pageSecurity, prev, overlayKeys)
+	closeIt := ov.Close
+	setHelp := ov.setHelp
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
@@ -74,8 +75,7 @@ func (u *ui) showSecurityRisks() {
 		}
 		return ev
 	})
-	pages.AddPage(pageSecurity, centered(tv, 84, 26), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 84, 26), tv)
 }
 
 // securityOverlayState is what the overlay needs to describe itself honestly.

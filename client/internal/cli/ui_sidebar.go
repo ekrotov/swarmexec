@@ -111,9 +111,10 @@ func (u *ui) resizeSidebar(width int) {
 // focusSidebar moves the keyboard to the context list and points the footer at
 // its keys.
 //
-// Deliberately not pushOverlayHelp: that counts an overlay, which pauses the
-// tree's background refresh. The sidebar is not an overlay — the cluster behind
-// it is still on screen and must keep updating.
+// Deliberately not an overlay: one would count as open and pause the tree's
+// background refresh. The sidebar is not an overlay — the cluster behind it is
+// still on screen and must keep updating, which is why this writes the footer
+// with setFooter directly instead of going through overlayFor.
 func (u *ui) focusSidebar() {
 	if u.sidebarFocused() {
 		u.blurSidebar()

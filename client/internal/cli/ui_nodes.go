@@ -119,7 +119,7 @@ func (u *ui) selectedNode() (swarmNodeInfo, bool) {
 }
 
 func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
-	app, pages, dcli, ctx, notable := u.app, u.pages, u.dcli, u.ctx, u.notable
+	app, dcli, ctx, notable := u.app, u.dcli, u.ctx, u.notable
 	cur := kvPairs(n.Labels)
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
@@ -137,13 +137,15 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 		}
 	}
 	render()
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
-	closeEd := func() { restoreHelp(); pages.RemovePage(pageNodeLabels); app.SetFocus(notable) }
+	ov := u.overlayFor(pageNodeLabels, notable, footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
+	closeEd := ov.Close
 	promptLabel := func(initial string, done func(string)) {
 		in := tview.NewInputField().SetLabel("key=value: ").SetText(initial).SetFieldWidth(44)
+		// Nested inside the label editor: it goes back to the list, not to the
+		// table the editor itself returns to.
+		pov := u.overlayFor(pageNodeLabelPrompt, list, "")
 		in.SetDoneFunc(func(k tcell.Key) {
-			pages.RemovePage(pageNodeLabelPrompt)
-			app.SetFocus(list)
+			pov.Close()
 			if k != tcell.KeyEnter {
 				return
 			}
@@ -159,8 +161,7 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 			render()
 		})
 		in.SetBorder(true)
-		pages.AddPage(pageNodeLabelPrompt, centeredPrompt(in, 60), true, true)
-		app.SetFocus(in)
+		pov.show(centeredPrompt(in, 60), in)
 	}
 	apply := func() {
 		lbls, err := labelsFromStrings(cur)
@@ -211,8 +212,7 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 		}
 		return vimListKeys(ev)
 	})
-	pages.AddPage(pageNodeLabels, centered(list, 70, 16), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 70, 16), list)
 }
 
 // openNodeAvailability offers the three availability states. One menu rather
@@ -222,11 +222,11 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 // Draining is confirmed because it evicts the node's tasks; active and pause are
 // applied directly (pause only stops NEW placements, it does not move anything).
 func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after func()) {
-	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	app, dcli, ctx := u.app, u.dcli, u.ctx
 	list := tview.NewList().ShowSecondaryText(true)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" availability — %s ", n.Hostname))
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-	closeMenu := func() { restoreHelp(); pages.RemovePage(pageNodeAvail); app.SetFocus(back) }
+	ov := u.overlayFor(pageNodeAvail, back, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeMenu := ov.Close
 
 	apply := func(to swarm.NodeAvailability) {
 		go func() {
@@ -269,8 +269,7 @@ func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after f
 		}
 		return vimListKeys(ev)
 	})
-	pages.AddPage(pageNodeAvail, centered(list, 62, 13), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 62, 13), list)
 }
 
 // nodeResourceSection renders what the scheduler has booked on a node against
@@ -342,7 +341,7 @@ func resourceBar(booked, capacity int64) string {
 }
 
 func (u *ui) showNodeDetail(n swarmNodeInfo) {
-	app, pages, notable := u.app, u.pages, u.notable
+	notable := u.notable
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
 	var b strings.Builder
@@ -381,8 +380,8 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 		b.WriteString("    [gray](none)[-]\n")
 	}
 	tv.SetText(b.String())
-	_, restoreHelp := u.pushOverlayHelp(footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
-	closeDetail := func() { restoreHelp(); pages.RemovePage(pageNodeDetail); app.SetFocus(notable) }
+	ov := u.overlayFor(pageNodeDetail, notable, footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
+	closeDetail := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == 'q' || ev.Rune() == 'i')):
@@ -399,8 +398,7 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 		}
 		return ev
 	})
-	pages.AddPage(pageNodeDetail, centered(tv, 72, 24), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 72, 24), tv)
 }
 
 // nodeUsageSection renders what the node's containers are ACTUALLY using, as a
@@ -465,7 +463,7 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 // operator name which one they mean, and each still goes through its own
 // confirm spelling out the consequence.
 func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
-	app, pages := u.app, u.pages
+	app := u.app
 	ni, known := u.nodeImgs[n.Hostname]
 	if !known {
 		u.info(fmt.Sprintf("No image information for %q.\n\n"+
@@ -476,8 +474,8 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 
 	list := tview.NewList().ShowSecondaryText(true)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" reclaim image space — %s ", n.Hostname))
-	_, restore := u.pushOverlayHelp(footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
-	closeIt := func() { restore(); pages.RemovePage(pageNodeImages); app.SetFocus(back) }
+	ov := u.overlayFor(pageNodeImages, back, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
+	closeIt := ov.Close
 
 	run := func(all bool) {
 		closeIt()
@@ -520,6 +518,5 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 		}
 		return vimListKeys(ev)
 	})
-	pages.AddPage(pageNodeImages, centered(list, 66, 9), true, true)
-	app.SetFocus(list)
+	ov.show(centered(list, 66, 9), list)
 }

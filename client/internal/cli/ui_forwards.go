@@ -124,13 +124,14 @@ func promptWidthFor(msg string) int {
 }
 
 func (u *ui) portPrompt(c resolve.Candidate) {
-	app, pages, ctree := u.app, u.pages, u.ctree
+	ctree := u.ctree
 	input := tview.NewInputField().SetLabel(" port: ").SetFieldWidth(20)
 	input.SetBorder(true).SetTitle(fmt.Sprintf(" forward %s on %s ", orDash(c.Service), orDash(c.NodeName)))
 	hint := "  8080  or  9090:8080 (local:remote)"
 	input.SetPlaceholder(hint)
 
-	closePrompt := func() { pages.RemovePage(pageFwdPrompt); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageFwdPrompt, ctree, "")
+	closePrompt := ov.Close
 	input.SetDoneFunc(func(key tcell.Key) {
 		if key != tcell.KeyEnter {
 			closePrompt()
@@ -153,25 +154,25 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 		// message that ends in "on cluste…" is worse than the kernel's.
 		if msg, clash := u.portConflict(local); clash {
 			input.SetTitle(" " + msg + " ")
-			pages.RemovePage(pageFwdPrompt)
-			pages.AddPage(pageFwdPrompt, centeredPrompt(input, promptWidthFor(msg)), true, true)
-			app.SetFocus(input)
+			// Re-shown at a width that fits the reason: AddPage replaces a page
+			// of the same name, so this is a re-lay-out, not a second page.
+			ov.show(centeredPrompt(input, promptWidthFor(msg)), input)
 			return
 		}
 		closePrompt()
 		u.startForward(c, local, remote)
 		u.flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
 	})
-	pages.AddPage(pageFwdPrompt, centeredPrompt(input, fwdPromptWidth), true, true)
-	app.SetFocus(input)
+	ov.show(centeredPrompt(input, fwdPromptWidth), input)
 }
 
 func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
-	app, pages, ctree := u.app, u.pages, u.ctree
+	ctree := u.ctree
 	input := tview.NewInputField().SetLabel(" user: ").SetFieldWidth(28)
 	input.SetBorder(true).SetTitle(fmt.Sprintf(" shell into %s on %s as… ", orDash(c.Service), orDash(c.NodeName)))
 	input.SetPlaceholder("  name or UID[:GID] — e.g. root, 1000, 1000:1000")
-	closePrompt := func() { pages.RemovePage(pageUserPrompt); app.SetFocus(ctree) }
+	ov := u.overlayFor(pageUserPrompt, ctree, "")
+	closePrompt := ov.Close
 	input.SetDoneFunc(func(key tcell.Key) {
 		if key != tcell.KeyEnter {
 			closePrompt()
@@ -185,8 +186,7 @@ func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
 		closePrompt()
 		open(usr)
 	})
-	pages.AddPage(pageUserPrompt, centeredPrompt(input, 62), true, true)
-	app.SetFocus(input)
+	ov.show(centeredPrompt(input, 62), input)
 }
 
 func (u *ui) renderForwards() {
@@ -260,7 +260,7 @@ func (u *ui) selectedForward() (forwardEntry, bool) {
 }
 
 func (u *ui) showForwardDetail() {
-	app, pages, forwards, ftable := u.app, u.pages, u.forwards, u.ftable
+	forwards, ftable := u.forwards, u.ftable
 	row, ok := u.selectedForward()
 	if !ok {
 		return
@@ -293,7 +293,8 @@ func (u *ui) showForwardDetail() {
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
-	closeDetail := func() { pages.RemovePage(pageFwdDetail); app.SetFocus(ftable) }
+	ov := u.overlayFor(pageFwdDetail, ftable, "")
+	closeDetail := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape, ev.Key() == tcell.KeyEnter:
@@ -316,6 +317,5 @@ func (u *ui) showForwardDetail() {
 	// Height tracks the content so a short forward gets a snug box and a
 	// failed one grows to fit its reason.
 	lines := strings.Count(b.String(), "\n") + 1
-	pages.AddPage(pageFwdDetail, centered(tv, 66, lines+2), true, true)
-	app.SetFocus(tv)
+	ov.show(centered(tv, 66, lines+2), tv)
 }
