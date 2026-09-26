@@ -567,6 +567,7 @@ func (iv *inspectView) explainNoVersionPicker() {
 // bug this structure exists to prevent was an action that simply was not in the
 // list, which no test of the list widget would have caught.
 type serviceAction struct {
+	key   rune // the inspect key that runs it directly
 	label string
 	run   func()
 }
@@ -575,7 +576,7 @@ type serviceAction struct {
 func (iv *inspectView) serviceActions() []serviceAction {
 	u, editSvc, table := iv.u, iv.editSvc, iv.table
 	var out []serviceAction
-	add := func(label string, fn func()) { out = append(out, serviceAction{label, fn}) }
+	add := func(key rune, label string, fn func()) { out = append(out, serviceAction{key, label, fn}) }
 
 	// Changing the image version is the most ordinary service change there is,
 	// and until now it had no entry here — it was reachable only from the bare
@@ -589,29 +590,29 @@ func (iv *inspectView) serviceActions() []serviceAction {
 	// you are pinning/rolling back to one of your choosing.
 	switch {
 	case iv.upInfo != nil && iv.hasUpgrade:
-		add("update image version…", iv.openVersionPicker)
+		add('u', "update image version…", iv.openVersionPicker)
 	case iv.upInfo != nil:
-		add("set image version…", iv.openVersionPicker)
+		add('u', "set image version…", iv.openVersionPicker)
 	default:
 		// Deliberately listed rather than hidden. An absent entry is what sent
 		// the operator looking in the first place; this one answers the question
 		// instead of leaving the menu silent about it.
-		add("set image version — unavailable for this image", iv.explainNoVersionPicker)
+		add('u', "set image version — unavailable for this image", iv.explainNoVersionPicker)
 	}
-	add("diff spec (previous → current)", iv.openDiff)
-	add("roll back to the previous version", iv.openRollback)
-	add("placement diagnosis — why a task is missing", func() { u.showPlacementDiagnosis(editSvc, table) })
-	add("scale", func() { u.openScalePrompt(editSvc, table, iv.reload) })
-	add("force-update", func() { u.openForceUpdate(editSvc, table, iv.reload) })
-	add("edit ports", func() { u.openPortsEditor(editSvc, table, iv.reload) })
-	add("edit labels", func() { u.openLabelsEditor(editSvc, table, iv.reload) })
-	add("edit env", func() { u.openEnvEditor(editSvc, table, iv.reload) })
-	add("edit networks", func() { u.openNetworksEditor(editSvc, table, iv.reload) })
-	add("edit secrets", func() { u.openSecretsEditor(editSvc, table, iv.reload) })
-	add("edit mounts", func() { u.openMountsEditor(editSvc, table, iv.reload) })
-	add("edit resources", func() { u.openResourcesEditor(editSvc, table, iv.reload) })
-	add("edit placement", func() { u.openPlacementMenu(editSvc, table, iv.reload) })
-	add("[red]remove service[white]", func() {
+	add('d', "diff spec (previous → current)", iv.openDiff)
+	add('R', "roll back to the previous version", iv.openRollback)
+	add('D', "placement diagnosis — why a task is missing", func() { u.showPlacementDiagnosis(editSvc, table) })
+	add('s', "scale", func() { u.openScalePrompt(editSvc, table, iv.reload) })
+	add('f', "force-update", func() { u.openForceUpdate(editSvc, table, iv.reload) })
+	add('p', "edit ports", func() { u.openPortsEditor(editSvc, table, iv.reload) })
+	add('l', "edit labels", func() { u.openLabelsEditor(editSvc, table, iv.reload) })
+	add('e', "edit env", func() { u.openEnvEditor(editSvc, table, iv.reload) })
+	add('n', "edit networks", func() { u.openNetworksEditor(editSvc, table, iv.reload) })
+	add('S', "edit secrets", func() { u.openSecretsEditor(editSvc, table, iv.reload) })
+	add('v', "edit mounts", func() { u.openMountsEditor(editSvc, table, iv.reload) })
+	add('r', "edit resources", func() { u.openResourcesEditor(editSvc, table, iv.reload) })
+	add('P', "edit placement", func() { u.openPlacementMenu(editSvc, table, iv.reload) })
+	add('X', "[red]remove service[white]", func() {
 		u.openRemoveService(editSvc, table, func() { iv.close(); u.loadContainers() })
 	})
 	return out
@@ -630,7 +631,8 @@ func (iv *inspectView) showActions() {
 	closeActions := ov.Close
 	for _, a := range iv.serviceActions() {
 		run := a.run
-		list.AddItem(a.label, "", 0, func() { closeActions(); run() })
+		// The key in front: the menu is where an operator learns the shortcut.
+		list.AddItem(fmt.Sprintf("[yellow]%s[white]  %s", keyLabel(a.key), a.label), "", 0, func() { closeActions(); run() })
 	}
 	list.AddItem("cancel", "", 0, closeActions)
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -670,11 +672,6 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			iv.copyLine()
 		}
 		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'u':
-		// Available from any row, not just the (top) upgrade row — the hint
-		// sits at the top precisely so the operator never has to hunt for it.
-		iv.openVersionPicker()
-		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == iv.u.km.Copy:
 		iv.copyLine()
 		return nil
@@ -693,50 +690,16 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
 		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
-		iv.openDiff()
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'R':
-		iv.openRollback()
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'D':
-		u.showPlacementDiagnosis(editSvc, table)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 's':
-		u.openScalePrompt(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
-		u.openForceUpdate(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'X':
-		// Destructive: remove the service, then close inspect (it's gone)
-		// and refresh the tree.
-		u.openRemoveService(editSvc, table, func() { iv.close(); u.loadContainers() })
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'p':
-		u.openPortsEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
-		u.openLabelsEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'n':
-		u.openNetworksEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'S':
-		u.openSecretsEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'v':
-		u.openMountsEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
-		u.openEnvEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'r':
-		u.openResourcesEditor(editSvc, table, iv.reload)
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'P':
-		u.openPlacementMenu(editSvc, table, iv.reload)
-		return nil
+	}
+	// A service inspect's editor keys are the actions menu's own list, so a
+	// key and its menu entry cannot drift apart.
+	if editSvc != "" && ev.Key() == tcell.KeyRune {
+		for _, a := range iv.serviceActions() {
+			if a.key == ev.Rune() {
+				a.run()
+				return nil
+			}
+		}
 	}
 	return ev
 }

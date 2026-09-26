@@ -144,7 +144,9 @@ func TestLoadKeybinds_DialogKeysAreRefusedForQuitAndCopy(t *testing.T) {
 	}
 }
 
-var runeLiteral = regexp.MustCompile(`ev\.Rune\(\) == '(.)'|case '(.)'|ev\.Rune\(\) >= '(.)' && ev\.Rune\(\) <= '(.)'`)
+// The last alternative is the inspect view's action list (serviceActions),
+// whose keys handleKey looks up rather than comparing one by one.
+var runeLiteral = regexp.MustCompile(`ev\.Rune\(\) == '(.)'|case '(.)'|ev\.Rune\(\) >= '(.)' && ev\.Rune\(\) <= '(.)'|add\('(.)', `)
 
 // dialogRunes is a claim about the source — "these are the keys the UI
 // handles itself" — so it is checked against the source. A fixed key added to
@@ -168,7 +170,7 @@ func TestDialogRunesMatchTheSource(t *testing.T) {
 				}
 				continue
 			}
-			used[[]rune(m[1] + m[2])[0]] = true
+			used[[]rune(m[1] + m[2] + m[5])[0]] = true
 		}
 	}
 	for r := range used {
