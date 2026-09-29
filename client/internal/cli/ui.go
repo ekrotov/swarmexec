@@ -1262,8 +1262,8 @@ func footerKeys(pairs ...string) string {
 	return b.String()
 }
 
-// generic info modal. Every message is also logged (with context) so the log
-// viewer / file has a record of what the operator was shown.
+// info shows a generic info modal. Every message is also logged (with context)
+// so the log viewer / file has a record of what the operator was shown.
 func (u *ui) info(msg string) {
 	clientlog.L().Info("ui notice", "msg", msg)
 	m := tview.NewModal().SetText(msg).AddButtons([]string{"OK"})
@@ -1836,10 +1836,10 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 	return ev
 }
 
-// The toggleable log viewer (closeLogView/openLogView/toggleLogView) is an
-// overlay showing the in-memory log ring, refreshed live while open; it is
-// opened/closed with the backtick key from any tab. Its state (logViewStop /
-// logViewPrev / logViewOverlay) lives on u.
+// closeLogView closes the log viewer. The viewer (closeLogView / openLogView /
+// toggleLogView) is an overlay showing the in-memory log ring, refreshed live
+// while open; it is opened/closed with the backtick key from any tab. Its state
+// (logViewStop / logViewPrev / logViewOverlay) lives on u.
 func (u *ui) closeLogView() {
 	if u.logViewStop != nil {
 		close(u.logViewStop)
