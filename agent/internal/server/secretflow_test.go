@@ -93,18 +93,17 @@ func TestSelfSignedSecretFlow(t *testing.T) {
 	dialOnce := func(addr string, creds credentials.PerRPCCredentials) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		//lint:ignore SA1019 mirrors the client's blocking dial (client/internal/dial)
-		conn, err := grpc.DialContext(ctx, addr,
+		conn, err := grpc.NewClient("passthrough:///"+addr,
 			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})),
 			grpc.WithPerRPCCredentials(creds),
-			//lint:ignore SA1019 as above
-			grpc.WithBlock(),
 		)
 		if err != nil {
 			return err
 		}
 		defer conn.Close()
-		_, err = pb.NewAgentClient(conn).ListContainers(context.Background(), &pb.ListRequest{})
+		// WaitForReady: connect first, then call — the credential under test is
+		// computed from the connection's certificate, so it needs one.
+		_, err = pb.NewAgentClient(conn).ListContainers(ctx, &pb.ListRequest{}, grpc.WaitForReady(true))
 		return err
 	}
 

@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -19,19 +20,25 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/internal/authmeta"
+	"swarmexec/internal/pb"
 )
 
-// Dial establishes a gRPC connection to host:port, blocking until the
-// connection (including the TLS handshake) is ready or ctx expires. Blocking
-// here means a missing/untrusted cert or unreachable node fails fast with a
-// clear error instead of hanging on the first RPC (REQUIREMENTS §8, §11). ctx
-// should carry the connect timeout, not the session lifetime.
+// Dial establishes a gRPC connection to host:port and returns it READY, or an
+// error that says why not: a refused connection or a certificate the client
+// does not trust fails at once, a peer that accepts and then says nothing
+// fails when ctx expires. Reporting that here, not on the first RPC, is the
+// point (REQUIREMENTS §8, §11): doctor's per-node verdict and every "cannot
+// reach agent" message come from this call. ctx should carry the connect
+// timeout, not the session lifetime.
 func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.ClientConn, error) {
 	tlsCfg, err := loadTLS(cfg)
 	if err != nil {
@@ -47,15 +54,6 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
-		// Dial now, fail now, and with the real reason: an unreachable agent is
-		// reported at connect time, not on the first RPC. NewClient has no
-		// equivalent, so these stay until that change is made deliberately.
-		//lint:ignore SA1019 see above
-		grpc.WithBlock(),
-		//lint:ignore SA1019 see above
-		grpc.WithReturnConnectionError(),
-		//lint:ignore SA1019 see above
-		grpc.FailOnNonTempDialError(true),
 		// Keep the connection warm with periodic pings. A long, silent RPC (e.g.
 		// the disk-usage scan behind volume sizes) sends no application bytes, so
 		// over an ssh -W tunnel the idle TCP link can be dropped by the bastion/NAT
@@ -91,13 +89,70 @@ func Dial(ctx context.Context, host string, port int, cfg config.Config) (*grpc.
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	start := time.Now()
-	//lint:ignore SA1019 WithBlock needs DialContext; moving to NewClient changes when dial errors surface
-	conn, err := grpc.DialContext(ctx, addr, opts...)
+	conn, err := connect(ctx, addr, opts)
 	clientlog.Timed("dial.agent", start, err, "addr", addr)
 	if err != nil {
 		return nil, fmt.Errorf("cannot reach agent on %s (mTLS/connection error: %w)", addr, err)
 	}
 	return conn, nil
+}
+
+// connect creates the client and waits until it is ready, has failed, or ctx
+// runs out.
+//
+// "passthrough:///" keeps the name exactly as given. NewClient would otherwise
+// resolve it locally through DNS, and behind an ssh bastion the node name
+// often resolves only on the far side: the tunnel (ProxyDialer) must receive
+// the name, not an address this machine does not have.
+func connect(ctx context.Context, addr string, opts []grpc.DialOption) (*grpc.ClientConn, error) {
+	conn, err := grpc.NewClient("passthrough:///"+addr, opts...)
+	if err != nil {
+		return nil, err
+	}
+	conn.Connect()
+	for {
+		s := conn.GetState()
+		switch s {
+		case connectivity.Ready:
+			return conn, nil
+		case connectivity.TransientFailure:
+			// The first attempt failed — refused, unreachable, or a TLS
+			// handshake the client rejected. None of that improves by waiting
+			// out the timeout, so say why and stop.
+			if err := connectionError(ctx, conn); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			return conn, nil // it came up in the meantime
+		case connectivity.Shutdown:
+			return nil, errors.New("connection closed while connecting")
+		}
+		if !conn.WaitForStateChange(ctx, s) {
+			_ = conn.Close()
+			return nil, ctx.Err()
+		}
+	}
+}
+
+// probeMethod names no real RPC: it is only ever used to read the failure a
+// connection in TRANSIENT_FAILURE is holding.
+const probeMethod = "/swarmexec.v1.Agent/ConnectProbe"
+
+// connectionError returns the reason a connection in TRANSIENT_FAILURE failed.
+// gRPC keeps that reason private, but a fail-fast call on such a connection is
+// refused locally, before anything reaches the network, with exactly that
+// reason as its status message ("connection error: desc = ..."). If the
+// connection became ready in the meantime the call does go out and comes back
+// Unimplemented — which means there is no error to report.
+func connectionError(ctx context.Context, conn *grpc.ClientConn) error {
+	err := conn.Invoke(ctx, probeMethod, &pb.VersionRequest{}, &pb.VersionResponse{})
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Unavailable {
+		return errors.New(st.Message())
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return nil
 }
 
 func loadTLS(cfg config.Config) (*tls.Config, error) {
