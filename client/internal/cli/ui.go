@@ -1489,7 +1489,7 @@ func (u *ui) showHelp() {
 
 	sec("Stacks/Services")
 	line("Enter", "expand a service · open a container's menu")
-	line(kl(km.Logs), "logs (service or container)")
+	line(kl(km.Logs), "logs (container, service, or a whole stack)")
 	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
 	line(kl(km.Forward), "port-forward the task under the cursor")
