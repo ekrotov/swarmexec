@@ -42,6 +42,7 @@ var argContract = map[string][]int{
 	"swarmexec ui":              {0, 1},
 	"swarmexec volume ls":       {0, 1},
 	"swarmexec volume rm":       {1},
+	"swarmexec wait":            {1, 2, 3}, // every service is waited for; 0 only with --stack
 }
 
 func TestEveryCommandTakesTheArgumentsItUses(t *testing.T) {

@@ -545,6 +545,39 @@
         </tbody>
       </table></div>
 
+      <h3 id="wait"><code>wait</code> — hasta que un despliegue haya convergido de verdad</h3>
+      <p>
+        <code>stack deploy</code> vuelve cuando swarm ha <em>aceptado</em> el cambio, no
+        cuando funciona. <code>wait</code> cierra ese hueco para un pipeline: bloquea hasta
+        que cada servicio indicado — o cada servicio de <code>--stack</code> — ha convergido,
+        y sale con <strong>0</strong>; con <strong>1</strong> y el motivo cuando alguno no.
+      </p>
+      <div class="cmd">swarmexec stack deploy shop.yml --yes &amp;&amp; swarmexec wait --stack shop --timeout 3m
+swarmexec wait api worker --healthy</div>
+      <p>
+        <strong>Convergido</strong> significa sin actualización en curso y tantas tareas
+        en ejecución como las deseadas (para un job: sus finalizaciones alcanzadas),
+        mantenido durante dos consultas separadas unos segundos — así que incluso un servicio
+        estable tarda unos segundos, y el instante justo después de un despliegue, antes de
+        que el manager haya empezado la actualización, no puede pasar por terminado. Dos
+        estados que parecen asentados son <strong>fallos</strong>: una actualización
+        <em>pausada</em> (el servicio ejecuta una mezcla de tareas viejas y nuevas) y un
+        rollback completado durante la espera (ejecuta la especificación anterior — el
+        despliegue no prosperó). Al agotar el tiempo se imprime por qué una tarea no se
+        ejecuta, normalmente el propio mensaje del scheduler. Con <code>--healthy</code> cada
+        contenedor con healthcheck debe además estar sano; un nodo cuyo agente no puede
+        informar la salud cuenta como <em>todavía no</em>, nunca como sano. swarmexec solo
+        observa e informa — nunca hace rollback ni reintenta.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Por defecto</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr><td><code>--stack</code></td><td>—</td><td>espera a cada servicio de este stack (además de los indicados)</td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>rendirse tras este tiempo (salida 1)</td></tr>
+          <tr><td><code>--healthy</code></td><td><code>false</code></td><td>exigir además contenedores sanos (pregunta a los agentes)</td></tr>
+        </tbody>
+      </table></div>
+
       <h3><code>doctor</code> — diagnosticar el swarm</h3>
       <p>
         Comprueba la conexión con el manager, si el servicio del agente está desplegado, y

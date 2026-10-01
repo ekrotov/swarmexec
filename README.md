@@ -364,6 +364,13 @@ swarmexec ps                 # all running tasks across the swarm
 swarmexec ps <service>       # filter to one service
 ```
 
+Wait until a deploy has actually converged — for CI (exit 0, or 1 with the reason):
+
+```sh
+swarmexec stack deploy shop.yml --yes && swarmexec wait --stack shop --timeout 3m
+swarmexec wait api worker --healthy   # also require healthy containers
+```
+
 Stream logs — of one container, several, every replica of a service, or a
 whole stack:
 

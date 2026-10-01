@@ -134,6 +134,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newInitCmd(g))
 	root.AddCommand(newDownCmd(g))
 	root.AddCommand(newDoctorCmd(g))
+	root.AddCommand(newWaitCmd(g))
 	root.AddCommand(newConfigCmd(g))
 	root.AddCommand(newContextCmd(g))
 	root.AddCommand(newExecCmd(g))
