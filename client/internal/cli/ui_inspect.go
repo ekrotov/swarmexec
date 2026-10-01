@@ -385,6 +385,7 @@ func (iv *inspectView) copyLine() {
 }
 
 func (iv *inspectView) close() {
+	iv.u.onUsage = nil
 	if iv.ov != nil {
 		iv.ov.Close()
 	}
@@ -712,6 +713,11 @@ func (iv *inspectView) open() {
 	table.SetSelectionChangedFunc(func(int, int) { iv.setFooter("") })
 	table.SetInputCapture(iv.handleKey)
 	iv.ov = u.overlayFor(pageInspect, u.ctree, iv.keysText())
+	u.onUsage = func() {
+		if iv.mode == inspModeStats {
+			iv.populate()
+		}
+	}
 	iv.setHelp = iv.ov.setHelp
 	iv.populate() // shows "loading…"
 	iv.ov.show(centered(iv.frame, 110, 40), table)
@@ -803,6 +809,15 @@ func (iv *inspectView) statsLines() []statsRow {
 		default:
 			rows = append(rows, statsRow{text: text, color: tcell.ColorWhite})
 		}
+	}
+
+	if hist := historyRows(cands, u.usageHist); len(hist) > 0 {
+		blank()
+		head("LAST MINUTES")
+		for _, h := range hist {
+			rows = append(rows, statsRow{text: h, color: tcell.ColorWhite})
+		}
+		dim("  share of each container's limit (or its node), oldest left; a blank is no reading, not zero")
 	}
 
 	blank()
@@ -919,4 +934,38 @@ func (s statsSubject) containers(all []resolve.Candidate) []resolve.Candidate {
 		}
 	}
 	return out
+}
+
+// historyWidth is how many samples a sparkline shows: at the 10 s poll about
+// five minutes, at the slow 30 s poll the whole window.
+const historyWidth = 30
+
+// historyRows renders one line per container that has history: its name, then
+// a cpu and a memory sparkline over the same span.
+func historyRows(cands []resolve.Candidate, hist map[string]*usageRing) []string {
+	var out []string
+	width := 0
+	for _, c := range cands {
+		width = max(width, len(candidateLabel(c)))
+	}
+	for _, c := range cands {
+		r := hist[c.ContainerID]
+		if r == nil || len(r.samples) < 2 {
+			continue
+		}
+		mins := max(1, int(spanOf(r.samples, historyWidth).Round(time.Minute).Minutes()))
+		out = append(out, fmt.Sprintf("  %-*s  cpu %-*s  mem %-*s  %s",
+			width, candidateLabel(c),
+			historyWidth, sparkline(r.samples, historyWidth, func(s usageSample) float64 { return s.cpu }),
+			historyWidth, sparkline(r.samples, historyWidth, func(s usageSample) float64 { return s.mem }),
+			fmt.Sprintf("last %d min", mins)))
+	}
+	return out
+}
+
+func candidateLabel(c resolve.Candidate) string {
+	if c.Slot > 0 {
+		return fmt.Sprintf("%s.%d", orDash(c.Service), c.Slot)
+	}
+	return shortID(c.ContainerID)
 }

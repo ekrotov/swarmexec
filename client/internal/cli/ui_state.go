@@ -164,6 +164,11 @@ type ui struct {
 	overlayMu sync.Mutex
 	overlays  map[string]bool
 
+	// onUsage, when set, is told after every usage pass, on the main loop.
+	// The inspect view sets it while open so its STATS view follows the
+	// readings instead of freezing on the ones it opened with.
+	onUsage func()
+
 	// switching guards the window between asking for a cluster and having it:
 	// the connect runs off the UI goroutine, and a second switch started in the
 	// meantime would race the first into the swap.

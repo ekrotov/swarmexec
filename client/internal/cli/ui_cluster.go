@@ -114,6 +114,7 @@ type clusterState struct {
 
 	// live resource usage, from this cluster's node agents
 	usage     map[string]containerUsage
+	usageHist map[string]*usageRing // the last minutes of usage per container
 	leafBase  map[string]string
 	nodeUse   map[string]nodeUsage
 	usageBusy atomic.Bool

@@ -1595,6 +1595,19 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         <code>no reading</code> zamiast zera, które czytałoby się jak „bezczynny”.
       </p>
       <p>
+        <strong>Ostatnie minuty.</strong> Pod tabelą każdy kontener dostaje dwie sparkline,
+        CPU i pamięć, z ostatnich odczytów — tak odróżnisz usługę, która <em>stoi</em> na
+        90%, od takiej, która właśnie <em>skoczyła</em> do 90%. Obie używają stałej skali
+        0–100% tego samego mianownika co tabela, żeby dwa kontenery dało się porównać, a
+        bezczynny pozostał płaski. Historia jest tylko w pamięci, najwyżej 15 minut, a
+        odczyty napływają dalej, gdy widok jest otwarty. <strong>Przerwa</strong> to okres bez
+        odczytów — węzeł, który nie odpowiedział, klaster, na który nie patrzyłeś — nigdy
+        spadek do zera.
+      </p>
+      <div class="cmd"><span class="k">LAST MINUTES</span>
+  gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
+<span style="color:#8b949e">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+      <p>
         Przypis pod tabelą nazywa <strong>mianownik</strong>: własny limit kontenera, jeśli
         go ma, a w przeciwnym razie pojemność węzła. To dopiero nadaje procentowi sens — 85%
         limitu 8&nbsp;GiB i 85% węzła o 64&nbsp;GiB to dwie różne rozmowy. Pamięć jest w

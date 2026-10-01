@@ -631,13 +631,12 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // just leaving the badges off.
 func (u *ui) loadUsage() {
 	ctx, cfg := u.ctx, u.cfg
-	// Pause while an overlay is open, exactly as the tree refresh does. The log
-	// view is the case that matters: it is the one overlay under constant
-	// redraw, and a usage pass ends in remarkUsage walking the whole tree on the
-	// main loop — competing with the log stream for the loop that also handles
-	// keystrokes. Nobody is looking at the tree's badges from inside an overlay
-	// anyway.
-	if u.anyOverlayOpen() || !u.usageBusy.CompareAndSwap(false, true) {
+	// Fetched even while an overlay is open: the inspect STATS view shows these
+	// readings and promises to refresh, and the history must not have a hole
+	// for every minute someone spends in a dialog. The fan-out runs off the
+	// main loop; what an overlay must not pay for is remarkUsage's walk of the
+	// whole tree, so only that waits until the tree is on screen again.
+	if !u.usageBusy.CompareAndSwap(false, true) {
 		return
 	}
 	gen := u.generation()
@@ -655,10 +654,17 @@ func (u *ui) loadUsage() {
 			return
 		}
 		u.onCluster(gen, func() {
-			if u.overlayOpen() {
-				return // an overlay opened while we were fanning out
-			}
 			u.usage, u.nodeUse = byContainer, byNode
+			if u.usageHist == nil {
+				u.usageHist = map[string]*usageRing{}
+			}
+			recordUsage(u.usageHist, time.Now(), byContainer)
+			if u.onUsage != nil {
+				u.onUsage()
+			}
+			if u.overlayOpen() {
+				return // the badges catch up when the tree is back
+			}
 			// Re-mark rather than rebuild: the readings only change row text, and
 			// rebuilding would fight the operator's cursor and fold state.
 			u.remarkUsage()
