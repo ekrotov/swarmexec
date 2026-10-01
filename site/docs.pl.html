@@ -534,6 +534,7 @@
           <tr><td><code>--force</code></td><td><code>false</code></td><td>zaktualizuj usługę, jeśli już istnieje</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akceptuje surowy sekret od klientów sprzed uwierzytelniania związanego z połączeniem; ustaw <code>=false</code>, gdy wszyscy klienci są zaktualizowani</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publikuj metryki Prometheus agenta na tym porcie hosta (<code>0</code> = wyłączone) — zob. <a href="#monitoring">monitorowanie agentów</a></td></tr>
+          <tr><td><code>--policy-file</code></td><td>—</td><td>plik reguł autoryzacji dla agentów, sprawdzany przed jakimkolwiek wdrożeniem — zob. <a href="#policy">polityka autoryzacji</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>zapisz konfigurację klienta</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>przekaż lokalne poświadczenia rejestru, żeby węzły mogły pobrać prywatny obraz</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>poczekaj, aż agenci wstaną, i raportuj postęp</td></tr>
@@ -833,6 +834,48 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         dashboard Grafany (<code>grafana-dashboard.json</code>, zaimportuj i wybierz swój
         Prometheus).
       </p>
+
+      <h3 id="policy">Polityka autoryzacji</h3>
+      <p>
+        Domyślnie agent przepuszcza każde żądanie, które przeszło uwierzytelnienie. Plik
+        reguł to zawęża: które <strong>akcje</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>; działają wzorce jak
+        <code>volume.*</code>) dla jakich <strong>usług</strong>, <strong>portów</strong>,
+        <strong>użytkowników</strong> exec i — tylko z certyfikatami klienta —
+        <strong>tożsamości</strong> operatorów. W regule muszą być spełnione wszystkie warunki;
+        decyduje pierwsza pasująca reguła, a <code>default</code> (wymagane) obejmuje resztę.
+      </p>
+      <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
+default: allow
+rules:
+  - deny: [image.prune.all]
+    reason: no sweeping prune on production
+  - deny: [portforward]
+    ports: [5432, 3306]
+    reason: no forwards to the databases
+  - deny: [exec]
+    users: [root, "0", "0:0"]
+  - deny: ["volume.*"]
+    services: ["prod_*"]</div>
+      <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
+      <p>
+        Odmowa dociera do klienta jako <em>permission denied</em> z regułą i jej powodem, a
+        ten sam tekst trafia do logu audytu. <code>init</code> sprawdza plik przed
+        jakimkolwiek wdrożeniem, a agent nie startuje z plikiem, którego nie potrafi
+        odczytać: nieznana akcja, literówka w kluczu czy zepsuty wzorzec to błąd, nigdy
+        reguła, która po cichu niczego nie trafia. Reguły na <code>identities</code> są
+        odrzucane, dopóki agenci używają wspólnego sekretu bez certyfikatów klienta —
+        tożsamość jest wtedy tym, co klient twierdzi. Exec bez <code>-u</code> działa jako
+        użytkownik obrazu, którego agent nie widzi; trafia go <code>users: [""]</code>. Zmień
+        plik i uruchom ponownie <code>init --force</code>; bez tej opcji polityka znika.
+      </p>
+      <div class="note">
+        <strong>Czym to nie jest.</strong> Polityka zapobiega <em>pomyłkom</em> i zapisuje
+        intencję — żadnego pełnego prune na produkcji, żadnego forwardu na bazę danych. Nie
+        jest kontrolą dostępu: wszystko, co swarmexec zmienia w usługach, sekretach, sieciach
+        i stackach, idzie do <em>managera</em> swarma z twoimi własnymi danymi Dockera i nigdy
+        nie przechodzi przez agenta, a kto je ma, może wdrożyć usługę z rootem na każdym
+        węźle. Do tego ogranicz dane dostępowe Dockera.
+      </div>
 
       <h3 id="reroll">Ponowne wdrożenie agentów bez zmiany sekretu</h3>
       <p>

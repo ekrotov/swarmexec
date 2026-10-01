@@ -260,12 +260,13 @@ review, then broke `swarmexec init` against every cluster.
 | Docker endpoint flag value | `unix:///var/run/docker.sock` | `deploy.SocketURL` |
 | Object label | `swarmexec.role` = `agent` / `port-forward` | `deploy.RoleLabel`, `deploy.RoleAgent`, `deploy.RoleForward` |
 | Default port | 9443 | `deploy.DefaultPort` |
+| Policy file in the container | `/run/configs/swarmexec_policy.yaml` (a Docker config `swarmexec_agent_policy_<hash>`) | `deploy.PolicyPath` |
 
 - The deployed command line is `deploy.AgentArgs`, and the agent registers those
   flags from the same `deploy.Flag*` constants. The flags in that set —
   `-port`, `-self-signed`, `-agent-secret-file`, `-docker-host`,
   `-drain-timeout`, `-log-format`, `-audit-dest`, `-allow-legacy-secret`,
-  `-metrics-addr` — are
+  `-metrics-addr`, `-policy-file` — are
   part of this contract and MUST NOT be renamed or repurposed on one side alone.
   Every other agent flag is the agent's own interface and carries no such
   promise.

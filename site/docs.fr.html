@@ -555,6 +555,7 @@
           <tr><td><code>--force</code></td><td><code>false</code></td><td>met à jour le service s'il existe déjà</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accepte le secret brut des clients antérieurs à l'authentification liée à la connexion ; passez <code>=false</code> une fois tous les clients à jour</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publie les métriques Prometheus de l'agent sur ce port de l'hôte (<code>0</code> = désactivé) — voir <a href="#monitoring">surveiller les agents</a></td></tr>
+          <tr><td><code>--policy-file</code></td><td>—</td><td>fichier de règles d'autorisation pour les agents, vérifié avant tout déploiement — voir <a href="#policy">politique d'autorisation</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>écrit la configuration client</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>transmet les identifiants de registre locaux pour que les nœuds puissent récupérer une image privée</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>attend que les agents démarrent et signale la progression</td></tr>
@@ -864,6 +865,51 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
         répond pas — et un tableau de bord Grafana (<code>grafana-dashboard.json</code>, à
         importer en choisissant votre Prometheus).
       </p>
+
+      <h3 id="policy">Politique d'autorisation</h3>
+      <p>
+        Par défaut, un agent autorise toute requête passée par l'authentification. Un
+        fichier de règles restreint cela : quelles <strong>actions</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code> ; les
+        motifs comme <code>volume.*</code> fonctionnent) pour quels <strong>services</strong>,
+        <strong>ports</strong>, <strong>utilisateurs</strong> exec et — avec des certificats
+        client seulement — <strong>identités</strong> d'opérateur. Dans une règle, toutes les
+        conditions doivent être vraies ; la première règle qui correspond décide, et
+        <code>default</code> (obligatoire) couvre le reste.
+      </p>
+      <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
+default: allow
+rules:
+  - deny: [image.prune.all]
+    reason: no sweeping prune on production
+  - deny: [portforward]
+    ports: [5432, 3306]
+    reason: no forwards to the databases
+  - deny: [exec]
+    users: [root, "0", "0:0"]
+  - deny: ["volume.*"]
+    services: ["prod_*"]</div>
+      <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
+      <p>
+        Un refus parvient au client comme <em>permission denied</em> avec la règle et sa
+        raison, et le même texte va dans le journal d'audit. <code>init</code> vérifie le
+        fichier avant tout déploiement, et l'agent refuse de démarrer avec un fichier qu'il
+        ne peut pas lire : une action inconnue, une clé mal orthographiée ou un motif cassé
+        est une erreur, jamais une règle qui ne correspond silencieusement à rien. Les règles
+        sur <code>identities</code> sont refusées tant que les agents utilisent un secret
+        partagé sans certificats client — l'identité est alors ce que le client affirme. Un
+        exec sans <code>-u</code> tourne avec l'utilisateur de l'image, que l'agent ne voit
+        pas ; <code>users: [""]</code> le couvre. Modifiez le fichier et relancez
+        <code>init --force</code> ; sans l'option, la politique disparaît.
+      </p>
+      <div class="note">
+        <strong>Ce que ce n'est pas.</strong> Une politique évite les <em>accidents</em> et
+        consigne l'intention — pas de prune total en production, pas de forward vers la base
+        de données. Ce n'est pas un contrôle d'accès : tout ce que swarmexec modifie sur les
+        services, secrets, réseaux et stacks part vers le <em>manager</em> du swarm avec vos
+        propres identifiants Docker sans passer par un agent, et qui les détient peut
+        déployer un service root sur chaque nœud. Restreignez pour cela les identifiants
+        Docker.
+      </div>
 
       <h3 id="reroll">Redéployer les agents sans changer le secret</h3>
       <p>

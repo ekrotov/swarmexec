@@ -39,6 +39,10 @@ const (
 	// client mounts the secret under this name, and the agent is told to read
 	// exactly this path.
 	SecretName = "swarmexec_agent_secret"
+
+	// PolicyPath is where `init --policy-file` mounts the rule file, as a
+	// Docker config, and where the agent is told to read it.
+	PolicyPath = "/run/configs/swarmexec_policy.yaml"
 	SecretPath = "/run/secrets/" + SecretName
 
 	// SocketPath is the Docker socket the client bind-mounts into the agent, and
@@ -73,6 +77,7 @@ const (
 	FlagAuditDest         = "audit-dest"
 	FlagAllowLegacySecret = "allow-legacy-secret"
 	FlagMetricsAddr       = "metrics-addr"
+	FlagPolicyFile        = "policy-file"
 )
 
 // DrainTimeout is the graceful-shutdown window a deployed agent gets. Written
@@ -92,6 +97,10 @@ type AgentOptions struct {
 	// that port. Zero writes nothing, so a deployment without metrics keeps the
 	// command line earlier versions produced.
 	MetricsPort int
+	// Policy, when set, points the agent at the rule file mounted at
+	// PolicyPath. Unset writes nothing: the agent then allows every
+	// authenticated request, as it always has.
+	Policy bool
 }
 
 // AgentArgs is the agent's command line as `swarmexec init` deploys it.
@@ -114,6 +123,9 @@ func AgentArgs(o AgentOptions) []string {
 	}
 	if o.MetricsPort > 0 {
 		args = append(args, fmt.Sprintf("-%s=:%d", FlagMetricsAddr, o.MetricsPort))
+	}
+	if o.Policy {
+		args = append(args, "-"+FlagPolicyFile+"="+PolicyPath)
 	}
 	return args
 }
