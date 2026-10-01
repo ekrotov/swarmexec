@@ -35,7 +35,7 @@ USER root
 COPY site/nginx.conf /etc/nginx/conf.d/default.conf
 # Glob covers every language variant (index.de.html, docs.fr.html, datenschutz.es.html, releases.fr.html, …).
 # releases.sample.json is a dev fixture and is deliberately NOT matched by any glob here.
-COPY site/index*.html site/docs*.html site/datenschutz*.html site/releases*.html site/robots.txt site/sitemap.xml \
+COPY site/index*.html site/docs*.html site/datenschutz*.html site/releases*.html site/robots.txt site/sitemap.xml site/install.sh \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png \
      site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif /usr/share/nginx/html/
 # Build-time-generated release data (same-origin fetch target for releases*.html).

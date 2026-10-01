@@ -219,6 +219,15 @@
         live resource usage and the per-node image view need <strong>Docker 23.0</strong>
         (API 1.41/1.42); below that they stay empty and say so instead of failing.
       </p>
+      <p>
+        <strong>Quickest:</strong> the install script picks the build for your machine,
+        checks it against the release's <code>SHA256SUMS</code> and refuses to install
+        anything it could not verify. It never uses <code>sudo</code> and never edits your
+        shell profile — <a href="/install.sh">read it first</a>, it is short.
+      </p>
+      <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+<span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># a specific release</span></div>
+      <p>Or by hand:</p>
       <p>The client is a single static binary. Grab the latest release build for your platform:</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64

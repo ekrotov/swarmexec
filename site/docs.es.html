@@ -220,6 +220,15 @@
         la vista de imágenes por nodo necesitan <strong>Docker 23.0</strong> (API 1.41/1.42);
         por debajo quedan vacías y lo dicen, en vez de fallar.
       </p>
+      <p>
+        <strong>Lo más rápido:</strong> el script de instalación elige el binario para tu
+        máquina, lo comprueba con el <code>SHA256SUMS</code> del release y se niega a instalar
+        nada que no haya podido verificar. Nunca usa <code>sudo</code> ni toca tu perfil de
+        shell — <a href="/install.sh">léelo antes</a>, es corto.
+      </p>
+      <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+<span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># un release concreto</span></div>
+      <p>O a mano:</p>
       <p>El cliente es un único binario estático. Descarga el build de la última versión para tu plataforma:</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64
