@@ -8,9 +8,8 @@
 # <base-url> is the directory holding the release's binaries, e.g.
 # https://gitlab.logle.io/api/v4/projects/242/packages/generic/swarmexec/v1.19.2
 #
-# It only WRITES the two files. Publishing them needs a tap repository (Homebrew)
-# and a bucket repository (Scoop) plus a token that may push there; that is a
-# decision about public infrastructure and is deliberately not made here.
+# It only WRITES the two files; ci/publish-packages.sh pushes them to the tap
+# and the bucket (the publish-packages CI job), when those are configured.
 set -eu
 
 tag=$1
