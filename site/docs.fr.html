@@ -2129,6 +2129,7 @@ rules:
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>affiche les métadonnées du secret et les services/conteneurs qui l'utilisent</td></tr>
+          <tr><td><kbd>d</kbd></td><td>dans la liste des secrets : <strong>supprime</strong> le secret sélectionné — le retire définitivement (un <code>SecretRemove</code>), après confirmation ; irréversible. Docker refuse de supprimer un secret encore référencé par un service, la confirmation <strong>avertit donc s'il est utilisé</strong> et liste ces services (détachez-le d'abord là-bas). À ne pas confondre avec le <kbd>d</kbd> <em>dans</em> la vue de détail, qui détache le secret d'un service</td></tr>
           <tr><td><kbd>a</kbd></td><td>dans la vue de détail : attache le secret à un service — un champ d'autocomplétion (suggérant les services qui ne l'utilisent pas déjà ; vous pouvez aussi taper n'importe quel nom), puis une confirmation de mise à jour progressive</td></tr>
           <tr><td><kbd>d</kbd></td><td>dans la vue de détail : détache le secret d'un service — un champ d'autocomplétion (suggérant les services qui l'utilisent actuellement ; vous pouvez aussi taper n'importe quel nom), puis une confirmation de mise à jour progressive</td></tr>
         </tbody>

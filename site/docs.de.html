@@ -2096,6 +2096,7 @@ rules:
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>die Metadaten des Secrets und die Services/Container zeigen, die es verwenden</td></tr>
+          <tr><td><kbd>d</kbd></td><td>in der Secret-Liste: das ausgewählte Secret <strong>löschen</strong> — entfernt es dauerhaft (ein <code>SecretRemove</code>), hinter einer Bestätigung; nicht rückgängig zu machen. Docker verweigert das Entfernen eines Secrets, das noch ein Service referenziert, deshalb <strong>warnt die Bestätigung, wenn es verwendet wird</strong>, und nennt diese Services (dort zuerst lösen). Nicht zu verwechseln mit dem <kbd>d</kbd> <em>in</em> der Detailansicht, das das Secret von einem Service löst</td></tr>
           <tr><td><kbd>a</kbd></td><td>in der Detailansicht: das Secret an einen Service anhängen — eine Autocomplete-Eingabe (schlägt Services vor, die es noch nicht verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
           <tr><td><kbd>d</kbd></td><td>in der Detailansicht: das Secret von einem Service trennen — eine Autocomplete-Eingabe (schlägt Services vor, die es aktuell verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
         </tbody>

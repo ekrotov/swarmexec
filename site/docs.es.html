@@ -2057,6 +2057,7 @@ rules:
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>muestra los metadatos del secreto y los servicios/contenedores que lo usan</td></tr>
+          <tr><td><kbd>d</kbd></td><td>en la lista de secretos: <strong>elimina</strong> el secreto seleccionado — lo borra definitivamente (un <code>SecretRemove</code>), tras una confirmación; no se puede deshacer. Docker se niega a eliminar un secreto que todavía referencia un servicio, así que la confirmación <strong>avisa si está en uso</strong> y lista esos servicios (desvincúlalo allí primero). No confundir con la <kbd>d</kbd> <em>dentro</em> de la vista de detalle, que desvincula el secreto de un servicio</td></tr>
           <tr><td><kbd>a</kbd></td><td>en la vista de detalle: adjunta el secreto a un servicio — una entrada con autocompletado (sugiriendo servicios que aún no lo usan; también puedes escribir cualquier nombre), luego una confirmación de actualización progresiva</td></tr>
           <tr><td><kbd>d</kbd></td><td>en la vista de detalle: desvincula el secreto de un servicio — una entrada con autocompletado (sugiriendo servicios que actualmente lo usan; también puedes escribir cualquier nombre), luego una confirmación de actualización progresiva</td></tr>
         </tbody>
