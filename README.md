@@ -316,6 +316,14 @@ curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v
 Or put a build from `./bin/swarmexec` on your `PATH`. For mTLS, have your
 `ca.crt`, `operator.crt`, `operator.key` available locally.
 
+Shell completion (completes service names, slots, stacks and contexts — it asks
+only the manager, gives up after two seconds, and never prompts over ssh):
+
+```sh
+swarmexec completion bash > ~/.local/share/bash-completion/completions/swarmexec
+swarmexec completion zsh  > "${fpath[1]}/_swarmexec"
+```
+
 ### Step 4.2 — Point the cli at a Swarm manager
 
 The cli queries the **manager API** to resolve a target to a node. It uses your

@@ -244,6 +244,20 @@
         <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><code>logleio/swarmexec-agent</code></a>.
       </p>
 
+      <h3 id="completion">Uzupełnianie w powłoce</h3>
+      <p>
+        <code>swarmexec completion bash|zsh|fish|powershell</code> wypisuje skrypt
+        uzupełniania. Uzupełnia więcej niż flagi: <code>exec &lt;TAB&gt;</code> podpowiada
+        istniejące usługi, <code>logs web.&lt;TAB&gt;</code> ich działające sloty,
+        <code>--stack &lt;TAB&gt;</code> wdrożone stacki, a <code>--context &lt;TAB&gt;</code>
+        twoje konteksty Dockera. Pytane jest tylko API managera, nigdy agent; uzupełnianie
+        poddaje się po dwóch sekundach i przez <code>ssh://</code> nigdy nie może o nic pytać —
+        kontekst, który wymagałby hasła, nie podpowiada wtedy nic zamiast zamrozić powłokę.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec completion bash &gt; /etc/bash_completion.d/swarmexec      <span class="o"># albo ~/.local/share/bash-completion/completions/</span>
+<span class="c">$</span> swarmexec completion zsh &gt; "${fpath[1]}/_swarmexec"
+<span class="c">$</span> swarmexec completion fish &gt; ~/.config/fish/completions/swarmexec.fish</div>
+
       <!-- 3 -->
       <h2 id="quickstart">3. Szybki start</h2>
       <p>

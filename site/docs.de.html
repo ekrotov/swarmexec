@@ -247,6 +247,21 @@
         <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><code>logleio/swarmexec-agent</code></a> verfügbar.
       </p>
 
+      <h3 id="completion">Shell-Completion</h3>
+      <p>
+        <code>swarmexec completion bash|zsh|fish|powershell</code> gibt ein
+        Completion-Skript aus. Es ergänzt mehr als Flags: <code>exec &lt;TAB&gt;</code> bietet
+        die vorhandenen Services an, <code>logs web.&lt;TAB&gt;</code> deren laufende Slots,
+        <code>--stack &lt;TAB&gt;</code> die deployten Stacks und <code>--context &lt;TAB&gt;</code>
+        Ihre Docker-Contexts. Gefragt wird nur die Manager-API, nie ein Agent; eine Completion
+        gibt nach zwei Sekunden auf und darf über <code>ssh://</code> nie nachfragen — ein
+        Context, der ein Passwort verlangen würde, bietet dann nichts an, statt die Shell
+        einzufrieren.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec completion bash &gt; /etc/bash_completion.d/swarmexec      <span class="o"># oder ~/.local/share/bash-completion/completions/</span>
+<span class="c">$</span> swarmexec completion zsh &gt; "${fpath[1]}/_swarmexec"
+<span class="c">$</span> swarmexec completion fish &gt; ~/.config/fish/completions/swarmexec.fish</div>
+
       <!-- 3 -->
       <h2 id="quickstart">3. Schnellstart</h2>
       <p>
