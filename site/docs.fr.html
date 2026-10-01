@@ -1769,6 +1769,19 @@ rules:
         d'un zéro, qui se lirait comme « au repos ».
       </p>
       <p>
+        <strong>Les dernières minutes.</strong> Sous le tableau, chaque conteneur reçoit
+        deux sparklines, CPU et mémoire, sur les derniers relevés — pour distinguer un service
+        qui <em>reste</em> à 90 % d'un autre qui vient de <em>grimper</em> à 90 %. Les deux
+        utilisent une échelle fixe de 0–100 % du même dénominateur que le tableau, afin que
+        deux conteneurs se comparent et qu'un conteneur au repos reste plat. L'historique ne
+        vit qu'en mémoire, 15 minutes au plus, et les relevés continuent d'arriver pendant que
+        la vue est ouverte. Un <strong>blanc</strong> est une période sans relevé — un nœud
+        qui n'a pas répondu, un cluster que vous ne regardiez pas —, jamais une chute à zéro.
+      </p>
+      <div class="cmd"><span class="k">LAST MINUTES</span>
+  gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
+<span style="color:#8b949e">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+      <p>
         La note sous le tableau nomme le <strong>dénominateur</strong> : la limite propre du
         conteneur lorsqu'il en a une, la capacité du nœud sinon. C'est cela qui donne un sens
         à un pourcentage — 85 % d'une limite de 8&nbsp;Gio et 85 % d'un nœud de 64&nbsp;Gio

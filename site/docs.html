@@ -1649,6 +1649,19 @@ rules:
         columns rather than a zero, which would read as idle.
       </p>
       <p>
+        <strong>The last minutes.</strong> Under the table each container gets two
+        sparklines, CPU and memory, over the last readings — so you can tell a service that
+        <em>stands</em> at 90% from one that just <em>shot up</em> to 90%. Both use a fixed
+        0–100% scale of the same denominator as the table, so two containers' lines compare
+        and an idle one stays flat. The history is kept in memory only, for at most
+        15 minutes, and readings keep arriving while the view is open. A
+        <strong>blank</strong> is a stretch without readings — a node that did not answer, a
+        cluster you were not looking at — never a drop to zero.
+      </p>
+      <div class="cmd"><span class="k">LAST MINUTES</span>
+  gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
+<span style="color:#8b949e">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+      <p>
         The footnote under the table names the <strong>denominator</strong>: the container's
         own limit where it has one, otherwise the node's capacity. That is the thing that
         makes a percentage mean something — 85% of an 8&nbsp;GiB limit and 85% of a 64&nbsp;GiB

@@ -1743,6 +1743,20 @@ rules:
         statt einer Null, die sich wie „im Leerlauf“ läse.
       </p>
       <p>
+        <strong>Die letzten Minuten.</strong> Unter der Tabelle bekommt jeder Container zwei
+        Sparklines, CPU und Speicher, über die letzten Messungen — so unterscheiden Sie
+        einen Service, der bei 90% <em>steht</em>, von einem, der gerade auf 90%
+        <em>hochgeschossen</em> ist. Beide nutzen eine feste Skala von 0–100% desselben
+        Nenners wie die Tabelle, damit zwei Container vergleichbar sind und ein ruhiger flach
+        bleibt. Der Verlauf liegt nur im Speicher, höchstens 15 Minuten, und die Messungen
+        laufen weiter, während die Ansicht offen ist. Eine <strong>Lücke</strong> ist eine
+        Strecke ohne Messung — ein Knoten, der nicht antwortete, ein Cluster, den Sie gerade
+        nicht ansahen —, nie ein Abfall auf null.
+      </p>
+      <div class="cmd"><span class="k">LAST MINUTES</span>
+  gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
+<span style="color:#8b949e">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+      <p>
         Die Fußnote unter der Tabelle benennt den <strong>Nenner</strong>: das eigene Limit
         des Containers, wenn er eins hat, sonst die Kapazität des Nodes. Genau das macht
         einen Prozentwert erst aussagekräftig — 85 % eines 8-GiB-Limits und 85 % eines

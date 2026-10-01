@@ -1719,6 +1719,19 @@ rules:
         un cero, que se leería como «ocioso».
       </p>
       <p>
+        <strong>Los últimos minutos.</strong> Bajo la tabla cada contenedor recibe dos
+        sparklines, CPU y memoria, sobre las últimas lecturas — así distingues un servicio
+        que <em>está</em> en el 90% de uno que acaba de <em>dispararse</em> al 90%. Ambas usan
+        una escala fija de 0–100% del mismo denominador que la tabla, para que dos
+        contenedores se comparen y uno inactivo quede plano. El historial solo vive en
+        memoria, como mucho 15 minutos, y las lecturas siguen llegando con la vista abierta.
+        Un <strong>hueco</strong> es un tramo sin lecturas — un nodo que no respondió, un
+        clúster que no estabas mirando —, nunca una caída a cero.
+      </p>
+      <div class="cmd"><span class="k">LAST MINUTES</span>
+  gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
+<span style="color:#8b949e">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+      <p>
         La nota al pie bajo la tabla nombra el <strong>denominador</strong>: el propio
         límite del contenedor cuando lo tiene, y si no la capacidad del nodo. Eso es lo que
         hace que un porcentaje signifique algo — el 85 % de un límite de 8&nbsp;GiB y el
