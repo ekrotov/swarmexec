@@ -672,6 +672,22 @@ swarmexec stack diff postgres.yml postgres</div>
           <tr><td><code>stack diff &lt;plik&gt; [stack]</code></td><td>porównuje plik z wdrożonym stackiem. Nazwa stacka domyślnie pochodzi od nazwy pliku bez rozszerzenia; <code>--stack</code> albo drugi argument ją nadpisuje. Kończy się kodem <strong>1</strong> przy każdej różnicy</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Jako bramka w pipeline.</strong> Uruchamiany co noc <code>stack diff</code>
+        odpowiada na pytanie „czy klaster wciąż zgadza się z Gitem?”: kod
+        <strong>0</strong> oznacza brak różnic, <strong>1</strong> różnicę, <strong>2</strong>
+        błąd użycia, <strong>125</strong> nieosiągalny manager. Bramka, która czerwienieje
+        przy każdej nieszkodliwej zmianie, zostaje wyłączona, dlatego <code>--ignore</code>
+        usuwa pole z <em>obu</em> stron — <code>services.*.deploy.replicas</code> dla liczby,
+        którą zmienia autoskaler, z <code>*</code> dla dowolnej nazwy usługi; powtórz dla
+        kilku ścieżek. Każda ignorowana ścieżka jest wypisana w <em>Not compared</em>, by
+        zielony wynik nadal mówił, czego nie sprawdził, a ścieżka, która po żadnej stronie
+        niczego nie trafia, jest zgłaszana — literówka na liście ignorowanych inaczej po
+        cichu niczego nie ignoruje. <code>--format json</code> wypisuje postać dla maszyn:
+        <code>differs</code>, hunki, <code>ignored</code> i <code>not_compared</code>.
+      </p>
+      <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
+swarmexec stack diff shop.yml --format json | jq .differs</div>
 
       <h3 id="stackdeploy"><code>stack deploy</code> — wdrożenie pliku stacka, po sprawdzeniu</h3>
       <p>
@@ -2175,6 +2191,7 @@ forward_stop: d  forward_copy_url: o</div>
         <thead><tr><th>Kod</th><th>Znaczenie</th></tr></thead>
         <tbody>
           <tr><td><code>0</code></td><td>sukces</td></tr>
+          <tr><td><code>1</code></td><td>stack diff znalazł różnicę (a <code>--format json</code> i tak ją wypisał)</td></tr>
           <tr><td><code>2</code></td><td>błąd użycia / flagi / konfiguracji albo przerwany wybór interaktywny</td></tr>
           <tr><td><code>125</code></td><td>awaria transportu — nieosiągalny menedżer albo agent, błąd połączenia/TLS, błąd strumienia, przerwane potwierdzenie (odzwierciedla <code>125</code> Dockera)</td></tr>
           <tr><td><code>N</code></td><td>dla <code>exec</code> — niezerowy kod wyjścia zdalnego polecenia, przekazany dosłownie</td></tr>

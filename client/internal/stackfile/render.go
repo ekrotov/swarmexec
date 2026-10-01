@@ -20,7 +20,50 @@ import (
 // noise that changes on each run.
 func (s *Stack) YAML() (string, error) { return s.render(false) }
 
+// YAMLWithout renders the stack like YAML, minus every field one of the paths
+// names, and reports which paths matched nothing. See pruneNode for the syntax.
+func (s *Stack) YAMLWithout(paths []string) (string, []string, error) {
+	var unmatched []string
+	out, err := s.renderPruned(false, func(root *yaml.Node) {
+		for _, p := range paths {
+			if pruneNode(root, strings.Split(p, ".")) == 0 {
+				unmatched = append(unmatched, p)
+			}
+		}
+	})
+	return out, unmatched, err
+}
+
 func (s *Stack) render(escapeDollars bool) (string, error) {
+	return s.renderPruned(escapeDollars, nil)
+}
+
+// pruneNode deletes every mapping entry the path names under n and returns how
+// many it deleted. Segments are mapping keys separated by dots; "*" matches any
+// key, so "services.*.deploy.replicas" ignores every service's replica count.
+func pruneNode(n *yaml.Node, path []string) int {
+	if n == nil || n.Kind != yaml.MappingNode || len(path) == 0 {
+		return 0
+	}
+	deleted := 0
+	for i := 0; i+1 < len(n.Content); {
+		key, val := n.Content[i], n.Content[i+1]
+		if path[0] != "*" && path[0] != key.Value {
+			i += 2
+			continue
+		}
+		if len(path) == 1 {
+			n.Content = append(n.Content[:i], n.Content[i+2:]...)
+			deleted++
+			continue
+		}
+		deleted += pruneNode(val, path[1:])
+		i += 2
+	}
+	return deleted
+}
+
+func (s *Stack) renderPruned(escapeDollars bool, prune func(*yaml.Node)) (string, error) {
 	root := mapping()
 	put(root, "services", mapOf(s.Services, func(v *Service) (*yaml.Node, error) { return node(v) }))
 	if len(s.Networks) > 0 {
@@ -38,6 +81,9 @@ func (s *Stack) render(escapeDollars bool) (string, error) {
 
 	if escapeDollars {
 		escapeInterpolation(root, false)
+	}
+	if prune != nil {
+		prune(root)
 	}
 
 	var b bytes.Buffer

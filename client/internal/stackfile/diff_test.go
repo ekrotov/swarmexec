@@ -4,6 +4,7 @@
 package stackfile
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -175,5 +176,102 @@ func TestDocumentCarriesItsNotes(t *testing.T) {
 	}
 	if !strings.Contains(doc, "# Secrets are declared external") {
 		t.Errorf("the notes must be in the file, not only on the terminal:\n%s", doc)
+	}
+}
+
+func replicas(n uint64) *Deploy { return &Deploy{Replicas: &n} }
+
+// An autoscaler moves the replica count; a gate that goes red on that every
+// night gets switched off. --ignore leaves the field out of BOTH sides, with a
+// wildcard for the service name, and says that it did.
+func TestIgnoreLeavesAFieldOutOfBothSides(t *testing.T) {
+	deployed := stackOf(map[string]*Service{
+		"web": {Image: "nginx:1.27", Deploy: replicas(5)},
+		"api": {Image: "api:2", Deploy: replicas(3)},
+	})
+	file := stackOf(map[string]*Service{
+		"web": {Image: "nginx:1.27", Deploy: replicas(2)},
+		"api": {Image: "api:2", Deploy: replicas(1)},
+	})
+
+	if d, _ := Compare(deployed, file, "s.yml"); d.Empty() {
+		t.Fatal("without --ignore the replica counts must differ")
+	}
+	d, err := Compare(deployed, file, "s.yml", "services.*.deploy.replicas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Empty() {
+		t.Errorf("with the replicas ignored nothing should differ:\n%s", d.Text())
+	}
+	if !strings.Contains(d.Text(), "services.*.deploy.replicas (ignored with --ignore)") {
+		t.Errorf("a clean result must name what it ignored:\n%s", d.Text())
+	}
+}
+
+// Ignoring one service's field leaves the others compared.
+func TestIgnoreIsExactWithoutAWildcard(t *testing.T) {
+	deployed := stackOf(map[string]*Service{"web": {Deploy: replicas(5)}, "api": {Deploy: replicas(3)}})
+	file := stackOf(map[string]*Service{"web": {Deploy: replicas(2)}, "api": {Deploy: replicas(1)}})
+	d, err := Compare(deployed, file, "s.yml", "services.web.deploy.replicas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Empty() || !strings.Contains(d.Text(), "replicas: 1") {
+		t.Errorf("api's replicas must still be compared:\n%s", d.Text())
+	}
+}
+
+// A typo in an ignore list ignores nothing, silently — unless it is reported.
+func TestIgnoreThatMatchesNothingIsReported(t *testing.T) {
+	s := func() *Stack { return stackOf(map[string]*Service{"web": {Image: "nginx"}}) }
+	d, err := Compare(s(), s(), "s.yml", "services.*.deploy.replica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(d.Text(), "--ignore services.*.deploy.replica matched nothing on either side") {
+		t.Errorf("an unmatched path must be named:\n%s", d.Text())
+	}
+}
+
+func TestDiffJSONIsTheMachineForm(t *testing.T) {
+	deployed := stackOf(map[string]*Service{"web": {Image: "nginx:1.25"}})
+	file := stackOf(map[string]*Service{"web": {Image: "nginx:1.27"}})
+	d, err := Compare(deployed, file, "web.yml", "services.*.deploy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		File        string   `json:"file"`
+		Differs     bool     `json:"differs"`
+		Ignored     []string `json:"ignored"`
+		NotCompared []string `json:"not_compared"`
+		Hunks       []struct {
+			Lines []struct{ Op, Text string } `json:"lines"`
+		} `json:"hunks"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, b)
+	}
+	if got.File != "web.yml" || !got.Differs || len(got.Ignored) != 1 || len(got.Hunks) != 1 {
+		t.Errorf("unexpected document:\n%s", b)
+	}
+	var plus bool
+	for _, l := range got.Hunks[0].Lines {
+		plus = plus || (l.Op == "+" && strings.Contains(l.Text, "nginx:1.27"))
+	}
+	if !plus {
+		t.Errorf("the addition is missing:\n%s", b)
+	}
+
+	// No difference is still a document, with an empty hunk list, not null.
+	same, _ := Compare(file, file, "web.yml")
+	b, _ = same.JSON()
+	if !strings.Contains(string(b), `"differs": false`) || !strings.Contains(string(b), `"hunks": []`) {
+		t.Errorf("an empty diff must still be well-formed:\n%s", b)
 	}
 }

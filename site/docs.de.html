@@ -690,6 +690,23 @@ swarmexec stack diff postgres.yml postgres</div>
           <tr><td><code>stack diff &lt;datei&gt; [stack]</code></td><td>eine Datei mit dem deployten Stack vergleichen. Der Stack-Name ist standardmäßig der Dateiname ohne Endung; <code>--stack</code> oder ein zweites Argument überschreibt ihn. Endet bei jedem Unterschied mit <strong>1</strong></td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Als Pipeline-Prüfung.</strong> Nächtlich ausgeführt beantwortet
+        <code>stack diff</code> die Frage „stimmt der Cluster noch mit Git überein?“:
+        Exit <strong>0</strong> heißt kein Unterschied, <strong>1</strong> ein Unterschied,
+        <strong>2</strong> ein Bedienfehler, <strong>125</strong> ein nicht erreichbarer
+        Manager. Eine Prüfung, die bei jeder harmlosen Änderung rot wird, wird
+        abgeschaltet; deshalb nimmt <code>--ignore</code> ein Feld aus <em>beiden</em> Seiten
+        heraus — <code>services.*.deploy.replicas</code> für eine Anzahl, die ein Autoscaler
+        verändert, mit <code>*</code> für jeden Servicenamen; für mehrere Pfade wiederholen.
+        Jeder ignorierte Pfad steht unter <em>Not compared</em>, damit auch ein grünes
+        Ergebnis sagt, was es nicht angesehen hat, und ein Pfad, der auf keiner Seite etwas
+        trifft, wird ausdrücklich gemeldet — ein Tippfehler in der Ignorierliste ignoriert
+        sonst still nichts. <code>--format json</code> gibt die maschinenlesbare Form aus:
+        <code>differs</code>, die Hunks, <code>ignored</code> und <code>not_compared</code>.
+      </p>
+      <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
+swarmexec stack diff shop.yml --format json | jq .differs</div>
 
       <h3 id="stackdeploy"><code>stack deploy</code> — eine Stack-Datei einspielen, nach Prüfung</h3>
       <p>
@@ -2242,6 +2259,7 @@ forward_stop: d  forward_copy_url: o</div>
         <thead><tr><th>Code</th><th>Bedeutung</th></tr></thead>
         <tbody>
           <tr><td><code>0</code></td><td>Erfolg</td></tr>
+          <tr><td><code>1</code></td><td>stack diff hat einen Unterschied gefunden (mit <code>--format json</code> wurde er trotzdem ausgegeben)</td></tr>
           <tr><td><code>2</code></td><td>Nutzungs-/Flag-/Konfigurationsfehler oder eine abgebrochene interaktive Auswahl</td></tr>
           <tr><td><code>125</code></td><td>Transportfehler — nicht erreichbarer Manager oder Agent, Dial-/TLS-Fehler, Stream-Fehler, abgebrochene Bestätigung (spiegelt Dockers <code>125</code>)</td></tr>
           <tr><td><code>N</code></td><td>bei <code>exec</code> der eigene Exit-Code des Remote-Befehls ungleich null, unverändert weitergegeben</td></tr>

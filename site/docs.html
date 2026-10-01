@@ -663,6 +663,22 @@ swarmexec stack diff postgres.yml postgres</div>
           <tr><td><code>stack diff &lt;file&gt; [stack]</code></td><td>compare a file against the deployed stack. The stack name defaults to the file's base name; <code>--stack</code> or a second argument overrides it. Exits <strong>1</strong> on any difference</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>As a pipeline gate.</strong> Run nightly, <code>stack diff</code> answers
+        “does the cluster still match Git?”: exit <strong>0</strong> means no difference,
+        <strong>1</strong> a difference, <strong>2</strong> a usage error, <strong>125</strong>
+        an unreachable manager. A gate that goes red on every harmless change gets
+        switched off, so <code>--ignore</code> leaves a field out of <em>both</em> sides —
+        <code>services.*.deploy.replicas</code> for a count an autoscaler moves, with
+        <code>*</code> for any service name; repeat it for several paths. Every ignored path
+        is listed under <em>Not compared</em>, so a green result still says what it did not
+        look at, and a path that matched nothing on either side is called out, because a
+        typo in an ignore list otherwise ignores nothing, silently.
+        <code>--format json</code> prints the machine form: <code>differs</code>, the hunks,
+        <code>ignored</code> and <code>not_compared</code>.
+      </p>
+      <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
+swarmexec stack diff shop.yml --format json | jq .differs</div>
 
       <h3 id="stackdeploy"><code>stack deploy</code> — apply a stack file, after checking it</h3>
       <p>
@@ -2123,6 +2139,7 @@ forward_stop: d  forward_copy_url: o</div>
         <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td><code>0</code></td><td>success</td></tr>
+          <tr><td><code>1</code></td><td>stack diff found a difference (and <code>--format json</code> still printed it)</td></tr>
           <tr><td><code>2</code></td><td>usage / flag / configuration error, or an aborted interactive selection</td></tr>
           <tr><td><code>125</code></td><td>transport failure — unreachable manager or agent, dial/TLS error, stream error, aborted confirmation (mirrors Docker's <code>125</code>)</td></tr>
           <tr><td><code>N</code></td><td>for <code>exec</code>, the remote command's own non-zero exit code, propagated verbatim</td></tr>
