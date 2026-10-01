@@ -6,7 +6,9 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +34,7 @@ import (
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
 	"swarmexec/internal/deploy"
+	"swarmexec/internal/policy"
 )
 
 // The deployment vocabulary lives in internal/deploy, which the agent imports
@@ -71,6 +74,7 @@ type initFlags struct {
 	force          bool
 	allowLegacy    bool
 	metricsPort    int
+	policyFile     string
 	saveConfig     bool
 	registryAuth   bool
 	wait           bool
@@ -105,6 +109,8 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 		"accept the raw shared secret from clients predating connection-bound auth; pass=false once all clients are upgraded")
 	fl.IntVar(&f.metricsPort, "metrics-port", 0,
 		"publish the agent's Prometheus metrics on this host port (0 = off); plain HTTP, counts only")
+	fl.StringVar(&f.policyFile, "policy-file", "",
+		"authorization rule file for the agents (YAML, checked before deploying); without it every authenticated request is allowed")
 	fl.BoolVar(&f.saveConfig, "save-config", true, "write the client config (~/.config/swarmexec/config.yaml)")
 	fl.BoolVar(&f.registryAuth, "registry-auth", true, "pass local registry credentials so nodes can pull a private image")
 	fl.BoolVar(&f.wait, "wait", true, "wait for the agents to come up and report progress")
@@ -139,6 +145,22 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	}
 
 	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
+
+	// Pre-flight: a policy that the agents would refuse must fail HERE, on this
+	// machine, not as an agent that will not start on every node. The agents
+	// init deploys use a shared secret and no client CA, so they cannot verify
+	// identities — checked exactly as they will check it.
+	var policyData []byte
+	if f.policyFile != "" {
+		b, err := os.ReadFile(f.policyFile)
+		if err != nil {
+			return &cliError{code: usageExitCode, err: fmt.Errorf("read --policy-file: %w", err)}
+		}
+		if _, err := policy.Parse(b, false); err != nil {
+			return &cliError{code: usageExitCode, err: fmt.Errorf("--policy-file %s: %w", f.policyFile, err)}
+		}
+		policyData = b
+	}
 
 	// Pre-flight: fail fast on a host-port conflict before creating anything.
 	if f.metricsPort == f.port {
@@ -189,7 +211,19 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 
 	// [2/3] agent service --------------------------------------------------------
 	step(2, fmt.Sprintf("agent service on port %d", f.port))
+	var policyRef *swarm.ConfigReference
+	if policyData != nil {
+		ref, err := ensurePolicyConfig(ctx, dcli, policyData)
+		if err != nil {
+			fmt.Fprintln(out, "failed")
+			return &cliError{code: session.TransportFailure, err: err}
+		}
+		policyRef = ref
+	}
 	spec := agentServiceSpec(f, secretID)
+	if policyRef != nil {
+		spec.TaskTemplate.ContainerSpec.Configs = []*swarm.ConfigReference{policyRef}
+	}
 	var encodedAuth string
 	if f.registryAuth {
 		auth, aerr := encodedRegistryAuth(f.image)
@@ -425,6 +459,42 @@ func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith str
 	return resp.ID, true, nil
 }
 
+// policyConfigPrefix names the Docker configs holding agent policies. Configs
+// are immutable, so each distinct policy is its own config, named by its
+// content hash: re-running init with the same file reuses it, a changed file
+// becomes a new one, and the service update points the agents at it.
+const policyConfigPrefix = "swarmexec_agent_policy_"
+
+func ensurePolicyConfig(ctx context.Context, dcli *client.Client, data []byte) (*swarm.ConfigReference, error) {
+	sum := sha256.Sum256(data)
+	name := policyConfigPrefix + hex.EncodeToString(sum[:])[:12]
+	list, err := dcli.ConfigList(ctx, types.ConfigListOptions{Filters: filters.NewArgs(filters.Arg("name", name))})
+	if err != nil {
+		return nil, fmt.Errorf("list configs: %w", err)
+	}
+	id := ""
+	for _, c := range list {
+		if c.Spec.Name == name {
+			id = c.ID
+		}
+	}
+	if id == "" {
+		resp, err := dcli.ConfigCreate(ctx, swarm.ConfigSpec{
+			Annotations: swarm.Annotations{Name: name, Labels: map[string]string{agentRoleLabel: agentRoleValue}},
+			Data:        data,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create policy config: %w", err)
+		}
+		id = resp.ID
+	}
+	return &swarm.ConfigReference{
+		ConfigID:   id,
+		ConfigName: name,
+		File:       &swarm.ConfigReferenceFileTarget{Name: deploy.PolicyPath, UID: "0", GID: "0", Mode: 0o444},
+	}, nil
+}
+
 // agentServiceSpec is the service `swarmexec init` deploys.
 //
 // It is the same agent as agent/deploy/agent-stack-selfsigned.yml provisions,
@@ -433,7 +503,7 @@ func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith str
 // from internal/deploy, which the agent parses its flags from — see there for
 // why that is not decoration.
 func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
-	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy, MetricsPort: f.metricsPort})
+	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy, MetricsPort: f.metricsPort, Policy: f.policyFile != ""})
 	ports := []swarm.PortConfig{{
 		Protocol:      swarm.PortConfigProtocolTCP,
 		TargetPort:    uint32(f.port),

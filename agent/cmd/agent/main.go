@@ -153,7 +153,21 @@ func run(args []string) error {
 	// (self-signed without a client CA); otherwise the cert CN is mandatory.
 	secretAuthIdentity := cfg.SelfSigned && cfg.CACert == ""
 
-	srv := server.New(dockerCli, auth.AllowAll{}, auditLog, log, sink, server.Options{
+	// Authorization: allow every authenticated request unless a rule file is
+	// given. A file that does not parse stops the agent here — an agent that
+	// started with "no policy" because its policy had a typo would be the
+	// worst outcome of all.
+	var authz auth.Authorizer = auth.AllowAll{}
+	if cfg.PolicyFile != "" {
+		p, err := auth.LoadPolicy(cfg.PolicyFile, identityVerified)
+		if err != nil {
+			return err
+		}
+		authz = p
+		log.Info("authorization policy loaded", "file", cfg.PolicyFile)
+	}
+
+	srv := server.New(dockerCli, authz, auditLog, log, sink, server.Options{
 		IdleTimeout:        cfg.IdleTimeout,
 		MaxSessionTime:     cfg.MaxSessionTime,
 		SecretAuth:         secretAuthIdentity,

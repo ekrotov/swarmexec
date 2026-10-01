@@ -75,3 +75,15 @@ func TestAgentArgsWritesMetricsOnlyWhenAsked(t *testing.T) {
 		t.Errorf("last arg = %q, want -metrics-addr=:9464", got)
 	}
 }
+
+// The policy flag and the mount path are two halves of one fact, like the
+// secret's: init mounts the config at PolicyPath, the agent reads that path.
+func TestAgentArgsPointsAtThePolicyOnlyWhenOneIsDeployed(t *testing.T) {
+	if s := strings.Join(AgentArgs(AgentOptions{Port: 9443, AllowLegacySecret: true}), " "); strings.Contains(s, FlagPolicyFile) {
+		t.Errorf("no policy must write nothing: %q", s)
+	}
+	a := AgentArgs(AgentOptions{Port: 9443, AllowLegacySecret: true, Policy: true})
+	if got := a[len(a)-1]; got != "-policy-file="+PolicyPath {
+		t.Errorf("last arg = %q", got)
+	}
+}

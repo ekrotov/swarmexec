@@ -90,3 +90,13 @@ func TestDeployedMetricsPortReachesTheMetricsListener(t *testing.T) {
 		t.Errorf("metrics addr = %q, want :9464", c.MetricsAddr)
 	}
 }
+
+func TestDeployedPolicyFlagReachesTheConfig(t *testing.T) {
+	c, err := Parse(deploy.AgentArgs(deploy.AgentOptions{Port: 9443, Policy: true}), io.Discard)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if c.PolicyFile != deploy.PolicyPath {
+		t.Errorf("policy file = %q, want %q", c.PolicyFile, deploy.PolicyPath)
+	}
+}

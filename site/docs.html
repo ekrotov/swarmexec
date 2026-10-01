@@ -507,6 +507,7 @@
           <tr><td><code>--force</code></td><td><code>false</code></td><td>update the service if it already exists</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accept the raw shared secret from clients predating connection-bound auth; pass <code>=false</code> once every client is upgraded</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publish the agent's Prometheus metrics on this host port (<code>0</code> = off) — see <a href="#monitoring">monitoring the agents</a></td></tr>
+          <tr><td><code>--policy-file</code></td><td>—</td><td>authorization rule file for the agents, checked before anything is deployed — see <a href="#policy">authorization policy</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>write the client config</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>pass local registry credentials so nodes can pull a private image</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>wait for the agents to come up and report progress</td></tr>
@@ -748,6 +749,48 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         than 30 minutes, cap refusals, an agent not answering — and a Grafana dashboard
         (<code>grafana-dashboard.json</code>, import and pick your Prometheus).
       </p>
+
+      <h3 id="policy">Authorization policy</h3>
+      <p>
+        By default an agent allows every request that passed authentication. A rule file
+        narrows that: which <strong>actions</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>; globs like
+        <code>volume.*</code> work) for which <strong>services</strong>, <strong>ports</strong>,
+        exec <strong>users</strong> and — with client certificates only — operator
+        <strong>identities</strong>. Within a rule every condition must hold; the first rule
+        that matches decides, and <code>default</code> (required) covers the rest.
+      </p>
+      <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
+default: allow
+rules:
+  - deny: [image.prune.all]
+    reason: no sweeping prune on production
+  - deny: [portforward]
+    ports: [5432, 3306]
+    reason: no forwards to the databases
+  - deny: [exec]
+    users: [root, "0", "0:0"]
+  - deny: ["volume.*"]
+    services: ["prod_*"]</div>
+      <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
+      <p>
+        A refusal reaches the client as <em>permission denied</em> with the rule and its
+        reason, and the same text lands in the audit log. <code>init</code> checks the file
+        before deploying anything, and the agent refuses to start on one it cannot read:
+        an unknown action, a misspelt key or a broken pattern is an error, never a rule that
+        silently matches nothing. Rules on <code>identities</code> are refused while the
+        agents use a shared secret without client certificates — the identity is then
+        whatever the client claims. An exec without <code>-u</code> runs as the image's
+        user, which the agent cannot see; <code>users: [""]</code> matches it. Change the
+        file and re-run <code>init --force</code>; run it without the flag to drop the policy.
+      </p>
+      <div class="note">
+        <strong>What this is not.</strong> A policy prevents <em>accidents</em> and records
+        intent — no sweeping prune on production, no forward onto the database. It is not
+        access control: everything swarmexec changes on services, secrets, networks and
+        stacks goes to the swarm <em>manager</em> with your own Docker credentials and never
+        passes an agent, and whoever holds those can deploy a service that is root on every
+        node. Restrict the Docker credentials for that.
+      </div>
 
       <h3 id="reroll">Re-rolling the agents without changing the secret</h3>
       <p>

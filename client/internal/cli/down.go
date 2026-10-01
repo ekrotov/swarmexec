@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -87,8 +88,40 @@ func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
 		}
 	}
 
+	// Policy configs exist only for the agent; with it gone they are inert.
+	// A config still held by a draining task is left for later, not an error.
+	if n, err := removePolicyConfigs(ctx, dcli); err != nil {
+		fmt.Fprintf(out, "policy configs: not all removed (%v) — `docker config ls` shows what is left\n", err)
+	} else if n > 0 {
+		fmt.Fprintf(out, "policy configs: %d removed\n", n)
+	}
+
 	fmt.Fprintln(out, "\n✓ done")
 	return nil
+}
+
+func removePolicyConfigs(ctx context.Context, dcli *client.Client) (int, error) {
+	list, err := dcli.ConfigList(ctx, types.ConfigListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
+	})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	var firstErr error
+	for _, c := range list {
+		if !strings.HasPrefix(c.Spec.Name, policyConfigPrefix) {
+			continue
+		}
+		if err := dcli.ConfigRemove(ctx, c.ID); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		n++
+	}
+	return n, firstErr
 }
 
 // findRemovableAgent locates the agent service by name, falling back to the

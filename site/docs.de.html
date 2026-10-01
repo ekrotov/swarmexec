@@ -524,6 +524,7 @@
           <tr><td><code>--force</code></td><td><code>false</code></td><td>den Service aktualisieren, falls er bereits existiert</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akzeptiert das rohe Secret von Clients vor der verbindungsgebundenen Authentifizierung; <code>=false</code> setzen, sobald alle Clients aktuell sind</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>Prometheus-Metriken des Agents auf diesem Host-Port veröffentlichen (<code>0</code> = aus) — siehe <a href="#monitoring">Agents überwachen</a></td></tr>
+          <tr><td><code>--policy-file</code></td><td>—</td><td>Autorisierungs-Regeldatei für die Agents, geprüft, bevor etwas ausgerollt wird — siehe <a href="#policy">Autorisierungs-Policy</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>die Client-Konfiguration schreiben</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>lokale Registry-Anmeldedaten weitergeben, damit Nodes ein privates Image pullen können</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>warten, bis die Agents hochkommen, und Fortschritt melden</td></tr>
@@ -779,6 +780,51 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         antwortet — und ein Grafana-Dashboard (<code>grafana-dashboard.json</code>,
         importieren und Prometheus auswählen).
       </p>
+
+      <h3 id="policy">Autorisierungs-Policy</h3>
+      <p>
+        Standardmäßig erlaubt ein Agent jede Anfrage, die die Authentifizierung bestanden
+        hat. Eine Regeldatei schränkt das ein: welche <strong>Aktionen</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>;
+        Muster wie <code>volume.*</code> gehen) für welche <strong>Services</strong>,
+        <strong>Ports</strong>, Exec-<strong>User</strong> und — nur mit Client-Zertifikaten —
+        Operator-<strong>Identitäten</strong>. Innerhalb einer Regel müssen alle Bedingungen
+        zutreffen; die erste passende Regel entscheidet, <code>default</code> (Pflicht) deckt
+        den Rest ab.
+      </p>
+      <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
+default: allow
+rules:
+  - deny: [image.prune.all]
+    reason: no sweeping prune on production
+  - deny: [portforward]
+    ports: [5432, 3306]
+    reason: no forwards to the databases
+  - deny: [exec]
+    users: [root, "0", "0:0"]
+  - deny: ["volume.*"]
+    services: ["prod_*"]</div>
+      <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
+      <p>
+        Eine Ablehnung erreicht den Client als <em>permission denied</em> mit der Regel und
+        ihrem Grund, und derselbe Text landet im Audit-Log. <code>init</code> prüft die
+        Datei, bevor etwas ausgerollt wird, und der Agent startet mit einer unlesbaren
+        Datei nicht: eine unbekannte Aktion, ein falsch geschriebener Schlüssel oder ein
+        kaputtes Muster ist ein Fehler, nie eine Regel, die still nichts trifft. Regeln auf
+        <code>identities</code> werden abgelehnt, solange die Agents ein Shared Secret ohne
+        Client-Zertifikate nutzen — die Identität ist dann, was der Client behauptet. Ein
+        Exec ohne <code>-u</code> läuft als User des Images, den der Agent nicht sieht;
+        <code>users: [""]</code> trifft ihn. Datei ändern und <code>init --force</code>
+        erneut ausführen; ohne das Flag entfällt die Policy wieder.
+      </p>
+      <div class="note">
+        <strong>Was das nicht ist.</strong> Eine Policy verhindert <em>Versehen</em> und
+        dokumentiert Absicht — kein Rundumschlag beim Image-Prune auf Produktion, kein
+        Forward auf die Datenbank. Zugriffskontrolle ist sie nicht: Alles, was swarmexec an
+        Services, Secrets, Netzwerken und Stacks ändert, geht mit Ihren eigenen
+        Docker-Zugangsdaten an den Swarm-<em>Manager</em> und nie über einen Agent, und wer
+        diese hat, kann einen Service ausrollen, der auf jedem Knoten root ist. Dafür
+        schränken Sie die Docker-Zugangsdaten ein.
+      </div>
 
       <h3 id="reroll">Agents neu ausrollen, ohne das Secret zu ändern</h3>
       <p>
