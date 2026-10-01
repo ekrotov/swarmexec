@@ -506,6 +506,7 @@
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>host port the agent publishes</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>update the service if it already exists</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accept the raw shared secret from clients predating connection-bound auth; pass <code>=false</code> once every client is upgraded</td></tr>
+          <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publish the agent's Prometheus metrics on this host port (<code>0</code> = off) — see <a href="#monitoring">monitoring the agents</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>write the client config</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>pass local registry credentials so nodes can pull a private image</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>wait for the agents to come up and report progress</td></tr>
@@ -718,6 +719,34 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         secret's value is immutable in swarm, so changing one means creating a new one
         under a new name. If a deploy does fail partway, what had already been applied is
         reported alongside the error rather than left to be guessed at.
+      </p>
+
+      <h3 id="monitoring">Monitoring the agents</h3>
+      <p>
+        Every agent can serve Prometheus metrics. They are <strong>off</strong> by default;
+        <code>swarmexec init --force --metrics-port 9464</code> turns them on: the agent
+        listens on that port and publishes it in host mode on every node, like the agent
+        port, so Prometheus reaches each node's agent at <code>&lt;node&gt;:9464</code>. The
+        endpoint is plain HTTP and carries <strong>counts only</strong> — no names, ids or
+        payload — but publish it only where your scraper can reach it.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Metric</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec_agent_info{version,protocol}</code></td><td>constant <code>1</code>; compare it across nodes to see version skew</td></tr>
+          <tr><td><code>swarmexec_active_sessions</code></td><td>exec sessions open right now</td></tr>
+          <tr><td><code>swarmexec_sessions_total</code></td><td>exec sessions started</td></tr>
+          <tr><td><code>swarmexec_auth_denials_total</code></td><td>requests the authorizer refused — the one signal that makes an attempt visible</td></tr>
+          <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>requests refused at a node cap (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
+          <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>bytes forwarded to containers / to clients</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The repository ships what goes around it, in <code>agent/deploy/monitoring/</code>:
+        a scrape config (Prometheus' own Docker Swarm discovery, or static targets), four
+        alert rules — authorization denials rising, agents on different versions for more
+        than 30 minutes, cap refusals, an agent not answering — and a Grafana dashboard
+        (<code>grafana-dashboard.json</code>, import and pick your Prometheus).
       </p>
 
       <h3 id="reroll">Re-rolling the agents without changing the secret</h3>

@@ -53,6 +53,10 @@ type limiter struct {
 	max  int64
 	what string // named in the error, so the operator knows which knob to raise
 	flag string // the flag that raises it
+
+	// refused, when set, is told about every refusal — the metric that makes a
+	// node running into its cap visible before an operator reports it.
+	refused func()
 }
 
 func newLimiter(max int, what, flag string) *limiter {
@@ -71,6 +75,9 @@ func (l *limiter) acquire() (func(), error) {
 	}
 	if n := l.cur.Add(1); n > l.max {
 		l.cur.Add(-1)
+		if l.refused != nil {
+			l.refused()
+		}
 		return nil, status.Errorf(codes.ResourceExhausted,
 			"too many concurrent %s on this node (limit %d); retry shortly or raise %s",
 			l.what, l.max, l.flag)

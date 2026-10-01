@@ -31,12 +31,22 @@ import (
 type testMetrics struct {
 	started, ended, denied atomic.Int64
 	in, out                atomic.Int64
+	refusedStreams         atomic.Int64
+	refusedSidecars        atomic.Int64
 }
 
 func (m *testMetrics) SessionStarted()             { m.started.Add(1) }
 func (m *testMetrics) SessionEnded()               { m.ended.Add(1) }
 func (m *testMetrics) AuthDenied()                 { m.denied.Add(1) }
 func (m *testMetrics) BytesTransferred(i, o int64) { m.in.Add(i); m.out.Add(o) }
+func (m *testMetrics) LimitRefused(limit string) {
+	switch limit {
+	case "streams":
+		m.refusedStreams.Add(1)
+	case "forward_sidecars":
+		m.refusedSidecars.Add(1)
+	}
+}
 
 // denyAuth always denies.
 type denyAuth struct{}

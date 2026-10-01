@@ -70,6 +70,7 @@ type initFlags struct {
 	port           int
 	force          bool
 	allowLegacy    bool
+	metricsPort    int
 	saveConfig     bool
 	registryAuth   bool
 	wait           bool
@@ -102,6 +103,8 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 	// agent should stop accepting the raw secret at all.
 	fl.BoolVar(&f.allowLegacy, "allow-legacy-secret", true,
 		"accept the raw shared secret from clients predating connection-bound auth; pass=false once all clients are upgraded")
+	fl.IntVar(&f.metricsPort, "metrics-port", 0,
+		"publish the agent's Prometheus metrics on this host port (0 = off); plain HTTP, counts only")
 	fl.BoolVar(&f.saveConfig, "save-config", true, "write the client config (~/.config/swarmexec/config.yaml)")
 	fl.BoolVar(&f.registryAuth, "registry-auth", true, "pass local registry credentials so nodes can pull a private image")
 	fl.BoolVar(&f.wait, "wait", true, "wait for the agents to come up and report progress")
@@ -138,10 +141,19 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
 
 	// Pre-flight: fail fast on a host-port conflict before creating anything.
+	if f.metricsPort == f.port {
+		return &cliError{code: usageExitCode, err: fmt.Errorf("--metrics-port %d is the agent port; pick another", f.metricsPort)}
+	}
 	if other, ok := portConflict(ctx, dcli, f.port, f.serviceName); ok {
 		return &cliError{code: usageExitCode, err: fmt.Errorf(
 			"host port %d is already published by service %q — remove it (`docker service rm %s`, or `swarmexec down` if it's an old swarmexec agent) or pick another --port",
 			f.port, other, other)}
+	}
+	if f.metricsPort > 0 {
+		if other, ok := portConflict(ctx, dcli, f.metricsPort, f.serviceName); ok {
+			return &cliError{code: usageExitCode, err: fmt.Errorf(
+				"host port %d is already published by service %q — pick another --metrics-port", f.metricsPort, other)}
+		}
 	}
 
 	// [1/3] shared secret --------------------------------------------------------
@@ -421,7 +433,23 @@ func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith str
 // from internal/deploy, which the agent parses its flags from — see there for
 // why that is not decoration.
 func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
-	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy})
+	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy, MetricsPort: f.metricsPort})
+	ports := []swarm.PortConfig{{
+		Protocol:      swarm.PortConfigProtocolTCP,
+		TargetPort:    uint32(f.port),
+		PublishedPort: uint32(f.port),
+		PublishMode:   swarm.PortConfigPublishModeHost,
+	}}
+	if f.metricsPort > 0 {
+		// Host mode like the agent port: there is no overlay network to scrape
+		// over, so Prometheus reaches each node's agent at <node>:<port>.
+		ports = append(ports, swarm.PortConfig{
+			Protocol:      swarm.PortConfigProtocolTCP,
+			TargetPort:    uint32(f.metricsPort),
+			PublishedPort: uint32(f.metricsPort),
+			PublishMode:   swarm.PortConfigPublishModeHost,
+		})
+	}
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
 			Name:   f.serviceName,
@@ -451,14 +479,7 @@ func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 				}},
 			},
 		},
-		EndpointSpec: &swarm.EndpointSpec{
-			Ports: []swarm.PortConfig{{
-				Protocol:      swarm.PortConfigProtocolTCP,
-				TargetPort:    uint32(f.port),
-				PublishedPort: uint32(f.port),
-				PublishMode:   swarm.PortConfigPublishModeHost,
-			}},
-		},
+		EndpointSpec: &swarm.EndpointSpec{Ports: ports},
 	}
 }
 

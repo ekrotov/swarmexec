@@ -264,13 +264,17 @@ review, then broke `swarmexec init` against every cluster.
 - The deployed command line is `deploy.AgentArgs`, and the agent registers those
   flags from the same `deploy.Flag*` constants. The flags in that set —
   `-port`, `-self-signed`, `-agent-secret-file`, `-docker-host`,
-  `-drain-timeout`, `-log-format`, `-audit-dest`, `-allow-legacy-secret` — are
+  `-drain-timeout`, `-log-format`, `-audit-dest`, `-allow-legacy-secret`,
+  `-metrics-addr` — are
   part of this contract and MUST NOT be renamed or repurposed on one side alone.
   Every other agent flag is the agent's own interface and carries no such
   promise.
 - `-allow-legacy-secret` is written out only when turning the path OFF, so an
   agent deployed by an older client and one deployed by a current client carry
   identical command lines unless the operator asked for the change.
+- `-metrics-addr` is written only when `swarmexec init --metrics-port` asks for
+  it, as `:<port>`, and that port is then published in host mode next to the
+  agent port. Without it the command line is unchanged.
 - A round-trip test in `agent/internal/config` parses what `deploy.AgentArgs`
   produces and asserts the resulting `Config`. A rename is therefore a compile
   error on one side or a red test on the other — never a broken deployment.

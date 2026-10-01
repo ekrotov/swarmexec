@@ -114,7 +114,7 @@ func TestNew_AppliesDefaultCaps(t *testing.T) {
 // Logs is the cheapest stream to open, so it is the one to prove the cap on.
 func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 	d := newFakeDocker()
-	srv, _ := newTestServer(d, auth.AllowAll{}, Options{MaxStreams: 1})
+	srv, m := newTestServer(d, auth.AllowAll{}, Options{MaxStreams: 1})
 
 	// Hold the single slot.
 	release, err := srv.streams.acquire()
@@ -125,6 +125,11 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 	err = srv.Logs(&pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()})
 	if statusCode(err) != codes.ResourceExhausted {
 		t.Fatalf("want ResourceExhausted, got %v", err)
+	}
+	// The refusal is counted, so a node running into its cap shows on a
+	// dashboard before anyone files a ticket.
+	if got := m.refusedStreams.Load(); got != 1 {
+		t.Errorf("stream refusals counted = %d, want 1", got)
 	}
 
 	// Releasing it makes the agent usable again — the cap must be a queue-free

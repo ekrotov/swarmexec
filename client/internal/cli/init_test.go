@@ -118,3 +118,24 @@ func TestAgentServiceSpec_LegacySecretSwitch(t *testing.T) {
 		t.Errorf("--allow-legacy-secret=false must reach the agent command, got %v", args(false))
 	}
 }
+
+// With --metrics-port the agent both listens and publishes: a metrics flag
+// without a published port is an endpoint nothing outside the container can
+// reach, which is exactly how the metrics went unused before.
+func TestAgentServiceSpec_MetricsPort(t *testing.T) {
+	f := &initFlags{image: "reg/agent:1", serviceName: "swarmexec_agent", port: 9443, allowLegacy: true}
+	if ports := agentServiceSpec(f, "s").EndpointSpec.Ports; len(ports) != 1 {
+		t.Fatalf("no metrics: want only the agent port, got %+v", ports)
+	}
+
+	f.metricsPort = 9464
+	spec := agentServiceSpec(f, "s")
+	ports := spec.EndpointSpec.Ports
+	if len(ports) != 2 || ports[1].PublishedPort != 9464 || ports[1].TargetPort != 9464 || ports[1].PublishMode != swarm.PortConfigPublishModeHost {
+		t.Errorf("metrics port not published in host mode: %+v", ports)
+	}
+	args := strings.Join(spec.TaskTemplate.ContainerSpec.Args, " ")
+	if !strings.Contains(args, "-metrics-addr=:9464") {
+		t.Errorf("agent not told to listen: %s", args)
+	}
+}

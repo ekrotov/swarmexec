@@ -1,0 +1,30 @@
+# Prometheus scrape config for the swarmexec agent.
+#
+# The agent serves metrics only when deployed with them on:
+#   swarmexec init --force --metrics-port 9464
+# It then listens on :9464 and publishes that port in HOST mode on every node
+# (there is no overlay network to scrape over), so each node's agent is reached
+# at <node address>:9464. The endpoint is plain HTTP and carries counts only —
+# no names, ids or payload — but publish it only where your scraper can reach it.
+#
+# Option A: let Prometheus find the nodes through the swarm (needs the Docker
+# API of a manager, e.g. the socket when Prometheus runs on a manager).
+scrape_configs:
+  - job_name: swarmexec-agent
+    dockerswarm_sd_configs:
+      - host: unix:///var/run/docker.sock
+        role: nodes
+    relabel_configs:
+      # Scrape each node's address on the metrics port.
+      - source_labels: [__meta_dockerswarm_node_address]
+        target_label: __address__
+        replacement: $1:9464
+      # Keep the node's name as the instance, which is what alerts should say.
+      - source_labels: [__meta_dockerswarm_node_hostname]
+        target_label: instance
+
+# Option B: list the nodes yourself.
+#
+#  - job_name: swarmexec-agent
+#    static_configs:
+#      - targets: ["node-1:9464", "node-2:9464", "node-3:9464"]

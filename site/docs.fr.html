@@ -529,6 +529,7 @@
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>port hôte que l'agent publie</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>met à jour le service s'il existe déjà</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accepte le secret brut des clients antérieurs à l'authentification liée à la connexion ; passez <code>=false</code> une fois tous les clients à jour</td></tr>
+          <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publie les métriques Prometheus de l'agent sur ce port de l'hôte (<code>0</code> = désactivé) — voir <a href="#monitoring">surveiller les agents</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>écrit la configuration client</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>transmet les identifiants de registre locaux pour que les nœuds puissent récupérer une image privée</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>attend que les agents démarrent et signale la progression</td></tr>
@@ -756,6 +757,36 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
         swarm, le changer signifie en créer un nouveau sous un autre nom. Si un déploiement
         échoue malgré tout en cours de route, ce qui a déjà été appliqué est rapporté avec
         l'erreur plutôt que laissé à deviner.
+      </p>
+
+      <h3 id="monitoring">Surveiller les agents</h3>
+      <p>
+        Chaque agent peut servir des métriques Prometheus. Elles sont
+        <strong>désactivées</strong> par défaut ; <code>swarmexec init --force --metrics-port 9464</code>
+        les active : l'agent écoute sur ce port et le publie en mode host sur chaque nœud,
+        comme le port de l'agent, Prometheus joint donc l'agent de chaque nœud sur
+        <code>&lt;nœud&gt;:9464</code>. Le point d'accès est en HTTP non chiffré et ne contient
+        que des <strong>compteurs</strong> — ni noms, ni identifiants, ni contenu —, mais ne
+        le publiez que là où votre scraper en a besoin.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Métrique</th><th>Signification</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec_agent_info{version,protocol}</code></td><td>constante <code>1</code> ; comparée entre nœuds, elle révèle les écarts de version</td></tr>
+          <tr><td><code>swarmexec_active_sessions</code></td><td>sessions exec ouvertes en ce moment</td></tr>
+          <tr><td><code>swarmexec_sessions_total</code></td><td>sessions exec démarrées</td></tr>
+          <tr><td><code>swarmexec_auth_denials_total</code></td><td>requêtes refusées par l'autoriseur — le signal qui rend une tentative visible</td></tr>
+          <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>requêtes refusées à une limite du nœud (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
+          <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>octets transmis aux conteneurs / aux clients</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Ce qui va autour se trouve dans le dépôt, sous <code>agent/deploy/monitoring/</code> :
+        une configuration de scrape (la découverte Docker Swarm de Prometheus ou des cibles
+        statiques), quatre règles d'alerte — refus d'autorisation en hausse, agents sur des
+        versions différentes depuis plus de 30 minutes, refus aux limites, un agent qui ne
+        répond pas — et un tableau de bord Grafana (<code>grafana-dashboard.json</code>, à
+        importer en choisissant votre Prometheus).
       </p>
 
       <h3 id="reroll">Redéployer les agents sans changer le secret</h3>

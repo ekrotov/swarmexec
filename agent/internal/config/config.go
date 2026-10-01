@@ -165,7 +165,7 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")
 	fs.StringVar(&c.LogFormat, deploy.FlagLogFormat, env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")
 	fs.StringVar(&c.AuditDest, deploy.FlagAuditDest, env("SWARMEXEC_AUDIT_DEST", "stdout"), "audit log destination: stdout|stderr|<file path> (env SWARMEXEC_AUDIT_DEST)")
-	fs.StringVar(&c.MetricsAddr, "metrics-addr", env("SWARMEXEC_METRICS_ADDR", ""), "Prometheus metrics listen address, empty=disabled (env SWARMEXEC_METRICS_ADDR)")
+	fs.StringVar(&c.MetricsAddr, deploy.FlagMetricsAddr, env("SWARMEXEC_METRICS_ADDR", ""), "Prometheus metrics listen address, empty=disabled (env SWARMEXEC_METRICS_ADDR)")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 
 	if err := fs.Parse(args); err != nil {

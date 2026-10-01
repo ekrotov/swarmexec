@@ -62,3 +62,16 @@ func TestSecretPathIsTheMountedSecret(t *testing.T) {
 		t.Errorf("SocketURL %q does not address the mounted socket %q", SocketURL, SocketPath)
 	}
 }
+
+// Metrics are opt-in: no port writes nothing, so a deployment without them
+// keeps the command line older clients produced; a port writes one flag.
+func TestAgentArgsWritesMetricsOnlyWhenAsked(t *testing.T) {
+	off := strings.Join(AgentArgs(AgentOptions{Port: 9443, AllowLegacySecret: true}), " ")
+	if strings.Contains(off, FlagMetricsAddr) {
+		t.Errorf("metrics off must write nothing: %q", off)
+	}
+	on := AgentArgs(AgentOptions{Port: 9443, AllowLegacySecret: true, MetricsPort: 9464})
+	if got := on[len(on)-1]; got != "-metrics-addr=:9464" {
+		t.Errorf("last arg = %q, want -metrics-addr=:9464", got)
+	}
+}
