@@ -833,7 +833,7 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
 
       <h3><code>logs</code> — transmitir logs</h3>
       <p>Transmite los logs de un contenedor desde cualquier lugar del swarm.</p>
-      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;</span></div>
+      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Por defecto</th><th>Descripción</th></tr></thead>
         <tbody>
@@ -844,6 +844,7 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
           <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>analiza las líneas como <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> lo decide a partir de las propias líneas (por defecto desde la configuración, si no <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>solo muestra este nivel y superiores: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>solo muestra las líneas cuyo mensaje (analizado) coincide con esta expresión regular de Go</td></tr>
+          <tr><td><code>--stack</code></td><td>—</td><td>sigue todos los servicios de este stack (además de los objetivos indicados)</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>pista/anulación de nodo para destinos de tipo container-id</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>tiempo de espera para conectar con el agente</td></tr>
         </tbody>
@@ -890,11 +891,33 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         está conectado — los agentes por nodo son locales a su nodo y no pueden ver los
         reemplazos a nivel de swarm.
       </div>
+      <p>
+        <strong>Varias fuentes a la vez.</strong> Con varios objetivos, un servicio con
+        varias réplicas o <code>--stack &lt;nombre&gt;</code>, <code>logs</code> sigue todas
+        las fuentes juntas: un servicio significa todas sus réplicas en ejecución, como con
+        <code>docker service logs</code>. Cada línea lleva como prefijo su origen —
+        <code>web.2</code>, o <code>agent@node-3</code> para un servicio global—, alineado
+        para que los mensajes queden en columna y en color en una terminal (nunca con
+        <code>NO_COLOR</code> definido ni en una tubería). Cada fuente se reconecta por sí
+        sola al reemplazarse su contenedor y detecta su propio formato con
+        <code>--log-format auto</code>, porque los servicios registran de forma distinta; las
+        líneas se combinan enteras, nunca partidas entre fuentes. Una fuente que falla lo
+        dice en sus propias líneas y no detiene a las demás; el código de salida lo indica
+        al final. Un objetivo que es un único contenedor se transmite como antes, sin prefijo.
+      </p>
+      <div class="note">
+        Las líneas se combinan en el orden de llegada, no ordenadas por tiempo entre
+        fuentes — añade <code>-t</code> cuando importe el orden entre servicios. Cada fuente
+        es un stream contra el agente de su nodo y cuenta para su límite
+        <code>-max-streams</code>.
+      </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
 <span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># que decidan las líneas</span>
-<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web
+<span class="c">$</span> swarmexec logs -f api worker db
+<span class="c">$</span> swarmexec logs -f --tail 20 --stack shop</div>
       <div class="note">
         <strong>Detectar el formato.</strong> <code>--log-format auto</code> —y <kbd>a</kbd>
         en la vista de logs de la TUI— puntúa las propias líneas contra cada formato

@@ -4,7 +4,6 @@
 package cli
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -32,8 +31,8 @@ var argContract = map[string][]int{
 	"swarmexec down":            {0},
 	"swarmexec exec":            {1, 2, 3}, // target, then the command as args[1:]
 	"swarmexec init":            {0},
-	"swarmexec logs":            {1}, // one target: runLogs reads args[0] and nothing else
-	"swarmexec port-forward":    {2}, // target and port spec
+	"swarmexec logs":            {1, 2, 3}, // every target is followed; 0 only with --stack
+	"swarmexec port-forward":    {2},       // target and port spec
 	"swarmexec ps":              {0, 1},
 	"swarmexec security report": {0},
 	"swarmexec stack deploy":    {1, 2}, // file, optional stack name
@@ -90,17 +89,21 @@ func TestEveryCommandTakesTheArgumentsItUses(t *testing.T) {
 	}
 }
 
-// The specific regression, named so it survives a rewrite of the table above.
-func TestLogsTakesExactlyOneTarget(t *testing.T) {
+// The original regression was `logs api worker` following api and silently
+// dropping worker. Several targets are now followed, so the guarantee is the
+// other half: none is accepted that is not used, and zero needs --stack.
+func TestLogsTargets(t *testing.T) {
 	c := newLogsCmd(&globalFlags{})
-	if err := c.Args(c, []string{"api"}); err != nil {
-		t.Errorf("one target must be accepted: %v", err)
+	if err := c.Args(c, []string{"api", "worker"}); err != nil {
+		t.Errorf("several targets must be accepted: %v", err)
 	}
-	err := c.Args(c, []string{"api", "worker"})
-	if err == nil {
-		t.Fatal("a second target must be refused, not silently dropped")
+	if err := c.Args(c, nil); err == nil {
+		t.Error("no target and no --stack must be refused")
 	}
-	if !strings.Contains(err.Error(), "1 arg") {
-		t.Errorf("the refusal should say how many are wanted, got %q", err)
+	if err := c.Flags().Set("stack", "shop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Args(c, nil); err != nil {
+		t.Errorf("--stack alone names what to follow: %v", err)
 	}
 }

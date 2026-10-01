@@ -842,7 +842,7 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
 
       <h3><code>logs</code> — Logs streamen</h3>
       <p>Streame die Logs eines Containers von irgendwo im Swarm.</p>
-      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;</span></div>
+      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
@@ -853,6 +853,7 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
           <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>Zeilen parsen als <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> entscheidet anhand der Zeilen selbst (Standard aus der Konfiguration, sonst <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>nur diese Stufe und höher anzeigen: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>nur Zeilen anzeigen, deren (geparste) Nachricht diesem Go-Regexp entspricht</td></tr>
+          <tr><td><code>--stack</code></td><td>—</td><td>allen Services dieses Stacks folgen (zusätzlich zu angegebenen Zielen)</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>Node-Hinweis/-Override für container-id-Ziele</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Timeout für die Verbindung zum Agent</td></tr>
         </tbody>
@@ -900,11 +901,34 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         er bereits verbunden ist — die Agents pro Node sind lokal zu ihrem Node und können
         Ersetzungen auf Swarm-Ebene nicht sehen.
       </div>
+      <p>
+        <strong>Mehrere Quellen gleichzeitig.</strong> Mit mehreren Zielen, einem Service
+        mit mehreren Replikas oder <code>--stack &lt;name&gt;</code> folgt <code>logs</code>
+        allen Quellen zusammen: Ein Service steht für alle seine laufenden Replikas, wie
+        bei <code>docker service logs</code>. Jede Zeile trägt ihre Herkunft als Präfix —
+        <code>web.2</code>, bei einem globalen Service <code>agent@node-3</code> —, auf eine
+        Breite gebracht, damit die Meldungen untereinanderstehen, und im Terminal farbig
+        (nie mit gesetztem <code>NO_COLOR</code> oder in einer Pipe). Jede Quelle verbindet
+        sich bei einem Containerwechsel selbst neu und erkennt ihr Format mit
+        <code>--log-format auto</code> selbst, denn Services loggen verschieden; Zeilen
+        werden ganz zusammengeführt, nie zwischen Quellen zerrissen. Fällt eine Quelle aus,
+        meldet sie das in ihren eigenen Zeilen, und die übrigen laufen weiter; der
+        Exit-Code sagt es am Ende. Ein Ziel, das genau ein Container ist, streamt wie
+        bisher, ohne Präfix.
+      </p>
+      <div class="note">
+        Die Zeilen erscheinen in der Reihenfolge ihres Eintreffens, nicht über die Quellen
+        hinweg nach Zeit sortiert — mit <code>-t</code>, wenn die Reihenfolge zwischen
+        Services zählt. Jede Quelle ist ein Stream gegen den Agent ihres Knotens und zählt
+        gegen dessen Limit <code>-max-streams</code>.
+      </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
 <span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># die Zeilen entscheiden lassen</span>
-<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web
+<span class="c">$</span> swarmexec logs -f api worker db
+<span class="c">$</span> swarmexec logs -f --tail 20 --stack shop</div>
       <div class="note">
         <strong>Format erkennen.</strong> <code>--log-format auto</code> — und in der
         TUI-Logansicht <kbd>a</kbd> — bewertet die Zeilen selbst gegen jedes eingebaute

@@ -807,7 +807,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
 
       <h3><code>logs</code> — stream logs</h3>
       <p>Stream a container's logs from anywhere in the swarm.</p>
-      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;</span></div>
+      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
@@ -818,6 +818,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
           <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decides from the lines themselves (default from config, else <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
+          <tr><td><code>--stack</code></td><td>—</td><td>follow every service of this stack (in addition to any targets)</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
         </tbody>
@@ -861,11 +862,33 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         already connected to — the per-node agents are local to their node and cannot see
         swarm-level replacements.
       </div>
+      <p>
+        <strong>Several sources at once.</strong> Give several targets, a service with
+        several replicas, or <code>--stack &lt;name&gt;</code>, and <code>logs</code> follows
+        every source together: a service means all of its running replicas, as with
+        <code>docker service logs</code>. Each line is prefixed with where it came from —
+        <code>web.2</code>, or <code>agent@node-3</code> for a global service — padded so the
+        messages line up and coloured on a terminal (never with <code>NO_COLOR</code> set or
+        when piped). Every source keeps its own reconnect across container replacements
+        and its own <code>--log-format auto</code> detection, since services log
+        differently; lines are merged whole, never torn between sources. A source that
+        fails says so in its own lines and does not stop the others; the exit code tells
+        you at the end. One target that is one container streams exactly as before,
+        without a prefix.
+      </p>
+      <div class="note">
+        Lines are merged in the order they arrive, not sorted by time across sources —
+        add <code>-t</code> when the order between services matters. Each source is one
+        stream against its node's agent, which counts toward the agent's
+        <code>-max-streams</code> limit.
+      </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
 <span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># let the lines decide</span>
-<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web
+<span class="c">$</span> swarmexec logs -f api worker db
+<span class="c">$</span> swarmexec logs -f --tail 20 --stack shop</div>
       <div class="note">
         <strong>Detecting the format.</strong> <code>--log-format auto</code> — and
         <kbd>a</kbd> in the TUI log view — scores the lines themselves against every

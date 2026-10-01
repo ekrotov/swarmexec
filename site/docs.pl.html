@@ -820,7 +820,7 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
 
       <h3><code>logs</code> — strumieniuj logi</h3>
       <p>Strumieniuj logi kontenera z dowolnego miejsca w swarmie.</p>
-      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;</span></div>
+      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
         <tbody>
@@ -831,6 +831,7 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
           <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parsuj linie jako <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decyduje na podstawie samych linii (domyślnie z konfiguracji, inaczej <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>pokaż tylko ten poziom i wyższe: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>pokaż tylko linie, których (sparsowany) komunikat pasuje do tego wyrażenia regularnego Go</td></tr>
+          <tr><td><code>--stack</code></td><td>—</td><td>śledź wszystkie usługi tego stacka (oprócz podanych celów)</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>podpowiedź/nadpisanie węzła dla celów typu container-id</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia z agentem</td></tr>
         </tbody>
@@ -876,11 +877,33 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         jest już połączony — agenci na węzłach są lokalni dla swojego węzła i nie widzą
         wymian na poziomie swarma.
       </div>
+      <p>
+        <strong>Kilka źródeł naraz.</strong> Przy kilku celach, usłudze z kilkoma
+        replikami albo <code>--stack &lt;nazwa&gt;</code> polecenie <code>logs</code> śledzi
+        wszystkie źródła razem: usługa oznacza wszystkie jej działające repliki, jak w
+        <code>docker service logs</code>. Każda linia ma prefiks ze swoim źródłem —
+        <code>web.2</code>, a dla usługi globalnej <code>agent@node-3</code> — wyrównany tak,
+        by komunikaty stały w kolumnie, i kolorowy w terminalu (nigdy przy ustawionym
+        <code>NO_COLOR</code> ani w potoku). Każde źródło samo łączy się ponownie po
+        wymianie kontenera i samo rozpoznaje swój format przez
+        <code>--log-format auto</code>, bo usługi logują różnie; linie są łączone w całości,
+        nigdy rozrywane między źródłami. Źródło, które zawiedzie, mówi o tym we własnych
+        liniach i nie zatrzymuje pozostałych; kod wyjścia informuje o tym na końcu. Cel
+        będący jednym kontenerem jest strumieniowany jak dotąd, bez prefiksu.
+      </p>
+      <div class="note">
+        Linie pojawiają się w kolejności nadejścia, nie są sortowane po czasie między
+        źródłami — dodaj <code>-t</code>, gdy kolejność między usługami ma znaczenie. Każde
+        źródło to jeden strumień do agenta swojego węzła i wlicza się do jego limitu
+        <code>-max-streams</code>.
+      </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
 <span class="c">$</span> swarmexec logs --since 15m -t web
 <span class="c">$</span> swarmexec logs --log-format json --min-level warn web
 <span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># niech zdecydują linie</span>
-<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web</div>
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web
+<span class="c">$</span> swarmexec logs -f api worker db
+<span class="c">$</span> swarmexec logs -f --tail 20 --stack shop</div>
       <div class="note">
         <strong>Wykrywanie formatu.</strong> <code>--log-format auto</code> — oraz
         <kbd>a</kbd> w widoku logów TUI — ocenia same linie względem każdego wbudowanego

@@ -43,20 +43,29 @@ type logsFlags struct {
 	logFormat      string // auto | classic | json | logfmt | gelf | raw
 	minLevel       string // trace..fatal; "" = no level filter
 	grep           string // regexp on the (parsed) message; "" = no text filter
+	stack          string // follow every service of this stack
 }
 
 func newLogsCmd(g *globalFlags) *cobra.Command {
 	f := &logsFlags{}
 	cmd := &cobra.Command{
-		Use:   "logs [flags] <service|service.slot|task-id|container-id>",
-		Short: "Stream a container's logs from anywhere in the swarm",
-		// Exactly one, because exactly one is what runLogs reads. It used to
-		// accept more and then ignore everything past the first, so
-		// `swarmexec logs api worker` followed api and said nothing about
-		// worker — a silence that reads as a bug in the operator's own setup.
-		// If this ever follows several targets at once, the loop comes first
-		// and this goes back to MinimumNArgs.
-		Args: cobra.ExactArgs(1),
+		Use:   "logs [flags] <service|service.slot|task-id|container-id>...",
+		Short: "Stream logs of one or more containers, services or a stack from anywhere in the swarm",
+		Long: `Stream logs from anywhere in the swarm.
+
+One target that is one container streams exactly as before. Several targets,
+a service with several replicas, or --stack follow every source at once: each
+line is prefixed with where it came from (svc.slot, svc@node for a global
+service), each source reconnects across its own container replacements, and
+each has its own format detection.`,
+		// Every target is read: runLogs follows all of them. A target is
+		// required unless --stack names what to follow.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if s, _ := cmd.Flags().GetString("stack"); s != "" {
+				return nil
+			}
+			return cobra.MinimumNArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLogs(cmd, g, f, args)
 		},
@@ -71,6 +80,7 @@ func newLogsCmd(g *globalFlags) *cobra.Command {
 	fl.StringVar(&f.logFormat, "log-format", "", "parse lines as: auto | classic | json | logfmt | gelf | raw (auto detects it from the lines themselves; default from config, else classic)")
 	fl.StringVar(&f.minLevel, "min-level", "", "only show this level and above: trace|debug|info|warn|error|fatal")
 	fl.StringVar(&f.grep, "grep", "", "only show lines whose message matches this regexp")
+	fl.StringVar(&f.stack, "stack", "", "follow every service of this stack (in addition to any targets)")
 	return cmd
 }
 
@@ -91,14 +101,26 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
-	ep, err := r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
-	if err != nil {
+
+	// One target that is one container keeps the single-stream path and its
+	// unprefixed output. A service with several replicas used to stop here as
+	// "ambiguous"; it now follows all of them, like docker service logs.
+	var ep *resolve.Endpoint
+	var multi []logSource
+	var notes []string
+	if len(args) == 1 && f.stack == "" {
+		ep, err = r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
 		if amb, ok := err.(*resolve.AmbiguousError); ok {
-			ep, err = pickCandidate(amb, false)
+			for _, c := range amb.Candidates {
+				multi = append(multi, sourceFromCandidate(c))
+			}
+			err = nil
 		}
-		if err != nil {
-			return &cliError{code: session.TransportFailure, err: err}
-		}
+	} else {
+		multi, notes, err = expandLogSources(ctx, r, args, f.stack, f.node)
+	}
+	if err != nil {
+		return &cliError{code: session.TransportFailure, err: err}
 	}
 
 	// Optional format-aware parsing + filtering (flags override config defaults).
@@ -112,6 +134,34 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		return &cliError{code: usageExitCode, err: ferr}
 	}
 	auto := logFormatAuto(formatName)
+	params := logsParams{
+		follow:         f.follow,
+		tail:           f.tail,
+		timestamps:     f.timestamps,
+		since:          f.since,
+		connectTimeout: f.connectTimeout,
+	}
+
+	if multi != nil {
+		for _, n := range notes {
+			fmt.Fprintln(os.Stderr, "── "+n+" ──")
+		}
+		wrap := func(dst io.Writer) (io.Writer, func()) {
+			if !auto && !filteringActive(format, filter) {
+				return dst, func() {}
+			}
+			fw := newFilterWriter(dst, format, filter, renderPlain)
+			if auto {
+				fw.detectFormat() // per source and per stream: services log differently
+			}
+			return fw, fw.Flush
+		}
+		if err := streamManyLogs(ctx, cfg, r, multi, params, os.Stdout, os.Stderr, colorOutput(os.Stdout), wrap); err != nil {
+			return &cliError{code: session.TransportFailure, err: err}
+		}
+		return nil
+	}
+
 	var stdout, stderr io.Writer = os.Stdout, os.Stderr
 	var flushers []*filterWriter
 	if auto || filteringActive(format, filter) {
@@ -131,13 +181,8 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	// so `logs -f <service>` keeps streaming after a swap, like `docker service
 	// logs -f`. Reconnect notices go straight to the real stderr, bypassing the
 	// filter so they are never dropped.
-	err = streamServiceLogs(ctx, cfg, r, followTargetFromTarget(args[0]), *ep, logsParams{
-		follow:         f.follow,
-		tail:           f.tail,
-		timestamps:     f.timestamps,
-		since:          f.since,
-		connectTimeout: f.connectTimeout,
-	}, stdout, stderr, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
+	err = streamServiceLogs(ctx, cfg, r, followTargetFromTarget(args[0]), *ep, params,
+		stdout, stderr, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	for _, w := range flushers {
 		w.Flush()
 	}
