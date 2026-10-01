@@ -4,7 +4,9 @@
 package stackfile
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -14,6 +16,7 @@ type Diff struct {
 	SwarmLabel  string
 	Hunks       []Hunk
 	Notes       []string
+	Ignored     []string // the --ignore paths applied to both sides
 	fileLines   []string
 	deployLines []string
 }
@@ -43,12 +46,19 @@ type DiffLine struct {
 // it would remove. That is the direction the question is asked in — "what would
 // this file change?" — and getting it backwards makes every reading of the
 // output wrong in a way that is hard to notice.
-func Compare(deployed, file *Stack, fileLabel string) (*Diff, error) {
-	before, err := deployed.YAML()
+//
+// ignore lists field paths left out of BOTH sides (see pruneNode) — runtime
+// differences an operator accepts, such as a replica count an autoscaler
+// moves. Every ignored path is named under "Not compared", so a clean result
+// still says what it did not look at; a path that matched nothing on either
+// side is named too, because that is almost always a typo, and a typo in an
+// ignore list silently ignores nothing.
+func Compare(deployed, file *Stack, fileLabel string, ignore ...string) (*Diff, error) {
+	before, unBefore, err := deployed.YAMLWithout(ignore)
 	if err != nil {
 		return nil, fmt.Errorf("render deployed stack: %w", err)
 	}
-	after, err := file.YAML()
+	after, unAfter, err := file.YAMLWithout(ignore)
 	if err != nil {
 		return nil, fmt.Errorf("render %s: %w", fileLabel, err)
 	}
@@ -70,7 +80,53 @@ func Compare(deployed, file *Stack, fileLabel string) (*Diff, error) {
 			d.Notes = append(d.Notes, n)
 		}
 	}
+	missing := map[string]bool{}
+	for _, p := range unAfter {
+		missing[p] = true
+	}
+	for _, p := range ignore {
+		d.Ignored = append(d.Ignored, p)
+		if missing[p] && slices.Contains(unBefore, p) {
+			d.Notes = append(d.Notes, fmt.Sprintf("--ignore %s matched nothing on either side — check the path", p))
+		} else {
+			d.Notes = append(d.Notes, fmt.Sprintf("%s (ignored with --ignore)", p))
+		}
+	}
 	return d, nil
+}
+
+// JSON renders the diff for a machine: whether it differs, the hunks, and
+// everything the comparison did not cover. The field names are the stable
+// interface; the text form is for people.
+func (d *Diff) JSON() ([]byte, error) {
+	type line struct {
+		Op   string `json:"op"`
+		Text string `json:"text"`
+	}
+	type hunk struct {
+		DeployStart int    `json:"deployed_start"`
+		DeployCount int    `json:"deployed_count"`
+		FileStart   int    `json:"file_start"`
+		FileCount   int    `json:"file_count"`
+		Lines       []line `json:"lines"`
+	}
+	out := struct {
+		File        string   `json:"file"`
+		Deployed    string   `json:"deployed"`
+		Differs     bool     `json:"differs"`
+		Hunks       []hunk   `json:"hunks"`
+		Ignored     []string `json:"ignored"`
+		NotCompared []string `json:"not_compared"`
+	}{File: d.FileLabel, Deployed: d.SwarmLabel, Differs: !d.Empty(),
+		Hunks: []hunk{}, Ignored: append([]string{}, d.Ignored...), NotCompared: append([]string{}, d.Notes...)}
+	for _, h := range d.Hunks {
+		jh := hunk{DeployStart: h.DeployStart, DeployCount: h.DeployCount, FileStart: h.FileStart, FileCount: h.FileCount}
+		for _, l := range h.Lines {
+			jh.Lines = append(jh.Lines, line{Op: string(l.Op), Text: l.Text})
+		}
+		out.Hunks = append(out.Hunks, jh)
+	}
+	return json.MarshalIndent(out, "", "  ")
 }
 
 func splitLines(s string) []string {

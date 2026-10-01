@@ -89,7 +89,8 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 }
 
 func newStackDiffCmd(g *globalFlags) *cobra.Command {
-	var stackName string
+	var stackName, format string
+	var ignore []string
 	cmd := &cobra.Command{
 		Use:   "diff <file> [stack]",
 		Short: "Compare a stack file against the deployed stack",
@@ -98,7 +99,11 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 			"give it explicitly when the file is not named after the stack.\n\n" +
 			"A \"+\" line is something deploying the file would add, a \"-\" is something it\n" +
 			"would remove. Both sides are normalised the same way, so an unchanged stack\n" +
-			"produces an empty diff rather than pages of daemon defaults.",
+			"produces an empty diff rather than pages of daemon defaults.\n\n" +
+			"Exit code 0 means no difference, 1 a difference, 2 a usage error and 125 an\n" +
+			"unreachable manager — so it can gate a pipeline. --ignore leaves a field out\n" +
+			"of both sides (\"services.*.deploy.replicas\" for an autoscaled count) and\n" +
+			"is reported under \"Not compared\"; --format json is the machine form.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
@@ -123,7 +128,10 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 			if err != nil {
 				return &cliError{code: usageExitCode, err: err}
 			}
-			d, err := stackfile.Compare(deployed, file, path)
+			if format != "" && format != "text" && format != "json" {
+				return &cliError{code: usageExitCode, err: fmt.Errorf("--format must be text or json, not %q", format)}
+			}
+			d, err := stackfile.Compare(deployed, file, path, ignore...)
 			if err != nil {
 				return err
 			}
@@ -133,7 +141,15 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(),
 					"note: swarm ignores these keys in %s: %v\n", path, un)
 			}
-			fmt.Fprint(cmd.OutOrStdout(), d.Text())
+			if format == "json" {
+				b, jerr := d.JSON()
+				if jerr != nil {
+					return jerr
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+			} else {
+				fmt.Fprint(cmd.OutOrStdout(), d.Text())
+			}
 			if !d.Empty() {
 				// Same convention as `diff` and `git diff --exit-code`: a
 				// difference is a non-zero exit, so this is usable in CI.
@@ -143,6 +159,8 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&stackName, "stack", "", "stack name to compare against (default: the file's base name)")
+	cmd.Flags().StringVar(&format, "format", "text", "output format: text | json")
+	cmd.Flags().StringSliceVar(&ignore, "ignore", nil, "leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)")
 	return cmd
 }
 

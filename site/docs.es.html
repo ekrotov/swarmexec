@@ -683,6 +683,23 @@ swarmexec stack diff postgres.yml postgres</div>
           <tr><td><code>stack diff &lt;fichero&gt; [stack]</code></td><td>compara un fichero con el stack desplegado. El nombre del stack es por defecto el del fichero sin extensión; <code>--stack</code> o un segundo argumento lo sustituye. Termina con <strong>1</strong> ante cualquier diferencia</td></tr>
         </tbody>
       </table></div>
+      <p>
+        <strong>Como control de pipeline.</strong> Ejecutado cada noche,
+        <code>stack diff</code> responde a “¿sigue el clúster igual que Git?”: la salida
+        <strong>0</strong> significa sin diferencias, <strong>1</strong> una diferencia,
+        <strong>2</strong> un error de uso, <strong>125</strong> un manager inalcanzable. Un
+        control que se pone en rojo con cada cambio inofensivo acaba desactivado, por eso
+        <code>--ignore</code> deja un campo fuera de <em>ambos</em> lados —
+        <code>services.*.deploy.replicas</code> para un recuento que mueve un autoescalador,
+        con <code>*</code> para cualquier nombre de servicio; repítelo para varias rutas. Cada
+        ruta ignorada aparece en <em>Not compared</em>, para que un resultado verde siga
+        diciendo lo que no miró, y una ruta que no coincide con nada en ningún lado se
+        señala, porque una errata en la lista de ignorados, si no, no ignora nada en
+        silencio. <code>--format json</code> imprime la forma para máquinas:
+        <code>differs</code>, los hunks, <code>ignored</code> y <code>not_compared</code>.
+      </p>
+      <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
+swarmexec stack diff shop.yml --format json | jq .differs</div>
 
       <h3 id="stackdeploy"><code>stack deploy</code> — aplicar un fichero de stack, tras comprobarlo</h3>
       <p>
@@ -2223,6 +2240,7 @@ forward_stop: d  forward_copy_url: o</div>
         <thead><tr><th>Código</th><th>Significado</th></tr></thead>
         <tbody>
           <tr><td><code>0</code></td><td>éxito</td></tr>
+          <tr><td><code>1</code></td><td>stack diff encontró una diferencia (y <code>--format json</code> la imprimió igualmente)</td></tr>
           <tr><td><code>2</code></td><td>error de uso / flag / configuración, o una selección interactiva abortada</td></tr>
           <tr><td><code>125</code></td><td>fallo de transporte — manager o agente inaccesible, error de dial/TLS, error de stream, confirmación abortada (refleja el <code>125</code> de Docker)</td></tr>
           <tr><td><code>N</code></td><td>para <code>exec</code>, el propio código de salida distinto de cero del comando remoto, propagado tal cual</td></tr>
