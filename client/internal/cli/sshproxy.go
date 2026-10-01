@@ -65,6 +65,7 @@ func sshForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
 	if pj := strings.TrimSpace(proxyJump); pj != "" {
 		args = append(args, "-J", pj)
 	}
+	args = append(args, sshBatchOpts()...)
 	args = append(args, sshMuxOpts(sp, proxyJump)...)
 	args = append(args, "-W", target, "--", sp.Host)
 	return args

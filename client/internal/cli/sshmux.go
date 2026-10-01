@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"github.com/docker/cli/cli/connhelper/ssh"
 )
@@ -162,10 +163,24 @@ func sshMuxDir() string {
 // the endpoint is unusable for other reasons and will say so in a moment, and
 // declining to share is never the interesting failure.
 func sshEndpointOpts(host, proxyJump string) []string {
-	flags := proxyJumpFlags(proxyJump)
+	flags := append(proxyJumpFlags(proxyJump), sshBatchOpts()...)
 	sp, err := ssh.ParseURL(host)
 	if err != nil {
 		return flags
 	}
 	return append(flags, sshMuxOpts(sp, proxyJump)...)
+}
+
+// sshNonInteractive makes every ssh this process starts refuse to prompt.
+// Shell completion sets it: a completion runs while the operator's shell
+// waits on it, without a terminal of its own, so a password prompt there
+// does not get answered — it freezes the shell. Failing fast and offering
+// nothing is the only acceptable outcome.
+var sshNonInteractive atomic.Bool
+
+func sshBatchOpts() []string {
+	if !sshNonInteractive.Load() {
+		return nil
+	}
+	return []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=3"}
 }
