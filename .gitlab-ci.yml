@@ -713,9 +713,7 @@ linkedin-announce:
 # ----------------------------------------------------------------------------
 # package-manifests — a Homebrew formula and a Scoop manifest for the release,
 # generated from the SHA256SUMS this pipeline built, pointing at the public
-# package-registry downloads. Kept as artifacts; PUBLISHING them needs a tap
-# and a bucket repository and a token that may push there, which is a decision
-# about public infrastructure this job does not make.
+# package-registry downloads. Kept as artifacts, and pushed by publish-packages.
 # ----------------------------------------------------------------------------
 package-manifests:
   stage: deploy
@@ -734,6 +732,32 @@ package-manifests:
     expose_as: "Package manifests"
     paths:
       - packaging/
+
+# ----------------------------------------------------------------------------
+# publish-packages — pushes those two files to the public Homebrew tap and
+# Scoop bucket, so `brew upgrade` / `scoop update` pick up the release. Set up
+# once (Settings > CI/CD > Variables):
+#   GITHUB_TAP_REPO        e.g. ekrotov/homebrew-swarmexec   (repo must exist)
+#   GITHUB_SCOOP_REPO      e.g. ekrotov/scoop-swarmexec      (repo must exist)
+#   GITHUB_PACKAGES_TOKEN  fine-grained token, Contents: read and write on both
+#                          repos (masked, protected); falls back to
+#                          GITHUB_MIRROR_TOKEN if that one covers them
+# An unset repository is skipped with a note; a prerelease is never published.
+# Like the GitHub mirror, a failure here must not turn a finished release red.
+# ----------------------------------------------------------------------------
+publish-packages:
+  stage: deploy
+  image: alpine:3
+  needs:
+    - job: package-manifests
+      artifacts: true
+  rules:
+    - *semver-tag
+  allow_failure: true
+  before_script:
+    - apk add --no-cache git ca-certificates >/dev/null
+  script:
+    - sh ci/publish-packages.sh "$CI_COMMIT_TAG" packaging
 
 reddit-post:
   extends: .release-post
