@@ -539,6 +539,39 @@
         </tbody>
       </table></div>
 
+      <h3 id="wait"><code>wait</code> — aż wdrożenie naprawdę się ustabilizuje</h3>
+      <p>
+        <code>stack deploy</code> kończy się, gdy swarm <em>przyjął</em> zmianę, a nie gdy
+        ona działa. <code>wait</code> zamyka tę lukę dla pipeline: blokuje, aż każda podana
+        usługa — albo każda usługa z <code>--stack</code> — się ustabilizuje, i kończy się
+        kodem <strong>0</strong>; kodem <strong>1</strong> z powodem, gdy któraś nie.
+      </p>
+      <div class="cmd">swarmexec stack deploy shop.yml --yes &amp;&amp; swarmexec wait --stack shop --timeout 3m
+swarmexec wait api worker --healthy</div>
+      <p>
+        <strong>Ustabilizowana</strong> oznacza: brak trwającej aktualizacji i tyle
+        działających zadań, ile żądano (dla joba: osiągnięta liczba ukończeń), utrzymane
+        przez dwa odczyty w odstępie kilku sekund — więc nawet stabilna usługa zajmuje kilka
+        sekund, a moment tuż po wdrożeniu, zanim manager zaczął aktualizację, nie może
+        uchodzić za koniec. Dwa stany, które wyglądają na spokojne, są
+        <strong>błędami</strong>: <em>wstrzymana</em> aktualizacja (usługa działa jako
+        mieszanka starych i nowych zadań) oraz rollback zakończony w trakcie czekania (działa
+        poprzednia specyfikacja — wdrożenie się nie przyjęło). Po upływie czasu wypisywany
+        jest powód, dla którego zadanie nie działa, zwykle komunikat samego schedulera. Z
+        <code>--healthy</code> każdy kontener z healthcheckiem musi też być zdrowy; węzeł,
+        którego agent nie potrafi podać stanu zdrowia, liczy się jako <em>jeszcze nie</em>,
+        nigdy jako zdrowy. swarmexec tylko obserwuje i raportuje — nigdy nie robi rollbacku
+        ani ponowień.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--stack</code></td><td>—</td><td>czekaj na każdą usługę tego stacka (oprócz podanych)</td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>poddaj się po tym czasie (kod 1)</td></tr>
+          <tr><td><code>--healthy</code></td><td><code>false</code></td><td>wymagaj też zdrowych kontenerów (pyta agentów)</td></tr>
+        </tbody>
+      </table></div>
+
       <h3><code>doctor</code> — zdiagnozuj swarm</h3>
       <p>
         Sprawdza połączenie z menedżerem, to czy usługa agenta jest wdrożona, oraz odpytuje

@@ -535,6 +535,38 @@
         </tbody>
       </table></div>
 
+      <h3 id="wait"><code>wait</code> — until a deploy has actually converged</h3>
+      <p>
+        <code>stack deploy</code> returns when swarm has <em>accepted</em> the change, not
+        when it works. <code>wait</code> closes that gap for a pipeline: it blocks until
+        every named service — or every service of <code>--stack</code> — has converged,
+        then exits <strong>0</strong>; it exits <strong>1</strong> with the reason when one
+        does not.
+      </p>
+      <div class="cmd">swarmexec stack deploy shop.yml --yes &amp;&amp; swarmexec wait --stack shop --timeout 3m
+swarmexec wait api worker --healthy</div>
+      <p>
+        <strong>Converged</strong> means no update in flight and as many running tasks as
+        desired (for a job: its completions reached), held for two polls a few seconds
+        apart — so even a stable service takes a few seconds, and the moment right after a
+        deploy, before the manager has started the update, cannot pass for done. Two states
+        that look settled are <strong>failures</strong>: an update that <em>paused</em>
+        (the service runs a mix of old and new tasks) and a rollback that completed during
+        the wait (it runs the previous spec — the deploy did not take). On timeout the
+        reason a task is not running is printed, typically the scheduler's own message.
+        With <code>--healthy</code> every container that has a healthcheck must also report
+        healthy; a node whose agent cannot report health counts as <em>not yet</em>, never
+        as healthy. swarmexec only observes and reports — it never rolls back or retries.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--stack</code></td><td>—</td><td>wait for every service of this stack (in addition to any named)</td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>give up after this long (exit 1)</td></tr>
+          <tr><td><code>--healthy</code></td><td><code>false</code></td><td>also require healthy containers (asks the agents)</td></tr>
+        </tbody>
+      </table></div>
+
       <h3><code>doctor</code> — diagnose the swarm</h3>
       <p>
         Checks the manager connection, whether the agent service is deployed, and probes
