@@ -11,6 +11,9 @@ type Metrics interface {
 	SessionEnded()
 	AuthDenied()
 	BytesTransferred(in, out int64)
+	// LimitRefused counts a request refused because a node cap was reached;
+	// limit is "streams" or "forward_sidecars".
+	LimitRefused(limit string)
 }
 
 // NopMetrics satisfies Metrics and does nothing.
@@ -20,5 +23,6 @@ func (NopMetrics) SessionStarted()             {}
 func (NopMetrics) SessionEnded()               {}
 func (NopMetrics) AuthDenied()                 {}
 func (NopMetrics) BytesTransferred(_, _ int64) {}
+func (NopMetrics) LimitRefused(string)         {}
 
 var _ Metrics = NopMetrics{}

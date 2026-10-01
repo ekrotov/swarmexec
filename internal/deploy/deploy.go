@@ -19,8 +19,9 @@
 // error on one side or a red test on the other, never a broken deployment.
 //
 // It holds ONLY what both sides touch. An agent flag the client never sets
-// (-ca-cert, -metrics-addr, -max-streams …) stays where it is: moving it here
-// would advertise a contract that does not exist.
+// (-ca-cert, -max-streams …) stays where it is: moving it here would advertise
+// a contract that does not exist. -metrics-addr moved in when init learned to
+// set it.
 package deploy
 
 import (
@@ -71,6 +72,7 @@ const (
 	FlagLogFormat         = "log-format"
 	FlagAuditDest         = "audit-dest"
 	FlagAllowLegacySecret = "allow-legacy-secret"
+	FlagMetricsAddr       = "metrics-addr"
 )
 
 // DrainTimeout is the graceful-shutdown window a deployed agent gets. Written
@@ -86,6 +88,10 @@ type AgentOptions struct {
 	// deployed command identical to what earlier versions produced, so re-running
 	// init does not show a spurious spec change.
 	AllowLegacySecret bool
+	// MetricsPort, when non-zero, turns on the agent's Prometheus endpoint on
+	// that port. Zero writes nothing, so a deployment without metrics keeps the
+	// command line earlier versions produced.
+	MetricsPort int
 }
 
 // AgentArgs is the agent's command line as `swarmexec init` deploys it.
@@ -105,6 +111,9 @@ func AgentArgs(o AgentOptions) []string {
 	}
 	if !o.AllowLegacySecret {
 		args = append(args, "-"+FlagAllowLegacySecret+"=false")
+	}
+	if o.MetricsPort > 0 {
+		args = append(args, fmt.Sprintf("-%s=:%d", FlagMetricsAddr, o.MetricsPort))
 	}
 	return args
 }

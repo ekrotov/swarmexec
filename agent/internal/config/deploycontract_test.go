@@ -78,3 +78,15 @@ func TestAgentDefaultsAgreeWithTheDeployedValues(t *testing.T) {
 		t.Errorf("default drain timeout = %v, want %v (deploy writes it out explicitly)", c.DrainTimeout, deploy.DrainTimeout)
 	}
 }
+
+// The metrics port init writes has to become the listen address the agent's
+// metrics server binds.
+func TestDeployedMetricsPortReachesTheMetricsListener(t *testing.T) {
+	c, err := Parse(deploy.AgentArgs(deploy.AgentOptions{Port: 9443, MetricsPort: 9464}), io.Discard)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if c.MetricsAddr != ":9464" {
+		t.Errorf("metrics addr = %q, want :9464", c.MetricsAddr)
+	}
+}

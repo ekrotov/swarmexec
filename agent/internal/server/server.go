@@ -119,6 +119,8 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
 	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
 		"port-forward sidecars", "-max-forward-sidecars")
+	s.streams.refused = func() { s.metrics.LimitRefused("streams") }
+	s.sidecars.refused = func() { s.metrics.LimitRefused("forward_sidecars") }
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {

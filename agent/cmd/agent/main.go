@@ -136,7 +136,7 @@ func run(args []string) error {
 	var sink server.Metrics = server.NopMetrics{}
 	var metricsSrv *http.Server
 	if cfg.MetricsAddr != "" {
-		prom := metrics.New()
+		prom := metrics.New(version.Version, version.Protocol)
 		sink = prom
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", prom.Handler())

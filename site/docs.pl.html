@@ -510,6 +510,7 @@
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>port hosta publikowany przez agenta</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>zaktualizuj usługę, jeśli już istnieje</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akceptuje surowy sekret od klientów sprzed uwierzytelniania związanego z połączeniem; ustaw <code>=false</code>, gdy wszyscy klienci są zaktualizowani</td></tr>
+          <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publikuj metryki Prometheus agenta na tym porcie hosta (<code>0</code> = wyłączone) — zob. <a href="#monitoring">monitorowanie agentów</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>zapisz konfigurację klienta</td></tr>
           <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>przekaż lokalne poświadczenia rejestru, żeby węzły mogły pobrać prywatny obraz</td></tr>
           <tr><td><code>--wait</code></td><td><code>true</code></td><td>poczekaj, aż agenci wstaną, i raportuj postęp</td></tr>
@@ -745,6 +746,36 @@ swarmexec stack deploy web.yml --force    # wdroż mimo znalezisk, świadomie</d
         utworzenie nowego pod nową nazwą. Jeśli wdrożenie mimo to zawiedzie w trakcie, to,
         co już zastosowano, jest raportowane wraz z błędem, a nie pozostawione do
         odgadnięcia.
+      </p>
+
+      <h3 id="monitoring">Monitorowanie agentów</h3>
+      <p>
+        Każdy agent może udostępniać metryki Prometheus. Domyślnie są
+        <strong>wyłączone</strong>; <code>swarmexec init --force --metrics-port 9464</code> je
+        włącza: agent nasłuchuje na tym porcie i publikuje go w trybie host na każdym węźle,
+        jak port agenta, więc Prometheus osiąga agenta każdego węzła pod
+        <code>&lt;węzeł&gt;:9464</code>. Endpoint to nieszyfrowane HTTP i zawiera
+        <strong>tylko liczniki</strong> — żadnych nazw, identyfikatorów ani treści — ale
+        publikuj go tylko tam, gdzie potrzebuje go scraper.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Metryka</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec_agent_info{version,protocol}</code></td><td>stała <code>1</code>; porównana między węzłami pokazuje rozbieżność wersji</td></tr>
+          <tr><td><code>swarmexec_active_sessions</code></td><td>otwarte teraz sesje exec</td></tr>
+          <tr><td><code>swarmexec_sessions_total</code></td><td>rozpoczęte sesje exec</td></tr>
+          <tr><td><code>swarmexec_auth_denials_total</code></td><td>żądania odrzucone przez autoryzator — jedyny sygnał, który czyni próbę widoczną</td></tr>
+          <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>żądania odrzucone na limicie węzła (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
+          <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>bajty przekazane do kontenerów / do klientów</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        To, co wokół, jest w repozytorium w <code>agent/deploy/monitoring/</code>:
+        konfiguracja scrape (własne wykrywanie Docker Swarm w Prometheusie albo statyczne
+        cele), cztery reguły alertów — rosnąca liczba odmów autoryzacji, agenci na różnych
+        wersjach dłużej niż 30 minut, odmowy na limitach, agent, który nie odpowiada — oraz
+        dashboard Grafany (<code>grafana-dashboard.json</code>, zaimportuj i wybierz swój
+        Prometheus).
       </p>
 
       <h3 id="reroll">Ponowne wdrożenie agentów bez zmiany sekretu</h3>

@@ -233,8 +233,11 @@ exec bridge is untouched. Every decision (allow/deny + reason) is audited.
 
   Payload bytes are never logged.
 - **Operational logs** go to stderr at the configured level/format.
-- **Metrics** (optional, `-metrics-addr`): `/metrics` exposes active/total
-  sessions, auth denials, and bytes transferred.
+- **Metrics** (optional, `-metrics-addr`; `swarmexec init --metrics-port 9464`
+  sets it and publishes the port): `/metrics` exposes `swarmexec_agent_info`
+  (build and protocol version), active/total exec sessions, auth denials, cap
+  refusals per limit, and bytes transferred. A scrape config, alert rules and a
+  Grafana dashboard are in [`deploy/monitoring/`](deploy/monitoring/).
 
 ## Rotating certs
 
