@@ -9,15 +9,14 @@ import (
 	"os"
 
 	"swarmexec/client/internal/cli"
+	"swarmexec/internal/pb"
 )
 
-// Injected at build time via -ldflags. protoVersion tracks CONTRACT.md's proto
-// package/version (CONTRACT.md §7).
-var (
-	version      = "dev"
-	protoVersion = "swarmexec/v1"
-)
+// version is the binary's release, injected at build time via -ldflags. The
+// protocol version is not build metadata and is not injected: it is
+// pb.ProtocolVersion, compiled from the same package as the agent's.
+var version = "dev"
 
 func main() {
-	os.Exit(cli.Execute(cli.Version{Binary: version, Proto: protoVersion}))
+	os.Exit(cli.Execute(cli.Version{Binary: version, Proto: pb.ProtocolVersion}))
 }

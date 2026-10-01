@@ -20,7 +20,7 @@ import (
 // "health_status: healthy", not a separate field.
 const healthPrefix = "health_status: "
 
-// WatchContainerEvents streams one container's runtime events (CONTRACT.md §3).
+// WatchContainerEvents streams one container's runtime events (CONTRACT.md §3.5).
 //
 // The manager cannot answer these. A task reads "running" while its container
 // fails every probe, is OOM-killed, or exits and is restarted — the daemon on

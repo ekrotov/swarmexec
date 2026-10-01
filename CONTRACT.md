@@ -1,9 +1,11 @@
 # Shared Contract — swarmexec
 
-This file is the **single source of truth** for the wire protocol between the
-CLI client and the Swarm agent. Both `REQUIREMENTS-agent.md` and
-`REQUIREMENTS-client.md` depend on this file. If anything here changes, both
-components must be updated.
+This file defines the wire protocol between the CLI client and the Swarm agent
+together with [`proto/swarmexec.proto`](proto/swarmexec.proto), and each owns
+one half: the `.proto` defines the messages, fields and RPCs; this file defines
+what they mean — transport, authentication, framing, lifecycles, limits — and
+that half is normative. Neither repeats the other. Both components are built
+against both files; if either changes, both components must be updated.
 
 ## 1. Overview
 
@@ -49,7 +51,7 @@ carries credentials in gRPC metadata:
 |---|---|
 | `x-swarmexec-binding` | **Current.** `base64url(HMAC-SHA256(secret, "swarmexec-channel-binding-v1" ‖ SHA-256(server leaf certificate DER)))`. |
 | `x-swarmexec-secret` | **Legacy.** The raw secret. Accepted only while the agent runs with `-allow-legacy-secret`. |
-| `x-swarmexec-operator` | Optional operator identity for audit when no client certificate is presented. Unauthenticated — see §2.2. |
+| `x-swarmexec-operator` | Optional operator identity for audit when no client certificate is presented. Unauthenticated: it is believed as sent, and the audit log marks it `identity_verified=false`. Per-operator attribution needs client certificates. |
 
 Clients send the binding, never the raw secret. The binding is per-connection:
 the agent recomputes it over its own certificate, so a proof collected from any
@@ -60,334 +62,26 @@ This authenticates the *client* to the agent. It does not authenticate the agent
 to the client: on a connection the client chose not to verify (`insecure`), the
 peer still sees what that session sends it.
 
-## 3. Protocol Definition (proto3)
+## 3. Protocol Definition
 
-This is the authoritative `.proto`. Both components generate Go code from it.
+The messages, fields and RPCs are defined in
+[`proto/swarmexec.proto`](proto/swarmexec.proto). That file is their single
+source: `internal/pb` is generated from it (`make generate`), and CI fails when
+the checked-in generated code does not match it. This document used to carry a
+copy of the `.proto`; two copies of a contract are two contracts, and the copy's
+comments had already drifted, so it was removed.
 
-```proto
-syntax = "proto3";
-package swarmexec;
-option go_package = "swarmexec/internal/pb";
+What a `.proto` cannot say lives here instead — the semantics below, which are
+normative.
 
-service Agent {
-  // List containers on THIS node. Optional helper for discovery/validation.
-  rpc ListContainers(ListRequest) returns (ListResponse);
+### 3.1 Logs framing (normative)
 
-  // Bidirectional interactive exec stream.
-  // The first ClientMessage on the stream MUST carry a StartExec payload.
-  rpc Exec(stream ClientMessage) returns (stream ServerMessage);
-
-  // Stream a container's logs. Server-streaming: the agent reads the container
-  // logs on its own node and forwards them as LogChunks until the request is
-  // satisfied (or, with follow=true, until the client cancels the stream).
-  rpc Logs(LogsRequest) returns (stream LogChunk);
-
-  // Stream ONE container's runtime events from the node it runs on: health
-  // transitions, OOM kills, exits with their code, starts and restarts.
-  rpc WatchContainerEvents(WatchContainerEventsRequest) returns (stream ContainerEvent);
-
-  // List volumes on THIS node. Swarm volumes are node-local, so the cli queries
-  // every node and aggregates the results.
-  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
-
-  // Remove a volume on THIS node (authorized + audited). Fails if the volume is
-  // in use unless force is set.
-  rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
-
-  // Create a volume on THIS node (authorized + audited). Volumes are node-local,
-  // so the cli targets a specific node's agent.
-  rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse);
-
-  // Forward a single TCP connection to a port inside a container on THIS node.
-  // Bidirectional: one stream carries exactly one connection, so a local
-  // listener opens a new stream per accepted conn (HTTP/2 multiplexes them over
-  // the one transport). The first ClientMessage MUST carry a StartForward.
-  rpc PortForward(stream ForwardClientMessage) returns (stream ForwardServerMessage);
-
-  // Resource usage of the containers on THIS node. Unary on purpose: the agent
-  // samples in the background and answers from memory, so a client polls this on
-  // the refresh cycle it already has instead of holding a stream open per node.
-  // It also solves the sampling problem — a CPU percentage needs two readings,
-  // and the background sampler always has the previous one.
-  rpc Stats(StatsRequest) returns (StatsResponse);
-
-  // List the images on THIS node, with what each costs on disk and whether a
-  // running container is using it. Images are node-local and the manager has no
-  // view of them at all, so the cli asks each node in turn.
-  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
-
-  // Reclaim image disk space on THIS node (authorized + audited). Destructive:
-  // see PruneImagesRequest.all for the two very different things it can mean.
-  rpc PruneImages(PruneImagesRequest) returns (PruneImagesResponse);
-
-  // Report the agent's build and protocol version. Cheap, low-privilege probe
-  // used by `swarmexec doctor` and for client/agent skew detection. Calling it
-  // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
-  // turns into an "agent too old — run init --force" hint.
-  rpc Version(VersionRequest) returns (VersionResponse);
-}
-
-message ListRequest {
-  string service_filter = 1; // optional substring/label filter; empty = all
-}
-
-message ListResponse {
-  repeated ContainerInfo containers = 1;
-}
-
-message ContainerInfo {
-  string id = 1;       // full container ID
-  string name = 2;     // container name
-  string service = 3;  // swarm service name if known, else empty
-  repeated string volumes = 4;  // names of named volumes this container mounts
-}
-
-message ClientMessage {
-  oneof payload {
-    StartExec start = 1;  // MUST be the first message
-    bytes stdin = 2;      // raw stdin bytes
-    Resize resize = 3;    // terminal resize event
-  }
-}
-
-message StartExec {
-  string container_id = 1;     // full container ID to exec into
-  repeated string cmd = 2;     // command + args, e.g. ["/bin/sh"]
-  bool tty = 3;                // allocate a TTY
-  uint32 width = 4;            // initial terminal width (columns)
-  uint32 height = 5;           // initial terminal height (rows)
-  repeated string env = 6;     // optional extra env, "KEY=VALUE"
-  string working_dir = 7;      // optional working directory
-  string user = 8;             // optional user, e.g. "1000:1000" or "root"
-}
-
-message Resize {
-  uint32 width = 1;
-  uint32 height = 2;
-}
-
-message ServerMessage {
-  oneof payload {
-    bytes stdout = 1;     // stdout bytes (also carries all output when tty=true)
-    bytes stderr = 2;     // stderr bytes (only when tty=false)
-    int32 exit_code = 3;  // sent once, as the final message before stream end
-    string error = 4;     // terminal error; stream ends after this
-  }
-}
-
-message LogsRequest {
-  string container_id = 1;   // full container ID to read logs from
-  bool follow = 2;           // keep streaming new log lines as they arrive
-  uint32 tail = 3;           // last N lines to start from; 0 = all
-  bool timestamps = 4;       // prefix each line with an RFC3339Nano timestamp
-  uint32 since_seconds = 5;  // only logs newer than N seconds ago; 0 = no limit
-}
-
-message WatchContainerEventsRequest {
-  string container_id = 1;  // full container ID to watch; exactly one
-}
-// ContainerEvent carries a typed SUBSET of a Docker event, not the event.
-// Docker attaches the container's full label set to every event, and labels are
-// operator-supplied strings; forwarding them wholesale would make this RPC an
-// exfiltration path for whatever a deployer happened to put in a label.
-message ContainerEvent {
-  string action = 1;          // raw docker action: "die", "oom", "start", "health_status: healthy"
-  int64 time_unix_nano = 2;   // when the daemon recorded it
-  int32 exit_code = 3;        // only meaningful when action is "die"; 0 otherwise
-  string health = 4;          // healthy|unhealthy|starting — only for health_status actions
-  string error = 5;           // terminal error; the stream ends after this
-}
-message LogChunk {
-  oneof payload {
-    bytes stdout = 1;  // stdout bytes (also carries all output for TTY containers)
-    bytes stderr = 2;  // stderr bytes (non-TTY containers only)
-    string error = 3;  // terminal error; stream ends after this
-  }
-}
-
-message ListVolumesRequest {
-  // with_size asks the agent to also compute each volume's on-disk size via the
-  // docker disk-usage endpoint (du-style; can be slow). Off by default so the
-  // plain listing stays fast.
-  bool with_size = 1;
-}
-
-message ListVolumesResponse {
-  repeated VolumeInfo volumes = 1;
-}
-
-message VolumeInfo {
-  string name = 1;
-  string driver = 2;
-  string mountpoint = 3;
-  string created_at = 4;  // RFC3339, if known
-  string scope = 5;       // "local" or "global"
-  // size_bytes is the on-disk size, only meaningful when size_known is true.
-  // -1 means "not available" (e.g. non-local driver).
-  int64 size_bytes = 6;
-  // size_known is true when the agent actually computed the size (with_size
-  // requested and disk-usage succeeded). It lets the client tell "0 bytes" from
-  // "an older agent that doesn't report sizes" (which would default size_bytes
-  // to 0).
-  bool size_known = 7;
-  // labels are the volume's metadata labels, as set at creation time.
-  map<string, string> labels = 8;
-}
-
-message RemoveVolumeRequest {
-  string name = 1;
-  bool force = 2;  // remove even with the "force" flag (does not override in-use)
-}
-
-message RemoveVolumeResponse {}
-
-message CreateVolumeRequest {
-  string name = 1;
-  string driver = 2;                 // empty means "local"
-  map<string, string> labels = 3;
-  map<string, string> driver_opts = 4;
-}
-
-message CreateVolumeResponse {
-  VolumeInfo volume = 1;             // the created volume
-}
-
-message StartForward {
-  string container_id = 1;  // full container ID to forward into
-  uint32 port = 2;          // TCP port inside the container
-}
-
-message ForwardClientMessage {
-  oneof payload {
-    StartForward start = 1;  // MUST be the first message
-    bytes data = 2;          // raw bytes toward the container
-  }
-}
-
-// ForwardReady is sent once, after the agent has established the connection to
-// the target port and before any data. It lets the client distinguish "the
-// target accepted" from "connected, but the peer has not spoken yet" — without
-// it a forward pointing at a closed port looks healthy until the operator's
-// own client times out.
-message ForwardReady {}
-
-message ForwardServerMessage {
-  oneof payload {
-    ForwardReady ready = 1;  // sent once, before any data
-    bytes data = 2;          // raw bytes from the container
-    string error = 3;        // terminal error; stream ends after this
-  }
-}
-
-message VersionRequest {}
-
-message VersionResponse {
-  string version = 1;        // agent build version
-  string proto_version = 2;  // wire protocol version
-}
-
-message StatsRequest {
-  // container_ids narrows the answer to these containers; empty means every
-  // container the agent is sampling. The cli sends the ids it is displaying so
-  // a large node does not ship readings nobody looks at.
-  repeated string container_ids = 1;
-}
-
-message StatsResponse {
-  repeated ContainerStats stats = 1;
-
-  // cpu_ready is false until the sampler has taken the TWO readings a CPU
-  // percentage needs — it is a delta, unlike memory, which is valid from the
-  // first sample. So a response can carry usable memory numbers with
-  // cpu_ready=false, and the client renders "…" for CPU rather than a wrong 0%.
-  bool cpu_ready = 2;
-
-  // sampled_at is when the underlying sample was taken (RFC3339), so a client
-  // can spot a stalled sampler rather than trusting stale numbers.
-  string sampled_at = 3;
-
-  // The node as a whole, for putting usage next to what the scheduler booked.
-  // node_cpus is the online CPU count; usage percentages are relative to it
-  // when a container has no CPU limit of its own.
-  int64 node_cpus = 4;
-  int64 node_memory_total_bytes = 5;
-}
-
-message ContainerStats {
-  string container_id = 1;
-
-  // cpu_percent is the same number `docker stats` prints: the share of ONE cpu,
-  // so 250.0 means two and a half cores. Divide by cpu_limit_cores (or by
-  // node_cpus when there is no limit) to get a 0-100 utilisation.
-  double cpu_percent = 2;
-
-  // cpu_limit_cores is the container's own CPU limit in cores, 0 when it has
-  // none. With no limit the container may use the whole node, which is why the
-  // client falls back to node_cpus for the ratio.
-  double cpu_limit_cores = 3;
-
-  int64 memory_bytes = 4;
-
-  // memory_limit_bytes is the container's limit if it has one, otherwise the
-  // node's total memory — the same substitution docker itself makes.
-  // memory_limited says which of the two it is, so "80% of its limit" is never
-  // confused with "80% of the node".
-  int64 memory_limit_bytes = 5;
-  bool memory_limited = 6;
-
-  // health is the container's healthcheck verdict: "healthy", "unhealthy",
-  // "starting", or "" when the container declares no healthcheck (and also when
-  // the agent could not tell — the two are indistinguishable here, and both
-  // mean "do not claim anything about this container's health").
-  //
-  // It rides along with the usage readings because the manager cannot supply
-  // it: a swarm task reads "running" while its container fails every probe, so
-  // health is only knowable on the node itself.
-  string health = 7;
-}
-
-message ListImagesRequest {}
-
-message ListImagesResponse {
-  repeated ImageInfo images = 1;
-
-  // Totals for the node, so a client can say what is at stake without summing a
-  // long list — and can show the safe and the risky figure separately, because
-  // they are what the operator is choosing between.
-  int64 total_bytes = 2;
-  int64 dangling_bytes = 3;  // untagged leftovers: nothing can start from these
-  int64 unused_bytes = 4;    // tagged, but no RUNNING container uses them
-}
-
-message ImageInfo {
-  string id = 1;
-  repeated string tags = 2;  // empty for a dangling image
-  int64 size_bytes = 3;
-  int64 created_unix = 4;
-  // in_use means a container that is RUNNING on this node right now uses it.
-  // It is not the same as "needed": a service scaled to zero, or a task between
-  // restarts, still needs its image and shows in_use=false.
-  bool in_use = 5;
-  bool dangling = 6;
-}
-
-message PruneImagesRequest {
-  // all=false removes only DANGLING images — untagged leftovers of a rebuild,
-  // which nothing can be about to start from. Always safe.
-  //
-  // all=true also removes TAGGED images that no running container uses. On a
-  // swarm node that includes the image of any service currently scaled to zero
-  // or between restarts: it will have to be pulled again, which is an outage if
-  // the registry is unreachable. A client MUST present the two as separate
-  // choices and MUST NOT default to this one.
-  bool all = 1;
-}
-
-message PruneImagesResponse {
-  int64 reclaimed_bytes = 1;
-  repeated string deleted = 2;  // what the daemon reported removing
-}
-```
+Like Exec, the stdout/stderr split depends on the container's TTY setting: for a
+TTY container the Docker log stream is raw and the agent forwards everything as
+`stdout`; for a non-TTY container the stream is `stdcopy`-multiplexed and the
+agent demultiplexes it into `stdout`/`stderr`. The same buffer-safety rule (§6)
+applies. The agent authorizes a Logs request before streaming, exactly as for
+Exec.
 
 ### 3.2 Port-forward lifecycle (normative)
 
@@ -414,15 +108,6 @@ constraint and the measurements behind it. That is an agent-side implementation
 detail and no part of this wire contract.
 
 The buffer-safety rule (§6) applies to `data` in both directions.
-
-### 3.1 Logs framing (normative)
-
-Like Exec, the stdout/stderr split depends on the container's TTY setting: for a
-TTY container the Docker log stream is raw and the agent forwards everything as
-`stdout`; for a non-TTY container the stream is `stdcopy`-multiplexed and the
-agent demultiplexes it into `stdout`/`stderr`. The same buffer-safety rule (§6)
-applies. The agent authorizes a Logs request before streaming, exactly as for
-Exec.
 
 ### 3.3 Stats semantics (normative)
 
@@ -479,6 +164,33 @@ that also removes tagged images — so a policy can permit the first without the
 second. A client MUST present them as separate choices and MUST NOT default to
 `all`.
 
+### 3.5 Container events (normative)
+
+`WatchContainerEvents` exists because the manager cannot answer the question.
+A task reads `running` while its container fails every health probe, is
+OOM-killed, or exits and is restarted; only the daemon on the node knows, and
+it knows immediately.
+
+- **One container per stream.** The request names a container id and the agent
+  subscribes with that filter at the DAEMON. An agent that received the node's
+  whole event stream and discarded most of it would be doing the narrowing in
+  the one place where a mistake leaks another container's lifecycle — including
+  containers that are not part of any swarm service.
+- **A typed subset crosses the wire, not the event.** Docker attaches the
+  container's full label set to every event, and labels are operator-supplied
+  strings. `ContainerEvent` therefore carries only `action`, `time_unix_nano`,
+  `exit_code`, `health` and `error`; `Actor.Attributes` is never forwarded.
+- `exit_code` is meaningful only when `action` is `die`, and is 0 otherwise.
+  `health` is set only for `health_status:` actions and carries the verdict
+  alone (`healthy` / `unhealthy` / `starting`).
+- The RPC is authorized as `container.events` and audited at start and end. The
+  audit record counts events; it never contains them.
+- It counts against the agent's stream cap like Exec, Logs and PortForward. It
+  is held open for as long as a view is open, so exempting it would be a quiet
+  way around the limit.
+- A client must treat this as an ENRICHMENT. An agent that predates the RPC
+  answers `Unimplemented`, and the view it decorates has to keep working.
+
 ## 4. Session Lifecycle (normative)
 
 1. Client opens the `Exec` stream.
@@ -518,35 +230,13 @@ that send the live read buffer are non-conformant.
 
 - The proto `package` is `swarmexec`. Breaking changes require a new package or
   an explicit version field; do not silently repurpose field numbers.
+- The protocol version is the constant `pb.ProtocolVersion` (currently
+  `swarmexec/v1`), defined next to the generated code. Both binaries compile it
+  from that one package, so they cannot report different values, and it is not
+  a build flag — only the binary's release version is injected at build time.
+  `doctor` compares the agents' value to the client's by exact equality.
 - Both binaries SHOULD expose `--version` and log the protocol/proto version on
   startup.
-
-### 3.5 Container events (normative)
-
-`WatchContainerEvents` exists because the manager cannot answer the question.
-A task reads `running` while its container fails every health probe, is
-OOM-killed, or exits and is restarted; only the daemon on the node knows, and
-it knows immediately.
-
-- **One container per stream.** The request names a container id and the agent
-  subscribes with that filter at the DAEMON. An agent that received the node's
-  whole event stream and discarded most of it would be doing the narrowing in
-  the one place where a mistake leaks another container's lifecycle — including
-  containers that are not part of any swarm service.
-- **A typed subset crosses the wire, not the event.** Docker attaches the
-  container's full label set to every event, and labels are operator-supplied
-  strings. `ContainerEvent` therefore carries only `action`, `time_unix_nano`,
-  `exit_code`, `health` and `error`; `Actor.Attributes` is never forwarded.
-- `exit_code` is meaningful only when `action` is `die`, and is 0 otherwise.
-  `health` is set only for `health_status:` actions and carries the verdict
-  alone (`healthy` / `unhealthy` / `starting`).
-- The RPC is authorized as `container.events` and audited at start and end. The
-  audit record counts events; it never contains them.
-- It counts against the agent's stream cap like Exec, Logs and PortForward. It
-  is held open for as long as a view is open, so exempting it would be a quiet
-  way around the limit.
-- A client must treat this as an ENRICHMENT. An agent that predates the RPC
-  answers `Unimplemented`, and the view it decorates has to keep working.
 
 ## 8. Deployment (normative)
 

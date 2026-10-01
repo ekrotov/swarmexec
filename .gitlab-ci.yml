@@ -2,7 +2,7 @@
 #
 # Stages:
 #   .pre    — verify-tag-on-main: gate that a release tag actually sits on main
-#   test    — go vet, gofmt check, race tests, code navigation
+#   test    — go vet, gofmt check, race tests, generated-code check, code navigation
 #   build   — cross-compile the cli (linux / macOS / windows) -> artifacts
 #   image   — build the agent image and push it to the GitLab Container Registry
 #   release — publish a GitLab Release for the tag
@@ -23,7 +23,6 @@ stages:
 
 variables:
   GO_IMAGE: "golang:1.27"
-  PROTO_VER: "swarmexec/v1"
   GOPATH: "$CI_PROJECT_DIR/.gocache"
 
 workflow:
@@ -87,6 +86,22 @@ test:
         exit 1
       fi
     - go test -race ./...
+
+# ----------------------------------------------------------------------------
+# generate-check — the checked-in internal/pb must be exactly what
+# proto/swarmexec.proto generates. Nothing else ties the two together: the
+# build compiles whatever internal/pb holds, so a .proto edit without a
+# regeneration (or a hand edit of generated code) would pass every other job.
+# Runs the same Makefile targets as a developer would, so the pinned tool
+# versions live in one place (Makefile `tools`).
+# ----------------------------------------------------------------------------
+generate-check:
+  stage: test
+  image: $GO_IMAGE
+  <<: *go-cache
+  script:
+    - make tools
+    - make check-generate
 
 # ----------------------------------------------------------------------------
 # vulncheck — CVE analysis with govulncheck (the official Go vulnerability
@@ -212,7 +227,7 @@ build-cli:
         out="dist/swarmexec-${os}-${arch}${ext}"
         echo "  -> $out"
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
-          -ldflags "-s -w -X main.version=${VERSION} -X main.protoVersion=${PROTO_VER}" \
+          -ldflags "-s -w -X main.version=${VERSION}" \
           -o "$out" ./client/cmd/swarmexec
       done
     - (cd dist && sha256sum swarmexec-* > SHA256SUMS)
@@ -300,7 +315,6 @@ agent-image:
         --context "$CI_PROJECT_DIR" \
         --dockerfile "$CI_PROJECT_DIR/agent/Dockerfile" \
         --build-arg "VERSION=$VERSION" \
-        --build-arg "PROTO_VER=$PROTO_VER" \
         $DESTS
   rules:
     - *semver-tag                 # release: :<version> (+ :latest if stable)

@@ -53,6 +53,7 @@ Regenerating the gRPC code (only needed after editing the contract):
 ```sh
 make tools           # installs buf + protoc-gen-go(-grpc) into $GOPATH/bin
 make generate        # buf generate -> internal/pb/
+make check-generate  # fail if internal/pb does not match the .proto (CI runs this)
 ```
 
 ### Releases (CI/CD)
@@ -595,7 +596,7 @@ bastion — and all of it under Apache-2.0 with no node limit.
 
 ## More detail
 
-- [`CONTRACT.md`](CONTRACT.md) — the authoritative wire protocol.
+- [`CONTRACT.md`](CONTRACT.md) — the wire protocol's semantics; the messages and RPCs themselves are in [`proto/swarmexec.proto`](proto/swarmexec.proto).
 - [`agent/README.md`](agent/README.md) — agent internals, deployment, cert rotation.
 - [`client/README.md`](client/README.md) — cli internals and behavior.
 

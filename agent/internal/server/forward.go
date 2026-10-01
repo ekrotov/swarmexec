@@ -49,7 +49,7 @@ const (
 )
 
 // PortForward bridges one client TCP connection to a port inside a container on
-// this node. One gRPC stream carries exactly one connection (CONTRACT.md §3).
+// this node. One gRPC stream carries exactly one connection (CONTRACT.md §3.2).
 func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
 	if s.draining.Load() {
 		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new forwards")

@@ -17,7 +17,6 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.protoVersion=swarmexec/v1
     goos:
       - linux
       - darwin
