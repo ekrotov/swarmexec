@@ -364,12 +364,15 @@ swarmexec ps                 # all running tasks across the swarm
 swarmexec ps <service>       # filter to one service
 ```
 
-Stream a container's logs:
+Stream logs — of one container, several, every replica of a service, or a
+whole stack:
 
 ```sh
-swarmexec logs web                 # all logs
+swarmexec logs web                 # all logs (every replica, prefixed, if web has several)
 swarmexec logs web -f --tail 100   # follow, starting from the last 100 lines
 swarmexec logs web -t --since 10m  # with timestamps, last 10 minutes
+swarmexec logs -f api worker db    # several services at once, one prefixed stream
+swarmexec logs -f --stack shop     # every service of a stack
 ```
 
 ### Volumes (swarm-wide)
