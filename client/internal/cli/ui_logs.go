@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -191,6 +192,19 @@ func (u *ui) showLogs(c resolve.Candidate) {
 // showServiceLogs streams the logs of every container of a service into one
 // viewer, each line prefixed with [container@node].
 func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
+	u.showMemberLogs("service logs", serviceName, members, false)
+}
+
+// stackLogLimit bounds how many containers one stack view follows. Each is a
+// stream against its node's agent (-max-streams), and a viewer fed by a
+// hundred followers is no longer readable anyway.
+const stackLogLimit = 64
+
+// showMemberLogs streams several containers into one log view. byService
+// labels each line with its service as well as its slot — needed once the
+// members span services, as a stack's do — and starts each from a shorter
+// tail, so opening a stack does not begin with thousands of old lines.
+func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, byService bool) {
 	app, ctree := u.app, u.ctree
 	cfg, r, ctx, f := u.cfg, u.r, u.ctx, u.f
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
@@ -202,8 +216,8 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 		if !follow.Load() {
 			state = "off"
 		}
-		tv.SetTitle(fmt.Sprintf(" service logs %s (%d containers) — follow:%s · %s ",
-			serviceName, len(members), state, lv.status()))
+		tv.SetTitle(fmt.Sprintf(" %s %s (%d containers) — follow:%s · %s ",
+			kind, name, len(members), state, lv.status()))
 	}
 	tv.SetBorder(true)
 	setTitle()
@@ -226,9 +240,15 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 		if c.Slot == 0 {
 			prefix = fmt.Sprintf("[%s] ", orDash(c.NodeName))
 		}
+		tail := uint32(200)
+		if byService {
+			// The same names the CLI prints: svc.slot, svc@node.
+			prefix = "[" + sourceFromCandidate(c).label + "] "
+			tail = 50
+		}
 		go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
 			lerr := streamServiceLogs(lctx, cfg, r, target, ep,
-				logsParams{follow: true, tail: 200, connectTimeout: f.connectTimeout},
+				logsParams{follow: true, tail: tail, connectTimeout: f.connectTimeout},
 				&logIngest{v: lv, prefix: prefix},
 				&logIngest{v: lv, prefix: prefix, stderr: true},
 				func(msg string) { lv.addNote(prefix + msg) })
@@ -243,11 +263,16 @@ func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
 }
 
 // showLogsForNode opens logs for the tree cursor: a container leaf shows that
-// container's logs; a service node shows its containers' aggregated logs.
+// container's logs; a service node shows its containers' aggregated logs; a
+// stack row shows every container of the stack.
 // Bound to the L key (Enter on a service toggles expand/collapse instead).
 func (u *ui) showLogsForNode(node *tview.TreeNode) {
 	if c, ok := node.GetReference().(resolve.Candidate); ok {
 		u.showLogs(c)
+		return
+	}
+	if ref, ok := node.GetReference().(stackRef); ok {
+		u.showStackLogs(ref.name)
 		return
 	}
 	if !isServiceNode(node) {
@@ -266,4 +291,51 @@ func (u *ui) showLogsForNode(node *tview.TreeNode) {
 		}
 		u.showServiceLogs(title, members)
 	}
+}
+
+// showStackLogs follows every container of every service in a stack, like
+// `swarmexec logs --stack`. The members come from the last fetch rather than
+// from the tree, so a folded service is followed as well as an open one.
+func (u *ui) showStackLogs(stack string) {
+	if stack == noStackLabel {
+		u.info("(no stack) is a display grouping, not a stack — open logs on one of its services instead.")
+		return
+	}
+	members := u.stackLogMembers(stack)
+	switch {
+	case len(members) == 0:
+		u.info(fmt.Sprintf("stack %s has no running container to follow.", stack))
+	case len(members) > stackLogLimit:
+		u.info(fmt.Sprintf("stack %s has %d running containers; following more than %d at once is not readable and costs every agent a stream each.\n\nOpen logs on its services one at a time, or use swarmexec logs --stack %s with --grep.",
+			stack, len(members), stackLogLimit, stack))
+	default:
+		u.showMemberLogs("stack logs", stack, members, true)
+	}
+}
+
+// stackLogMembers is every running container of the stack's services, in
+// service and slot order.
+func (u *ui) stackLogMembers(stack string) []resolve.Candidate {
+	inStack := map[string]bool{}
+	for _, s := range u.lastSvcs {
+		if stackNameOf(s) == stack {
+			inStack[s.Name] = true
+		}
+	}
+	var out []resolve.Candidate
+	for _, c := range u.lastCands {
+		if inStack[c.Service] {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Service != out[j].Service {
+			return out[i].Service < out[j].Service
+		}
+		if out[i].Slot != out[j].Slot {
+			return out[i].Slot < out[j].Slot
+		}
+		return out[i].NodeName < out[j].NodeName
+	})
+	return out
 }
