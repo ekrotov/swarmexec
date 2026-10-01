@@ -71,6 +71,7 @@ regenerate after a contract change, from the repo root:
 ```sh
 make tools          # installs buf + protoc-gen-go(-grpc) into GOPATH/bin
 make generate       # buf generate -> internal/pb/
+make check-generate # fail if internal/pb does not match the .proto (CI runs this)
 ```
 
 ## Configuration

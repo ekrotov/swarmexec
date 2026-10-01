@@ -151,9 +151,10 @@ refresh, `q` to quit.
 
 ## Shared wire protocol
 
-[`CONTRACT.md`](CONTRACT.md) is the single source of truth: a proto3 definition
-(`package swarmexec`, `go_package = swarmexec/internal/pb`) that both binaries
-generate from into the shared `internal/pb`. Transport is gRPC over TLS, default
+[`proto/swarmexec.proto`](proto/swarmexec.proto) defines the messages and RPCs
+(`package swarmexec`, `go_package = swarmexec/internal/pb`); both binaries
+compile the shared `internal/pb` generated from it, and CI checks that the
+generated code matches. [`CONTRACT.md`](CONTRACT.md) defines their semantics. Transport is gRPC over TLS, default
 port **9443**. Normative rules cover the exec/logs stdout/stderr framing, the
 exec session lifecycle, and buffer-safety.
 

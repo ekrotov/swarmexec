@@ -16,9 +16,8 @@ RUN go mod download
 # Build the agent command from the shared module.
 COPY . .
 ARG VERSION=dev
-ARG PROTO_VER=swarmexec/v1
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X swarmexec/agent/internal/version.Version=${VERSION} -X swarmexec/agent/internal/version.Protocol=${PROTO_VER}" \
+    -ldflags "-s -w -X swarmexec/agent/internal/version.Version=${VERSION}" \
     -o /agent ./agent/cmd/agent
 
 # --- runtime stage: minimal distroless (no shell, no docker CLI) ---

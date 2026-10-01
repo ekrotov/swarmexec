@@ -2,22 +2,21 @@
 #
 # Single Go module (module swarmexec) shared by the cli and the agent. The
 # generated proto code lives in internal/pb and is the contract surface both
-# components compile against (CONTRACT.md §3).
+# components compile against (proto/swarmexec.proto; semantics in CONTRACT.md).
 
 GOBIN      := $(shell go env GOPATH)/bin
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-PROTO_VER  ?= swarmexec/v1
 PKG        := swarmexec/client/cmd/swarmexec
-LDFLAGS    := -s -w -X main.version=$(VERSION) -X main.protoVersion=$(PROTO_VER)
+LDFLAGS    := -s -w -X main.version=$(VERSION)
 
 # The agent keeps its version in a package (not main), so it has its own ldflags.
-AGENT_LDFLAGS := -s -w -X swarmexec/agent/internal/version.Version=$(VERSION) -X swarmexec/agent/internal/version.Protocol=$(PROTO_VER)
+AGENT_LDFLAGS := -s -w -X swarmexec/agent/internal/version.Version=$(VERSION)
 AGENT_IMAGE   ?= swarmexec-agent:$(VERSION)
 
 # Operator platforms (REQUIREMENTS §2).
 PLATFORMS  := linux/amd64 linux/arm64 darwin/arm64
 
-.PHONY: all tools generate build agent agent-image build-all test vet lint release clean
+.PHONY: all tools generate check-generate build agent agent-image build-all test vet lint release clean
 
 all: generate build-all
 
@@ -33,6 +32,11 @@ tools:
 ## generate: regenerate internal/pb from proto/swarmexec.proto
 generate:
 	PATH="$(GOBIN):$$PATH" buf generate
+
+## check-generate: fail when internal/pb does not match proto/swarmexec.proto
+check-generate: generate
+	@git diff --exit-code -- internal/pb || { echo "internal/pb is stale: run 'make generate' and commit"; exit 1; }
+	@test -z "$$(git status --porcelain -- internal/pb)" || { git status --porcelain -- internal/pb; echo "untracked generated files in internal/pb"; exit 1; }
 
 ## build: build the cli for the host platform into ./bin
 build:

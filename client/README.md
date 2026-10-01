@@ -37,6 +37,7 @@ Building generated proto code from scratch needs the codegen tools once:
 ```sh
 make tools           # installs buf + protoc-gen-go[-grpc]
 make generate        # regenerates internal/pb from proto/swarmexec.proto
+make check-generate  # fail if internal/pb does not match the .proto (CI runs this)
 ```
 
 ## Configure TLS (mandatory)
