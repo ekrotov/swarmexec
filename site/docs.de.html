@@ -223,6 +223,15 @@
         <strong>Docker 23.0</strong> (API 1.41/1.42) — darunter bleiben sie leer und sagen das
         auch, statt zu scheitern.
       </p>
+      <p>
+        <strong>Am schnellsten:</strong> Das Installationsskript wählt das Binary für Ihren
+        Rechner, prüft es gegen die <code>SHA256SUMS</code> des Releases und installiert nichts,
+        was es nicht prüfen konnte. Es verwendet nie <code>sudo</code> und ändert kein
+        Shell-Profil — <a href="/install.sh">vorher lesen</a>, es ist kurz.
+      </p>
+      <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+<span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># ein bestimmtes Release</span></div>
+      <p>Oder von Hand:</p>
       <p>Der Client ist ein einzelnes statisches Binary. Hol dir den aktuellen Release-Build für deine Plattform:</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64

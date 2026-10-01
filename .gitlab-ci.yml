@@ -710,6 +710,31 @@ linkedin-announce:
 # reddit-post — builds reddit-post-<tag>.md and posts NOTHING. Which subreddit,
 # which flair and whether a release is worth a post at all is a judgement call,
 # and whoever posts has to be there for the comments. See ci/reddit-post.sh.
+# ----------------------------------------------------------------------------
+# package-manifests — a Homebrew formula and a Scoop manifest for the release,
+# generated from the SHA256SUMS this pipeline built, pointing at the public
+# package-registry downloads. Kept as artifacts; PUBLISHING them needs a tap
+# and a bucket repository and a token that may push there, which is a decision
+# about public infrastructure this job does not make.
+# ----------------------------------------------------------------------------
+package-manifests:
+  stage: deploy
+  image: alpine:3
+  needs:
+    - job: build-cli
+      artifacts: true
+  rules:
+    - *semver-tag
+  script:
+    - sh ci/package-manifests.sh "$CI_COMMIT_TAG"
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG"
+        dist/SHA256SUMS packaging
+  artifacts:
+    expire_in: 1 year
+    expose_as: "Package manifests"
+    paths:
+      - packaging/
+
 reddit-post:
   extends: .release-post
   script:

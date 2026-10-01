@@ -220,6 +220,15 @@
         widok obrazów per węzeł potrzebują <strong>Dockera 23.0</strong> (API 1.41/1.42) —
         poniżej pozostają puste i mówią o tym, zamiast zawodzić.
       </p>
+      <p>
+        <strong>Najszybciej:</strong> skrypt instalacyjny wybiera binarkę dla twojej maszyny,
+        sprawdza ją z <code>SHA256SUMS</code> wydania i odmawia instalacji czegokolwiek, czego
+        nie mógł zweryfikować. Nigdy nie używa <code>sudo</code> i nie zmienia profilu powłoki
+        — <a href="/install.sh">przeczytaj go najpierw</a>, jest krótki.
+      </p>
+      <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+<span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># konkretne wydanie</span></div>
+      <p>Albo ręcznie:</p>
       <p>Klient to pojedynczy statyczny plik binarny. Pobierz najnowszą wersję dla swojej platformy:</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
     https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64

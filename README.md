@@ -304,8 +304,17 @@ The two modes use different agent flags:
 
 ### Step 4.1 — Get the cli and your operator cert
 
-Put `./bin/swarmexec` on your `PATH`, and have your `ca.crt`,
-`operator.crt`, `operator.key` available locally.
+Install the client — the script picks the build for your machine, verifies it
+against the release's `SHA256SUMS`, refuses an unverified binary, and never uses
+sudo ([read it first](site/install.sh)):
+
+```sh
+curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   # a specific release
+```
+
+Or put a build from `./bin/swarmexec` on your `PATH`. For mTLS, have your
+`ca.crt`, `operator.crt`, `operator.key` available locally.
 
 ### Step 4.2 — Point the cli at a Swarm manager
 
