@@ -16,7 +16,7 @@ AGENT_IMAGE   ?= swarmexec-agent:$(VERSION)
 # Operator platforms (REQUIREMENTS §2).
 PLATFORMS  := linux/amd64 linux/arm64 darwin/arm64
 
-.PHONY: all tools generate check-generate build agent agent-image build-all test vet lint release clean
+.PHONY: all tools generate check-generate docs-i18n docs-i18n-check docs-i18n-accept build agent agent-image build-all test vet lint release clean
 
 all: generate build-all
 
@@ -37,6 +37,18 @@ generate:
 check-generate: generate
 	@git diff --exit-code -- internal/pb || { echo "internal/pb is stale: run 'make generate' and commit"; exit 1; }
 	@test -z "$$(git status --porcelain -- internal/pb)" || { git status --porcelain -- internal/pb; echo "untracked generated files in internal/pb"; exit 1; }
+
+## docs-i18n: re-translate the docs sections whose English changed (needs ANTHROPIC_API_KEY)
+docs-i18n:
+	go run ./tools/docs-i18n
+
+## docs-i18n-check: list the stale sections without translating
+docs-i18n-check:
+	go run ./tools/docs-i18n -dry-run
+
+## docs-i18n-accept: record hand-made translations as up to date
+docs-i18n-accept:
+	go run ./tools/docs-i18n -accept
 
 ## build: build the cli for the host platform into ./bin
 build:

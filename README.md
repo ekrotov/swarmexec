@@ -56,6 +56,25 @@ make generate        # buf generate -> internal/pb/
 make check-generate  # fail if internal/pb does not match the .proto (CI runs this)
 ```
 
+### Documentation translations
+
+`site/docs.html` (English) is the source of the docs page; `docs.de/es/fr/pl.html`
+are derived from it, section by section. `site/i18n/` records which English
+each translated section came from, and a test fails — naming the sections — as
+soon as the English changes without the translations following.
+
+```sh
+make docs-i18n-check   # which sections are stale (no network)
+make docs-i18n         # re-translate exactly those, via the Claude API (ANTHROPIC_API_KEY)
+make docs-i18n-accept  # or translate by hand, then record them as up to date
+```
+
+`docs-i18n` sends each stale section with the English it was translated from
+and the current translation, so only what changed is rewritten; every answer is
+checked (same tables, command blocks, flags and keys; the head's language,
+canonical and hreflang tags untouched) before it is written. CI never calls
+the API — it only checks.
+
 ### Releases (CI/CD)
 
 [`.gitlab-ci.yml`](.gitlab-ci.yml) builds and versions automatically:
