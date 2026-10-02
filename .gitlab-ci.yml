@@ -80,9 +80,9 @@ test:
   script:
     - go vet ./...
     - |
-      if [ -n "$(gofmt -l agent client internal)" ]; then
+      if [ -n "$(gofmt -l agent client internal site tools)" ]; then
         echo "gofmt: the following files need formatting:"
-        gofmt -l agent client internal
+        gofmt -l agent client internal site tools
         exit 1
       fi
     - go test -race ./...
