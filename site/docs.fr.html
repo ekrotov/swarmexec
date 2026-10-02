@@ -232,6 +232,14 @@
       </p>
       <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
 <span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># une release précise</span></div>
+      <p>
+        <strong>Avec un gestionnaire de paquets</strong> — <code>brew upgrade</code> ou
+        <code>scoop update</code> apportent alors chaque nouvelle release, ce qui garde le
+        client au niveau des agents :
+      </p>
+      <div class="prompt"><span class="c">$</span> brew install ekrotov/swarmexec/swarmexec             <span class="o"># macOS, Linux</span>
+<span class="c">$</span> scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
+<span class="c">$</span> scoop install swarmexec                               <span class="o"># Windows</span></div>
       <p>Ou à la main :</p>
       <p>Le client est un unique binaire statique. Récupérez le build de la dernière version pour votre plateforme :</p>
       <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \

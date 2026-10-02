@@ -332,6 +332,14 @@ curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
 curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   # a specific release
 ```
 
+Or with a package manager, so `brew upgrade` / `scoop update` keep the client in
+step with the agents:
+
+```sh
+brew install ekrotov/swarmexec/swarmexec                                   # macOS, Linux
+scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec && scoop install swarmexec   # Windows
+```
+
 Or put a build from `./bin/swarmexec` on your `PATH`. For mTLS, have your
 `ca.crt`, `operator.crt`, `operator.key` available locally.
 
