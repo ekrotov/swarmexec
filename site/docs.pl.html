@@ -1111,6 +1111,16 @@ rules:
       </table></div>
       <div class="prompt"><span class="c">$</span> swarmexec port-forward db 5432             <span class="o"># localhost:5432 → container:5432</span>
 <span class="c">$</span> swarmexec pf web 9090:8080                  <span class="o"># localhost:9090 → container:8080</span></div>
+      <p>
+        Jak to działa: agent uruchamia krótkotrwały kontener <strong>sidecar</strong>
+        w przestrzeni nazw sieci celu (z własnym obrazem agenta i etykietą
+        <code>swarmexec.role=port-forward</code>) i przeprowadza przez niego wszystkie
+        połączenia przekierowania. Po zamknięciu ostatniego połączenia sidecar pozostaje
+        jeszcze około <strong>dwóch minut</strong>, aby przeładowanie strony w przeglądarce
+        albo pula połączeń, która łączy się ponownie, nie płaciła znowu za start kontenera —
+        sidecar, który wciąż istnieje chwilę po <kbd>Ctrl-C</kbd>, to właśnie ta przerwa,
+        a nie wyciek. Agent usuwa go sam.
+      </p>
 
       <h3><code>volume ls</code> — wypisz wolumeny</h3>
       <p>
