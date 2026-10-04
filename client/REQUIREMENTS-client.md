@@ -21,8 +21,8 @@ It does two jobs:
 ## 2. Language, libraries, build
 
 - Language: **Go** (1.22+).
-- Swarm resolution via the official Docker SDK: `github.com/docker/docker/client`
-  (`TaskList`, `ServiceList`, `NodeInspectWithRaw`), honoring `DOCKER_HOST` /
+- Swarm resolution via the official Docker SDK: `github.com/moby/moby/client`
+  (`TaskList`, `ServiceList`, `NodeInspect`), honoring `DOCKER_HOST` /
   Docker contexts so it can target a manager.
 - Terminal: `golang.org/x/term` (`MakeRaw`, `Restore`, `GetSize`,
   `IsTerminal`).
@@ -73,7 +73,7 @@ swarmexec ps [service]    # list candidate tasks/containers + the node each is o
     choose (interactive prompt if attached to a TTY, error listing options if
     not).
 - From the chosen task, extract:
-  - `NodeID` → `NodeInspectWithRaw` → node hostname/address to dial.
+  - `NodeID` → `NodeInspect` → node hostname/address to dial.
   - `Status.ContainerStatus.ContainerID` → the container ID for `StartExec`.
 - The address used to dial the agent must be documented and configurable
   (hostname vs. internal IP vs. routing-mesh endpoint) to match the agent's

@@ -28,7 +28,7 @@ A long-running gRPC server deployed as a **global** Swarm service (one task per
 node). It bind-mounts the local Docker socket and exposes a narrow gRPC surface
 that proxies operations into containers/volumes **on its own node**.
 
-**Build / runtime.** Go 1.22+, official Docker SDK (`github.com/docker/docker`),
+**Build / runtime.** Go 1.22+, official Docker SDK (`github.com/moby/moby/client`),
 `google.golang.org/grpc`. Ships as a static binary in a minimal distroless image
 (no shell, no Docker CLI). The Docker socket is bind-mounted read-write; the
 agent never exposes the raw socket to the network.
