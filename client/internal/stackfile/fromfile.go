@@ -68,17 +68,17 @@ func FromFile(ctx context.Context, cli client.APIClient, path, stackName string)
 	}
 	for n, v := range cfg.Secrets {
 		if !v.External.External {
-			owned[stackName+"_"+n] = true
+			owned[ownedName(stackName, n, v.Name)] = true
 		}
 	}
 	for n, v := range cfg.Configs {
 		if !v.External.External {
-			owned[stackName+"_"+n] = true
+			owned[ownedName(stackName, n, v.Name)] = true
 		}
 	}
 	for n, v := range cfg.Volumes {
 		if !v.External.External {
-			owned[stackName+"_"+n] = true
+			owned[ownedName(stackName, n, v.Name)] = true
 		}
 	}
 	// Compose invents a "default" network for services that name none, and the
@@ -116,15 +116,21 @@ func FromFile(ctx context.Context, cli client.APIClient, path, stackName string)
 	// Secrets, configs and volumes render as external on both sides, so the two
 	// agree by construction rather than by luck: the deployed side genuinely
 	// cannot know more (a secret's value is write-only), and a file that inlines
-	// a value must not have that value end up in a diff.
-	for name := range cfg.Secrets {
-		st.Secrets[name] = &Resource{External: true}
+	// a value must not have that value end up in a diff. The ones the file
+	// creates carry their full name and labels, which is exactly what the
+	// deployed side reads back from the objects the deploy made of them.
+	for name, v := range cfg.Secrets {
+		st.Secrets[name] = ownedResource(stackName, name, v.Name, v.External.External, v.Labels)
 	}
-	for name := range cfg.Configs {
-		st.Configs[name] = &Resource{External: true}
+	for name, v := range cfg.Configs {
+		st.Configs[name] = ownedResource(stackName, name, v.Name, v.External.External, v.Labels)
 	}
-	for name := range cfg.Volumes {
-		st.Volumes[name] = &Resource{External: true}
+	for name, v := range cfg.Volumes {
+		r := &Resource{External: true}
+		if !v.External.External && v.Name == "" {
+			r.Name = stackName + "_" + name
+		}
+		st.Volumes[name] = r
 	}
 	if len(gaps) > 0 {
 		st.Notes = append(st.Notes,
@@ -203,4 +209,23 @@ func usesImplicitDefault(specs map[string]swarm.ServiceSpec, stackName string) b
 		}
 	}
 	return false
+}
+
+// ownedName is the name the deploy gives an object the file creates: its
+// explicit name: if it has one, else the key in the stack's namespace.
+func ownedName(stackName, key, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return stackName + "_" + key
+}
+
+// ownedResource renders a secret or config declaration the way the deployed
+// side reads it back: an external reference for one the file does not create,
+// the created object's name and labels for one it does.
+func ownedResource(stackName, key, explicit string, external bool, labels map[string]string) *Resource {
+	if external {
+		return &Resource{External: true}
+	}
+	return &Resource{External: true, Name: ownedName(stackName, key, explicit), Labels: stackLabels(labels)}
 }

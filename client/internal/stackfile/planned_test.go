@@ -19,13 +19,14 @@ import (
 type emptyCluster struct {
 	client.APIClient
 	secrets []swarm.Secret
+	configs []swarm.Config
 }
 
 func (e emptyCluster) SecretList(context.Context, client.SecretListOptions) (client.SecretListResult, error) {
 	return client.SecretListResult{Items: e.secrets}, nil
 }
-func (emptyCluster) ConfigList(context.Context, client.ConfigListOptions) (client.ConfigListResult, error) {
-	return client.ConfigListResult{}, nil
+func (e emptyCluster) ConfigList(context.Context, client.ConfigListOptions) (client.ConfigListResult, error) {
+	return client.ConfigListResult{Items: e.configs}, nil
 }
 
 func writeStack(t *testing.T, yml string) string {
