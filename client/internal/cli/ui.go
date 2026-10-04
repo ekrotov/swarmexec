@@ -100,6 +100,8 @@ type editListConfig struct {
 	confirmNote func([]string) string
 	entryAction *listEntryAction
 	formPrompt  func(initial string, submit func(raw string) error, cancel func()) tview.Primitive
+	formHeight  int      // formPrompt's box height (0: 19, the mount form's)
+	staged      []string // when set, the editor opens with these entries staged over items
 	back        tview.Primitive
 	after       func()
 }
@@ -131,6 +133,8 @@ const (
 	pageListEdit         = "listedit"
 	pageListEditPrompt   = "listeditprompt"
 	pageListEditLeave    = "listeditleave"
+	pageEnvEdit          = "envedit"
+	pageVimHelp          = "vimhelp"
 	pageScalePrompt      = "scaleprompt"
 	pageImageVersion     = "imageversion"
 	pagePlacementMenu    = "placementmenu"

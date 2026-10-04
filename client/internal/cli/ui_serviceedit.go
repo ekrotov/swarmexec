@@ -31,6 +31,9 @@ func (u *ui) editList(cfg editListConfig) {
 	confirmNote, entryAction := cfg.confirmNote, cfg.entryAction
 	formPrompt, back, after := cfg.formPrompt, cfg.back, cfg.after
 	cur := append([]string{}, items...)
+	if cfg.staged != nil {
+		cur = append([]string{}, cfg.staged...)
+	}
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s ", title))
 	keyPairs := []string{"a", "add"}
@@ -129,7 +132,11 @@ func (u *ui) editList(cfg editListConfig) {
 				return nil
 			}
 			form := formPrompt(initial, submit, cancel)
-			pov.show(centered(form, 78, 15), form)
+			h := cfg.formHeight
+			if h == 0 {
+				h = 19
+			}
+			pov.show(centered(form, 96, h), form)
 			return
 		}
 		if multiline {
@@ -157,10 +164,29 @@ func (u *ui) editList(cfg editListConfig) {
 			pov.show(centered(ta, 96, 22), ta)
 			return
 		}
-		in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(40)
-		if suggest != nil {
-			in.SetAutocompleteFunc(suggest)
+		if suggest == nil {
+			// No autocomplete to keep: a wide field that wraps, so a long
+			// label value or port spec stays readable as a whole.
+			ta := wrapField(label, initial, "", 3)
+			ta.SetBorder(true).SetTitle(" Enter save · Esc cancel ")
+			ta.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+				switch ev.Key() {
+				case tcell.KeyEscape:
+					pov.Close()
+					return nil
+				case tcell.KeyEnter:
+					txt := fieldText(ta)
+					pov.Close()
+					commit(txt, done)
+					return nil
+				}
+				return ev
+			})
+			pov.show(centered(ta, 96, 5), ta)
+			return
 		}
+		in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(0)
+		in.SetAutocompleteFunc(suggest)
 		in.SetDoneFunc(func(k tcell.Key) {
 			pov.Close()
 			if k != tcell.KeyEnter {
@@ -169,7 +195,7 @@ func (u *ui) editList(cfg editListConfig) {
 			commit(in.GetText(), done)
 		})
 		in.SetBorder(true)
-		pov.show(centeredPrompt(in, 60), in)
+		pov.show(centeredPrompt(in, 96), in)
 	}
 	// hasChanges reports whether anything is staged but not yet applied (cur
 	// differs from the original set — order included; j/k only navigate here).
@@ -278,7 +304,29 @@ func (u *ui) editList(cfg editListConfig) {
 		}
 		return vimListKeys(ev)
 	})
-	ov.show(centered(list, 72, 18), list)
+	ov.show(centered(list, 110, 18), list)
+}
+
+// wrapField is a one-value input that wraps instead of scrolling sideways, for
+// values that outgrow a line: bind paths, port specs, label values. It is
+// still one value — Enter moves on (in a form) rather than breaking the line;
+// fieldText drops any newline a paste brings along.
+func wrapField(label, text, placeholder string, rows int) *tview.TextArea {
+	ta := tview.NewTextArea().SetText(text, true).SetLabel(label).SetPlaceholder(placeholder)
+	ta.SetWrap(true).SetWordWrap(true).SetSize(rows, 0)
+	ta.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEnter {
+			// In a form, Tab is "next field"; a TextArea would insert a newline.
+			return tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+		}
+		return ev
+	})
+	return ta
+}
+
+// fieldText is a wrapField's value: trimmed, newlines removed.
+func fieldText(ta *tview.TextArea) string {
+	return strings.TrimSpace(strings.NewReplacer("\r", "", "\n", "").Replace(ta.GetText()))
 }
 
 // openPortsEditor / openLabelsEditor fetch the service's current ports/labels
@@ -345,12 +393,54 @@ func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()
 					}
 					return setServiceLabels(ctx, dcli, svcName, labels)
 				},
-				allowEdit: true,
-				back:      back,
-				after:     after,
+				allowEdit:  true,
+				formPrompt: labelForm,
+				formHeight: 14,
+				back:       back,
+				after:      after,
 			})
 		})
 	}()
+}
+
+// labelForm edits one label as two wrapping fields, key and value, so a long
+// key (com.example.team.…) and a long value (a Traefik rule) both stay
+// readable. It hands the list editor the usual key=value entry.
+func labelForm(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
+	key, val := "", ""
+	if k, v, err := parseLabel(initial); err == nil {
+		key, val = k, v
+	}
+	form := tview.NewForm()
+	keyField := wrapField("key", key, "com.example.team", 2)
+	valField := wrapField("value", val, "Host(`app.example.com`)", 5)
+	setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
+	save := func() {
+		k, v := fieldText(keyField), fieldText(valField)
+		switch {
+		case k == "":
+			setTitle(" ⚠ the key is required ")
+			return
+		case strings.Contains(k, "="):
+			setTitle(" ⚠ the key must not contain = ")
+			return
+		}
+		if e := submit(k + "=" + v); e != nil {
+			setTitle(" ⚠ " + e.Error() + " ")
+		}
+	}
+	form.AddFormItem(keyField)
+	form.AddFormItem(valField)
+	form.AddButton("Save", save)
+	form.AddButton("Cancel", cancel)
+	form.SetCancelFunc(cancel)
+	form.SetBorder(true)
+	if initial == "" {
+		setTitle(" add label · Tab moves · Enter on Save ")
+	} else {
+		setTitle(" edit label · Tab moves · Enter on Save ")
+	}
+	return form
 }
 
 // openAliasEditorForNet edits a service's DNS aliases on one network. Reached
@@ -515,8 +605,9 @@ func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func(
 	}()
 }
 
-// openEnvEditor edits a service's environment variables (KEY=VALUE), with
-// edit allowed (adjust a value in place), add and remove.
+// openEnvEditor edits a service's environment variables. It opens the whole
+// environment as text in the vim editor (one KEY=VALUE per line, heredocs for
+// multi-line values); :list switches to the staged list editor instead.
 func (u *ui) openEnvEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli, ctx := u.app, u.dcli, u.ctx
 	go func() {
@@ -526,31 +617,127 @@ func (u *ui) openEnvEditor(svcName string, back tview.Primitive, after func()) {
 				u.info("cannot load env: " + err.Error())
 				return
 			}
-			u.editList(editListConfig{
-				title:     "env of " + svcName,
-				applyVerb: "Update the environment",
-				items:     items,
-				validate: func(s string) (string, error) {
-					k, v, e := parseEnv(s)
-					if e != nil {
-						return "", e
-					}
-					return k + "=" + v, nil
-				},
-				onApply: func(list []string) error {
-					env, e := envFromStrings(list)
-					if e != nil {
-						return e
-					}
-					return setServiceEnv(ctx, dcli, svcName, env)
-				},
-				allowEdit: true,
-				multiline: true,
-				back:      back,
-				after:     after,
-			})
+			u.openEnvText(svcName, items, back, after)
 		})
 	}()
+}
+
+// envListConfig is the staged list editor for a service's environment: the
+// alternative view, reached from the text editor with :list.
+func (u *ui) envListConfig(svcName string, items []string, back tview.Primitive, after func()) editListConfig {
+	dcli, ctx := u.dcli, u.ctx
+	return editListConfig{
+		title:     "env of " + svcName,
+		applyVerb: "Update the environment",
+		items:     items,
+		validate: func(s string) (string, error) {
+			k, v, e := parseEnv(s)
+			if e != nil {
+				return "", e
+			}
+			return k + "=" + v, nil
+		},
+		onApply: func(list []string) error {
+			env, e := envFromStrings(list)
+			if e != nil {
+				return e
+			}
+			return setServiceEnv(ctx, dcli, svcName, env)
+		},
+		allowEdit: true,
+		multiline: true,
+		back:      back,
+		after:     after,
+	}
+}
+
+// openEnvText opens the environment as text in the vim editor. :w checks
+// every line (an error names it and moves the cursor there), confirms the
+// rolling update with what changes, and applies.
+func (u *ui) openEnvText(svcName string, items []string, back tview.Primitive, after func()) {
+	app, dcli, ctx := u.app, u.dcli, u.ctx
+	ed := newVimEditor("env of "+svcName+" · ? help", formatEnvText(items))
+	ov := u.overlayFor(pageEnvEdit, back, vimFooterKeys(vimNormal))
+	ed.onMode = func(m vimMode) { ov.setHelp(vimFooterKeys(m)) }
+	ed.onQuit = ov.Close
+	ed.onHelp = func() {
+		u.showVimHelp(ed.ta, sectionHelp("Environment",
+			"KEY=VALUE", "one variable per line",
+			"KEY<<EOF", "a multi-line value: its lines follow, a line EOF ends it",
+			"# …", "a comment — commenting a line out removes the variable",
+			":list", "switch to the list editor"))
+	}
+	ed.commands = map[string]func(string) error{
+		"list": func(text string) error {
+			list, err := parseEnvText(text)
+			if err != nil {
+				return err
+			}
+			cfg := u.envListConfig(svcName, items, back, after)
+			cfg.staged = list
+			ov.back = nil // the list editor takes focus itself
+			ov.Close()
+			u.editList(cfg)
+			return nil
+		},
+	}
+	ed.onWrite = func(text string) error {
+		list, err := parseEnvText(text)
+		if err != nil {
+			return err
+		}
+		if slices.Equal(list, items) {
+			ov.Close()
+			u.flash("environment unchanged")
+			return nil
+		}
+		msg := envChangeSummary(items, list) + "\n\nUpdate the environment?\n\nThis triggers a rolling update of the service."
+		u.confirm(msg, "Apply", ed.ta, func() {
+			go func() {
+				err := setServiceEnv(ctx, dcli, svcName, list)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						ed.setMsg("update failed: "+err.Error(), true)
+						app.SetFocus(ed.ta)
+						return
+					}
+					ov.Close()
+					u.info("service updated — rolling update started")
+					if after != nil {
+						after()
+					}
+				})
+			}()
+		})
+		return nil
+	}
+	ov.show(centered(ed.root, 110, 30), ed.ta)
+}
+
+// sectionHelp formats an extra section for vimHelpText from key,description
+// pairs.
+func sectionHelp(title string, pairs ...string) string {
+	var b strings.Builder
+	b.WriteString("\n[yellow::b]" + title + "[-::-]\n")
+	for i := 0; i+1 < len(pairs); i += 2 {
+		fmt.Fprintf(&b, "  [aqua]%-15s[-] %s\n", tview.Escape(pairs[i]), pairs[i+1])
+	}
+	return b.String()
+}
+
+// showVimHelp shows the vim editor's help over it; Esc, the quit key or ? close it.
+func (u *ui) showVimHelp(back tview.Primitive, extra string) {
+	hov := u.overlayFor(pageVimHelp, back, footerKeys("j/k", "scroll", "Esc", "close"))
+	tv := tview.NewTextView().SetDynamicColors(true).SetText(vimHelpText(extra))
+	tv.SetBorder(true).SetTitle(" editor keys ")
+	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?') {
+			hov.Close()
+			return nil
+		}
+		return vimListKeys(ev)
+	})
+	hov.show(centered(tv, 80, 48), tv)
 }
 
 // placementListEditor opens a staged list editor whose add/edit input
@@ -721,8 +908,13 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 					isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
 				}
 				form := tview.NewForm()
-				srcField := tview.NewInputField().SetText(src).SetFieldWidth(48)
-				tgtField := tview.NewInputField().SetLabel("container path").SetText(tgt).SetFieldWidth(48).SetPlaceholder("/data")
+				// Volume names are short and want autocomplete, so they keep an
+				// InputField; host and container paths get a wrapping field so a
+				// long path is visible whole. The bind toggle swaps which source
+				// field the form shows.
+				volField := tview.NewInputField().SetLabel("volume").SetPlaceholder("volume name").SetFieldWidth(0)
+				hostField := wrapField("host path", "", "/opt/app/config", 3)
+				tgtField := wrapField("container path", tgt, "/data", 3)
 				roCheck := tview.NewCheckbox().SetLabel("read-only").SetChecked(ro)
 				volSuggest := func(text string) []string {
 					text = strings.ToLower(strings.TrimSpace(text))
@@ -734,24 +926,42 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 					}
 					return out
 				}
-				applyMode := func(bind bool) {
-					if bind {
-						srcField.SetLabel("host path").SetPlaceholder("/opt/app/config").SetAutocompleteFunc(nil)
-					} else {
-						srcField.SetLabel("volume").SetPlaceholder("volume name").SetAutocompleteFunc(volSuggest)
-					}
+				volField.SetAutocompleteFunc(volSuggest)
+				if isBind {
+					hostField.SetText(src, true)
+				} else {
+					volField.SetText(src)
 				}
-				bindCheck := tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).
-					SetChangedFunc(func(checked bool) { applyMode(checked) })
-				applyMode(isBind)
+				var bindCheck *tview.Checkbox
+				layout := func(bind bool) {
+					form.Clear(false)
+					form.AddFormItem(bindCheck)
+					if bind {
+						form.AddFormItem(hostField)
+					} else {
+						form.AddFormItem(volField)
+					}
+					form.AddFormItem(tgtField)
+					form.AddFormItem(roCheck)
+				}
+				bindCheck = tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).
+					SetChangedFunc(func(checked bool) {
+						// Carry what was typed over to the other field.
+						if checked {
+							hostField.SetText(strings.TrimSpace(volField.GetText()), true)
+						} else {
+							volField.SetText(fieldText(hostField))
+						}
+						layout(checked)
+					})
+				layout(isBind)
 				setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
 				save := func() {
-					typ := "volume"
+					typ, s := "volume", strings.TrimSpace(volField.GetText())
 					if bindCheck.IsChecked() {
-						typ = "bind"
+						typ, s = "bind", fieldText(hostField)
 					}
-					s := strings.TrimSpace(srcField.GetText())
-					t := strings.TrimSpace(tgtField.GetText())
+					t := fieldText(tgtField)
 					if s == "" || t == "" {
 						setTitle(" ⚠ source and container path are required ")
 						return
@@ -764,10 +974,6 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 						setTitle(" ⚠ " + e.Error() + " ")
 					}
 				}
-				form.AddFormItem(bindCheck)
-				form.AddFormItem(srcField)
-				form.AddFormItem(tgtField)
-				form.AddFormItem(roCheck)
 				form.AddButton("Save", save)
 				form.AddButton("Cancel", cancel)
 				form.SetCancelFunc(cancel)

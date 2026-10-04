@@ -1301,7 +1301,7 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
-          <tr><td><kbd>?</kbd></td><td>abre el overlay de atajos — la referencia de teclas completa y siempre actualizada (se genera a partir de tu mapa de teclas, así que las teclas reasignadas aparecen correctamente); el pie, de una sola línea, solo tiene sitio para las teclas más usadas</td></tr>
+          <tr><td><kbd>?</kbd></td><td>abre el overlay de atajos — la referencia de teclas completa y siempre actualizada (se genera a partir de tu mapa de teclas, así que las teclas reasignadas aparecen correctamente); la línea de atajos del pie solo tiene sitio para las teclas más usadas</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>pasa a la siguiente pestaña</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>salta a Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>baja / sube (también <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -1936,12 +1936,12 @@ rules:
           <tr><td><kbd>f</kbd></td><td>forzar actualización — vuelve a desplegar el servicio sin cambiar su spec (el equivalente de <code>docker service update --force</code>: incrementa <code>TaskTemplate.ForceUpdate</code>), previa confirmación. Todas las tareas se reinician / reprograman, que es la forma de desatascar un servicio que se ha quedado en un <strong>estado incompleto</strong> (p. ej. <code>1/2</code> réplicas). Un único <code>ServiceUpdate</code> (actualización progresiva)</td></tr>
           <tr><td><kbd>X</kbd></td><td>elimina el servicio (<kbd>X</kbd> mayúscula) — lo <strong>borra definitivamente</strong> y detiene todas sus tareas, previa confirmación; no se puede deshacer. Un único <code>ServiceRemove</code> de la API del manager; si tiene éxito, el overlay de inspección se cierra y el árbol de servicios se refresca. Si el servicio era el <strong>único que usaba uno o más secretos</strong>, swarmexec pregunta a continuación si quieres <strong>borrar también esos secretos, que han quedado huérfanos</strong> (los secretos que aún usa otro servicio no se tocan)</td></tr>
           <tr><td><kbd>D</kbd></td><td>diagnostica la colocación (<kbd>D</kbd> mayúscula) — responde en una sola vista <em>por qué un servicio no se ejecuta en todos los sitios donde esperas</em>, en lugar de tener que averiguarlo con varios comandos <code>docker</code>. En un servicio <strong>global</strong>, lista cada nodo con ✓ (en ejecución) o ✗ y el motivo por el que queda excluido (<strong>disponibilidad</strong> drain/pause, estado <strong>down</strong>, una <strong>restricción</strong> de colocación que no se cumple o una <strong>plataforma</strong> que no coincide) — por eso un clúster de 3 nodos puede mostrar legítimamente <code>2/2</code> (el tercer nodo no es elegible). En un servicio <strong>replicado</strong>, lista cada tarea que <em>no</em> se está ejecutando con el propio mensaje del planificador (restricciones, recursos insuficientes, errores al descargar la imagen, …). Las restricciones que no se pueden comprobar en el cliente (<code>engine.labels.*</code>) se señalan, no se adivinan. Overlay de solo lectura</td></tr>
-          <tr><td><kbd>p</kbd></td><td>edita los puertos publicados — abre un editor de lista con cambios pendientes para los puertos del servicio, cada uno en la forma <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, por defecto <code>tcp</code>), p. ej. <code>8080:80/tcp</code></td></tr>
-          <tr><td><kbd>l</kbd></td><td>edita las etiquetas — el mismo editor de lista con cambios pendientes, sobre entradas <code>key=value</code></td></tr>
-          <tr><td><kbd>e</kbd></td><td>edita las variables de entorno — el mismo editor de lista con cambios pendientes, sobre el env del <code>ContainerSpec</code>, cada una introducida como <code>KEY=VALUE</code> (p. ej. <code>LOG_LEVEL=debug</code>); la clave es obligatoria, y el valor puede estar vacío y contener a su vez <code>=</code>. Igual que en puertos/etiquetas/montajes, este editor <strong>sí</strong> permite editar con <kbd>e</kbd>, para que puedas modificar un valor sin borrarlo. A diferencia de los otros editores, aquí <kbd>e</kbd> abre la entrada en un <strong>área de texto multilínea</strong> con desplazamiento (en lugar de un campo de una línea), para que sea cómodo editar valores largos como <code>GITLAB_OMNIBUS_CONFIG</code> — escribe libremente (<kbd>Enter</kbd> inserta un salto de línea), <kbd>Ctrl-S</kbd> guarda, <kbd>Esc</kbd> cancela. Al aplicar, se sustituye el env del servicio en un único <code>ServiceUpdate</code> (actualización progresiva)</td></tr>
+          <tr><td><kbd>p</kbd></td><td>edita los puertos publicados — abre un editor de lista con cambios pendientes para los puertos del servicio, cada uno en la forma <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, por defecto <code>tcp</code>), p. ej. <code>8080:80/tcp</code>. El campo para añadir/editar es ancho y continúa una entrada larga en las filas siguientes en lugar de desplazarla fuera de la vista; <kbd>Enter</kbd> guarda</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edita las etiquetas — el mismo editor de lista con cambios pendientes, sobre entradas <code>key=value</code>. Añadir (<kbd>a</kbd>) o editar (<kbd>e</kbd>) abre un pequeño formulario con dos campos que continúan en varias filas, <strong>clave</strong> y <strong>valor</strong>, para que una clave larga o un valor largo, como una regla de Traefik, se lea entero; <kbd>Enter</kbd> pasa al campo siguiente</td></tr>
+          <tr><td><kbd>e</kbd></td><td>edita las variables de entorno — abre todo el entorno del servicio como <strong>texto</strong> en un pequeño <strong>editor al estilo vim</strong>, un <code>KEY=VALUE</code> por línea (p. ej. <code>LOG_LEVEL=debug</code>); la clave es obligatoria, y el valor puede estar vacío y contener a su vez <code>=</code>. Un valor con saltos de línea, como <code>GITLAB_OMNIBUS_CONFIG</code>, se escribe como heredoc: <code>KEY&lt;&lt;EOF</code>, las líneas del valor y después una línea <code>EOF</code>. Las líneas que empiezan por <code>#</code> son comentarios, así que comentar una línea elimina esa variable. <kbd>:w</kbd> comprueba primero cada línea — un error indica la línea y pone el cursor en ella —, después muestra qué claves se añaden, cambian y eliminan, y las aplica en un único <code>ServiceUpdate</code> (actualización progresiva). <kbd>:list</kbd> cambia al editor de lista con cambios pendientes, conservando lo que hayas editado. Consulta <a href="#env-editor">el editor de env</a> más abajo para ver las teclas</td></tr>
           <tr><td><kbd>n</kbd></td><td>edita las redes — un editor de lista con cambios pendientes sobre las redes a las que está conectado el servicio; como una entrada es solo un nombre, <strong>solo se puede añadir/eliminar</strong> (no hay edición con <kbd>e</kbd>). El campo para añadir <strong>autocompleta nombres de red</strong> (sugiere redes a las que el servicio aún no está conectado; también puedes escribir el nombre tú mismo). Al aplicar, se sustituyen las conexiones en un único <code>ServiceUpdate</code>. Los <strong>alias DNS</strong> también se editan desde aquí: selecciona una red en este editor y pulsa <kbd>A</kbd> para abrir una lista con cambios pendientes de los alias DNS del servicio <em>en esa red</em> (<kbd>a</kbd> añadir / <kbd>e</kbd> editar / <kbd>d</kbd> eliminar / <kbd>y</kbd> copiar / <kbd>u</kbd> deshacer / <kbd>w</kbd> aplicar / <kbd>Esc</kbd> cancelar); al aplicar, se sustituyen los alias de esa red en un único <code>ServiceUpdate</code>. Funciona incluso si el servicio aún no tiene alias. (Antes de poder definir los alias de una red recién añadida, tienes que aplicar ese cambio.)</td></tr>
           <tr><td><kbd>S</kbd></td><td>edita los secretos (<kbd>S</kbd> mayúscula, es decir, Shift+s, para distinguirla de <kbd>s</kbd> escalar) — el mismo editor de lista con cambios pendientes que el de redes, sobre los secretos a los que hace referencia el servicio; una entrada es solo un nombre, así que <strong>solo se puede añadir/eliminar</strong> (no hay edición con <kbd>e</kbd>). El campo para añadir <strong>autocompleta nombres de secreto</strong> (sugiere secretos que el servicio aún no usa; también puedes escribir el nombre tú mismo). Al aplicar, se sustituyen las referencias a secretos del servicio en un único <code>ServiceUpdate</code> (actualización progresiva); cada secreto se monta en <code>/run/secrets/&lt;name&gt;</code>. Funciona incluso si el servicio no tiene ningún secreto todavía</td></tr>
-          <tr><td><kbd>v</kbd></td><td>edita los montajes — un editor de lista con cambios pendientes sobre los volúmenes y bind mounts del servicio. Añadir (<kbd>a</kbd>) o editar (<kbd>e</kbd>) abre un pequeño <strong>formulario</strong> en lugar de un único campo de texto: una casilla de <strong>bind mount</strong>, un <strong>origen</strong> (con la casilla desmarcada es un nombre de <em>volumen</em>, con <strong>autocompletado</strong> de los volúmenes existentes en el clúster; con la casilla marcada es una <em>ruta del host</em>), una <strong>ruta en el contenedor</strong> y una casilla de <strong>solo lectura</strong>. (Internamente, cada entrada sigue siendo <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Los orígenes de los bind mounts y todos los destinos deben ser rutas absolutas. Al aplicar, se sustituyen los montajes en un único <code>ServiceUpdate</code> (actualización progresiva). <strong>Salvaguarda para bind mounts (no bloqueante):</strong> si la lista de cambios pendientes contiene algún bind mount, al aplicar se muestra primero un aviso con los nodos en los que se podría programar el servicio (calculados a partir de las restricciones de colocación y del rol/etiquetas/disponibilidad de cada nodo) y se te recuerda que cada origen de bind mount <strong>ya debe existir</strong> en todos ellos — swarmexec no puede verificar rutas del host (el agente no tiene acceso al sistema de archivos del host), así que las rutas de bind mount no se autocompletan ni se comprueba que existan; el aviso es solo orientativo</td></tr>
+          <tr><td><kbd>v</kbd></td><td>edita los montajes — un editor de lista con cambios pendientes sobre los volúmenes y bind mounts del servicio. Añadir (<kbd>a</kbd>) o editar (<kbd>e</kbd>) abre un pequeño <strong>formulario</strong> en lugar de un único campo de texto: una casilla de <strong>bind mount</strong>, un <strong>origen</strong> (con la casilla desmarcada es un nombre de <em>volumen</em>, con <strong>autocompletado</strong> de los volúmenes existentes en el clúster; con la casilla marcada es una <em>ruta del host</em>), una <strong>ruta en el contenedor</strong> y una casilla de <strong>solo lectura</strong>. La ruta del host y la ruta en el contenedor son campos anchos que continúan una ruta larga en las filas siguientes, de modo que la ruta completa sigue visible; <kbd>Enter</kbd> pasa al campo siguiente. (Internamente, cada entrada sigue siendo <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Los orígenes de los bind mounts y todos los destinos deben ser rutas absolutas. Al aplicar, se sustituyen los montajes en un único <code>ServiceUpdate</code> (actualización progresiva). <strong>Salvaguarda para bind mounts (no bloqueante):</strong> si la lista de cambios pendientes contiene algún bind mount, al aplicar se muestra primero un aviso con los nodos en los que se podría programar el servicio (calculados a partir de las restricciones de colocación y del rol/etiquetas/disponibilidad de cada nodo) y se te recuerda que cada origen de bind mount <strong>ya debe existir</strong> en todos ellos — swarmexec no puede verificar rutas del host (el agente no tiene acceso al sistema de archivos del host), así que las rutas de bind mount no se autocompletan ni se comprueba que existan; el aviso es solo orientativo</td></tr>
           <tr><td><kbd>r</kbd></td><td>edita los límites de recursos — un pequeño formulario para fijar, cambiar o quitar los límites de <strong>CPU</strong> y <strong>memoria</strong> del servicio (y, opcionalmente, las reservas). La CPU se indica en núcleos (p. ej. <code>0.5</code>, <code>2</code>); la memoria, como un tamaño legible (p. ej. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Dejar un campo <strong>vacío quita</strong> ese límite (Swarm lo trata entonces como ilimitado). Una reserva no puede superar su límite. Al aplicar, se hace un único <code>ServiceUpdate</code> (actualización progresiva); se conservan los límites de Pids y las reservas de dispositivos/genéricas existentes</td></tr>
           <tr><td><kbd>P</kbd></td><td>edita la colocación (<kbd>P</kbd> mayúscula, es decir, Shift+p, para distinguirla de <kbd>p</kbd> puertos) — abre un pequeño menú con dos editores con cambios pendientes: <strong>Restricciones</strong> y <strong>Preferencias de distribución</strong>.
             <ul>
@@ -1976,11 +1976,44 @@ rules:
         también tienen <kbd>e</kbd> para editar la entrada bajo el cursor; los editores de
         <strong>redes</strong> y <strong>secretos</strong> no tienen <kbd>e</kbd> —
         una entrada de red o de secreto es solo un nombre, así que solo se puede añadir
-        (<kbd>a</kbd>) / eliminar (<kbd>d</kbd>). El <kbd>e</kbd> del editor de <strong>env</strong> abre un
-        área de texto multilínea desplazable (<kbd>Ctrl-S</kbd> guardar / <kbd>Esc</kbd>
-        cancelar) para valores largos; los demás editores mantienen la entrada de una línea
-        con <kbd>Enter</kbd> para confirmar.
+        (<kbd>a</kbd>) / eliminar (<kbd>d</kbd>). En el editor de lista de <strong>env</strong>
+        (al que se llega con <kbd>:list</kbd>), <kbd>e</kbd> abre un área de texto multilínea
+        desplazable (<kbd>Ctrl-S</kbd> guardar / <kbd>Esc</kbd> cancelar) para valores largos;
+        el editor de puertos usa un campo ancho que continúa los valores largos
+        en varias filas, y los editores con autocompletado (redes, secretos, colocación), una
+        entrada de una sola línea — en ambos casos, <kbd>Enter</kbd> confirma.
       </p>
+      <h4 id="env-editor">El editor de env</h4>
+      <p>
+        El editor de env funciona como vim, reducido a lo que necesita la edición de una lista
+        de variables. Se abre en modo <strong>Normal</strong>, en el que las teclas son
+        comandos; <kbd>i</kbd> cambia al modo <strong>Insert</strong> para escribir, y
+        <kbd>Esc</kbd> vuelve atrás. La línea de estado de abajo muestra el modo, la posición
+        del cursor y si algo ha cambiado; el pie muestra siempre las teclas relevantes en el
+        modo actual, y <kbd>?</kbd> abre la lista completa. <kbd>Esc</kbd> en modo Normal sale
+        del editor cuando no ha cambiado nada.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Teclas</th><th>Acción</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>o</kbd> <kbd>O</kbd></td><td>inserta antes / después del cursor, al inicio / final de la línea, en una línea nueva debajo / encima</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd>, <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd>, <kbd>0</kbd> <kbd>^</kbd> <kbd>$</kbd>, <kbd>gg</kbd> <kbd>G</kbd></td><td>mueve por carácter y por línea, por palabra, al inicio de la línea / primer carácter no blanco / final de la línea, a la primera / última línea (las teclas de flecha también funcionan)</td></tr>
+          <tr><td><kbd>/</kbd>texto, <kbd>n</kbd> <kbd>N</kbd></td><td>busca, coincidencia siguiente / anterior</td></tr>
+          <tr><td><kbd>x</kbd> <kbd>dd</kbd> <kbd>D</kbd> <kbd>dw</kbd></td><td>borra un carácter, la línea, hasta el final de la línea, hasta la palabra siguiente</td></tr>
+          <tr><td><kbd>cc</kbd> <kbd>cw</kbd> <kbd>C</kbd> <kbd>r</kbd></td><td>cambia la línea, la palabra, hasta el final de la línea; reemplaza un carácter</td></tr>
+          <tr><td><kbd>yy</kbd> <kbd>p</kbd> <kbd>P</kbd> <kbd>J</kbd></td><td>copia la línea, pega debajo / encima, une la línea siguiente</td></tr>
+          <tr><td><kbd>u</kbd> <kbd>Ctrl-R</kbd></td><td>deshace, rehace; un número repite un comando (<kbd>3dd</kbd>, <kbd>5j</kbd>)</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>comprueba y aplica (también <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>)</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancela; <kbd>:q</kbd> se niega mientras haya cambios, <kbd>:q!</kbd> los descarta</td></tr>
+          <tr><td><kbd>:list</kbd> <kbd>:42</kbd> <kbd>?</kbd></td><td>cambia al editor de lista, va a la línea 42, muestra la ayuda</td></tr>
+        </tbody>
+      </table></div>
+      <pre><span class="o">LOG_LEVEL=info
+# DEBUG=1
+GITLAB_OMNIBUS_CONFIG&lt;&lt;EOF
+external_url 'https://gitlab.example.com'
+gitlab_rails['backup_keep_time'] = 604800
+EOF</span></pre>
       <p>
         El árbol se refresca automáticamente cada ~10 s, así que un contenedor reemplazado o
         un servicio escalado en segundo plano aparece por sí solo — se conservan el cursor y
@@ -2288,7 +2321,7 @@ rules:
 
       <h3>Pestaña Configs</h3>
       <p>
-        Pestaña&nbsp;<kbd>8</kbd> — la equivalente de la pestaña Secrets para el otro tipo de
+        Pestaña&nbsp;<kbd>7</kbd> — la equivalente de la pestaña Secrets para el otro tipo de
         objeto que el swarm entrega a los contenedores, con una diferencia decisiva:
         <strong>el contenido de un config sí se puede leer</strong>. La pestaña Secrets nunca
         puede mostrar un valor (la API de Docker no lo devuelve); el detalle de un config
@@ -2419,7 +2452,10 @@ forward_stop: d  forward_copy_url: o</div>
         el overlay de inspección, las vistas de detalle, el visor de logs —, así que una tecla
         reasignada también cierra y copia allí. Por la misma razón, no pueden usar una tecla
         que un diálogo ya utiliza para sí mismo, como <kbd>t</kbd>, <kbd>d</kbd> o
-        <kbd>i</kbd>: en ese caso se mantiene el valor por defecto, con un aviso.
+        <kbd>i</kbd>: en ese caso se mantiene el valor por defecto, con un aviso. El editor de
+        env es la excepción: allí cada letra es un comando de vim o texto, así que se sale con
+        <kbd>Esc</kbd> / <kbd>:q</kbd> y se copia con <kbd>yy</kbd>, sea cual sea la tecla
+        asignada a <code>quit</code> y <code>copy</code>.
       </p>
 
       <!-- 11 -->

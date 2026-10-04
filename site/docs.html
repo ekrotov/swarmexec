@@ -1247,7 +1247,7 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the one-line footer only has room for the most used keys</td></tr>
+          <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the key-hint line of the footer only has room for the most used keys</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -1838,12 +1838,12 @@ rules:
           <tr><td><kbd>f</kbd></td><td>force-update — redeploys the service without changing its spec (the equivalent of <code>docker service update --force</code>: bumps <code>TaskTemplate.ForceUpdate</code>), after a confirm. Every task is restarted / rescheduled, which is how you unstick a service sitting in an <strong>incomplete state</strong> (e.g. <code>1/2</code> replicas). One <code>ServiceUpdate</code> (rolling update)</td></tr>
           <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the service tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>
           <tr><td><kbd>D</kbd></td><td>diagnose placement (capital <kbd>D</kbd>) — answers <em>why a service isn't running everywhere you expect</em> in one view, instead of chasing it through several <code>docker</code> commands. For a <strong>global</strong> service it lists every node with ✓ running or ✗ and the reason it is excluded (<strong>availability</strong> drain/pause, a <strong>down</strong> state, an unmet placement <strong>constraint</strong>, or a <strong>platform</strong> mismatch) — which is why a 3-node cluster can legitimately show <code>2/2</code> (the third node is not eligible). For a <strong>replicated</strong> service it lists each task that is <em>not</em> running with the scheduler's own message (constraints, insufficient resources, image-pull errors, …). Constraints that can't be checked client-side (<code>engine.labels.*</code>) are noted, not guessed. Read-only overlay</td></tr>
-          <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code></td></tr>
-          <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries</td></tr>
-          <tr><td><kbd>e</kbd></td><td>edit environment variables — the same staged list editor over the <code>ContainerSpec</code> env, each entered as <code>KEY=VALUE</code> (e.g. <code>LOG_LEVEL=debug</code>); the key is required, the value may be empty and may itself contain <code>=</code>. Like ports/labels/mounts this editor <strong>does</strong> allow <kbd>e</kbd> edit, so you can adjust a value in place. Unlike the other editors, <kbd>e</kbd> here opens the entry in a scrollable <strong>multi-line text area</strong> (rather than a one-line field) so long values such as <code>GITLAB_OMNIBUS_CONFIG</code> are comfortable to edit — type freely (<kbd>Enter</kbd> inserts a newline), <kbd>Ctrl-S</kbd> saves, <kbd>Esc</kbd> cancels. Applying replaces the service's env in one <code>ServiceUpdate</code> (rolling update)</td></tr>
+          <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code>. The add/edit input is a wide field that wraps a long entry onto further rows instead of scrolling it out of sight; <kbd>Enter</kbd> saves</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small form with two wrapping fields, <strong>key</strong> and <strong>value</strong>, so a long key or a long value such as a Traefik rule stays readable as a whole; <kbd>Enter</kbd> moves to the next field</td></tr>
+          <tr><td><kbd>e</kbd></td><td>edit environment variables — opens the service's whole environment as <strong>text</strong> in a small <strong>vim-style editor</strong>, one <code>KEY=VALUE</code> per line (e.g. <code>LOG_LEVEL=debug</code>); the key is required, the value may be empty and may itself contain <code>=</code>. A value with newlines, such as <code>GITLAB_OMNIBUS_CONFIG</code>, is written as a heredoc: <code>KEY&lt;&lt;EOF</code>, the value's lines, then a line <code>EOF</code>. Lines starting with <code>#</code> are comments, so commenting a line out removes that variable. <kbd>:w</kbd> checks every line first — an error names the line and puts the cursor on it — then shows which keys are added, changed and removed and applies them in one <code>ServiceUpdate</code> (rolling update). <kbd>:list</kbd> switches to the staged list editor with your edits carried over. See <a href="#env-editor">the env editor</a> below for the keys</td></tr>
           <tr><td><kbd>n</kbd></td><td>edit networks — a staged list editor over the service's network attachments; since an entry is just a name it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code>. <strong>DNS aliases</strong> are edited from here too: select a network in this editor and press <kbd>A</kbd> to open a staged list of the service's DNS aliases <em>on that network</em> (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>y</kbd> copy / <kbd>u</kbd> undo / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel); applying replaces that network's aliases in one <code>ServiceUpdate</code>. Works even when the service has no aliases yet. (You must apply a newly-added network first before you can set its aliases.)</td></tr>
           <tr><td><kbd>S</kbd></td><td>edit secrets (capital <kbd>S</kbd>, i.e. Shift+s, to distinguish it from <kbd>s</kbd> scale) — the same staged list editor as networks over the secrets the service references; an entry is just a name, so it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes secret names</strong> (suggesting secrets the service doesn't already use, or type one yourself). Applying replaces the service's secret references in one <code>ServiceUpdate</code> (rolling update); each secret is mounted at <code>/run/secrets/&lt;name&gt;</code>. Works even when the service currently has no secrets</td></tr>
-          <tr><td><kbd>v</kbd></td><td>edit mounts — a staged list editor over the service's volumes and bind mounts. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small <strong>form</strong> instead of a single text field: a <strong>bind mount</strong> checkbox, a <strong>source</strong> (when the box is unchecked it's a <em>volume</em> name with <strong>autocomplete</strong> of existing cluster volumes; when checked it's a <em>host path</em>), a <strong>container path</strong>, and a <strong>read-only</strong> checkbox. (Under the hood each entry is still <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind sources and all targets must be absolute paths. Applying replaces the mounts in one <code>ServiceUpdate</code> (rolling update). <strong>Bind-mount guard (soft):</strong> if the staged list contains any bind mounts, applying first shows a warning listing the nodes the service could be scheduled on (computed from placement constraints plus node role/labels/availability) and reminds you that each bind source must <strong>already exist</strong> on all of them — swarmexec cannot verify host paths (the agent has no host filesystem access), so bind paths are not autocompleted or existence-checked; it is advisory only</td></tr>
+          <tr><td><kbd>v</kbd></td><td>edit mounts — a staged list editor over the service's volumes and bind mounts. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small <strong>form</strong> instead of a single text field: a <strong>bind mount</strong> checkbox, a <strong>source</strong> (when the box is unchecked it's a <em>volume</em> name with <strong>autocomplete</strong> of existing cluster volumes; when checked it's a <em>host path</em>), a <strong>container path</strong>, and a <strong>read-only</strong> checkbox. The host path and the container path are wide fields that wrap a long path onto further rows, so the whole path stays visible; <kbd>Enter</kbd> moves to the next field. (Under the hood each entry is still <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind sources and all targets must be absolute paths. Applying replaces the mounts in one <code>ServiceUpdate</code> (rolling update). <strong>Bind-mount guard (soft):</strong> if the staged list contains any bind mounts, applying first shows a warning listing the nodes the service could be scheduled on (computed from placement constraints plus node role/labels/availability) and reminds you that each bind source must <strong>already exist</strong> on all of them — swarmexec cannot verify host paths (the agent has no host filesystem access), so bind paths are not autocompleted or existence-checked; it is advisory only</td></tr>
           <tr><td><kbd>r</kbd></td><td>edit resource limits — a small form to set, change or clear the service's <strong>CPU</strong> and <strong>memory</strong> limits (and, optionally, reservations). CPU is given in cores (e.g. <code>0.5</code>, <code>2</code>); memory as a human size (e.g. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Leaving a field <strong>empty clears</strong> that limit (Swarm then treats it as unlimited). A reservation may not exceed its limit. Applying does one <code>ServiceUpdate</code> (rolling update); existing Pids limits and device/generic reservations are preserved</td></tr>
           <tr><td><kbd>P</kbd></td><td>edit placement (capital <kbd>P</kbd>, i.e. Shift+p, to distinguish it from <kbd>p</kbd> ports) — opens a small menu with two staged editors: <strong>Constraints</strong> and <strong>Spread preferences</strong>.
             <ul>
@@ -1876,11 +1876,44 @@ rules:
         also have <kbd>e</kbd> to edit the entry under the cursor; the
         <strong>networks</strong> and <strong>secrets</strong> editors have no <kbd>e</kbd> —
         a network or secret entry is just a name, so it's add (<kbd>a</kbd>) /
-        remove (<kbd>d</kbd>) only. The <strong>env</strong> editor's <kbd>e</kbd> opens a
-        scrollable multi-line text area (<kbd>Ctrl-S</kbd> save / <kbd>Esc</kbd> cancel) for
-        long values; the other editors keep the single-line input with <kbd>Enter</kbd> to
-        confirm.
+        remove (<kbd>d</kbd>) only. In the <strong>env</strong> list editor (reached with
+        <kbd>:list</kbd>) <kbd>e</kbd> opens a scrollable multi-line text area
+        (<kbd>Ctrl-S</kbd> save / <kbd>Esc</kbd> cancel) for long values; the ports
+        editor uses a wide input that wraps long values, and editors with
+        autocomplete (networks, secrets, placement) a single-line input — <kbd>Enter</kbd>
+        confirms in both.
       </p>
+      <h4 id="env-editor">The env editor</h4>
+      <p>
+        The env editor works like vim, reduced to what editing a list of variables needs.
+        It opens in <strong>Normal</strong> mode, where keys are commands; <kbd>i</kbd>
+        switches to <strong>Insert</strong> mode to type, <kbd>Esc</kbd> back. The status
+        line at the bottom shows the mode, the cursor position and whether anything
+        changed; the footer always shows the keys that matter in the current mode, and
+        <kbd>?</kbd> opens the full list. <kbd>Esc</kbd> in Normal mode leaves the editor
+        when nothing changed.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>o</kbd> <kbd>O</kbd></td><td>insert before / after the cursor, at the line start / end, on a new line below / above</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd>, <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd>, <kbd>0</kbd> <kbd>^</kbd> <kbd>$</kbd>, <kbd>gg</kbd> <kbd>G</kbd></td><td>move by character and line, by word, to the line start / first non-blank / line end, to the first / last line (the arrow keys work too)</td></tr>
+          <tr><td><kbd>/</kbd>text, <kbd>n</kbd> <kbd>N</kbd></td><td>search, next / previous match</td></tr>
+          <tr><td><kbd>x</kbd> <kbd>dd</kbd> <kbd>D</kbd> <kbd>dw</kbd></td><td>delete a character, the line, to the line end, to the next word</td></tr>
+          <tr><td><kbd>cc</kbd> <kbd>cw</kbd> <kbd>C</kbd> <kbd>r</kbd></td><td>change the line, the word, to the line end; replace one character</td></tr>
+          <tr><td><kbd>yy</kbd> <kbd>p</kbd> <kbd>P</kbd> <kbd>J</kbd></td><td>copy the line, paste below / above, join the next line</td></tr>
+          <tr><td><kbd>u</kbd> <kbd>Ctrl-R</kbd></td><td>undo, redo; a count repeats a command (<kbd>3dd</kbd>, <kbd>5j</kbd>)</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>check and apply (also <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>)</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancel; <kbd>:q</kbd> refuses while there are changes, <kbd>:q!</kbd> discards them</td></tr>
+          <tr><td><kbd>:list</kbd> <kbd>:42</kbd> <kbd>?</kbd></td><td>switch to the list editor, go to line 42, show the help</td></tr>
+        </tbody>
+      </table></div>
+      <pre><span class="o">LOG_LEVEL=info
+# DEBUG=1
+GITLAB_OMNIBUS_CONFIG&lt;&lt;EOF
+external_url 'https://gitlab.example.com'
+gitlab_rails['backup_keep_time'] = 604800
+EOF</span></pre>
       <p>
         The tree auto-refreshes every ~10s, so a container replaced or a service scaled
         in the background shows up on its own — the cursor and any expanded services are
@@ -2178,7 +2211,7 @@ rules:
 
       <h3>Configs tab</h3>
       <p>
-        Tab&nbsp;<kbd>8</kbd> — the Secrets tab's twin for the other object swarm hands to
+        Tab&nbsp;<kbd>7</kbd> — the Secrets tab's twin for the other object swarm hands to
         containers, with one decisive difference: <strong>a config's content is
         readable</strong>. The Secrets tab can never show a value (the Docker API does not
         return it); the config detail shows the <strong>actual content</strong>, so you can
@@ -2301,7 +2334,9 @@ forward_stop: d  forward_copy_url: o</div>
         inspect overlay, the detail views, the log viewer — so a remapped key closes and
         copies there too. For the same reason they cannot take a key a dialog uses for
         itself, such as <kbd>t</kbd>, <kbd>d</kbd> or <kbd>i</kbd>: that remap keeps the
-        default, with a warning.
+        default, with a warning. The env editor is the exception: there every letter is a
+        vim command or text, so it leaves with <kbd>Esc</kbd> / <kbd>:q</kbd> and copies
+        with <kbd>yy</kbd> whatever <code>quit</code> and <code>copy</code> are bound to.
       </p>
 
       <!-- 11 -->

@@ -1286,7 +1286,7 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
-          <tr><td><kbd>?</kbd></td><td>otwórz nakładkę ze skrótami klawiszowymi — kompletny, aktualny spis klawiszy (generowany z twojego mapowania klawiszy, więc przemapowane klawisze wyświetlają się poprawnie); jednowierszowa stopka mieści tylko najczęściej używane klawisze</td></tr>
+          <tr><td><kbd>?</kbd></td><td>otwórz nakładkę ze skrótami klawiszowymi — kompletny, aktualny spis klawiszy (generowany z twojego mapowania klawiszy, więc przemapowane klawisze wyświetlają się poprawnie); wiersz podpowiedzi klawiszy w stopce mieści tylko najczęściej używane klawisze</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>przejdź do następnej zakładki</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>przejdź do Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>w dół / w górę (także <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -1915,12 +1915,12 @@ rules:
           <tr><td><kbd>f</kbd></td><td>wymuszona aktualizacja — wdraża usługę ponownie bez zmiany jej specyfikacji (odpowiednik <code>docker service update --force</code>: podbija <code>TaskTemplate.ForceUpdate</code>), po potwierdzeniu. Każde zadanie jest restartowane / planowane ponownie — w ten sposób odblokowujesz usługę tkwiącą w <strong>niekompletnym stanie</strong> (np. <code>1/2</code> repliki). Jeden <code>ServiceUpdate</code> (aktualizacja krocząca)</td></tr>
           <tr><td><kbd>X</kbd></td><td>usuń usługę (wielkie <kbd>X</kbd>) — <strong>trwale ją usuwa</strong> i zatrzymuje wszystkie jej zadania, po potwierdzeniu; nie da się tego cofnąć. Jedno <code>ServiceRemove</code> w API menedżera; po powodzeniu nakładka inspekcji zamyka się, a drzewo usług się odświeża. Jeśli usługa była <strong>jedynym użytkownikiem jednego lub więcej sekretów</strong>, swarmexec pyta następnie, czy <strong>usunąć także te osierocone sekrety</strong> (sekrety wciąż używane przez inną usługę zostają nietknięte)</td></tr>
           <tr><td><kbd>D</kbd></td><td>zdiagnozuj rozmieszczenie (wielkie <kbd>D</kbd>) — odpowiada w jednym widoku na pytanie, <em>dlaczego usługa nie działa wszędzie tam, gdzie się tego spodziewasz</em>, zamiast szukać odpowiedzi w kilku poleceniach <code>docker</code>. Dla usługi <strong>globalnej</strong> wypisuje każdy węzeł z ✓ działa albo ✗ i powodem wykluczenia (<strong>dostępność</strong> drain/pause, stan <strong>down</strong>, niespełnione <strong>ograniczenie</strong> rozmieszczenia albo niezgodność <strong>platformy</strong>) — dlatego trzywęzłowy klaster może całkowicie poprawnie pokazywać <code>2/2</code> (trzeci węzeł się nie kwalifikuje). Dla usługi <strong>replikowanej</strong> wypisuje każde zadanie, które <em>nie</em> działa, wraz z własnym komunikatem schedulera (ograniczenia, za mało zasobów, błędy pobierania obrazu, …). Ograniczenia, których nie da się sprawdzić po stronie klienta (<code>engine.labels.*</code>), są odnotowywane, a nie zgadywane. Nakładka tylko do odczytu</td></tr>
-          <tr><td><kbd>p</kbd></td><td>edytuj opublikowane porty — otwiera buforowany edytor listy portów usługi, każdy w postaci <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, domyślnie <code>tcp</code>), np. <code>8080:80/tcp</code></td></tr>
-          <tr><td><kbd>l</kbd></td><td>edytuj etykiety — ten sam buforowany edytor listy dla wpisów <code>key=value</code></td></tr>
-          <tr><td><kbd>e</kbd></td><td>edytuj zmienne środowiskowe — ten sam buforowany edytor listy dla zmiennych z <code>ContainerSpec</code>, każda wprowadzana jako <code>KEY=VALUE</code> (np. <code>LOG_LEVEL=debug</code>); klucz jest wymagany, wartość może być pusta i sama może zawierać <code>=</code>. Tak jak edytory portów/etykiet/montowań ten edytor <strong>obsługuje</strong> edycję klawiszem <kbd>e</kbd>, więc możesz poprawić wartość w miejscu. W odróżnieniu od pozostałych edytorów <kbd>e</kbd> otwiera tu wpis w przewijalnym <strong>wieloliniowym polu tekstowym</strong> (a nie w jednoliniowym), żeby długie wartości takie jak <code>GITLAB_OMNIBUS_CONFIG</code> dało się wygodnie edytować — pisz swobodnie (<kbd>Enter</kbd> wstawia nową linię), <kbd>Ctrl-S</kbd> zapisuje, <kbd>Esc</kbd> anuluje. Zastosowanie podmienia zmienne środowiskowe usługi w jednym <code>ServiceUpdate</code> (aktualizacja krocząca)</td></tr>
+          <tr><td><kbd>p</kbd></td><td>edytuj opublikowane porty — otwiera buforowany edytor listy portów usługi, każdy w postaci <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, domyślnie <code>tcp</code>), np. <code>8080:80/tcp</code>. Pole dodawania/edycji jest szerokie i zawija długi wpis na kolejne wiersze, zamiast przewijać go poza widok; <kbd>Enter</kbd> zapisuje</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edytuj etykiety — ten sam buforowany edytor listy dla wpisów <code>key=value</code>. Dodanie (<kbd>a</kbd>) lub edycja (<kbd>e</kbd>) otwiera mały formularz z dwoma zawijanymi polami, <strong>klucz</strong> i <strong>wartość</strong>, dzięki czemu długi klucz albo długa wartość, np. reguła Traefika, pozostaje czytelna w całości; <kbd>Enter</kbd> przechodzi do następnego pola</td></tr>
+          <tr><td><kbd>e</kbd></td><td>edytuj zmienne środowiskowe — otwiera całe środowisko usługi jako <strong>tekst</strong> w małym <strong>edytorze w stylu vima</strong>, jedno <code>KEY=VALUE</code> na linię (np. <code>LOG_LEVEL=debug</code>); klucz jest wymagany, wartość może być pusta i sama może zawierać <code>=</code>. Wartość z nowymi liniami, taką jak <code>GITLAB_OMNIBUS_CONFIG</code>, zapisuje się jako heredoc: <code>KEY&lt;&lt;EOF</code>, linie wartości, a potem linia <code>EOF</code>. Linie zaczynające się od <code>#</code> są komentarzami, więc zakomentowanie linii usuwa daną zmienną. <kbd>:w</kbd> najpierw sprawdza każdą linię — błąd podaje numer linii i ustawia na niej kursor — potem pokazuje, które klucze zostaną dodane, zmienione i usunięte, i stosuje je w jednym <code>ServiceUpdate</code> (aktualizacja krocząca). <kbd>:list</kbd> przełącza do buforowanego edytora listy z przeniesieniem twoich zmian. Klawisze opisuje <a href="#env-editor">edytor zmiennych środowiskowych</a> niżej</td></tr>
           <tr><td><kbd>n</kbd></td><td>edytuj sieci — buforowany edytor listy dla podłączeń sieciowych usługi; skoro wpis to sama nazwa, jest to <strong>tylko dodawanie/usuwanie</strong> (bez edycji klawiszem <kbd>e</kbd>). Pole dodawania <strong>autouzupełnia nazwy sieci</strong> (podpowiada sieci, do których usługa nie jest jeszcze podłączona, albo wpisz własną). Zastosowanie podmienia podłączenia w jednym <code>ServiceUpdate</code>. <strong>Aliasy DNS</strong> edytuje się również stąd: zaznacz sieć w tym edytorze i naciśnij <kbd>A</kbd>, żeby otworzyć buforowaną listę aliasów DNS usługi <em>w tej sieci</em> (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>y</kbd> kopiuj / <kbd>u</kbd> cofnij / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj); zastosowanie podmienia aliasy tej sieci w jednym <code>ServiceUpdate</code>. Działa nawet wtedy, gdy usługa nie ma jeszcze żadnych aliasów. (Nowo dodaną sieć musisz najpierw zastosować, zanim ustawisz jej aliasy.)</td></tr>
           <tr><td><kbd>S</kbd></td><td>edytuj sekrety (wielkie <kbd>S</kbd>, czyli Shift+s, dla odróżnienia od <kbd>s</kbd> (skalowanie)) — ten sam buforowany edytor listy co przy sieciach, dla sekretów, do których usługa się odwołuje; wpis to sama nazwa, więc jest to <strong>tylko dodawanie/usuwanie</strong> (bez edycji klawiszem <kbd>e</kbd>). Pole dodawania <strong>autouzupełnia nazwy sekretów</strong> (podpowiada sekrety, których usługa jeszcze nie używa, albo wpisz własną). Zastosowanie podmienia odwołania usługi do sekretów w jednym <code>ServiceUpdate</code> (aktualizacja krocząca); każdy sekret jest montowany w <code>/run/secrets/&lt;name&gt;</code>. Działa nawet wtedy, gdy usługa nie ma obecnie żadnych sekretów</td></tr>
-          <tr><td><kbd>v</kbd></td><td>edytuj montowania — buforowany edytor listy dla wolumenów i montowań bind usługi. Dodawanie (<kbd>a</kbd>) albo edycja (<kbd>e</kbd>) otwiera mały <strong>formularz</strong> zamiast pojedynczego pola tekstowego: pole wyboru <strong>bind mount</strong>, <strong>źródło</strong> (gdy pole jest odznaczone, jest to nazwa <em>wolumenu</em> z <strong>autouzupełnianiem</strong> istniejących wolumenów klastra; gdy zaznaczone — <em>ścieżka na hoście</em>), <strong>ścieżka w kontenerze</strong> oraz pole wyboru <strong>tylko do odczytu</strong>. (Pod spodem każdy wpis to nadal <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Źródła montowań bind i wszystkie ścieżki docelowe muszą być ścieżkami bezwzględnymi. Zastosowanie podmienia montowania w jednym <code>ServiceUpdate</code> (aktualizacja krocząca). <strong>Ostrzeżenie dla montowań bind (miękkie):</strong> jeśli buforowana lista zawiera jakiekolwiek montowania bind, zastosowanie pokazuje najpierw ostrzeżenie z listą węzłów, na których usługa mogłaby zostać zaplanowana (wyliczonych z ograniczeń rozmieszczenia oraz roli/etykiet/dostępności węzłów), i przypomina, że każde źródło montowania bind musi <strong>już istnieć</strong> na wszystkich tych węzłach — swarmexec nie potrafi zweryfikować ścieżek hosta (agent nie ma dostępu do systemu plików hosta), więc ścieżki bind nie są autouzupełniane ani sprawdzane pod kątem istnienia; to tylko ostrzeżenie</td></tr>
+          <tr><td><kbd>v</kbd></td><td>edytuj montowania — buforowany edytor listy dla wolumenów i montowań bind usługi. Dodawanie (<kbd>a</kbd>) albo edycja (<kbd>e</kbd>) otwiera mały <strong>formularz</strong> zamiast pojedynczego pola tekstowego: pole wyboru <strong>bind mount</strong>, <strong>źródło</strong> (gdy pole jest odznaczone, jest to nazwa <em>wolumenu</em> z <strong>autouzupełnianiem</strong> istniejących wolumenów klastra; gdy zaznaczone — <em>ścieżka na hoście</em>), <strong>ścieżka w kontenerze</strong> oraz pole wyboru <strong>tylko do odczytu</strong>. Ścieżka na hoście i ścieżka w kontenerze to szerokie pola, które zawijają długą ścieżkę na kolejne wiersze, więc cała ścieżka pozostaje widoczna; <kbd>Enter</kbd> przechodzi do następnego pola. (Pod spodem każdy wpis to nadal <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Źródła montowań bind i wszystkie ścieżki docelowe muszą być ścieżkami bezwzględnymi. Zastosowanie podmienia montowania w jednym <code>ServiceUpdate</code> (aktualizacja krocząca). <strong>Ostrzeżenie dla montowań bind (miękkie):</strong> jeśli buforowana lista zawiera jakiekolwiek montowania bind, zastosowanie pokazuje najpierw ostrzeżenie z listą węzłów, na których usługa mogłaby zostać zaplanowana (wyliczonych z ograniczeń rozmieszczenia oraz roli/etykiet/dostępności węzłów), i przypomina, że każde źródło montowania bind musi <strong>już istnieć</strong> na wszystkich tych węzłach — swarmexec nie potrafi zweryfikować ścieżek hosta (agent nie ma dostępu do systemu plików hosta), więc ścieżki bind nie są autouzupełniane ani sprawdzane pod kątem istnienia; to tylko ostrzeżenie</td></tr>
           <tr><td><kbd>r</kbd></td><td>edytuj limity zasobów — mały formularz do ustawienia, zmiany albo wyczyszczenia limitów <strong>CPU</strong> i <strong>pamięci</strong> usługi (oraz, opcjonalnie, rezerwacji). CPU podaje się w rdzeniach (np. <code>0.5</code>, <code>2</code>); pamięć jako rozmiar czytelny dla człowieka (np. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Pozostawienie pola <strong>pustego czyści</strong> dany limit (Swarm traktuje go wtedy jako nieograniczony). Rezerwacja nie może przekraczać swojego limitu. Zastosowanie wykonuje jeden <code>ServiceUpdate</code> (aktualizacja krocząca); istniejące limity Pids oraz rezerwacje urządzeń/ogólne są zachowywane</td></tr>
           <tr><td><kbd>P</kbd></td><td>edytuj rozmieszczenie (wielkie <kbd>P</kbd>, czyli Shift+p, dla odróżnienia od <kbd>p</kbd> (porty)) — otwiera małe menu z dwoma buforowanymi edytorami: <strong>Ograniczenia</strong> i <strong>Preferencje rozproszenia</strong>.
             <ul>
@@ -1954,11 +1954,44 @@ rules:
         mają też <kbd>e</kbd> do edycji wpisu pod kursorem; edytory
         <strong>sieci</strong> i <strong>sekretów</strong> nie mają <kbd>e</kbd> —
         wpis sieci albo sekretu to sama nazwa, więc jest tylko dodawanie (<kbd>a</kbd>) /
-        usuwanie (<kbd>d</kbd>). <kbd>e</kbd> w edytorze <strong>zmiennych
-        środowiskowych</strong> otwiera przewijalne wieloliniowe pole tekstowe
-        (<kbd>Ctrl-S</kbd> zapis / <kbd>Esc</kbd> anulowanie) dla długich wartości; pozostałe
-        edytory zachowują jednoliniowe pole z <kbd>Enter</kbd> do zatwierdzenia.
+        usuwanie (<kbd>d</kbd>). W edytorze listy <strong>zmiennych
+        środowiskowych</strong> (otwieranym przez <kbd>:list</kbd>) <kbd>e</kbd> otwiera
+        przewijalne wieloliniowe pole tekstowe (<kbd>Ctrl-S</kbd> zapis / <kbd>Esc</kbd>
+        anulowanie) dla długich wartości; edytor portów używa szerokiego pola,
+        które zawija długie wartości, a edytory z autouzupełnianiem (sieci, sekrety,
+        rozmieszczenie) jednoliniowego pola — w obu przypadkach <kbd>Enter</kbd> zatwierdza.
       </p>
+      <h4 id="env-editor">Edytor zmiennych środowiskowych</h4>
+      <p>
+        Edytor zmiennych środowiskowych działa jak vim, ograniczony do tego, czego wymaga
+        edycja listy zmiennych. Otwiera się w trybie <strong>Normal</strong>, w którym
+        klawisze są poleceniami; <kbd>i</kbd> przełącza do trybu <strong>Insert</strong>,
+        w którym się pisze, a <kbd>Esc</kbd> z powrotem. Wiersz statusu na dole pokazuje
+        tryb, pozycję kursora i to, czy coś się zmieniło; stopka zawsze pokazuje klawisze
+        istotne w bieżącym trybie, a <kbd>?</kbd> otwiera pełną listę. <kbd>Esc</kbd> w trybie
+        Normal zamyka edytor, jeśli nic się nie zmieniło.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisze</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>o</kbd> <kbd>O</kbd></td><td>wstawianie przed / za kursorem, na początku / końcu linii, w nowej linii poniżej / powyżej</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd>, <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd>, <kbd>0</kbd> <kbd>^</kbd> <kbd>$</kbd>, <kbd>gg</kbd> <kbd>G</kbd></td><td>ruch o znak i linię, o słowo, na początek linii / do pierwszego niepustego znaku / na koniec linii, do pierwszej / ostatniej linii (strzałki też działają)</td></tr>
+          <tr><td><kbd>/</kbd>text, <kbd>n</kbd> <kbd>N</kbd></td><td>szukanie, następne / poprzednie dopasowanie</td></tr>
+          <tr><td><kbd>x</kbd> <kbd>dd</kbd> <kbd>D</kbd> <kbd>dw</kbd></td><td>usunięcie znaku, linii, do końca linii, do następnego słowa</td></tr>
+          <tr><td><kbd>cc</kbd> <kbd>cw</kbd> <kbd>C</kbd> <kbd>r</kbd></td><td>zmiana linii, słowa, do końca linii; zastąpienie jednego znaku</td></tr>
+          <tr><td><kbd>yy</kbd> <kbd>p</kbd> <kbd>P</kbd> <kbd>J</kbd></td><td>skopiowanie linii, wklejenie poniżej / powyżej, złączenie z następną linią</td></tr>
+          <tr><td><kbd>u</kbd> <kbd>Ctrl-R</kbd></td><td>cofnij, ponów; liczba przed poleceniem powtarza je (<kbd>3dd</kbd>, <kbd>5j</kbd>)</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>sprawdzenie i zastosowanie (także <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>)</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>anulowanie; <kbd>:q</kbd> odmawia, dopóki są zmiany, <kbd>:q!</kbd> je odrzuca</td></tr>
+          <tr><td><kbd>:list</kbd> <kbd>:42</kbd> <kbd>?</kbd></td><td>przełączenie do edytora listy, przejście do linii 42, wyświetlenie pomocy</td></tr>
+        </tbody>
+      </table></div>
+      <pre><span class="o">LOG_LEVEL=info
+# DEBUG=1
+GITLAB_OMNIBUS_CONFIG&lt;&lt;EOF
+external_url 'https://gitlab.example.com'
+gitlab_rails['backup_keep_time'] = 604800
+EOF</span></pre>
       <p>
         Drzewo odświeża się automatycznie co ok. 10 s, więc kontener zastąpiony albo usługa
         przeskalowana w tle pojawiają się samoczynnie — kursor i rozwinięte usługi są
@@ -2261,7 +2294,7 @@ rules:
 
       <h3>Zakładka Configs</h3>
       <p>
-        Zakładka&nbsp;<kbd>8</kbd> — bliźniacza zakładka Secrets, dla drugiego rodzaju
+        Zakładka&nbsp;<kbd>7</kbd> — bliźniacza zakładka Secrets, dla drugiego rodzaju
         obiektów, które swarm przekazuje kontenerom, z jedną decydującą różnicą: <strong>treść configu da się
         odczytać</strong>. Zakładka Secrets nigdy nie pokaże wartości (API Dockera jej nie
         zwraca); widok szczegółów configu pokazuje <strong>rzeczywistą treść</strong>, więc
@@ -2386,6 +2419,9 @@ forward_stop: d  forward_copy_url: o</div>
         przemapowany klawisz zamyka i kopiuje również tam. Z tego samego powodu nie mogą
         zająć klawisza, którego używa samo okno dialogowe, np. <kbd>t</kbd>, <kbd>d</kbd> czy
         <kbd>i</kbd>: takie przypisanie zachowuje wartość domyślną, z ostrzeżeniem.
+        Wyjątkiem jest edytor zmiennych środowiskowych: tam każda litera jest poleceniem vima
+        albo tekstem, więc zamyka się go przez <kbd>Esc</kbd> / <kbd>:q</kbd> i kopiuje przez
+        <kbd>yy</kbd>, niezależnie od tego, do czego przypisane są <code>quit</code> i <code>copy</code>.
       </p>
 
       <!-- 11 -->
