@@ -28,7 +28,7 @@ import (
 // what the file SAYS against what the cluster HAS, and those are different
 // languages: compose's short port syntax, its restart aliases, its variable
 // interpolation and its defaults all sit in between.
-func FromFile(ctx context.Context, cli *client.Client, path, stackName string) (*Stack, error) {
+func FromFile(ctx context.Context, cli client.APIClient, path, stackName string) (*Stack, error) {
 	cfg, err := loadComposeFile(path)
 	if err != nil {
 		return nil, err
@@ -36,9 +36,15 @@ func FromFile(ctx context.Context, cli *client.Client, path, stackName string) (
 	ns := convert.NewNamespace(stackName)
 
 	// Secret and config references are resolved against the cluster, because
-	// that is what deploy does; a reference to something that does not exist is
-	// an error there too, and finding it here is the cheaper place.
-	specs, err := convert.Services(ctx, ns, cfg, cli)
+	// that is what deploy does. The file's own secrets and configs count as
+	// present — deploy creates them before it converts (see plannedClient); a
+	// reference to an external one that does not exist is an error there too,
+	// and finding it here is the cheaper place.
+	planned, err := newPlannedClient(cli, ns, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("convert %s: %w", filepath.Base(path), err)
+	}
+	specs, err := convert.Services(ctx, ns, cfg, planned)
 	if err != nil {
 		return nil, fmt.Errorf("convert %s: %w", filepath.Base(path), err)
 	}
