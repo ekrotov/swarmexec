@@ -72,8 +72,12 @@ make docs-i18n-accept  # or translate by hand, then record them as up to date
 `docs-i18n` sends each stale section with the English it was translated from
 and the current translation, so only what changed is rewritten; every answer is
 checked (same tables, command blocks, flags and keys; the head's language,
-canonical and hreflang tags untouched) before it is written. CI never calls
-the API — it only checks.
+canonical and hreflang tags untouched) before it is written. CI checks on
+every pipeline; it calls the API only when you start the optional, manual
+`docs-i18n` job on a branch or merge request that changes the docs. That job
+needs `ANTHROPIC_API_KEY` as a CI/CD variable and leaves the translations as a
+`docs-i18n.patch` artifact — or, with `DOCS_I18N_PUSH_TOKEN` (a project access
+token with `write_repository`) set, commits them to that branch.
 
 ### Releases (CI/CD)
 
