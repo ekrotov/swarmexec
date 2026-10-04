@@ -13,8 +13,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/docker/docker/client"
 	units "github.com/docker/go-units"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/config"

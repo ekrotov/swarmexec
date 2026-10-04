@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -66,12 +66,12 @@ func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, strea
 	// Filtered at the daemon, not here: an agent that received every container's
 	// events and discarded most of them would be doing the filtering in the one
 	// place where a mistake leaks.
-	msgs, errs := s.docker.Events(ctx, events.ListOptions{
-		Filters: filters.NewArgs(
-			filters.Arg("type", string(events.ContainerEventType)),
-			filters.Arg("container", req.GetContainerId()),
-		),
+	sub := s.docker.Events(ctx, client.EventsListOptions{
+		Filters: make(client.Filters).
+			Add("type", string(events.ContainerEventType)).
+			Add("container", req.GetContainerId()),
 	})
+	msgs, errs := sub.Messages, sub.Err
 
 	for {
 		select {

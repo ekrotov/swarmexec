@@ -9,14 +9,11 @@ import (
 	"sort"
 	"strings"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/compose/convert"
 	composetypes "github.com/docker/cli/cli/compose/types"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/errdefs"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // Deploying a stack is CLIENT-side work: the engine has no "deploy a stack"
@@ -56,13 +53,13 @@ type ApplyOptions struct {
 // deployClient is the slice of the docker client a deploy needs.
 type deployClient interface {
 	swarmReader
-	NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
-	NetworkInspect(ctx context.Context, id string, options network.InspectOptions) (network.Inspect, error)
-	SecretCreate(ctx context.Context, secret swarm.SecretSpec) (types.SecretCreateResponse, error)
-	ConfigCreate(ctx context.Context, config swarm.ConfigSpec) (types.ConfigCreateResponse, error)
-	ServiceCreate(ctx context.Context, service swarm.ServiceSpec, options types.ServiceCreateOptions) (swarm.ServiceCreateResponse, error)
-	ServiceUpdate(ctx context.Context, serviceID string, version swarm.Version, service swarm.ServiceSpec, options types.ServiceUpdateOptions) (swarm.ServiceUpdateResponse, error)
-	ServiceRemove(ctx context.Context, serviceID string) error
+	NetworkCreate(ctx context.Context, name string, options client.NetworkCreateOptions) (client.NetworkCreateResult, error)
+	NetworkInspect(ctx context.Context, id string, options client.NetworkInspectOptions) (client.NetworkInspectResult, error)
+	SecretCreate(ctx context.Context, options client.SecretCreateOptions) (client.SecretCreateResult, error)
+	ConfigCreate(ctx context.Context, options client.ConfigCreateOptions) (client.ConfigCreateResult, error)
+	ServiceCreate(ctx context.Context, options client.ServiceCreateOptions) (client.ServiceCreateResult, error)
+	ServiceUpdate(ctx context.Context, serviceID string, options client.ServiceUpdateOptions) (client.ServiceUpdateResult, error)
+	ServiceRemove(ctx context.Context, serviceID string, options client.ServiceRemoveOptions) (client.ServiceRemoveResult, error)
 }
 
 // Apply applies a loaded stack file to the cluster.
@@ -96,13 +93,13 @@ func Apply(ctx context.Context, cli *client.Client, stackName string, cfg *compo
 		spec := specs[short]
 		cur, found := existing[spec.Name]
 		if !found {
-			if _, err := cli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{QueryRegistry: true}); err != nil {
+			if _, err := cli.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: spec, QueryRegistry: true}); err != nil {
 				return res, fmt.Errorf("create service %s: %w", spec.Name, err)
 			}
 			res.Created = append(res.Created, spec.Name)
 			continue
 		}
-		_, err := cli.ServiceUpdate(ctx, cur.ID, cur.Version, spec, types.ServiceUpdateOptions{QueryRegistry: true})
+		_, err := cli.ServiceUpdate(ctx, cur.ID, client.ServiceUpdateOptions{Version: cur.Version, Spec: spec, QueryRegistry: true})
 		if err != nil {
 			return res, fmt.Errorf("update service %s: %w", spec.Name, err)
 		}
@@ -119,8 +116,9 @@ func Apply(ctx context.Context, cli *client.Client, stackName string, cfg *compo
 
 // deployedServices maps a stack's current services by their full name.
 func deployedServices(ctx context.Context, cli deployClient, stackName string) (map[string]swarm.Service, error) {
-	f := filters.NewArgs(filters.Arg("label", stackLabel+"="+stackName))
-	svcs, err := cli.ServiceList(ctx, types.ServiceListOptions{Filters: f})
+	f := make(client.Filters).Add("label", stackLabel+"="+stackName)
+	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
@@ -149,13 +147,13 @@ func deployNetworks(ctx context.Context, cli deployClient, ns convert.Namespace,
 	// common reason a deploy half-applies: the services referencing it fail one
 	// by one, after the rest of the stack has already been changed. Check first.
 	for _, name := range external {
-		if _, err := cli.NetworkInspect(ctx, name, network.InspectOptions{}); err != nil {
+		if _, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err != nil {
 			return fmt.Errorf("network %q is declared external but does not exist", name)
 		}
 	}
 
 	for _, name := range sortedKeys(create) {
-		if _, err := cli.NetworkInspect(ctx, name, network.InspectOptions{}); err == nil {
+		if _, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
 			continue // already there; docker does not update networks either
 		}
 		opts := create[name]
@@ -171,7 +169,7 @@ func deployNetworks(ctx context.Context, cli deployClient, ns convert.Namespace,
 		if _, err := cli.NetworkCreate(ctx, name, opts); err != nil {
 			// Two deploys racing is normal in CI; the loser sees "already
 			// exists" and that is not a failure.
-			if errdefs.IsConflict(err) {
+			if cerrdefs.IsConflict(err) {
 				continue
 			}
 			return fmt.Errorf("create network %s: %w", name, err)
@@ -188,8 +186,8 @@ func deploySecrets(ctx context.Context, cli deployClient, ns convert.Namespace, 
 	}
 	sort.Slice(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
 	for _, spec := range specs {
-		if _, err := cli.SecretCreate(ctx, spec); err != nil {
-			if errdefs.IsConflict(err) {
+		if _, err := cli.SecretCreate(ctx, client.SecretCreateOptions{Spec: spec}); err != nil {
+			if cerrdefs.IsConflict(err) {
 				// A secret's value is immutable in swarm; an existing one is
 				// left exactly as it is. Changing a secret means creating a new
 				// one under a new name, which is the whole point of the
@@ -210,8 +208,8 @@ func deployConfigs(ctx context.Context, cli deployClient, ns convert.Namespace, 
 	}
 	sort.Slice(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
 	for _, spec := range specs {
-		if _, err := cli.ConfigCreate(ctx, spec); err != nil {
-			if errdefs.IsConflict(err) {
+		if _, err := cli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec}); err != nil {
+			if cerrdefs.IsConflict(err) {
 				continue
 			}
 			return fmt.Errorf("create config %s: %w", spec.Name, err)
@@ -231,7 +229,7 @@ func pruneServices(ctx context.Context, cli deployClient, specs map[string]swarm
 		if wanted[name] {
 			continue
 		}
-		if err := cli.ServiceRemove(ctx, existing[name].ID); err != nil {
+		if _, err := cli.ServiceRemove(ctx, existing[name].ID, client.ServiceRemoveOptions{}); err != nil {
 			return fmt.Errorf("remove service %s: %w", name, err)
 		}
 		res.Removed = append(res.Removed, name)

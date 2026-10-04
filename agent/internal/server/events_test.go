@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/events"
+	"github.com/moby/moby/api/types/events"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
@@ -129,13 +129,13 @@ func TestWatchContainerEvents_FiltersAtTheDaemon(t *testing.T) {
 	defer cancel()
 
 	go srv.WatchContainerEvents(&pb.WatchContainerEventsRequest{ContainerId: "c1"}, &fakeEventStream{ctx: ctx})
-	waitUntil(t, "the subscription", func() bool { return len(d.eventFilters().Get("container")) > 0 })
+	waitUntil(t, "the subscription", func() bool { return len(filterValues(d.eventFilters(), "container")) > 0 })
 
 	f := d.eventFilters()
-	if got := f.Get("container"); len(got) != 1 || got[0] != "c1" {
+	if got := filterValues(f, "container"); len(got) != 1 || got[0] != "c1" {
 		t.Errorf("container filter = %v, want [c1]", got)
 	}
-	if got := f.Get("type"); len(got) != 1 || got[0] != "container" {
+	if got := filterValues(f, "type"); len(got) != 1 || got[0] != "container" {
 		t.Errorf("type filter = %v, want [container]", got)
 	}
 }
@@ -166,7 +166,7 @@ func TestWatchContainerEvents_HonoursTheAuthorizer(t *testing.T) {
 	if got.Action != "container.events" {
 		t.Errorf("action = %q, want container.events", got.Action)
 	}
-	if len(d.eventFilters().Get("container")) != 0 {
+	if len(filterValues(d.eventFilters(), "container")) != 0 {
 		t.Error("a denied watch must not subscribe to anything")
 	}
 }
@@ -204,7 +204,7 @@ func TestWatchContainerEvents_ReportsAStreamFailure(t *testing.T) {
 	go func() {
 		done <- srv.WatchContainerEvents(&pb.WatchContainerEventsRequest{ContainerId: "c1"}, stream)
 	}()
-	waitUntil(t, "the subscription", func() bool { return len(d.eventFilters().Get("container")) > 0 })
+	waitUntil(t, "the subscription", func() bool { return len(filterValues(d.eventFilters(), "container")) > 0 })
 
 	d.eventErrCh <- errors.New("docker went away")
 

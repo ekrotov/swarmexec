@@ -8,16 +8,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // The inspect overlay shows a tabular, operator-first view by default (networks,
@@ -173,7 +171,8 @@ func (b *inspBuilder) list(items []string) {
 // serviceInspectViews returns the formatted (tabular) lines and raw-JSON view of
 // a service inspect. ref is a service name or ID.
 func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, reg *registryCache) ([]inspLine, string, error) {
-	svc, rawb, err := dcli.ServiceInspectWithRaw(ctx, ref, types.ServiceInspectOptions{})
+	svcRes, err := dcli.ServiceInspect(ctx, ref, client.ServiceInspectOptions{})
+	svc, rawb := svcRes.Service, []byte(svcRes.Raw)
 	if err != nil {
 		return nil, "", err
 	}
@@ -182,9 +181,11 @@ func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, r
 	// network, and their node names. Both are best effort: an API error just
 	// leaves the drill-down empty rather than failing the whole inspect.
 	info.nodeNames = nodeHostnames(ctx, dcli)
-	info.tasks, _ = dcli.TaskList(ctx, types.TaskListOptions{
-		Filters: filters.NewArgs(filters.Arg("service", svc.ID)),
-	})
+	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{
+		Filters: make(client.Filters).Add("service", svc.ID),
+	}); err == nil {
+		info.tasks = tasks.Items
+	}
 	var img imageStatus
 	if reg != nil && svc.Spec.TaskTemplate.ContainerSpec != nil {
 		img = reg.statusNow(ctx, svc.Spec.TaskTemplate.ContainerSpec.Image, 5*time.Second)
@@ -195,7 +196,8 @@ func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, r
 // taskInspectViews returns the formatted lines and raw-JSON view of a task
 // inspect — the manager's view of a container instance.
 func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) ([]inspLine, string, error) {
-	task, rawb, err := dcli.TaskInspectWithRaw(ctx, taskID)
+	taskRes, err := dcli.TaskInspect(ctx, taskID, client.TaskInspectOptions{})
+	task, rawb := taskRes.Task, []byte(taskRes.Raw)
 	if err != nil {
 		return nil, "", err
 	}
@@ -203,7 +205,8 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 	// inherits; fetch it best-effort so the task's NETWORKS can show them too.
 	var owning *swarm.Service
 	if task.ServiceID != "" {
-		if s, _, e := dcli.ServiceInspectWithRaw(ctx, task.ServiceID, types.ServiceInspectOptions{}); e == nil {
+		if sRes, e := dcli.ServiceInspect(ctx, task.ServiceID, client.ServiceInspectOptions{}); e == nil {
+			s := sRes.Service
 			owning = &s
 		}
 	}
@@ -216,7 +219,8 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 // spec against its PreviousSpec (what the last update changed). hasPrev is false
 // when the service has never been updated (no PreviousSpec to compare against).
 func serviceDiffLines(ctx context.Context, dcli *client.Client, ref string) (lines []string, hasPrev bool, err error) {
-	svc, _, err := dcli.ServiceInspectWithRaw(ctx, ref, types.ServiceInspectOptions{})
+	svcRes, err := dcli.ServiceInspect(ctx, ref, client.ServiceInspectOptions{})
+	svc := svcRes.Service
 	if err != nil {
 		return nil, false, err
 	}
@@ -360,7 +364,8 @@ type netInfo struct {
 // effort; empty maps on error (the inspect still renders, just less readably).
 func networkInfo(ctx context.Context, dcli *client.Client) netInfo {
 	info := netInfo{names: map[string]string{}, encrypted: map[string]bool{}, ingress: map[string]bool{}}
-	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
+	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
+	nets := netsRes.Items
 	if err != nil {
 		return info
 	}
@@ -621,13 +626,7 @@ func serviceNetDNS(svc swarm.Service, info netInfo) []netDNS {
 		}
 		out = append(out, nd)
 	}
-	// TaskTemplate.Networks is current; Spec.Networks is the deprecated pre-v1.44
-	// location — read both so older services still show their attachments.
 	for _, a := range svc.Spec.TaskTemplate.Networks {
-		add(a)
-	}
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	for _, a := range svc.Spec.Networks {
 		add(a)
 	}
 	return append(out, implicitNets(svc, info, vips, addrs, seen)...)
@@ -667,7 +666,7 @@ func taskNetDNS(task swarm.Task, owning *swarm.Service, info netInfo) []netDNS {
 		}
 		// Any further addresses (IPv6, secondaries) still belong in the detail.
 		if len(a.Addresses) > 1 {
-			nd.Extra = []string{"addresses: " + strings.Join(a.Addresses, ", ")}
+			nd.Extra = []string{"addresses: " + strings.Join(prefixStrings(a.Addresses), ", ")}
 		}
 		out = append(out, nd)
 	}
@@ -690,13 +689,13 @@ func implicitNets(svc swarm.Service, info netInfo, vips map[string]string, addrs
 		if name == "" {
 			name = shortID(v.NetworkID)
 		}
-		if v.Addr == "" || seen[name] {
+		if !v.Addr.IsValid() || seen[name] {
 			continue
 		}
 		seen[name] = true
 		nd := netDNS{
 			Name:      name,
-			Addr:      v.Addr,
+			Addr:      v.Addr.String(),
 			AddrLabel: "vip",
 			Tasks:     taskAddrRows(pickAddrs(addrs, v.NetworkID, name)),
 			Encrypted: info.encrypted[v.NetworkID],
@@ -735,12 +734,12 @@ func ingressPortLines(svc swarm.Service) []string {
 func serviceVIPs(svc swarm.Service, info netInfo) map[string]string {
 	m := map[string]string{}
 	for _, v := range svc.Endpoint.VirtualIPs {
-		if v.Addr == "" {
+		if !v.Addr.IsValid() {
 			continue
 		}
-		m[v.NetworkID] = v.Addr
+		m[v.NetworkID] = v.Addr.String()
 		if n := info.names[v.NetworkID]; n != "" {
-			m[n] = v.Addr
+			m[n] = v.Addr.String()
 		}
 	}
 	return m
@@ -879,13 +878,22 @@ func taskAddrRows(ts []netTaskAddr) []inspTaskRow {
 
 // firstIPv4 returns an attachment's first IPv4 address in the CIDR form the
 // manager reports ("10.0.1.5/24"); "" when it has only IPv6 or no address yet.
-func firstIPv4(addrs []string) string {
+func firstIPv4(addrs []netip.Prefix) string {
 	for _, a := range addrs {
-		if strings.Contains(stripMask(a), ".") {
-			return a
+		if a.Addr().Is4() {
+			return a.String()
 		}
 	}
 	return ""
+}
+
+// prefixStrings spells addresses the way the API used to send them, 10.0.1.5/24.
+func prefixStrings(ps []netip.Prefix) []string {
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, p.String())
+	}
+	return out
 }
 
 // stripMask turns "10.0.1.5/24" into "10.0.1.5" — the form that is useful to

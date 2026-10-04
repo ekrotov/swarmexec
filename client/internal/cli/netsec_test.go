@@ -4,38 +4,33 @@
 package cli
 
 import (
+	"net/netip"
 	"reflect"
 	"sort"
 	"testing"
 
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 )
 
-func svc(name string, taskNets, specNets []string) swarm.Service {
+func svc(name string, taskNets []string) swarm.Service {
 	var s swarm.Service
 	s.Spec.Name = name
 	for _, n := range taskNets {
 		s.Spec.TaskTemplate.Networks = append(s.Spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: n})
-	}
-	for _, n := range specNets {
-		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-		s.Spec.Networks = append(s.Spec.Networks, swarm.NetworkAttachmentConfig{Target: n})
 	}
 	return s
 }
 
 func TestServiceNetworkMembership(t *testing.T) {
 	svcs := []swarm.Service{
-		svc("web", []string{"frontend"}, nil),
-		svc("api", []string{"frontend", "backend"}, nil),
-		// Legacy service that still uses the deprecated Spec.Networks field.
-		svc("legacy", nil, []string{"backend"}),
-		// A network referenced twice (both spec locations) must not double-count.
-		svc("both", []string{"backend"}, []string{"backend"}),
+		svc("web", []string{"frontend"}),
+		svc("api", []string{"frontend", "backend"}),
+		// A network attached twice must not double-count.
+		svc("both", []string{"backend", "backend"}),
 		// Empty target is ignored.
-		svc("noop", []string{""}, nil),
+		svc("noop", []string{""}),
 	}
 	got := serviceNetworkMembership(svcs)
 	for _, m := range got {
@@ -43,7 +38,7 @@ func TestServiceNetworkMembership(t *testing.T) {
 	}
 	want := map[string][]string{
 		"frontend": {"api", "web"},
-		"backend":  {"api", "both", "legacy"},
+		"backend":  {"api", "both"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("serviceNetworkMembership = %v, want %v", got, want)
@@ -54,12 +49,9 @@ func TestServiceAliasesOnNetwork(t *testing.T) {
 	var s swarm.Service
 	s.Spec.Name = "web"
 	// Attached by network ID on the task template, with two aliases.
+	// One attachment by network ID, one by NAME, each with its aliases.
 	s.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{
 		{Target: "net-id-1", Aliases: []string{"web", "frontend"}},
-	}
-	// A second attachment referenced by NAME on the deprecated spec field.
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	s.Spec.Networks = []swarm.NetworkAttachmentConfig{
 		{Target: "backend", Aliases: []string{"api"}},
 	}
 
@@ -130,7 +122,7 @@ func TestBuildNetworkCreateOptions(t *testing.T) {
 	if opts.EnableIPv6 == nil || !*opts.EnableIPv6 {
 		t.Errorf("ipv6 not enabled")
 	}
-	wantIPAM := []network.IPAMConfig{{Subnet: "10.10.0.0/24", Gateway: "10.10.0.1"}}
+	wantIPAM := []network.IPAMConfig{{Subnet: netip.MustParsePrefix("10.10.0.0/24"), Gateway: netip.MustParseAddr("10.10.0.1")}}
 	if opts.IPAM == nil || !reflect.DeepEqual(opts.IPAM.Config, wantIPAM) {
 		t.Errorf("ipam = %+v, want %+v", opts.IPAM, wantIPAM)
 	}

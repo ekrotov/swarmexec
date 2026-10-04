@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 )
 
 func TestList(t *testing.T) {

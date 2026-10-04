@@ -9,9 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 )
 
 // volumeSizeInterval is the periodic full-rescan interval. Volume sizes grow as
@@ -113,23 +112,26 @@ func (c *volumeSizeCache) run(ctx context.Context) {
 }
 
 func (c *volumeSizeCache) subscribe(ctx context.Context) (<-chan events.Message, <-chan error) {
-	return c.docker.Events(ctx, events.ListOptions{
-		Filters: filters.NewArgs(filters.Arg("type", "volume")),
+	res := c.docker.Events(ctx, client.EventsListOptions{
+		Filters: make(client.Filters).Add("type", "volume"),
 	})
+	return res.Messages, res.Err
 }
 
 // refresh runs one DiskUsage scan and swaps in the new sizes. A failure is
 // non-fatal: the previous cache is kept so a transient error does not blank the
 // SIZE column.
 func (c *volumeSizeCache) refresh(ctx context.Context) {
-	du, err := c.docker.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	// Verbose is required: on API >= 1.52 the client only fills Volumes.Items
+	// (the per-volume UsageData) when it is set, and returns totals otherwise.
+	du, err := c.docker.DiskUsage(ctx, client.DiskUsageOptions{Volumes: true, Verbose: true})
 	if err != nil {
 		c.log.Warn("volume size scan failed; keeping previous cache", "err", err)
 		return
 	}
-	sizes := make(map[string]int64, len(du.Volumes))
-	for _, v := range du.Volumes {
-		if v == nil || v.UsageData == nil {
+	sizes := make(map[string]int64, len(du.Volumes.Items))
+	for _, v := range du.Volumes.Items {
+		if v.UsageData == nil {
 			continue
 		}
 		sizes[v.Name] = v.UsageData.Size // docker reports -1 for non-local drivers

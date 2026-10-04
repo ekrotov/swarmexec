@@ -182,10 +182,11 @@ docs-i18n:
 #
 # Gating: fails the pipeline on a reachable vulnerability that has a fix
 # available, so a release can't ship a CVE we could simply have upgraded away.
-# Advisories with no fixed version in our dependency line (currently the two
-# Moby daemon-side ones — we only import the docker client SDK) are reported but
-# do not fail; VULNCHECK_ALLOW lists those GO-IDs, with a comment saying why.
+# Advisories with no fixed version in our dependency line are reported but do
+# not fail; VULNCHECK_ALLOW lists those GO-IDs, with a comment saying why.
 # Clear an entry from that list once its module ships a fix in a line we use.
+# It is empty since the move to github.com/moby/moby (M1), which took the two
+# Moby daemon-side advisories GO-2026-4887 / GO-2026-4883 with it.
 #
 # The JSON output is kept as an artifact so a release can be audited later.
 # ----------------------------------------------------------------------------
@@ -195,10 +196,7 @@ vulncheck:
   <<: *go-cache
   variables:
     # GO-ID: reason. Reachable-but-unfixable in our dependency line.
-    #   GO-2026-4887 / GO-2026-4883 — Moby daemon AuthZ-plugin + plugin-privilege
-    #   issues. Fixed only in github.com/moby/moby/v2; the docker/docker line we
-    #   use as a CLIENT SDK has no fix, and we import no daemon-side package.
-    VULNCHECK_ALLOW: "GO-2026-4887 GO-2026-4883"
+    VULNCHECK_ALLOW: ""
   script:
     - go install golang.org/x/vuln/cmd/govulncheck@latest
     - "$(go env GOPATH)/bin/govulncheck -format json ./... > govulncheck.json || true"

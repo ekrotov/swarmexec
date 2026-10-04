@@ -7,8 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 
 	"swarmexec/client/internal/secscan"
 )
@@ -24,7 +23,8 @@ import (
 // listServicesForScan runs the per-service analyzers over every service in the
 // cluster.
 func listServicesForScan(ctx context.Context, dcli *client.Client) ([]secscan.ServiceScan, error) {
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,8 @@ func gatherCluster(ctx context.Context, dcli *client.Client) (secscan.Cluster, e
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list configs: %w", err)
 	}
-	nodes, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nodes := nodesRes.Items
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list nodes: %w", err)
 	}
@@ -96,7 +97,8 @@ func gatherCluster(ctx context.Context, dcli *client.Client) (secscan.Cluster, e
 		})
 	}
 
-	if sw, err := dcli.SwarmInspect(ctx); err == nil {
+	if swRes, err := dcli.SwarmInspect(ctx, client.SwarmInspectOptions{}); err == nil {
+		sw := swRes.Swarm
 		c.Swarm = &secscan.SwarmInfo{AutoLockManagers: sw.Spec.EncryptionConfig.AutoLockManagers}
 	}
 	return c, nil
@@ -125,7 +127,8 @@ func contextLabel(ctx context.Context, dcli *client.Client, contextName string) 
 	if contextName != "" {
 		return contextName
 	}
-	if info, err := dcli.Info(ctx); err == nil && info.Name != "" {
+	if infoRes, err := dcli.Info(ctx, client.InfoOptions{}); err == nil && infoRes.Info.Name != "" {
+		info := infoRes.Info
 		return info.Name
 	}
 	return ""

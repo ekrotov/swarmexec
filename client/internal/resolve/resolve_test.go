@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/api/types/system"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/api/types/system"
 )
 
 // fakeDocker is an in-memory DockerClient honoring the filters the resolver uses
@@ -26,29 +28,29 @@ type fakeDocker struct {
 	infoCals int // how many times Info was called
 }
 
-func (f *fakeDocker) Info(_ context.Context) (system.Info, error) {
+func (f *fakeDocker) Info(_ context.Context, _ client.InfoOptions) (client.SystemInfoResult, error) {
 	f.infoCals++
 	if f.infoErr != nil {
-		return system.Info{}, f.infoErr
+		return client.SystemInfoResult{}, f.infoErr
 	}
-	return system.Info{Swarm: swarm.Info{RemoteManagers: f.peers}}, nil
+	return client.SystemInfoResult{Info: system.Info{Swarm: swarm.Info{RemoteManagers: f.peers}}}, nil
 }
 
-func (f *fakeDocker) ServiceList(_ context.Context, opts types.ServiceListOptions) ([]swarm.Service, error) {
-	name := first(opts.Filters.Get("name"))
+func (f *fakeDocker) ServiceList(_ context.Context, opts client.ServiceListOptions) (client.ServiceListResult, error) {
+	name := first(filterValues(opts.Filters, "name"))
 	var out []swarm.Service
 	for _, s := range f.services {
 		if name == "" || contains(s.Spec.Name, name) {
 			out = append(out, s)
 		}
 	}
-	return out, nil
+	return client.ServiceListResult{Items: out}, nil
 }
 
-func (f *fakeDocker) TaskList(_ context.Context, opts types.TaskListOptions) ([]swarm.Task, error) {
-	id := first(opts.Filters.Get("id"))
-	service := first(opts.Filters.Get("service"))
-	desired := first(opts.Filters.Get("desired-state"))
+func (f *fakeDocker) TaskList(_ context.Context, opts client.TaskListOptions) (client.TaskListResult, error) {
+	id := first(filterValues(opts.Filters, "id"))
+	service := first(filterValues(opts.Filters, "service"))
+	desired := first(filterValues(opts.Filters, "desired-state"))
 	var out []swarm.Task
 	for _, t := range f.tasks {
 		if id != "" && t.ID != id {
@@ -62,23 +64,33 @@ func (f *fakeDocker) TaskList(_ context.Context, opts types.TaskListOptions) ([]
 		}
 		out = append(out, t)
 	}
-	return out, nil
+	return client.TaskListResult{Items: out}, nil
 }
 
-func (f *fakeDocker) NodeInspectWithRaw(_ context.Context, id string) (swarm.Node, []byte, error) {
+func (f *fakeDocker) NodeInspect(_ context.Context, id string, _ client.NodeInspectOptions) (client.NodeInspectResult, error) {
 	n, ok := f.nodes[id]
 	if !ok {
-		return swarm.Node{}, nil, errors.New("node not found")
+		return client.NodeInspectResult{}, errors.New("node not found")
 	}
-	return n, nil, nil
+	return client.NodeInspectResult{Node: n}, nil
 }
 
-func (f *fakeDocker) NodeList(_ context.Context, _ types.NodeListOptions) ([]swarm.Node, error) {
+func (f *fakeDocker) NodeList(_ context.Context, _ client.NodeListOptions) (client.NodeListResult, error) {
 	var out []swarm.Node
 	for _, n := range f.nodes {
 		out = append(out, n)
 	}
-	return out, nil
+	return client.NodeListResult{Items: out}, nil
+}
+
+// filterValues lists the values set for one filter term, sorted.
+func filterValues(f client.Filters, term string) []string {
+	var out []string
+	for v := range f[term] {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func first(s []string) string {

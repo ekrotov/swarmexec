@@ -20,10 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/api/types/system"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/swarm"
 
 	"swarmexec/client/internal/secscan"
 )
@@ -31,11 +30,11 @@ import (
 // DockerClient is the subset of the Docker SDK the resolver needs. The real
 // *client.Client satisfies it; tests supply a fake.
 type DockerClient interface {
-	ServiceList(ctx context.Context, options types.ServiceListOptions) ([]swarm.Service, error)
-	TaskList(ctx context.Context, options types.TaskListOptions) ([]swarm.Task, error)
-	NodeInspectWithRaw(ctx context.Context, nodeID string) (swarm.Node, []byte, error)
-	NodeList(ctx context.Context, options types.NodeListOptions) ([]swarm.Node, error)
-	Info(ctx context.Context) (system.Info, error)
+	ServiceList(ctx context.Context, options client.ServiceListOptions) (client.ServiceListResult, error)
+	TaskList(ctx context.Context, options client.TaskListOptions) (client.TaskListResult, error)
+	NodeInspect(ctx context.Context, nodeID string, options client.NodeInspectOptions) (client.NodeInspectResult, error)
+	NodeList(ctx context.Context, options client.NodeListOptions) (client.NodeListResult, error)
+	Info(ctx context.Context, options client.InfoOptions) (client.SystemInfoResult, error)
 }
 
 // Node is a swarm node the cli can dial an agent on.
@@ -47,7 +46,8 @@ type Node struct {
 
 // Nodes lists the ready swarm nodes with the address to dial each agent on.
 func (r *Resolver) Nodes(ctx context.Context) ([]Node, error) {
-	nodes, err := r.cli.NodeList(ctx, types.NodeListOptions{})
+	nodesRes, err := r.cli.NodeList(ctx, client.NodeListOptions{})
+	nodes := nodesRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -243,8 +243,9 @@ func (r *Resolver) Resolve(ctx context.Context, req Request) (*Endpoint, error) 
 }
 
 func (r *Resolver) findService(ctx context.Context, name string) (*swarm.Service, error) {
-	f := filters.NewArgs(filters.Arg("name", name))
-	svcs, err := r.cli.ServiceList(ctx, types.ServiceListOptions{Filters: f})
+	f := make(client.Filters).Add("name", name)
+	svcsRes, err := r.cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +260,8 @@ func (r *Resolver) findService(ctx context.Context, name string) (*swarm.Service
 
 // serviceNames returns a map of service ID -> service name for all services.
 func (r *Resolver) serviceNames(ctx context.Context) (map[string]string, error) {
-	svcs, err := r.cli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := r.cli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -271,12 +273,13 @@ func (r *Resolver) serviceNames(ctx context.Context) (map[string]string, error) 
 }
 
 func (r *Resolver) runningTasks(ctx context.Context, serviceID string) ([]swarm.Task, error) {
-	f := filters.NewArgs()
+	f := make(client.Filters)
 	if serviceID != "" {
 		f.Add("service", serviceID)
 	}
 	f.Add("desired-state", "running")
-	return r.cli.TaskList(ctx, types.TaskListOptions{Filters: f})
+	res, err := r.cli.TaskList(ctx, client.TaskListOptions{Filters: f})
+	return res.Items, err
 }
 
 func (r *Resolver) resolveService(ctx context.Context, svc *swarm.Service) (*Endpoint, error) {
@@ -318,8 +321,9 @@ func (r *Resolver) resolveServiceSlot(ctx context.Context, svc *swarm.Service, s
 }
 
 func (r *Resolver) resolveTaskID(ctx context.Context, id string) (*Endpoint, bool, error) {
-	f := filters.NewArgs(filters.Arg("id", id))
-	tasks, err := r.cli.TaskList(ctx, types.TaskListOptions{Filters: f})
+	f := make(client.Filters).Add("id", id)
+	tasksRes, err := r.cli.TaskList(ctx, client.TaskListOptions{Filters: f})
+	tasks := tasksRes.Items
 	if err != nil {
 		return nil, false, err
 	}
@@ -359,8 +363,8 @@ func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) 
 	// With a hint, derive the dial host from the node if it resolves, else dial
 	// the hint directly.
 	host := nodeHint
-	if node, _, err := r.cli.NodeInspectWithRaw(ctx, nodeHint); err == nil {
-		host = r.dialHost(ctx, node)
+	if res, err := r.cli.NodeInspect(ctx, nodeHint, client.NodeInspectOptions{}); err == nil {
+		host = r.dialHost(ctx, res.Node)
 	}
 	return &Endpoint{DialHost: host, ContainerID: id}, nil
 }
@@ -491,7 +495,8 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 // not have to list tasks per service; if the manager does not populate it, it
 // falls back to counting tasks. Results are sorted by name.
 func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
-	svcs, err := r.cli.ServiceList(ctx, types.ServiceListOptions{Status: true})
+	svcsRes, err := r.cli.ServiceList(ctx, client.ServiceListOptions{Status: true})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -533,9 +538,10 @@ func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running,
 	if rep := s.Spec.Mode.Replicated; rep != nil && rep.Replicas != nil {
 		desired = int(*rep.Replicas)
 	}
-	tasks, err := r.cli.TaskList(ctx, types.TaskListOptions{
-		Filters: filters.NewArgs(filters.Arg("service", s.ID)),
+	tasksRes, err := r.cli.TaskList(ctx, client.TaskListOptions{
+		Filters: make(client.Filters).Add("service", s.ID),
 	})
+	tasks := tasksRes.Items
 	if err != nil {
 		return running, desired, completed
 	}
@@ -672,7 +678,8 @@ func servicePorts(ports []swarm.PortConfig) string {
 }
 
 func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidate, error) {
-	node, _, err := r.cli.NodeInspectWithRaw(ctx, t.NodeID)
+	nodeRes, err := r.cli.NodeInspect(ctx, t.NodeID, client.NodeInspectOptions{})
+	node := nodeRes.Node
 	if err != nil {
 		return nil, fmt.Errorf("inspect node %s: %w", t.NodeID, err)
 	}
@@ -744,7 +751,8 @@ func (r *Resolver) dialHost(ctx context.Context, node swarm.Node) string {
 // across invocations.
 func (r *Resolver) peerAddr(ctx context.Context, nodeID string) string {
 	r.peersOnce.Do(func() {
-		info, err := r.cli.Info(ctx)
+		res, err := r.cli.Info(ctx, client.InfoOptions{})
+		info := res.Info
 		if err != nil {
 			return // leaves r.peers nil; lookups below return ""
 		}

@@ -6,8 +6,8 @@ package cli
 import (
 	"testing"
 
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 func TestParseServicePort(t *testing.T) {
@@ -259,5 +259,25 @@ func TestParseEnvAndFromStrings(t *testing.T) {
 	}
 	if got, err := envFromStrings([]string{"A=1", "B=2"}); err != nil || len(got) != 2 {
 		t.Errorf("envFromStrings = %v err=%v", got, err)
+	}
+}
+
+// A service whose networks sit in the pre-API-1.44 top-level Spec.Networks is
+// recognised from the raw inspect, so an edit can refuse instead of writing
+// the spec back without them.
+func TestHasLegacyNetworks(t *testing.T) {
+	cases := []struct {
+		name, raw string
+		want      bool
+	}{
+		{"legacy", `{"Spec":{"Name":"web","Networks":[{"Target":"abc"}]}}`, true},
+		{"task template only", `{"Spec":{"Name":"web","TaskTemplate":{"Networks":[{"Target":"abc"}]}}}`, false},
+		{"empty legacy list", `{"Spec":{"Name":"web","Networks":[]}}`, false},
+		{"not json", `nope`, false},
+	}
+	for _, c := range cases {
+		if got := hasLegacyNetworks([]byte(c.raw)); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
 	}
 }

@@ -11,7 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 const (
@@ -115,11 +116,12 @@ func (c *containerStatsCache) capacity(ctx context.Context) (cpus, mem int64) {
 	if cpus > 0 && mem > 0 {
 		return cpus, mem
 	}
-	info, err := c.docker.Info(ctx)
+	res, err := c.docker.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		c.log.Debug("stats: docker info failed; node capacity unknown", "err", err)
 		return cpus, mem
 	}
+	info := res.Info
 	c.mu.Lock()
 	c.nodeCPUs, c.nodeMem = int64(info.NCPU), info.MemTotal
 	cpus, mem = c.nodeCPUs, c.nodeMem
@@ -138,7 +140,8 @@ func (c *containerStatsCache) limitsFor(ctx context.Context, id string) containe
 	if ok {
 		return lim
 	}
-	insp, err := c.docker.ContainerInspect(ctx, id)
+	res, err := c.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	insp := res.Container
 	if err != nil || insp.HostConfig == nil {
 		// Cache the zero value anyway: a container we cannot inspect should not be
 		// re-inspected every five seconds for the rest of its life.
@@ -216,7 +219,7 @@ func (c *containerStatsCache) run(ctx context.Context) {
 // percentages are computed against the previous pass, so the first pass after
 // an idle period carries memory only.
 func (c *containerStatsCache) refresh(ctx context.Context) {
-	list, err := c.docker.ContainerList(ctx, container.ListOptions{All: false})
+	res, err := c.docker.ContainerList(ctx, client.ContainerListOptions{All: false})
 	if err != nil {
 		c.log.Warn("stats: container list failed; keeping previous readings", "err", err)
 		return
@@ -226,6 +229,7 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 	prev := c.samples
 	c.mu.RUnlock()
 
+	list := res.Items
 	next := make(map[string]containerSample, len(list))
 	var mu sync.Mutex
 	anyCPU := false
@@ -287,7 +291,10 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 func (c *containerStatsCache) sample(ctx context.Context, id string) (containerSample, bool) {
 	cctx, cancel := context.WithTimeout(ctx, statsSampleTimeout)
 	defer cancel()
-	resp, err := c.docker.ContainerStatsOneShot(cctx, id)
+	// Stream false + IncludePreviousSample false is the old ContainerStatsOneShot
+	// exactly (?stream=false&one-shot=true): one frame, without the daemon
+	// waiting a second to fill in a pre-sample we compute ourselves.
+	resp, err := c.docker.ContainerStats(cctx, id, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: false})
 	if err != nil {
 		c.log.Debug("stats: one-shot read failed", "container", id, "err", err)
 		return containerSample{}, false

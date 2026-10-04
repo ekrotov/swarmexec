@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/dockerctx"
@@ -96,7 +95,8 @@ func completionClient(ctx context.Context, g *globalFlags) (*client.Client, bool
 // analyzers over every spec, which is right for the tree and far too slow for
 // a key press (it ran past the deadline on a cluster with ~60 services).
 func completionServices(ctx context.Context, dcli *client.Client) ([]swarm.Service, error) {
-	return dcli.ServiceList(ctx, types.ServiceListOptions{})
+	res, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	return res.Items, err
 }
 
 // completeServices offers service names; with slots, a word that already

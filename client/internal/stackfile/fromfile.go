@@ -13,8 +13,8 @@ import (
 	"github.com/docker/cli/cli/compose/convert"
 	"github.com/docker/cli/cli/compose/loader"
 	composetypes "github.com/docker/cli/cli/compose/types"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // FromFile loads a stack file and reduces it the same way a deployed stack is

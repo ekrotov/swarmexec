@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/api/types/image"
 
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
@@ -115,7 +115,7 @@ func TestAuditTrail_ExecDenied(t *testing.T) {
 func TestAuditTrail_Logs(t *testing.T) {
 	d := newFakeDocker()
 	var buf bytes.Buffer
-	_, _ = stdcopy.NewStdWriter(&buf, stdcopy.Stdout).Write([]byte("out-line\n"))
+	_, _ = newStdWriter(&buf, stdcopy.Stdout).Write([]byte("out-line\n"))
 	d.logsReader = io.NopCloser(&buf)
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
 	log := captureAudit(srv)

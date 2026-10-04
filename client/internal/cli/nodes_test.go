@@ -6,7 +6,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/swarm"
 
 	"swarmexec/client/internal/resolve"
 )

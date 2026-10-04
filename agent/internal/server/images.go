@@ -6,9 +6,8 @@ package server
 import (
 	"context"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -38,15 +37,17 @@ func (s *Server) ListImages(ctx context.Context, _ *pb.ListImagesRequest) (*pb.L
 	// DiskUsage, not ImageList. Summing each image's Size double-counts every
 	// layer two images share — measured against a real node it inflated 22 GB of
 	// images to 33 GB. DiskUsage is what `docker system df` itself reports from:
-	// LayersSize is the true total, and each image carries the SharedSize needed
-	// to work out what removing it would ACTUALLY free. It also fills in
-	// Containers, so no separate container list is needed.
-	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.ImageObject}})
+	// Images.TotalSize is the true total (the legacy LayersSize on API < 1.52),
+	// and each image carries the SharedSize needed to work out what removing it
+	// would ACTUALLY free. It also fills in Containers, so no separate container
+	// list is needed. Verbose is required: on API >= 1.52 the client only fills
+	// Images.Items when it is set, and returns the totals alone otherwise.
+	du, err := s.docker.DiskUsage(ctx, client.DiskUsageOptions{Images: true, Verbose: true})
 	if err != nil {
 		s.log.Error("DiskUsage(images) failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "list images: %v", err)
 	}
-	return imagesResponse(du), nil
+	return imagesResponse(du.Images), nil
 }
 
 // imagesResponse is the pure shaping half: it decides what counts as dangling,
@@ -58,18 +59,16 @@ func (s *Server) ListImages(ctx context.Context, _ *pb.ListImagesRequest) (*pb.L
 // it is built from, and layers are shared, so summing sizes over-reports badly.
 // What removing ONE image would free is its UNIQUE bytes, Size - SharedSize —
 // the same figure `docker system df` puts in its reclaimable column. The total
-// on disk comes from LayersSize, which counts each layer once.
-func imagesResponse(du types.DiskUsage) *pb.ListImagesResponse {
-	out := &pb.ListImagesResponse{TotalBytes: du.LayersSize}
+// on disk comes from TotalSize (LayersSize before API 1.52), which counts each
+// layer once.
+func imagesResponse(du client.ImagesDiskUsage) *pb.ListImagesResponse {
+	out := &pb.ListImagesResponse{TotalBytes: du.TotalSize}
 
 	var inUseUnique, danglingUnique int64
-	for _, img := range du.Images {
-		if img == nil {
-			continue
-		}
+	for _, img := range du.Items {
 		// Docker reports an untagged image either with no tags at all or with the
 		// explicit "<none>:<none>" placeholder.
-		tags := imageTags(*img)
+		tags := imageTags(img)
 		dangling := len(tags) == 0
 		used := img.Containers > 0
 		out.Images = append(out.Images, &pb.ImageInfo{
@@ -82,9 +81,9 @@ func imagesResponse(du types.DiskUsage) *pb.ListImagesResponse {
 		})
 		switch {
 		case used:
-			inUseUnique += uniqueSize(*img)
+			inUseUnique += uniqueSize(img)
 		case dangling:
-			danglingUnique += uniqueSize(*img)
+			danglingUnique += uniqueSize(img)
 		}
 	}
 
@@ -93,7 +92,7 @@ func imagesResponse(du types.DiskUsage) *pb.ListImagesResponse {
 	// unused images' unique sizes is not: a layer shared by TWO unused images
 	// belongs to neither one's unique size, yet pruning frees it. Measured on a
 	// real node the naive sum under-reported by 1.3 GB of 23 GB.
-	reclaimable := du.LayersSize - inUseUnique
+	reclaimable := du.TotalSize - inUseUnique
 	if reclaimable < 0 {
 		reclaimable = 0
 	}
@@ -159,13 +158,14 @@ func (s *Server) PruneImages(ctx context.Context, req *pb.PruneImagesRequest) (*
 		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
 	}
 
-	report, err := s.docker.ImagesPrune(ctx, pruneFilters(req.GetAll()))
+	res, err := s.docker.ImagePrune(ctx, client.ImagePruneOptions{Filters: pruneFilters(req.GetAll())})
 	if err != nil {
 		s.audit.ImagePrune(identity, req.GetAll(), 0, 0, false, err.Error())
-		s.log.Error("ImagesPrune failed", "all", req.GetAll(), "err", err)
+		s.log.Error("ImagePrune failed", "all", req.GetAll(), "err", err)
 		return nil, status.Errorf(codes.Internal, "prune images: %v", err)
 	}
 
+	report := res.Report
 	out := &pb.PruneImagesResponse{ReclaimedBytes: int64(report.SpaceReclaimed)}
 	for _, d := range report.ImagesDeleted {
 		switch {
@@ -184,9 +184,9 @@ func (s *Server) PruneImages(ctx context.Context, req *pb.PruneImagesRequest) (*
 // untagged images, `dangling=false` prunes every unused one. Getting this the
 // wrong way round would quietly turn the safe choice into the destructive one,
 // which is why it is its own function with its own test.
-func pruneFilters(all bool) filters.Args {
+func pruneFilters(all bool) client.Filters {
 	if all {
-		return filters.NewArgs(filters.Arg("dangling", "false"))
+		return make(client.Filters).Add("dangling", "false")
 	}
-	return filters.NewArgs(filters.Arg("dangling", "true"))
+	return make(client.Filters).Add("dangling", "true")
 }

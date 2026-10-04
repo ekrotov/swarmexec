@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/docker/cli/cli/connhelper"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 )
 
 // newDockerClient builds a Docker SDK client for the manager API, honoring
@@ -27,7 +27,7 @@ func newDockerClient(ctx context.Context, contextOverride string) (*client.Clien
 // split matters: it is what lets the manager client and the agent tunnel come
 // out of one resolution instead of two that can disagree (see dockerEndpoint).
 func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
-	opts := []client.Opt{client.WithAPIVersionNegotiation()}
+	var opts []client.Opt // API-version negotiation is the default now
 	if strings.HasPrefix(host, "ssh://") {
 		// ssh endpoints need a connection helper (it tunnels the Docker API over
 		// ssh, the same way `docker --context <ssh-ctx>` does). Inject the
@@ -48,7 +48,7 @@ func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 		opts = append(opts, client.WithHost(host))
 	}
 
-	c, err := client.NewClientWithOpts(opts...)
+	c, err := client.New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("connect to Docker manager API (%s): %w", host, err)
 	}
@@ -59,7 +59,7 @@ func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 // proxyJump) and verifies it with an Info call — used to test a context before
 // saving it.
 func pingDockerHost(ctx context.Context, host, proxyJump string) error {
-	opts := []client.Opt{client.WithAPIVersionNegotiation()}
+	var opts []client.Opt // API-version negotiation is the default now
 	if strings.HasPrefix(host, "ssh://") {
 		// Same flags as the real client, not a second hand-rolled copy: a probe
 		// that connects differently from the thing it is probing for is a probe
@@ -76,14 +76,14 @@ func pingDockerHost(ctx context.Context, host, proxyJump string) error {
 	} else {
 		opts = append(opts, client.WithHost(host))
 	}
-	c, err := client.NewClientWithOpts(opts...)
+	c, err := client.New(opts...)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 	cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	_, err = c.Info(cctx)
+	_, err = c.Info(cctx, client.InfoOptions{})
 	return err
 }
 

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/docker/docker/api/types/versions"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
+	"github.com/moby/moby/client/pkg/versions"
 
 	"swarmexec/client/internal/dockerctx"
 )
@@ -114,7 +114,7 @@ func (e dockerEndpoint) connect(ctx context.Context) (*client.Client, error) {
 // "too old" would send the operator looking in the wrong place. The real error
 // surfaces from whatever call comes next.
 func checkAPIVersion(ctx context.Context, c *client.Client) error {
-	ping, err := c.Ping(ctx)
+	ping, err := c.Ping(ctx, client.PingOptions{})
 	if err != nil || ping.APIVersion == "" {
 		return nil
 	}

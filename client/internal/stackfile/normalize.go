@@ -5,12 +5,14 @@ package stackfile
 
 import (
 	"fmt"
+	"net/netip"
 	"sort"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 // ServiceFromSpec reduces a swarm service spec to the compose shape. It is the
@@ -89,7 +91,7 @@ func ServiceFromSpec(ns string, spec swarm.ServiceSpec, names Names) *Service {
 		s.Init = cs.Init
 	}
 	if cs.DNSConfig != nil {
-		s.DNS = sortedCopy(cs.DNSConfig.Nameservers)
+		s.DNS = sortedCopy(addrStrings(cs.DNSConfig.Nameservers))
 		s.DNSSearch = sortedCopy(cs.DNSConfig.Search)
 	}
 	s.Ports = portStrings(spec.EndpointSpec)
@@ -216,7 +218,7 @@ func portStrings(ep *swarm.EndpointSpec) []any {
 	entries := make([]entry, 0, len(ep.Ports))
 	for _, p := range ep.Ports {
 		proto := string(p.Protocol)
-		if p.Protocol == swarm.PortConfigProtocolTCP {
+		if p.Protocol == network.TCP {
 			proto = "" // the default; spelling it on one side only is a phantom
 		}
 		if p.PublishMode == swarm.PortConfigPublishModeHost {
@@ -281,11 +283,10 @@ func mountStrings(names Names, mounts []mount.Mount) []string {
 // recorded, and then the same stack would differ from itself depending on how
 // it was created.
 func networkAttachments(spec swarm.ServiceSpec, names Names, selfName string) map[string]*NetAttach {
+	// Only TaskTemplate.Networks: the top-level Spec.Networks of services
+	// created before API 1.44 is gone from the API types, and daemons since
+	// Docker 25 move it into the task template themselves.
 	nets := spec.TaskTemplate.Networks
-	if len(nets) == 0 {
-		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-		nets = spec.Networks
-	}
 	if len(nets) == 0 {
 		return nil
 	}
@@ -480,11 +481,11 @@ func updateConfig(u *swarm.UpdateConfig) *UpdateConfig {
 		n := u.Parallelism
 		out.Parallelism = &n
 	}
-	if u.FailureAction != "" && u.FailureAction != defaultUpdateFailure {
-		out.FailureAction = u.FailureAction
+	if u.FailureAction != "" && string(u.FailureAction) != defaultUpdateFailure {
+		out.FailureAction = string(u.FailureAction)
 	}
-	if u.Order != "" && u.Order != defaultUpdateOrder {
-		out.Order = u.Order
+	if u.Order != "" && string(u.Order) != defaultUpdateOrder {
+		out.Order = string(u.Order)
 	}
 	if out.Parallelism == nil && out.Delay == "" && out.FailureAction == "" &&
 		out.Monitor == "" && out.MaxFailureRatio == 0 && out.Order == "" {
@@ -524,6 +525,15 @@ func Unmodelled(spec swarm.ServiceSpec) []string {
 	}
 	if spec.TaskTemplate.Runtime != "" && spec.TaskTemplate.Runtime != swarm.RuntimeContainer {
 		out = append(out, "runtime "+string(spec.TaskTemplate.Runtime))
+	}
+	return out
+}
+
+// addrStrings spells DNS server addresses the way a stack file writes them.
+func addrStrings(as []netip.Addr) []string {
+	out := make([]string, 0, len(as))
+	for _, a := range as {
+		out = append(out, a.String())
 	}
 	return out
 }

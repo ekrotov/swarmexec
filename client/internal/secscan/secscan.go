@@ -11,7 +11,7 @@ package secscan
 import (
 	"sort"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 // Severity ranks a finding. Higher is worse; the UI tints and orders by it.

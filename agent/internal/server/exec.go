@@ -11,9 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -87,9 +86,9 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 	s.audit.SessionStart(identity, se.GetContainerId(), service, se.GetCmd(), se.GetTty(), clientAddr)
 
 	// (5) Create the exec.
-	execCfg := container.ExecOptions{
+	execCfg := client.ExecCreateOptions{
 		User:         se.GetUser(),
-		Tty:          se.GetTty(),
+		TTY:          se.GetTty(),
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
@@ -98,17 +97,17 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 		Cmd:          se.GetCmd(),
 	}
 	if se.GetTty() && se.GetWidth() > 0 && se.GetHeight() > 0 {
-		execCfg.ConsoleSize = &[2]uint{uint(se.GetHeight()), uint(se.GetWidth())}
+		execCfg.ConsoleSize = client.ConsoleSize{Height: uint(se.GetHeight()), Width: uint(se.GetWidth())}
 	}
 
-	idResp, err := s.docker.ContainerExecCreate(stream.Context(), se.GetContainerId(), execCfg)
+	idResp, err := s.docker.ExecCreate(stream.Context(), se.GetContainerId(), execCfg)
 	if err != nil {
 		return s.failSession(stream, identity, se.GetContainerId(), start, "exec create failed: "+err.Error())
 	}
 	execID := idResp.ID
 
-	attach, err := s.docker.ContainerExecAttach(stream.Context(), execID, container.ExecAttachOptions{
-		Tty:         se.GetTty(),
+	attach, err := s.docker.ExecAttach(stream.Context(), execID, client.ExecAttachOptions{
+		TTY:         se.GetTty(),
 		ConsoleSize: execCfg.ConsoleSize,
 	})
 	if err != nil {
@@ -131,7 +130,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 
 	// Apply the initial TTY size explicitly after attach (REQUIREMENTS §3.1).
 	if se.GetTty() && se.GetWidth() > 0 && se.GetHeight() > 0 {
-		if err := s.docker.ContainerExecResize(ctx, execID, container.ResizeOptions{
+		if _, err := s.docker.ExecResize(ctx, execID, client.ExecResizeOptions{
 			Height: uint(se.GetHeight()), Width: uint(se.GetWidth()),
 		}); err != nil {
 			s.log.Warn("initial exec resize failed", "exec_id", execID, "err", err)
@@ -162,7 +161,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 
 	// Client -> container pump (stdin + resize). Runs until the client
 	// half-closes, disconnects, or the session context is cancelled.
-	go s.pumpInput(ctx, stream, &attach, execID, &bytesIn, touch, cancel)
+	go s.pumpInput(ctx, stream, &attach.HijackedResponse, execID, &bytesIn, touch, cancel)
 
 	// Container -> client copy. Blocks until output ends or the conn is closed.
 	out := &msgWriter{stream: stream, count: &bytesOut, touch: touch}
@@ -210,7 +209,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 // pumpInput forwards client stdin to the exec and applies resize events. On
 // client half-close it half-closes the exec stdin (EOF to the process) while
 // leaving the output direction open. On disconnect/error it cancels the session.
-func (s *Server) pumpInput(ctx context.Context, stream pb.Agent_ExecServer, attach *types.HijackedResponse, execID string, bytesIn *atomic.Int64, touch func(), cancel context.CancelFunc) {
+func (s *Server) pumpInput(ctx context.Context, stream pb.Agent_ExecServer, attach *client.HijackedResponse, execID string, bytesIn *atomic.Int64, touch func(), cancel context.CancelFunc) {
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
@@ -237,7 +236,7 @@ func (s *Server) pumpInput(ctx context.Context, stream pb.Agent_ExecServer, atta
 		case *pb.ClientMessage_Resize:
 			touch()
 			if p.Resize.GetWidth() > 0 && p.Resize.GetHeight() > 0 {
-				if rerr := s.docker.ContainerExecResize(ctx, execID, container.ResizeOptions{
+				if _, rerr := s.docker.ExecResize(ctx, execID, client.ExecResizeOptions{
 					Height: uint(p.Resize.GetHeight()), Width: uint(p.Resize.GetWidth()),
 				}); rerr != nil {
 					s.log.Debug("exec resize failed", "exec_id", execID, "err", rerr)
@@ -279,7 +278,7 @@ func (s *Server) idleMonitor(ctx context.Context, last *atomic.Int64, idleHit *a
 func (s *Server) inspectExit(execID string) int {
 	ictx, cancel := context.WithTimeout(context.Background(), inspectTimeout)
 	defer cancel()
-	info, err := s.docker.ContainerExecInspect(ictx, execID)
+	info, err := s.docker.ExecInspect(ictx, execID, client.ExecInspectOptions{})
 	if err != nil {
 		s.log.Warn("exec inspect failed; exit code unknown", "exec_id", execID, "err", err)
 		return -1

@@ -7,7 +7,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/docker/docker/api/types/volume"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -31,7 +31,7 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
 	}
 
-	resp, err := s.docker.VolumeList(ctx, volume.ListOptions{})
+	resp, err := s.docker.VolumeList(ctx, client.VolumeListOptions{})
 	if err != nil {
 		s.log.Error("VolumeList failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "list volumes: %v", err)
@@ -49,10 +49,7 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 	}
 
 	out := &pb.ListVolumesResponse{}
-	for _, v := range resp.Volumes {
-		if v == nil {
-			continue
-		}
+	for _, v := range resp.Items {
 		size, known := int64(-1), false
 		if ready {
 			if sz, ok := sizes[v.Name]; ok {
@@ -94,7 +91,7 @@ func (s *Server) RemoveVolume(ctx context.Context, req *pb.RemoveVolumeRequest) 
 		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
 	}
 
-	err = s.docker.VolumeRemove(ctx, req.GetName(), req.GetForce())
+	_, err = s.docker.VolumeRemove(ctx, req.GetName(), client.VolumeRemoveOptions{Force: req.GetForce()})
 	if err != nil {
 		s.audit.VolumeRemove(identity, req.GetName(), false, err.Error())
 		if isVolumeInUse(err) {
@@ -127,7 +124,7 @@ func (s *Server) CreateVolume(ctx context.Context, req *pb.CreateVolumeRequest) 
 		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
 	}
 
-	v, err := s.docker.VolumeCreate(ctx, volume.CreateOptions{
+	created, err := s.docker.VolumeCreate(ctx, client.VolumeCreateOptions{
 		Name:       req.GetName(),
 		Driver:     req.GetDriver(),
 		Labels:     req.GetLabels(),
@@ -138,12 +135,13 @@ func (s *Server) CreateVolume(ctx context.Context, req *pb.CreateVolumeRequest) 
 		return nil, status.Errorf(codes.Internal, "create volume %s: %v", req.GetName(), err)
 	}
 	s.audit.VolumeCreate(identity, req.GetName(), true, "")
+	v := created.Volume
 	return &pb.CreateVolumeResponse{Volume: &pb.VolumeInfo{
 		Name:       v.Name,
 		Driver:     v.Driver,
 		Mountpoint: v.Mountpoint,
 		CreatedAt:  v.CreatedAt,
-		Scope:      string(v.Scope),
+		Scope:      v.Scope,
 		Labels:     v.Labels,
 	}}, nil
 }

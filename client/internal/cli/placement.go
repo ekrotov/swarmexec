@@ -9,10 +9,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // Placement diagnosis answers "why isn't this service running everywhere I
@@ -64,13 +62,15 @@ func diagnoseServicePlacement(ctx context.Context, dcli *client.Client, name str
 	if svc == nil {
 		return placeReport{}, fmt.Errorf("no service named %q", name)
 	}
-	nodes, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nodes := nodesRes.Items
 	if err != nil {
 		return placeReport{}, err
 	}
-	tasks, err := dcli.TaskList(ctx, types.TaskListOptions{
-		Filters: filters.NewArgs(filters.Arg("service", svc.ID)),
+	tasksRes, err := dcli.TaskList(ctx, client.TaskListOptions{
+		Filters: make(client.Filters).Add("service", svc.ID),
 	})
+	tasks := tasksRes.Items
 	if err != nil {
 		return placeReport{}, err
 	}

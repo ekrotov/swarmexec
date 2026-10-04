@@ -11,9 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -59,8 +58,8 @@ func (s *fakeLogsStream) collect() (stdout, stderr string) {
 func TestLogs_NonTTYDemux(t *testing.T) {
 	d := newFakeDocker()
 	var buf bytes.Buffer
-	_, _ = stdcopy.NewStdWriter(&buf, stdcopy.Stdout).Write([]byte("out-line\n"))
-	_, _ = stdcopy.NewStdWriter(&buf, stdcopy.Stderr).Write([]byte("err-line\n"))
+	_, _ = newStdWriter(&buf, stdcopy.Stdout).Write([]byte("out-line\n"))
+	_, _ = newStdWriter(&buf, stdcopy.Stderr).Write([]byte("err-line\n"))
 	d.logsReader = io.NopCloser(&buf)
 
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
@@ -79,9 +78,9 @@ func TestLogs_NonTTYDemux(t *testing.T) {
 
 func TestLogs_TTYRaw(t *testing.T) {
 	d := newFakeDocker()
-	d.inspect["c1"] = types.ContainerJSON{
-		ContainerJSONBase: &types.ContainerJSONBase{ID: "c1"},
-		Config:            &container.Config{Tty: true},
+	d.inspect["c1"] = container.InspectResponse{
+		ID:     "c1",
+		Config: &container.Config{Tty: true},
 	}
 	d.logsReader = io.NopCloser(strings.NewReader("raw-tty-line\n"))
 

@@ -15,10 +15,10 @@ the server side of the `Agent` gRPC service.
 ## 2. Language, libraries, build
 
 - Language: **Go** (1.22+).
-- Docker access via the official SDK: `github.com/docker/docker/client`.
-  - Exec: `ContainerExecCreate`, `ContainerExecAttach`, `ContainerExecResize`,
-    `ContainerExecInspect`.
-  - stdcopy demux: `github.com/docker/docker/pkg/stdcopy`.
+- Docker access via the official SDK: `github.com/moby/moby/client`
+  (types from `github.com/moby/moby/api`).
+  - Exec: `ExecCreate`, `ExecAttach`, `ExecResize`, `ExecInspect`.
+  - stdcopy demux: `github.com/moby/moby/api/pkg/stdcopy`.
 - gRPC: `google.golang.org/grpc`, generated code from the contract proto.
 - Build a **static binary**; ship in a minimal image (`scratch` or `distroless`)
   with the Docker socket bind-mounted, not the Docker CLI.

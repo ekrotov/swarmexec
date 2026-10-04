@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/config"
@@ -278,7 +278,8 @@ func waitPoll(ctx context.Context, dcli serviceTaskLister, r *resolve.Resolver, 
 	for _, s := range svcs {
 		byName[s.Name] = s
 	}
-	raw, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	rawRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	raw := rawRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -327,15 +328,16 @@ func waitPoll(ctx context.Context, dcli serviceTaskLister, r *resolve.Resolver, 
 
 // serviceTaskLister is the part of the Docker client wait reads.
 type serviceTaskLister interface {
-	ServiceList(ctx context.Context, opts types.ServiceListOptions) ([]swarm.Service, error)
-	TaskList(ctx context.Context, opts types.TaskListOptions) ([]swarm.Task, error)
+	ServiceList(ctx context.Context, opts client.ServiceListOptions) (client.ServiceListResult, error)
+	TaskList(ctx context.Context, opts client.TaskListOptions) (client.TaskListResult, error)
 }
 
 // latestTaskError is why the newest task meant to run is not running: the
 // scheduler's "no suitable node", a failed start, a rejected image. Empty when
 // nothing is wrong or nothing can be read.
 func latestTaskError(ctx context.Context, dcli serviceTaskLister, serviceID string) string {
-	tasks, err := dcli.TaskList(ctx, types.TaskListOptions{Filters: filters.NewArgs(filters.Arg("service", serviceID))})
+	tasksRes, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: make(client.Filters).Add("service", serviceID)})
+	tasks := tasksRes.Items
 	if err != nil {
 		return ""
 	}

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/mount"
 	"github.com/gdamore/tcell/v2"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/rivo/tview"
 )
 

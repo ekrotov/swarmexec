@@ -9,10 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/network"
 )
 
 // stackLabel is how docker marks everything that belongs to a stack. It is the
@@ -23,10 +22,10 @@ const stackLabel = "com.docker.stack.namespace"
 // swarmReader is the slice of the docker client this needs. An interface, so
 // the reduction can be tested against fixtures rather than a live cluster.
 type swarmReader interface {
-	ServiceList(ctx context.Context, options types.ServiceListOptions) ([]swarm.Service, error)
-	NetworkList(ctx context.Context, options network.ListOptions) ([]network.Summary, error)
-	SecretList(ctx context.Context, options types.SecretListOptions) ([]swarm.Secret, error)
-	ConfigList(ctx context.Context, options types.ConfigListOptions) ([]swarm.Config, error)
+	ServiceList(ctx context.Context, options client.ServiceListOptions) (client.ServiceListResult, error)
+	NetworkList(ctx context.Context, options client.NetworkListOptions) (client.NetworkListResult, error)
+	SecretList(ctx context.Context, options client.SecretListOptions) (client.SecretListResult, error)
+	ConfigList(ctx context.Context, options client.ConfigListOptions) (client.ConfigListResult, error)
 }
 
 // FromSwarm reads a deployed stack back into the model.
@@ -37,8 +36,9 @@ type swarmReader interface {
 // external. An export is a description of a stack, not a backup of it, and the
 // difference matters most exactly when someone is relying on it.
 func FromSwarm(ctx context.Context, cli swarmReader, name string) (*Stack, error) {
-	f := filters.NewArgs(filters.Arg("label", stackLabel+"="+name))
-	svcs, err := cli.ServiceList(ctx, types.ServiceListOptions{Filters: f})
+	f := make(client.Filters).Add("label", stackLabel+"="+name)
+	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
@@ -58,7 +58,8 @@ func FromSwarm(ctx context.Context, cli swarmReader, name string) (*Stack, error
 	// The network list comes first: a deployed service records the network's ID,
 	// not its name, and a reduction that cannot resolve it would put an opaque
 	// id where the file has a name — a difference on every service.
-	nets, err := cli.NetworkList(ctx, network.ListOptions{})
+	netsRes, err := cli.NetworkList(ctx, client.NetworkListOptions{})
+	nets := netsRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list networks: %w", err)
 	}
@@ -182,15 +183,15 @@ func driverOpts(in map[string]string) map[string]string {
 // created. Best effort: if a listing fails nothing is marked owned, which keeps
 // full names on both sides — wordier, but never wrong.
 func ownSecretsConfigs(ctx context.Context, cli swarmReader, ns string, owned map[string]bool) {
-	if secs, err := cli.SecretList(ctx, types.SecretListOptions{}); err == nil {
-		for _, s := range secs {
+	if secs, err := cli.SecretList(ctx, client.SecretListOptions{}); err == nil {
+		for _, s := range secs.Items {
 			if s.Spec.Labels[stackLabel] == ns {
 				owned[s.Spec.Name] = true
 			}
 		}
 	}
-	if cfgs, err := cli.ConfigList(ctx, types.ConfigListOptions{}); err == nil {
-		for _, c := range cfgs {
+	if cfgs, err := cli.ConfigList(ctx, client.ConfigListOptions{}); err == nil {
+		for _, c := range cfgs.Items {
 			if c.Spec.Labels[stackLabel] == ns {
 				owned[c.Spec.Name] = true
 			}
@@ -218,15 +219,15 @@ func readSecretsAndConfigs(ctx context.Context, cli swarmReader, ns string, st *
 	for name := range wantCfg {
 		st.Configs[name] = &Resource{External: true}
 	}
-	if secs, err := cli.SecretList(ctx, types.SecretListOptions{}); err == nil {
-		for _, s := range secs {
+	if secs, err := cli.SecretList(ctx, client.SecretListOptions{}); err == nil {
+		for _, s := range secs.Items {
 			if short := stripNamespace(ns, s.Spec.Name); wantSec[short] && s.Spec.Labels[stackLabel] == ns {
 				st.Secrets[short] = &Resource{External: true, Name: s.Spec.Name, Labels: stackLabels(s.Spec.Labels)}
 			}
 		}
 	}
-	if cfgs, err := cli.ConfigList(ctx, types.ConfigListOptions{}); err == nil {
-		for _, c := range cfgs {
+	if cfgs, err := cli.ConfigList(ctx, client.ConfigListOptions{}); err == nil {
+		for _, c := range cfgs.Items {
 			if short := stripNamespace(ns, c.Spec.Name); wantCfg[short] && c.Spec.Labels[stackLabel] == ns {
 				st.Configs[short] = &Resource{External: true, Name: c.Spec.Name, Labels: stackLabels(c.Spec.Labels)}
 			}
@@ -255,7 +256,8 @@ func collectVolumes(st *Stack) {
 // StackNames lists the stacks deployed on the cluster, for a picker that does
 // not make the operator remember them.
 func StackNames(ctx context.Context, cli swarmReader) ([]string, error) {
-	svcs, err := cli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, err
 	}
