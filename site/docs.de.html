@@ -1305,7 +1305,7 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>?</kbd></td><td>das Tastenbelegungs-Overlay öffnen — die vollständige, stets aktuelle Tastenreferenz (sie wird aus deiner Tastenbelegung erzeugt, umbelegte Tasten erscheinen also korrekt); die einzeilige Fußzeile hat nur Platz für die meistgenutzten Tasten</td></tr>
+          <tr><td><kbd>?</kbd></td><td>das Tastenbelegungs-Overlay öffnen — die vollständige, stets aktuelle Tastenreferenz (sie wird aus deiner Tastenbelegung erzeugt, umbelegte Tasten erscheinen also korrekt); die Tastenhinweis-Zeile der Fußzeile hat nur Platz für die meistgenutzten Tasten</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>zum nächsten Tab wechseln</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>zu Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs springen</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>runter / hoch (auch <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -1949,12 +1949,12 @@ rules:
           <tr><td><kbd>f</kbd></td><td>force-update — deployt den Service neu, ohne seine Spec zu ändern (das Äquivalent zu <code>docker service update --force</code>: erhöht <code>TaskTemplate.ForceUpdate</code>), nach einer Bestätigung. Jede Task wird neu gestartet / neu geplant, womit du einen Service wieder in Gang bringst, der in einem <strong>unvollständigen Zustand</strong> feststeckt (z. B. <code>1/2</code> Replicas). Ein <code>ServiceUpdate</code> (Rolling Update)</td></tr>
           <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Service-Baum aktualisiert sich. War der Service der <strong>einzige Nutzer eines oder mehrerer Secrets</strong>, fragt swarmexec anschließend, ob diese <strong>nun verwaisten Secrets</strong> ebenfalls gelöscht werden sollen (Secrets, die noch ein anderer Service referenziert, bleiben unberührt)</td></tr>
           <tr><td><kbd>D</kbd></td><td>Placement diagnostizieren (großes <kbd>D</kbd>) — beantwortet <em>warum ein Service nicht überall läuft, wo du es erwartest</em> in einer Ansicht, statt ihn über mehrere <code>docker</code>-Befehle zu verfolgen. Für einen <strong>globalen</strong> Service listet es jeden Node mit ✓ laufend oder ✗ und dem Grund, warum er ausgeschlossen ist (<strong>Verfügbarkeit</strong> drain/pause, ein <strong>down</strong>-Zustand, ein nicht erfüllter Placement-<strong>Constraint</strong> oder eine <strong>Plattform</strong>-Diskrepanz) — deshalb kann ein 3-Node-Cluster legitim <code>2/2</code> anzeigen (der dritte Node ist nicht geeignet). Für einen <strong>replizierten</strong> Service listet es jede Task, die <em>nicht</em> läuft, mit der eigenen Meldung des Schedulers (Constraints, unzureichende Ressourcen, Image-Pull-Fehler, …). Constraints, die client-seitig nicht geprüft werden können (<code>engine.labels.*</code>), werden vermerkt, nicht geraten. Schreibgeschütztes Overlay</td></tr>
-          <tr><td><kbd>p</kbd></td><td>veröffentlichte Ports bearbeiten — öffnet einen Staging-Listeneditor der Ports des Service, jeder in der Form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, Standard <code>tcp</code>), z. B. <code>8080:80/tcp</code></td></tr>
+          <tr><td><kbd>p</kbd></td><td>veröffentlichte Ports bearbeiten — öffnet einen Staging-Listeneditor der Ports des Service, jeder in der Form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, Standard <code>tcp</code>), z. B. <code>8080:80/tcp</code>. Die Eingabe zum Hinzufügen/Bearbeiten ist ein breites Feld, das einen langen Eintrag auf weitere Zeilen umbricht, statt ihn aus dem Blick zu scrollen; <kbd>Enter</kbd> speichert</td></tr>
           <tr><td><kbd>l</kbd></td><td>Labels bearbeiten — derselbe Staging-Listeneditor über <code>key=value</code>-Einträge</td></tr>
-          <tr><td><kbd>e</kbd></td><td>Umgebungsvariablen bearbeiten — derselbe Staging-Listeneditor über die Env der <code>ContainerSpec</code>, jede als <code>KEY=VALUE</code> eingegeben (z. B. <code>LOG_LEVEL=debug</code>); der Schlüssel ist erforderlich, der Wert darf leer sein und selbst <code>=</code> enthalten. Wie Ports/Labels/Mounts erlaubt dieser Editor <strong>sehr wohl</strong> <kbd>e</kbd> zum Bearbeiten, sodass du einen Wert an Ort und Stelle anpassen kannst. Anders als die übrigen Editoren öffnet <kbd>e</kbd> hier den Eintrag in einem scrollbaren <strong>mehrzeiligen Textbereich</strong> (statt eines einzeiligen Feldes), sodass lange Werte wie <code>GITLAB_OMNIBUS_CONFIG</code> bequem zu bearbeiten sind — tippe frei (<kbd>Enter</kbd> fügt einen Zeilenumbruch ein), <kbd>Ctrl-S</kbd> speichert, <kbd>Esc</kbd> bricht ab. Das Anwenden ersetzt die Env des Service in einem <code>ServiceUpdate</code> (Rolling Update)</td></tr>
+          <tr><td><kbd>e</kbd></td><td>Umgebungsvariablen bearbeiten — öffnet die gesamte Umgebung des Service als <strong>Text</strong> in einem kleinen <strong>Editor im vim-Stil</strong>, ein <code>KEY=VALUE</code> pro Zeile (z. B. <code>LOG_LEVEL=debug</code>); der Schlüssel ist erforderlich, der Wert darf leer sein und selbst <code>=</code> enthalten. Ein Wert mit Zeilenumbrüchen, etwa <code>GITLAB_OMNIBUS_CONFIG</code>, wird als Heredoc geschrieben: <code>KEY&lt;&lt;EOF</code>, die Zeilen des Werts, dann eine Zeile <code>EOF</code>. Zeilen, die mit <code>#</code> beginnen, sind Kommentare — eine auskommentierte Zeile entfernt also diese Variable. <kbd>:w</kbd> prüft zuerst jede Zeile — ein Fehler nennt die Zeile und setzt den Cursor darauf —, zeigt dann, welche Schlüssel hinzugefügt, geändert und entfernt werden, und wendet sie in einem <code>ServiceUpdate</code> an (Rolling Update). <kbd>:list</kbd> wechselt in den Staging-Listeneditor und übernimmt deine Änderungen. Die Tasten findest du unten unter <a href="#env-editor">Der Env-Editor</a></td></tr>
           <tr><td><kbd>n</kbd></td><td>Netzwerke bearbeiten — ein Staging-Listeneditor über die Netzwerkanschlüsse des Service; da ein Eintrag nur ein Name ist, ist er <strong>nur Hinzufügen/Entfernen</strong> (kein <kbd>e</kbd> Bearbeiten). Die Hinzufügen-Eingabe <strong>vervollständigt Netzwerknamen automatisch</strong> (schlägt Netzwerke vor, an die der Service noch nicht angeschlossen ist, oder tippe selbst eines). Das Anwenden ersetzt die Anschlüsse in einem <code>ServiceUpdate</code>. <strong>DNS-Aliase</strong> werden auch von hier aus bearbeitet: wähle in diesem Editor ein Netzwerk und drücke <kbd>A</kbd>, um eine Staging-Liste der DNS-Aliase des Service <em>in diesem Netzwerk</em> zu öffnen (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>y</kbd> kopieren / <kbd>u</kbd> rückgängig / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen); das Anwenden ersetzt die Aliase dieses Netzwerks in einem <code>ServiceUpdate</code>. Funktioniert auch, wenn der Service noch keine Aliase hat. (Du musst ein neu hinzugefügtes Netzwerk erst anwenden, bevor du seine Aliase setzen kannst.)</td></tr>
           <tr><td><kbd>S</kbd></td><td>Secrets bearbeiten (großes <kbd>S</kbd>, also Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden) — derselbe Staging-Listeneditor wie Netzwerke über die Secrets, die der Service referenziert; ein Eintrag ist nur ein Name, also <strong>nur Hinzufügen/Entfernen</strong> (kein <kbd>e</kbd> Bearbeiten). Die Hinzufügen-Eingabe <strong>vervollständigt Secret-Namen automatisch</strong> (schlägt Secrets vor, die der Service noch nicht verwendet, oder tippe selbst eines). Das Anwenden ersetzt die Secret-Referenzen des Service in einem <code>ServiceUpdate</code> (Rolling Update); jedes Secret wird unter <code>/run/secrets/&lt;name&gt;</code> eingehängt. Funktioniert auch, wenn der Service aktuell keine Secrets hat</td></tr>
-          <tr><td><kbd>v</kbd></td><td>Mounts bearbeiten — ein Staging-Listeneditor über die Volumes und Bind-Mounts des Service. Hinzufügen (<kbd>a</kbd>) oder Bearbeiten (<kbd>e</kbd>) öffnet ein kleines <strong>Formular</strong> statt eines einzelnen Textfeldes: eine <strong>Bind-Mount</strong>-Checkbox, eine <strong>Quelle</strong> (wenn die Box nicht angehakt ist, ist es ein <em>Volume</em>-Name mit <strong>Autocomplete</strong> bestehender Cluster-Volumes; wenn angehakt, ist es ein <em>Host-Pfad</em>), ein <strong>Container-Pfad</strong> und eine <strong>Read-only</strong>-Checkbox. (Intern ist jeder Eintrag weiterhin <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind-Quellen und alle Ziele müssen absolute Pfade sein. Das Anwenden ersetzt die Mounts in einem <code>ServiceUpdate</code> (Rolling Update). <strong>Bind-Mount-Schutz (weich):</strong> wenn die vorgemerkte Liste Bind-Mounts enthält, zeigt das Anwenden zuerst eine Warnung, die die Nodes auflistet, auf denen der Service eingeplant werden könnte (berechnet aus Placement-Constraints plus Node-Rolle/-Labels/-Verfügbarkeit), und erinnert dich daran, dass jede Bind-Quelle auf allen davon <strong>bereits existieren</strong> muss — swarmexec kann Host-Pfade nicht verifizieren (der Agent hat keinen Zugriff auf das Host-Dateisystem), daher werden Bind-Pfade nicht vervollständigt oder auf Existenz geprüft; es ist nur ein Hinweis</td></tr>
+          <tr><td><kbd>v</kbd></td><td>Mounts bearbeiten — ein Staging-Listeneditor über die Volumes und Bind-Mounts des Service. Hinzufügen (<kbd>a</kbd>) oder Bearbeiten (<kbd>e</kbd>) öffnet ein kleines <strong>Formular</strong> statt eines einzelnen Textfeldes: eine <strong>Bind-Mount</strong>-Checkbox, eine <strong>Quelle</strong> (wenn die Box nicht angehakt ist, ist es ein <em>Volume</em>-Name mit <strong>Autocomplete</strong> bestehender Cluster-Volumes; wenn angehakt, ist es ein <em>Host-Pfad</em>), ein <strong>Container-Pfad</strong> und eine <strong>Read-only</strong>-Checkbox. Host-Pfad und Container-Pfad sind breite Felder, die einen langen Pfad auf weitere Zeilen umbrechen, sodass der ganze Pfad sichtbar bleibt; <kbd>Enter</kbd> springt zum nächsten Feld. (Intern ist jeder Eintrag weiterhin <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind-Quellen und alle Ziele müssen absolute Pfade sein. Das Anwenden ersetzt die Mounts in einem <code>ServiceUpdate</code> (Rolling Update). <strong>Bind-Mount-Schutz (weich):</strong> wenn die vorgemerkte Liste Bind-Mounts enthält, zeigt das Anwenden zuerst eine Warnung, die die Nodes auflistet, auf denen der Service eingeplant werden könnte (berechnet aus Placement-Constraints plus Node-Rolle/-Labels/-Verfügbarkeit), und erinnert dich daran, dass jede Bind-Quelle auf allen davon <strong>bereits existieren</strong> muss — swarmexec kann Host-Pfade nicht verifizieren (der Agent hat keinen Zugriff auf das Host-Dateisystem), daher werden Bind-Pfade nicht vervollständigt oder auf Existenz geprüft; es ist nur ein Hinweis</td></tr>
           <tr><td><kbd>r</kbd></td><td>Ressourcen-Limits bearbeiten — ein kleines Formular, um die <strong>CPU</strong>- und <strong>Memory</strong>-Limits des Service (und optional Reservierungen) zu setzen, zu ändern oder zu löschen. CPU wird in Kernen angegeben (z. B. <code>0.5</code>, <code>2</code>); Memory als menschenlesbare Größe (z. B. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Ein <strong>leeres Feld löscht</strong> dieses Limit (Swarm behandelt es dann als unbegrenzt). Eine Reservierung darf ihr Limit nicht überschreiten. Das Anwenden macht ein <code>ServiceUpdate</code> (Rolling Update); bestehende Pids-Limits und Device-/generische Reservierungen bleiben erhalten</td></tr>
           <tr><td><kbd>P</kbd></td><td>Placement bearbeiten (großes <kbd>P</kbd>, also Shift+p, um es von <kbd>p</kbd> Ports zu unterscheiden) — öffnet ein kleines Menü mit zwei Staging-Editoren: <strong>Constraints</strong> und <strong>Spread-Präferenzen</strong>.
             <ul>
@@ -1990,12 +1990,46 @@ rules:
         haben außerdem <kbd>e</kbd>, um den Eintrag unter dem Cursor zu bearbeiten; die
         Editoren für <strong>Netzwerke</strong> und <strong>Secrets</strong> haben kein
         <kbd>e</kbd> — ein Netzwerk- oder Secret-Eintrag ist nur ein Name, also nur
-        Hinzufügen (<kbd>a</kbd>) / Entfernen (<kbd>d</kbd>). Das <kbd>e</kbd> des
-        <strong>Env</strong>-Editors öffnet einen scrollbaren mehrzeiligen Textbereich
-        (<kbd>Ctrl-S</kbd> speichern / <kbd>Esc</kbd> abbrechen) für lange Werte; die
-        übrigen Editoren behalten die einzeilige Eingabe mit <kbd>Enter</kbd> zum
-        Bestätigen.
+        Hinzufügen (<kbd>a</kbd>) / Entfernen (<kbd>d</kbd>). Im
+        <strong>Env</strong>-Listeneditor (erreichbar mit <kbd>:list</kbd>) öffnet
+        <kbd>e</kbd> einen scrollbaren mehrzeiligen Textbereich (<kbd>Ctrl-S</kbd>
+        speichern / <kbd>Esc</kbd> abbrechen) für lange Werte; die Editoren für Ports und
+        Labels nutzen eine breite Eingabe, die lange Werte umbricht, und Editoren mit
+        Autocomplete (Netzwerke, Secrets, Placement) eine einzeilige Eingabe —
+        <kbd>Enter</kbd> bestätigt in beiden Fällen.
       </p>
+      <h4 id="env-editor">Der Env-Editor</h4>
+      <p>
+        Der Env-Editor funktioniert wie vim, reduziert auf das, was das Bearbeiten einer
+        Liste von Variablen braucht. Er startet im <strong>Normal</strong>-Modus, in dem
+        Tasten Befehle sind; <kbd>i</kbd> wechselt zum Tippen in den
+        <strong>Insert</strong>-Modus, <kbd>Esc</kbd> zurück. Die Statuszeile unten zeigt
+        den Modus, die Cursorposition und ob sich etwas geändert hat; die Fußzeile zeigt
+        immer die Tasten, die im aktuellen Modus wichtig sind, und <kbd>?</kbd> öffnet die
+        vollständige Liste. <kbd>Esc</kbd> im Normal-Modus verlässt den Editor, wenn sich
+        nichts geändert hat.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Tasten</th><th>Aktion</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>o</kbd> <kbd>O</kbd></td><td>einfügen vor / nach dem Cursor, am Zeilenanfang / -ende, in einer neuen Zeile darunter / darüber</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd>, <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd>, <kbd>0</kbd> <kbd>^</kbd> <kbd>$</kbd>, <kbd>gg</kbd> <kbd>G</kbd></td><td>zeichen- und zeilenweise bewegen, wortweise, zum Zeilenanfang / ersten Nicht-Leerzeichen / Zeilenende, zur ersten / letzten Zeile (die Pfeiltasten funktionieren auch)</td></tr>
+          <tr><td><kbd>/</kbd>text, <kbd>n</kbd> <kbd>N</kbd></td><td>suchen, nächster / vorheriger Treffer</td></tr>
+          <tr><td><kbd>x</kbd> <kbd>dd</kbd> <kbd>D</kbd> <kbd>dw</kbd></td><td>ein Zeichen löschen, die Zeile, bis zum Zeilenende, bis zum nächsten Wort</td></tr>
+          <tr><td><kbd>cc</kbd> <kbd>cw</kbd> <kbd>C</kbd> <kbd>r</kbd></td><td>die Zeile, das Wort, bis zum Zeilenende ändern; ein Zeichen ersetzen</td></tr>
+          <tr><td><kbd>yy</kbd> <kbd>p</kbd> <kbd>P</kbd> <kbd>J</kbd></td><td>die Zeile kopieren, darunter / darüber einfügen, die nächste Zeile anhängen</td></tr>
+          <tr><td><kbd>u</kbd> <kbd>Ctrl-R</kbd></td><td>rückgängig, wiederholen; eine vorangestellte Zahl wiederholt einen Befehl (<kbd>3dd</kbd>, <kbd>5j</kbd>)</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>prüfen und anwenden (auch <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>)</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>abbrechen; <kbd>:q</kbd> verweigert, solange es Änderungen gibt, <kbd>:q!</kbd> verwirft sie</td></tr>
+          <tr><td><kbd>:list</kbd> <kbd>:42</kbd> <kbd>?</kbd></td><td>in den Listeneditor wechseln, zu Zeile 42 springen, die Hilfe anzeigen</td></tr>
+        </tbody>
+      </table></div>
+      <pre><span class="o">LOG_LEVEL=info
+# DEBUG=1
+GITLAB_OMNIBUS_CONFIG&lt;&lt;EOF
+external_url 'https://gitlab.example.com'
+gitlab_rails['backup_keep_time'] = 604800
+EOF</span></pre>
       <p>
         Der Baum aktualisiert sich automatisch alle ~10s, sodass ein im Hintergrund
         ersetzter Container oder ein skalierter Service von selbst auftaucht — der Cursor
@@ -2304,7 +2338,7 @@ rules:
 
       <h3>Configs-Tab</h3>
       <p>
-        Tab&nbsp;<kbd>8</kbd> — das Gegenstück zum Secrets-Tab für das andere Objekt, das der
+        Tab&nbsp;<kbd>7</kbd> — das Gegenstück zum Secrets-Tab für das andere Objekt, das der
         Swarm in Container reicht, mit einem entscheidenden Unterschied: <strong>der Inhalt
         einer Config ist lesbar</strong>. Der Secrets-Tab kann einen Wert nie zeigen (die
         Docker-API gibt ihn nicht heraus); die Config-Detailansicht zeigt den
@@ -2433,7 +2467,10 @@ forward_stop: d  forward_copy_url: o</div>
         Inspect-Overlay, in den Detailansichten, im Log-Viewer —, eine umbelegte Taste
         schließt und kopiert also auch dort. Aus demselben Grund dürfen sie keine Taste
         belegen, die ein Dialog selbst verwendet, etwa <kbd>t</kbd>, <kbd>d</kbd> oder
-        <kbd>i</kbd>: Eine solche Belegung behält den Standard, mit einer Warnung.
+        <kbd>i</kbd>: Eine solche Belegung behält den Standard, mit einer Warnung. Der
+        Env-Editor ist die Ausnahme: Dort ist jeder Buchstabe ein vim-Befehl oder Text,
+        daher verlässt du ihn mit <kbd>Esc</kbd> / <kbd>:q</kbd> und kopierst mit
+        <kbd>yy</kbd> — egal, worauf <code>quit</code> und <code>copy</code> gelegt sind.
       </p>
 
       <!-- 11 -->
