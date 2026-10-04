@@ -92,10 +92,11 @@ func (p *Plan) Flagged() []PlannedService {
 // security analyzers over the result.
 //
 // The conversion needs the cluster: a service's secret and config references
-// are resolved to ids against it, exactly as deploy does. A file naming a
-// secret that does not exist therefore fails HERE, before anything has been
+// are resolved to ids against it, exactly as deploy does. The ones the file
+// creates itself count as present (see plannedClient); a file naming an
+// external secret that does not exist fails HERE, before anything has been
 // created — which is the cheap place for it to fail.
-func PlanFile(ctx context.Context, cli *client.Client, path, stackName string) (*Plan, error) {
+func PlanFile(ctx context.Context, cli client.APIClient, path, stackName string) (*Plan, error) {
 	cfg, err := loadComposeFile(path)
 	if err != nil {
 		return nil, err
@@ -105,7 +106,12 @@ func PlanFile(ctx context.Context, cli *client.Client, path, stackName string) (
 		p.Unsupported = un
 	}
 
-	specs, err := convert.Services(ctx, convert.NewNamespace(stackName), cfg, cli)
+	ns := convert.NewNamespace(stackName)
+	planned, err := newPlannedClient(cli, ns, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("convert %s: %w", path, err)
+	}
+	specs, err := convert.Services(ctx, ns, cfg, planned)
 	if err != nil {
 		return nil, fmt.Errorf("convert %s: %w", path, err)
 	}
