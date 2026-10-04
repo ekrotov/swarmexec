@@ -104,6 +104,78 @@ generate-check:
     - make check-generate
 
 # ----------------------------------------------------------------------------
+# docs-i18n — OPTIONAL: re-translate the docs sections whose English changed,
+# with the Claude API (tools/docs-i18n, the same as `make docs-i18n`).
+#
+# Manual and allowed to fail: translations can always be made by hand and
+# recorded with `make docs-i18n-accept`; this job only saves that work. It is
+# offered on branch and MR pipelines that touch the docs, never on tags.
+#
+# Variables (Settings > CI/CD > Variables):
+#   ANTHROPIC_API_KEY      required; masked. If it is protected, the job only
+#                          sees it on protected branches.
+#   DOCS_I18N_PUSH_TOKEN   optional; a project access token with write_repository
+#                          (masked). When set, the job commits the translations
+#                          to the branch it ran for — never to the default branch.
+#                          Without it the result is the docs-i18n.patch artifact:
+#                          `git apply docs-i18n.patch`, review, commit.
+# The site tests run on the result, so a translation that breaks the page's
+# structure fails here instead of in the next pipeline.
+# ----------------------------------------------------------------------------
+docs-i18n:
+  stage: test
+  image: $GO_IMAGE
+  <<: *go-cache
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - changes:
+        - site/docs.html
+        - site/docs.*.html
+        - site/i18n/*
+      when: manual
+  allow_failure: true
+  script:
+    - |
+      if [ -z "$ANTHROPIC_API_KEY" ]; then
+        echo "ANTHROPIC_API_KEY is not available to this pipeline — nothing translated."
+        echo "Add it under Settings > CI/CD > Variables (masked). A protected variable"
+        echo "is only passed to protected branches."
+        exit 1
+      fi
+    - go run ./tools/docs-i18n
+    - go test ./site/
+    - git diff -- site/ > docs-i18n.patch
+    - git diff --stat -- site/
+    - |
+      if [ ! -s docs-i18n.patch ]; then
+        echo "translations were already current — nothing to commit"
+        exit 0
+      fi
+      BRANCH="${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-$CI_COMMIT_BRANCH}"
+      # A merged-results pipeline checks out a merge commit, which must not
+      # land on the branch; the patch is still right for it.
+      if [ -z "$DOCS_I18N_PUSH_TOKEN" ] || [ -z "$BRANCH" ] || [ "$BRANCH" = "$CI_DEFAULT_BRANCH" ] \
+         || [ "$CI_MERGE_REQUEST_EVENT_TYPE" = "merged_result" ]; then
+        echo "translations are in the docs-i18n.patch artifact (git apply docs-i18n.patch)"
+        exit 0
+      fi
+      set +x
+      git config --global --add safe.directory "$CI_PROJECT_DIR"
+      git config user.name "docs-i18n"
+      git config user.email "docs-i18n@${CI_SERVER_HOST}"
+      git add site/
+      git commit -q -m "docs: update the translations (docs-i18n)"
+      git push "https://docs-i18n:${DOCS_I18N_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:refs/heads/${BRANCH}"
+      echo "pushed the translations to ${BRANCH}"
+  artifacts:
+    when: always
+    expire_in: 1 week
+    expose_as: "docs translations"
+    paths:
+      - docs-i18n.patch
+
+# ----------------------------------------------------------------------------
 # vulncheck — CVE analysis with govulncheck (the official Go vulnerability
 # scanner). It reports only vulnerabilities whose affected symbols our code can
 # actually REACH, so it is far less noisy than a plain dependency-version diff.
