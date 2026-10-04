@@ -11,7 +11,9 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 // stackLabel is how docker marks everything that belongs to a stack. It is the
@@ -77,6 +79,7 @@ func FromSwarm(ctx context.Context, cli swarmReader, name string) (*Stack, error
 	// label, not the name: a secret merely called "<stack>_something" that the
 	// stack never created keeps its name (see Names).
 	ownSecretsConfigs(ctx, cli, name, owned)
+	ownVolumes(svcs, name, owned)
 
 	names := Names{
 		Namespace:   name,
@@ -97,7 +100,7 @@ func FromSwarm(ctx context.Context, cli swarmReader, name string) (*Stack, error
 
 	readNetworks(name, byName, st)
 	readSecretsAndConfigs(ctx, cli, name, st)
-	collectVolumes(st)
+	collectVolumes(st, names)
 
 	if len(st.Secrets) > 0 {
 		st.Notes = append(st.Notes,
@@ -199,6 +202,25 @@ func ownSecretsConfigs(ctx context.Context, cli swarmReader, ns string, owned ma
 	}
 }
 
+// ownVolumes adds the named volumes this stack created. Volumes are node-local
+// and the manager cannot list them cluster-wide, but it does not need to: the
+// deploy writes the stack label into each volume mount's options, so the
+// service spec itself says which volumes are the stack's.
+func ownVolumes(svcs []swarm.Service, ns string, owned map[string]bool) {
+	for _, s := range svcs {
+		cs := s.Spec.TaskTemplate.ContainerSpec
+		if cs == nil {
+			continue
+		}
+		for _, m := range cs.Mounts {
+			if m.Type == mount.TypeVolume && m.Source != "" && m.VolumeOptions != nil &&
+				m.VolumeOptions.Labels[stackLabel] == ns {
+				owned[m.Source] = true
+			}
+		}
+	}
+}
+
 // readSecretsAndConfigs records which of the referenced secrets and configs
 // belong to this stack. Best effort: a listing failure leaves them declared as
 // plain external references, which is what they are from the file's side
@@ -236,8 +258,10 @@ func readSecretsAndConfigs(ctx context.Context, cli swarmReader, ns string, st *
 }
 
 // collectVolumes declares the named volumes the services mount. Only named
-// volumes: a bind mount is a host path, not a stack-level declaration.
-func collectVolumes(st *Stack) {
+// volumes: a bind mount is a host path, not a stack-level declaration. A
+// volume the stack created keeps its full name, so an export deployed again
+// mounts the same volume rather than a new one under the short name.
+func collectVolumes(st *Stack, names Names) {
 	for _, s := range st.Services {
 		for _, v := range s.Volumes {
 			src := v
@@ -248,7 +272,11 @@ func collectVolumes(st *Stack) {
 			if src == "" || strings.HasPrefix(src, "/") || strings.HasPrefix(src, ".") {
 				continue
 			}
-			st.Volumes[src] = &Resource{External: true}
+			r := &Resource{External: true}
+			if full := names.Namespace + "_" + src; names.Owned[full] {
+				r.Name = full
+			}
+			st.Volumes[src] = r
 		}
 	}
 }
