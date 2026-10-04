@@ -1124,6 +1124,16 @@ rules:
       </table></div>
       <div class="prompt"><span class="c">$</span> swarmexec port-forward db 5432             <span class="o"># localhost:5432 → contenedor:5432</span>
 <span class="c">$</span> swarmexec pf web 9090:8080                  <span class="o"># localhost:9090 → contenedor:8080</span></div>
+      <p>
+        Cómo funciona: el agente arranca un contenedor <strong>sidecar</strong> de vida corta
+        en el espacio de nombres de red del destino (la propia imagen del agente, con la
+        etiqueta <code>swarmexec.role=port-forward</code>) y lleva por él todas las conexiones
+        del reenvío. Tras cerrarse la última conexión, el sidecar se mantiene unos
+        <strong>dos minutos</strong>, para que una recarga del navegador o un pool de
+        conexiones que se reconecta no vuelva a pagar el arranque del contenedor: un sidecar
+        que sigue ahí poco después de <kbd>Ctrl-C</kbd> es esa pausa, no una fuga. El agente
+        lo elimina por sí solo.
+      </p>
 
       <h3><code>volume ls</code> — listar volúmenes</h3>
       <p>

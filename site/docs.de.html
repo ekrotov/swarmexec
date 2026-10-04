@@ -1127,6 +1127,16 @@ rules:
       </table></div>
       <div class="prompt"><span class="c">$</span> swarmexec port-forward db 5432             <span class="o"># localhost:5432 → container:5432</span>
 <span class="c">$</span> swarmexec pf web 9090:8080                  <span class="o"># localhost:9090 → container:8080</span></div>
+      <p>
+        So funktioniert es: Der Agent startet im Netzwerk-Namespace des Ziels einen
+        kurzlebigen <strong>Sidecar</strong>-Container (das eigene Image des Agents, mit dem
+        Label <code>swarmexec.role=port-forward</code>) und führt alle Verbindungen des
+        Port-Forwards darüber. Nach der letzten Verbindung bleibt das Sidecar noch etwa
+        <strong>zwei Minuten</strong> stehen, damit ein Neuladen im Browser oder ein
+        Verbindungspool, der sich neu verbindet, den Containerstart nicht noch einmal
+        bezahlt — ein Sidecar, das kurz nach <kbd>Ctrl-C</kbd> noch da ist, ist diese Pause,
+        kein Leck. Der Agent entfernt es von selbst.
+      </p>
 
       <h3><code>volume ls</code> — Volumes auflisten</h3>
       <p>
