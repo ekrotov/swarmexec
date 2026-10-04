@@ -161,17 +161,17 @@
       <p class="lead">
         swarmexec bietet dir <code>docker exec -it</code>, Logs, Port-Forwarding und
         Volume-Verwaltung für <strong>jeden</strong> Container in einem Docker Swarm,
-        aus einem einzigen Terminal. Ein kleiner <strong>Agent</strong> pro Node (ein
+        und das alles aus einem einzigen Terminal. Ein kleiner <strong>Agent</strong> pro Node (ein
         globaler Swarm-Service) erledigt die Arbeit auf seinem Node; der
-        <strong>Client</strong> fragt den Swarm-Manager, welcher Node dein Ziel
-        ausführt, und verbindet sich dann direkt mit dem Agent dieses Nodes über mTLS.
+        <strong>Client</strong> fragt den Swarm-Manager, auf welchem Node dein Ziel
+        läuft, und verbindet sich dann per mTLS direkt mit dem Agent dieses Nodes.
         Diese Seite dokumentiert den Client.
       </p>
 
       <div class="toc">
         <p class="th">Inhalt</p>
         <ol>
-          <li><a href="#model">1. Wie es funktioniert</a></li>
+          <li><a href="#model">1. So funktioniert es</a></li>
           <li><a href="#install">2. Installation</a></li>
           <li><a href="#quickstart">3. Schnellstart</a></li>
           <li><a href="#targets">4. Ziel-Selektoren</a></li>
@@ -186,7 +186,7 @@
       </div>
 
       <!-- 1 -->
-      <h2 id="model">1. Wie es funktioniert</h2>
+      <h2 id="model">1. So funktioniert es</h2>
       <p class="lead">
         Zwei Binaries, ein Wire-Protokoll:
       </p>
@@ -196,19 +196,19 @@
           gRPC-API bereit, die exec / logs / port-forward in Container <em>auf seinem
           eigenen Node</em> weiterreicht. Du rollst ihn einmal mit
           <code>swarmexec init</code> aus.</li>
-        <li><strong>client</strong> (diese CLI) — läuft auf deiner Workstation. Er spricht
-          mit der Swarm-<strong>Manager-API</strong>, um aufzulösen, welcher Node dein Ziel
-          ausführt und wie die Container-ID lautet, und verbindet sich dann direkt mit dem
+        <li><strong>client</strong> (diese CLI) — läuft auf deiner Workstation. Er fragt
+          die Swarm-<strong>Manager-API</strong>, auf welchem Node dein Ziel läuft und wie
+          seine Container-ID lautet, und verbindet sich dann direkt mit dem
           Agent dieses Nodes auf Port <code>9443</code>. Es gibt kein Agent-zu-Agent-Mesh.</li>
       </ul>
       <div class="prompt">operator terminal ──gRPC/mTLS──&gt; agent(nodeN) ──docker.sock──&gt; container
         <span class="o">│</span>
-        <span class="o">└── Docker manager API (resolve node + container id)</span></div>
+        <span class="o">└── Docker-Manager-API (Node + Container-ID auflösen)</span></div>
       <p>
         Die Manager-Verbindung nutzt deinen Docker-CLI-Context (sie berücksichtigt also
         <code>--context</code>, <code>ssh://</code>-Bastions, mTLS usw.). Die
-        Agent-Verbindung wird mit mutual TLS authentifiziert, oder mit einem geteilten
-        Secret gegen einen selbstsignierten Agent — siehe
+        Agent-Verbindung wird per Mutual TLS authentifiziert oder, bei einem
+        selbstsignierten Agent, mit einem Shared Secret — siehe
         <a href="#auth">Authentifizierung</a>.
       </p>
 
@@ -219,15 +219,15 @@
         — auf dem Manager und auf jedem Node. swarmexec lehnt einen älteren Daemon schon beim
         Verbinden ab und nennt dabei beide Versionen, statt sich zu verbinden und dann eine
         Ansicht nach der anderen scheitern zu lassen. Zwei Funktionen brauchen vom Daemon des
-        <em>Nodes</em> etwas mehr: die Live-Auslastung und die Image-Ansicht pro Node wollen
-        <strong>Docker 23.0</strong> (API 1.41/1.42) — darunter bleiben sie leer und sagen das
-        auch, statt zu scheitern.
+        <em>Nodes</em> etwas mehr: Die Live-Auslastung und die Image-Ansicht pro Node setzen
+        <strong>Docker 23.0</strong> (API 1.41/1.42) voraus — bei älteren Versionen bleiben sie
+        leer und weisen darauf hin, statt einen Fehler zu werfen.
       </p>
       <p>
-        <strong>Am schnellsten:</strong> Das Installationsskript wählt das Binary für Ihren
+        <strong>Am schnellsten:</strong> Das Installationsskript wählt das passende Binary für deinen
         Rechner, prüft es gegen die <code>SHA256SUMS</code> des Releases und installiert nichts,
-        was es nicht prüfen konnte. Es verwendet nie <code>sudo</code> und ändert kein
-        Shell-Profil — <a href="/install.sh">vorher lesen</a>, es ist kurz.
+        was es nicht verifizieren konnte. Es verwendet nie <code>sudo</code> und ändert nie dein
+        Shell-Profil — <a href="/install.sh">lies es vorher</a>, es ist kurz.
       </p>
       <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
 <span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># ein bestimmtes Release</span></div>
@@ -258,13 +258,13 @@
       <h3 id="completion">Shell-Completion</h3>
       <p>
         <code>swarmexec completion bash|zsh|fish|powershell</code> gibt ein
-        Completion-Skript aus. Es ergänzt mehr als Flags: <code>exec &lt;TAB&gt;</code> bietet
+        Completion-Skript aus. Es vervollständigt mehr als nur Flags: <code>exec &lt;TAB&gt;</code> bietet
         die vorhandenen Services an, <code>logs web.&lt;TAB&gt;</code> deren laufende Slots,
         <code>--stack &lt;TAB&gt;</code> die deployten Stacks und <code>--context &lt;TAB&gt;</code>
-        Ihre Docker-Contexts. Gefragt wird nur die Manager-API, nie ein Agent; eine Completion
-        gibt nach zwei Sekunden auf und darf über <code>ssh://</code> nie nachfragen — ein
-        Context, der ein Passwort verlangen würde, bietet dann nichts an, statt die Shell
-        einzufrieren.
+        deine Docker-Contexts. Gefragt wird nur die Manager-API, nie ein Agent; eine Completion
+        gibt nach zwei Sekunden auf und darf über <code>ssh://</code> nie interaktiv nachfragen —
+        ein Context, der nach einem Passwort fragen würde, liefert dann einfach keine Vorschläge,
+        statt die Shell einzufrieren.
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec completion bash &gt; /etc/bash_completion.d/swarmexec      <span class="o"># oder ~/.local/share/bash-completion/completions/</span>
 <span class="c">$</span> swarmexec completion zsh &gt; "${fpath[1]}/_swarmexec"
@@ -273,73 +273,73 @@
       <!-- 3 -->
       <h2 id="quickstart">3. Schnellstart</h2>
       <p>
-        Richte deinen Docker-Context auf einen Swarm-Manager aus und provisioniere die
-        Agents dann einmalig. <code>init</code> erzeugt ein geteiltes Secret, rollt den
+        Lass deinen Docker-Context auf einen Swarm-Manager zeigen und provisioniere dann
+        einmalig die Agents. <code>init</code> erzeugt ein Shared Secret, rollt den
         Agent auf jedem Node im selbstsignierten Modus aus und schreibt eine passende
         Client-Konfiguration — damit die übrigen Befehle sofort funktionieren.
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec --context my-swarm init      <span class="o"># Agents auf jedem Node ausrollen (einmalig)</span>
-<span class="c">$</span> swarmexec ps                            <span class="o"># Tasks auflisten und den Node, auf dem jede läuft</span>
-<span class="c">$</span> swarmexec exec web -- sh                <span class="o"># Shell in Service "web", beliebiger Node</span>
+<span class="c">$</span> swarmexec ps                            <span class="o"># Tasks auflisten, samt Node, auf dem sie laufen</span>
+<span class="c">$</span> swarmexec exec web -- sh                <span class="o"># Shell im Service "web", egal auf welchem Node</span>
 <span class="c">$</span> swarmexec logs -f web                   <span class="o"># den Logs eines Service folgen</span>
 <span class="c">$</span> swarmexec port-forward db 5432          <span class="o"># localhost:5432 → container:5432</span>
 <span class="c">$</span> swarmexec ui                            <span class="o"># interaktive TUI</span></div>
       <p>
-        Baue die Agents wieder mit <code>swarmexec down</code> ab (deine
+        Mit <code>swarmexec down</code> baust du die Agents wieder ab (deine
         Client-Konfiguration bleibt dabei unangetastet).
       </p>
 
       <!-- 4 -->
       <h2 id="targets">4. Ziel-Selektoren</h2>
       <p>
-        <code>exec</code>, <code>logs</code> und <code>port-forward</code> nehmen ein
-        <strong>Ziel</strong> als erstes Argument. Es wird in dieser Reihenfolge aufgelöst:
+        <code>exec</code>, <code>logs</code> und <code>port-forward</code> erwarten als erstes
+        Argument ein <strong>Ziel</strong>. Es wird in dieser Reihenfolge aufgelöst:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Form</th><th>Beispiel</th><th>Bedeutung</th></tr></thead>
         <tbody>
           <tr><td><code>service</code></td><td><code>web</code></td><td>Die laufende Task des Service. Bei mehr als einem Replica ist das mehrdeutig — siehe unten.</td></tr>
-          <tr><td><code>service.slot</code></td><td><code>web.2</code></td><td>Ein bestimmter Replica-Slot. Während eines Rolling Update gewinnt die neueste Task im Slot.</td></tr>
+          <tr><td><code>service.slot</code></td><td><code>web.2</code></td><td>Ein bestimmter Replica-Slot. Während eines Rolling Updates gewinnt die neueste Task im Slot.</td></tr>
           <tr><td><code>task-id</code></td><td><code>xxh8k1…</code></td><td>Eine Swarm-Task-ID.</td></tr>
-          <tr><td><code>container-id</code></td><td><code>3f9a2b…</code></td><td>Ein Container-ID-Präfix. Braucht einen Node: gib <code>--node</code> an, oder er wird durch Scannen der laufenden Tasks gefunden.</td></tr>
+          <tr><td><code>container-id</code></td><td><code>3f9a2b…</code></td><td>Ein Container-ID-Präfix. Braucht einen Node: Gib <code>--node</code> an, sonst wird er durch Durchsuchen der laufenden Tasks ermittelt.</td></tr>
         </tbody>
       </table></div>
       <p>
         <strong>Mehrdeutigkeit.</strong> Ein bloßer Service-Name mit mehreren Replicas
-        lässt sich nicht auf eine einzelne Task auflösen. <code>exec</code> fordert dich
-        interaktiv auf, aus einer nummerierten Liste zu wählen; <code>logs</code> und
+        lässt sich nicht auf eine einzelne Task auflösen. <code>exec</code> lässt dich bei
+        interaktivem Aufruf aus einer nummerierten Liste wählen; <code>logs</code> und
         <code>port-forward</code> fragen nie nach — sie geben die Kandidatenliste aus und
-        beenden sich. Vereindeutige mit einem Slot
+        beenden sich. Eindeutig wird es mit einem Slot
         (<code>web.0</code>, <code>web.1</code>, …).
       </p>
       <div class="note">
         <strong>--node</strong> wird nur für <em>container-id</em>-Ziele herangezogen und
         kann ein Hostname, eine IP oder eine Node-ID sein. Service-/Slot-/Task-Ziele werden
-        über die Manager-API lokalisiert und brauchen es daher nie.
+        über die Manager-API ermittelt und brauchen das Flag daher nie.
       </div>
 
       <!-- 5 -->
       <h2 id="config">5. Konfiguration</h2>
       <p>
-        Einstellungen kommen aus vier Ebenen, jede überschreibt die vorherige:
+        Einstellungen stammen aus vier Ebenen; jede überschreibt die vorherige:
       </p>
       <div class="cmd">built-in defaults  <span class="k">→</span>  config file  <span class="k">→</span>  environment  <span class="k">→</span>  command-line flags</div>
       <p>
-        Ein Flag überschreibt nur, wenn du es tatsächlich angibst, sodass ein Wert aus der
-        Datei oder der Umgebung erhalten bleibt, solange er nicht ausdrücklich überschrieben wird.
+        Ein Flag überschreibt nur, wenn du es tatsächlich angibst; ein Wert aus der Datei
+        oder der Umgebung bleibt also erhalten, solange er nicht ausdrücklich überschrieben wird.
       </p>
 
       <h3>Konfigurationsdatei</h3>
-      <p>Der Standardpfad ist der erste der folgenden, der gesetzt ist:</p>
+      <p>Als Standardpfad gilt der erste gesetzte Eintrag dieser Liste:</p>
       <ol>
         <li><code>$SWARMEXEC_CONFIG</code></li>
         <li><code>$XDG_CONFIG_HOME/swarmexec/config.yaml</code></li>
         <li><code>~/.config/swarmexec/config.yaml</code></li>
       </ol>
       <p>
-        Überschreibe ihn mit <code>--config &lt;path&gt;</code>. Die Datei ist YAML; eine
-        fehlende Datei ist in Ordnung, eine fehlerhafte ist ein Fehler. Sie wird mit
-        <code>0600</code> geschrieben (sie kann das geteilte Secret enthalten). Die
+        Überschreibe ihn mit <code>--config &lt;path&gt;</code>. Die Datei ist YAML; fehlt
+        sie, ist das kein Problem, ist sie fehlerhaft, ist das ein Fehler. Sie wird mit
+        <code>0600</code> geschrieben (sie kann das Shared Secret enthalten). Die
         Log-Datei liegt standardmäßig daneben —
         <code>~/.config/swarmexec/swarmexec.log</code> — sofern du nicht
         <code>--log-file</code> setzt. Schlüssel:
@@ -351,16 +351,16 @@
           <tr><td><code>cert</code></td><td>string</td><td>Client-Zertifikat — sein CN ist deine Operator-Identität</td></tr>
           <tr><td><code>key</code></td><td>string</td><td>privater Client-Schlüssel</td></tr>
           <tr><td><code>port</code></td><td>int</td><td>Agent-Port (Standard <code>9443</code>)</td></tr>
-          <tr><td><code>addr_mode</code></td><td>string</td><td><code>hostname</code> (Standard) oder <code>ip</code> — wie ein Node angewählt wird</td></tr>
+          <tr><td><code>addr_mode</code></td><td>string</td><td><code>hostname</code> (Standard) oder <code>ip</code> — wie ein Node angesprochen wird</td></tr>
           <tr><td><code>server_name</code></td><td>string</td><td>überschreibt den TLS-Servernamen, der zur Verifizierung des Agents verwendet wird</td></tr>
-          <tr><td><code>agent_secret</code></td><td>string</td><td>geteiltes Secret für einen selbstsignierten Agent</td></tr>
+          <tr><td><code>agent_secret</code></td><td>string</td><td>Shared Secret für einen selbstsignierten Agent</td></tr>
           <tr><td><code>agent_secret_file</code></td><td>string</td><td>liest das Secret aus dieser Datei (hat Vorrang vor <code>agent_secret</code>)</td></tr>
           <tr><td><code>insecure</code></td><td>bool</td><td>überspringt die Prüfung des Agent-Serverzertifikats (selbstsignierte Agents)</td></tr>
-          <tr><td><code>legacy_secret</code></td><td>bool</td><td>sendet zusätzlich das <em>rohe</em> Secret, für Agents älter als v1.17.3 — standardmäßig aus; siehe unten</td></tr>
+          <tr><td><code>legacy_secret</code></td><td>bool</td><td>sendet zusätzlich das <em>Secret selbst</em>, für Agents älter als v1.17.3 — standardmäßig aus; siehe unten</td></tr>
           <tr><td><code>operator</code></td><td>string</td><td>Audit-Identität, wenn kein Client-Zertifikat verwendet wird (Standard: OS-Benutzername)</td></tr>
           <tr><td><code>logs.format</code></td><td>string</td><td>Standard-Log-Format für <code>logs</code> und die TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (leer = <code>classic</code>)</td></tr>
-          <tr><td><code>logs.min_level</code></td><td>string</td><td>Standard-Mindeststufe: <code>trace</code>..<code>fatal</code> (weglassen für keinen Stufenfilter)</td></tr>
-          <tr><td><code>ui.dim</code></td><td>float</td><td>wie stark der Hintergrund hinter einem offenen Overlay abgedunkelt wird, ein Bruch <code>0</code>–<code>1</code> (Standard <code>0.6</code>; <code>0</code> = keine Abdunklung)</td></tr>
+          <tr><td><code>logs.min_level</code></td><td>string</td><td>Standard-Mindest-Level: <code>trace</code>..<code>fatal</code> (weglassen = kein Level-Filter)</td></tr>
+          <tr><td><code>ui.dim</code></td><td>float</td><td>wie stark der Hintergrund hinter einem offenen Overlay abgedunkelt wird, als Anteil von <code>0</code> bis <code>1</code> (Standard <code>0.6</code>; <code>0</code> = keine Abdunklung)</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -371,18 +371,18 @@
       <div class="cmd">logs:
   format: auto        <span class="k"># auto | classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
-      <p>Inspiziere die effektive, zusammengeführte Konfiguration (Secret maskiert) mit:</p>
-      <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
+      <p>Die effektive, zusammengeführte Konfiguration (Secret maskiert) zeigst du so an:</p>
+      <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># oder: --json</span></div>
 
       <h3>addr-mode</h3>
       <p>
-        <code>hostname</code> (Standard) wählt den gemeldeten Hostnamen des Nodes an;
-        <code>ip</code> wählt seine angekündigte Adresse an. Verwende <code>ip</code>, wenn
+        <code>hostname</code> (Standard) verbindet sich mit dem gemeldeten Hostnamen des
+        Nodes, <code>ip</code> mit seiner Advertise-Adresse. Verwende <code>ip</code>, wenn
         die Node-Hostnamen von deiner Workstation aus nicht auflösbar sind —
         <code>init</code> schreibt genau deshalb <code>addr_mode: ip</code> in die
         generierte Konfiguration. Der Swarm-Leader meldet <code>0.0.0.0</code> für sich
-        selbst; der Client stellt seine echte Adresse automatisch aus der Raft-Peer-Liste
-        wieder her.
+        selbst; der Client ermittelt seine echte Adresse automatisch aus der
+        Raft-Peer-Liste.
       </p>
 
       <h3>Umgebungsvariablen</h3>
@@ -394,12 +394,12 @@
           <tr><td><code>SWARMEXEC_PORT</code></td><td>Agent-Port</td></tr>
           <tr><td><code>SWARMEXEC_ADDR_MODE</code></td><td><code>hostname</code> / <code>ip</code></td></tr>
           <tr><td><code>SWARMEXEC_SERVER_NAME</code></td><td>TLS-Servername</td></tr>
-          <tr><td><code>SWARMEXEC_AGENT_SECRET</code> / <code>_FILE</code></td><td>geteiltes Secret / Secret-Datei</td></tr>
+          <tr><td><code>SWARMEXEC_AGENT_SECRET</code> / <code>_FILE</code></td><td>Shared Secret / Secret-Datei</td></tr>
           <tr><td><code>SWARMEXEC_INSECURE</code></td><td>Prüfung überspringen (<code>1/true/yes/on</code>)</td></tr>
           <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>Audit-Identität</td></tr>
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>Overlay-Hintergrundabdunklung (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_KEYS</code></td><td>Pfad zur Tastenbelegungsdatei der TUI (Standard: <code>keys.yaml</code> neben der Konfiguration)</td></tr>
-          <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> schaltet geteilte ssh-Verbindungen ab (siehe <a href="#sshsharing">Gemeinsame ssh-Verbindungen</a>)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> schaltet gemeinsame ssh-Verbindungen ab (siehe <a href="#sshsharing">Gemeinsame ssh-Verbindungen</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>Docker-Context für die Manager-API</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>Basis für den Standard-Konfigurationspfad</td></tr>
         </tbody>
@@ -412,14 +412,14 @@
       <h3>Modus A — mutual TLS (Standard)</h3>
       <p>
         Setze <code>ca</code>, <code>cert</code> und <code>key</code> (alle drei
-        erforderlich). Der Client verifiziert den Agent gegen deine CA und präsentiert sein
-        Zertifikat; der Agent autorisiert und auditiert dich anhand des
-        <strong>CN</strong> des Zertifikats. Das ist der Standard und die empfohlene
-        Vorgehensweise.
+        erforderlich). Der Client verifiziert den Agent gegen deine CA und weist sich mit seinem
+        Zertifikat aus; der Agent autorisiert dich anhand des
+        <strong>CN</strong> des Zertifikats und führt dich unter diesem Namen im Audit-Log.
+        Das ist der Standard und die empfohlene Konfiguration.
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec --ca ca.crt --cert me.crt --key me.key ps</div>
 
-      <h3>Modus B — selbstsignierter Agent + geteiltes Secret</h3>
+      <h3>Modus B — selbstsignierter Agent + Shared Secret</h3>
       <p>
         Einfacher zu betreiben (ein Secret, keine PKI) — das richtet <code>init</code> ein.
         Setze <code>agent_secret</code> (oder <code>agent_secret_file</code>) und entweder
@@ -433,11 +433,11 @@
       <div class="warn">
         <strong>insecure</strong> überspringt die Prüfung des Serverzertifikats des Agents.
         Das Secret ist dadurch <em>nicht</em> gefährdet: Der Client sendet es nie, sondern
-        nur einen Beweis aus Secret und dem Zertifikat der Verbindung, auf der er reist —
-        ein nicht verifizierter Server erhält also nichts, was gegen einen echten Agent
-        funktioniert. Es bleibt: Der Agent ist <strong>dir gegenüber nicht
-        authentifiziert</strong> — wer antwortet, liest mit, was diese Sitzung ihm schickt.
-        In einem Netz, dem du nicht traust, nimm eine <code>ca</code>, und halte das Secret
+        nur einen Nachweis, der aus dem Secret und dem Zertifikat der jeweiligen Verbindung
+        berechnet wird — ein nicht verifizierter Server erhält also nichts, was gegenüber einem
+        echten Agent funktioniert. Was bleibt: Der Agent ist <strong>dir gegenüber nicht
+        authentifiziert</strong> — wer auch immer antwortet, kann lesen, was diese Sitzung an ihn
+        sendet. In einem Netzwerk, dem du nicht vertraust, verwende besser eine <code>ca</code>, und halte das Secret
         aus deiner Shell-History heraus (verwende <code>agent_secret_file</code> oder die
         Konfigurationsdatei).
       </div>
@@ -445,16 +445,16 @@
       <h3>Umstieg auf v1.17.3 — zuerst die Agents aktualisieren</h3>
       <div class="warn">
         <strong>Ein v1.17.3-Client kann sich bei einem älteren Agent nicht
-        authentifizieren.</strong> Er sendet nur noch den verbindungsgebundenen Beweis,
+        authentifizieren.</strong> Er sendet nur noch den verbindungsgebundenen Nachweis,
         und Agents vor v1.17.3 kennen diese Form nicht — sie antworten
         <code>invalid or missing agent secret</code>, obwohl dein Secret stimmt.
         Aktualisiere sie zuerst:
         <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
         Solange die Flotte gemischt ist, sendet <code>legacy_secret: true</code> in der
-        Client-Konfiguration zusätzlich das rohe Secret — mit der oben beschriebenen
-        Preisgabe. Entferne es, sobald die Agents aktuell sind, und rolle mit
-        <code>swarmexec init --force --allow-legacy-secret=false</code> nach, damit kein
-        Client das Credential versehentlich aufs Kabel legen kann.
+        Client-Konfiguration zusätzlich das Secret selbst — mit dem oben beschriebenen
+        Risiko. Entferne die Option, sobald die Agents aktuell sind, und führe dann
+        <code>swarmexec init --force --allow-legacy-secret=false</code> aus, damit kein
+        Client das Secret versehentlich über die Leitung schicken kann.
       </div>
 
       <!-- 7 -->
@@ -471,22 +471,22 @@
         <code>docker</code>-Binary aus — er bindet das Docker-Go-SDK ein und spricht die
         Manager-API direkt, wobei er alle Context-Metadaten selbst aus Dateien liest. Alles,
         was er braucht, ist ein erreichbarer Swarm-<strong>Manager</strong>-Endpoint (die
-        Node-Auflösungsaufrufe funktionieren nur gegen einen Manager):
+        Aufrufe zur Node-Auflösung funktionieren nur gegenüber einem Manager):
         <ul>
           <li><code>$DOCKER_HOST</code> auf einem entfernten <code>tcp://</code>-Manager
-            (mTLS) — dann ist auf deiner Workstation überhaupt kein Docker installiert;</li>
+            (mTLS) — dann muss auf deiner Workstation überhaupt kein Docker installiert sein;</li>
           <li>ein <code>ssh://</code>-Context — braucht den <code>ssh</code>-Client (nicht
-            docker); sowohl der Manager- als auch der Agent-Verkehr tunneln darüber;</li>
+            docker); sowohl der Manager- als auch der Agent-Traffic werden darüber getunnelt;</li>
           <li>der lokale Socket <code>unix:///var/run/docker.sock</code> — nur der
             Standard-Fallback und die einzige Option, die einen lokalen Daemon
             voraussetzt.</li>
         </ul>
         Die <code>docker</code>-CLI selbst wird nur benötigt, um benannte Contexts zu
-        <em>erstellen</em> (<code>docker context create</code>) — oder erstelle sie mit
-        <code>swarmexec context create &lt;name&gt; --docker-host …</code>, sodass die
-        docker-CLI selbst dafür nicht mehr benötigt wird; verwende
+        <em>erstellen</em> (<code>docker context create</code>) — oder du erstellst sie mit
+        <code>swarmexec context create &lt;name&gt; --docker-host …</code> und brauchst die
+        docker-CLI nicht einmal dafür; verwende
         <code>$DOCKER_HOST</code>, um benannte Contexts ganz zu überspringen.
-        (<code>init</code> liest lokale <code>docker login</code>-Anmeldedaten nur für ein
+        (<code>init</code> liest lokale <code>docker login</code>-Zugangsdaten nur für ein
         <em>privates</em> Agent-Image — nicht für das öffentliche Standard-Image.)
       </div>
       <p>
@@ -494,7 +494,7 @@
         <code>ssh://</code>-Endpoint ist, wird die Manager-API über SSH getunnelt — und die
         Agent-Verbindung ebenfalls: Da die <code>node:9443</code>-Endpoints der Nodes von
         deiner Workstation aus meist nicht routbar sind, tunnelt der Client den
-        gRPC-Verkehr des Agents automatisch über denselben SSH-Host. Keine zusätzlichen
+        gRPC-Traffic des Agents automatisch über denselben SSH-Host. Keine zusätzlichen
         Flags nötig.
       </p>
       <div class="prompt"><span class="c">$</span> docker context create swarm --docker host=ssh://ops@manager.example.com
@@ -509,18 +509,18 @@
           <tr><td><code>--config</code></td><td>—</td><td>Pfad der Konfigurationsdatei (Standard <code>~/.config/swarmexec/config.yaml</code>)</td></tr>
           <tr><td><code>--context</code></td><td>—</td><td>Docker-Context für die Manager-API; unterstützt <code>ssh://</code> (auch <code>$DOCKER_CONTEXT</code>)</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>Agent-Port</td></tr>
-          <tr><td><code>--addr-mode</code></td><td><code>hostname</code></td><td>Node-Anwähladresse: <code>hostname</code> | <code>ip</code></td></tr>
+          <tr><td><code>--addr-mode</code></td><td><code>hostname</code></td><td>Adresse, über die ein Node angesprochen wird: <code>hostname</code> | <code>ip</code></td></tr>
           <tr><td><code>--ca</code></td><td>—</td><td>CA-Zertifikat zur Verifizierung des Agents (mTLS)</td></tr>
           <tr><td><code>--cert</code></td><td>—</td><td>Client-Zertifikat (mTLS; CN ist die Operator-Identität)</td></tr>
           <tr><td><code>--key</code></td><td>—</td><td>privater Client-Schlüssel (mTLS)</td></tr>
           <tr><td><code>--server-name</code></td><td>—</td><td>überschreibt den TLS-Servernamen für die Agent-Verifizierung</td></tr>
-          <tr><td><code>--agent-secret</code></td><td>—</td><td>geteiltes Secret für einen selbstsignierten Agent</td></tr>
-          <tr><td><code>--agent-secret-file</code></td><td>—</td><td>Datei, aus der das geteilte Secret gelesen wird</td></tr>
+          <tr><td><code>--agent-secret</code></td><td>—</td><td>Shared Secret für einen selbstsignierten Agent</td></tr>
+          <tr><td><code>--agent-secret-file</code></td><td>—</td><td>Datei, aus der das Shared Secret gelesen wird</td></tr>
           <tr><td><code>--insecure</code></td><td><code>false</code></td><td>Prüfung des Agent-Serverzertifikats überspringen</td></tr>
           <tr><td><code>--operator</code></td><td>OS-Benutzername</td><td>für das Audit gemeldete Operator-Identität</td></tr>
           <tr><td><code>--log-level</code></td><td><code>info</code></td><td>Log-Ausführlichkeit: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> deaktiviert das Logging vollständig)</td></tr>
           <tr><td><code>--log-file</code></td><td>—</td><td>Pfad der Log-Datei (Standard <code>swarmexec.log</code> neben der Konfigurationsdatei)</td></tr>
-          <tr><td><code>--info</code></td><td>—</td><td>zeigt Version, Lizenz und Kontaktinfo</td></tr>
+          <tr><td><code>--info</code></td><td>—</td><td>zeigt Version, Lizenz und Kontaktinformationen</td></tr>
           <tr><td><code>--version</code></td><td>—</td><td>gibt die Client- und Protokollversion aus</td></tr>
         </tbody>
       </table></div>
@@ -528,11 +528,11 @@
         <strong>Logging.</strong> swarmexec loggt in strukturierter Form (Go
         <code>slog</code>, Textformat) in die Log-Datei <em>und</em> einen
         In-Memory-Ringpuffer. In der TUI werden Logs nie ins Terminal geschrieben (das
-        würde die Anzeige beschädigen) — stattdessen speist der Ringpuffer einen
-        Live-Viewer in der App (siehe <a href="#tui">Die TUI</a>).
+        würde die Anzeige zerstören) — stattdessen speist der Ringpuffer einen
+        Live-Log-Viewer in der TUI (siehe <a href="#tui">Die TUI</a>).
         <code>--log-level off</code> deaktiviert das Logging vollständig; eine Log-Datei,
-        die nicht geöffnet werden kann, ist nicht fatal (es wird dann nur auf den
-        Ringpuffer zurückgegriffen).
+        die nicht geöffnet werden kann, führt nicht zum Abbruch (dann wird nur der
+        Ringpuffer verwendet).
       </div>
 
       <!-- 9 -->
@@ -540,8 +540,8 @@
 
       <h3 id="init"><code>init</code> — die Agents provisionieren</h3>
       <p>
-        Rollt den Agent als globalen Swarm-Service über die Manager-API aus: erstellt ein
-        Docker-Secret mit geteiltem Secret, führt den Agent im selbstsignierten Modus auf
+        Rollt den Agent als globalen Swarm-Service über die Manager-API aus: legt das
+        Shared Secret als Docker-Secret an, führt den Agent im selbstsignierten Modus auf
         jedem Node aus (Host-Port 9443) und schreibt die passende Client-Konfiguration.
         Führe es einmal pro Swarm aus.
       </p>
@@ -550,22 +550,22 @@
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
           <tr><td><code>--image</code></td><td><code>docker.io/logleio/swarmexec-agent:latest</code></td><td>auszurollendes Agent-Image</td></tr>
-          <tr><td><code>--secret</code></td><td>zufällig</td><td>zu verwendendes geteiltes Secret (Standard: ein zufälliges erzeugen)</td></tr>
+          <tr><td><code>--secret</code></td><td>zufällig</td><td>zu verwendendes Shared Secret (Standard: ein zufälliges erzeugen). Hinweis: Wenn das Agent-Secret <strong>bereits existiert</strong>, bleibt es unverändert (Docker-Secrets sind unveränderlich), <code>--secret</code> wird also <strong>nicht auf den Cluster angewendet</strong> — es landet nur in deiner Client-Konfiguration, und <code>init</code> warnt vor der möglichen Abweichung. Um das Cluster-Secret zu ändern, entferne es zuerst (kein Service darf es referenzieren) und führe <code>init</code> dann erneut aus</td></tr>
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>Name für den Agent-Service</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>Host-Port, den der Agent veröffentlicht</td></tr>
           <tr><td><code>--force</code></td><td><code>false</code></td><td>den Service aktualisieren, falls er bereits existiert</td></tr>
-          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akzeptiert das rohe Secret von Clients vor der verbindungsgebundenen Authentifizierung; <code>=false</code> setzen, sobald alle Clients aktuell sind</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akzeptiert das Secret selbst von Clients, die älter sind als die verbindungsgebundene Authentifizierung; <code>=false</code> setzen, sobald alle Clients aktuell sind</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>Prometheus-Metriken des Agents auf diesem Host-Port veröffentlichen (<code>0</code> = aus) — siehe <a href="#monitoring">Agents überwachen</a></td></tr>
           <tr><td><code>--policy-file</code></td><td>—</td><td>Autorisierungs-Regeldatei für die Agents, geprüft, bevor etwas ausgerollt wird — siehe <a href="#policy">Autorisierungs-Policy</a></td></tr>
           <tr><td><code>--save-config</code></td><td><code>true</code></td><td>die Client-Konfiguration schreiben</td></tr>
-          <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>lokale Registry-Anmeldedaten weitergeben, damit Nodes ein privates Image pullen können</td></tr>
-          <tr><td><code>--wait</code></td><td><code>true</code></td><td>warten, bis die Agents hochkommen, und Fortschritt melden</td></tr>
+          <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>lokale Registry-Zugangsdaten weitergeben, damit Nodes ein privates Image pullen können</td></tr>
+          <tr><td><code>--wait</code></td><td><code>true</code></td><td>warten, bis die Agents laufen, und den Fortschritt anzeigen</td></tr>
           <tr><td><code>--rollout-timeout</code></td><td><code>90s</code></td><td>wie lange auf den Start der Agents gewartet wird</td></tr>
         </tbody>
       </table></div>
       <div class="note">
         Das Standard-Agent-Image ist öffentlich auf Docker Hub, es ist also kein
-        Registry-Login nötig. Führe es mit <code>--force</code> erneut aus, um eine neue
+        Registry-Login nötig. Führe den Befehl mit <code>--force</code> erneut aus, um eine neue
         Agent-Version auszurollen — siehe
         <a href="#reroll">Agents neu ausrollen, ohne das Secret zu ändern</a>.
       </div>
@@ -573,7 +573,7 @@
       <h3><code>down</code> — die Agents entfernen</h3>
       <p>
         Das Gegenstück zu <code>init</code>: entfernt den globalen Agent-Service und
-        standardmäßig das Docker-Secret mit dem geteilten Secret. Es rührt deine
+        standardmäßig auch das Docker-Secret mit dem Shared Secret. Es rührt deine
         Client-Konfiguration <strong>nicht</strong> an.
       </p>
       <div class="cmd">swarmexec down</div>
@@ -581,33 +581,33 @@
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>Name des zu entfernenden Agent-Service</td></tr>
-          <tr><td><code>--keep-secret</code></td><td><code>false</code></td><td>das Docker-Secret mit dem geteilten Secret nicht entfernen</td></tr>
+          <tr><td><code>--keep-secret</code></td><td><code>false</code></td><td>das Docker-Secret mit dem Shared Secret nicht entfernen</td></tr>
           <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nicht zur Bestätigung auffordern</td></tr>
         </tbody>
       </table></div>
 
-      <h3 id="wait"><code>wait</code> — bis ein Deploy wirklich angekommen ist</h3>
+      <h3 id="wait"><code>wait</code> — warten, bis ein Deploy tatsächlich konvergiert ist</h3>
       <p>
         <code>stack deploy</code> kehrt zurück, sobald Swarm die Änderung
-        <em>angenommen</em> hat, nicht wenn sie funktioniert. <code>wait</code> schließt
+        <em>angenommen</em> hat, nicht erst, wenn sie auch funktioniert. <code>wait</code> schließt
         diese Lücke für eine Pipeline: Es blockiert, bis jeder genannte Service — oder jeder
         Service von <code>--stack</code> — konvergiert ist, und endet dann mit
-        <strong>0</strong>; mit <strong>1</strong> und Begründung, wenn einer es nicht ist.
+        <strong>0</strong>; konvergiert einer nicht, endet es mit <strong>1</strong> und nennt den Grund.
       </p>
       <div class="cmd">swarmexec stack deploy shop.yml --yes &amp;&amp; swarmexec wait --stack shop --timeout 3m
 swarmexec wait api worker --healthy</div>
       <p>
-        <strong>Konvergiert</strong> heißt: kein Update unterwegs und so viele laufende
-        Tasks wie gewünscht (bei einem Job: seine Abschlüsse erreicht), gehalten über zwei
-        Abfragen im Abstand einiger Sekunden — auch ein stabiler Service braucht also ein
+        <strong>Konvergiert</strong> heißt: kein laufendes Update und so viele laufende
+        Tasks wie gewünscht (bei einem Job: die gewünschte Zahl an Abschlüssen erreicht), und
+        das über zwei Abfragen im Abstand einiger Sekunden hinweg — auch ein stabiler Service braucht also ein
         paar Sekunden, und der Moment direkt nach einem Deploy, bevor der Manager das Update
-        begonnen hat, kann nicht als fertig durchgehen. Zwei Zustände, die ruhig aussehen,
+        begonnen hat, kann nicht als fertig durchgehen. Zwei Zustände, die stabil wirken,
         sind <strong>Fehler</strong>: ein <em>angehaltenes</em> Update (der Service läuft
         gemischt aus alten und neuen Tasks) und ein Rollback, der während des Wartens fertig
         wurde (er läuft mit der vorherigen Spec — der Deploy hat nicht gegriffen). Beim
-        Timeout wird der Grund ausgegeben, aus dem ein Task nicht läuft, meist die Meldung
+        Timeout wird ausgegeben, warum eine Task nicht läuft, meist die Meldung
         des Schedulers. Mit <code>--healthy</code> muss außerdem jeder Container mit
-        Healthcheck gesund melden; ein Knoten, dessen Agent keine Health liefern kann, zählt
+        Healthcheck healthy melden; ein Node, dessen Agent keinen Health-Status liefern kann, zählt
         als <em>noch nicht</em>, nie als gesund. swarmexec beobachtet und meldet nur — es
         rollt nie zurück und wiederholt nichts.
       </p>
@@ -622,12 +622,12 @@ swarmexec wait api worker --healthy</div>
 
       <h3><code>doctor</code> — den Swarm diagnostizieren</h3>
       <p>
-        Prüft die Manager-Verbindung, ob der Agent-Service ausgerollt ist, und testet den
-        Agent jedes bereiten Nodes auf Erreichbarkeit und Versionsabweichung. Gibt eine
+        Prüft die Manager-Verbindung und ob der Agent-Service ausgerollt ist, und testet den
+        Agent jedes Nodes im Zustand ready auf Erreichbarkeit und Versionsabweichungen. Gibt eine
         Tabelle pro Node aus
         (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>); beendet
         sich mit einem Wert ungleich null, wenn der Manager nicht erreichbar ist oder ein
-        Agent unhealthy ist. Ein Node mit dem Status <code>too old (init --force)</code>
+        Agent nicht gesund ist. Ein Node mit dem Status <code>too old (init --force)</code>
         betreibt einen Agent, der älter ist als dein Client — siehe
         <a href="#reroll">Agents neu ausrollen, ohne das Secret zu ändern</a>.
       </p>
@@ -635,7 +635,7 @@ swarmexec wait api worker --healthy</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
-          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Connect-Timeout pro Node</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Verbindungs-Timeout pro Node</td></tr>
           <tr><td><code>--json</code></td><td><code>false</code></td><td>JSON statt einer Tabelle ausgeben</td></tr>
         </tbody>
       </table></div>
@@ -644,68 +644,68 @@ swarmexec wait api worker --healthy</div>
       <p>
         Das <a href="#tui">Sicherheitsrisiken-Overlay</a> prüft Service-Specs und zeigt das
         Ergebnis auf dem Bildschirm. Dieser Befehl schreibt dieselbe Prüfung — plus die
-        Checks, die dem <strong>Cluster</strong> gehören und keinem einzelnen Service — als
-        Markdown heraus. So lässt sie sich fern vom Terminal lesen, an ein Ticket hängen
-        oder neben die Stack-Dateien committen und von Release zu Release diffen. Die
-        Ausgabe geht nach <strong>stdout</strong>, solange kein <code>-o</code> angegeben
-        ist, ist also genauso gut pipebar wie speicherbar.
+        Prüfungen, die den <strong>Cluster</strong> als Ganzes betreffen statt einen einzelnen
+        Service — als Markdown. So lässt sich der Bericht abseits des Terminals prüfen, an ein
+        Ticket hängen oder neben deinen Stack-Dateien committen und von Release zu Release
+        diffen. Die Ausgabe geht nach <strong>stdout</strong>, solange kein <code>-o</code>
+        angegeben ist, lässt sich also ebenso gut in eine Pipe leiten wie speichern.
       </p>
       <div class="cmd">swarmexec security report -o security.md</div>
       <p>
-        Vier Prüfungen laufen auf Cluster-Ebene, von denen keine ein Service-Spec
+        Vier Prüfungen laufen auf Cluster-Ebene — Fragen, die keine Service-Spec
         beantworten kann:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Prüfung</th><th>Schweregrad</th><th>Was sie meldet</th></tr></thead>
         <tbody>
-          <tr><td><code>network-unencrypted</code> — „Overlay-Verkehr ist nicht verschlüsselt“</td><td><span style="color:#f2cc60">medium</span></td><td>ein <strong>Overlay-Netz, das Service-Verkehr trägt</strong>, ohne Verschlüsselung der Datenebene. Swarm tunnelt Container-Verkehr zwischen Nodes <strong>im Klartext</strong> über VXLAN, solange das Netz nicht mit <code>--opt encrypted</code> angelegt wurde — und am laufenden Service sieht man so oder so keinen Unterschied. Netze <strong>ohne angehängte Services</strong> werden nicht gemeldet (sie tragen nichts), und <strong>ingress</strong> ebenso wenig: es lässt sich gar nicht verschlüsseln, ein Befund darauf wäre nie abzustellen</td></tr>
-          <tr><td><code>autolock-disabled</code> — „Manager sind nicht autolocked“</td><td><span style="color:#f2cc60">medium</span></td><td>der Raft-Speicher der Manager ist <strong>nicht im Ruhezustand verschlüsselt</strong>. Er enthält jedes Secret, jede Config und den CA-Schlüssel des Clusters, und sein Schlüssel liegt auf derselben Platte — wer die Platte eines Managers mitnimmt, hat alles. Einschalten mit <code>docker swarm update --autolock=true</code>, und den <strong>Unlock-Key aufbewahren</strong>: ein neu gestarteter Manager fragt danach. Ist die Swarm-Konfiguration nicht lesbar, meldet der Bericht <code>autolock-unknown</code> statt zu raten — „aus“ anzunehmen erfände einen Befund, „an“ wäre eine Falschentwarnung</td></tr>
-          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>der Agent ist das, was bei jedem Exec, jedem Log und jedem Port-Forward die <strong>Autorisierung durchsetzt</strong> — ein Agent, der älter ist als dein Client, setzt womöglich eine Regel nicht durch, die der Client voraussetzt. Ein <strong>Protokoll</strong>-Mismatch ist <strong>high</strong> und wiegt schwerer als eine Versionsdifferenz: die beiden Seiten sind sich über den Vertrag selbst uneinig, nicht bloß über den Build. Ein Agent, der <strong>nicht geantwortet</strong> hat, wird als <strong>Lücke</strong> ausgewiesen, nicht als bestanden. Für einen unveröffentlichten (<code>dev</code>) Client wird kein Skew gemeldet — er weicht von jedem Release-Agenten naturgemäß ab, dieselbe Ausnahme macht <code>doctor</code></td></tr>
-          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>ein Secret oder eine Config, auf die <strong>kein Service verweist</strong>. Sie wird weiterhin über den Raft-Speicher verteilt und ist für alles lesbar, was einen Manager erreicht — meist ein Zugangsdatum, das jemand rotiert und nie entfernt hat. Der alte Wert ist also <strong>noch im Cluster</strong>, lange nachdem alle ihn für weg halten</td></tr>
+          <tr><td><code>network-unencrypted</code> — „overlay traffic is not encrypted“</td><td><span style="color:#f2cc60">medium</span></td><td>ein <strong>Overlay-Netzwerk, das Service-Traffic transportiert</strong>, ohne Data-Plane-Verschlüsselung. Swarm tunnelt Container-Traffic zwischen Nodes <strong>im Klartext</strong> über VXLAN, solange das Netzwerk nicht mit <code>--opt encrypted</code> angelegt wurde — und am laufenden Service sieht man so oder so keinen Unterschied. Netzwerke, an denen <strong>nichts hängt</strong>, werden nicht gemeldet (sie transportieren nichts), und <strong>ingress</strong> ebenso wenig: Es lässt sich gar nicht verschlüsseln, ein Befund dazu ließe sich also nie beheben</td></tr>
+          <tr><td><code>autolock-disabled</code> — „managers are not autolocked“</td><td><span style="color:#f2cc60">medium</span></td><td>der Raft-Speicher der Manager ist <strong>at rest nicht verschlüsselt</strong>. Er enthält jedes Secret, jede Config und den CA-Schlüssel des Clusters, und sein Schlüssel liegt auf derselben Platte — wer die Platte eines Managers mitnimmt, hat alles. Einschalten mit <code>docker swarm update --autolock=true</code> — und den <strong>Unlock-Key gut aufbewahren</strong>: Ein neu gestarteter Manager fragt danach. Ist die Swarm-Konfiguration nicht lesbar, meldet der Bericht <code>autolock-unknown</code> statt zu raten — „aus“ anzunehmen erfände einen Befund, „an“ anzunehmen ergäbe eine falsche Entwarnung</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>der Agent ist es, der bei jedem Exec, jedem Log und jedem Port-Forward die <strong>Autorisierung durchsetzt</strong> — ein Agent, der älter ist als dein Client, setzt womöglich eine Regel nicht durch, von der der Client ausgeht. Ein <strong>Protokoll</strong>-Mismatch ist <strong>high</strong> und wiegt schwerer als eine Versionsabweichung: Die beiden Seiten sind sich über den Schnittstellenvertrag selbst uneins, nicht bloß darüber, welcher Build ihn umsetzt. Ein Agent, der <strong>nicht geantwortet</strong> hat, wird als <strong>Lücke</strong> ausgewiesen, nicht als bestanden. Für einen unveröffentlichten (<code>dev</code>) Client wird <strong>keine</strong> Versionsabweichung gemeldet — er weicht zwangsläufig von jedem veröffentlichten Agent ab; dieselbe Ausnahme macht <code>doctor</code></td></tr>
+          <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>ein Secret oder eine Config, auf die <strong>kein Service verweist</strong>. Sie wird weiterhin über den Raft-Speicher verteilt und ist für alles lesbar, was einen Manager erreicht — meist Zugangsdaten, die jemand rotiert, aber nie entfernt hat. Der alte Wert ist also <strong>im Cluster noch aktiv</strong>, lange nachdem alle ihn für entfernt halten</td></tr>
         </tbody>
       </table></div>
       <p>
-        <strong>Was der Bericht über sich selbst sagt.</strong> Er wird fern vom Terminal
-        gelesen, von jemandem, der beim Lauf nicht dabei war — also trägt er seinen Kontext
-        mit: <strong>welcher Cluster, wann, mit welchem Build</strong>. Außerdem hat er
-        einen Abschnitt <strong>Not covered</strong> — nicht erreichte Agenten, unlesbare
-        Swarm-Konfiguration, leere Node-Liste —, denn Schweigen in einem Sicherheitsbericht
-        liest sich als Entwarnung für Boden, den er nie betreten hat. Die Reihenfolge hängt
+        <strong>Was der Bericht über sich selbst sagt.</strong> Er wird abseits des Terminals
+        gelesen, von jemandem, der beim Lauf nicht dabei war — deshalb bringt er seinen Kontext
+        selbst mit: <strong>welcher Cluster, wann, mit welchem Build</strong>. Außerdem hat er
+        einen Abschnitt <strong>Not covered</strong> — nicht erreichbare Agents, eine unlesbare
+        Swarm-Konfiguration, eine leere Node-Liste —, denn Schweigen in einem
+        Sicherheitsbericht liest sich wie eine Entwarnung für Bereiche, die er nie geprüft hat. Die Reihenfolge hängt
         allein von den Befunden ab, zwei Berichte eines unveränderten Clusters
         unterscheiden sich also nur im Zeitstempel und lassen sich gegeneinander diffen —
         was nur deshalb etwas wert ist, weil ein fehlender Befund <em>nicht gefunden</em>
-        heißt und nie <em>nicht geschaut</em>.
+        bedeutet und nie <em>nicht geprüft</em>.
       </p>
       <p>
-        Die Datei wird <strong><code>0600</code></strong> geschrieben, eventuell nötige
-        Elternverzeichnisse <code>0700</code>. Sie nennt jeden Service, jedes Netz und
-        jedes Secret des Clusters samt jeder gefundenen Schwäche — das ist eine
-        Angriffskarte, und die hat nichts in einer für jedes Konto der Maschine lesbaren
-        Datei verloren.
+        Die Datei wird mit <strong><code>0600</code></strong> geschrieben, fehlende
+        übergeordnete Verzeichnisse werden mit <code>0700</code> angelegt. Sie nennt jeden
+        Service, jedes Netzwerk und jedes Secret des Clusters samt jeder gefundenen Schwäche —
+        das ist eine Landkarte für Angreifer, und die hat nichts in einer Datei verloren, die
+        jedes Konto auf der Maschine lesen kann.
       </p>
       <div class="tablewrap"><table>
-        <thead><tr><th>Flag</th><th>Default</th><th>Beschreibung</th></tr></thead>
+        <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
           <tr><td><code>-o</code>, <code>--output</code></td><td><em>stdout</em></td><td>in diese Datei schreiben statt nach stdout</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Verbindungs-Timeout pro Node beim Prüfen der Agents</td></tr>
-          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>die Node-Agents nicht kontaktieren. Schneller; der Agent-Skew steht dann unter <strong>Not covered</strong>, statt stillschweigend zu fehlen</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>die Node-Agents nicht kontaktieren. Schneller; die Versionsabweichung der Agents steht dann unter <strong>Not covered</strong>, statt stillschweigend zu fehlen</td></tr>
         </tbody>
       </table></div>
       <p>
-        Denselben Bericht schreibt auch das TUI: <kbd>w</kbd> im
-        Sicherheitsrisiken-Overlay. Er wird dabei frisch clusterweit erhoben, ist also kein
-        Abzug dessen, was das Overlay zeigt, und läuft außerhalb der UI-Goroutine — die
-        Oberfläche bleibt bedienbar, während er jeden Node abfragt.
+        Denselben Bericht kannst du auch aus der TUI schreiben: <kbd>w</kbd> im
+        Sicherheitsrisiken-Overlay. Die Daten werden dabei clusterweit neu erhoben — es ist
+        kein Abbild dessen, was das Overlay gerade zeigt —, und das Ganze läuft außerhalb der
+        UI-Goroutine: Die Oberfläche bleibt bedienbar, während jeder Node abgefragt wird.
       </p>
 
       <h3 id="stackfile"><code>stack export</code> / <code>stack diff</code> — ein deployter Stack als Datei</h3>
       <p>
         <code>stack export</code> liest einen deployten Stack aus dem Cluster zurück und
-        schreibt ihn als Compose-förmiges YAML. <code>stack diff</code> vergleicht eine
-        Stack-Datei mit dem, was tatsächlich läuft, und gibt einen
+        schreibt ihn als YAML im Compose-Format. <code>stack diff</code> vergleicht eine
+        Stack-Datei mit dem tatsächlich deployten Stand und gibt einen
         <strong>Unified Diff</strong> aus: eine <code>+</code>-Zeile ist etwas, das ein
         Deploy der Datei <strong>hinzufügen</strong> würde, eine <code>-</code>-Zeile
-        etwas, das es <strong>entfernen</strong> würde. Wie
+        etwas, das er <strong>entfernen</strong> würde. Wie
         <code>git diff --exit-code</code> endet der Befehl mit <strong>1</strong>, sobald
         es Unterschiede gibt — also auch in CI brauchbar.
       </p>
@@ -713,23 +713,23 @@ swarmexec wait api worker --healthy</div>
 swarmexec stack export postgres -o postgres.yml
 swarmexec stack diff postgres.yml postgres</div>
       <p>
-        Im TUI bietet <kbd>E</kbd> auf dem Stacks/Services-Tab beides für den Stack unter
+        In der TUI bietet <kbd>E</kbd> auf dem Stacks/Services-Tab beides für den Stack unter
         dem Cursor an — die Stack-Zeile, ein Service darin oder einer seiner Container.
       </p>
       <p>
-        <strong>Warum kein Textvergleich.</strong> Ein deployter Stack trägt Dinge, die
+        <strong>Warum kein Textvergleich.</strong> Ein deployter Stack enthält Dinge, die
         die Datei nie hatte: den Image-Digest, den der Daemon beim Deploy aufgelöst hat,
-        seine eigenen Defaults für Restart- und Update-Policy, und den Stack-Namespace vor
-        jedem Netz, Secret und Volume. Beide als Text zu vergleichen meldet Dutzende
-        Unterschiede für einen Stack, der exakt synchron ist — und das ist schlimmer als
-        gar kein Werkzeug, weil man lernt, die Ausgabe zu ignorieren. Stattdessen läuft
+        die eigenen Standardwerte des Daemons für Restart- und Update-Policy und das
+        Stack-Namespace-Präfix vor jedem Netzwerk, Secret und Volume. Ein reiner Textvergleich
+        meldet Dutzende Unterschiede für einen Stack, der exakt synchron ist — und das ist
+        schlimmer als gar kein Werkzeug, weil man sich angewöhnt, die Ausgabe zu ignorieren. Stattdessen läuft
         die Datei durch <strong>Dockers eigenen Compose-Loader und -Converter</strong>,
         denselben Code, den <code>docker stack deploy</code> nutzt, und beide Seiten
         werden anschließend von <strong>derselben</strong> Funktion reduziert. Beantwortet
         wird die Frage <em>„würde ein Deploy dieser Datei etwas ändern?“</em>, nicht
-        <em>„sind diese beiden Dateien gleich geschrieben?“</em>. Daemon-Defaults fallen
-        auf beiden Seiten weg; ein Wert, der <strong>nicht</strong> der Default ist,
-        erscheint weiterhin — es wird also nichts Echtes verborgen.
+        <em>„sind diese beiden Dateien gleich geschrieben?“</em>. Standardwerte des Daemons
+        fallen auf beiden Seiten weg; ein Wert, der <strong>nicht</strong> dem Standard
+        entspricht, erscheint weiterhin — es wird also nichts Relevantes verborgen.
       </p>
       <p>
         <strong>Ein Export ist eine Beschreibung, kein Backup.</strong> Der Wert eines
@@ -737,31 +737,31 @@ swarmexec stack diff postgres.yml postgres</div>
         auslesbar, und Volume-Inhalte liegen auf den Nodes. Beides wird deshalb als
         <code>external</code> deklariert, und die exportierte Datei sagt das in ihrem
         eigenen Kopf: den Stack anderswo neu aufzubauen heißt, zuerst die Secrets
-        anzulegen. Spec-Felder, die das Rendering nicht trägt (<code>tty</code>,
+        anzulegen. Spec-Felder, die der Export nicht abbildet (<code>tty</code>,
         <code>ulimits</code>, seccomp- und AppArmor-Einstellungen und einige weitere),
         stehen an derselben Stelle — denn der gefährliche Fehler eines
         Vergleichswerkzeugs ist nicht die falsche Antwort, sondern das selbstsichere
         Schweigen. <em>„Keine Unterschiede“</em> kommt daher immer mit seinen Vorbehalten.
       </p>
       <p>
-        Variablen werden aus deiner Umgebung interpoliert, genau wie bei
+        Variablen werden aus deiner Umgebung eingesetzt, genau wie bei
         <code>docker stack deploy</code>. Eine Datei mit <code>${TAG}</code> beschreibt
         also für ein anderes <code>TAG</code> einen anderen Stack, und der Diff hängt von
-        der Umgebung ab, in der er läuft — was richtig ist: alles andere würde „keine
-        Änderung“ melden für ein Deploy, das das Image austauscht.
+        der Umgebung ab, in der er läuft — und das ist richtig so: Alles andere würde „keine
+        Änderung“ melden für einen Deploy, der das Image austauschen würde.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Befehl</th><th>Beschreibung</th></tr></thead>
         <tbody>
           <tr><td><code>stack ls</code></td><td>die auf dem Cluster deployten Stacks</td></tr>
           <tr><td><code>stack export &lt;stack&gt;</code></td><td>den Stack als Compose-YAML schreiben; mit <code>-o</code> in eine Datei, sonst nach stdout</td></tr>
-          <tr><td><code>stack diff &lt;datei&gt; [stack]</code></td><td>eine Datei mit dem deployten Stack vergleichen. Der Stack-Name ist standardmäßig der Dateiname ohne Endung; <code>--stack</code> oder ein zweites Argument überschreibt ihn. Endet bei jedem Unterschied mit <strong>1</strong></td></tr>
+          <tr><td><code>stack diff &lt;file&gt; [stack]</code></td><td>eine Datei mit dem deployten Stack vergleichen. Der Stack-Name ist standardmäßig der Dateiname ohne Endung; <code>--stack</code> oder ein zweites Argument überschreibt ihn. Endet bei jedem Unterschied mit <strong>1</strong></td></tr>
         </tbody>
       </table></div>
       <p>
         <strong>Als Pipeline-Prüfung.</strong> Nächtlich ausgeführt beantwortet
         <code>stack diff</code> die Frage „stimmt der Cluster noch mit Git überein?“:
-        Exit <strong>0</strong> heißt kein Unterschied, <strong>1</strong> ein Unterschied,
+        Exit-Code <strong>0</strong> heißt kein Unterschied, <strong>1</strong> ein Unterschied,
         <strong>2</strong> ein Bedienfehler, <strong>125</strong> ein nicht erreichbarer
         Manager. Eine Prüfung, die bei jeder harmlosen Änderung rot wird, wird
         abgeschaltet; deshalb nimmt <code>--ignore</code> ein Feld aus <em>beiden</em> Seiten
@@ -776,11 +776,11 @@ swarmexec stack diff postgres.yml postgres</div>
       <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
 swarmexec stack diff shop.yml --format json | jq .differs</div>
 
-      <h3 id="stackdeploy"><code>stack deploy</code> — eine Stack-Datei einspielen, nach Prüfung</h3>
+      <h3 id="stackdeploy"><code>stack deploy</code> — eine Stack-Datei ausrollen, nach vorheriger Prüfung</h3>
       <p>
         Lädt eine Stack-Datei, lässt die <a href="#tui">Sicherheitsprüfungen</a> über das
-        laufen, was tatsächlich ausgerollt würde, und spielt sie ein. Was das gegenüber
-        <code>docker stack deploy</code> wertvoll macht, ist der <strong>Gate</strong>: die
+        laufen, was tatsächlich ausgerollt würde, und rollt sie aus. Was das gegenüber
+        <code>docker stack deploy</code> wertvoll macht, ist das <strong>Gate</strong>: Die
         Datei wird geprüft, <strong>bevor irgendetwas angelegt ist</strong>, und wenn etwas
         oberhalb von „informativ“ gefunden wird, <strong>hält der Deploy an und fragt</strong>.
       </p>
@@ -788,29 +788,29 @@ swarmexec stack diff shop.yml --format json | jq .differs</div>
 swarmexec stack deploy web.yml --check    # nur prüfen, nie ausrollen
 swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</div>
       <p>
-        Im TUI macht <kbd>E</kbd> → <em>deploy a file</em> dasselbe: zuerst die Befunde,
-        <kbd>d</kbd> fährt fort, <kbd>Esc</kbd> geht weg. Zu diesem Zeitpunkt ist nichts
-        angelegt — genau dafür ist die Pause da.
+        In der TUI macht <kbd>E</kbd> → <em>deploy a file</em> dasselbe: Zuerst werden die
+        Befunde angezeigt, <kbd>d</kbd> setzt fort, <kbd>Esc</kbd> bricht ab. Zu diesem
+        Zeitpunkt ist noch nichts angelegt — genau dafür ist die Pause da.
       </p>
       <p>
         <strong>Die Prüfungen sind kein zweiter Regelsatz.</strong> Die Datei wird in genau
         die <code>ServiceSpec</code>-Werte umgewandelt, die der Deploy einreichen würde, und
         darauf laufen die <strong>vorhandenen acht Analyzer</strong> — dieselben Prüfungen,
-        die im Baum den Schild setzen und das <kbd>!</kbd>-Overlay sowie den Security-Report
-        füllen. Zwei Sätze würden auseinanderdriften: eine Regel, die an einer Stelle
-        verschärft wird und an der anderen nicht, heißt, dass der Gate eine Datei
-        durchlässt, die der Baum im selben Moment markiert, in dem sie läuft — und wem
+        die im Baum das Schild setzen und das <kbd>!</kbd>-Overlay sowie den Sicherheitsbericht
+        füllen. Zwei Regelsätze würden auseinanderdriften: Eine Regel, die an einer Stelle
+        verschärft wird und an der anderen nicht, bedeutet, dass das Gate eine Datei
+        durchlässt, die der Baum markiert, sobald sie läuft — und wem
         <em>„nichts gefunden“</em> gesagt wurde, dem wurde etwas Falsches gesagt. Außerdem
         sehen die Prüfungen so, was der Cluster <strong>tun</strong> wird, nicht was die
-        Datei <strong>sagt</strong>; Composes Defaults und Kurzschreibweisen liegen dazwischen.
+        Datei <strong>sagt</strong>; dazwischen liegen die Standardwerte und Kurzschreibweisen von Compose.
       </p>
       <p>
         <strong><code>--yes</code> heißt nicht „ignoriere die Befunde“.</strong> Es heißt
         „frag nicht“, und ein Lauf, der etwas oberhalb von „informativ“ findet,
-        <strong>verweigert</strong> trotzdem und endet mit Exit ungleich null. Alles andere
-        würde den Gate zur Formalie machen, sobald ihn jemand in CI einbaut. Um trotz
-        Befunden auszurollen, muss man <code>--force</code> schreiben — anderer Tastendruck,
-        andere Rechtfertigung hinterher. Ein nicht-interaktiver Lauf ohne Antwort auf stdin
+        <strong>verweigert</strong> trotzdem den Deploy und endet mit einem Exit-Code ungleich
+        null. Alles andere würde das Gate zur Formalie machen, sobald es jemand in CI einbaut.
+        Um trotz Befunden auszurollen, musst du <code>--force</code> angeben — das tippt man
+        bewusst anders und muss es hinterher auch anders begründen. Ein nicht-interaktiver Lauf ohne Antwort auf stdin
         zählt als <strong>Nein</strong>.
       </p>
       <div class="tablewrap"><table>
@@ -823,10 +823,10 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         </tbody>
       </table></div>
       <p>
-        <strong>Was ein Deploy tut, in dieser Reihenfolge:</strong> Netze, dann Secrets,
+        <strong>Was ein Deploy tut, in dieser Reihenfolge:</strong> Netzwerke, dann Secrets,
         dann Configs, dann Services — ein Service, der auf etwas noch nicht Vorhandenes
-        verweist, scheitert, und der Stack bleibt halb angewandt zurück. Externe Netze
-        werden <strong>zuerst</strong> geprüft, denn ein nicht existierendes ist der
+        verweist, scheitert, und der Stack bleibt halb angewandt zurück. Externe Netzwerke
+        werden <strong>zuerst</strong> geprüft, denn ein fehlendes externes Netzwerk ist der
         häufigste Grund, warum ein Deploy auf halber Strecke stehen bleibt. Ein vorhandenes
         <strong>Secret wird nie überschrieben</strong>: sein Wert ist in Swarm unveränderlich,
         ein Secret zu ändern heißt, ein neues unter neuem Namen anzulegen. Scheitert ein
@@ -839,19 +839,19 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         Jeder Agent kann Prometheus-Metriken ausliefern. Standardmäßig sind sie
         <strong>aus</strong>; <code>swarmexec init --force --metrics-port 9464</code> schaltet
         sie ein: Der Agent lauscht auf diesem Port und veröffentlicht ihn wie den Agent-Port
-        im Host-Modus auf jedem Knoten, Prometheus erreicht den Agent eines Knotens also unter
-        <code>&lt;knoten&gt;:9464</code>. Der Endpunkt spricht unverschlüsseltes HTTP und
-        enthält <strong>nur Zählerstände</strong> — keine Namen, IDs oder Inhalte —, sollte
-        aber nur dort erreichbar sein, wo Ihr Scraper ihn braucht.
+        im Host-Modus auf jedem Node, Prometheus erreicht den Agent eines Nodes also unter
+        <code>&lt;node&gt;:9464</code>. Der Endpoint spricht unverschlüsseltes HTTP und
+        liefert <strong>nur Zählerstände</strong> — keine Namen, IDs oder Inhalte —; mach ihn
+        trotzdem nur dort erreichbar, wo dein Scraper ihn braucht.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Metrik</th><th>Bedeutung</th></tr></thead>
         <tbody>
-          <tr><td><code>swarmexec_agent_info{version,protocol}</code></td><td>immer <code>1</code>; über die Knoten verglichen zeigt sie Versionsabweichungen</td></tr>
+          <tr><td><code>swarmexec_agent_info{version,protocol}</code></td><td>immer <code>1</code>; über die Nodes hinweg verglichen zeigt sie Versionsabweichungen</td></tr>
           <tr><td><code>swarmexec_active_sessions</code></td><td>gerade offene Exec-Sitzungen</td></tr>
           <tr><td><code>swarmexec_sessions_total</code></td><td>gestartete Exec-Sitzungen</td></tr>
           <tr><td><code>swarmexec_auth_denials_total</code></td><td>vom Authorizer abgelehnte Anfragen — das eine Signal, das einen Versuch sichtbar macht</td></tr>
-          <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>an einem Knotenlimit abgelehnte Anfragen (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
+          <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>an einem Node-Limit abgelehnte Anfragen (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
           <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>an Container / an Clients weitergeleitete Bytes</td></tr>
         </tbody>
       </table></div>
@@ -868,13 +868,13 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
       <p>
         Standardmäßig erlaubt ein Agent jede Anfrage, die die Authentifizierung bestanden
         hat. Eine Regeldatei schränkt das ein: welche <strong>Aktionen</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>;
-        Muster wie <code>volume.*</code> gehen) für welche <strong>Services</strong>,
+        Muster wie <code>volume.*</code> sind möglich) für welche <strong>Services</strong>,
         <strong>Ports</strong>, Exec-<strong>User</strong> und — nur mit Client-Zertifikaten —
         Operator-<strong>Identitäten</strong>. Innerhalb einer Regel müssen alle Bedingungen
         zutreffen; die erste passende Regel entscheidet, <code>default</code> (Pflicht) deckt
         den Rest ab.
       </p>
-      <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
+      <div class="prompt"><span class="o"># policy.yaml — die erste passende Regel entscheidet; "default", wenn keine passt</span>
 default: allow
 rules:
   - deny: [image.prune.all]
@@ -895,7 +895,7 @@ rules:
         kaputtes Muster ist ein Fehler, nie eine Regel, die still nichts trifft. Regeln auf
         <code>identities</code> werden abgelehnt, solange die Agents ein Shared Secret ohne
         Client-Zertifikate nutzen — die Identität ist dann, was der Client behauptet. Ein
-        Exec ohne <code>-u</code> läuft als User des Images, den der Agent nicht sieht;
+        Exec ohne <code>-u</code> läuft als Benutzer des Images, den der Agent nicht sieht;
         <code>users: [""]</code> trifft ihn. Datei ändern und <code>init --force</code>
         erneut ausführen; ohne das Flag entfällt die Policy wieder.
       </p>
@@ -903,10 +903,10 @@ rules:
         <strong>Was das nicht ist.</strong> Eine Policy verhindert <em>Versehen</em> und
         dokumentiert Absicht — kein Rundumschlag beim Image-Prune auf Produktion, kein
         Forward auf die Datenbank. Zugriffskontrolle ist sie nicht: Alles, was swarmexec an
-        Services, Secrets, Netzwerken und Stacks ändert, geht mit Ihren eigenen
+        Services, Secrets, Netzwerken und Stacks ändert, geht mit deinen eigenen
         Docker-Zugangsdaten an den Swarm-<em>Manager</em> und nie über einen Agent, und wer
-        diese hat, kann einen Service ausrollen, der auf jedem Knoten root ist. Dafür
-        schränken Sie die Docker-Zugangsdaten ein.
+        diese hat, kann einen Service ausrollen, der auf jedem Node root ist. Dafür musst du
+        die Docker-Zugangsdaten einschränken.
       </div>
 
       <h3 id="reroll">Agents neu ausrollen, ohne das Secret zu ändern</h3>
@@ -919,12 +919,12 @@ rules:
         zurück. Die Lösung ist, <code>init</code> mit <code>--force</code> erneut
         auszuführen — das Flag bedeutet genau <em>den Service aktualisieren, falls er
         bereits existiert</em>. Ohne das Flag ist ein <code>init</code> auf einen
-        bestehenden Service ein Usage-Fehler, der dich auffordert, <code>--force</code>
+        bestehenden Service ein Bedienfehler, der dich auffordert, <code>--force</code>
         zu ergänzen; geändert wird dabei nichts.
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
       <p>
-        Damit wird der Agent auf jedem Node neu ausgerollt, und das geteilte Secret
+        Damit wird der Agent auf jedem Node neu ausgerollt, und das Shared Secret
         <strong>bleibt unangetastet</strong>. Docker-Secrets sind unveränderlich, also
         findet <code>init</code> das vorhandene <code>swarmexec_agent_secret</code>,
         meldet es als <code>reusing existing</code> und behält den Wert, der bereits im
@@ -961,11 +961,11 @@ rules:
 
       <h3><code>ps</code> — Tasks auflisten</h3>
       <p>
-        Listet mögliche Tasks/Container und den Node, auf dem jede läuft. Nimmt einen
-        optionalen Service-Filter. Spalten:
+        Listet infrage kommende Tasks/Container samt dem Node, auf dem sie jeweils laufen.
+        Ein optionaler Service-Filter ist möglich. Spalten:
         <code>SERVICE&nbsp;&nbsp;SLOT&nbsp;&nbsp;CONTAINER&nbsp;&nbsp;NODE&nbsp;&nbsp;IP&nbsp;&nbsp;UPTIME</code>.
-        Dies spricht nur mit der Manager-API — es funktioniert sogar, bevor die Agents
-        erreichbar sind.
+        Der Befehl fragt nur die Manager-API ab — er funktioniert also sogar, bevor die
+        Agents erreichbar sind.
       </p>
       <div class="cmd">swarmexec ps [service]</div>
       <div class="tablewrap"><table>
@@ -977,8 +977,8 @@ rules:
 
       <h3><code>exec</code> — einen Befehl ausführen / eine Shell öffnen</h3>
       <p>
-        Exec in einen Container, der irgendwo im Swarm läuft. Ohne Befehl öffnet es
-        <code>/bin/sh</code>. Ein TTY wird automatisch zugewiesen, wenn stdin ein Terminal
+        Führt einen Befehl in einem Container aus, der irgendwo im Swarm läuft. Ohne Befehl
+        wird <code>/bin/sh</code> geöffnet. Ein TTY wird automatisch zugewiesen, wenn stdin ein Terminal
         ist und du keinen Befehl angegeben hast; erzwinge es mit <code>-t</code>. Der eigene
         Exit-Code des Remote-Befehls wird unverändert weitergegeben.
       </p>
@@ -987,7 +987,7 @@ rules:
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
           <tr><td><code>-i</code>, <code>--stdin</code></td><td><code>true</code></td><td>stdin offen halten</td></tr>
-          <tr><td><code>-t</code>, <code>--tty</code></td><td>auto</td><td>ein TTY zuweisen (auto: true genau dann, wenn stdin ein Terminal und kein Befehl ist)</td></tr>
+          <tr><td><code>-t</code>, <code>--tty</code></td><td>auto</td><td>ein TTY zuweisen (auto: true genau dann, wenn stdin ein Terminal ist und kein Befehl angegeben wurde)</td></tr>
           <tr><td><code>-u</code>, <code>--user</code></td><td>—</td><td>Benutzername oder UID (z. B. <code>1000:1000</code>)</td></tr>
           <tr><td><code>-w</code>, <code>--workdir</code></td><td>—</td><td>Arbeitsverzeichnis im Container</td></tr>
           <tr><td><code>-e</code>, <code>--env</code></td><td>—</td><td>Umgebungsvariablen setzen (<code>KEY=VALUE</code>, wiederholbar)</td></tr>
@@ -1001,7 +1001,7 @@ rules:
 <span class="c">$</span> swarmexec exec -e FOO=bar web -- env</div>
 
       <h3><code>logs</code> — Logs streamen</h3>
-      <p>Streame die Logs eines Containers von irgendwo im Swarm.</p>
+      <p>Streamt die Logs eines Containers, egal wo im Swarm er läuft.</p>
       <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
@@ -1009,9 +1009,9 @@ rules:
           <tr><td><code>-f</code>, <code>--follow</code></td><td><code>false</code></td><td>neue Log-Zeilen weiter streamen</td></tr>
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>Anzahl der Zeilen vom Ende, mit denen begonnen wird (<code>0</code> = alle)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>jeder Zeile einen Zeitstempel voranstellen</td></tr>
-          <tr><td><code>--since</code></td><td><code>0</code></td><td>nur Logs neuer als dies (z. B. <code>10m</code>, <code>1h</code>)</td></tr>
+          <tr><td><code>--since</code></td><td><code>0</code></td><td>nur Logs, die neuer sind (z. B. <code>10m</code>, <code>1h</code>)</td></tr>
           <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>Zeilen parsen als <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> entscheidet anhand der Zeilen selbst (Standard aus der Konfiguration, sonst <code>classic</code>)</td></tr>
-          <tr><td><code>--min-level</code></td><td>—</td><td>nur diese Stufe und höher anzeigen: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
+          <tr><td><code>--min-level</code></td><td>—</td><td>nur dieses Level und höher anzeigen: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>nur Zeilen anzeigen, deren (geparste) Nachricht diesem Go-Regexp entspricht</td></tr>
           <tr><td><code>--stack</code></td><td>—</td><td>allen Services dieses Stacks folgen (zusätzlich zu angegebenen Zielen)</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>Node-Hinweis/-Override für container-id-Ziele</td></tr>
@@ -1020,26 +1020,26 @@ rules:
       </table></div>
       <p>
         <strong>Formatbewusstes Parsen &amp; Filtern.</strong> <code>--log-format</code>
-        sagt dem Client, wie er jede Zeile lesen soll, damit er eine <em>Stufe</em> und
-        eine <em>Nachricht</em> herausziehen kann: <code>classic</code> extrahiert eine
-        Stufe aus einer reinen Textzeile — ein Feld in Klammern
+        sagt dem Client, wie er jede Zeile lesen soll, damit er ein <em>Level</em> und
+        eine <em>Nachricht</em> herausziehen kann: <code>classic</code> extrahiert ein
+        Level aus einer reinen Textzeile — ein Feld in Klammern
         (<code>[error]</code>, <code>[ info]</code>), ein Wort in GROSSBUCHSTABEN oder
-        eines mit Doppelpunkt (<code>error:</code>), womit ein Knoten namens
+        eines mit Doppelpunkt (<code>error:</code>), womit ein Node namens
         <code>node-error-2</code> nicht mehr jede Zeile rot färbt, die ihn erwähnt; <code>json</code> parst JSON im
         Logstash-Stil (<code>level</code>/<code>message</code>-Felder), <code>logfmt</code>
         parst den <code>key=value</code>-Stil, den viele Go-Anwendungen, der Docker-Daemon
         und HashiCorp-Tools verwenden (<code>msg</code>/<code>message</code>,
         <code>level</code>/<code>lvl</code>/<code>severity</code>, <code>ts</code>/<code>time</code>),
         <code>gelf</code>
-        parst Graylog-GELF-JSON (numerische Syslog-Stufe) und <code>raw</code> reicht
+        parst Graylog-GELF-JSON (numerisches Syslog-Level) und <code>raw</code> reicht
         Zeilen unverändert durch. <code>--min-level</code> verwirft dann alles unterhalb
-        der gewählten Stufe, und <code>--grep</code> behält nur Zeilen, deren geparste
+        des gewählten Levels, und <code>--grep</code> behält nur Zeilen, deren geparste
         Nachricht dem Regexp entspricht.
       </p>
       <div class="note">
-        Zeilen <strong>ohne erkennbare Stufe</strong> passieren den
+        Zeilen <strong>ohne erkennbares Level</strong> passieren den
         <code>--min-level</code>-Filter immer, damit mehrzeilige Stacktraces nicht
-        verloren gehen. Dieselben Standardwerte lassen sich einmalig unter dem
+        verloren gehen. Dieselben Standardwerte lassen sich einmal zentral im
         <a href="#config"><code>logs:</code>-Konfigurationsabschnitt</a> setzen (Flags
         überschreiben).
       </div>
@@ -1063,8 +1063,8 @@ rules:
       </div>
       <p>
         <strong>Mehrere Quellen gleichzeitig.</strong> Mit mehreren Zielen, einem Service
-        mit mehreren Replikas oder <code>--stack &lt;name&gt;</code> folgt <code>logs</code>
-        allen Quellen zusammen: Ein Service steht für alle seine laufenden Replikas, wie
+        mit mehreren Replicas oder <code>--stack &lt;name&gt;</code> folgt <code>logs</code>
+        allen Quellen zusammen: Ein Service steht für alle seine laufenden Replicas, wie
         bei <code>docker service logs</code>. Jede Zeile trägt ihre Herkunft als Präfix —
         <code>web.2</code>, bei einem globalen Service <code>agent@node-3</code> —, auf eine
         Breite gebracht, damit die Meldungen untereinanderstehen, und im Terminal farbig
@@ -1079,7 +1079,7 @@ rules:
       <div class="note">
         Die Zeilen erscheinen in der Reihenfolge ihres Eintreffens, nicht über die Quellen
         hinweg nach Zeit sortiert — mit <code>-t</code>, wenn die Reihenfolge zwischen
-        Services zählt. Jede Quelle ist ein Stream gegen den Agent ihres Knotens und zählt
+        Services zählt. Jede Quelle ist ein Stream zum Agent ihres Nodes und zählt
         gegen dessen Limit <code>-max-streams</code>.
       </div>
       <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
@@ -1100,11 +1100,11 @@ rules:
         Zeilen, nicht in den ersten: Die sind das Startbanner eines Frameworks und nicht die
         Anwendung. Ist die Stichprobe zu klein oder zu gemischt, sagt es das und bleibt beim
         Standard, statt zu raten: Ein falsches Format ist schlimmer als keines, weil
-        <code>--min-level</code> auf einem falsch geparsten Strom gar nichts filtert. In der
-        Pipe werden die ersten Zeilen bis zum Urteil zurückgehalten (höchstens 40, höchstens
-        eine Sekunde), damit die Ausgabe nie in zwei Gestalten erscheint. Weiterhin offen:
-        Erkennung pro Service aus einem Online-Katalog über das Image — dieselbe Nahtstelle,
-        eine andere Quelle der Antwort.
+        <code>--min-level</code> auf einem falsch geparsten Strom gar nichts filtert. In einer
+        Pipe werden die ersten Zeilen bis zur Entscheidung zurückgehalten (höchstens 40,
+        höchstens eine Sekunde), damit die Ausgabe nie in zwei verschiedenen Formaten
+        erscheint. Noch geplant: Erkennung pro Service über einen Online-Katalog, nach Image
+        geordnet — dieselbe Schnittstelle, nur eine andere Quelle für die Antwort.
       </div>
 
       <h3><code>port-forward</code> (Alias <code>pf</code>) — einen lokalen Port weiterleiten</h3>
@@ -1130,7 +1130,7 @@ rules:
 
       <h3><code>volume ls</code> — Volumes auflisten</h3>
       <p>
-        Listet Volumes über alle Nodes hinweg und welche Nodes jedes halten.
+        Listet Volumes über alle Nodes hinweg auf, jeweils mit den Nodes, auf denen sie liegen.
         Swarm-Volumes sind node-lokal, der Client fragt daher jeden Node ab und aggregiert.
         Optionaler Teilstring-Namensfilter. Spalten:
         <code>VOLUME&nbsp;&nbsp;DRIVER&nbsp;&nbsp;NODES&nbsp;&nbsp;USED&nbsp;BY&nbsp;&nbsp;AGE</code>
@@ -1140,17 +1140,17 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
-          <tr><td><code>--size</code></td><td><code>false</code></td><td>zusätzlich die Größe jedes Volumes auf der Platte berechnen (langsamer: du pro Volume)</td></tr>
+          <tr><td><code>--size</code></td><td><code>false</code></td><td>zusätzlich die Belegung jedes Volumes auf der Platte berechnen (langsamer: du pro Volume)</td></tr>
           <tr><td><code>--sort</code></td><td><code>name</code></td><td>sortieren nach: <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code> (<code>size</code> impliziert <code>--size</code>)</td></tr>
           <tr><td><code>--reverse</code></td><td><code>false</code></td><td>Sortierrichtung umkehren</td></tr>
-          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Connect-Timeout pro Node</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Verbindungs-Timeout pro Node</td></tr>
           <tr><td><code>--json</code></td><td><code>false</code></td><td>JSON statt einer Tabelle ausgeben</td></tr>
         </tbody>
       </table></div>
 
       <h3><code>volume rm</code> — ein Volume entfernen</h3>
       <p>
-        Entfernt ein Volume auf jedem Node, der es hält (<code>--all</code>), oder auf
+        Entfernt ein Volume auf jedem Node, auf dem es liegt (<code>--all</code>), oder auf
         bestimmten Nodes (<code>--node</code>, wiederholbar). Eines von beiden ist
         erforderlich.
       </p>
@@ -1158,19 +1158,19 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
         <tbody>
-          <tr><td><code>--all</code></td><td><code>false</code></td><td>auf jedem Node entfernen, der das Volume hält</td></tr>
+          <tr><td><code>--all</code></td><td><code>false</code></td><td>auf jedem Node entfernen, auf dem das Volume liegt</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>nur auf diesen Nodes entfernen (wiederholbar)</td></tr>
-          <tr><td><code>--force</code></td><td><code>false</code></td><td>docker's Force-Flag durchreichen</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>das Force-Flag von docker durchreichen</td></tr>
           <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nicht zur Bestätigung auffordern</td></tr>
-          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Connect-Timeout pro Node</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Verbindungs-Timeout pro Node</td></tr>
         </tbody>
       </table></div>
 
       <h3><code>ui</code> — interaktive TUI</h3>
       <p>
-        Eine interaktive Ansicht von Containern und Volumes, mit integriertem exec, logs
-        und Port-Forwarding. Braucht ein interaktives Terminal. Siehe
-        <a href="#tui">Die TUI</a> für die Tasten.
+        Eine interaktive Ansicht von Containern und Volumes, mit eingebautem Exec, Logs
+        und Port-Forwarding. Braucht ein interaktives Terminal. Die Tastenbelegung steht
+        unter <a href="#tui">Die TUI</a>.
       </p>
       <div class="cmd">swarmexec ui [service]</div>
       <div class="tablewrap"><table>
@@ -1180,7 +1180,7 @@ rules:
         </tbody>
       </table></div>
 
-      <h3><code>config show</code> — Konfiguration inspizieren</h3>
+      <h3><code>config show</code> — Konfiguration anzeigen</h3>
       <p>Gibt die effektive, zusammengeführte Client-Konfiguration mit maskiertem Secret aus.</p>
       <div class="cmd">swarmexec config show  [--json]</div>
 
@@ -1188,9 +1188,9 @@ rules:
       <p>
         Erstellt und verwaltet die Docker-Contexts, die <code>--context</code> (und
         <code>$DOCKER_CONTEXT</code>) für die Manager-API auflösen. swarmexec schreibt
-        docker's eigenen On-Disk-Speicher, sodass hier erstellte Contexts mit der
-        <code>docker</code>-CLI austauschbar sind — und du brauchst docker nicht mehr
-        installiert, selbst um einen zu erstellen. Der eingebaute
+        direkt in den Context-Speicher von docker auf der Platte, sodass hier erstellte
+        Contexts mit der <code>docker</code>-CLI austauschbar sind — und du musst docker nicht
+        einmal installiert haben, um einen zu erstellen. Der eingebaute
         <code>default</code>-Context kann nicht entfernt werden.
       </p>
 
@@ -1227,39 +1227,39 @@ rules:
 
       <h3 id="sshsharing">Gemeinsame ssh-Verbindungen</h3>
       <p>
-        Bei einem <code>ssh://</code>-Kontext erreicht swarmexec den Cluster gleich
-        zweimal über ssh: die Docker-Manager-API über ssh's Connection-Helper, und jeden
-        Node-Agenten über einen eigenen Tunnel zum selben Host. Jedes Exec, jeder
+        Bei einem <code>ssh://</code>-Context erreicht swarmexec den Cluster gleich
+        zweimal über ssh: die Docker-Manager-API über den Connection-Helper von ssh und jeden
+        Node-Agent über einen eigenen Tunnel zum selben Host. Jedes Exec, jeder
         Log-Stream, jedes Port-Forward, jeder Stats-Poll und jeder Refresh-Zyklus
         öffnete bisher eine frische ssh-Verbindung — ein TCP-Handshake, ein
-        Schlüsselaustausch und eine Authentifizierung pro Dial, und noch einmal pro
+        Schlüsselaustausch und eine Authentifizierung pro Verbindungsaufbau, und noch einmal pro
         Jump-Host — gegen einen Bastion-Host, der einen Moment vorher schon verbunden
         war.
       </p>
       <p>
-        swarmexec lässt sie jetzt einen Transport teilen, mit OpenSSHs eigenem
-        <code>ControlMaster</code>: die erste Verbindung zu einem Ziel öffnet ihn, jede
-        weitere wird ein Kanal darauf. Gemessen an einem Drei-Node-Cluster hinter einem
-        Jump-Host ging <code>swarmexec doctor</code> von <strong>8 Authentifizierungen
-        und 3,6&nbsp;s</strong> auf <strong>2 und 1,0&nbsp;s</strong>. Am Verkehr selbst
-        ändert sich nichts, und der Effekt wächst mit dem, was man in einer Sitzung tut.
+        Jetzt teilen sie sich eine Transportverbindung über den <code>ControlMaster</code>
+        von OpenSSH selbst: Die erste Verbindung zu einem Ziel öffnet ihn, jede weitere wird
+        zu einem Kanal darauf. Gemessen an einem Drei-Node-Cluster hinter einem
+        Jump-Host sank <code>swarmexec doctor</code> von <strong>8 Authentifizierungen
+        und 3,6&nbsp;s</strong> auf <strong>2 und 1,0&nbsp;s</strong>. Am Traffic selbst
+        ändert sich nichts, und der Effekt wächst mit der Zahl der Aktionen in einer Sitzung.
       </p>
       <ul>
         <li>
           Die Control-Sockets liegen in <code>$XDG_RUNTIME_DIR/swarmexec/ssh/</code>
           (ersatzweise im Cache-Verzeichnis), angelegt mit <code>0700</code> — ein
-          Control-Socket ist eine lebende, authentifizierte Sitzung, also bleibt er im
-          eigenen Verzeichnisbaum und niemals in <code>/tmp</code>.
+          Control-Socket ist eine aktive, authentifizierte Sitzung, also bleibt er in deinem
+          eigenen Verzeichnisbaum und landet nie in <code>/tmp</code>.
         </li>
         <li>
-          Ein Socket pro <em>Ziel und Route</em>: zwei Kontexte, die denselben Manager
+          Ein Socket pro <em>Ziel und Route</em>: Zwei Contexts, die denselben Manager
           über verschiedene Jump-Hosts erreichen, teilen sich nichts — sie sind nicht
           dieselbe Verbindung.
         </li>
         <li>
           Die geteilte Verbindung überlebt das Kommando um <strong>60&nbsp;s</strong>,
-          damit das nächste billig ist, und beendet sich dann von selbst. Danach hält
-          nichts von swarmexec mehr eine Verbindung.
+          damit der nächste Befehl schnell startet, und beendet sich dann von selbst. Danach
+          hält swarmexec keine Verbindung mehr offen.
         </li>
         <li>
           Ein Socket, den ein hart beendeter Master hinterlassen hat, ist harmlos: ssh
@@ -1268,8 +1268,8 @@ rules:
         <li>
           Unter Windows nicht verfügbar — dessen OpenSSH kennt keine geteilten
           Verbindungen. Überall sonst schaltet <code>SWARMEXEC_SSH_MULTIPLEX=0</code> es
-          ab — relevant, wenn Sie <code>ControlPath</code> selbst konfigurieren, denn
-          swarmexecs Einstellung steht auf der ssh-Kommandozeile und hat damit Vorrang
+          ab — relevant, wenn du <code>ControlPath</code> selbst konfigurierst, denn
+          die Einstellung von swarmexec steht auf der ssh-Kommandozeile und hat damit Vorrang
           vor <code>~/.ssh/config</code>.
         </li>
       </ul>
@@ -1282,36 +1282,36 @@ rules:
         <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
         <strong>Nodes&nbsp;(6)</strong>, <strong>Configs&nbsp;(7)</strong> — eine
         <strong>Context-Sidebar</strong> am rechten Rand und einen
-        zweizeiligen Footer: oben die Tastenhinweise pro Tab, dann eine Statuszeile mit dem
+        zweizeilige Fußzeile: oben die Tastenhinweise pro Tab, dann eine Statuszeile mit dem
         aktiven Docker-Context
         (<code>ctx&nbsp;&lt;name&gt;</code>, sodass immer klar ist, auf welchem Cluster du
         bist), einer Live-Cluster-Zusammenfassung, der Anzahl der Forwards und — im
         Volumes-Tab — wie viele Volumes du ausgewählt hast. Diese Tasten funktionieren auf
         jedem Tab:
       </p>
+      <div class="note">
+        <strong>Geändert:</strong> Die Contexts waren Tab&nbsp;6 und sind jetzt die
+        Sidebar (<kbd>c</kbd>). Nodes und Configs sind auf <strong>6</strong> und
+        <strong>7</strong> vorgerückt.
+      </div>
       <p>
         Die Tab-Leiste ist <strong>responsiv</strong>: in einem schmaleren Terminal
-        wechselt sie auf Kurzlabels — <strong>St/Sv</strong>, <strong>Vol</strong>,
+        wechselt sie auf Kurzbezeichnungen — <strong>St/Sv</strong>, <strong>Vol</strong>,
         <strong>Fwd</strong>, <strong>Net</strong>, <strong>Sec</strong>,
         <strong>Node</strong>, <strong>Cfg</strong> — damit alle sieben Tabs sichtbar
         bleiben, statt dass die letzten abgeschnitten werden. (<strong>Cfg</strong> ist
         Configs.) Die Zifferntasten und die Maus-Klickflächen bleiben unverändert.
       </p>
-      <div class="note">
-        <strong>Geändert:</strong> die Contexts waren Tab&nbsp;6 und sind jetzt die
-        Sidebar (<kbd>c</kbd>). Nodes und Configs rücken auf <strong>6</strong> und
-        <strong>7</strong> vor.
-      </div>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>?</kbd></td><td>das Tastenbelegungs-Overlay öffnen — die vollständige, lebende Tastenreferenz (sie wird aus deiner Tastenbelegung erzeugt, umbelegte Tasten erscheinen also korrekt); die einzeilige Fußzeile hat nur Platz für die meistgenutzten Tasten</td></tr>
+          <tr><td><kbd>?</kbd></td><td>das Tastenbelegungs-Overlay öffnen — die vollständige, stets aktuelle Tastenreferenz (sie wird aus deiner Tastenbelegung erzeugt, umbelegte Tasten erscheinen also korrekt); die einzeilige Fußzeile hat nur Platz für die meistgenutzten Tasten</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>zum nächsten Tab wechseln</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>zu Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs springen</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>runter / hoch (auch <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
           <tr><td><kbd>r</kbd></td><td>den aktiven Tab und die Cluster-Zusammenfassung aktualisieren</td></tr>
           <tr><td><kbd>y</kbd></td><td>die aktuelle Liste in die Zwischenablage kopieren (OSC52)</td></tr>
-          <tr><td><kbd>m</kbd></td><td>Maus-Capture umschalten (aus = das eigene Auswählen/Kopieren deines Terminals)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>Mausunterstützung umschalten (aus = Markieren/Kopieren wie gewohnt im Terminal)</td></tr>
           <tr><td><kbd>`</kbd></td><td>den Live-Log-Viewer öffnen / schließen (siehe unten)</td></tr>
           <tr><td><kbd>q</kbd></td><td>beenden</td></tr>
         </tbody>
@@ -1327,7 +1327,7 @@ rules:
         <strong>:latest-Versionsprüfung.</strong> Swarm fixiert <code>:latest</code> zum
         Deploy-Zeitpunkt auf einen Digest, sodass ein mit <code>:latest</code> getaggter
         Service tatsächlich ein festes Image ausführt. swarmexec löst das gegen die
-        Registry auf (mit deinen lokalen Docker-Anmeldedaten) und annotiert die
+        Registry auf (mit deinen lokalen Docker-Zugangsdaten) und annotiert die
         Service-Zeile <strong>direkt nach der Image-URI</strong>: die
         <strong>echte Version</strong> in Klammern — aus dem
         <code>org.opencontainers.image.version</code>-Label des Images gelesen — und einen
@@ -1347,7 +1347,7 @@ rules:
         der Registry lesen konnte — bei versionsgepinnten <em>und</em> bei
         <code>:latest</code>-Services gleichermaßen — und aus <em>jeder</em> Zeile des Overlays,
         sodass du den Hinweis nie suchen musst. <strong>Dieselbe</strong> Version erneut setzen, das aktuell Laufende
-        <strong>pinnen</strong> oder auf einen <strong>älteren</strong> Tag zurückgehen sind ganz
+        <strong>pinnen</strong> oder auf ein <strong>älteres</strong> Tag zurückgehen sind ganz
         normale Anwendungsfälle; du musst nicht warten, bis es ein Update gibt. Der
         <strong>Text in der Fußzeile zeigt dir, in welcher Situation du bist</strong>:
         <code>u&nbsp;update&nbsp;version</code>, wenn eine neuere Version gefunden wurde (dann gibt
@@ -1367,17 +1367,17 @@ rules:
         gleitenden Tag weg zu pinnen</strong> — genau das, was der Risiko-Befund
         <code>unpinned-image</code> (siehe das Sicherheits-Overlay weiter unten) verlangt. Die
         einzige Ausnahme ist ein <code>:latest</code>-Service mit <strong>anstehendem
-        Digest-Update</strong>: Der bleibt bei der <strong>einzelnen Bestätigung</strong> auf den
-        neuen Digest der Registry, die er immer war — eine Auswahl würde dort dazu verleiten,
+        Digest-Update</strong>: Dort bleibt es wie bisher bei der <strong>einfachen Bestätigung</strong> für den
+        neuen Digest aus der Registry — eine Auswahl würde dort dazu verleiten,
         <code>latest</code> einzutippen, was auf das nackte Tag auflöst und damit still genau die
         Digest-Pinnung wegwerfen würde, die das Update auffrischen soll.
       </p>
       <p>
         In der Auswahl ist die Vorschlagsliste auf <strong>25</strong> Einträge begrenzt (ein viel
         genutztes Repo listet leicht Hunderte), und das Feld bleibt <strong>frei
-        editierbar</strong>: du kannst <strong>jeden vorhandenen Tag eintippen, auch einen älteren,
-        um ihn zu pinnen oder zurückzurollen</strong> auf ein bewährtes Release. Ein eingetippter
-        Tag wird gegen die Repo-Tags geprüft (ein nicht gelisteter Tag wird abgelehnt), und die
+        editierbar</strong>: du kannst <strong>jedes vorhandene Tag eintippen, auch ein älteres,
+        um es zu pinnen oder zurückzurollen</strong> auf ein bewährtes Release. Ein eingetipptes
+        Tag wird gegen die Repo-Tags geprüft (ein nicht gelistetes Tag wird abgelehnt), und die
         Auswahl eines älteren Tags zeigt vor dem Anwenden eine <strong>Downgrade-Warnung</strong>.
         In jedem Fall ist die Änderung ein <code>ServiceUpdate</code> / Rolling Update, hinter einer
         Bestätigung. Liefert die Registry <strong>überhaupt keine Tags</strong> und gibt es auch kein
@@ -1389,14 +1389,14 @@ rules:
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>/</kbd></td><td>die Suchleiste öffnen (filtert nach Service / Container / Node)</td></tr>
-          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>ein-/ausklappen über alle drei Ebenen. <kbd>h</kbd> klappt die Zeile unter dem Cursor zu — ein Stack die ganze Gruppe, ein ausgeklappter Service seine Container — und wo nichts mehr zuzuklappen ist, springt es stattdessen <em>heraus</em> zum Elternknoten, sodass wiederholtes Drücken nach oben läuft: Container&nbsp;→ Service&nbsp;→ Stack. <kbd>l</kbd> klappt die Zeile unter dem Cursor auf oder steigt in ihr erstes Kind ab, wenn sie schon offen ist</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>ein-/ausklappen über alle drei Ebenen. <kbd>h</kbd> klappt die Zeile unter dem Cursor zu — ein Stack die ganze Gruppe, ein ausgeklappter Service seine Container — und wo nichts mehr zuzuklappen ist, springt es stattdessen <em>heraus</em> zur übergeordneten Zeile, sodass wiederholtes Drücken nach oben läuft: Container&nbsp;→ Service&nbsp;→ Stack. <kbd>l</kbd> klappt die Zeile unter dem Cursor auf oder steigt in ihr erstes Kind ab, wenn sie schon offen ist</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>auf einem Container: das Aktionsmenü öffnen; auf einem Service oder einem Stack: ihn ein-/ausklappen</td></tr>
           <tr><td><kbd>s</kbd></td><td>Stack-Gruppierung umschalten — gruppierter Baum ⟷ flache Service-Liste (siehe unten)</td></tr>
           <tr><td><kbd>L</kbd></td><td>Logs (großes <kbd>L</kbd>) — auf einem Container dessen eigene Logs, auf einem Service die aggregierten Logs aller seiner Tasks; auf einer <strong>Stack</strong>-Zeile jeder Container jedes Service im Stack, jede Zeile mit <code>[svc.slot]</code> markiert (bei einem globalen Service <code>[svc@node]</code>), je ab den letzten 50 Zeilen — wie <code>swarmexec logs --stack</code>. Bis zu 64 Container; die Zeile <em>(no stack)</em> ist eine Gruppierung, kein Stack, und öffnet nichts</td></tr>
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
           <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor</td></tr>
-          <tr><td><kbd>i</kbd></td><td>den Node unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, eine <strong>Tab-Leiste</strong> oben benennt die drei Ansichten, <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> wählen Tabelle / Stats / rohes Daemon-JSON direkt aus und <kbd>t</kbd> schaltet reihum durch (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
-          <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird der <strong>ganze Stack</strong> entfernt, genau das, was <code>docker stack rm</code> entfernt: jeder Service, jedes Secret, jede Config und jedes Netzwerk mit dem Label <code>com.docker.stack.namespace</code> dieses Stacks. Die Bestätigung nennt vorher die gefundenen Zahlen (&bdquo;4 services, 2 secrets, 1 network&ldquo;), und Netzwerke werden ein paar Sekunden lang erneut versucht, weil die Endpunkte eines Service nach dem Stoppen seiner Tasks noch einen Moment brauchen &mdash; <code>docker stack rm</code> gibt dort auf und lässt das Netzwerk zurück. Was sich verweigert, wird danach namentlich aufgelistet, damit klar ist, was übrig bleibt. Die Zeile <em>(no stack)</em> entfernt nichts: sie ist eine Anzeigegruppierung, kein Stack. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks; das kann nicht rückgängig gemacht werden. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span style="color:#f85149"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
+          <tr><td><kbd>i</kbd></td><td>den Eintrag unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, eine <strong>Tab-Leiste</strong> oben benennt die drei Ansichten, <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> wählen Tabelle / Stats / rohes Daemon-JSON direkt aus und <kbd>t</kbd> schaltet reihum durch (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
+          <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird der <strong>ganze Stack</strong> entfernt, genau das, was <code>docker stack rm</code> entfernt: jeder Service, jedes Secret, jede Config und jedes Netzwerk mit dem Label <code>com.docker.stack.namespace</code> dieses Stacks. Die Bestätigung nennt vorher die gefundenen Zahlen (&bdquo;4 services, 2 secrets, 1 network&ldquo;), und Netzwerke werden ein paar Sekunden lang erneut versucht, weil die Endpoints eines Service nach dem Stoppen seiner Tasks noch einen Moment brauchen &mdash; <code>docker stack rm</code> gibt dort auf und lässt das Netzwerk zurück. Was sich verweigert, wird danach namentlich aufgelistet, damit klar ist, was übrig bleibt. Die Zeile <em>(no stack)</em> entfernt nichts: sie ist eine Anzeigegruppierung, kein Stack. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks, kann nicht rückgängig gemacht werden und bietet danach an, nun verwaiste Secrets ebenfalls zu löschen. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span style="color:#f85149"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1404,7 +1404,7 @@ rules:
         gerendert wie eine <code>docker service ls</code>-Zeile — Name, Modus,
         laufende/gewünschte Anzahl, Image und veröffentlichte Ports — und danach eingefärbt,
         wie es dem Service tatsächlich geht: Die laufenden/gewünschten Tasks geben die
-        Grundfarbe vor (aqua = alle Tasks oben, orange = teilweise, rot = unten, grau = auf
+        Grundfarbe vor (aqua = alle Tasks laufen, orange = teilweise, rot = keine, grau = auf
         null skaliert), ein fehlschlagender <strong>Healthcheck</strong> überschreibt sie
         (siehe unten). Ein <code>▸</code>/<code>▾</code>-Marker zeigt, ob ein Service
         eingeklappt oder ausgeklappt ist; seine laufenden Container verschachteln sich
@@ -1428,8 +1428,9 @@ rules:
       <p>
         <strong>Eingefärbt nach Healthcheck, nicht nur nach Replica-Zahl.</strong> Die Farbe
         einer Service-Zeile kam bisher allein aus laufend gegen gewünscht — ein Service,
-        dessen <em>sämtliche</em> Container ihren Healthcheck rissen, stand also weiterhin
-        als ruhiges aquafarbenes <strong>3/3</strong> da. Die Zahl stimmte, die Zeile log.
+        bei dem <em>sämtliche</em> Container ihren Healthcheck nicht bestanden, stand also
+        weiterhin als ruhiges aquafarbenes <strong>3/3</strong> da. Die Zahl stimmte, die Zeile
+        führte trotzdem in die Irre.
         Der Task-Status von Swarm hilft hier nicht weiter: Eine Task ist
         <code>running</code>, während ihr Container jede Probe verfehlt — das Urteil muss
         also vom Node kommen. Eine fehlschlagende Probe gilt jetzt als Verschlechterung
@@ -1454,12 +1455,12 @@ rules:
         <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> in Gelb, solange die Proben
         noch nicht durch sind; ein Container-Blatt trägt
         <span style="color:#f85149">✖&nbsp;unhealthy</span> bzw.
-        <span style="color:#f2cc60">◌&nbsp;starting</span>. Unhealthy sticht starting — das
-        ist das, wo man ran muss. Eine Stack-Zeile fasst denselben Marker über alles darunter
+        <span style="color:#f2cc60">◌&nbsp;starting</span>. unhealthy hat Vorrang vor starting —
+        dort muss man eingreifen. Eine Stack-Zeile fasst denselben Marker über alles darunter
         zusammen (siehe <em>Nach Stack gruppiert</em> weiter unten). Ein
         <strong>gesunder</strong> Container bekommt
         <strong>keinen</strong> Marker, einer <strong>ohne</strong> Healthcheck ebenso wenig;
-        so bleibt der Marker eine Aussage. Sie stehen neben den
+        so behält der Marker seine Aussagekraft. Sie stehen neben den
         <code>cpu</code>/<code>mem</code>-Ressourcenmarkern weiter unten, und die Gesundheit
         kommt in der Zeile <strong>zuerst</strong>: Sie ist das, was der Zahl direkt daneben
         widerspricht.
@@ -1475,7 +1476,7 @@ rules:
         der Daemon diese Zeile eines Tages um, hört swarmexec also auf, Bescheid zu wissen,
         statt einen fehlschlagenden Container als gesund zu melden. Es gilt dieselbe
         Voraussetzung wie für die Nutzungszahlen: Es braucht Agents aus diesem Release oder
-        neuer, ein noch nicht neu ausgerolltes Cluster zeigt also gar keine
+        neuer, ein noch nicht neu ausgerollter Cluster zeigt also gar keine
         Health-Marker — ausrollen mit
         <a href="#reroll"><code>swarmexec init --force</code></a>.
       </div>
@@ -1500,7 +1501,7 @@ rules:
         Replicas, der Prozentwert das Maximum.)
       </p>
       <p>
-        <strong>Wovon der Prozentwert ein Prozentwert ist.</strong> Gemessen wird gegen das,
+        <strong>Worauf sich der Prozentwert bezieht.</strong> Gemessen wird gegen das,
         was der Container tatsächlich nutzen darf: <strong>sein eigenes Limit, wenn er eins
         hat, sonst die Kapazität des Nodes</strong>. Genau darauf kommt es an — 91 % eines
         256-MB-Limits heißt, ein OOM-Kill steht bevor; 91 % eines 64-GB-Nodes ist eine
@@ -1517,7 +1518,7 @@ rules:
         vorhandenen Refresh-Zyklus ab. Daraus folgen zwei Dinge. Ein
         <strong>CPU-Prozentwert ist eine Differenz zwischen zwei Messungen</strong> und
         existiert daher erst, wenn der Agent zwei genommen hat (ein paar Sekunden) —
-        solange zeigen die Ansichten <code>…</code>, nie <code>0 %</code>; Memory braucht
+        solange zeigen die Ansichten <code>…</code>, nie <code>0%</code>; Memory braucht
         keine Differenz und ist ab der ersten Messung da. Und ein Agent sampelt nur,
         <strong>solange auch jemand hinschaut</strong>: Rund eine Minute nach der letzten
         Anfrage hört er auf und vergisst seine Messwerte, statt veraltete auszuliefern.
@@ -1529,9 +1530,9 @@ rules:
         Zugabe und fällt still aus: Ein Node, dessen Agent nicht erreichbar ist — oder
         <strong>älter als dieses Release und damit ohne Kenntnis des
         <code>Stats</code>-RPC</strong> —, liefert schlicht keine Messwerte. Die Marker
-        bleiben aus, der Node-Block fehlt, alles andere bleibt unberührt; der Client nimmt
-        so einen Node zudem für eine Weile aus dem Rennen, statt ihn bei jedem Refresh neu
-        anzufragen. Auf einem Cluster, das noch nicht neu ausgerollt wurde, gibt es deshalb
+        bleiben aus, der Node-Block fehlt, alles andere bleibt unberührt; der Client fragt
+        einen solchen Node zudem eine Weile lang nicht mehr ab, statt es bei jedem Refresh neu
+        zu versuchen. Auf einem Cluster, der noch nicht neu ausgerollt wurde, gibt es deshalb
         <strong>überhaupt keine Nutzungszahlen und keine Health-Marker</strong>, bis die
         Agents aktualisiert sind —
         ausrollen mit <a href="#reroll"><code>swarmexec init --force</code></a>. Das ist mit
@@ -1568,8 +1569,8 @@ rules:
         das immer zuletzt einsortiert wird und damit nie echte Stacks nach unten drängt.
         <strong>Nichts wird versteckt</strong> — jeder Service erscheint weiterhin genau
         einmal. Stacks werden nach Namen sortiert und starten ausgeklappt, sodass der
-        gruppierte Baum dieselben Services zeigt wie der flache; von dir gesetzte Falten
-        überleben die Auto-Aktualisierung.
+        gruppierte Baum dieselben Services zeigt wie der flache; was du zuklappst, bleibt
+        auch nach der automatischen Aktualisierung zugeklappt.
       </p>
       <p>
         Die Gruppierung ist <strong>standardmäßig an</strong>, greift aber erst, wenn
@@ -1585,7 +1586,7 @@ rules:
         Die Suche (<kbd>/</kbd>) bleibt unverändert: der Filter greift weiterhin auf
         Service, Container und Node. Ein Stack, den der Filter leert, verschwindet aus dem
         Baum, und die Zähler jeder Stack-Zeile beschreiben, was tatsächlich darunter
-        gelandet ist — sie folgen also dem Filter, statt weggefilterte Services anzupreisen.
+        gelandet ist — sie folgen also dem Filter, statt weggefilterte Services mitzuzählen.
       </p>
 
       <p>
@@ -1594,7 +1595,7 @@ rules:
         Benutzer/einer UID, wie <code>docker exec -u</code> — für Images, deren
         Standardbenutzer die benötigten Werkzeuge oder Rechte nicht hat) und
         <strong>port forward</strong> (nicht verfügbare Shells
-        werden nach einem Test ausgegraut). In der Suchleiste behält <kbd>Enter</kbd> den
+        werden nach einer Prüfung ausgegraut). In der Suchleiste behält <kbd>Enter</kbd> den
         Filter und kehrt zur Liste zurück; <kbd>Esc</kbd> löscht den Filter und schließt
         die Leiste.
       </p>
@@ -1605,7 +1606,7 @@ rules:
         <strong>statischer Analyzer über die Spec jedes Service</strong> laufen — über
         dieselbe Spec, die der Manager ohnehin schon geliefert hat. Es gibt also keinen
         zusätzlichen API-Aufruf, der Agent ist nicht beteiligt, und in deinen Containern
-        wird nichts ausgeführt. Ein Service mit einem Befund, der Handlung verdient, wird
+        wird nichts ausgeführt. Ein Service mit einem Befund, bei dem Handlungsbedarf besteht, wird
         im Service-Baum mit einem vorangestellten <strong>🛡</strong> markiert — in einem
         Slot fester Breite vor dem Namen, sodass die Schilde eine senkrechte Scan-Spalte
         bilden. <kbd>!</kbd> öffnet das <strong>Sicherheitsrisiken-Overlay</strong>, und
@@ -1626,9 +1627,9 @@ rules:
           <tr><td><code>host-network</code> — „runs on the host network“</td><td><span style="color:#f85149">high</span></td><td>der Service hängt am Netzwerk namens <code>host</code>: der Container teilt sich den <strong>Netzwerk-Stack des Nodes</strong>, es gibt also keine Netzwerk-Isolation, und das Published-Port-Mapping von Swarm greift nicht mehr. Er erreicht alles, was der Node erreicht — <strong>einschließlich Diensten, die nur auf localhost lauschen</strong> und die man üblicherweise für aus einem Container heraus unerreichbar hält</td></tr>
           <tr><td><code>unconfined</code> — „seccomp disabled“ / „AppArmor disabled“</td><td><span style="color:#f85149">high</span></td><td>die Sandbox auf Kernel-Ebene ist für den Container abgeschaltet: <strong>seccomp steht auf <code>unconfined</code></strong> — der Container darf jeden Syscall absetzen, womit die wichtigste Hürde gegen Kernel-Exploits wegfällt — oder die <strong>AppArmor-Einschränkung ist deaktiviert</strong>. Beides wird getrennt gemeldet; ein Service, der beides abschaltet, bekommt zwei Befunde</td></tr>
           <tr><td><code>root-user</code> — „runs as root“</td><td><span style="color:#f85149">high</span></td><td>die Spec legt den Container <strong>ausdrücklich auf root</strong> fest — <code>User=root</code> oder UID <code>0</code> (auch numerische Formen wie <code>00</code> oder <code>+0</code> werden erkannt; betrachtet wird nur der Benutzerteil von <code>user:group</code>)</td></tr>
-          <tr><td><code>secret-in-env</code> — „secret in environment variable“</td><td><span style="color:#f85149">high</span></td><td>ein nach einem Credential aussehender Env-Schlüssel enthält einen <strong>literalen Wert in der Service-Spec</strong>, lesbar für jeden, der die Spec lesen darf. Nutze stattdessen ein Docker-Secret oder die <code>*_FILE</code>-Konvention</td></tr>
+          <tr><td><code>secret-in-env</code> — „secret in environment variable“</td><td><span style="color:#f85149">high</span></td><td>ein nach einem Credential aussehender Env-Schlüssel enthält einen <strong>Klartextwert in der Service-Spec</strong>, lesbar für jeden, der die Spec lesen darf. Nutze stattdessen ein Docker-Secret oder die <code>*_FILE</code>-Konvention</td></tr>
           <tr><td><code>root-user</code> — „no user set“</td><td>low</td><td><strong>kein</strong> Benutzer ist gesetzt, der Container läuft also als der Standardbenutzer des Images — oft root. <strong>Nur informativ, markiert den Service also nicht</strong>: ein nicht gesetzter Benutzer ist bei fast jedem Service der Swarm-Standard, und ob es wirklich root ist, hängt vom <code>USER</code> des Images ab, das die Manager-Spec nicht preisgibt</td></tr>
-          <tr><td><code>no-resource-limits</code> — „no resource limits“</td><td>low</td><td>der Task setzt <strong>weder ein CPU- noch ein Memory-Limit</strong>; ein außer Kontrolle geratener Container kann damit den ganzen Node aufbrauchen und alles andere darauf aushungern. <strong>Nur informativ</strong> — siehe unten</td></tr>
+          <tr><td><code>no-resource-limits</code> — „no resource limits“</td><td>low</td><td>die Task setzt <strong>weder ein CPU- noch ein Memory-Limit</strong>; ein außer Kontrolle geratener Container kann damit den ganzen Node aufbrauchen und alles andere darauf aushungern. <strong>Nur informativ</strong> — siehe unten</td></tr>
           <tr><td><code>unpinned-image</code> — „image not pinned“</td><td>low</td><td>das Image ist auf <code>:latest</code> festgelegt oder trägt <strong>überhaupt kein Tag</strong> (was auf <code>:latest</code> hinausläuft) — die laufende Version kann sich ohne Spec-Änderung ändern, ein Deploy ist damit nicht reproduzierbar. Ein <strong>per Digest gepinntes</strong> Image (<code>…@sha256:…</code>) ist exakt reproduzierbar und wird nie gemeldet, und ein Doppelpunkt, der zum Port des Registry-Hosts gehört (<code>registry:5000/img</code>), wird nicht für ein Tag gehalten. <strong>Nur informativ</strong> — siehe unten</td></tr>
         </tbody>
       </table></div>
@@ -1648,8 +1649,8 @@ rules:
         <strong>Es wird nie ein Secret-Wert angezeigt.</strong> Von den acht Prüfungen schaut
         nur <code>secret-in-env</code> überhaupt auf Umgebungsvariablen, und ihr Befund nennt
         ausschließlich den <strong>Schlüssel</strong> der Env-Variable; der Wert wird nie in
-        den Befund eingelesen, nie gerendert und nie kopiert. Die Prüfung ist außerdem auf Ruhe
-        ausgelegt: sie vergleicht ganze, durch <code>_</code> getrennte Tokens
+        den Befund eingelesen, nie gerendert und nie kopiert. Die Prüfung ist außerdem darauf
+        ausgelegt, keine Fehlalarme zu erzeugen: sie vergleicht ganze, durch <code>_</code> getrennte Tokens
         (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
         <code>PASSPHRASE</code>, <code>SECRET</code>, <code>TOKEN</code>,
         <code>APIKEY</code>, <code>CREDENTIAL(S)</code>, <code>PRIVATEKEY</code> sowie die
@@ -1692,13 +1693,13 @@ rules:
         als <code>security_risks</code> in <a href="#tui">keys.yaml</a> umbelegbar.
       </div>
       <p>
-        <kbd>i</kbd> öffnet ein <strong>Inspect-Overlay</strong> für den Node unter dem
+        <kbd>i</kbd> öffnet ein <strong>Inspect-Overlay</strong> für den Eintrag unter dem
         Cursor — auf einem <strong>Service</strong> zeigt es
         <code>docker service inspect</code>, und auf einem <strong>Container</strong>-Blatt
         das <strong>Swarm-Task-Inspect</strong> (die Sicht des Managers auf diese Instanz:
         State, Slot, Node, Container-ID, Container-Spec, Ressourcen und Statushistorie).
         Beide kommen vom Swarm-Manager. Das Overlay öffnet sich mit einer
-        <strong>tabellarischen, operator-first Zusammenfassung</strong> mit Abschnitten,
+        <strong>tabellarischen, auf den Betrieb ausgerichteten Zusammenfassung</strong> mit Abschnitten,
         die nach operativer Relevanz geordnet sind — zuerst Netzwerke, Labels,
         Volumes/Mounts und Secrets (und Configs), dann Ports, Image, Modus, Env,
         Ressourcen, Placement und Update-Policy (plus State, Node und Container-ID bei
@@ -1710,7 +1711,7 @@ rules:
         gefolgt von der Ziffer, die es auswählt. <kbd>1</kbd>, <kbd>2</kbd> und <kbd>3</kbd>
         springen <strong>direkt</strong> zu Tabelle, Stats und rohem Daemon-JSON, und
         <kbd>t</kbd> schaltet weiterhin reihum <strong>Tabelle&nbsp;→ Stats&nbsp;→ rohes
-        JSON</strong> und wieder zurück. Der Footer-Hinweis lautet nur noch
+        JSON</strong> und wieder zurück. Der Hinweis in der Fußzeile lautet nur noch
         <em>1-3/t view</em>, und der Rahmentitel wiederholt die aktuelle Ansicht nicht mehr —
         er heißt schlicht <code>inspect service foo</code>, denn die Leiste sagt bereits, wo
         du bist. Beachte, dass die tabellarische Ansicht die Task-Sicht des Managers ist,
@@ -1736,15 +1737,15 @@ rules:
         Eine Tabelle, weil ein nackter Prozentwert nicht lesbar ist, wenn man nicht ohnehin
         weiß, wie das Werkzeug misst — <em>94 % wovon?</em> Jede Zelle bringt ihre
         <strong>eigenen Einheiten</strong> mit, <code>0.07 / 4.00 cores</code> braucht also
-        keine Legende, und der Prozentwert steht direkt neben der Zahl, von der er ein
-        Prozentwert ist. Mehrere Replicas vergleicht man, indem man eine <strong>Spalte
+        keine Legende, und der Prozentwert steht direkt neben der Zahl, auf die er sich
+        <em>bezieht</em>. Mehrere Replicas vergleicht man, indem man eine <strong>Spalte
         entlangliest</strong>, statt gestapelte Blöcke gegeneinanderzuhalten. Die Spalte
         <strong>HEALTH</strong> formuliert das Urteil in Worten — <code>healthy</code>,
         <code>unhealthy</code>, <code>starting</code> oder <code>none</code> für einen
         Container, der gar keinen Healthcheck deklariert. <code>none</code> und
         <code>healthy</code> sind mit Absicht <strong>zwei verschiedene Worte</strong> und
-        nicht ein Wort und eine Lücke: „kein Healthcheck konfiguriert“ und „die Probe läuft
-        durch“ sind verschiedene Tatsachen, und eine Lücke läse sich wie das Zweite. Ein
+        nicht ein Wort und eine Lücke: <em>kein Healthcheck konfiguriert</em> und <em>die Probe läuft
+        durch</em> sind verschiedene Tatsachen, und eine Lücke läse sich wie das Zweite. Ein
         Container, den kein Agent gemeldet hat — nicht erreichbarer Node, ein für den
         <code>Stats</code>-RPC zu alter Agent oder ein erst seit der letzten Messung
         laufender Container —, zeigt in beiden Ressourcenspalten <code>no reading</code>
@@ -1752,14 +1753,14 @@ rules:
       </p>
       <p>
         <strong>Die letzten Minuten.</strong> Unter der Tabelle bekommt jeder Container zwei
-        Sparklines, CPU und Speicher, über die letzten Messungen — so unterscheiden Sie
+        Sparklines, CPU und Memory, über die letzten Messungen — so unterscheidest du
         einen Service, der bei 90% <em>steht</em>, von einem, der gerade auf 90%
         <em>hochgeschossen</em> ist. Beide nutzen eine feste Skala von 0–100% desselben
         Nenners wie die Tabelle, damit zwei Container vergleichbar sind und ein ruhiger flach
         bleibt. Der Verlauf liegt nur im Speicher, höchstens 15 Minuten, und die Messungen
         laufen weiter, während die Ansicht offen ist. Eine <strong>Lücke</strong> ist eine
-        Strecke ohne Messung — ein Knoten, der nicht antwortete, ein Cluster, den Sie gerade
-        nicht ansahen —, nie ein Abfall auf null.
+        Strecke ohne Messung — ein Node, der nicht antwortete, ein Cluster, den du gerade
+        nicht angesehen hast —, nie ein Abfall auf null.
       </p>
       <div class="cmd"><span class="k">LAST MINUTES</span>
   gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
@@ -1792,9 +1793,9 @@ rules:
         aus-/einklappt (siehe unten). Alle drei Ansichten (die tabellarische
         Zusammenfassung, die Stats-Ansicht und das rohe JSON, erreichbar über
         <kbd>1</kbd>–<kbd>3</kbd> oder reihum mit <kbd>t</kbd>)
-        sind Zeile für Zeile auswählbar und kopierbar. Ein <strong>Footer listet immer die verfügbaren Tasten</strong>, sodass
-        auf einen Blick sichtbar ist, was du tun kannst; bei einem Service zeigt der
-        Footer auch die untenstehenden Bearbeitungstasten.
+        sind Zeile für Zeile auswählbar und kopierbar. Eine <strong>Fußzeile listet immer die verfügbaren Tasten</strong>, sodass
+        auf einen Blick sichtbar ist, was du tun kannst; bei einem Service zeigt die
+        Fußzeile auch die unten beschriebenen Bearbeitungstasten.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
@@ -1841,7 +1842,7 @@ rules:
         benutzerdefinierten Aliase —, sodass du sehen kannst, unter welchem DNS-Namen er
         erreicht wird und welche Aliase er pro Netzwerk trägt. Darunter steht eine zweite
         einklappbare Zeile, <code>+ 2 containers</code> (im Singular
-        <code>+ 1 container</code>); <kbd>Enter</kbd> darauf öffnet die tiefste Ebene: eine
+        <code>+ 1 container</code>); <kbd>Enter</kbd> auf <em>dieser</em> Zeile öffnet die tiefste Ebene: eine
         spaltenbündige Zeile pro Container, <code>web.1 10.0.1.5/24 host-a</code> — Task-Name,
         seine Adresse in diesem Netzwerk und der Node, auf dem er läuft (replizierte Tasks
         heißen <code>&lt;service&gt;.&lt;slot&gt;</code>, globale
@@ -1859,7 +1860,7 @@ rules:
         freigegeben und kann längst einem anderen Container gehören, sie zu zeigen wäre also
         aktiv falsch. Eine Task, die noch keinen Traffic bedient, trägt ihren Zustand in
         Klammern am Zeilenende, <code>web.1 10.0.1.5/24 host-a (starting)</code>; eine laufende
-        hat kein Suffix. Die Zeilen stammen aus einem <code>TaskList</code> der Manager-API,
+        hat kein Suffix. Die Zeilen stammen aus einem <code>TaskList</code>-Aufruf der Manager-API,
         gefiltert auf den Service, und sind Best-Effort — ein API-Fehler lässt den Drilldown
         einfach leer. Die beiden Ebenen klappen unabhängig voneinander; klappst du das
         Netzwerk ein, verschwindet die Container-Ebene mit.
@@ -1904,7 +1905,7 @@ rules:
       </p>
       <p>
         Wenn du einen <strong>Service</strong> inspizierst (nicht ein Container/Task-Blatt,
-        dessen Overlay schreibgeschützt bleibt), stellt der Overlay-Footer auch mehrere
+        dessen Overlay schreibgeschützt bleibt), stellt die Fußzeile des Overlays auch mehrere
         Bearbeitungstasten bereit, jede ein Manager-API-<code>ServiceUpdate</code>, das ein
         Rolling Update / eine Rekonziliation der Tasks des Service auslöst.
       </p>
@@ -1920,7 +1921,7 @@ rules:
         <strong>gleichwertig</strong> und keine Varianten mit unterschiedlichem Verhalten.
         Die Einträge in ihrer Reihenfolge:
         <em>update image version…</em> (<em>set image version…</em>, wenn es keine neuere
-        gibt — auf einen Tag deiner Wahl pinnen oder zurückgehen ist genauso legitim),
+        gibt — auf ein Tag deiner Wahl pinnen oder zurückgehen ist genauso legitim),
         <em>diff spec (previous → current)</em>, <em>roll back to the previous version</em>,
         <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
         <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
@@ -1945,39 +1946,39 @@ rules:
           <tr><td><kbd>d</kbd></td><td>diff — zeigt ein Unified-Diff der <em>aktuellen</em> Spec des Service gegen seine <em>vorherige</em> (was das letzte Rolling Update geändert hat), unter Verwendung von Swarms <code>PreviousSpec</code>. Geänderte Felder werden feldweise gruppiert mit <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span>-Zeilen aufgelistet (Image, Modus/Replicas, Env, Labels, Netzwerke, Aliase, Secrets, Mounts, Ports, Placement-Constraints, Spread-Präferenzen, Ressourcen-Limits/-Reservierungen); unveränderte Felder werden weggelassen. Wenn der Service nie aktualisiert wurde (keine vorherige Spec), sagt es das. Schreibgeschütztes Overlay — <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> schließt</td></tr>
           <tr><td><kbd>R</kbd></td><td>auf die vorherige Version zurückrollen (großes <kbd>R</kbd>, also Shift+r, um es von <kbd>r</kbd> Ressourcen-Limits zu unterscheiden) — das Gegenstück zum <kbd>d</kbd>-Diff darüber: es macht das letzte Rolling Update rückgängig. Der Bestätigungsdialog zeigt <strong>genau dieses Diff umgekehrt</strong> unter „This will undo:“, denn das ist es, was der Rollback tatsächlich ändert — eine Zeile, die das Update <em>hinzugefügt</em> hat, steht dort als <span style="color:#f85149">- removed</span>, und eine, die es <em>entfernt</em> hat, kommt als <span style="color:#3fb950">+ added</span> zurück. Die Vorschau ist auf <strong>12</strong> Einträge begrenzt, gefolgt von einem Hinweis „… and N more“, der für das vollständige Diff auf <kbd>d</kbd> verweist (haben sich nur Metadaten geändert, meldet er, dass es keine feldweisen Unterschiede gibt). Beim Bestätigen läuft ein <strong>serverseitiger</strong> Rollback — ein Manager-API-<code>ServiceUpdate</code> mit <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>kein</em> clientseitiges Neuanwenden der <code>PreviousSpec</code> — der <strong>Manager</strong> führt ihn also selbst aus, beachtet dabei die <strong>Rollback-Konfiguration</strong> des Service (Parallelität, Verzögerung, Failure-Action) und meldet den Fortschritt als Update-Status <code>rollback_started</code>: genau das oben beschriebene Badge <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span>, auf der Baumzeile und in diesem Overlay. Ein Service, der <strong>nie aktualisiert</strong> wurde, hat keine vorherige Spec — du bekommst einen erklärenden Hinweis, keinen Fehler. Auch über das <kbd>a</kbd>-Aktionsmenü erreichbar. Wie <kbd>d</kbd>, <kbd>D</kbd> und <kbd>X</kbd> ist das eine feste Inspect-Taste, keine umbelegbare Keymap-Aktion</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — fragt nach einer neuen Replica-Anzahl und wendet sie an (nur replizierte Services; ein globaler Service meldet, dass er nicht skaliert werden kann)</td></tr>
-          <tr><td><kbd>f</kbd></td><td>force-update — deployt den Service neu, ohne seine Spec zu ändern (das Äquivalent zu <code>docker service update --force</code>: erhöht <code>TaskTemplate.ForceUpdate</code>), nach einer Bestätigung. Jede Task wird neu gestartet / neu geplant, womit du einen Service losbekommst, der in einem <strong>unvollständigen Zustand</strong> feststeckt (z. B. <code>1/2</code> Replicas). Ein <code>ServiceUpdate</code> (Rolling Update)</td></tr>
-          <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Service-Baum aktualisiert sich</td></tr>
+          <tr><td><kbd>f</kbd></td><td>force-update — deployt den Service neu, ohne seine Spec zu ändern (das Äquivalent zu <code>docker service update --force</code>: erhöht <code>TaskTemplate.ForceUpdate</code>), nach einer Bestätigung. Jede Task wird neu gestartet / neu geplant, womit du einen Service wieder in Gang bringst, der in einem <strong>unvollständigen Zustand</strong> feststeckt (z. B. <code>1/2</code> Replicas). Ein <code>ServiceUpdate</code> (Rolling Update)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Service-Baum aktualisiert sich. War der Service der <strong>einzige Nutzer eines oder mehrerer Secrets</strong>, fragt swarmexec anschließend, ob diese <strong>nun verwaisten Secrets</strong> ebenfalls gelöscht werden sollen (Secrets, die noch ein anderer Service referenziert, bleiben unberührt)</td></tr>
           <tr><td><kbd>D</kbd></td><td>Placement diagnostizieren (großes <kbd>D</kbd>) — beantwortet <em>warum ein Service nicht überall läuft, wo du es erwartest</em> in einer Ansicht, statt ihn über mehrere <code>docker</code>-Befehle zu verfolgen. Für einen <strong>globalen</strong> Service listet es jeden Node mit ✓ laufend oder ✗ und dem Grund, warum er ausgeschlossen ist (<strong>Verfügbarkeit</strong> drain/pause, ein <strong>down</strong>-Zustand, ein nicht erfüllter Placement-<strong>Constraint</strong> oder eine <strong>Plattform</strong>-Diskrepanz) — deshalb kann ein 3-Node-Cluster legitim <code>2/2</code> anzeigen (der dritte Node ist nicht geeignet). Für einen <strong>replizierten</strong> Service listet es jede Task, die <em>nicht</em> läuft, mit der eigenen Meldung des Schedulers (Constraints, unzureichende Ressourcen, Image-Pull-Fehler, …). Constraints, die client-seitig nicht geprüft werden können (<code>engine.labels.*</code>), werden vermerkt, nicht geraten. Schreibgeschütztes Overlay</td></tr>
-          <tr><td><kbd>p</kbd></td><td>veröffentlichte Ports bearbeiten — öffnet einen gestagten Listeneditor der Ports des Service, jeder in der Form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, Standard <code>tcp</code>), z. B. <code>8080:80/tcp</code></td></tr>
-          <tr><td><kbd>l</kbd></td><td>Labels bearbeiten — derselbe gestagte Listeneditor über <code>key=value</code>-Einträge</td></tr>
-          <tr><td><kbd>e</kbd></td><td>Umgebungsvariablen bearbeiten — derselbe gestagte Listeneditor über die Env der <code>ContainerSpec</code>, jede als <code>KEY=VALUE</code> eingegeben (z. B. <code>LOG_LEVEL=debug</code>); der Schlüssel ist erforderlich, der Wert darf leer sein und selbst <code>=</code> enthalten. Wie Ports/Labels/Mounts erlaubt dieser Editor <strong>sehr wohl</strong> <kbd>e</kbd> zum Bearbeiten, sodass du einen Wert an Ort und Stelle anpassen kannst. Anders als die übrigen Editoren öffnet <kbd>e</kbd> hier den Eintrag in einem scrollbaren <strong>mehrzeiligen Textbereich</strong> (statt eines einzeiligen Feldes), sodass lange Werte wie <code>GITLAB_OMNIBUS_CONFIG</code> bequem zu bearbeiten sind — tippe frei (<kbd>Enter</kbd> fügt einen Zeilenumbruch ein), <kbd>Ctrl-S</kbd> speichert, <kbd>Esc</kbd> bricht ab. Das Anwenden ersetzt die Env des Service in einem <code>ServiceUpdate</code> (Rolling Update)</td></tr>
-          <tr><td><kbd>n</kbd></td><td>Netzwerke bearbeiten — ein gestagter Listeneditor über die Netzwerkanschlüsse des Service; da ein Eintrag nur ein Name ist, ist er <strong>nur Hinzufügen/Entfernen</strong> (kein <kbd>e</kbd> Bearbeiten). Die Hinzufügen-Eingabe <strong>vervollständigt Netzwerknamen automatisch</strong> (schlägt Netzwerke vor, an die der Service noch nicht angeschlossen ist, oder tippe selbst eines). Das Anwenden ersetzt die Anschlüsse in einem <code>ServiceUpdate</code>. <strong>DNS-Aliase</strong> werden auch von hier aus bearbeitet: wähle in diesem Editor ein Netzwerk und drücke <kbd>A</kbd>, um eine gestagte Liste der DNS-Aliase des Service <em>in diesem Netzwerk</em> zu öffnen (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>y</kbd> kopieren / <kbd>u</kbd> rückgängig / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen); das Anwenden ersetzt die Aliase dieses Netzwerks in einem <code>ServiceUpdate</code>. Funktioniert auch, wenn der Service noch keine Aliase hat. (Du musst ein neu hinzugefügtes Netzwerk erst anwenden, bevor du seine Aliase setzen kannst.)</td></tr>
-          <tr><td><kbd>S</kbd></td><td>Secrets bearbeiten (großes <kbd>S</kbd>, also Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden) — derselbe gestagte Listeneditor wie Netzwerke über die Secrets, die der Service referenziert; ein Eintrag ist nur ein Name, also <strong>nur Hinzufügen/Entfernen</strong> (kein <kbd>e</kbd> Bearbeiten). Die Hinzufügen-Eingabe <strong>vervollständigt Secret-Namen automatisch</strong> (schlägt Secrets vor, die der Service noch nicht verwendet, oder tippe selbst eines). Das Anwenden ersetzt die Secret-Referenzen des Service in einem <code>ServiceUpdate</code> (Rolling Update); jedes Secret wird unter <code>/run/secrets/&lt;name&gt;</code> eingehängt. Funktioniert auch, wenn der Service aktuell keine Secrets hat</td></tr>
-          <tr><td><kbd>v</kbd></td><td>Mounts bearbeiten — ein gestagter Listeneditor über die Volumes und Bind-Mounts des Service. Hinzufügen (<kbd>a</kbd>) oder Bearbeiten (<kbd>e</kbd>) öffnet ein kleines <strong>Formular</strong> statt eines einzelnen Textfeldes: eine <strong>Bind-Mount</strong>-Checkbox, eine <strong>Quelle</strong> (wenn die Box nicht angehakt ist, ist es ein <em>Volume</em>-Name mit <strong>Autocomplete</strong> bestehender Cluster-Volumes; wenn angehakt, ist es ein <em>Host-Pfad</em>), ein <strong>Container-Pfad</strong> und eine <strong>Read-only</strong>-Checkbox. (Intern ist jeder Eintrag weiterhin <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind-Quellen und alle Ziele müssen absolute Pfade sein. Das Anwenden ersetzt die Mounts in einem <code>ServiceUpdate</code> (Rolling Update). <strong>Bind-Mount-Schutz (weich):</strong> wenn die gestagte Liste Bind-Mounts enthält, zeigt das Anwenden zuerst eine Warnung, die die Nodes auflistet, auf denen der Service eingeplant werden könnte (berechnet aus Placement-Constraints plus Node-Rolle/-Labels/-Verfügbarkeit), und erinnert dich daran, dass jede Bind-Quelle auf allen davon <strong>bereits existieren</strong> muss — swarmexec kann Host-Pfade nicht verifizieren (der Agent hat keinen Zugriff auf das Host-Dateisystem), daher werden Bind-Pfade nicht vervollständigt oder auf Existenz geprüft; es ist nur ein Hinweis</td></tr>
+          <tr><td><kbd>p</kbd></td><td>veröffentlichte Ports bearbeiten — öffnet einen Staging-Listeneditor der Ports des Service, jeder in der Form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, Standard <code>tcp</code>), z. B. <code>8080:80/tcp</code></td></tr>
+          <tr><td><kbd>l</kbd></td><td>Labels bearbeiten — derselbe Staging-Listeneditor über <code>key=value</code>-Einträge</td></tr>
+          <tr><td><kbd>e</kbd></td><td>Umgebungsvariablen bearbeiten — derselbe Staging-Listeneditor über die Env der <code>ContainerSpec</code>, jede als <code>KEY=VALUE</code> eingegeben (z. B. <code>LOG_LEVEL=debug</code>); der Schlüssel ist erforderlich, der Wert darf leer sein und selbst <code>=</code> enthalten. Wie Ports/Labels/Mounts erlaubt dieser Editor <strong>sehr wohl</strong> <kbd>e</kbd> zum Bearbeiten, sodass du einen Wert an Ort und Stelle anpassen kannst. Anders als die übrigen Editoren öffnet <kbd>e</kbd> hier den Eintrag in einem scrollbaren <strong>mehrzeiligen Textbereich</strong> (statt eines einzeiligen Feldes), sodass lange Werte wie <code>GITLAB_OMNIBUS_CONFIG</code> bequem zu bearbeiten sind — tippe frei (<kbd>Enter</kbd> fügt einen Zeilenumbruch ein), <kbd>Ctrl-S</kbd> speichert, <kbd>Esc</kbd> bricht ab. Das Anwenden ersetzt die Env des Service in einem <code>ServiceUpdate</code> (Rolling Update)</td></tr>
+          <tr><td><kbd>n</kbd></td><td>Netzwerke bearbeiten — ein Staging-Listeneditor über die Netzwerkanschlüsse des Service; da ein Eintrag nur ein Name ist, ist er <strong>nur Hinzufügen/Entfernen</strong> (kein <kbd>e</kbd> Bearbeiten). Die Hinzufügen-Eingabe <strong>vervollständigt Netzwerknamen automatisch</strong> (schlägt Netzwerke vor, an die der Service noch nicht angeschlossen ist, oder tippe selbst eines). Das Anwenden ersetzt die Anschlüsse in einem <code>ServiceUpdate</code>. <strong>DNS-Aliase</strong> werden auch von hier aus bearbeitet: wähle in diesem Editor ein Netzwerk und drücke <kbd>A</kbd>, um eine Staging-Liste der DNS-Aliase des Service <em>in diesem Netzwerk</em> zu öffnen (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>y</kbd> kopieren / <kbd>u</kbd> rückgängig / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen); das Anwenden ersetzt die Aliase dieses Netzwerks in einem <code>ServiceUpdate</code>. Funktioniert auch, wenn der Service noch keine Aliase hat. (Du musst ein neu hinzugefügtes Netzwerk erst anwenden, bevor du seine Aliase setzen kannst.)</td></tr>
+          <tr><td><kbd>S</kbd></td><td>Secrets bearbeiten (großes <kbd>S</kbd>, also Shift+s, um es von <kbd>s</kbd> Skalieren zu unterscheiden) — derselbe Staging-Listeneditor wie Netzwerke über die Secrets, die der Service referenziert; ein Eintrag ist nur ein Name, also <strong>nur Hinzufügen/Entfernen</strong> (kein <kbd>e</kbd> Bearbeiten). Die Hinzufügen-Eingabe <strong>vervollständigt Secret-Namen automatisch</strong> (schlägt Secrets vor, die der Service noch nicht verwendet, oder tippe selbst eines). Das Anwenden ersetzt die Secret-Referenzen des Service in einem <code>ServiceUpdate</code> (Rolling Update); jedes Secret wird unter <code>/run/secrets/&lt;name&gt;</code> eingehängt. Funktioniert auch, wenn der Service aktuell keine Secrets hat</td></tr>
+          <tr><td><kbd>v</kbd></td><td>Mounts bearbeiten — ein Staging-Listeneditor über die Volumes und Bind-Mounts des Service. Hinzufügen (<kbd>a</kbd>) oder Bearbeiten (<kbd>e</kbd>) öffnet ein kleines <strong>Formular</strong> statt eines einzelnen Textfeldes: eine <strong>Bind-Mount</strong>-Checkbox, eine <strong>Quelle</strong> (wenn die Box nicht angehakt ist, ist es ein <em>Volume</em>-Name mit <strong>Autocomplete</strong> bestehender Cluster-Volumes; wenn angehakt, ist es ein <em>Host-Pfad</em>), ein <strong>Container-Pfad</strong> und eine <strong>Read-only</strong>-Checkbox. (Intern ist jeder Eintrag weiterhin <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind-Quellen und alle Ziele müssen absolute Pfade sein. Das Anwenden ersetzt die Mounts in einem <code>ServiceUpdate</code> (Rolling Update). <strong>Bind-Mount-Schutz (weich):</strong> wenn die vorgemerkte Liste Bind-Mounts enthält, zeigt das Anwenden zuerst eine Warnung, die die Nodes auflistet, auf denen der Service eingeplant werden könnte (berechnet aus Placement-Constraints plus Node-Rolle/-Labels/-Verfügbarkeit), und erinnert dich daran, dass jede Bind-Quelle auf allen davon <strong>bereits existieren</strong> muss — swarmexec kann Host-Pfade nicht verifizieren (der Agent hat keinen Zugriff auf das Host-Dateisystem), daher werden Bind-Pfade nicht vervollständigt oder auf Existenz geprüft; es ist nur ein Hinweis</td></tr>
           <tr><td><kbd>r</kbd></td><td>Ressourcen-Limits bearbeiten — ein kleines Formular, um die <strong>CPU</strong>- und <strong>Memory</strong>-Limits des Service (und optional Reservierungen) zu setzen, zu ändern oder zu löschen. CPU wird in Kernen angegeben (z. B. <code>0.5</code>, <code>2</code>); Memory als menschenlesbare Größe (z. B. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Ein <strong>leeres Feld löscht</strong> dieses Limit (Swarm behandelt es dann als unbegrenzt). Eine Reservierung darf ihr Limit nicht überschreiten. Das Anwenden macht ein <code>ServiceUpdate</code> (Rolling Update); bestehende Pids-Limits und Device-/generische Reservierungen bleiben erhalten</td></tr>
-          <tr><td><kbd>P</kbd></td><td>Placement bearbeiten (großes <kbd>P</kbd>, also Shift+p, um es von <kbd>p</kbd> Ports zu unterscheiden) — öffnet ein kleines Menü mit zwei gestagten Editoren: <strong>Constraints</strong> und <strong>Spread-Präferenzen</strong>.
+          <tr><td><kbd>P</kbd></td><td>Placement bearbeiten (großes <kbd>P</kbd>, also Shift+p, um es von <kbd>p</kbd> Ports zu unterscheiden) — öffnet ein kleines Menü mit zwei Staging-Editoren: <strong>Constraints</strong> und <strong>Spread-Präferenzen</strong>.
             <ul>
               <li><strong>Constraints</strong> — die harten Placement-Constraints des Service (<code>node.role</code>, <code>node.hostname</code>, <code>node.id</code>, <code>node.platform.os</code>/<code>arch</code>, <code>node.labels.&lt;k&gt;</code>, <code>engine.labels.&lt;k&gt;</code>, jeweils mit <code>==</code> oder <code>!=</code>, z. B. <code>node.role==manager</code>, <code>node.labels.zone!=eu</code>). Die Hinzufügen-/Bearbeiten-Eingabe <strong>vervollständigt</strong> vollständig geformte Kandidaten aus dem aktuellen Cluster — Rolle, Hostname, Plattform und Node-/Engine-Labels jedes Nodes — sodass du einen Constraint meist auswählen kannst, statt ihn zu tippen (die <code>==</code>-Form wird vorgeschlagen; tippe <code>!=</code> von Hand für eine Negation). Die resultierende Node-Menge speist auch den Bind-Mount-Schutz des Mounts-Editors.</li>
-              <li><strong>Spread-Präferenzen</strong> — die weichen <code>--placement-pref spread=…</code>-Strategien: eine gestagte, geordnete Liste bloßer Node-Attribute (z. B. <code>node.labels.zone</code>, <code>node.hostname</code>), über die Swarm Tasks gleichmäßig verteilt. Die Eingabe vervollständigt die Node-/Engine-Label-Schlüssel und Node-Attribute des Clusters automatisch (ein Deskriptor ist nur das Attribut — kein Operator oder Wert).</li>
+              <li><strong>Spread-Präferenzen</strong> — die weichen <code>--placement-pref spread=…</code>-Strategien: eine geordnete Staging-Liste bloßer Node-Attribute (z. B. <code>node.labels.zone</code>, <code>node.hostname</code>), über die Swarm Tasks gleichmäßig verteilt. Die Eingabe vervollständigt die Node-/Engine-Label-Schlüssel und Node-Attribute des Clusters automatisch (ein Deskriptor ist nur das Attribut — kein Operator oder Wert).</li>
             </ul>
             Das Anwenden ersetzt jeweils diesen Teil des Placements in einem <code>ServiceUpdate</code> (Rolling Update); der andere Teil bleibt erhalten.</td></tr>
         </tbody>
       </table></div>
       <p>
-        Diese Editoren sind <strong>gestagt</strong>: <kbd>a</kbd> fügt einen Eintrag
+        Diese Editoren arbeiten mit <strong>Staging</strong>: <kbd>a</kbd> fügt einen Eintrag
         hinzu, <kbd>d</kbd> löscht den unter dem Cursor, <kbd>y</kbd> kopiert den
         ausgewählten Eintrag über OSC52 in deine Zwischenablage (sodass du z. B. eine
         einzelne Umgebungsvariable greifen kannst, während du sie ansiehst), <kbd>u</kbd>
-        macht die letzte gestagte Änderung rückgängig (Hinzufügen / Bearbeiten / Löschen),
+        macht die letzte vorgemerkte Änderung rückgängig (Hinzufügen / Bearbeiten / Löschen),
         solange du noch nicht angewendet hast — drücke es wiederholt, um schrittweise durch
-        die gestagte Historie zurückzugehen — und <kbd>w</kbd> wendet alle Änderungen auf
+        die vorgemerkten Änderungen zurückzugehen — und <kbd>w</kbd> wendet alle Änderungen auf
         einmal in einem einzigen <code>ServiceUpdate</code> an (sodass z. B. das Hinzufügen
         mehrerer Volumes und anschließendes Drücken von <kbd>w</kbd> <em>ein</em> Rolling
         Update auslöst, nicht eines pro Eintrag), hinter einer Bestätigung. Wenn du
-        <kbd>Esc</kbd> drückst, während noch Änderungen gestagt sind, verwirft der Editor
+        <kbd>Esc</kbd> drückst, während noch Änderungen vorgemerkt sind, verwirft der Editor
         sie nicht stillschweigend — er fragt, ob <strong>anwenden</strong>,
         <strong>verwerfen</strong> oder <strong>weiter bearbeiten</strong>.
-        Solange Änderungen noch gestagt sind, werden sie <strong>hervorgehoben</strong>,
+        Solange Änderungen noch vorgemerkt sind, werden sie <strong>hervorgehoben</strong>,
         sodass du genau siehst, was sich ändern wird: hinzugefügte oder bearbeitete
         Einträge erscheinen in
         <span style="color:#3fb950;font-weight:600">Grün (neu)</span> und entfernte
@@ -2010,16 +2011,16 @@ rules:
           <tr><td><kbd>n</kbd></td><td>ein Volume erstellen — ein Formular mit <strong>Name</strong>, <strong>Driver</strong> (Standard <code>local</code>), <strong>Labels</strong> (<code>k=v,k=v</code>) und einem <strong>Node</strong>-Ziel (vervollständigt Node-Namen; <strong>leer lassen, um auf jedem Node zu erstellen</strong>, da Volumes node-lokal sind). Erstellt es auf dem Agent jedes Ziel-Nodes und meldet Erfolg/Fehler pro Node. <kbd>Tab</kbd> wechselt zwischen Feldern, <kbd>Esc</kbd> bricht ab</td></tr>
           <tr><td><kbd>space</kbd></td><td>das Volume aus-/abwählen (markiert <code>▣</code>) für ein Massen-Löschen</td></tr>
           <tr><td><kbd>a</kbd></td><td>alle aktuell angezeigten Volumes aus-/abwählen</td></tr>
-          <tr><td><kbd>d</kbd></td><td>die ausgewählten Volumes — oder das unter dem Cursor — auf jedem Node löschen, der sie hält, hinter einer Bestätigung (mit einem Fortschritts-Overlay; die Löschungen laufen mit begrenzter Parallelität)</td></tr>
+          <tr><td><kbd>d</kbd></td><td>die ausgewählten Volumes — oder das unter dem Cursor — auf jedem Node löschen, auf dem sie liegen, hinter einer Bestätigung (mit einem Fortschritts-Overlay; die Löschungen laufen mit begrenzter Parallelität)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: jedes Volume löschen, das kein laufender Container einhängt <em>und</em> kein Service deklariert, hinter einer Bestätigung</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>zeigen, welche Nodes das Volume halten; die <strong>Labels</strong> des Volumes werden schreibgeschützt über den Nodes aufgelistet (Docker hat keine Volume-Update-API, daher können Labels nach der Erstellung nicht bearbeitet werden — setze sie beim Erstellen des Volumes)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>zeigen, auf welchen Nodes das Volume liegt; die <strong>Labels</strong> des Volumes werden schreibgeschützt über den Nodes aufgelistet (Docker hat keine Volume-Update-API, daher können Labels nach der Erstellung nicht bearbeitet werden — setze sie beim Erstellen des Volumes)</td></tr>
           <tr><td><kbd>i</kbd></td><td>zeigen, welche Services/Container es verwenden</td></tr>
-          <tr><td><kbd>A</kbd></td><td>das Volume an einen Service anhängen: einen Service auswählen (Name-Autocomplete) → den Container-Zielpfad eingeben (absolut) → <em>Attach</em> oder <em>Attach read-only</em> wählen. Fügt den Mount über ein <code>ServiceUpdate</code> (Rolling Update) hinzu — das Volume-Gegenstück zu den Netzwerk-/Secret-Attach-Aktionen; das Umgekehrte lebt im <kbd>v</kbd>-Mounts-Editor des Service-Inspects</td></tr>
+          <tr><td><kbd>A</kbd></td><td>das Volume an einen Service anhängen: einen Service auswählen (Name-Autocomplete) → den Container-Zielpfad eingeben (absolut) → <em>Attach</em> oder <em>Attach read-only</em> wählen. Fügt den Mount über ein <code>ServiceUpdate</code> (Rolling Update) hinzu — das Volume-Gegenstück zu den Netzwerk-/Secret-Attach-Aktionen; das Gegenstück dazu ist der <kbd>v</kbd>-Mounts-Editor im Service-Inspect</td></tr>
           <tr><td><kbd>s</kbd> <kbd>S</kbd></td><td>das Sortierfeld durchschalten (name → nodes → used → age → size) / umkehren</td></tr>
         </tbody>
       </table></div>
       <p>
-        Das Löschen ist node-bewusst: ein Volume wird auf jedem Node entfernt, der es hält.
+        Das Löschen berücksichtigt die Nodes: Ein Volume wird auf jedem Node entfernt, auf dem es liegt.
         Prune verschont Volumes, die ein Service <em>deklariert</em>, selbst wenn keine
         Task läuft, sodass es die Daten eines gestoppten Stacks nicht löscht. Für feinere
         Kontrolle öffnet <kbd>Enter</kbd> die Liste pro Node, wo <kbd>space</kbd> Nodes
@@ -2038,7 +2039,7 @@ rules:
       </table></div>
       <p>
         Ein laufender Container wird im Baum als <code>local→remote</code> annotiert
-        (z. B. <code>9090→8080</code>). Forwards laufen weiter, wenn ihr Overlay schließt
+        (z. B. <code>9090→8080</code>). Forwards laufen weiter, wenn ihr Overlay geschlossen wird
         <em>und</em> wenn du auf einen anderen Cluster wechselst; sie stoppen bei
         <kbd>d</kbd> oder wenn du die UI beendest. Die <code>CLUSTER</code>-Spalte nennt
         den Context, zu dem jeder gehört, gedimmt für den gerade sichtbaren — ein Forward
@@ -2051,7 +2052,7 @@ rules:
         Deshalb wird ein lokaler Port, den du schon benutzt, <strong>vorab
         abgelehnt</strong> — mit Angabe des Forwards, der ihn hält, und des Clusters,
         zu dem er gehört; der Prompt bleibt offen, damit du einen anderen Port wählen
-        kannst. Das „address already in use" des Betriebssystems bleibt für den Fall,
+        kannst. Das „address already in use“ des Betriebssystems bleibt für den Fall,
         in dem es recht hat: ein Port, den ein anderes Programm hält und den swarmexec
         nicht benennen kann.
       </p>
@@ -2064,7 +2065,7 @@ rules:
         <code>TYPE</code>-Spalte zeigt <code>overlay</code> oder den Driver-Namen (z. B.
         <code>bridge</code>) für einfache Netzwerke statt eines Strichs. Die
         <code>ENC</code>-Spalte zeigt <span style="color:#3fb950">🔒&nbsp;yes</span>, wenn
-        das Overlay-Netzwerk Data-Plane-Verschlüsselung an hat (erstellt mit
+        das Overlay-Netzwerk Data-Plane-Verschlüsselung aktiviert hat (erstellt mit
         <code>--opt encrypted</code>), sonst einen Strich. Der Name jedes Netzwerks und
         seine <code>TYPE</code>-Zelle sind nach Art farbcodiert (höchste Priorität zuerst):
       </p>
@@ -2081,13 +2082,13 @@ rules:
           <tr><td><kbd>n</kbd></td><td>ein Netzwerk erstellen — öffnet ein Formular (Standard-Driver <code>overlay</code>) mit den gängigen Swarm-Optionen: <strong>attachable</strong> (standalone Container beitreten lassen), <strong>encrypted</strong> (Overlay-Data-Plane-Verschlüsselung), <strong>internal</strong> (kein externes Routing), <strong>IPv6</strong>, eine optionale <strong>MTU</strong>, ein optionales <strong>Subnet</strong>/<strong>Gateway</strong> (IPAM) und <strong>Labels</strong> (<code>k=v,k=v</code>). <kbd>Tab</kbd> wechselt zwischen Feldern, <kbd>Enter</kbd> auf <em>Create</em> bestätigt, <kbd>Esc</kbd> bricht ab. Erstellt es über ein Manager-API-<code>NetworkCreate</code> und aktualisiert dann den Tab</td></tr>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>die angeschlossenen Services zeigen, jeder mit seinen laufenden Containern darunter verschachtelt. Die eigenen <strong>Labels</strong> des Netzwerks werden schreibgeschützt oben aufgelistet (Docker hat keine Netzwerk-Update-API, daher können Netzwerk-Labels nach der Erstellung nicht bearbeitet werden — setze sie beim Erstellen des Netzwerks). Jeder Service-Header zeigt außerdem, wie viele <strong>DNS-Aliase</strong> er in diesem Netzwerk hat (oder <em>no aliases</em>)</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>in der Members-Ansicht: die DNS-Aliase des ausgewählten Service <strong>aus-/einklappen</strong> (standardmäßig eingeklappt, damit die Liste kompakt bleibt); die Aliase erscheinen eingerückt unter dem Service-Header</td></tr>
-          <tr><td><kbd>A</kbd></td><td>in der Members-Ansicht: die DNS-Aliase des ausgewählten Service in diesem Netzwerk <strong>hinzufügen / bearbeiten</strong> — öffnet denselben gestagten Alias-Editor wie die Inspect-Ansicht (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen); das Anwenden ersetzt die Aliase dieses Netzwerks in einem <code>ServiceUpdate</code> und aktualisiert die Ansicht. Funktioniert auch, wenn der Service noch keine Aliase hat. (<kbd>A</kbd> ist groß, Shift+a, um es von <kbd>a</kbd> Attach zu unterscheiden; standalone Nicht-Swarm-Container sind nicht bearbeitbar — Aliase sind ein <code>ServiceUpdate</code> pro Service)</td></tr>
+          <tr><td><kbd>A</kbd></td><td>in der Members-Ansicht: die DNS-Aliase des ausgewählten Service in diesem Netzwerk <strong>hinzufügen / bearbeiten</strong> — öffnet denselben Staging-Alias-Editor wie die Inspect-Ansicht (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen); das Anwenden ersetzt die Aliase dieses Netzwerks in einem <code>ServiceUpdate</code> und aktualisiert die Ansicht. Funktioniert auch, wenn der Service noch keine Aliase hat. (<kbd>A</kbd> ist groß, Shift+a, um es von <kbd>a</kbd> Attach zu unterscheiden; standalone Nicht-Swarm-Container sind nicht bearbeitbar — Aliase sind ein <code>ServiceUpdate</code> pro Service)</td></tr>
           <tr><td><kbd>a</kbd></td><td>in der Members-Ansicht: einen Service an dieses Netzwerk anhängen — eine Autocomplete-Eingabe (schlägt Services vor, die noch nicht angeschlossen sind; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
           <tr><td><kbd>d</kbd></td><td>in der Members-Ansicht: einen Service von diesem Netzwerk trennen — eine Autocomplete-Eingabe (schlägt die aktuell angeschlossenen Services vor; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
         </tbody>
       </table></div>
       <p>
-        Anhängen oder Trennen macht ein Service-Update, das das Netzwerk in der
+        Anhängen oder Trennen führt ein Service-Update aus, das das Netzwerk in der
         Service-Spec hinzufügt oder entfernt, und aktualisiert dann den Networks-Tab. Das
         ist eine Manager-API-Operation (<code>ServiceUpdate</code>) — derselbe Kanal, den
         der Client für die Topologie nutzt — und sie löst ein <strong>Rolling
@@ -2123,22 +2124,22 @@ rules:
         Die Cluster stehen in einer Spalte am rechten Rand, nicht in einem Tab. Den
         Cluster zu wechseln ist etwas, das man <em>von dort aus</em> tut, wo man gerade
         ist — und die Liste der Cluster ist das, was einem sagt, wo das ist. Sie gehört
-        also auf den Bildschirm und nicht auf eine Seite, zu der man erst hinreisen muss.
+        also auf den Bildschirm und nicht auf eine Seite, zu der man erst wechseln muss.
       </p>
       <p>
         <kbd>c</kbd> gibt ihr aus jedem Tab die Tastatur; <kbd>c</kbd> erneut oder
         <kbd>Esc</kbd> gibt sie an den Tab zurück, auf dem du warst. Der aktive Cluster
-        ist mit <code>▶</code> markiert — derselbe Name, den der Footer zeigt. Ein
+        ist mit <code>▶</code> markiert — derselbe Name, den die Fußzeile zeigt. Ein
         Cluster, den du in dieser Sitzung schon besucht hast, trägt ein grünes
-        <code>·</code>: er ist noch verbunden, der Wechsel dorthin ist sofort da. Einer,
+        <code>·</code>: er ist noch verbunden, der Wechsel dorthin geht sofort. Einer,
         der die Verbindung verweigert hat, trägt ein rotes <code>✗</code>. Der eingebaute
         <code>default</code>-Context ist geschützt.
       </p>
       <p>
         Die Sidebar richtet ihre Breite nach dem längsten Context-Namen und
         <strong>tritt auf schmalen Terminals beiseite</strong>: unter etwa 92 Spalten
-        blendet sie sich aus, statt den Baum abzuschneiden, und kommt zurück, solange
-        <kbd>c</kbd> sie hält. Endpoints stehen nicht in der Spalte — dort ist kein Platz
+        blendet sie sich aus, statt den Baum abzuschneiden, und erscheint wieder, solange
+        sie per <kbd>c</kbd> fokussiert ist. Endpoints stehen nicht in der Spalte — dort ist kein Platz
         dafür, und <kbd>i</kbd> zeigt das vollständige Detail.
       </p>
       <p>
@@ -2155,7 +2156,7 @@ rules:
         erste Wechsel zu einem Cluster dauert so lange, wie ihn zu erreichen dauert — die
         Verbindung wird aufgebaut, <em>bevor</em> sich auf dem Bildschirm etwas ändert.
         Scheitert sie, erfährst du, welcher Cluster es war, und bleibst auf dem, der
-        funktioniert. Jeder weitere Wechsel zurück ist sofort da.
+        funktioniert. Jeder spätere Wechsel zurück erfolgt sofort.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
@@ -2163,14 +2164,14 @@ rules:
           <tr><td><kbd>c</kbd></td><td>die Sidebar aus jedem Tab fokussieren; <kbd>c</kbd> erneut oder <kbd>Esc</kbd> gibt die Tastatur zurück</td></tr>
           <tr><td><kbd>i</kbd></td><td>Context-Details — Endpoint und Jump-Hosts, für die in der Spalte kein Platz ist</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>den ausgewählten Context aktivieren — macht ihn zum aktuellen (auch für dockers gespeicherten current context) und schaltet die UI auf diesen Cluster um, mit deiner Position, deinen Filtern und deinen Port-Forwards</td></tr>
-          <tr><td><kbd>n</kbd></td><td>einen Context erstellen — ein <strong>geführtes</strong> Formular. Eine Checkbox <strong>„Connect to Docker over SSH“</strong> entscheidet den Endpoint: wenn an, füllst du SSH-<strong>User / Host / Port</strong> aus, und eine zweite Checkbox <strong>„Use a jump host“</strong> zeigt ein Feld <strong>Jump-Host(s)</strong> (komma-separiert, Multi-Hop-<code>ProxyJump</code>) — swarmexec speichert sie am Context und injiziert <code>-J</code> in <em>beide</em> ssh-Verbindungen, die Docker-API und den Agent-Tunnel, sodass Bastions ohne Bearbeiten von <code>~/.ssh/config</code> funktionieren. Wenn aus, gibst du einen einfachen <code>tcp://</code> / <code>unix://</code>-Host ein. Das Formular setzt den Docker-Host für dich zusammen, und <strong>Test</strong> pingt den zusammengesetzten Endpoint, bevor du speicherst. Auch auf der CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
+          <tr><td><kbd>n</kbd></td><td>einen Context erstellen — ein <strong>geführtes</strong> Formular. Eine Checkbox <strong>„Connect to Docker over SSH“</strong> entscheidet den Endpoint: wenn an, füllst du SSH-<strong>User / Host / Port</strong> aus, und eine zweite Checkbox <strong>„Use a jump host“</strong> zeigt ein Feld <strong>Jump-Host(s)</strong> (kommagetrennt, Multi-Hop-<code>ProxyJump</code>) — swarmexec speichert sie am Context und injiziert <code>-J</code> in <em>beide</em> ssh-Verbindungen, die Docker-API und den Agent-Tunnel, sodass Bastions ohne Bearbeiten von <code>~/.ssh/config</code> funktionieren. Wenn aus, gibst du einen einfachen <code>tcp://</code> / <code>unix://</code>-Host ein. Das Formular setzt den Docker-Host für dich zusammen, und <strong>Test</strong> pingt den zusammengesetzten Endpoint, bevor du speicherst. Auch auf der CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
           <tr><td><kbd>d</kbd></td><td>den ausgewählten Context entfernen (hinter einer Bestätigung); das Entfernen des aktuellen setzt die Auswahl auf <code>default</code> zurück</td></tr>
         </tbody>
       </table></div>
 
       <h3>Nodes-Tab</h3>
       <p>
-        Listet die Nodes des Swarms mit allgemeinen Infos und ein paar Aggregationen —
+        Listet die Nodes des Swarms mit allgemeinen Informationen und einigen Kennzahlen —
         <code>NODE</code> (Hostname; Manager in aqua, der Leader markiert mit
         <code>★</code>), <code>ROLE</code> (manager / worker), <code>AVAIL</code>
         (active / pause / drain, farbcodiert), <code>STATE</code> (ready / down),
@@ -2182,15 +2183,15 @@ rules:
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>Node-Details — ein schreibgeschütztes Overlay mit Hostname, ID, Rolle/Leader, Verfügbarkeit, State, Adresse, Engine, Plattform, CPUs, Memory, Anzahl laufender Tasks, den Blöcken <strong>reservierte Ressourcen</strong>, <strong>tatsächliche Nutzung</strong> und <strong>Images auf diesem Node</strong> (siehe unten), Volume-Anzahl und der vollständigen Label-Liste</td></tr>
-          <tr><td><kbd>l</kbd></td><td>die <strong>Labels</strong> des ausgewählten Nodes bearbeiten — ein gestagter Listeneditor (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen) über <code>key=value</code>-Einträge. Das Anwenden macht ein <code>NodeUpdate</code> — anders als bei einem Service <strong>greift ein Node-Update sofort</strong> (kein Rolling Update). Node-Labels werden häufig als Ziele von Placement-Constraints verwendet (<code>node.labels.&lt;k&gt;</code>)</td></tr>
-          <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>active</em> plant Tasks hier normal ein; <em>pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>drain</em> verschiebt <strong>jeden</strong> Task vom Node herunter. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umlegbar als <code>node_availability</code></td></tr>
-          <tr><td><kbd>P</kbd></td><td>Image-Plattenplatz auf dem Node freiräumen (großes <kbd>P</kbd>, also Shift+p — dieselbe Geste, die der Volumes-Tab für sein Prune verwendet). Öffnet ein kleines Menü mit den <strong>zwei</strong> unten beschriebenen Modi, jeder hinter einer eigenen Bestätigung; es lohnt sich, vorher zu lesen, welcher welcher ist. Die Fußzeile endet mit <em>P reclaim images</em>, das <kbd>?</kbd>-Overlay führt es als <em>reclaim image disk space on the node</em>. Umlegbar als <code>node_prune_images</code></td></tr>
+          <tr><td><kbd>l</kbd></td><td>die <strong>Labels</strong> des ausgewählten Nodes bearbeiten — ein Staging-Listeneditor (<kbd>a</kbd> hinzufügen / <kbd>e</kbd> bearbeiten / <kbd>d</kbd> löschen / <kbd>w</kbd> anwenden / <kbd>Esc</kbd> abbrechen) über <code>key=value</code>-Einträge. Das Anwenden macht ein <code>NodeUpdate</code> — anders als bei einem Service <strong>greift ein Node-Update sofort</strong> (kein Rolling Update). Node-Labels werden häufig als Ziele von Placement-Constraints verwendet (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>die <strong>Verfügbarkeit</strong> des Nodes setzen — ein Menü aus <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong>, das den aktuellen Zustand des Nodes markiert. <em>active</em> plant Tasks hier normal ein; <em>pause</em> behält die laufenden Tasks und verhindert nur <strong>neue</strong> Platzierungen; <em>drain</em> verschiebt <strong>jede</strong> Task vom Node. Active und Pause greifen direkt; Drain läuft über eine Bestätigung, die nennt, wie viele laufende Tasks der Swarm stoppen und anderswo neu einplanen wird (Services, deren Tasks nirgendwo sonst platziert werden können, werden unschedulable). Wie eine Label-Änderung ist es ein <code>NodeUpdate</code> (Read-Modify-Write auf der Node-Spec) und <strong>greift sofort</strong> — Nodes haben kein Rolling Update. Umbelegbar als <code>node_availability</code></td></tr>
+          <tr><td><kbd>P</kbd></td><td>von Images belegten Speicherplatz auf dem Node freiräumen (großes <kbd>P</kbd>, also Shift+p — dieselbe Geste, die der Volumes-Tab für sein Prune verwendet). Öffnet ein kleines Menü mit den <strong>zwei</strong> unten beschriebenen Modi, jeder hinter einer eigenen Bestätigung; es lohnt sich, vorher zu lesen, welcher welcher ist. Die Fußzeile endet mit <em>P reclaim images</em>, das <kbd>?</kbd>-Overlay führt es als <em>reclaim image disk space on the node</em>. Umbelegbar als <code>node_prune_images</code></td></tr>
         </tbody>
       </table></div>
       <p>
         <strong>Reservierte Ressourcen.</strong> Die Node-Details enthalten einen Block
         <em>reserved by tasks (scheduler's view)</em>: je für <strong>CPU</strong> und
-        <strong>Memory</strong> einen Balken plus <code>reserviert / Kapazität</code> und
+        <strong>Memory</strong> einen Balken plus <code>reserved / capacity</code> und
         wie viel frei ist. Der Balken ist grün, wird ab 75 % gelb und bei 100 % oder darüber
         rot; eine Überbuchung wird ausdrücklich benannt, und „frei“ wird nie negativ. Ein
         Node, der keine Kapazität meldet, sagt das, statt einen Balken zu zeichnen. Der Block
@@ -2199,7 +2200,7 @@ rules:
       <div class="note">
         <strong>Das sind Reservierungen, keine Auslastung.</strong> Die Zahlen sind die Summe
         der von den Tasks deklarierten <code>Reservations</code> — genau die Rechnung, die
-        der Swarm-Scheduler selbst anstellt, wenn er entscheidet, ob ein Task auf einen Node
+        der Swarm-Scheduler selbst anstellt, wenn er entscheidet, ob eine Task auf einen Node
         passt, und der übliche Grund, warum ein Service unschedulable bleibt. Der
         tatsächliche CPU-/RAM-Verbrauch ist node-lokal und <em>nicht</em>, was hier steht —
         er hat direkt darunter einen eigenen Block.
@@ -2207,7 +2208,7 @@ rules:
         ausgewiesen</strong>: Sie buchen hier nichts, können aber trotzdem den ganzen Node
         auslasten — ein niedriger Prozentwert heißt also nicht, dass der Node im Leerlauf
         ist, und in den meisten Clustern setzen ohnehin nur wenige Services überhaupt
-        Reservierungen. Ein Task hält seine Reservierung ab dem Moment der Zuweisung bis zu
+        Reservierungen. Eine Task hält ihre Reservierung ab dem Moment der Zuweisung bis zu
         einem Endzustand: Tasks in preparing oder starting zählen also mit, shutdown /
         failed / complete / rejected dagegen nicht (der Swarm behält diese als Historie in
         der Task-Liste).
@@ -2305,7 +2306,7 @@ rules:
       <p>
         Tab&nbsp;<kbd>8</kbd> — das Gegenstück zum Secrets-Tab für das andere Objekt, das der
         Swarm in Container reicht, mit einem entscheidenden Unterschied: <strong>der Inhalt
-        eines Configs ist lesbar</strong>. Der Secrets-Tab kann einen Wert nie zeigen (die
+        einer Config ist lesbar</strong>. Der Secrets-Tab kann einen Wert nie zeigen (die
         Docker-API gibt ihn nicht heraus); die Config-Detailansicht zeigt den
         <strong>tatsächlichen Inhalt</strong>, sodass du siehst, was ein Service wirklich
         bekommt, ohne auf <code>docker config inspect</code> auszuweichen. Genau darum geht
@@ -2313,20 +2314,20 @@ rules:
       </p>
       <p>
         Die Liste ist schreibgeschützt: <code>CONFIG</code> (Name), <code>USED BY</code> (wie
-        viele Services es einhängen), <code>SIZE</code>, <code>AGE</code>,
+        viele Services sie einhängen), <code>SIZE</code>, <code>AGE</code>,
         <code>UPDATED</code> und <code>LABELS</code> (Anzahl).
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>die Detailansicht öffnen: Name, ID, Größe, erstellt, aktualisiert, die Services, die das Config einhängen, seine Labels — und den Inhalt des Configs</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>die Detailansicht öffnen: Name, ID, Größe, erstellt, aktualisiert, die Services, die die Config einhängen, ihre Labels — und den Inhalt der Config</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd> / <kbd>g</kbd> <kbd>G</kbd></td><td>in der Detailansicht: scrollen · an den Anfang / ans Ende springen (<kbd>Esc</kbd> schließt)</td></tr>
         </tbody>
       </table></div>
       <p>
         Der Inhalt wird <strong>bei Bedarf</strong> geholt, wenn die Detailansicht aufgeht —
-        nicht zusammen mit der Liste — denn ein Config kann eine ganze
-        <code>nginx.conf</code> sein; bis dahin steht dort <em>loading…</em>, ein leeres
+        nicht zusammen mit der Liste — denn eine Config kann eine ganze
+        <code>nginx.conf</code> sein; bis dahin steht dort <em>loading…</em>, eine leere
         Config meldet <em>(empty)</em>. Gezeigt wird eine <strong>Vorschau</strong>, begrenzt
         <strong>sowohl</strong> auf <strong>64&nbsp;KiB</strong> <strong>als auch</strong> auf
         <strong>500 Zeilen</strong>. Beide Grenzen sind nötig: Begrenzt man nur die Bytes,
@@ -2335,14 +2336,14 @@ rules:
         Kürzung wird immer <strong>benannt</strong> („… truncated at 500 lines“ bzw. an der
         Byte-Grenze), nie still abgeschnitten, und <strong>binärer Inhalt wird gemeldet, nicht
         ausgekippt</strong> („(binary content, N — not shown)“, erkannt an NUL-Bytes im Kopf
-        der Daten). Das vollständige Config ist ein <code>docker config inspect</code>
+        der Daten). Die vollständige Config ist nur ein <code>docker config inspect</code>
         entfernt.
       </p>
       <p>
         <strong>USED BY</strong> wird genauso hergeleitet wie im Secrets-Tab: Der Swarm führt
-        <strong>keinen Rückwärtsindex</strong> von einem Config zu seinen Nutzern, also liest
+        <strong>keinen Rückwärtsindex</strong> von einer Config zu ihren Nutzern, also liest
         swarmexec die Service-Specs (ein <code>ServiceList</code>) und erkennt eine Referenz
-        an der <strong>ID oder am Namen</strong> des Configs — eine Spec kann beide Formen
+        an der <strong>ID oder am Namen</strong> der Config — eine Spec kann beide Formen
         enthalten, deshalb werden beide nachgeschlagen und zusammengeführt. Best effort:
         Lässt sich die Service-Liste nicht lesen, erscheinen die Configs trotzdem, nur ohne
         Zuordnung.
@@ -2350,7 +2351,7 @@ rules:
 
       <h3>Eingebettete Shell &amp; Logs</h3>
       <p>
-        In einer eingebetteten Shell löst <kbd>Ctrl-]</kbd> ab (ohne den Prozess zu
+        In einer eingebetteten Shell trennt <kbd>Ctrl-]</kbd> die Verbindung (ohne den Prozess zu
         beenden). Die Logs-Ansicht — ein einzelner Container oder die aggregierten Logs
         eines Service — unterstützt dasselbe formatbewusste Parsen und Filtern wie der
         <code>logs</code>-Befehl:
@@ -2361,15 +2362,15 @@ rules:
           <tr><td><kbd>f</kbd></td><td>Follow umschalten</td></tr>
           <tr><td><kbd>F</kbd></td><td>Log-Format durchschalten (classic → json → logfmt → gelf → raw)</td></tr>
           <tr><td><kbd>a</kbd></td><td>Log-Format aus den Zeilen auf dem Schirm erkennen — sagt es, wenn es sich nicht sicher ist, und schaut weiter zu</td></tr>
-          <tr><td><kbd>l</kbd></td><td>Mindeststufen-Filter durchschalten (off → trace → … → fatal → off)</td></tr>
+          <tr><td><kbd>l</kbd></td><td>Mindest-Level-Filter durchschalten (off → trace → … → fatal → off)</td></tr>
           <tr><td><kbd>/</kbd></td><td>ein Grep-Regexp auf die Nachricht eingeben (leer löscht es)</td></tr>
-          <tr><td><kbd>m</kbd></td><td>Maus-Capture umschalten (aus = das eigene Auswählen/Kopieren deines Terminals)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>Mausunterstützung umschalten (aus = Markieren/Kopieren wie gewohnt im Terminal)</td></tr>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>scrollen</td></tr>
           <tr><td><kbd>Esc</kbd> / <kbd>q</kbd></td><td>schließen</td></tr>
         </tbody>
       </table></div>
       <p>
-        Die Ansicht rendert die gepufferten Zeilen live neu, wenn du Format, Stufe oder
+        Die Ansicht rendert die gepufferten Zeilen live neu, wenn du Format, Level oder
         Grep änderst, und die Titelleiste zeigt den aktiven Status
         <code>fmt:… lvl:… grep:…</code>.
       </p>
@@ -2385,7 +2386,7 @@ rules:
       <p>
         Drücke <kbd>`</kbd> (Backtick) von jedem Tab aus, um ein Live-Log-Overlay
         umzuschalten. Es zeigt die neuesten Einträge aus dem In-Memory-Ringpuffer —
-        neueste unten — aktualisiert sich, während es offen ist, und ist nach Stufe
+        neueste unten — aktualisiert sich, während es offen ist, und ist nach Level
         farbcodiert (rot = error, gelb = warn, grau = debug).
         <kbd>↑</kbd>/<kbd>↓</kbd> scrollen; <kbd>Esc</kbd>, <kbd>q</kbd> oder <kbd>`</kbd>
         schließen es. Das ist das Fenster der TUI auf dieselben Logs, die in die Log-Datei
@@ -2405,14 +2406,14 @@ rules:
         <code>$SWARMEXEC_KEYS</code>). Jeder Wert ist eine einzelne Taste oder das Wort
         <code>space</code>. Die strukturellen Tasten — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
         <kbd>Tab</kbd>, die Pfeile, die Tab-Nummerntasten <kbd>1</kbd>–<kbd>9</kbd> und die
-        vim-Aliase <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — sind fest. Der
-        Footer zeigt immer deine tatsächlichen Tasten, und das <kbd>?</kbd>-Overlay listet
+        vim-Aliase <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — sind fest. Die
+        Fußzeile zeigt immer deine tatsächlichen Tasten, und das <kbd>?</kbd>-Overlay listet
         sie alle auf.
       </p>
-      <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — omit any line to keep its default</span>
+      <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — weggelassene Zeilen behalten ihren Standard</span>
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
-container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" muss in Anführungszeichen — YAML</span>
+container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" muss in YAML in Anführungszeichen stehen</span>
 stack_group: s
 volume_select: space               volume_select_all: a
 volume_delete: d volume_prune: P   volume_used_by: i
@@ -2429,7 +2430,7 @@ forward_stop: d  forward_copy_url: o</div>
       </p>
       <p>
         <code>quit</code> und <code>copy</code> gelten auch in jedem Dialog — im
-        Inspect-Overlay, in den Detailansichten, im Log-Viewer —, eine umgelegte Taste
+        Inspect-Overlay, in den Detailansichten, im Log-Viewer —, eine umbelegte Taste
         schließt und kopiert also auch dort. Aus demselben Grund dürfen sie keine Taste
         belegen, die ein Dialog selbst verwendet, etwa <kbd>t</kbd>, <kbd>d</kbd> oder
         <kbd>i</kbd>: Eine solche Belegung behält den Standard, mit einer Warnung.
@@ -2442,8 +2443,8 @@ forward_stop: d  forward_copy_url: o</div>
         <tbody>
           <tr><td><code>0</code></td><td>Erfolg</td></tr>
           <tr><td><code>1</code></td><td>stack diff hat einen Unterschied gefunden (mit <code>--format json</code> wurde er trotzdem ausgegeben)</td></tr>
-          <tr><td><code>2</code></td><td>Nutzungs-/Flag-/Konfigurationsfehler oder eine abgebrochene interaktive Auswahl</td></tr>
-          <tr><td><code>125</code></td><td>Transportfehler — nicht erreichbarer Manager oder Agent, Dial-/TLS-Fehler, Stream-Fehler, abgebrochene Bestätigung (spiegelt Dockers <code>125</code>)</td></tr>
+          <tr><td><code>2</code></td><td>Bedien-/Flag-/Konfigurationsfehler oder eine abgebrochene interaktive Auswahl</td></tr>
+          <tr><td><code>125</code></td><td>Transportfehler — nicht erreichbarer Manager oder Agent, Dial-/TLS-Fehler, Stream-Fehler, abgebrochene Bestätigung (entspricht Dockers <code>125</code>)</td></tr>
           <tr><td><code>N</code></td><td>bei <code>exec</code> der eigene Exit-Code des Remote-Befehls ungleich null, unverändert weitergegeben</td></tr>
         </tbody>
       </table></div>
