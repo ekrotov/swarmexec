@@ -55,3 +55,29 @@ func TestFieldTextDropsNewlines(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// The label form splits key and value and hands back key=value; a key with =
+// is refused before it reaches the list.
+func TestLabelForm(t *testing.T) {
+	var got string
+	submit := func(raw string) error { got = raw; return nil }
+	form := labelForm("traefik.http.routers.app.rule=Host(`a.example.com`) && PathPrefix(`/api`)", submit, func() {}).(*tview.Form)
+
+	key := form.GetFormItem(0).(*tview.TextArea)
+	val := form.GetFormItem(1).(*tview.TextArea)
+	if key.GetText() != "traefik.http.routers.app.rule" || val.GetText() != "Host(`a.example.com`) && PathPrefix(`/api`)" {
+		t.Fatalf("split wrong: key %q value %q", key.GetText(), val.GetText())
+	}
+	val.SetText("Host(`b.example.com`)", true)
+	form.GetButton(0).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	if got != "traefik.http.routers.app.rule=Host(`b.example.com`)" {
+		t.Fatalf("submitted %q", got)
+	}
+
+	got = ""
+	key.SetText("a=b", true)
+	form.GetButton(0).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	if got != "" || !strings.Contains(form.GetTitle(), "must not contain =") {
+		t.Fatalf("a key with = was accepted (submitted %q, title %q)", got, form.GetTitle())
+	}
+}

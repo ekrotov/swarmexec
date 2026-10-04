@@ -132,7 +132,11 @@ func (u *ui) editList(cfg editListConfig) {
 				return nil
 			}
 			form := formPrompt(initial, submit, cancel)
-			pov.show(centered(form, 96, 19), form)
+			h := cfg.formHeight
+			if h == 0 {
+				h = 19
+			}
+			pov.show(centered(form, 96, h), form)
 			return
 		}
 		if multiline {
@@ -389,12 +393,54 @@ func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()
 					}
 					return setServiceLabels(ctx, dcli, svcName, labels)
 				},
-				allowEdit: true,
-				back:      back,
-				after:     after,
+				allowEdit:  true,
+				formPrompt: labelForm,
+				formHeight: 14,
+				back:       back,
+				after:      after,
 			})
 		})
 	}()
+}
+
+// labelForm edits one label as two wrapping fields, key and value, so a long
+// key (com.example.team.…) and a long value (a Traefik rule) both stay
+// readable. It hands the list editor the usual key=value entry.
+func labelForm(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
+	key, val := "", ""
+	if k, v, err := parseLabel(initial); err == nil {
+		key, val = k, v
+	}
+	form := tview.NewForm()
+	keyField := wrapField("key", key, "com.example.team", 2)
+	valField := wrapField("value", val, "Host(`app.example.com`)", 5)
+	setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
+	save := func() {
+		k, v := fieldText(keyField), fieldText(valField)
+		switch {
+		case k == "":
+			setTitle(" ⚠ the key is required ")
+			return
+		case strings.Contains(k, "="):
+			setTitle(" ⚠ the key must not contain = ")
+			return
+		}
+		if e := submit(k + "=" + v); e != nil {
+			setTitle(" ⚠ " + e.Error() + " ")
+		}
+	}
+	form.AddFormItem(keyField)
+	form.AddFormItem(valField)
+	form.AddButton("Save", save)
+	form.AddButton("Cancel", cancel)
+	form.SetCancelFunc(cancel)
+	form.SetBorder(true)
+	if initial == "" {
+		setTitle(" add label · Tab moves · Enter on Save ")
+	} else {
+		setTitle(" edit label · Tab moves · Enter on Save ")
+	}
+	return form
 }
 
 // openAliasEditorForNet edits a service's DNS aliases on one network. Reached
