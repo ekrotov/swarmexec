@@ -95,7 +95,9 @@ var keyActions = []keyAction{
 
 // dialogActions are the configurable keys that also apply INSIDE dialogs:
 // every overlay closes on the quit key and copies with the copy key, so a
-// remapped key works there too instead of only on the tabs.
+// remapped key works there too instead of only on the tabs. The one exception
+// is the vim text editor (env): there every letter is a command or text, so it
+// leaves with Esc / :q and copies with yy, whatever quit and copy are bound to.
 var dialogActions = map[string]bool{"quit": true, "copy": true}
 
 // dialogRunes are the fixed keys dialogs and tab detail views handle
@@ -107,7 +109,8 @@ var dialogRunes = map[rune]bool{
 	'?': true, '`': true, '/': true, ' ': true, '+': true, '-': true,
 	'a': true, 'd': true, 'e': true, 'f': true, 'i': true, 'l': true, 'm': true,
 	'n': true, 'p': true, 'r': true, 's': true, 't': true, 'u': true, 'v': true, 'w': true,
-	'A': true, 'D': true, 'F': true, 'P': true, 'R': true, 'S': true, 'X': true,
+	'A': true, 'D': true, 'F': true, 'P': true, 'Q': true, 'R': true, 'S': true, 'X': true,
+	'Z': true,
 }
 
 // reservedRunes are the fixed structural keys a configurable binding must not
