@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
 	"google.golang.org/grpc/codes"
 
 	"swarmexec/agent/internal/auth"
@@ -136,7 +135,7 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 	// "not now", not a permanent degradation.
 	release()
 	var buf bytes.Buffer
-	_, _ = stdcopy.NewStdWriter(&buf, stdcopy.Stdout).Write([]byte("hello\n"))
+	_, _ = newStdWriter(&buf, stdcopy.Stdout).Write([]byte("hello\n"))
 	d.logsReader = io.NopCloser(&buf)
 	if err := srv.Logs(&pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()}); err != nil {
 		t.Fatalf("after release: %v", err)
@@ -150,9 +149,9 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 // created — the whole point is that the node never makes them.
 func TestForward_SidecarCapRefusesBeforeCreatingContainers(t *testing.T) {
 	d := newFakeDocker()
-	d.inspect["target"] = types.ContainerJSON{
-		ContainerJSONBase: &types.ContainerJSONBase{ID: "target"},
-		Config:            &container.Config{Image: "test-agent:latest"},
+	d.inspect["target"] = container.InspectResponse{
+		ID:     "target",
+		Config: &container.Config{Image: "test-agent:latest"},
 	}
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{ForwardImage: "test-agent:latest", MaxForwardSidecars: 1})
 

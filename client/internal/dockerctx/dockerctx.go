@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 
 	"swarmexec/client/internal/clientlog"
 )

@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 // Stack is a whole stack, reduced to what can be compared and restored.

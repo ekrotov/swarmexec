@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/config"
@@ -72,7 +73,8 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 
-	info, err := dcli.Info(ctx)
+	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
+	info := infoRes.Info
 	if err != nil {
 		if f.json {
 			_ = printJSON(out, doctorReport{Client: g.version.Binary, Proto: g.version.Proto, Manager: "unreachable", Healthy: false})

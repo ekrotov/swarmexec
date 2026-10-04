@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // Nodes are swarm-scoped (managed by the manager), so their general info and
@@ -134,24 +133,27 @@ func taskHoldsResources(t swarm.Task) bool {
 // write on the node spec like setNodeLabels; applies immediately (nodes have no
 // rolling update). Draining reschedules the node's tasks elsewhere.
 func setNodeAvailability(ctx context.Context, dcli *client.Client, nodeID string, availability swarm.NodeAvailability) error {
-	node, _, err := dcli.NodeInspectWithRaw(ctx, nodeID)
+	nodeRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
+	node := nodeRes.Node
 	if err != nil {
 		return err
 	}
 	spec := node.Spec
 	spec.Availability = availability
-	return dcli.NodeUpdate(ctx, nodeID, node.Version, spec)
+	_, err = dcli.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{Version: node.Version, Spec: spec})
+	return err
 }
 
 // listNodeInfos returns the cluster's nodes with their running-task counts.
 func listNodeInfos(ctx context.Context, dcli *client.Client) ([]swarmNodeInfo, error) {
-	nodes, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nodes := nodesRes.Items
 	if err != nil {
 		return nil, err
 	}
 	// Task counts are best-effort: a TaskList error just leaves them at zero.
-	tasks, _ := dcli.TaskList(ctx, types.TaskListOptions{})
-	return buildNodeInfos(nodes, tasks), nil
+	tasks, _ := dcli.TaskList(ctx, client.TaskListOptions{})
+	return buildNodeInfos(nodes, tasks.Items), nil
 }
 
 // volumeCountsByNode counts, per node hostname, the volumes that node holds.
@@ -169,13 +171,14 @@ func volumeCountsByNode(vols []swarmVolume) map[string]int {
 // setNodeLabels replaces a node's labels via NodeUpdate (read-modify-write on the
 // node spec). Applies immediately — nodes have no rolling update.
 func setNodeLabels(ctx context.Context, dcli *client.Client, nodeID string, labels map[string]string) error {
-	n, _, err := dcli.NodeInspectWithRaw(ctx, nodeID)
+	nRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
+	n := nRes.Node
 	if err != nil {
 		return err
 	}
 	spec := n.Spec
 	spec.Annotations.Labels = labels
-	if err := dcli.NodeUpdate(ctx, nodeID, n.Version, spec); err != nil {
+	if _, err := dcli.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{Version: n.Version, Spec: spec}); err != nil {
 		return fmt.Errorf("update node %s: %w", nodeID, err)
 	}
 	return nil

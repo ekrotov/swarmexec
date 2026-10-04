@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/session"
@@ -74,7 +72,7 @@ func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
 		return &cliError{code: session.TransportFailure, silent: true}
 	}
 
-	if err := dcli.ServiceRemove(ctx, svc.ID); err != nil {
+	if _, err := dcli.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("remove service %q: %w", svc.Spec.Name, err)}
 	}
 	fmt.Fprintf(out, "service %q: removed\n", svc.Spec.Name)
@@ -101,9 +99,10 @@ func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
 }
 
 func removePolicyConfigs(ctx context.Context, dcli *client.Client) (int, error) {
-	list, err := dcli.ConfigList(ctx, types.ConfigListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
+	listRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{
+		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
 	})
+	list := listRes.Items
 	if err != nil {
 		return 0, err
 	}
@@ -113,7 +112,7 @@ func removePolicyConfigs(ctx context.Context, dcli *client.Client) (int, error) 
 		if !strings.HasPrefix(c.Spec.Name, policyConfigPrefix) {
 			continue
 		}
-		if err := dcli.ConfigRemove(ctx, c.ID); err != nil {
+		if _, err := dcli.ConfigRemove(ctx, c.ID, client.ConfigRemoveOptions{}); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -132,9 +131,10 @@ func findRemovableAgent(ctx context.Context, dcli *client.Client, name string) (
 	} else if svc != nil {
 		return svc, nil
 	}
-	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
+	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{
+		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
 	})
+	list := listRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
@@ -145,15 +145,17 @@ func findRemovableAgent(ctx context.Context, dcli *client.Client, name string) (
 }
 
 func removeSecret(ctx context.Context, dcli *client.Client, name string) error {
-	list, err := dcli.SecretList(ctx, types.SecretListOptions{
-		Filters: filters.NewArgs(filters.Arg("name", name)),
+	listRes, err := dcli.SecretList(ctx, client.SecretListOptions{
+		Filters: make(client.Filters).Add("name", name),
 	})
+	list := listRes.Items
 	if err != nil {
 		return err
 	}
 	for _, s := range list {
 		if s.Spec.Name == name {
-			return dcli.SecretRemove(ctx, s.ID)
+			_, err := dcli.SecretRemove(ctx, s.ID, client.SecretRemoveOptions{})
+			return err
 		}
 	}
 	return nil // not present — fine

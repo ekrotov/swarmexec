@@ -15,9 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
@@ -134,7 +133,7 @@ func forwardTestServer(d DockerClient, az auth.Authorizer) (*Server, *testMetric
 // is still accepted and still used by the tests that only need readiness.
 func sidecarSpeak(t *testing.T, conn io.Writer, control string, _ []byte) {
 	t.Helper()
-	w := stdcopy.NewStdWriter(conn, stdcopy.Stderr)
+	w := newStdWriter(conn, stdcopy.Stderr)
 	if _, err := w.Write([]byte(control + "\n")); err != nil {
 		t.Fatalf("write control line: %v", err)
 	}
@@ -152,7 +151,7 @@ type muxSide struct {
 func newMuxSide(t *testing.T, conn net.Conn) *muxSide {
 	t.Helper()
 	sidecarSpeak(t, conn, "mux ok", nil)
-	return &muxSide{t: t, conn: conn, out: stdcopy.NewStdWriter(conn, stdcopy.Stdout)}
+	return &muxSide{t: t, conn: conn, out: newStdWriter(conn, stdcopy.Stdout)}
 }
 
 // recv reads one frame the agent sent on the sidecar's stdin.
@@ -668,9 +667,9 @@ func discardLogger() *slog.Logger {
 func TestForwardImage_NilConfigIsAnErrorNotAPanic(t *testing.T) {
 	d := newFakeDocker()
 	host, _ := os.Hostname()
-	d.inspect[host] = types.ContainerJSON{
-		ContainerJSONBase: &types.ContainerJSONBase{ID: host},
-		Config:            nil, // what the guard is for
+	d.inspect[host] = container.InspectResponse{
+		ID:     host,
+		Config: nil, // what the guard is for
 	}
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{}) // no ForwardImage override
 
@@ -684,9 +683,9 @@ func TestForwardImage_NilConfigIsAnErrorNotAPanic(t *testing.T) {
 
 	// An empty image is the same failure wearing a different hat.
 	d2 := newFakeDocker()
-	d2.inspect[host] = types.ContainerJSON{
-		ContainerJSONBase: &types.ContainerJSONBase{ID: host},
-		Config:            &container.Config{Image: ""},
+	d2.inspect[host] = container.InspectResponse{
+		ID:     host,
+		Config: &container.Config{Image: ""},
 	}
 	srv2, _ := newTestServer(d2, auth.AllowAll{}, Options{})
 	if _, err := srv2.forwardImage(context.Background()); err == nil {

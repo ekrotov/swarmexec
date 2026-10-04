@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/dockerctx"

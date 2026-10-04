@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/system"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/system"
+	"github.com/moby/moby/client"
 )
 
 func discardLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -99,18 +99,39 @@ func TestMemoryUsageExcludesPageCache(t *testing.T) {
 // known node capacity.
 func statsFake(limitMem int64, nanoCPUs int64) *fakeDocker {
 	d := newFakeDocker()
-	d.containers = []types.Container{{ID: "c1"}}
-	var insp types.ContainerJSON
-	insp.ContainerJSONBase = &types.ContainerJSONBase{HostConfig: &container.HostConfig{}}
+	d.containers = []container.Summary{{ID: "c1"}}
+	var insp container.InspectResponse
+	insp.HostConfig = &container.HostConfig{}
 	insp.HostConfig.Memory = limitMem
 	insp.HostConfig.NanoCPUs = nanoCPUs
-	d.inspect = map[string]types.ContainerJSON{"c1": insp}
+	d.inspect = map[string]container.InspectResponse{"c1": insp}
 	d.statsFrames = map[string][]container.StatsResponse{"c1": {
 		frame(1_000_000_000, 10_000_000_000, 4, 1000, 8<<30, map[string]uint64{"inactive_file": 400}),
 		frame(3_000_000_000, 14_000_000_000, 4, 1000, 8<<30, map[string]uint64{"inactive_file": 400}),
 	}}
 	d.info = system.Info{NCPU: 4, MemTotal: 8 << 30}
 	return d
+}
+
+// Every reading must be a single non-streaming frame without the daemon's own
+// pre-sample (?stream=false&one-shot=true, the old ContainerStatsOneShot): the
+// cache keeps the previous reading itself, and a pre-sample would make each
+// read wait a second on the daemon.
+func TestStatsCacheReadsOneShot(t *testing.T) {
+	d := statsFake(0, 0)
+	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c.refresh(context.Background())
+	c.refresh(context.Background())
+
+	opts := d.statsCallOpts()
+	if len(opts) != 2 {
+		t.Fatalf("ContainerStats calls = %d, want 2", len(opts))
+	}
+	for i, o := range opts {
+		if o != (client.ContainerStatsOptions{Stream: false, IncludePreviousSample: false}) {
+			t.Errorf("call %d options = %+v, want a one-shot read", i, o)
+		}
+	}
 }
 
 // The first pass carries memory but no CPU — a percentage needs two readings.

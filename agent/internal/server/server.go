@@ -14,9 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -170,7 +170,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
 	}
 
-	containers, err := s.docker.ContainerList(ctx, container.ListOptions{All: false})
+	list, err := s.docker.ContainerList(ctx, client.ContainerListOptions{All: false})
 	if err != nil {
 		s.log.Error("ContainerList failed", "err", err)
 		return nil, status.Errorf(codes.Internal, "list containers: %v", err)
@@ -178,7 +178,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 
 	filter := strings.TrimSpace(req.GetServiceFilter())
 	resp := &pb.ListResponse{}
-	for _, c := range containers {
+	for _, c := range list.Items {
 		name := containerName(c.Names)
 		service := c.Labels[swarmServiceLabel]
 		if filter != "" && !strings.Contains(service, filter) && !strings.Contains(name, filter) {
@@ -205,7 +205,7 @@ func containerName(names []string) string {
 
 // namedVolumes returns the names of the named volumes a container mounts,
 // ignoring bind mounts and anonymous/tmpfs mounts (which have no volume name).
-func namedVolumes(mounts []types.MountPoint) []string {
+func namedVolumes(mounts []container.MountPoint) []string {
 	var out []string
 	for _, m := range mounts {
 		if m.Type == mount.TypeVolume && m.Name != "" {
@@ -219,11 +219,12 @@ func namedVolumes(mounts []types.MountPoint) []string {
 // failure here is non-fatal: it returns "" so authorization and audit still
 // proceed with whatever identity/container information is available.
 func (s *Server) resolveService(ctx context.Context, containerID string) string {
-	info, err := s.docker.ContainerInspect(ctx, containerID)
+	res, err := s.docker.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.log.Warn("ContainerInspect failed; service name unresolved", "container_id", containerID, "err", err)
 		return ""
 	}
+	info := res.Container
 	if info.Config == nil {
 		return ""
 	}

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/config"
@@ -358,7 +358,7 @@ const clusterProbeTimeout = 15 * time.Second
 func (c *clusterState) reach() error {
 	ctx, cancel := context.WithTimeout(c.ctx, clusterProbeTimeout)
 	defer cancel()
-	_, err := c.dcli.Ping(ctx)
+	_, err := c.dcli.Ping(ctx, client.PingOptions{})
 	return err
 }
 

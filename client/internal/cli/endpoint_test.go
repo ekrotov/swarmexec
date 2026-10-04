@@ -6,10 +6,11 @@ package cli
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/docker/docker/api/types/versions"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/moby/moby/client/pkg/versions"
 )
 
 // writeContexts lays down a docker config directory holding two ssh contexts,

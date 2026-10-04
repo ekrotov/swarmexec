@@ -19,12 +19,11 @@ import (
 	"time"
 
 	cliconfig "github.com/docker/cli/cli/config"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/registry"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -131,7 +130,8 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	}
 	fmt.Fprintf(out, "deploying agents into Docker context %q (%s)\n", tctx.Name, hostOrDefault(tctx.Host))
 
-	info, err := dcli.Info(ctx)
+	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
+	info := infoRes.Info
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
 	}
@@ -251,7 +251,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	var serviceID string
 	switch {
 	case existing == nil:
-		resp, cerr := dcli.ServiceCreate(ctx, spec, types.ServiceCreateOptions{EncodedRegistryAuth: encodedAuth, QueryRegistry: true})
+		resp, cerr := dcli.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: spec, EncodedRegistryAuth: encodedAuth, QueryRegistry: true})
 		if cerr != nil {
 			fmt.Fprintln(out, "failed")
 			return &cliError{code: session.TransportFailure, err: fmt.Errorf("create agent service: %w", cerr)}
@@ -259,7 +259,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		serviceID = resp.ID
 		fmt.Fprintf(out, "created (%q, global)\n", f.serviceName)
 	case f.force:
-		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, existing.Version, spec, types.ServiceUpdateOptions{EncodedRegistryAuth: encodedAuth, QueryRegistry: true}); uerr != nil {
+		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec, EncodedRegistryAuth: encodedAuth, QueryRegistry: true}); uerr != nil {
 			fmt.Fprintln(out, "failed")
 			return &cliError{code: session.TransportFailure, err: fmt.Errorf("update agent service: %w", uerr)}
 		}
@@ -387,9 +387,10 @@ func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out
 	deadline := time.Now().Add(timeout)
 	last := ""
 	for {
-		tasks, err := dcli.TaskList(ctx, types.TaskListOptions{
-			Filters: filters.NewArgs(filters.Arg("service", serviceID)),
+		tasksRes, err := dcli.TaskList(ctx, client.TaskListOptions{
+			Filters: make(client.Filters).Add("service", serviceID),
 		})
+		tasks := tasksRes.Items
 		if err != nil {
 			fmt.Fprintf(out, "      (could not query tasks: %v)\n", err)
 			return
@@ -438,9 +439,10 @@ func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out
 // if it does not exist (Docker secrets are immutable, so an existing one is
 // reused as-is).
 func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith string) (id string, created bool, err error) {
-	list, err := dcli.SecretList(ctx, types.SecretListOptions{
-		Filters: filters.NewArgs(filters.Arg("name", name)),
+	listRes, err := dcli.SecretList(ctx, client.SecretListOptions{
+		Filters: make(client.Filters).Add("name", name),
 	})
+	list := listRes.Items
 	if err != nil {
 		return "", false, fmt.Errorf("list secrets: %w", err)
 	}
@@ -449,10 +451,10 @@ func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith str
 			return s.ID, false, nil
 		}
 	}
-	resp, err := dcli.SecretCreate(ctx, swarm.SecretSpec{
+	resp, err := dcli.SecretCreate(ctx, client.SecretCreateOptions{Spec: swarm.SecretSpec{
 		Annotations: swarm.Annotations{Name: name, Labels: map[string]string{agentRoleLabel: agentRoleValue}},
 		Data:        []byte(createWith),
-	})
+	}})
 	if err != nil {
 		return "", false, fmt.Errorf("create secret: %w", err)
 	}
@@ -468,7 +470,8 @@ const policyConfigPrefix = "swarmexec_agent_policy_"
 func ensurePolicyConfig(ctx context.Context, dcli *client.Client, data []byte) (*swarm.ConfigReference, error) {
 	sum := sha256.Sum256(data)
 	name := policyConfigPrefix + hex.EncodeToString(sum[:])[:12]
-	list, err := dcli.ConfigList(ctx, types.ConfigListOptions{Filters: filters.NewArgs(filters.Arg("name", name))})
+	listRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{Filters: make(client.Filters).Add("name", name)})
+	list := listRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list configs: %w", err)
 	}
@@ -479,10 +482,10 @@ func ensurePolicyConfig(ctx context.Context, dcli *client.Client, data []byte) (
 		}
 	}
 	if id == "" {
-		resp, err := dcli.ConfigCreate(ctx, swarm.ConfigSpec{
+		resp, err := dcli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: swarm.ConfigSpec{
 			Annotations: swarm.Annotations{Name: name, Labels: map[string]string{agentRoleLabel: agentRoleValue}},
 			Data:        data,
-		})
+		}})
 		if err != nil {
 			return nil, fmt.Errorf("create policy config: %w", err)
 		}
@@ -505,7 +508,7 @@ func ensurePolicyConfig(ctx context.Context, dcli *client.Client, data []byte) (
 func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy, MetricsPort: f.metricsPort, Policy: f.policyFile != ""})
 	ports := []swarm.PortConfig{{
-		Protocol:      swarm.PortConfigProtocolTCP,
+		Protocol:      network.TCP,
 		TargetPort:    uint32(f.port),
 		PublishedPort: uint32(f.port),
 		PublishMode:   swarm.PortConfigPublishModeHost,
@@ -514,7 +517,7 @@ func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 		// Host mode like the agent port: there is no overlay network to scrape
 		// over, so Prometheus reaches each node's agent at <node>:<port>.
 		ports = append(ports, swarm.PortConfig{
-			Protocol:      swarm.PortConfigProtocolTCP,
+			Protocol:      network.TCP,
 			TargetPort:    uint32(f.metricsPort),
 			PublishedPort: uint32(f.metricsPort),
 			PublishMode:   swarm.PortConfigPublishModeHost,
@@ -561,9 +564,10 @@ func generateSecret() string {
 
 // serviceByName returns the service with the given name, or nil.
 func serviceByName(ctx context.Context, dcli *client.Client, name string) (*swarm.Service, error) {
-	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{
-		Filters: filters.NewArgs(filters.Arg("name", name)),
+	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{
+		Filters: make(client.Filters).Add("name", name),
 	})
+	list := listRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
@@ -581,16 +585,17 @@ func serviceByName(ctx context.Context, dcli *client.Client, name string) (*swar
 // serviceLister is the slice of the Docker manager API agentDeployed needs (so
 // it is unit-testable without a real client).
 type serviceLister interface {
-	ServiceList(context.Context, types.ServiceListOptions) ([]swarm.Service, error)
+	ServiceList(context.Context, client.ServiceListOptions) (client.ServiceListResult, error)
 }
 
 func agentDeployed(ctx context.Context, dcli serviceLister) bool {
-	if list, err := dcli.ServiceList(ctx, types.ServiceListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
-	}); err == nil && len(list) > 0 {
+	if list, err := dcli.ServiceList(ctx, client.ServiceListOptions{
+		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
+	}); err == nil && len(list.Items) > 0 {
 		return true
 	}
-	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	list := listRes.Items
 	if err != nil {
 		return true // can't tell — don't claim the agent is missing
 	}
@@ -616,7 +621,8 @@ func isAgentImage(image string) bool {
 // inspectServiceImage reads back a service's resolved image (Docker pins the
 // @sha256 digest on deploy when QueryRegistry is set).
 func inspectServiceImage(ctx context.Context, dcli *client.Client, serviceID string) string {
-	svc, _, err := dcli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+	svcRes, err := dcli.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
+	svc := svcRes.Service
 	if err != nil || svc.Spec.TaskTemplate.ContainerSpec == nil {
 		return ""
 	}
@@ -626,12 +632,13 @@ func inspectServiceImage(ctx context.Context, dcli *client.Client, serviceID str
 // agentServiceImage returns the image (including any pinned @sha256 digest) of
 // the deployed agent service, or "" if none is found.
 func agentServiceImage(ctx context.Context, dcli serviceLister) string {
-	if list, err := dcli.ServiceList(ctx, types.ServiceListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", agentRoleLabel+"="+agentRoleValue)),
-	}); err == nil && len(list) > 0 && list[0].Spec.TaskTemplate.ContainerSpec != nil {
-		return list[0].Spec.TaskTemplate.ContainerSpec.Image
+	if list, err := dcli.ServiceList(ctx, client.ServiceListOptions{
+		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
+	}); err == nil && len(list.Items) > 0 && list.Items[0].Spec.TaskTemplate.ContainerSpec != nil {
+		return list.Items[0].Spec.TaskTemplate.ContainerSpec.Image
 	}
-	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	list := listRes.Items
 	if err != nil {
 		return ""
 	}
@@ -646,7 +653,8 @@ func agentServiceImage(ctx context.Context, dcli serviceLister) string {
 // portConflict reports whether a service other than ownName already publishes
 // the given host port, which would stop the global agent from binding it.
 func portConflict(ctx context.Context, dcli serviceLister, port int, ownName string) (string, bool) {
-	list, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	list := listRes.Items
 	if err != nil {
 		return "", false // can't check — let the rollout surface any problem
 	}

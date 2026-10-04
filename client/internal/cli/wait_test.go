@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/swarm"
 )
 
 // The definition is the feature: each case is a state a pipeline can meet
@@ -65,11 +66,11 @@ func TestJudge(t *testing.T) {
 
 type fakeTaskLister struct{ tasks []swarm.Task }
 
-func (f fakeTaskLister) ServiceList(context.Context, types.ServiceListOptions) ([]swarm.Service, error) {
-	return nil, nil
+func (f fakeTaskLister) ServiceList(context.Context, client.ServiceListOptions) (client.ServiceListResult, error) {
+	return client.ServiceListResult{}, nil
 }
-func (f fakeTaskLister) TaskList(context.Context, types.TaskListOptions) ([]swarm.Task, error) {
-	return f.tasks, nil
+func (f fakeTaskLister) TaskList(context.Context, client.TaskListOptions) (client.TaskListResult, error) {
+	return client.TaskListResult{Items: f.tasks}, nil
 }
 
 // The reason shown is the newest one, and a running task is never a reason.

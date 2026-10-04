@@ -5,17 +5,17 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
 	units "github.com/docker/go-units"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // Service edits (scale, ports, labels) are manager-API ServiceUpdate operations
@@ -35,12 +35,44 @@ func updateServiceSpec(ctx context.Context, dcli *client.Client, name string, mu
 	if svc == nil {
 		return fmt.Errorf("no service named %q", name)
 	}
+	if err := refuseLegacyNetworks(ctx, dcli, svc.ID, name); err != nil {
+		return err
+	}
 	spec := svc.Spec
 	if err := mutate(&spec); err != nil {
 		return err
 	}
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: svc.Version, Spec: spec})
 	return err
+}
+
+// refuseLegacyNetworks stops a read-modify-write of a service whose networks
+// still sit in the top-level Spec.Networks that services created before API
+// 1.44 used. The API types no longer have that field, so the spec we would
+// send back lacks it — and a daemon older than Docker 25, which does not move
+// it into the task template itself, would take that as "no networks" and
+// detach the service. Daemons since Docker 25 never return it, so for them
+// this costs one inspect and refuses nothing.
+func refuseLegacyNetworks(ctx context.Context, dcli *client.Client, id, name string) error {
+	res, err := dcli.ServiceInspect(ctx, id, client.ServiceInspectOptions{})
+	if err != nil {
+		return err
+	}
+	if hasLegacyNetworks(res.Raw) {
+		return fmt.Errorf("service %q keeps its networks in the pre-API-1.44 Spec.Networks field, which this version cannot write back without detaching them — update it once with `docker service update`, or upgrade the managers to Docker 25 or newer", name)
+	}
+	return nil
+}
+
+// hasLegacyNetworks reports whether a raw service inspect carries networks in
+// the top-level Spec.Networks.
+func hasLegacyNetworks(raw []byte) bool {
+	var v struct {
+		Spec struct {
+			Networks []json.RawMessage
+		}
+	}
+	return json.Unmarshal(raw, &v) == nil && len(v.Spec.Networks) > 0
 }
 
 // scaleService sets the replica count of a replicated service.
@@ -126,8 +158,7 @@ func currentServiceReplicas(ctx context.Context, dcli *client.Client, name strin
 
 // setServiceNetworks replaces the networks a service is attached to. targetIDs
 // are network IDs (or names the daemon can resolve). It writes the current
-// TaskTemplate.Networks and clears the deprecated Spec.Networks so it cannot
-// override.
+// TaskTemplate.Networks.
 func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, targetIDs []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		var nets []swarm.NetworkAttachmentConfig
@@ -135,8 +166,6 @@ func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, t
 			nets = append(nets, swarm.NetworkAttachmentConfig{Target: id})
 		}
 		spec.TaskTemplate.Networks = nets
-		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-		spec.Networks = nil
 		return nil
 	})
 }
@@ -145,7 +174,8 @@ func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, t
 // names, for the networks editor (autocomplete + name/ID resolution).
 func listNetworkRefs(ctx context.Context, dcli *client.Client) (idByName, idToName map[string]string, names []string) {
 	idByName, idToName = map[string]string{}, map[string]string{}
-	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
+	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
+	nets := netsRes.Items
 	if err != nil {
 		return idByName, idToName, names
 	}
@@ -193,10 +223,6 @@ func serviceAttachedNetworks(ctx context.Context, dcli *client.Client, name stri
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a)
 	}
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	for _, a := range svc.Spec.Networks {
-		add(a)
-	}
 	return out, nil
 }
 
@@ -208,15 +234,6 @@ func setNetworkAliases(ctx context.Context, dcli *client.Client, name, target st
 		for i := range spec.TaskTemplate.Networks {
 			if spec.TaskTemplate.Networks[i].Target == target {
 				spec.TaskTemplate.Networks[i].Aliases = aliases
-				found = true
-			}
-		}
-		// Same backing array as spec.Networks, so the aliases land in the spec.
-		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-		legacy := spec.Networks
-		for i := range legacy {
-			if legacy[i].Target == target {
-				legacy[i].Aliases = aliases
 				found = true
 			}
 		}
@@ -250,10 +267,6 @@ func currentServiceNetworks(ctx context.Context, dcli *client.Client, name strin
 		out = append(out, n)
 	}
 	for _, a := range svc.Spec.TaskTemplate.Networks {
-		add(a.Target)
-	}
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	for _, a := range svc.Spec.Networks {
 		add(a.Target)
 	}
 	return out, nil
@@ -293,7 +306,8 @@ func removeService(ctx context.Context, dcli *client.Client, name string) error 
 	if svc == nil {
 		return fmt.Errorf("no service named %q", name)
 	}
-	return dcli.ServiceRemove(ctx, svc.ID)
+	_, err = dcli.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{})
+	return err
 }
 
 // rollbackService asks the manager to roll a service back to its previous spec.
@@ -315,8 +329,8 @@ func rollbackService(ctx context.Context, dcli *client.Client, name string) erro
 	if svc.PreviousSpec == nil {
 		return fmt.Errorf("service %q has no previous version to roll back to", name)
 	}
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, svc.Spec,
-		types.ServiceUpdateOptions{Rollback: "previous"})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{
+		Version: svc.Version, Spec: svc.Spec, Rollback: "previous"})
 	return err
 }
 
@@ -390,8 +404,8 @@ func setServiceSecrets(ctx context.Context, dcli *client.Client, name string, se
 			return fmt.Errorf("service %q has no container spec", name)
 		}
 		idByName := map[string]string{}
-		if secs, e := dcli.SecretList(ctx, types.SecretListOptions{}); e == nil {
-			for _, s := range secs {
+		if secs, e := dcli.SecretList(ctx, client.SecretListOptions{}); e == nil {
+			for _, s := range secs.Items {
 				idByName[s.Spec.Name] = s.ID
 			}
 		}
@@ -434,8 +448,8 @@ func currentServiceSecrets(ctx context.Context, dcli *client.Client, name string
 // autocomplete. Best effort.
 func secretNames(ctx context.Context, dcli *client.Client) []string {
 	var out []string
-	if secs, e := dcli.SecretList(ctx, types.SecretListOptions{}); e == nil {
-		for _, s := range secs {
+	if secs, e := dcli.SecretList(ctx, client.SecretListOptions{}); e == nil {
+		for _, s := range secs.Items {
 			out = append(out, s.Spec.Name)
 		}
 	}
@@ -570,7 +584,8 @@ func candidateNodesForService(ctx context.Context, dcli *client.Client, name str
 	if p := svc.Spec.TaskTemplate.Placement; p != nil {
 		constraints = p.Constraints
 	}
-	nl, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nl := nlRes.Items
 	if err != nil {
 		return nil, nil, err
 	}
@@ -711,7 +726,8 @@ func validatePlacementConstraint(s string) (string, error) {
 // placement editor's autocomplete. The operator offered is ==; the user can
 // still type an != constraint by hand.
 func placementSuggestions(ctx context.Context, dcli *client.Client) ([]string, error) {
-	nl, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nl := nlRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -802,7 +818,8 @@ func validateSpreadDescriptor(s string) (string, error) {
 // spreadSuggestions builds candidate spread descriptors (bare node attributes)
 // from the current cluster for the spread editor's autocomplete.
 func spreadSuggestions(ctx context.Context, dcli *client.Client) ([]string, error) {
-	nl, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nl := nlRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -956,7 +973,7 @@ func parseServicePort(s string) (swarm.PortConfig, error) {
 		return swarm.PortConfig{}, fmt.Errorf("protocol must be tcp, udp or sctp (got %q)", proto)
 	}
 	return swarm.PortConfig{
-		Protocol:      swarm.PortConfigProtocol(proto),
+		Protocol:      network.IPProtocol(proto),
 		PublishedPort: uint32(pub),
 		TargetPort:    uint32(tgt),
 		PublishMode:   swarm.PortConfigPublishModeIngress,

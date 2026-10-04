@@ -9,8 +9,8 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"time"
 
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/gdamore/tcell/v2"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/resolve"

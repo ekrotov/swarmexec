@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/docker/docker/api/types/volume"
+	"github.com/moby/moby/api/types/volume"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -18,10 +18,9 @@ import (
 
 func TestListVolumes(t *testing.T) {
 	d := newFakeDocker()
-	d.volumes = []*volume.Volume{
+	d.volumes = []volume.Volume{
 		{Name: "v1", Driver: "local", Mountpoint: "/m1", Scope: "local"},
 		{Name: "v2", Driver: "local"},
-		nil, // tolerated
 	}
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
 	resp, err := srv.ListVolumes(context.Background(), &pb.ListVolumesRequest{})
@@ -38,7 +37,7 @@ func TestListVolumes(t *testing.T) {
 
 func TestListVolumes_WithSize(t *testing.T) {
 	d := newFakeDocker()
-	d.volumes = []*volume.Volume{
+	d.volumes = []volume.Volume{
 		{Name: "v1", Driver: "local", UsageData: &volume.UsageData{Size: 4096, RefCount: 1}},
 		{Name: "v2", Driver: "other", UsageData: &volume.UsageData{Size: -1, RefCount: -1}},
 	}

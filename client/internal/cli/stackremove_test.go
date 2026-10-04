@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 )
 
@@ -35,50 +35,50 @@ type fakeStackAPI struct {
 	netCalls    int
 }
 
-func labelOf(f filters.Args) string {
-	if got := f.Get("label"); len(got) == 1 {
+func labelOf(f client.Filters) string {
+	if got := filterValues(f, "label"); len(got) == 1 {
 		return got[0]
 	}
 	return "<none>"
 }
 
-func (f *fakeStackAPI) ServiceList(_ context.Context, o types.ServiceListOptions) ([]swarm.Service, error) {
+func (f *fakeStackAPI) ServiceList(_ context.Context, o client.ServiceListOptions) (client.ServiceListResult, error) {
 	f.labels = append(f.labels, labelOf(o.Filters))
-	return f.svcs, nil
+	return client.ServiceListResult{Items: f.svcs}, nil
 }
-func (f *fakeStackAPI) SecretList(_ context.Context, o types.SecretListOptions) ([]swarm.Secret, error) {
+func (f *fakeStackAPI) SecretList(_ context.Context, o client.SecretListOptions) (client.SecretListResult, error) {
 	f.labels = append(f.labels, labelOf(o.Filters))
-	return f.secs, nil
+	return client.SecretListResult{Items: f.secs}, nil
 }
-func (f *fakeStackAPI) ConfigList(_ context.Context, o types.ConfigListOptions) ([]swarm.Config, error) {
+func (f *fakeStackAPI) ConfigList(_ context.Context, o client.ConfigListOptions) (client.ConfigListResult, error) {
 	f.labels = append(f.labels, labelOf(o.Filters))
-	return f.cfgs, nil
+	return client.ConfigListResult{Items: f.cfgs}, nil
 }
-func (f *fakeStackAPI) NetworkList(_ context.Context, o network.ListOptions) ([]network.Summary, error) {
+func (f *fakeStackAPI) NetworkList(_ context.Context, o client.NetworkListOptions) (client.NetworkListResult, error) {
 	f.labels = append(f.labels, labelOf(o.Filters))
-	return f.nets, nil
+	return client.NetworkListResult{Items: f.nets}, nil
 }
 
 func (f *fakeStackAPI) remove(kind, id string) error {
 	f.removed = append(f.removed, kind+":"+id)
 	return f.failRemove[id]
 }
-func (f *fakeStackAPI) ServiceRemove(_ context.Context, id string) error {
-	return f.remove("service", id)
+func (f *fakeStackAPI) ServiceRemove(_ context.Context, id string, _ client.ServiceRemoveOptions) (client.ServiceRemoveResult, error) {
+	return client.ServiceRemoveResult{}, f.remove("service", id)
 }
-func (f *fakeStackAPI) SecretRemove(_ context.Context, id string) error {
-	return f.remove("secret", id)
+func (f *fakeStackAPI) SecretRemove(_ context.Context, id string, _ client.SecretRemoveOptions) (client.SecretRemoveResult, error) {
+	return client.SecretRemoveResult{}, f.remove("secret", id)
 }
-func (f *fakeStackAPI) ConfigRemove(_ context.Context, id string) error {
-	return f.remove("config", id)
+func (f *fakeStackAPI) ConfigRemove(_ context.Context, id string, _ client.ConfigRemoveOptions) (client.ConfigRemoveResult, error) {
+	return client.ConfigRemoveResult{}, f.remove("config", id)
 }
-func (f *fakeStackAPI) NetworkRemove(_ context.Context, id string) error {
+func (f *fakeStackAPI) NetworkRemove(_ context.Context, id string, _ client.NetworkRemoveOptions) (client.NetworkRemoveResult, error) {
 	f.netCalls++
 	f.removed = append(f.removed, "network:"+id)
 	if f.netCalls <= f.netFailsFor {
-		return errors.New("network has active endpoints")
+		return client.NetworkRemoveResult{}, errors.New("network has active endpoints")
 	}
-	return f.failRemove[id]
+	return client.NetworkRemoveResult{}, f.failRemove[id]
 }
 
 func stackFixture() *fakeStackAPI {

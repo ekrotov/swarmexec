@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/swarm"
 )
 
 type fakeServiceLister struct {
@@ -18,11 +19,11 @@ type fakeServiceLister struct {
 	err error
 }
 
-func (f fakeServiceLister) ServiceList(_ context.Context, opts types.ServiceListOptions) ([]swarm.Service, error) {
+func (f fakeServiceLister) ServiceList(_ context.Context, opts client.ServiceListOptions) (client.ServiceListResult, error) {
 	if f.err != nil {
-		return nil, f.err
+		return client.ServiceListResult{}, f.err
 	}
-	if labels := opts.Filters.Get("label"); len(labels) > 0 {
+	if labels := filterValues(opts.Filters, "label"); len(labels) > 0 {
 		var out []swarm.Service
 		for _, s := range f.all {
 			for _, w := range labels {
@@ -32,9 +33,9 @@ func (f fakeServiceLister) ServiceList(_ context.Context, opts types.ServiceList
 				}
 			}
 		}
-		return out, nil
+		return client.ServiceListResult{Items: out}, nil
 	}
-	return f.all, nil
+	return client.ServiceListResult{Items: f.all}, nil
 }
 
 func labeledAgent() swarm.Service {

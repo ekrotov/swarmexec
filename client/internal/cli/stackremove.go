@@ -9,11 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 )
 
 // Removing a stack is the most destructive thing this program does: it is the
@@ -37,14 +33,14 @@ const stackLabelKey = "com.docker.stack.namespace"
 // stackAPI is the slice of the Docker client a stack removal needs.
 // *client.Client satisfies it.
 type stackAPI interface {
-	ServiceList(context.Context, types.ServiceListOptions) ([]swarm.Service, error)
-	ServiceRemove(context.Context, string) error
-	SecretList(context.Context, types.SecretListOptions) ([]swarm.Secret, error)
-	SecretRemove(context.Context, string) error
-	ConfigList(context.Context, types.ConfigListOptions) ([]swarm.Config, error)
-	ConfigRemove(context.Context, string) error
-	NetworkList(context.Context, network.ListOptions) ([]network.Summary, error)
-	NetworkRemove(context.Context, string) error
+	ServiceList(context.Context, client.ServiceListOptions) (client.ServiceListResult, error)
+	ServiceRemove(context.Context, string, client.ServiceRemoveOptions) (client.ServiceRemoveResult, error)
+	SecretList(context.Context, client.SecretListOptions) (client.SecretListResult, error)
+	SecretRemove(context.Context, string, client.SecretRemoveOptions) (client.SecretRemoveResult, error)
+	ConfigList(context.Context, client.ConfigListOptions) (client.ConfigListResult, error)
+	ConfigRemove(context.Context, string, client.ConfigRemoveOptions) (client.ConfigRemoveResult, error)
+	NetworkList(context.Context, client.NetworkListOptions) (client.NetworkListResult, error)
+	NetworkRemove(context.Context, string, client.NetworkRemoveOptions) (client.NetworkRemoveResult, error)
 }
 
 // The assertion lives here so a Docker client upgrade that changes one of these
@@ -98,10 +94,11 @@ func (c stackContents) counts() string {
 // stackContentsOf lists everything labelled for stack. Filtered at the daemon,
 // so a stack whose name is a prefix of another's cannot be caught by accident.
 func stackContentsOf(ctx context.Context, api stackAPI, stack string) (stackContents, error) {
-	f := filters.NewArgs(filters.Arg("label", stackLabelKey+"="+stack))
+	f := make(client.Filters).Add("label", stackLabelKey+"="+stack)
 	var c stackContents
 
-	svcs, err := api.ServiceList(ctx, types.ServiceListOptions{Filters: f})
+	svcsRes, err := api.ServiceList(ctx, client.ServiceListOptions{Filters: f})
+	svcs := svcsRes.Items
 	if err != nil {
 		return c, fmt.Errorf("list services: %w", err)
 	}
@@ -109,7 +106,8 @@ func stackContentsOf(ctx context.Context, api stackAPI, stack string) (stackCont
 		c.Services = append(c.Services, stackObject{ID: s.ID, Name: s.Spec.Name})
 	}
 
-	secs, err := api.SecretList(ctx, types.SecretListOptions{Filters: f})
+	secsRes, err := api.SecretList(ctx, client.SecretListOptions{Filters: f})
+	secs := secsRes.Items
 	if err != nil {
 		return c, fmt.Errorf("list secrets: %w", err)
 	}
@@ -117,7 +115,8 @@ func stackContentsOf(ctx context.Context, api stackAPI, stack string) (stackCont
 		c.Secrets = append(c.Secrets, stackObject{ID: s.ID, Name: s.Spec.Name})
 	}
 
-	cfgs, err := api.ConfigList(ctx, types.ConfigListOptions{Filters: f})
+	cfgsRes, err := api.ConfigList(ctx, client.ConfigListOptions{Filters: f})
+	cfgs := cfgsRes.Items
 	if err != nil {
 		return c, fmt.Errorf("list configs: %w", err)
 	}
@@ -125,7 +124,8 @@ func stackContentsOf(ctx context.Context, api stackAPI, stack string) (stackCont
 		c.Configs = append(c.Configs, stackObject{ID: cf.ID, Name: cf.Spec.Name})
 	}
 
-	nets, err := api.NetworkList(ctx, network.ListOptions{Filters: f})
+	netsRes, err := api.NetworkList(ctx, client.NetworkListOptions{Filters: f})
+	nets := netsRes.Items
 	if err != nil {
 		return c, fmt.Errorf("list networks: %w", err)
 	}
@@ -164,17 +164,17 @@ func removeStack(ctx context.Context, api stackAPI, c stackContents) []error {
 
 	// Services first: while they exist, everything else is in use by definition.
 	for _, o := range c.Services {
-		if err := api.ServiceRemove(ctx, o.ID); err != nil {
+		if _, err := api.ServiceRemove(ctx, o.ID, client.ServiceRemoveOptions{}); err != nil {
 			fail("service", o, err)
 		}
 	}
 	for _, o := range c.Secrets {
-		if err := api.SecretRemove(ctx, o.ID); err != nil {
+		if _, err := api.SecretRemove(ctx, o.ID, client.SecretRemoveOptions{}); err != nil {
 			fail("secret", o, err)
 		}
 	}
 	for _, o := range c.Configs {
-		if err := api.ConfigRemove(ctx, o.ID); err != nil {
+		if _, err := api.ConfigRemove(ctx, o.ID, client.ConfigRemoveOptions{}); err != nil {
 			fail("config", o, err)
 		}
 	}
@@ -182,7 +182,7 @@ func removeStack(ctx context.Context, api stackAPI, c stackContents) []error {
 	for _, o := range c.Networks {
 		var err error
 		for attempt := 0; attempt < networkRetries; attempt++ {
-			if err = api.NetworkRemove(ctx, o.ID); err == nil || ctx.Err() != nil {
+			if _, err = api.NetworkRemove(ctx, o.ID, client.NetworkRemoveOptions{}); err == nil || ctx.Err() != nil {
 				break
 			}
 			if attempt == networkRetries-1 {

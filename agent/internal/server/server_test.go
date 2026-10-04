@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -217,10 +217,10 @@ func TestExec_NonTTYDemuxRouting(t *testing.T) {
 
 	conn := d.waitAttach()
 	// Write framed stdout and stderr from the container side.
-	if _, err := stdcopy.NewStdWriter(conn, stdcopy.Stdout).Write([]byte("hello-out")); err != nil {
+	if _, err := newStdWriter(conn, stdcopy.Stdout).Write([]byte("hello-out")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stdcopy.NewStdWriter(conn, stdcopy.Stderr).Write([]byte("hello-err")); err != nil {
+	if _, err := newStdWriter(conn, stdcopy.Stderr).Write([]byte("hello-err")); err != nil {
 		t.Fatal(err)
 	}
 	conn.Close()
@@ -338,11 +338,11 @@ func TestExec_StdinAndResizeForwarded(t *testing.T) {
 	if len(resizes) < 2 {
 		t.Fatalf("want >=2 resizes (initial + event), got %d: %+v", len(resizes), resizes)
 	}
-	if resizes[0] != (container.ResizeOptions{Height: 24, Width: 80}) {
+	if resizes[0] != (client.ExecResizeOptions{Height: 24, Width: 80}) {
 		t.Errorf("initial resize wrong: %+v", resizes[0])
 	}
 	last := resizes[len(resizes)-1]
-	if last != (container.ResizeOptions{Height: 40, Width: 120}) {
+	if last != (client.ExecResizeOptions{Height: 40, Width: 120}) {
 		t.Errorf("resize event wrong: %+v", last)
 	}
 }
@@ -469,7 +469,7 @@ func TestExec_IdleTimeout(t *testing.T) {
 
 func TestListContainers_Filter(t *testing.T) {
 	d := newFakeDocker()
-	d.containers = []types.Container{
+	d.containers = []container.Summary{
 		{ID: "a1", Names: []string{"/web.1"}, Labels: map[string]string{swarmServiceLabel: "web"}},
 		{ID: "b2", Names: []string{"/db.1"}, Labels: map[string]string{swarmServiceLabel: "db"}},
 		{ID: "c3", Names: []string{"/standalone"}},
@@ -513,7 +513,7 @@ func TestListContainers_Error(t *testing.T) {
 // container id and service name needed to aim them.
 func TestListContainers_HonoursTheAuthorizer(t *testing.T) {
 	d := newFakeDocker()
-	d.containers = []types.Container{{ID: "a1", Names: []string{"/web.1"}}}
+	d.containers = []container.Summary{{ID: "a1", Names: []string{"/web.1"}}}
 	srv, m := newTestServer(d, denyAuth{}, Options{})
 
 	if _, err := srv.ListContainers(context.Background(), &pb.ListRequest{}); statusCode(err) != codes.PermissionDenied {
@@ -555,7 +555,7 @@ func TestListContainers_AuthorizerSeesTheAction(t *testing.T) {
 // every container on every node left no record whatsoever.
 func TestListContainers_IsAudited(t *testing.T) {
 	d := newFakeDocker()
-	d.containers = []types.Container{
+	d.containers = []container.Summary{
 		{ID: "a1", Names: []string{"/web.1"}, Labels: map[string]string{swarmServiceLabel: "web"}},
 		{ID: "b2", Names: []string{"/db.1"}, Labels: map[string]string{swarmServiceLabel: "db"}},
 	}

@@ -7,8 +7,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/client"
+
+	"github.com/moby/moby/api/types/events"
 
 	"swarmexec/client/internal/clientlog"
 )
@@ -90,7 +91,7 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
 	// Scoped on purpose — secrets, configs and networks have their own tabs
 	// that load on demand, and subscribing to them here would re-list the tree
 	// for changes it does not show.
-	f := filters.NewArgs()
+	f := make(client.Filters)
 	f.Add("type", string(events.ServiceEventType))
 	f.Add("type", string(events.NodeEventType))
 
@@ -132,8 +133,9 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
 // beyond opening the stream lives in consumeTopology, which takes channels
 // rather than a Docker client — the coalescing is the part with decisions in
 // it, and a rule that cannot be tested without a live swarm would not be.
-func (u *ui) streamTopology(ctx context.Context, c *clusterState, f filters.Args) bool {
-	msgs, errs := c.dcli.Events(ctx, events.ListOptions{Filters: f})
+func (u *ui) streamTopology(ctx context.Context, c *clusterState, f client.Filters) bool {
+	sub := c.dcli.Events(ctx, client.EventsListOptions{Filters: f})
+	msgs, errs := sub.Messages, sub.Err
 	// Subscribed without error: from here the poll may take the slow rate.
 	// Dialling is what fails on a cluster where this does not work at all — an
 	// old daemon, a blocked socket — and that is the case the fast rate exists

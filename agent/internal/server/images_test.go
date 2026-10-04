@@ -7,8 +7,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/image"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 
 	"swarmexec/agent/internal/auth"
 
@@ -18,12 +18,14 @@ import (
 // img builds an image summary as DiskUsage returns one: size is the image's
 // total including shared layers, shared is how much of that it holds in common
 // with others, and containers>0 means something is running from it.
-func img(id string, size, shared int64, containers int64, tags ...string) *image.Summary {
-	return &image.Summary{ID: id, Size: size, SharedSize: shared, Containers: containers, RepoTags: tags}
+func img(id string, size, shared int64, containers int64, tags ...string) image.Summary {
+	return image.Summary{ID: id, Size: size, SharedSize: shared, Containers: containers, RepoTags: tags}
 }
 
-func du(layers int64, images ...*image.Summary) types.DiskUsage {
-	return types.DiskUsage{LayersSize: layers, Images: images}
+// du builds the images half of a DiskUsage result: total is the layer store's
+// size with each layer counted once (TotalSize; LayersSize before API 1.52).
+func du(total int64, images ...image.Summary) client.ImagesDiskUsage {
+	return client.ImagesDiskUsage{TotalSize: total, Items: images}
 }
 
 // Docker's prune filter reads backwards from how it sounds: dangling=TRUE is
@@ -32,11 +34,11 @@ func du(layers int64, images ...*image.Summary) types.DiskUsage {
 // it is pinned here.
 func TestPruneFiltersDirection(t *testing.T) {
 	safe := pruneFilters(false)
-	if got := safe.Get("dangling"); len(got) != 1 || got[0] != "true" {
+	if got := filterValues(safe, "dangling"); len(got) != 1 || got[0] != "true" {
 		t.Errorf("safe prune filter = %v, want dangling=true (untagged only)", got)
 	}
 	all := pruneFilters(true)
-	if got := all.Get("dangling"); len(got) != 1 || got[0] != "false" {
+	if got := filterValues(all, "dangling"); len(got) != 1 || got[0] != "false" {
 		t.Errorf("sweeping prune filter = %v, want dangling=false (every unused image)", got)
 	}
 }
@@ -106,9 +108,10 @@ func TestImagesResponseHandlesUnknownSharedSize(t *testing.T) {
 	if resp.UnusedBytes != 500 {
 		t.Errorf("unused = %d, want the whole layer store when nothing runs", resp.UnusedBytes)
 	}
-	// A nil entry in the list must not panic.
-	if got := imagesResponse(du(10, nil)); got.TotalBytes != 10 || len(got.Images) != 0 {
-		t.Errorf("nil image entry mishandled: %+v", got)
+	// No per-image items (Items are values now, so there is no nil entry to
+	// trip on) must still report the total and no images.
+	if got := imagesResponse(du(10)); got.TotalBytes != 10 || len(got.Images) != 0 {
+		t.Errorf("empty image list mishandled: %+v", got)
 	}
 	// Nonsense (shared larger than total) also yields nothing rather than a
 	// negative that would subtract from the reclaimable figure.
@@ -147,14 +150,14 @@ func TestPruneImagesModes(t *testing.T) {
 	if resp.GetReclaimedBytes() != 1234 || len(resp.GetDeleted()) != 2 {
 		t.Errorf("response = %+v, want the reclaimed bytes and both removals", resp)
 	}
-	if got := d.pruneFilters[0].Get("dangling"); got[0] != "true" {
+	if got := filterValues(d.pruneFilters[0], "dangling"); len(got) != 1 || got[0] != "true" {
 		t.Errorf("default prune sent dangling=%v, want the safe mode", got)
 	}
 
 	if _, err := s.PruneImages(ctx, &pb.PruneImagesRequest{All: true}); err != nil {
 		t.Fatalf("sweeping prune: %v", err)
 	}
-	if got := d.pruneFilters[1].Get("dangling"); got[0] != "false" {
+	if got := filterValues(d.pruneFilters[1], "dangling"); len(got) != 1 || got[0] != "false" {
 		t.Errorf("all-prune sent dangling=%v, want the sweep", got)
 	}
 }

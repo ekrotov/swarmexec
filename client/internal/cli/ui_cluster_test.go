@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/resolve"
@@ -201,7 +201,7 @@ func TestForwardsAnnotateOnlyTheirOwnCluster(t *testing.T) {
 func TestARefusedClusterDoesNotLookConnected(t *testing.T) {
 	c := newClusterState("down", "down")
 	c.ctx, c.cancel = context.WithCancel(context.Background())
-	dcli, err := client.NewClientWithOpts(client.WithHost("tcp://127.0.0.1:1"))
+	dcli, err := client.New(client.WithHost("tcp://127.0.0.1:1"))
 	if err != nil {
 		t.Fatal(err)
 	}

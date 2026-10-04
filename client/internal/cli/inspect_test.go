@@ -4,11 +4,13 @@
 package cli
 
 import (
+	"net/netip"
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 )
 
 func joinInspLines(lines []inspLine) string {
@@ -176,7 +178,7 @@ func TestFormatTaskInspect_NetworksAndState(t *testing.T) {
 	task.Status.State = swarm.TaskStateRunning
 	task.Status.ContainerStatus = &swarm.ContainerStatus{ContainerID: "cabc123"}
 	task.NetworksAttachments = []swarm.NetworkAttachment{
-		{Network: swarm.Network{ID: "netid1"}, Addresses: []string{"10.0.1.5/24"}},
+		{Network: swarm.Network{ID: "netid1"}, Addresses: []netip.Prefix{netip.MustParsePrefix("10.0.1.5/24")}},
 	}
 	task.ServiceID = "svc1"
 	task.Spec.ContainerSpec = &swarm.ContainerSpec{Image: "nginx:1"}
@@ -223,7 +225,7 @@ func runningTask(slot int, node, netID, netName, addr string) swarm.Task {
 	var n swarm.Network
 	n.ID = netID
 	n.Spec.Name = netName
-	t.NetworksAttachments = []swarm.NetworkAttachment{{Network: n, Addresses: []string{addr}}}
+	t.NetworksAttachments = []swarm.NetworkAttachment{{Network: n, Addresses: []netip.Prefix{netip.MustParsePrefix(addr)}}}
 	return t
 }
 
@@ -234,7 +236,7 @@ func TestServiceNetDNS_VIPAndContainerAddresses(t *testing.T) {
 	var svc swarm.Service
 	svc.Spec.Name = "web"
 	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
-	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: "10.0.1.2/24"}}
+	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: netip.MustParsePrefix("10.0.1.2/24")}}
 
 	// A task the manager has given up on: its address is released, so it must not
 	// be listed even though the API still reports the attachment.
@@ -304,7 +306,7 @@ func TestServiceNetDNS_AttachmentByName(t *testing.T) {
 	var svc swarm.Service
 	svc.Spec.Name = "web"
 	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "frontend-net"}}
-	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: "10.0.1.2/24"}}
+	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: netip.MustParsePrefix("10.0.1.2/24")}}
 
 	info := netInfo{
 		names:     map[string]string{"netid1": "frontend-net", "frontend-net": "frontend-net"},
@@ -367,10 +369,10 @@ func TestTaskAddrRowsAlignment(t *testing.T) {
 }
 
 func TestFirstIPv4AndStripMask(t *testing.T) {
-	if got := firstIPv4([]string{"fd00::5/64", "10.0.1.5/24"}); got != "10.0.1.5/24" {
+	if got := firstIPv4([]netip.Prefix{netip.MustParsePrefix("fd00::5/64"), netip.MustParsePrefix("10.0.1.5/24")}); got != "10.0.1.5/24" {
 		t.Errorf("firstIPv4 = %q, want the IPv4 address in CIDR form", got)
 	}
-	if got := firstIPv4([]string{"fd00::5/64"}); got != "" {
+	if got := firstIPv4([]netip.Prefix{netip.MustParsePrefix("fd00::5/64")}); got != "" {
 		t.Errorf("IPv6-only attachment should yield no IPv4, got %q", got)
 	}
 	if got := firstIPv4(nil); got != "" {
@@ -395,14 +397,12 @@ func TestNetTasksKeyCannotCollide(t *testing.T) {
 	}
 }
 
-// The same network can be attached under its id in TaskTemplate.Networks and
-// under its name in the deprecated Spec.Networks — it must be listed once.
+// The same network can be attached once under its id and once under its name —
+// it must be listed once.
 func TestServiceNetDNS_DeduplicatesByName(t *testing.T) {
 	var svc swarm.Service
 	svc.Spec.Name = "web"
-	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	svc.Spec.Networks = []swarm.NetworkAttachmentConfig{{Target: "frontend-net"}}
+	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}, {Target: "frontend-net"}}
 
 	info := netInfo{
 		names:     map[string]string{"netid1": "frontend-net", "frontend-net": "frontend-net"},
@@ -421,12 +421,12 @@ func TestServiceNetDNS_IngressRow(t *testing.T) {
 	svc.Spec.Name = "web"
 	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
 	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{
-		{NetworkID: "netid1", Addr: "10.0.1.2/24"},
-		{NetworkID: "ingressid", Addr: "10.0.0.5/24"},
+		{NetworkID: "netid1", Addr: netip.MustParsePrefix("10.0.1.2/24")},
+		{NetworkID: "ingressid", Addr: netip.MustParsePrefix("10.0.0.5/24")},
 	}
 	svc.Endpoint.Ports = []swarm.PortConfig{
-		{PublishedPort: 8080, TargetPort: 80, Protocol: swarm.PortConfigProtocolTCP, PublishMode: swarm.PortConfigPublishModeIngress},
-		{PublishedPort: 9000, TargetPort: 9000, Protocol: swarm.PortConfigProtocolTCP, PublishMode: swarm.PortConfigPublishModeHost},
+		{PublishedPort: 8080, TargetPort: 80, Protocol: network.TCP, PublishMode: swarm.PortConfigPublishModeIngress},
+		{PublishedPort: 9000, TargetPort: 9000, Protocol: network.TCP, PublishMode: swarm.PortConfigPublishModeHost},
 	}
 
 	task := runningTask(1, "node1", "netid1", "frontend-net", "10.0.1.5/24")
@@ -434,7 +434,7 @@ func TestServiceNetDNS_IngressRow(t *testing.T) {
 	ing.ID = "ingressid"
 	ing.Spec.Name = "ingress"
 	task.NetworksAttachments = append(task.NetworksAttachments,
-		swarm.NetworkAttachment{Network: ing, Addresses: []string{"10.0.0.9/24"}})
+		swarm.NetworkAttachment{Network: ing, Addresses: []netip.Prefix{netip.MustParsePrefix("10.0.0.9/24")}})
 
 	info := netInfo{
 		names:     map[string]string{"netid1": "frontend-net", "frontend-net": "frontend-net", "ingressid": "ingress", "ingress": "ingress"},
@@ -479,7 +479,7 @@ func TestServiceNetDNS_NoDuplicateRowForSpecNetwork(t *testing.T) {
 	var svc swarm.Service
 	svc.Spec.Name = "web"
 	svc.Spec.TaskTemplate.Networks = []swarm.NetworkAttachmentConfig{{Target: "netid1"}}
-	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: "10.0.1.2/24"}}
+	svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{NetworkID: "netid1", Addr: netip.MustParsePrefix("10.0.1.2/24")}}
 
 	info := netInfo{
 		names:     map[string]string{"netid1": "frontend-net", "frontend-net": "frontend-net"},

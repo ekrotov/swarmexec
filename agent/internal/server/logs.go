@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -47,11 +47,11 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 
 	// A TTY container's log stream is raw; a non-TTY one is stdcopy-multiplexed.
 	tty := false
-	if info, err := s.docker.ContainerInspect(ctx, req.GetContainerId()); err == nil && info.Config != nil {
-		tty = info.Config.Tty
+	if res, err := s.docker.ContainerInspect(ctx, req.GetContainerId(), client.ContainerInspectOptions{}); err == nil && res.Container.Config != nil {
+		tty = res.Container.Config.Tty
 	}
 
-	opts := container.LogsOptions{
+	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     req.GetFollow(),

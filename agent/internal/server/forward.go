@@ -17,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -253,7 +253,7 @@ func (s *Server) openForwardChannel(ctx context.Context, containerID string, por
 type sidecarChannel struct {
 	docker DockerClient
 	id     string
-	attach types.HijackedResponse
+	attach client.HijackedResponse
 	log    *slog.Logger
 
 	// stdoutR carries payload from the demux goroutine to CopyTo.
@@ -319,7 +319,7 @@ func (c *sidecarChannel) Close() {
 		// gets its own. AutoRemove usually wins the race; this is the backstop.
 		rctx, cancel := context.WithTimeout(context.Background(), forwardRemoveTimeout)
 		defer cancel()
-		if err := c.docker.ContainerRemove(rctx, c.id, container.RemoveOptions{Force: true}); err != nil {
+		if _, err := c.docker.ContainerRemove(rctx, c.id, client.ContainerRemoveOptions{Force: true}); err != nil {
 			if !isNotFoundErr(err) {
 				c.log.Warn("sidecar removal failed; it may linger", "sidecar", c.id, "err", err)
 			}
@@ -384,7 +384,7 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 		RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyDisabled},
 	}
 
-	created, err := s.docker.ContainerCreate(sctx, cfg, hostCfg, nil, nil, "")
+	created, err := s.docker.ContainerCreate(sctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg})
 	if err != nil {
 		releaseSlot()
 		return nil, fmt.Errorf("create forward sidecar: %w", err)
@@ -396,17 +396,17 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 	ch := &sidecarChannel{docker: s.docker, id: created.ID, log: s.log, release: releaseSlot}
 
 	// Attach before start so no output is missed.
-	attach, err := s.docker.ContainerAttach(sctx, created.ID, container.AttachOptions{
+	attach, err := s.docker.ContainerAttach(sctx, created.ID, client.ContainerAttachOptions{
 		Stream: true, Stdin: true, Stdout: true, Stderr: true,
 	})
 	if err != nil {
 		ch.Close()
 		return nil, fmt.Errorf("attach forward sidecar: %w", err)
 	}
-	ch.attach = attach
+	ch.attach = attach.HijackedResponse
 	ch.startDemux()
 
-	if err := s.docker.ContainerStart(sctx, created.ID, container.StartOptions{}); err != nil {
+	if _, err := s.docker.ContainerStart(sctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		ch.Close()
 		return nil, fmt.Errorf("start forward sidecar: %w", err)
 	}
@@ -493,7 +493,7 @@ func (s *Server) forwardImage(ctx context.Context) (string, error) {
 			s.forwardImageErr = fmt.Errorf("determine own hostname: %w", err)
 			return
 		}
-		self, err := s.docker.ContainerInspect(ctx, host)
+		res, err := s.docker.ContainerInspect(ctx, host, client.ContainerInspectOptions{})
 		if err != nil {
 			s.forwardImageErr = fmt.Errorf(
 				"cannot determine the agent's own image (inspect %q: %w) — "+
@@ -504,6 +504,7 @@ func (s *Server) forwardImage(ctx context.Context) (string, error) {
 		// populate it; every other inspect call site here guards it. Without the
 		// guard a malformed response panics the RPC goroutine inside a sync.Once,
 		// so the failure is both a crash and permanently cached.
+		self := res.Container
 		if self.Config == nil || self.Config.Image == "" {
 			s.forwardImageErr = fmt.Errorf(
 				"cannot determine the agent's own image (inspect %q returned no image) — "+

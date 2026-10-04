@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -93,9 +93,10 @@ func run(args []string) error {
 	identityVerified := !(cfg.SelfSigned && cfg.CACert == "")
 	auditLog := audit.New(slog.New(slog.NewJSONHandler(auditWriter, &slog.HandlerOptions{Level: slog.LevelInfo})), identityVerified)
 
-	dockerCli, err := client.NewClientWithOpts(
+	// API-version negotiation is the default in moby/moby/client (the old
+	// WithAPIVersionNegotiation option is a deprecated no-op).
+	dockerCli, err := client.New(
 		client.WithHost(cfg.DockerHost),
-		client.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
 		return fmt.Errorf("create docker client: %w", err)
@@ -297,9 +298,10 @@ func newLogger(cfg *config.Config) *slog.Logger {
 // any operator-supplied extras.
 func gatherSANs(ctx context.Context, cli *client.Client, cfg *config.Config, log *slog.Logger) []string {
 	sans := []string{"DNS:swarmexec-agent", "DNS:localhost", "IP:127.0.0.1", "IP:::1"}
-	if info, err := cli.Info(ctx); err != nil {
+	if res, err := cli.Info(ctx, client.InfoOptions{}); err != nil {
 		log.Warn("could not read Docker info for cert SANs; using static SANs only", "err", err)
 	} else {
+		info := res.Info
 		if info.Name != "" {
 			sans = append(sans, "DNS:"+info.Name)
 		}

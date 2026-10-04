@@ -6,16 +6,16 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 )
 
 // Networks and secrets are swarm-scoped (managed by the manager), unlike
@@ -73,7 +73,8 @@ type swarmSecret struct {
 // listNetworks returns every network on the manager with attached-service
 // membership resolved from service specs.
 func listNetworks(ctx context.Context, dcli *client.Client) ([]swarmNetwork, error) {
-	nets, err := dcli.NetworkList(ctx, network.ListOptions{})
+	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
+	nets := netsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -139,16 +140,16 @@ type newNetworkOpts struct {
 // buildNetworkCreateOptions maps the form input onto docker's CreateOptions,
 // validating the numeric/relational constraints. Split out from createNetwork so
 // the mapping is unit-testable without a daemon.
-func buildNetworkCreateOptions(o newNetworkOpts) (string, network.CreateOptions, error) {
+func buildNetworkCreateOptions(o newNetworkOpts) (string, client.NetworkCreateOptions, error) {
 	name := strings.TrimSpace(o.Name)
 	if name == "" {
-		return "", network.CreateOptions{}, fmt.Errorf("network name is required")
+		return "", client.NetworkCreateOptions{}, fmt.Errorf("network name is required")
 	}
 	driver := strings.TrimSpace(o.Driver)
 	if driver == "" {
 		driver = "overlay"
 	}
-	opts := network.CreateOptions{
+	opts := client.NetworkCreateOptions{
 		Driver:     driver,
 		Attachable: o.Attachable,
 		Internal:   o.Internal,
@@ -160,7 +161,7 @@ func buildNetworkCreateOptions(o newNetworkOpts) (string, network.CreateOptions,
 	}
 	if mtu := strings.TrimSpace(o.MTU); mtu != "" {
 		if _, err := strconv.Atoi(mtu); err != nil {
-			return "", network.CreateOptions{}, fmt.Errorf("MTU must be a number, got %q", o.MTU)
+			return "", client.NetworkCreateOptions{}, fmt.Errorf("MTU must be a number, got %q", o.MTU)
 		}
 		driverOpts["com.docker.network.driver.mtu"] = mtu
 	}
@@ -173,12 +174,22 @@ func buildNetworkCreateOptions(o newNetworkOpts) (string, network.CreateOptions,
 	}
 	subnet, gateway := strings.TrimSpace(o.Subnet), strings.TrimSpace(o.Gateway)
 	if gateway != "" && subnet == "" {
-		return "", network.CreateOptions{}, fmt.Errorf("a gateway requires a subnet")
+		return "", client.NetworkCreateOptions{}, fmt.Errorf("a gateway requires a subnet")
 	}
 	if subnet != "" {
-		cfg := network.IPAMConfig{Subnet: subnet}
+		// The API types parse addresses now; a malformed one is refused here,
+		// with the operator's own text, instead of by the daemon.
+		pfx, err := netip.ParsePrefix(subnet)
+		if err != nil {
+			return "", client.NetworkCreateOptions{}, fmt.Errorf("subnet must be CIDR like 10.20.0.0/24, got %q", subnet)
+		}
+		cfg := network.IPAMConfig{Subnet: pfx}
 		if gateway != "" {
-			cfg.Gateway = gateway
+			gw, err := netip.ParseAddr(gateway)
+			if err != nil {
+				return "", client.NetworkCreateOptions{}, fmt.Errorf("gateway must be an IP address, got %q", gateway)
+			}
+			cfg.Gateway = gw
 		}
 		opts.IPAM = &network.IPAM{Config: []network.IPAMConfig{cfg}}
 	}
@@ -232,16 +243,12 @@ func attachServiceToNetwork(ctx context.Context, dcli *client.Client, serviceNam
 			return fmt.Errorf("service %q is already attached to network %q", serviceName, networkName)
 		}
 	}
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	for _, a := range svc.Spec.Networks {
-		if a.Target == networkID || a.Target == networkName {
-			return fmt.Errorf("service %q is already attached to network %q", serviceName, networkName)
-		}
+	if err := refuseLegacyNetworks(ctx, dcli, svc.ID, serviceName); err != nil {
+		return err
 	}
 	spec := svc.Spec
-	// TaskTemplate.Networks is the current location (Spec.Networks is deprecated).
 	spec.TaskTemplate.Networks = append(spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: networkID})
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: svc.Version, Spec: spec})
 	return err
 }
 
@@ -266,6 +273,9 @@ func attachSecretToService(ctx context.Context, dcli *client.Client, serviceName
 			return fmt.Errorf("service %q already uses secret %q", serviceName, secretName)
 		}
 	}
+	if err := refuseLegacyNetworks(ctx, dcli, svc.ID, serviceName); err != nil {
+		return err
+	}
 	spec := svc.Spec
 	spec.TaskTemplate.ContainerSpec.Secrets = append(spec.TaskTemplate.ContainerSpec.Secrets, &swarm.SecretReference{
 		SecretID:   secretID,
@@ -277,7 +287,7 @@ func attachSecretToService(ctx context.Context, dcli *client.Client, serviceName
 			Mode: 0o444,
 		},
 	})
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: svc.Version, Spec: spec})
 	return err
 }
 
@@ -292,18 +302,17 @@ func detachServiceFromNetwork(ctx context.Context, dcli *client.Client, serviceN
 	if svc == nil {
 		return fmt.Errorf("no service named %q", serviceName)
 	}
+	if err := refuseLegacyNetworks(ctx, dcli, svc.ID, serviceName); err != nil {
+		return err
+	}
 	matches := func(target string) bool { return target == networkID || target == networkName }
 	spec := svc.Spec
-	tt, n1 := dropNetwork(spec.TaskTemplate.Networks, matches)
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	sn, n2 := dropNetwork(spec.Networks, matches)
-	if n1+n2 == 0 {
+	tt, n := dropNetwork(spec.TaskTemplate.Networks, matches)
+	if n == 0 {
 		return fmt.Errorf("service %q is not attached to network %q", serviceName, networkName)
 	}
 	spec.TaskTemplate.Networks = tt
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	spec.Networks = sn
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: svc.Version, Spec: spec})
 	return err
 }
 
@@ -349,9 +358,12 @@ func detachSecretFromService(ctx context.Context, dcli *client.Client, serviceNa
 	if !removed {
 		return fmt.Errorf("service %q does not use secret %q", serviceName, secretName)
 	}
+	if err := refuseLegacyNetworks(ctx, dcli, svc.ID, serviceName); err != nil {
+		return err
+	}
 	spec := svc.Spec
 	spec.TaskTemplate.ContainerSpec.Secrets = kept
-	_, err = dcli.ServiceUpdate(ctx, svc.ID, svc.Version, spec, types.ServiceUpdateOptions{})
+	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: svc.Version, Spec: spec})
 	return err
 }
 
@@ -360,7 +372,8 @@ func detachSecretFromService(ctx context.Context, dcli *client.Client, serviceNa
 // Best effort: a ServiceList failure yields an empty map so the network list
 // still renders (just without membership).
 func networkServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return map[string][]string{}
 	}
@@ -380,13 +393,7 @@ func serviceNetworkMembership(svcs []swarm.Service) map[string][]string {
 			seen[target] = true
 			m[target] = append(m[target], s.Spec.Name)
 		}
-		// TaskTemplate.Networks is current; Spec.Networks is the deprecated
-		// pre-v1.44 location — read both so older services still show up.
 		for _, a := range s.Spec.TaskTemplate.Networks {
-			add(a.Target)
-		}
-		//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-		for _, a := range s.Spec.Networks {
 			add(a.Target)
 		}
 	}
@@ -406,16 +413,16 @@ func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) 
 	// service's custom DNS aliases on this network — no extra per-service inspect.
 	idName := map[string]string{}
 	aliasesBySvc := map[string][]string{}
-	if svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{}); err == nil {
-		for _, s := range svcs {
+	if svcs, err := dcli.ServiceList(ctx, client.ServiceListOptions{}); err == nil {
+		for _, s := range svcs.Items {
 			idName[s.ID] = s.Spec.Name
 			aliasesBySvc[s.Spec.Name] = serviceAliasesOnNetwork(s, net)
 		}
 	}
 
 	byService := map[string][]netContainer{}
-	if tasks, err := dcli.TaskList(ctx, types.TaskListOptions{}); err == nil {
-		for _, t := range tasks {
+	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{}); err == nil {
+		for _, t := range tasks.Items {
 			if t.Status.State != swarm.TaskStateRunning || !taskOnNetwork(t, net.ID) {
 				continue
 			}
@@ -462,7 +469,8 @@ func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) 
 // nodeHostnames maps node ID to hostname, so a task's NodeID shows as a name.
 func nodeHostnames(ctx context.Context, dcli *client.Client) map[string]string {
 	m := map[string]string{}
-	nodes, err := dcli.NodeList(ctx, types.NodeListOptions{})
+	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
+	nodes := nodesRes.Items
 	if err != nil {
 		return m
 	}
@@ -506,12 +514,6 @@ func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
 			return append([]string{}, a.Aliases...)
 		}
 	}
-	//lint:ignore SA1019 compat: services created before API 1.44 carry their networks in Spec.Networks
-	for _, a := range s.Spec.Networks {
-		if match(a) && len(a.Aliases) > 0 {
-			return append([]string{}, a.Aliases...)
-		}
-	}
 	return nil
 }
 
@@ -530,7 +532,8 @@ func createSecret(ctx context.Context, dcli *client.Client, name string, data []
 	if len(data) == 0 {
 		return fmt.Errorf("value is required")
 	}
-	list, err := dcli.SecretList(ctx, types.SecretListOptions{})
+	listRes, err := dcli.SecretList(ctx, client.SecretListOptions{})
+	list := listRes.Items
 	if err != nil {
 		return err
 	}
@@ -539,15 +542,16 @@ func createSecret(ctx context.Context, dcli *client.Client, name string, data []
 			return fmt.Errorf("secret %q already exists (secrets are immutable — remove it first to replace)", name)
 		}
 	}
-	_, err = dcli.SecretCreate(ctx, swarm.SecretSpec{
+	_, err = dcli.SecretCreate(ctx, client.SecretCreateOptions{Spec: swarm.SecretSpec{
 		Annotations: swarm.Annotations{Name: name, Labels: labels},
 		Data:        data,
-	})
+	}})
 	return err
 }
 
 func listSecrets(ctx context.Context, dcli *client.Client) ([]swarmSecret, error) {
-	secs, err := dcli.SecretList(ctx, types.SecretListOptions{})
+	secsRes, err := dcli.SecretList(ctx, client.SecretListOptions{})
+	secs := secsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -581,7 +585,8 @@ func listSecrets(ctx context.Context, dcli *client.Client) ([]swarmSecret, error
 // services that reference it. Best effort: a ServiceList failure yields an empty
 // map so the secret list still renders.
 func secretServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return map[string][]string{}
 	}
@@ -633,7 +638,8 @@ func orphanSecrets(target swarm.Service, all []swarm.Service) []secretRef {
 // secretsOnlyUsedBy returns the secrets referenced only by the named service —
 // the ones orphaned if it is removed. Best-effort (empty on error/not found).
 func secretsOnlyUsedBy(ctx context.Context, dcli *client.Client, name string) ([]secretRef, error) {
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -680,8 +686,8 @@ func secretMembers(ctx context.Context, dcli *client.Client, secret swarmSecret)
 	usingIDs := map[string]bool{}
 	usingNames := map[string]bool{}
 	idName := map[string]string{}
-	if svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{}); err == nil {
-		for _, s := range svcs {
+	if svcs, err := dcli.ServiceList(ctx, client.ServiceListOptions{}); err == nil {
+		for _, s := range svcs.Items {
 			idName[s.ID] = s.Spec.Name
 			if serviceUsesSecret(s, secret.ID, secret.Name) {
 				usingIDs[s.ID] = true
@@ -692,8 +698,8 @@ func secretMembers(ctx context.Context, dcli *client.Client, secret swarmSecret)
 	nodeName := nodeHostnames(ctx, dcli)
 
 	byService := map[string][]netContainer{}
-	if tasks, err := dcli.TaskList(ctx, types.TaskListOptions{}); err == nil {
-		for _, t := range tasks {
+	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{}); err == nil {
+		for _, t := range tasks.Items {
 			if t.Status.State != swarm.TaskStateRunning || !usingIDs[t.ServiceID] {
 				continue
 			}
@@ -742,7 +748,8 @@ func serviceUsesSecret(s swarm.Service, id, name string) bool {
 // prune even when no task currently runs. Best effort: a ServiceList failure
 // yields an empty set (prune then falls back to the running-container view).
 func serviceVolumeNames(ctx context.Context, dcli *client.Client) map[string]bool {
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return map[string]bool{}
 	}
@@ -783,7 +790,8 @@ type swarmConfig struct {
 // resolved from service specs — the same derivation listSecrets does, since
 // swarm has no reverse index either way.
 func listConfigs(ctx context.Context, dcli *client.Client) ([]swarmConfig, error) {
-	cfgs, err := dcli.ConfigList(ctx, types.ConfigListOptions{})
+	cfgsRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{})
+	cfgs := cfgsRes.Items
 	if err != nil {
 		return nil, err
 	}
@@ -816,7 +824,8 @@ func listConfigs(ctx context.Context, dcli *client.Client) ([]swarmConfig, error
 
 // configServiceMembers maps config id/name -> service names that mount it.
 func configServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
-	svcs, err := dcli.ServiceList(ctx, types.ServiceListOptions{})
+	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	svcs := svcsRes.Items
 	if err != nil {
 		return map[string][]string{}
 	}
@@ -856,9 +865,9 @@ func serviceConfigMembership(svcs []swarm.Service) map[string][]string {
 // not), so the detail view can show what a service actually receives. Fetched on
 // demand rather than with the list: a config can be a whole nginx.conf.
 func configContent(ctx context.Context, dcli *client.Client, id string) ([]byte, error) {
-	c, _, err := dcli.ConfigInspectWithRaw(ctx, id)
+	res, err := dcli.ConfigInspect(ctx, id, client.ConfigInspectOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return c.Spec.Data, nil
+	return res.Config.Spec.Data, nil
 }
