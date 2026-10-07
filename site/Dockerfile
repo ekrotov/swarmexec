@@ -33,14 +33,18 @@ ARG VERSION=dev
 # Root only for the build steps; the base image drops back to the nginx user.
 USER root
 COPY site/nginx.conf /etc/nginx/conf.d/default.conf
-# Glob covers every language variant (index.de.html, docs.fr.html, datenschutz.es.html, releases.fr.html, …).
+# Glob covers every language variant (docs.fr.html, datenschutz.es.html, releases.fr.html, …); the landing page is English only.
 # releases.sample.json is a dev fixture and is deliberately NOT matched by any glob here.
 COPY site/index*.html site/docs*.html site/datenschutz*.html site/releases*.html site/robots.txt site/sitemap.xml site/install.sh \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png \
-     site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif /usr/share/nginx/html/
+     site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif \
+     site/landing.css site/landing.js /usr/share/nginx/html/
+# Fonts are served from here, not from Google (no third-party request, nothing
+# for the privacy page to declare); the OFL texts travel with them.
+COPY site/fonts /usr/share/nginx/html/fonts
 # Build-time-generated release data (same-origin fetch target for releases*.html).
 COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
-# index*.html and docs*.html carry the __VERSION__ placeholder (in every language); datenschutz*.html and releases*.html do not.
+# index.html and docs*.html carry the __VERSION__ placeholder; datenschutz*.html and releases*.html do not.
 RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index*.html /usr/share/nginx/html/docs*.html \
  && chown -R nginx:nginx /usr/share/nginx/html \
  && chown nginx:nginx /etc/nginx/conf.d/default.conf

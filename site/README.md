@@ -56,7 +56,15 @@ none. Verified: read-only rootfs blocks writes, and it still serves as uid 101.
 
 ## Files
 
-- `index.html` — the page (self-contained, inline CSS, `__VERSION__` placeholder).
+- `index.html` — the landing page, English only (`__VERSION__` placeholder, also used
+  as `?v=` on its stylesheet and script). The former `index.de/es/fr/pl.html` are gone;
+  nginx answers them with a permanent redirect to `/`. Docs, release notes and the
+  privacy page stay in five languages.
+- `landing.css`, `landing.js` — the landing page's styles and its animated scenes
+  (vanilla JS, no library).
+- `fonts/` — Archivo and JetBrains Mono (latin + latin-ext, woff2) with their SIL OFL
+  texts. Served from here on purpose: no request to Google, nothing for the privacy
+  page to declare.
 - `nginx.conf` — minimal nginx config (listens on 8080, gzip, security headers, `/healthz`).
 - `Dockerfile` — `nginx-unprivileged` (non-root), bakes `VERSION` into the page.
 - `deploy/site-stack.yml` — Swarm stack (Traefik labels, gateway net, non-root + read-only + cap-drop).
