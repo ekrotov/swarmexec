@@ -6,6 +6,7 @@
 #   build   — cross-compile the cli (linux / macOS / windows) -> artifacts
 #   image   — build the agent image and push it to the GitLab Container Registry
 #   release — publish a GitLab Release for the tag
+#   deploy  — mirror, packages, site; verify-release checks it all arrived
 #
 # Versioning:
 #   * Branch / MR pipelines  -> dev builds stamped with the short commit SHA.
@@ -828,6 +829,36 @@ publish-packages:
     - apk add --no-cache git ca-certificates >/dev/null
   script:
     - sh ci/publish-packages.sh "$CI_COMMIT_TAG" packaging
+
+# ----------------------------------------------------------------------------
+# verify-release — the last word on a release: is it really out?
+#
+# Every job above checks its own step; this one checks the result, the way a
+# user meets it — anonymously, through the public URLs, against the checksums
+# build-cli produced: GitLab downloads, the GitHub release, the Homebrew formula
+# and Scoop manifest, the Docker Hub tag, install.sh from the live site, and the
+# site's release notes. Each of those went wrong once without anyone noticing
+# for a while. The GitHub CDN and the site deploy lag by minutes, so those
+# checks retry for up to VERIFY_WAIT seconds. Not allow_failure: a release that
+# did not arrive must turn the pipeline red. See ci/verify-release.sh.
+# ----------------------------------------------------------------------------
+verify-release:
+  stage: deploy
+  image: alpine:3
+  needs:
+    - job: release-publish
+    - job: agent-image
+    - job: mirror-github
+    - job: publish-packages
+    - job: deploy-site
+  rules:
+    - *semver-tag
+  variables:
+    VERIFY_WAIT: "900"
+  before_script:
+    - apk add --no-cache curl jq coreutils >/dev/null
+  script:
+    - sh ci/verify-release.sh "$CI_COMMIT_TAG"
 
 reddit-post:
   extends: .release-post
