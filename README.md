@@ -93,7 +93,13 @@ token with `write_repository`) set, commits them to that branch.
   (enforced by the `verify-tag-on-main` gate). It produces:
   - cli binaries for linux/macOS/windows stamped with the version,
   - the agent image at `$CI_REGISTRY_IMAGE/agent:<version>` and `:latest`,
-  - a GitLab **Release** with the binaries attached.
+  - a GitLab **Release** with the binaries attached,
+  - the GitHub mirror release, Homebrew formula and Scoop manifest, the site,
+  - and last, `verify-release`: it checks from the outside, anonymously, that
+    all of it arrived — downloads against `SHA256SUMS`, the GitHub release, the
+    formula and manifest hashes, the Docker Hub tag, `install.sh` from the live
+    site, and the site's release notes. It turns the pipeline red if not
+    (`ci/verify-release.sh`; run it by hand with a tag to check any release).
 
   A semver tag that is **not** on `main` fails the gate and builds nothing.
 
