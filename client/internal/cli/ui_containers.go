@@ -702,6 +702,15 @@ func (u *ui) remarkUsage() {
 // shared keys.
 func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
 	km, ctree, croot := u.km, u.ctree, u.croot
+	// g / G (and Home / End) jump the SELECTION to the first / last row. tview's
+	// tree only scrolls on them and leaves the cursor where it was — off screen,
+	// so the next j or Enter acts on a row the operator can no longer see.
+	if top, ok := treeEdgeKey(ev); ok {
+		if n := treeEdgeNode(croot, top); n != nil {
+			ctree.SetCurrentNode(n)
+		}
+		return nil
+	}
 	if ev.Key() == tcell.KeyRune {
 		switch ev.Rune() {
 		case km.Search:
@@ -797,4 +806,35 @@ func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 	return u.tabKeys(ev)
+}
+
+// treeEdgeKey reports whether ev asks for the first (top) or last row: g / Home
+// or G / End.
+func treeEdgeKey(ev *tcell.EventKey) (top, ok bool) {
+	switch {
+	case ev.Key() == tcell.KeyHome, ev.Key() == tcell.KeyRune && ev.Rune() == 'g':
+		return true, true
+	case ev.Key() == tcell.KeyEnd, ev.Key() == tcell.KeyRune && ev.Rune() == 'G':
+		return false, true
+	}
+	return false, false
+}
+
+// treeEdgeNode returns the first or last row the tree shows under root (which
+// itself is hidden): the first top-level node, or the deepest last node along
+// the expanded branches.
+func treeEdgeNode(root *tview.TreeNode, top bool) *tview.TreeNode {
+	kids := root.GetChildren()
+	if len(kids) == 0 {
+		return nil
+	}
+	if top {
+		return kids[0]
+	}
+	n := kids[len(kids)-1]
+	for n.IsExpanded() && len(n.GetChildren()) > 0 {
+		c := n.GetChildren()
+		n = c[len(c)-1]
+	}
+	return n
 }
