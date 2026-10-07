@@ -1,373 +1,562 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec — cluster-wide docker exec for Docker Swarm</title>
-  <meta name="description" content="Cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal.">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="icon" href="/favicon.ico" sizes="48x48">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/">
-  <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/">
-  <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/index.de.html">
-  <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/index.es.html">
-  <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/index.fr.html">
-  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/index.pl.html">
-  <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="swarmexec">
-  <meta property="og:title" content="swarmexec — cluster-wide docker exec for Docker Swarm">
-  <meta property="og:description" content="Cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal.">
-  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/">
-  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
-  <meta property="og:image:width" content="860">
-  <meta property="og:image:height" content="470">
-  <meta property="og:locale" content="en_US">
-  <meta property="og:locale:alternate" content="de_DE">
-  <meta property="og:locale:alternate" content="es_ES">
-  <meta property="og:locale:alternate" content="fr_FR">
-  <meta property="og:locale:alternate" content="pl_PL">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="swarmexec — cluster-wide docker exec for Docker Swarm">
-  <meta name="twitter:description" content="Cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal.">
-  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "swarmexec",
-    "description": "Cluster-wide docker exec, logs and volume management for Docker Swarm, from a single terminal.",
-    "url": "https://swarm-exec.cloud-surfers.net/",
-    "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Linux, macOS, Windows",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "license": "https://www.apache.org/licenses/LICENSE-2.0",
-    "author": {
-      "@type": "Organization",
-      "name": "Cloud Surfers GmbH",
-      "url": "https://www.cloud-surfers.com/"
-    }
-  }
-  </script>
-  <style>
-    :root {
-      --bg: #0d1117; --panel: #161b22; --border: #30363d;
-      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      display: flex; align-items: center; justify-content: center; padding: 2rem;
-      line-height: 1.6;
-    }
-    main { width: 100%; max-width: 760px; }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 2.5rem;
-    }
-    h1 { margin: 0 0 .25rem; font-size: 2rem; letter-spacing: -.02em; }
-    h1 .cursor { color: var(--aqua); }
-    .tagline { color: var(--aqua); margin: 0 0 1.5rem; font-size: 1.05rem; }
-    p { color: var(--fg); }
-    p.lead { color: var(--muted); }
-    .prompt {
-      background: #010409; border: 1px solid var(--border); border-radius: 8px;
-      padding: 1rem 1.15rem; margin: 1.5rem 0; color: var(--muted);
-      overflow-x: auto; white-space: pre; font-size: .9rem;
-    }
-    .prompt .c { color: var(--aqua); }
-    .dhbox {
-      margin-top: 1.25rem; padding: .7rem .95rem; font-size: .9rem;
-      background: rgba(47,129,247,.08); border: 1px solid var(--accent);
-      border-radius: 8px; color: var(--fg);
-    }
-    .dhbox a { color: var(--aqua); text-decoration: none; }
-    .dhbox a:hover { text-decoration: underline; }
-.demo { display: block; width: 100%; height: auto; margin: 1.5rem 0; border: 1px solid var(--border); border-radius: 10px; }
-    /* demo slideshow: dependency-free, keyboard-navigable, respects reduced motion */
-    .slideshow { margin: 1.5rem 0; }
-    .slideshow:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
-    .slides { position: relative; }
-    .slide { margin: 0; }
-    .slide[hidden] { display: none; }
-    .slide .demo { margin: 0; }
-    .slide figcaption { text-align: center; color: var(--muted); font-size: .85rem; margin-top: .6rem; }
-    .slide figcaption b { color: var(--aqua); font-weight: 600; }
-    .slide-nav { display: flex; align-items: center; justify-content: center; gap: .75rem; margin-top: .6rem; }
-    .slide-nav button { font-family: inherit; cursor: pointer; background: #0d1117; color: var(--fg); border: 1px solid var(--border); border-radius: 8px; transition: border-color .15s; }
-    .slide-nav button:hover { border-color: var(--accent); }
-    .slide-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .slide-nav .arrow { width: 2rem; height: 2rem; line-height: 1; font-size: 1.15rem; padding: 0; }
-    .dots { display: flex; gap: .5rem; }
-    .dot { width: .7rem; height: .7rem; padding: 0; border-radius: 50%; }
-    .dot[aria-current="true"] { background: var(--aqua); border-color: var(--aqua); }
-    .links { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1.75rem; }
-    a.btn {
-      display: flex; flex-direction: column; gap: .15rem;
-      text-decoration: none; color: var(--fg);
-      background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
-      padding: .85rem 1rem; transition: border-color .15s, transform .05s;
-    }
-    a.btn:hover { border-color: var(--accent); }
-    a.btn:active { transform: translateY(1px); }
-    a.btn .t { font-weight: 600; }
-    a.btn .t::before { content: "→ "; color: var(--accent); }
-    a.btn .s { color: var(--muted); font-size: .8rem; }
-    .downloads { margin-top: 1rem; font-size: .85rem; color: var(--muted); }
-    .downloads a { color: var(--accent); text-decoration: none; }
-    .downloads a:hover { text-decoration: underline; }
-    footer { color: var(--muted); font-size: .8rem; margin-top: 1.75rem; }
-    footer a { color: var(--muted); }
-    /* Impressum/Datenschutz are legally required and must stay legible. */
-    .legal { margin-top: .6rem; }
-    .legal a { text-decoration: underline; }
-    .legal a:hover { color: var(--accent); }
-    @media (max-width: 560px) { .links { grid-template-columns: 1fr; } .card { padding: 1.5rem; } }
-    /* language switcher */
-    .langbar { position: fixed; top: .75rem; right: .75rem; display: flex; gap: .25rem; z-index: 10; font-size: .75rem; }
-    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
-    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
-    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
-  </style>
-  <script>
-    // i18n: on first visit redirect to the browser language (de/es/fr/pl; en is the
-    // base); the switcher below stores the choice in localStorage.
-    window.__i18n = { base: 'index', baseLang: 'en' };
-    (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
-      try {
-        var w = localStorage.getItem('sx-lang');
-        if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
-        if (w !== P) { location.replace(w === I.baseLang ? I.base + '.html' : I.base + '.' + w + '.html'); return; }
-      } catch (e) { }
-      document.addEventListener('DOMContentLoaded', function () {
-        var bar = document.querySelector('.langbar'); if (!bar) return;
-        var c = bar.querySelector('a[data-lang="' + P + '"]'); if (c) c.setAttribute('aria-current', 'true');
-        bar.addEventListener('click', function (e) {
-          var a = e.target.closest('a[data-lang]');
-          if (a) { try { localStorage.setItem('sx-lang', a.getAttribute('data-lang')); } catch (_) { } }
-        });
-      });
-    })();
-  </script>
-  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
-  <script defer src="https://stats.cloud-surfers.net/recorder.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>swarmexec — ask the node, not only the manager</title>
+<meta name="description" content="For Docker Swarm: exec, logs and port-forward into any container through a small agent on every node, plus a content diff of deployed stacks and a security scan of service specs. Apache-2.0, no node limit.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="canonical" href="https://swarm-exec.cloud-surfers.net/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="swarmexec">
+<meta property="og:title" content="swarmexec — ask the node, not only the manager">
+<meta property="og:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
+<meta property="og:url" content="https://swarm-exec.cloud-surfers.net/">
+<meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+<meta property="og:image:width" content="860">
+<meta property="og:image:height" content="470">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="swarmexec — ask the node, not only the manager">
+<meta name="twitter:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
+<meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "swarmexec",
+  "description": "For Docker Swarm: exec, logs and port-forward into any container through a small agent on every node, plus a content diff of deployed stacks and a security scan of service specs. Apache-2.0, no node limit.",
+  "url": "https://swarm-exec.cloud-surfers.net/",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "author": { "@type": "Organization", "name": "Cloud Surfers GmbH", "url": "https://www.cloud-surfers.com/" }
+}
+</script>
+<script>document.documentElement.className = 'js';</script>
+<!-- Fonts are served from this site (fonts/, SIL OFL); nothing is loaded from Google. -->
+<link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="landing.css?v=__VERSION__">
+<script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+<script defer src="https://stats.cloud-surfers.net/recorder.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>
-  <nav class="langbar" aria-label="Language">
-    <a data-lang="en" hreflang="en" href="index.html">EN</a>
-    <a data-lang="de" hreflang="de" href="index.de.html">DE</a>
-    <a data-lang="es" hreflang="es" href="index.es.html">ES</a>
-    <a data-lang="fr" hreflang="fr" href="index.fr.html">FR</a>
-    <a data-lang="pl" hreflang="pl" href="index.pl.html">PL</a>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="rail">
+  <a class="mark" href="#main" aria-label="swarmexec, top of page">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Sections">
+    <a href="#alone">Only here</a>
+    <a href="#commands">Commands</a>
+    <a href="#tui">TUI</a>
+    <a class="rail-cta" href="#install">Install</a>
   </nav>
-  <main>
-    <div class="card">
-      <h1>swarmexec<span class="cursor">_</span></h1>
-      <p class="tagline">Cluster-wide <code>docker exec -it</code> for Docker Swarm.</p>
+</header>
 
-      <div class="slideshow" role="group" aria-roledescription="carousel" aria-label="Feature demos" tabindex="0">
-        <div class="slides">
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="1 / 5" data-play="15630">
-            <img class="demo" src="/demo.gif" width="860" height="470" fetchpriority="high"
-                 alt="Instead of docker node ls, finding the node, ssh node-3 and docker exec, just run: swarmexec exec web -- sh">
-            <figcaption><b>cluster-wide exec</b> — shell into any task, from one terminal</figcaption>
-          </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="2 / 5" hidden data-play="9140">
-            <img class="demo" src="/portforward.gif" width="860" height="470" loading="eager"
-                 alt="swarmexec port-forward web 9090:8080 brings up a forward to a task on node-3, then curl localhost:9090 succeeds — no SSH and no published port">
-            <figcaption><b>port-forward from your laptop</b> — reach a task's port, no SSH, no ingress</figcaption>
-          </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="3 / 5" hidden data-play="9720">
-            <img class="demo" src="/ui.gif" width="860" height="470" loading="eager"
-                 alt="swarmexec ui: a terminal UI showing the cluster as a tree of stacks, services and containers; a service is expanded to its tasks on node-2, node-4 and node-5, and the security-risks overlay lists the flagged services">
-            <figcaption><b>a terminal UI for the whole cluster</b> — stacks, services, containers, logs and risks</figcaption>
-          </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="4 / 5" hidden data-play="13160">
-            <img class="demo" src="/report.gif" width="860" height="470" loading="eager"
-                 alt="swarmexec security report -o security.md writes a Markdown report: a summary table of high, medium and low findings, then cluster findings such as an unencrypted overlay network and managers that are not autolocked">
-            <figcaption><b>a security report for the whole cluster</b> — services, networks, secrets and nodes, as Markdown</figcaption>
-          </figure>
-          <figure class="slide" role="group" aria-roledescription="slide" aria-label="5 / 5" hidden data-play="15200">
-            <img class="demo" src="/contexts.gif" width="860" height="470" loading="lazy"
-                 alt="The TUI with a contexts sidebar on the right: pressing c focuses it, Enter switches from the prod cluster to staging, and switching back leaves the cursor on the same service it was on before">
-            <figcaption><b>several clusters, one session</b> — switch context and keep your place, filters and forwards</figcaption>
-          </figure>
-        </div>
-        <div class="slide-nav">
-          <button class="arrow sl-prev" type="button" aria-label="Previous slide">&#8249;</button>
-          <div class="dots" role="group" aria-label="Choose slide">
-            <button class="dot" type="button" aria-label="Show cluster-wide exec demo" aria-current="true"></button>
-            <button class="dot" type="button" aria-label="Show port-forward demo" aria-current="false"></button>
-            <button class="dot" type="button" aria-label="Show terminal UI demo" aria-current="false"></button>
-            <button class="dot" type="button" aria-label="Show security report demo" aria-current="false"></button>
-            <button class="dot" type="button" aria-label="Show cluster switching demo" aria-current="false"></button>
-          </div>
-          <button class="arrow sl-next" type="button" aria-label="Next slide">&#8250;</button>
-        </div>
-      </div>
+<main id="main">
 
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-text">
+    <h1 id="hero-title"><span class="h1-part" style="--i:0">The manager says <span class="nb">running.</span></span> <span class="h1-part" style="--i:1">Ask the node.</span></h1>
+    <div class="lead-cols">
       <p class="lead">
-        Get an interactive shell (or run a one-off command) inside <strong>any</strong>
-        container in a Swarm — plus logs and swarm-wide volume management — from a
-        single terminal, without SSHing to the node that happens to run the task.
-        A small per-node agent, a scriptable CLI/TUI, mTLS auth and an audit log.
+        In a Swarm the manager knows where every task is scheduled. What is true inside
+        the container — its healthcheck, its shell, a port nobody published, the volume on
+        its disk — lives on one node. swarmexec puts a small agent on every node and asks it
+        directly, from the terminal you are already sitting in.
       </p>
-      <p class="lead">
-        It also <strong>audits the cluster</strong>: one command writes a Markdown
-        <strong>security report</strong> over every service, plus checks no single
-        service can answer — unencrypted overlay networks carrying traffic, managers
-        that are not autolocked, agent version skew, unused secrets and configs. It
-        states where it came from and <em>what it did not look at</em>, and its order
-        depends only on the findings, so two reports diff cleanly.
+      <p class="lead-sub">
+        No SSH to whichever node runs the task, no throwaway helper container per command.
+        Apache-2.0, no node limit.
       </p>
-
-      <div class="prompt"><span class="c">$</span> swarmexec init                 <span style="color:#484f58"># deploy the agent on every node</span>
-<span class="c">$</span> swarmexec exec web -- sh       <span style="color:#484f58"># shell into a task, any node</span>
-<span class="c">$</span> swarmexec ui                   <span style="color:#484f58"># interactive TUI</span>
-<span class="c">$</span> swarmexec security report      <span style="color:#484f58"># audit the whole cluster, as Markdown</span></div>
-
-      <div class="dhbox">
-        The per-node agent ships on Docker Hub:
-        <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">logleio/swarmexec-agent</a>
-      </div>
-
-      <div class="links">
-        <a class="btn" href="/docs">
-          <span class="t">Documentation</span>
-          <span class="s">commands, flags, config &amp; the TUI</span>
-        </a>
-        <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">
-          <span class="t">GitLab repository</span>
-          <span class="s">source &amp; issues</span>
-        </a>
-        <a class="btn" href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub">
-          <span class="t">Docker Hub</span>
-          <span class="s">logleio/swarmexec-agent</span>
-        </a>
-        <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest">
-          <span class="t">Latest release</span>
-          <span class="s">notes for <span id="ver">__VERSION__</span></span>
-        </a>
-        <a class="btn" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64" data-umami-event="download-linux-amd64">
-          <span class="t">Download CLI</span>
-          <span class="s">latest linux/amd64 binary</span>
-        </a>
-        <a class="btn" href="/releases">
-          <span class="t">Release notes</span>
-          <span class="s">every version, what changed</span>
-        </a>
-      </div>
-
-      <div class="downloads">
-        More builds (always latest release):
-        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-arm64" data-umami-event="download-linux-arm64">linux-arm64</a> ·
-        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-arm64" data-umami-event="download-darwin-arm64">darwin-arm64</a> ·
-        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-amd64" data-umami-event="download-darwin-amd64">darwin-amd64</a> ·
-        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-windows-amd64.exe" data-umami-event="download-windows-amd64">windows-amd64</a>
-      </div>
-
-      <footer>
-        <span id="verline">Current release: <strong>__VERSION__</strong></span> ·
-        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
-        <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">gitlab.logle.io/cs-public/swarm-remote-exec</a><br>
-        Open source under the
-        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
-        · © 2026 Cloud Surfers GmbH
-        <nav class="legal" aria-label="Legal">
-          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
-          <a href="/datenschutz">Datenschutz</a> ·
-          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
-        </nav>
-      </footer>
     </div>
-  </main>
-  <script>
-    // Demo slideshow: vanilla, no deps. Keyboard: arrows on the group; buttons
-    // are natively focusable. Gentle auto-advance, held while hovered/focused,
-    // and disabled entirely under prefers-reduced-motion or on touch.
-    (function () {
-      var root = document.querySelector('.slideshow');
-      if (!root) return;
-      var slides = Array.prototype.slice.call(root.querySelectorAll('.slide'));
-      var dots = Array.prototype.slice.call(root.querySelectorAll('.dot'));
-      var i = 0, timer = null, paused = 0;
-      var mm = window.matchMedia;
-      var reduce = mm && mm('(prefers-reduced-motion: reduce)').matches;
-      // On a coarse pointer (touch) there is no hover and the nav buttons only
-      // take focus on tap, so an auto-advancing carousel could not be stopped
-      // (WCAG 2.2.2). Leave it on manual control there.
-      var auto = mm && mm('(pointer: coarse)').matches;
-      // A gif behind display:none does not sit waiting at frame 0 — the browser
-      // pauses it where it was, or keeps running it unseen. Either way a slide
-      // opened a second time would start halfway through its own story, which
-      // is the thing per-slide timing is meant to prevent. Re-assigning the src
-      // rewinds it, and by then the file is served from cache or revalidated
-      // with a conditional request — nginx sends no Cache-Control for these, so
-      // it is a 304 at worst, not a re-download of the image.
-      // removeAttribute, NOT src='': an empty src resolves against the page URL
-      // and makes the browser fetch the DOCUMENT again, which is both a wasted
-      // request and a second set of analytics hits.
-      var seen = [];
-      function rewind(img) {
-        if (!img) return;
-        var src = img.getAttribute('src');
-        if (!src) return;
-        img.removeAttribute('src');
-        img.setAttribute('src', src);
-      }
-      function show(n) {
-        i = (n + slides.length) % slides.length;
-        if (seen[i]) rewind(slides[i].querySelector('img'));
-        seen[i] = true;
-        slides.forEach(function (s, k) {
-          var on = k === i;
-          s.hidden = !on;
-          dots[k].setAttribute('aria-current', on ? 'true' : 'false');
-        });
-      }
-      function next() { show(i + 1); }
-      function prev() { show(i - 1); }
-      function stop() { if (timer) { clearTimeout(timer); timer = null; } }
-      // Each gif is its own length, so one fixed interval was wrong for all of
-      // them: it cut the long ones off partway through their story and left the
-      // short ones sitting on a held last frame. The slide carries its own
-      // duration and the timer is armed per slide, one slide at a time.
-      function playtime() {
-        var v = parseInt(slides[i].getAttribute('data-play'), 10);
-        // The small tail absorbs timer and decode jitter, so the last frame is
-        // never clipped. No attribute (or a bad one) falls back to the old pace.
-        return v > 0 ? v + 250 : 6000;
-      }
-      // paused counts the independent reasons to hold (hover, focus). start()
-      // honours it, so restarting the timer after a click/arrow key cannot
-      // resume auto-advance while the pointer or focus is still on the carousel.
-      function start() {
-        if (reduce || auto || paused || timer) return;
-        timer = setTimeout(function () { timer = null; next(); start(); }, playtime());
-      }
-      function restart() { stop(); start(); }
-      function hold() { paused++; stop(); }
-      function release() { paused = Math.max(0, paused - 1); start(); }
-      root.querySelector('.sl-next').addEventListener('click', function () { next(); restart(); });
-      root.querySelector('.sl-prev').addEventListener('click', function () { prev(); restart(); });
-      dots.forEach(function (d, k) { d.addEventListener('click', function () { show(k); restart(); }); });
-      root.addEventListener('keydown', function (e) {
-        if (e.key === 'ArrowRight') { next(); restart(); e.preventDefault(); }
-        else if (e.key === 'ArrowLeft') { prev(); restart(); e.preventDefault(); }
-      });
-      root.addEventListener('mouseenter', hold);
-      root.addEventListener('mouseleave', release);
-      root.addEventListener('focusin', hold);
-      root.addEventListener('focusout', release);
-      show(0); start();
-    })();
-  </script>
+  </div>
+
+  <figure class="stage" id="stage" aria-labelledby="stage-cap">
+    <div class="stage-head">
+      <div class="scenes" role="tablist" aria-label="Pick a mechanism to watch">
+        <button type="button" role="tab" id="tab-health"  data-scene="health"  aria-selected="true"  aria-controls="stage-body">health</button>
+        <button type="button" role="tab" id="tab-exec"    data-scene="exec"    aria-selected="false" aria-controls="stage-body" tabindex="-1">exec</button>
+        <button type="button" role="tab" id="tab-forward" data-scene="forward" aria-selected="false" aria-controls="stage-body" tabindex="-1">port-forward</button>
+        <button type="button" role="tab" id="tab-logs"    data-scene="logs"    aria-selected="false" aria-controls="stage-body" tabindex="-1">logs -f</button>
+      </div>
+      <button type="button" class="replay" id="replay" aria-label="Run this scene again"><span aria-hidden="true">↻</span><span class="replay-t"> Run again</span></button>
+    </div>
+
+    <div class="stage-body" id="stage-body" role="tabpanel" aria-labelledby="tab-health">
+      <div class="board" id="board">
+        <svg class="wires" id="wires" aria-hidden="true" focusable="false"></svg>
+        <div class="labels" id="labels" aria-hidden="true"></div>
+
+        <div class="row-top">
+          <div class="card host" data-anchor="host" style="--i:0">
+            <span class="card-name">your terminal</span>
+            <span class="card-sub">context <b>prod</b></span>
+          </div>
+          <div class="card mgr" data-anchor="mgr" style="--i:1">
+            <span class="card-name">manager</span>
+            <span class="card-sub">Docker API</span>
+          </div>
+        </div>
+
+        <div class="nodes">
+          <div class="card node" data-anchor="node-2" style="--i:2">
+            <span class="card-name"><i class="led" aria-hidden="true"></i>node-2</span>
+            <span class="card-sub">agent :9443</span>
+            <ul class="pods">
+              <li><button type="button" class="pod" data-pod="web.1" data-health="healthy" disabled><span class="dot"></span>web.1</button></li>
+              <li class="pod-late" hidden><button type="button" class="pod" data-pod="web.2b" data-health="starting" disabled><span class="dot"></span>web.2</button></li>
+            </ul>
+          </div>
+          <div class="card node" data-anchor="node-3" style="--i:3">
+            <span class="card-name"><i class="led" aria-hidden="true"></i>node-3</span>
+            <span class="card-sub">agent :9443</span>
+            <ul class="pods">
+              <li><button type="button" class="pod" data-pod="web.2" data-health="unhealthy" disabled><span class="dot"></span>web.2</button></li>
+            </ul>
+          </div>
+          <div class="card node" data-anchor="node-4" style="--i:4">
+            <span class="card-name"><i class="led" aria-hidden="true"></i>node-4</span>
+            <span class="card-sub">agent :9443</span>
+            <ul class="pods">
+              <li><button type="button" class="pod" data-pod="web.3" data-health="healthy" disabled><span class="dot"></span>web.3</button></li>
+              <li><button type="button" class="pod pod-db" data-pod="db.1" data-health="none" disabled><span class="dot"></span>db.1</button></li>
+              <li class="sidecar" hidden><span class="dot"></span>sidecar</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="console" id="console" aria-label="Terminal output">
+        <div class="con-block">
+          <p class="con-h">manager · task list for web</p>
+          <pre>web.1   node-2   <span class="c-aqua">running</span>
+web.2   node-3   <span class="c-aqua">running</span>
+web.3   node-4   <span class="c-aqua">running</span></pre>
+        </div>
+        <div class="con-block">
+          <p class="con-h">agents · the status line each node already reads</p>
+          <pre>node-2  Up 3 days <span class="c-aqua">(healthy)</span>
+node-3  Up 2 hours <span class="c-red">(unhealthy)</span>
+node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
+        </div>
+        <div class="con-block">
+          <p class="con-h">swarmexec ui · the tree row</p>
+          <pre class="tree-row"><span class="c-amber">▾ web  replicated  3/3  nginx:1.27.2</span>  <span class="c-red">✖ 1 unhealthy</span></pre>
+          <p class="con-why">1 of 3 checked containers unhealthy: orange, like a partial rollout.</p>
+        </div>
+      </div>
+    </div>
+
+    <figcaption class="stage-cap" id="stage-cap">
+      Swarm's task state reads <code>running</code> while its container fails every probe,
+      so the verdict has to come from the node. It rides along with the status line the
+      agent already reads for resource usage — no extra request.
+    </figcaption>
+    <p class="stage-hint" id="stage-hint" hidden></p>
+  </figure>
+</section>
+
+<section id="alone" class="band" aria-labelledby="alone-title">
+  <div class="band-head">
+    <h2 id="alone-title">Three things you will not find elsewhere</h2>
+    <p class="band-lead">
+      Exec by itself is no longer rare — <a href="https://github.com/jr-k/d4s">d4s</a> has
+      it over an SSH tunnel, and <a href="https://github.com/Eldara-Tech/swarmcli">swarmcli</a>'s
+      Business Edition behind an mTLS proxy. These three have not turned up in either,
+      nor in Portainer, Swarmpit or Komodo.
+    </p>
+  </div>
+
+  <!-- 1 · stack diff -->
+  <article class="claim" id="claim-diff">
+    <div class="claim-text">
+      <p class="claim-cmd"><span class="p">$</span> swarmexec stack diff web.yml</p>
+      <h3>A diff of what would change, not of how it is spelled</h3>
+      <p>
+        A deployed stack carries things your file never had: the digest the daemon resolved,
+        its own restart and update defaults, the stack name prefixed onto every network and
+        secret. Compared as text, that is a page of differences for a stack that is exactly in
+        sync — and a tool that teaches you to ignore its output.
+      </p>
+      <p>
+        swarmexec runs the file through Docker's own compose loader and converter, the code
+        <code>docker stack deploy</code> uses, and reduces both sides with the same function.
+        The question it answers is <em>would deploying this change anything</em>. Exits&nbsp;1
+        on a difference, like <code>git diff --exit-code</code>.
+      </p>
+      <p class="claim-why">
+        An export is a description, not a backup: secret values are write-only in the engine
+        API and volume contents live on the nodes, so both are declared external, and the
+        output says so under <em>Not compared</em>.
+      </p>
+    </div>
+
+    <div class="toy" id="diff-toy">
+      <div class="toy-controls">
+        <fieldset class="seg">
+          <legend>The file says</legend>
+          <label><input type="radio" name="diff-file" value="same"> <code>nginx:1.27.1</code> <span class="seg-note">as deployed</span></label>
+          <label><input type="radio" name="diff-file" value="bump" checked> <code>nginx:1.27.2</code> <span class="seg-note">one bump</span></label>
+        </fieldset>
+        <fieldset class="seg">
+          <legend>Compared</legend>
+          <label><input type="radio" name="diff-mode" value="text"> as text</label>
+          <label><input type="radio" name="diff-mode" value="sx" checked> by swarmexec</label>
+        </fieldset>
+      </div>
+      <div class="term" aria-live="polite">
+        <div class="term-bar"><span class="term-title" id="diff-title">swarmexec stack diff web.yml</span><span class="exit bad" id="diff-exit">exit 1</span></div>
+        <pre id="diff-out"><span class="d-meta">--- deployed stack web
++++ web.yml
+@@ -1,6 +1,6 @@</span>
+ services:
+   web:
+<span class="d-del">-    image: nginx:1.27.1</span>
+<span class="d-add">+    image: nginx:1.27.2</span>
+     networks:
+       - front
+     deploy:</pre>
+      </div>
+      <p class="toy-note" id="diff-note">One line changed, so one line is reported.</p>
+    </div>
+  </article>
+
+  <!-- 2 · security gate -->
+  <article class="claim" id="claim-scan">
+    <div class="claim-text">
+      <p class="claim-cmd"><span class="p">$</span> swarmexec stack deploy web.yml --check</p>
+      <h3>A scan of the spec, before anything is created</h3>
+      <p>
+        Eight analyzers read each service's spec — the spec the manager already returned, so
+        nothing runs inside your containers. <code>stack deploy</code> converts the file into
+        the very <code>ServiceSpec</code> values it would submit and runs the same eight, so
+        the gate, the <span class="shield">🛡</span> in the tree and the report can never
+        disagree.
+      </p>
+      <p>
+        Anything above informational stops the deploy and asks. <code>--yes</code> means
+        <em>do not ask</em>, not <em>ignore the findings</em> — it still refuses. To deploy
+        anyway you type <code>--force</code>.
+      </p>
+      <p class="claim-why">
+        <code>security report</code> adds four checks no single service can answer:
+        unencrypted overlay networks, managers without autolock, agent version skew,
+        secrets and configs nobody references — and names what it could <em>not</em> reach,
+        because silence in a security report reads as an all-clear.
+      </p>
+    </div>
+
+    <div class="toy" id="scan-toy">
+      <p class="toy-lede">Tap a line to change it. The output is the checker's, rule for rule.</p>
+      <div class="yaml" role="group" aria-label="web.yml, service api">
+        <div class="y-fixed">services:<br>&nbsp;&nbsp;api:</div>
+        <button type="button" class="y-line" data-rule="image" aria-pressed="true">
+          <span class="y-on">image: shop/api:latest</span><span class="y-off">image: shop/api:2.4.1</span></button>
+        <button type="button" class="y-line" data-rule="user" aria-pressed="false">
+          <span class="y-on">user: "0"</span><span class="y-off">user: "10001"</span></button>
+        <button type="button" class="y-line" data-rule="env" aria-pressed="false">
+          <span class="y-on">environment: { DB_PASSWORD: hunter2 }</span><span class="y-off">environment: { DB_PASSWORD_FILE: /run/secrets/db }</span></button>
+        <button type="button" class="y-line" data-rule="sock" aria-pressed="true">
+          <span class="y-on">volumes: [ /var/run/docker.sock:/var/run/docker.sock:ro ]</span><span class="y-off">volumes: [ data:/var/lib/api ]</span></button>
+        <button type="button" class="y-line" data-rule="cap" aria-pressed="false">
+          <span class="y-on">cap_add: [ NET_ADMIN ]</span><span class="y-off">cap_add: [ ]</span></button>
+        <button type="button" class="y-line" data-rule="limits" aria-pressed="false">
+          <span class="y-on">deploy: { resources: { } }</span><span class="y-off">deploy: { resources: { limits: { memory: 256M } } }</span></button>
+      </div>
+      <div class="term" aria-live="polite">
+        <div class="term-bar"><span class="term-title">swarmexec stack deploy web.yml --check</span><span class="exit bad" id="scan-exit">exit 1</span></div>
+        <pre id="scan-out">1 of 1 service(s) flagged in web.yml:
+
+  api
+    <span class="sev-t high">high</span>    Docker socket mounted in — the Docker socket is bind-mounted at /var/run/docker.sock; anything in this container can start a privileged container on the node, i.e. it is root on the host (read-only does not help — the socket is an API, not a file)
+</pre>
+      </div>
+      <div class="gate is-closed" id="gate" aria-hidden="true">
+        <span class="gate-post"></span><span class="gate-arm"></span>
+        <span class="gate-label" id="gate-label">deploy stops and asks</span>
+      </div>
+      <p class="toy-note" id="scan-note">Also found, and not printed because it is informational: image not pinned.</p>
+    </div>
+  </article>
+
+  <!-- 3 · logs across replacement -->
+  <article class="claim" id="claim-logs">
+    <div class="claim-text">
+      <p class="claim-cmd"><span class="p">$</span> swarmexec logs -f web.2</p>
+      <h3>Logs that outlive the container</h3>
+      <p>
+        A rolling update, a restart or a reschedule replaces the container under the stream.
+        The client re-resolves the slot through the manager it is already talking to,
+        dials the new node's agent and prints one dim line where the old stream ended. It
+        waits about 30&nbsp;seconds for a replacement to be scheduled, and stops cleanly if the
+        service is removed.
+      </p>
+      <p class="claim-why">
+        The detection has to live in the client: each agent is local to its node and cannot
+        see a replacement that happens at the swarm level.
+      </p>
+      <button type="button" class="to-stage" data-goto="logs">Watch it happen on the cluster above</button>
+    </div>
+    <div class="toy toy-static" id="logs-toy">
+      <div class="term">
+        <div class="term-bar"><span class="term-title">swarmexec logs -f web.2</span></div>
+        <pre>10.0.1.7 - - "GET /healthz HTTP/1.1" 200 2
+10.0.1.9 - - "GET /api/cart HTTP/1.1" 200 812
+<span class="c-dim">── container replaced; reconnected to 7f3a2b1c9e04 on node-2 ──</span>
+10.0.1.7 - - "GET /healthz HTTP/1.1" 200 2
+10.0.1.4 - - "POST /api/cart HTTP/1.1" 201 64</pre>
+      </div>
+    </div>
+  </article>
+
+  <p class="footnote">Compared against the projects' own repositories and READMEs on 2026-09-26.</p>
+</section>
+
+<section id="commands" class="band" aria-labelledby="cmd-title">
+  <div class="band-head">
+    <h2 id="cmd-title">The whole command surface</h2>
+    <p class="band-lead">
+      Every command honours your Docker CLI context, including an <code>ssh://</code> one
+      behind a jump host. Connections to the same host share one OpenSSH transport, so only
+      the first one authenticates: <code>doctor</code> on a three-node cluster behind a jump
+      host went from 8 authentications and 3.6&nbsp;s to 2 and 1.0&nbsp;s.
+    </p>
+  </div>
+
+  <div class="cmdgrid">
+    <div class="cmdgroup">
+      <h3>Provision</h3>
+      <dl>
+        <dt>init</dt><dd>deploy the agent as a global service, create the shared secret, write a matching client config</dd>
+        <dt>init --force</dt><dd>re-roll the agents and keep the secret, so every client keeps working</dd>
+        <dt>down</dt><dd>remove the agents again; your client config is left alone</dd>
+        <dt>doctor</dt><dd>check the manager and every agent; non-zero if one is unhealthy or too old</dd>
+      </dl>
+    </div>
+    <div class="cmdgroup">
+      <h3>Reach in</h3>
+      <dl>
+        <dt>exec &lt;target&gt; -- sh</dt><dd>a shell or a one-off command in any container; the remote exit code comes back verbatim</dd>
+        <dt>logs -f &lt;target&gt;</dt><dd>follow across replacement; <code>--log-format auto</code>, <code>--min-level</code>, <code>--grep</code></dd>
+        <dt>port-forward &lt;target&gt;</dt><dd>a local port onto a container port that is published nowhere</dd>
+        <dt>ps</dt><dd>every task and the node it runs on, from the manager alone</dd>
+      </dl>
+    </div>
+    <div class="cmdgroup">
+      <h3>Node-local objects</h3>
+      <dl>
+        <dt>volume ls</dt><dd>volumes across all nodes, with which nodes hold each and who uses it</dd>
+        <dt>volume rm</dt><dd>remove a volume on every node that holds it, or on the nodes you name</dd>
+        <dt>context</dt><dd>create, list and switch Docker contexts, in docker's own store</dd>
+        <dt>config show</dt><dd>the effective merged config, secret masked</dd>
+      </dl>
+    </div>
+    <div class="cmdgroup">
+      <h3>Stacks and safety</h3>
+      <dl>
+        <dt>stack export</dt><dd>read a deployed stack back out as compose-shaped YAML</dd>
+        <dt>stack diff</dt><dd>compare a file against what is deployed; exits 1 on a difference</dd>
+        <dt>stack deploy</dt><dd>check the file, then apply it; <code>--check</code> gates a pipeline</dd>
+        <dt>security report</dt><dd>a Markdown audit of services, networks, secrets and nodes</dd>
+      </dl>
+    </div>
+  </div>
+
+  <p class="targets">
+    A target is <code>web</code> (the service's running task), <code>web.2</code> (a replica
+    slot), <code>xxh8k1…</code> (a task ID) or <code>3f9a2b…</code> (a container ID). A bare
+    service name with several replicas is ambiguous: <code>exec</code> offers a numbered list
+    when it is interactive; <code>logs</code> and <code>port-forward</code> print the
+    candidates and exit rather than pick for you.
+  </p>
+</section>
+
+<section id="tui" class="band band-tui" aria-labelledby="tui-title">
+  <div class="band-head">
+    <h2 id="tui-title">The same cluster, as one screen</h2>
+  </div>
+  <div class="tui-split">
+    <div class="tui-text">
+      <p>
+        <code>swarmexec ui</code> has seven tabs — Stacks/Services, Volumes, Forwards,
+        Networks, Secrets, Nodes, Configs — a context sidebar on the right, and exec, logs
+        and port-forwarding built in.
+      </p>
+      <ul class="ticks">
+        <li>The tree is coloured by healthcheck as well as replica count — the rule the stage above lets you try.</li>
+        <li>A service with a finding worth acting on carries a <span class="shield">🛡</span> in a fixed-width column, so the shields line up into a vertical scan.</li>
+        <li>CPU and memory markers appear at 70&nbsp;% and 90&nbsp;%, measured against the container's own limit when it has one.</li>
+        <li>Switching context keeps your place, your filters and your forwards.</li>
+        <li><kbd>?</kbd> opens the full key reference, generated from your own keymap.</li>
+      </ul>
+      <p class="claim-why">
+        Health and usage need agents from a current release. A cluster that has not been
+        re-rolled shows neither, rather than a guess — <code>init --force</code> fixes that.
+      </p>
+    </div>
+    <div class="tui-shots">
+      <figure class="shot">
+        <img src="ui.gif" width="860" height="470" loading="lazy" decoding="async"
+             alt="The swarmexec TUI: the cluster as a tree of stacks, services and containers, a service expanded to its tasks on node-2, node-4 and node-5, and the security-risks overlay listing the flagged services.">
+        <figcaption>Tab 1, expanded to tasks, with the security-risks overlay open.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="contexts.gif" width="860" height="470" loading="lazy" decoding="async"
+             alt="The TUI with a contexts sidebar on the right: pressing c focuses it, Enter switches from the prod cluster to staging, and switching back leaves the cursor on the same service.">
+        <figcaption>Switching clusters and back; the cursor stays on the same service.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="checks" class="band" aria-labelledby="checks-title">
+  <div class="band-head">
+    <h2 id="checks-title">What the scan looks for</h2>
+    <p class="band-lead">
+      The report's own <em>Checked</em> list is generated from the analyzers themselves, so a
+      check cannot ship without appearing in what the report claims to have looked at.
+    </p>
+  </div>
+
+  <div class="tables">
+  <table class="checks">
+    <caption>Per service, from the spec the manager returned</caption>
+    <thead><tr><th scope="col">Check</th><th scope="col">Severity</th><th scope="col">What it flags</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">docker-socket</th><td><span class="sev high">high</span></td><td>the daemon socket bind-mounted in. Anything that can talk to it can start a privileged container on that node; read-only does not help, because a socket is an API, not a file.</td></tr>
+      <tr><th scope="row">added-capability</th><td><span class="sev high">high</span> <span class="sev med">medium</span></td><td>Swarm has no <code>--privileged</code>, so capabilities are how a service asks for host power. Eight are high, each with its reason: <code>ALL</code>, <code>SYS_ADMIN</code>, <code>SYS_MODULE</code>, <code>SYS_PTRACE</code>, <code>SYS_RAWIO</code>, <code>DAC_READ_SEARCH</code>, <code>NET_ADMIN</code>, <code>NET_RAW</code>. Any other is medium.</td></tr>
+      <tr><th scope="row">host-network</th><td><span class="sev high">high</span></td><td>attached to the <code>host</code> network: no isolation, no port mapping, and it can reach anything the node can — including services bound to localhost.</td></tr>
+      <tr><th scope="row">unconfined</th><td><span class="sev high">high</span></td><td>seccomp or AppArmor switched off, reported separately, so a service that disables both gets two findings.</td></tr>
+      <tr><th scope="row">root-user</th><td><span class="sev high">high</span> <span class="sev low">low</span></td><td>high when the spec pins the container to root — <code>User=root</code> or uid&nbsp;0. Low, and not marking the service, when no user is set at all: whether that is root depends on the image's own <code>USER</code>.</td></tr>
+      <tr><th scope="row">secret-in-env</th><td><span class="sev high">high</span></td><td>a credential-looking key with a literal value, readable by anyone who can read the spec. <code>*_FILE</code> references are exempt, and the value never appears in the finding.</td></tr>
+      <tr><th scope="row">no-resource-limits</th><td><span class="sev low">low</span></td><td>neither a CPU nor a memory limit, so a runaway container can starve the node.</td></tr>
+      <tr><th scope="row">unpinned-image</th><td><span class="sev low">low</span></td><td><code>:latest</code> or no tag. A digest-pinned image is never flagged, and a registry port is not mistaken for a tag.</td></tr>
+    </tbody>
+  </table>
+
+  <table class="checks">
+    <caption>Per cluster, in the Markdown report</caption>
+    <thead><tr><th scope="col">Check</th><th scope="col">Severity</th><th scope="col">What it flags</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">network-unencrypted</th><td><span class="sev med">medium</span></td><td>Swarm tunnels traffic between nodes over VXLAN in the clear unless the network was created <code>--opt encrypted</code>. Empty networks are not flagged, nor is ingress, which cannot be encrypted at all.</td></tr>
+      <tr><th scope="row">autolock-disabled</th><td><span class="sev med">medium</span></td><td>the raft store holds every secret, every config and the cluster CA key, and its key sits on the same disk. Unreadable configuration is reported as <em>unknown</em>, not guessed.</td></tr>
+      <tr><th scope="row">agent skew</th><td><span class="sev high">high</span> <span class="sev med">medium</span> <span class="sev low">low</span></td><td>the agent enforces authorization, so one older than your client may not enforce a rule the client assumes. An agent that did not answer is a gap, not a pass.</td></tr>
+      <tr><th scope="row">unused-secret / -config</th><td><span class="sev low">low</span></td><td>still distributed through raft and readable by anything that reaches a manager — usually a credential someone rotated and never removed.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="footnote">
+    The report is written <code>0600</code> into directories created <code>0700</code>: it
+    names every service, network and secret together with every weakness found in it, which
+    is a map of where to attack. Its order depends only on the findings, so two reports of an
+    unchanged cluster differ in their timestamp alone.
+  </p>
+</section>
+
+<section id="install" class="band band-install" aria-labelledby="install-title">
+  <div class="band-head">
+    <h2 id="install-title">Standing it up</h2>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <h3>Take the binary</h3>
+      <pre class="sh"><span class="p">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+<span class="p">$</span> brew install ekrotov/swarmexec/swarmexec        <span class="c-dim"># macOS, Linux</span>
+<span class="p">$</span> scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
+<span class="p">$</span> scoop install swarmexec                          <span class="c-dim"># Windows</span></pre>
+      <p>One static binary. The install script checks it against the release's checksum and refuses what it cannot verify. Docker Engine 19.03 or newer on the manager and every node; live usage and the per-node image view want 23.0 and say so instead of failing below it.</p>
+    </li>
+    <li>
+      <h3>Provision the agents, once</h3>
+      <pre class="sh"><span class="p">$</span> swarmexec --context prod init</pre>
+      <p>Deploys the agent as a global service — one task per node — creates a shared secret and writes the matching client config. <code>swarmexec down</code> takes it away again.</p>
+    </li>
+    <li>
+      <h3>Use it</h3>
+      <pre class="sh"><span class="p">$</span> swarmexec exec web -- sh
+<span class="p">$</span> swarmexec ui</pre>
+      <p>Or put <code>stack diff</code> and <code>stack deploy --check</code> into CI, where the exit codes are the point.</p>
+    </li>
+  </ol>
+
+  <div class="auth">
+    <h3>Two ways to authenticate</h3>
+    <div class="auth-two">
+      <div>
+        <h4>Mutual TLS</h4>
+        <p>
+          The recommended posture. Your own CA — the project does no PKI bootstrap. The
+          agent identifies and audits you by your certificate's CN.
+        </p>
+      </div>
+      <div>
+        <h4>Shared secret</h4>
+        <p>
+          What <code>init</code> sets up: one secret, no PKI. The secret itself is never
+          sent — the client sends a proof bound to the certificate of the connection it
+          travels on, so a server you did not verify receives nothing that works against a
+          real agent. That beats theft and replay, not eavesdropping; for that you want a CA.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="get">
+    <a class="get-main" href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-amd64" data-umami-event="download-linux-amd64">
+      <b>Download the CLI</b>
+      <span>linux/amd64, release <span id="ver">__VERSION__</span></span>
+    </a>
+    <a class="get-alt" href="docs.html"><b>Documentation</b><span>every command, flag and key</span></a>
+    <a class="get-alt" href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab"><b>GitLab</b><span>source and issues</span></a>
+    <a class="get-alt" href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><b>Docker Hub</b><span>logleio/swarmexec-agent</span></a>
+    <a class="get-alt" href="releases.html"><b>Release notes</b><span>every version, what changed</span></a>
+  </div>
+
+  <p class="builds">
+    Other builds, always the latest release:
+    <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-linux-arm64" data-umami-event="download-linux-arm64">linux-arm64</a>,
+    <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-arm64" data-umami-event="download-darwin-arm64">darwin-arm64</a>,
+    <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-darwin-amd64" data-umami-event="download-darwin-amd64">darwin-amd64</a>,
+    <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases/permalink/latest/downloads/bin/swarmexec-windows-amd64.exe" data-umami-event="download-windows-amd64">windows-amd64</a>.
+  </p>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-grid">
+    <p class="foot-lede">
+      swarmexec is open source under the
+      <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>, with no
+      node limit and no edition above it.
+    </p>
+    <p>
+      <code>docker pull logleio/swarmexec-agent:latest</code><br>
+      <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">gitlab.logle.io/cs-public/swarm-remote-exec</a>
+    </p>
+    <nav class="legal" aria-label="Legal">
+      <a href="https://www.cloud-surfers.com/impressum/">Impressum</a>
+      <a href="datenschutz.html">Datenschutz</a>
+      <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+    </nav>
+    <p class="copy">© 2026 Cloud Surfers GmbH</p>
+  </div>
+</footer>
+
+<script src="landing.js?v=__VERSION__" defer></script>
 </body>
 </html>
