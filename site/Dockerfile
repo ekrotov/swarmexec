@@ -38,7 +38,7 @@ COPY site/nginx.conf /etc/nginx/conf.d/default.conf
 COPY site/index*.html site/docs*.html site/datenschutz*.html site/releases*.html site/robots.txt site/sitemap.xml site/install.sh \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png \
      site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif \
-     site/landing.css site/landing.js /usr/share/nginx/html/
+     site/landing.css site/landing.js site/docs.css /usr/share/nginx/html/
 # Fonts are served from here, not from Google (no third-party request, nothing
 # for the privacy page to declare); the OFL texts travel with them.
 COPY site/fonts /usr/share/nginx/html/fonts

@@ -62,7 +62,12 @@ none. Verified: read-only rootfs blocks writes, and it still serves as uid 101.
   privacy page stay in five languages.
 - `landing.css`, `landing.js` — the landing page's styles and its animated scenes
   (vanilla JS, no library).
-- `fonts/` — Archivo and JetBrains Mono (latin + latin-ext, woff2) with their SIL OFL
+- `docs.css` — the look of the docs pages (all five languages share it), in the
+  landing page's design: same colours, fonts, light/dark and top bar. Colours the
+  TUI uses are classes (`tc-red`, `tc-yellow`, …), not inline styles, so they stay
+  readable on paper in both modes and switch to terminal colours inside a
+  command block.
+- `fonts/` — `fonts.css` plus Archivo and JetBrains Mono (latin + latin-ext, woff2) with their SIL OFL
   texts. Served from here on purpose: no request to Google, nothing for the privacy
   page to declare.
 - `nginx.conf` — minimal nginx config (listens on 8080, gzip, security headers, `/healthz`).

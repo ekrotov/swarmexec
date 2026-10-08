@@ -32,95 +32,10 @@
   <meta name="twitter:title" content="swarmexec — Client-Dokumentation">
   <meta name="twitter:description" content="So verwendest du den swarmexec-Client: Befehle, Flags, Konfiguration, Authentifizierung und die interaktive TUI.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
-  <style>
-    :root {
-      --bg: #0d1117; --panel: #161b22; --border: #30363d;
-      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
-      --danger: #f85149; --comment: #484f58;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--fg);
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      line-height: 1.6; padding: 2rem 1.5rem 4rem;
-    }
-    main { width: 100%; max-width: 900px; margin: 0 auto; }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 2.5rem;
-    }
-    a { color: var(--accent); }
-    .home { color: var(--muted); text-decoration: none; font-size: .85rem; }
-    .home:hover { color: var(--accent); }
-    h1 { margin: .5rem 0 .25rem; font-size: 2rem; letter-spacing: -.02em; }
-    h1 .cursor { color: var(--aqua); }
-    .tagline { color: var(--aqua); margin: 0 0 1.25rem; font-size: 1.05rem; }
-    p { color: var(--fg); }
-    p.lead { color: var(--muted); }
-    h2 {
-      margin: 2.75rem 0 .85rem; font-size: 1.35rem; letter-spacing: -.01em;
-      border-bottom: 1px solid var(--border); padding-bottom: .4rem; scroll-margin-top: 1rem;
-    }
-    h3 { margin: 1.9rem 0 .5rem; font-size: 1.05rem; color: var(--aqua); scroll-margin-top: 1rem; }
-    h3 code { color: var(--aqua); background: none; border: 0; padding: 0; }
-    code {
-      background: #010409; border: 1px solid var(--border); border-radius: 4px;
-      padding: .08em .35em; font-size: .85em;
-    }
-    .prompt, .cmd {
-      background: #010409; border: 1px solid var(--border); border-radius: 8px;
-      padding: 1rem 1.15rem; margin: 1.1rem 0; color: var(--muted);
-      overflow-x: auto; white-space: pre; font-size: .85rem; line-height: 1.7;
-    }
-    .prompt code, .cmd code { background: none; border: 0; padding: 0; font-size: 1em; }
-    .prompt .c { color: var(--aqua); }
-    .prompt .o { color: var(--comment); }
-    .cmd { color: var(--fg); }
-    .cmd .k { color: var(--aqua); }
-    .tablewrap { overflow-x: auto; margin: 1rem 0; }
-    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-    th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
-    th { background: #010409; color: var(--aqua); font-weight: 600; white-space: nowrap; }
-    td code { white-space: nowrap; }
-    tbody tr:nth-child(even) { background: rgba(255,255,255,.02); }
-    kbd {
-      background: #0d1117; border: 1px solid var(--border); border-bottom-width: 2px;
-      border-radius: 5px; padding: .05em .5em; font-size: .78em; color: var(--fg);
-      white-space: nowrap;
-    }
-    ul, ol { padding-left: 1.3rem; }
-    li { margin: .3rem 0; }
-    .note, .warn {
-      border-left: 3px solid var(--aqua); background: #010409;
-      padding: .7rem 1rem; margin: 1.1rem 0; color: var(--muted); border-radius: 0 6px 6px 0;
-    }
-    .warn { border-left-color: var(--danger); }
-    .note strong, .warn strong { color: var(--fg); }
-    .toc {
-      background: #010409; border: 1px solid var(--border); border-radius: 8px;
-      padding: 1.2rem 1.4rem; margin: 1.75rem 0 1rem;
-    }
-    .toc .th { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 .7rem; }
-    .toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 2rem; }
-    .toc li { margin: .2rem 0; break-inside: avoid; }
-    .toc a { text-decoration: none; }
-    .toc a:hover { text-decoration: underline; }
-    footer { color: var(--muted); font-size: .8rem; margin-top: 2.5rem; border-top: 1px solid var(--border); padding-top: 1.25rem; }
-    footer a { color: var(--muted); }
-    .legal { margin-top: .6rem; }
-    .legal a { text-decoration: underline; }
-    .legal a:hover { color: var(--accent); }
-    @media (max-width: 620px) {
-      .card { padding: 1.5rem; }
-      .toc ol { columns: 1; }
-      body { padding: 1.25rem 1rem 3rem; }
-    }
-    /* language switcher */
-    .langbar { position: fixed; top: .75rem; right: .75rem; display: flex; gap: .25rem; z-index: 10; font-size: .75rem; }
-    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
-    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
-    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
-  </style>
+  <meta name="color-scheme" content="light dark">
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="docs.css?v=__VERSION__">
   <script>
     // i18n: redirect to the browser language on first visit; the switcher stores the choice.
     window.__i18n = { base: 'docs', baseLang: 'en' };
@@ -145,14 +60,27 @@
   <script defer src="https://stats.cloud-surfers.net/recorder.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>
-  <nav class="langbar" aria-label="Language">
-    <a data-lang="en" hreflang="en" href="docs.html">EN</a>
-    <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
-    <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
-    <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
-    <a data-lang="pl" hreflang="pl" href="docs.pl.html">PL</a>
-  </nav>
-  <main>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a class="rail-link" href="releases.de.html">Releases</a>
+      <nav class="langbar" aria-label="Language">
+        <a data-lang="en" hreflang="en" href="docs.html">EN</a>
+        <a data-lang="de" hreflang="de" href="docs.de.html">DE</a>
+        <a data-lang="es" hreflang="es" href="docs.es.html">ES</a>
+        <a data-lang="fr" hreflang="fr" href="docs.fr.html">FR</a>
+        <a data-lang="pl" hreflang="pl" href="docs.pl.html">PL</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
     <div class="card">
       <a class="home" href="/">&larr; swarm-exec.cloud-surfers.net</a>
       <h1>swarmexec<span class="cursor">_</span> Doku</h1>
@@ -658,9 +586,9 @@ swarmexec wait api worker --healthy</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Prüfung</th><th>Schweregrad</th><th>Was sie meldet</th></tr></thead>
         <tbody>
-          <tr><td><code>network-unencrypted</code> — „overlay traffic is not encrypted“</td><td><span style="color:#f2cc60">medium</span></td><td>ein <strong>Overlay-Netzwerk, das Service-Traffic transportiert</strong>, ohne Data-Plane-Verschlüsselung. Swarm tunnelt Container-Traffic zwischen Nodes <strong>im Klartext</strong> über VXLAN, solange das Netzwerk nicht mit <code>--opt encrypted</code> angelegt wurde — und am laufenden Service sieht man so oder so keinen Unterschied. Netzwerke, an denen <strong>nichts hängt</strong>, werden nicht gemeldet (sie transportieren nichts), und <strong>ingress</strong> ebenso wenig: Es lässt sich gar nicht verschlüsseln, ein Befund dazu ließe sich also nie beheben</td></tr>
-          <tr><td><code>autolock-disabled</code> — „managers are not autolocked“</td><td><span style="color:#f2cc60">medium</span></td><td>der Raft-Speicher der Manager ist <strong>at rest nicht verschlüsselt</strong>. Er enthält jedes Secret, jede Config und den CA-Schlüssel des Clusters, und sein Schlüssel liegt auf derselben Platte — wer die Platte eines Managers mitnimmt, hat alles. Einschalten mit <code>docker swarm update --autolock=true</code> — und den <strong>Unlock-Key gut aufbewahren</strong>: Ein neu gestarteter Manager fragt danach. Ist die Swarm-Konfiguration nicht lesbar, meldet der Bericht <code>autolock-unknown</code> statt zu raten — „aus“ anzunehmen erfände einen Befund, „an“ anzunehmen ergäbe eine falsche Entwarnung</td></tr>
-          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span> / low</td><td>der Agent ist es, der bei jedem Exec, jedem Log und jedem Port-Forward die <strong>Autorisierung durchsetzt</strong> — ein Agent, der älter ist als dein Client, setzt womöglich eine Regel nicht durch, von der der Client ausgeht. Ein <strong>Protokoll</strong>-Mismatch ist <strong>high</strong> und wiegt schwerer als eine Versionsabweichung: Die beiden Seiten sind sich über den Schnittstellenvertrag selbst uneins, nicht bloß darüber, welcher Build ihn umsetzt. Ein Agent, der <strong>nicht geantwortet</strong> hat, wird als <strong>Lücke</strong> ausgewiesen, nicht als bestanden. Für einen unveröffentlichten (<code>dev</code>) Client wird <strong>keine</strong> Versionsabweichung gemeldet — er weicht zwangsläufig von jedem veröffentlichten Agent ab; dieselbe Ausnahme macht <code>doctor</code></td></tr>
+          <tr><td><code>network-unencrypted</code> — „overlay traffic is not encrypted“</td><td><span class="tc-yellow">medium</span></td><td>ein <strong>Overlay-Netzwerk, das Service-Traffic transportiert</strong>, ohne Data-Plane-Verschlüsselung. Swarm tunnelt Container-Traffic zwischen Nodes <strong>im Klartext</strong> über VXLAN, solange das Netzwerk nicht mit <code>--opt encrypted</code> angelegt wurde — und am laufenden Service sieht man so oder so keinen Unterschied. Netzwerke, an denen <strong>nichts hängt</strong>, werden nicht gemeldet (sie transportieren nichts), und <strong>ingress</strong> ebenso wenig: Es lässt sich gar nicht verschlüsseln, ein Befund dazu ließe sich also nie beheben</td></tr>
+          <tr><td><code>autolock-disabled</code> — „managers are not autolocked“</td><td><span class="tc-yellow">medium</span></td><td>der Raft-Speicher der Manager ist <strong>at rest nicht verschlüsselt</strong>. Er enthält jedes Secret, jede Config und den CA-Schlüssel des Clusters, und sein Schlüssel liegt auf derselben Platte — wer die Platte eines Managers mitnimmt, hat alles. Einschalten mit <code>docker swarm update --autolock=true</code> — und den <strong>Unlock-Key gut aufbewahren</strong>: Ein neu gestarteter Manager fragt danach. Ist die Swarm-Konfiguration nicht lesbar, meldet der Bericht <code>autolock-unknown</code> statt zu raten — „aus“ anzunehmen erfände einen Befund, „an“ anzunehmen ergäbe eine falsche Entwarnung</td></tr>
+          <tr><td><code>agent-proto-mismatch</code> / <code>agent-version-skew</code> / <code>agent-too-old</code> / <code>agent-unreachable</code></td><td><span class="tc-red">high</span> / <span class="tc-yellow">medium</span> / low</td><td>der Agent ist es, der bei jedem Exec, jedem Log und jedem Port-Forward die <strong>Autorisierung durchsetzt</strong> — ein Agent, der älter ist als dein Client, setzt womöglich eine Regel nicht durch, von der der Client ausgeht. Ein <strong>Protokoll</strong>-Mismatch ist <strong>high</strong> und wiegt schwerer als eine Versionsabweichung: Die beiden Seiten sind sich über den Schnittstellenvertrag selbst uneins, nicht bloß darüber, welcher Build ihn umsetzt. Ein Agent, der <strong>nicht geantwortet</strong> hat, wird als <strong>Lücke</strong> ausgewiesen, nicht als bestanden. Für einen unveröffentlichten (<code>dev</code>) Client wird <strong>keine</strong> Versionsabweichung gemeldet — er weicht zwangsläufig von jedem veröffentlichten Agent ab; dieselbe Ausnahme macht <code>doctor</code></td></tr>
           <tr><td><code>unused-secret</code> / <code>unused-config</code></td><td>low</td><td>ein Secret oder eine Config, auf die <strong>kein Service verweist</strong>. Sie wird weiterhin über den Raft-Speicher verteilt und ist für alles lesbar, was einen Manager erreicht — meist Zugangsdaten, die jemand rotiert, aber nie entfernt hat. Der alte Wert ist also <strong>im Cluster noch aktiv</strong>, lange nachdem alle ihn für entfernt halten</td></tr>
         </tbody>
       </table></div>
@@ -1406,7 +1334,7 @@ rules:
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
           <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor</td></tr>
           <tr><td><kbd>i</kbd></td><td>den Eintrag unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, eine <strong>Tab-Leiste</strong> oben benennt die drei Ansichten, <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> wählen Tabelle / Stats / rohes Daemon-JSON direkt aus und <kbd>t</kbd> schaltet reihum durch (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
-          <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird der <strong>ganze Stack</strong> entfernt, genau das, was <code>docker stack rm</code> entfernt: jeder Service, jedes Secret, jede Config und jedes Netzwerk mit dem Label <code>com.docker.stack.namespace</code> dieses Stacks. Die Bestätigung nennt vorher die gefundenen Zahlen (&bdquo;4 services, 2 secrets, 1 network&ldquo;), und Netzwerke werden ein paar Sekunden lang erneut versucht, weil die Endpoints eines Service nach dem Stoppen seiner Tasks noch einen Moment brauchen &mdash; <code>docker stack rm</code> gibt dort auf und lässt das Netzwerk zurück. Was sich verweigert, wird danach namentlich aufgelistet, damit klar ist, was übrig bleibt. Die Zeile <em>(no stack)</em> entfernt nichts: sie ist eine Anzeigegruppierung, kein Stack. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks, kann nicht rückgängig gemacht werden und bietet danach an, nun verwaiste Secrets ebenfalls zu löschen. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span style="color:#f85149"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
+          <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird der <strong>ganze Stack</strong> entfernt, genau das, was <code>docker stack rm</code> entfernt: jeder Service, jedes Secret, jede Config und jedes Netzwerk mit dem Label <code>com.docker.stack.namespace</code> dieses Stacks. Die Bestätigung nennt vorher die gefundenen Zahlen (&bdquo;4 services, 2 secrets, 1 network&ldquo;), und Netzwerke werden ein paar Sekunden lang erneut versucht, weil die Endpoints eines Service nach dem Stoppen seiner Tasks noch einen Moment brauchen &mdash; <code>docker stack rm</code> gibt dort auf und lässt das Netzwerk zurück. Was sich verweigert, wird danach namentlich aufgelistet, damit klar ist, was übrig bleibt. Die Zeile <em>(no stack)</em> entfernt nichts: sie ist eine Anzeigegruppierung, kein Stack. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks, kann nicht rückgängig gemacht werden und bietet danach an, nun verwaiste Secrets ebenfalls zu löschen. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span class="tc-red"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -1419,8 +1347,8 @@ rules:
         (siehe unten). Ein <code>▸</code>/<code>▾</code>-Marker zeigt, ob ein Service
         eingeklappt oder ausgeklappt ist; seine laufenden Container verschachteln sich
         darunter. Ein Service <strong>mitten in einem Rolling Update</strong> trägt ein
-        farbiges Badge in seiner Baumzeile — <span style="color:#f2cc60">⟳&nbsp;updating</span> oder
-        <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span> — und derselbe Status erscheint
+        farbiges Badge in seiner Baumzeile — <span class="tc-yellow">⟳&nbsp;updating</span> oder
+        <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span> — und derselbe Status erscheint
         im Service-Inspect-Overlay; es verschwindet, sobald das Update abgeschlossen ist.
       </p>
       <p>
@@ -1448,10 +1376,10 @@ rules:
       </p>
       <ul>
         <li><strong>alle</strong> geprüften Container unhealthy → die Zeile wird
-          <strong style="color:#f85149">rot</strong>, das ist so schlimm wie „läuft
+          <strong class="tc-red">rot</strong>, das ist so schlimm wie „läuft
           keiner“;</li>
         <li><strong>ein Teil</strong> unhealthy →
-          <strong style="color:#db6d28">orange</strong>, wie bei einem halb ausgerollten
+          <strong class="tc-amber">orange</strong>, wie bei einem halb ausgerollten
           Update;</li>
         <li>alle healthy → die Farbe, die die Replica-Zahl der Zeile ohnehin gegeben hat,
           <strong>unverändert</strong>;</li>
@@ -1461,11 +1389,11 @@ rules:
       </ul>
       <p>
         <strong>Die Marker.</strong> Eine Service-Zeile trägt
-        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> in Rot oder
-        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span> in Gelb, solange die Proben
+        <span class="tc-red">✖&nbsp;N&nbsp;unhealthy</span> in Rot oder
+        <span class="tc-yellow">◌&nbsp;N&nbsp;starting</span> in Gelb, solange die Proben
         noch nicht durch sind; ein Container-Blatt trägt
-        <span style="color:#f85149">✖&nbsp;unhealthy</span> bzw.
-        <span style="color:#f2cc60">◌&nbsp;starting</span>. unhealthy hat Vorrang vor starting —
+        <span class="tc-red">✖&nbsp;unhealthy</span> bzw.
+        <span class="tc-yellow">◌&nbsp;starting</span>. unhealthy hat Vorrang vor starting —
         dort muss man eingreifen. Eine Stack-Zeile fasst denselben Marker über alles darunter
         zusammen (siehe <em>Nach Stack gruppiert</em> weiter unten). Ein
         <strong>gesunder</strong> Container bekommt
@@ -1498,8 +1426,8 @@ rules:
         <strong>70 %</strong>, bekommt er einen orangen Marker, ab <strong>90 %</strong>
         einen roten — am Ende der Zeile, mit der Ressource in <strong>Worten</strong>
         (<code>cpu</code> für CPU, <code>mem</code> für Memory) und dem Prozentwert
-        (<span style="color:#f85149">cpu&nbsp;94 %</span>,
-        <span style="color:#db6d28">mem&nbsp;91 %</span>). Sind beide heiß, erscheinen
+        (<span class="tc-red">cpu&nbsp;94 %</span>,
+        <span class="tc-amber">mem&nbsp;91 %</span>). Sind beide heiß, erscheinen
         beide. Worte statt Symbolen, bei gleicher Breite: Ein Marker, dessen Bedeutung man
         erst nachschlagen muss, tut seinen Job nicht — und Buchstaben können in keinem
         Terminal an der Darstellung scheitern. Unter 70 % wird nichts gezeichnet, damit die
@@ -1561,13 +1489,13 @@ rules:
         (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), eingefärbt nach genau derselben Regel
         wie eine Service-Zeile — der summierten laufend/gewünscht-Zahl, <strong>mit derselben
         Healthcheck-Übersteuerung</strong> darüber. Dahinter stehen die Sammelzähler, sobald
-        sie nicht null sind: <span style="color:#f2cc60">⟳&nbsp;n</span> — Services in
+        sie nicht null sind: <span class="tc-yellow">⟳&nbsp;n</span> — Services in
         diesem Stack <strong>mitten in einem Rolling Update</strong> —
-        <span style="color:#f85149">🛡&nbsp;n</span> — Services mit einem
+        <span class="tc-red">🛡&nbsp;n</span> — Services mit einem
         <strong>handlungswürdigen Sicherheitsbefund</strong>, dasselbe Schild, das die
         Service-Zeilen tragen — und danach der Health-Marker,
-        <span style="color:#f85149">✖&nbsp;N&nbsp;unhealthy</span> oder
-        <span style="color:#f2cc60">◌&nbsp;N&nbsp;starting</span>, summiert über jeden
+        <span class="tc-red">✖&nbsp;N&nbsp;unhealthy</span> oder
+        <span class="tc-yellow">◌&nbsp;N&nbsp;starting</span>, summiert über jeden
         Container jedes Service im Stack. Auch ein zugeklappter Stack verrät so, ob darin etwas
         Aufmerksamkeit braucht. Gerade beim Health-Marker zählt das: Die Stack-Zeile ist die
         Ebene, die man <em>zuerst</em> überfliegt — ein trügerisches „läuft alles“ ist hier
@@ -1632,12 +1560,12 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Prüfung</th><th>Schweregrad</th><th>Was sie meldet</th></tr></thead>
         <tbody>
-          <tr><td><code>docker-socket</code> — „Docker socket mounted in“</td><td><span style="color:#f85149">high</span></td><td><strong>der schwerwiegendste Befund hier.</strong> Ein <strong>Bind-Mount</strong>, dessen Quelle der Socket des Docker-Daemons ist — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> oder jeder Quellpfad, der auf <code>/docker.sock</code> endet. Alles in diesem Container kann mit dem Socket sprechen, und wer mit dem Socket sprechen kann, kann auf diesem Node einen <strong>privilegierten Container starten</strong> — das ist faktisch <strong>root auf dem Host</strong>, ganz gleich, als wer der Container selbst läuft. <strong>Read-only entschärft das nicht</strong>: der Socket ist eine API, keine Datei, deren Inhalt zählt — der Befund sagt das bei einem Read-only-Mount auch selbst dazu. Genannt wird der Zielpfad, an dem der Socket eingehängt ist</td></tr>
-          <tr><td><code>added-capability</code> — „capability <em>NAME</em> added“</td><td><span style="color:#f85149">high</span> / <span style="color:#f2cc60">medium</span></td><td>eine Linux-Capability, die der Service seinem Container zusätzlich gibt. Swarm kennt <strong>kein <code>--privileged</code></strong>, Capabilities sind also der Weg, über den ein Service zusätzliche Macht auf dem Host anfordert — deshalb lohnt der Blick auf die hinzugefügte Menge. Acht gelten als <strong>high</strong>, jeweils mit der Begründung, die der Befund mitführt: <code>ALL</code> (vergibt jede Capability), <code>SYS_ADMIN</code> (fast root: Mount-, Namespace- und cgroup-Kontrolle), <code>SYS_MODULE</code> (kann Kernel-Module laden), <code>SYS_PTRACE</code> (kann andere Prozesse einsehen und steuern), <code>SYS_RAWIO</code> (Raw-I/O-Zugriff auf Geräte), <code>DAC_READ_SEARCH</code> (umgeht Leserechte-Prüfungen im Dateisystem), <code>NET_ADMIN</code> (volle Kontrolle über das Netzwerk des Nodes), <code>NET_RAW</code> (kann Rohpakete fälschen und mitschneiden). <strong>Jede andere</strong> hinzugefügte Capability ist <strong>medium</strong> — ein Privileg über die Standardmenge hinaus. Ein Befund pro hinzugefügter Capability; beide Schreibweisen werden erkannt, in beliebiger Groß-/Kleinschreibung (<code>CAP_SYS_ADMIN</code> und <code>SYS_ADMIN</code>)</td></tr>
-          <tr><td><code>host-network</code> — „runs on the host network“</td><td><span style="color:#f85149">high</span></td><td>der Service hängt am Netzwerk namens <code>host</code>: der Container teilt sich den <strong>Netzwerk-Stack des Nodes</strong>, es gibt also keine Netzwerk-Isolation, und das Published-Port-Mapping von Swarm greift nicht mehr. Er erreicht alles, was der Node erreicht — <strong>einschließlich Diensten, die nur auf localhost lauschen</strong> und die man üblicherweise für aus einem Container heraus unerreichbar hält</td></tr>
-          <tr><td><code>unconfined</code> — „seccomp disabled“ / „AppArmor disabled“</td><td><span style="color:#f85149">high</span></td><td>die Sandbox auf Kernel-Ebene ist für den Container abgeschaltet: <strong>seccomp steht auf <code>unconfined</code></strong> — der Container darf jeden Syscall absetzen, womit die wichtigste Hürde gegen Kernel-Exploits wegfällt — oder die <strong>AppArmor-Einschränkung ist deaktiviert</strong>. Beides wird getrennt gemeldet; ein Service, der beides abschaltet, bekommt zwei Befunde</td></tr>
-          <tr><td><code>root-user</code> — „runs as root“</td><td><span style="color:#f85149">high</span></td><td>die Spec legt den Container <strong>ausdrücklich auf root</strong> fest — <code>User=root</code> oder UID <code>0</code> (auch numerische Formen wie <code>00</code> oder <code>+0</code> werden erkannt; betrachtet wird nur der Benutzerteil von <code>user:group</code>)</td></tr>
-          <tr><td><code>secret-in-env</code> — „secret in environment variable“</td><td><span style="color:#f85149">high</span></td><td>ein nach einem Credential aussehender Env-Schlüssel enthält einen <strong>Klartextwert in der Service-Spec</strong>, lesbar für jeden, der die Spec lesen darf. Nutze stattdessen ein Docker-Secret oder die <code>*_FILE</code>-Konvention</td></tr>
+          <tr><td><code>docker-socket</code> — „Docker socket mounted in“</td><td><span class="tc-red">high</span></td><td><strong>der schwerwiegendste Befund hier.</strong> Ein <strong>Bind-Mount</strong>, dessen Quelle der Socket des Docker-Daemons ist — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> oder jeder Quellpfad, der auf <code>/docker.sock</code> endet. Alles in diesem Container kann mit dem Socket sprechen, und wer mit dem Socket sprechen kann, kann auf diesem Node einen <strong>privilegierten Container starten</strong> — das ist faktisch <strong>root auf dem Host</strong>, ganz gleich, als wer der Container selbst läuft. <strong>Read-only entschärft das nicht</strong>: der Socket ist eine API, keine Datei, deren Inhalt zählt — der Befund sagt das bei einem Read-only-Mount auch selbst dazu. Genannt wird der Zielpfad, an dem der Socket eingehängt ist</td></tr>
+          <tr><td><code>added-capability</code> — „capability <em>NAME</em> added“</td><td><span class="tc-red">high</span> / <span class="tc-yellow">medium</span></td><td>eine Linux-Capability, die der Service seinem Container zusätzlich gibt. Swarm kennt <strong>kein <code>--privileged</code></strong>, Capabilities sind also der Weg, über den ein Service zusätzliche Macht auf dem Host anfordert — deshalb lohnt der Blick auf die hinzugefügte Menge. Acht gelten als <strong>high</strong>, jeweils mit der Begründung, die der Befund mitführt: <code>ALL</code> (vergibt jede Capability), <code>SYS_ADMIN</code> (fast root: Mount-, Namespace- und cgroup-Kontrolle), <code>SYS_MODULE</code> (kann Kernel-Module laden), <code>SYS_PTRACE</code> (kann andere Prozesse einsehen und steuern), <code>SYS_RAWIO</code> (Raw-I/O-Zugriff auf Geräte), <code>DAC_READ_SEARCH</code> (umgeht Leserechte-Prüfungen im Dateisystem), <code>NET_ADMIN</code> (volle Kontrolle über das Netzwerk des Nodes), <code>NET_RAW</code> (kann Rohpakete fälschen und mitschneiden). <strong>Jede andere</strong> hinzugefügte Capability ist <strong>medium</strong> — ein Privileg über die Standardmenge hinaus. Ein Befund pro hinzugefügter Capability; beide Schreibweisen werden erkannt, in beliebiger Groß-/Kleinschreibung (<code>CAP_SYS_ADMIN</code> und <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — „runs on the host network“</td><td><span class="tc-red">high</span></td><td>der Service hängt am Netzwerk namens <code>host</code>: der Container teilt sich den <strong>Netzwerk-Stack des Nodes</strong>, es gibt also keine Netzwerk-Isolation, und das Published-Port-Mapping von Swarm greift nicht mehr. Er erreicht alles, was der Node erreicht — <strong>einschließlich Diensten, die nur auf localhost lauschen</strong> und die man üblicherweise für aus einem Container heraus unerreichbar hält</td></tr>
+          <tr><td><code>unconfined</code> — „seccomp disabled“ / „AppArmor disabled“</td><td><span class="tc-red">high</span></td><td>die Sandbox auf Kernel-Ebene ist für den Container abgeschaltet: <strong>seccomp steht auf <code>unconfined</code></strong> — der Container darf jeden Syscall absetzen, womit die wichtigste Hürde gegen Kernel-Exploits wegfällt — oder die <strong>AppArmor-Einschränkung ist deaktiviert</strong>. Beides wird getrennt gemeldet; ein Service, der beides abschaltet, bekommt zwei Befunde</td></tr>
+          <tr><td><code>root-user</code> — „runs as root“</td><td><span class="tc-red">high</span></td><td>die Spec legt den Container <strong>ausdrücklich auf root</strong> fest — <code>User=root</code> oder UID <code>0</code> (auch numerische Formen wie <code>00</code> oder <code>+0</code> werden erkannt; betrachtet wird nur der Benutzerteil von <code>user:group</code>)</td></tr>
+          <tr><td><code>secret-in-env</code> — „secret in environment variable“</td><td><span class="tc-red">high</span></td><td>ein nach einem Credential aussehender Env-Schlüssel enthält einen <strong>Klartextwert in der Service-Spec</strong>, lesbar für jeden, der die Spec lesen darf. Nutze stattdessen ein Docker-Secret oder die <code>*_FILE</code>-Konvention</td></tr>
           <tr><td><code>root-user</code> — „no user set“</td><td>low</td><td><strong>kein</strong> Benutzer ist gesetzt, der Container läuft also als der Standardbenutzer des Images — oft root. <strong>Nur informativ, markiert den Service also nicht</strong>: ein nicht gesetzter Benutzer ist bei fast jedem Service der Swarm-Standard, und ob es wirklich root ist, hängt vom <code>USER</code> des Images ab, das die Manager-Spec nicht preisgibt</td></tr>
           <tr><td><code>no-resource-limits</code> — „no resource limits“</td><td>low</td><td>die Task setzt <strong>weder ein CPU- noch ein Memory-Limit</strong>; ein außer Kontrolle geratener Container kann damit den ganzen Node aufbrauchen und alles andere darauf aushungern. <strong>Nur informativ</strong> — siehe unten</td></tr>
           <tr><td><code>unpinned-image</code> — „image not pinned“</td><td>low</td><td>das Image ist auf <code>:latest</code> festgelegt oder trägt <strong>überhaupt kein Tag</strong> (was auf <code>:latest</code> hinausläuft) — die laufende Version kann sich ohne Spec-Änderung ändern, ein Deploy ist damit nicht reproduzierbar. Ein <strong>per Digest gepinntes</strong> Image (<code>…@sha256:…</code>) ist exakt reproduzierbar und wird nie gemeldet, und ein Doppelpunkt, der zum Port des Registry-Hosts gehört (<code>registry:5000/img</code>), wird nicht für ein Tag gehalten. <strong>Nur informativ</strong> — siehe unten</td></tr>
@@ -1678,8 +1606,8 @@ rules:
       <p>
         Das Overlay listet <strong>jeden markierten Service</strong> („N of M service(s)
         flagged · 8 checks“), nach Service gruppiert, jeden Befund in einer eigenen Zeile mit einem
-        Schweregrad-Punkt — <span style="color:#f85149">● high</span>,
-        <span style="color:#f2cc60">● medium</span>, <span style="color:#8b949e">● low</span> —
+        Schweregrad-Punkt — <span class="tc-red">● high</span>,
+        <span class="tc-yellow">● medium</span>, <span class="tc-grey">● low</span> —
         einem kurzen Titel und einer einzeiligen Erklärung. Befunde stehen nach
         Schweregrad absteigend. Sobald ein Service wegen etwas Handlungsrelevantem markiert
         ist, werden auch seine rein informativen Low-Befunde aufgeführt. Ist der Service
@@ -1737,12 +1665,12 @@ rules:
         Container eines Task-Inspects):
       </p>
       <div class="cmd"><span class="k">RESOURCE USAGE</span>
-<span style="color:#8b949e">  measured on each node, refreshed with the tree</span>
+<span class="tc-grey">  measured on each node, refreshed with the tree</span>
 
 <span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
   gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
 
-<span style="color:#8b949e">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+<span class="tc-grey">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
       <p>
         Eine Tabelle, weil ein nackter Prozentwert nicht lesbar ist, wenn man nicht ohnehin
         weiß, wie das Werkzeug misst — <em>94 % wovon?</em> Jede Zelle bringt ihre
@@ -1774,7 +1702,7 @@ rules:
       </p>
       <div class="cmd"><span class="k">LAST MINUTES</span>
   gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
-<span style="color:#8b949e">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+<span class="tc-grey">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
       <p>
         Die Fußnote unter der Tabelle benennt den <strong>Nenner</strong>: das eigene Limit
         des Containers, wenn er eins hat, sonst die Kapazität des Nodes. Genau das macht
@@ -1936,7 +1864,7 @@ rules:
         <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
         <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
         <em>edit secrets</em>, <em>edit mounts</em>, <em>edit resources</em>,
-        <em>edit placement</em>, <span style="color:#f85149"><em>remove service</em></span>
+        <em>edit placement</em>, <span class="tc-red"><em>remove service</em></span>
         — der destruktive, deshalb rot markiert — und <em>Cancel</em>. Navigiert wird mit
         <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> springen zum ersten/letzten
         Eintrag), <kbd>Enter</kbd> wählt aus; <kbd>Esc</kbd> — oder der Eintrag
@@ -1953,8 +1881,8 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
-          <tr><td><kbd>d</kbd></td><td>diff — zeigt ein Unified-Diff der <em>aktuellen</em> Spec des Service gegen seine <em>vorherige</em> (was das letzte Rolling Update geändert hat), unter Verwendung von Swarms <code>PreviousSpec</code>. Geänderte Felder werden feldweise gruppiert mit <span style="color:#f85149">- removed</span> / <span style="color:#3fb950">+ added</span>-Zeilen aufgelistet (Image, Modus/Replicas, Env, Labels, Netzwerke, Aliase, Secrets, Mounts, Ports, Placement-Constraints, Spread-Präferenzen, Ressourcen-Limits/-Reservierungen); unveränderte Felder werden weggelassen. Wenn der Service nie aktualisiert wurde (keine vorherige Spec), sagt es das. Schreibgeschütztes Overlay — <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> schließt</td></tr>
-          <tr><td><kbd>R</kbd></td><td>auf die vorherige Version zurückrollen (großes <kbd>R</kbd>, also Shift+r, um es von <kbd>r</kbd> Ressourcen-Limits zu unterscheiden) — das Gegenstück zum <kbd>d</kbd>-Diff darüber: es macht das letzte Rolling Update rückgängig. Der Bestätigungsdialog zeigt <strong>genau dieses Diff umgekehrt</strong> unter „This will undo:“, denn das ist es, was der Rollback tatsächlich ändert — eine Zeile, die das Update <em>hinzugefügt</em> hat, steht dort als <span style="color:#f85149">- removed</span>, und eine, die es <em>entfernt</em> hat, kommt als <span style="color:#3fb950">+ added</span> zurück. Die Vorschau ist auf <strong>12</strong> Einträge begrenzt, gefolgt von einem Hinweis „… and N more“, der für das vollständige Diff auf <kbd>d</kbd> verweist (haben sich nur Metadaten geändert, meldet er, dass es keine feldweisen Unterschiede gibt). Beim Bestätigen läuft ein <strong>serverseitiger</strong> Rollback — ein Manager-API-<code>ServiceUpdate</code> mit <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>kein</em> clientseitiges Neuanwenden der <code>PreviousSpec</code> — der <strong>Manager</strong> führt ihn also selbst aus, beachtet dabei die <strong>Rollback-Konfiguration</strong> des Service (Parallelität, Verzögerung, Failure-Action) und meldet den Fortschritt als Update-Status <code>rollback_started</code>: genau das oben beschriebene Badge <span style="color:#db6d28">↺&nbsp;rolling&nbsp;back</span>, auf der Baumzeile und in diesem Overlay. Ein Service, der <strong>nie aktualisiert</strong> wurde, hat keine vorherige Spec — du bekommst einen erklärenden Hinweis, keinen Fehler. Auch über das <kbd>a</kbd>-Aktionsmenü erreichbar. Wie <kbd>d</kbd>, <kbd>D</kbd> und <kbd>X</kbd> ist das eine feste Inspect-Taste, keine umbelegbare Keymap-Aktion</td></tr>
+          <tr><td><kbd>d</kbd></td><td>diff — zeigt ein Unified-Diff der <em>aktuellen</em> Spec des Service gegen seine <em>vorherige</em> (was das letzte Rolling Update geändert hat), unter Verwendung von Swarms <code>PreviousSpec</code>. Geänderte Felder werden feldweise gruppiert mit <span class="tc-red">- removed</span> / <span class="tc-green">+ added</span>-Zeilen aufgelistet (Image, Modus/Replicas, Env, Labels, Netzwerke, Aliase, Secrets, Mounts, Ports, Placement-Constraints, Spread-Präferenzen, Ressourcen-Limits/-Reservierungen); unveränderte Felder werden weggelassen. Wenn der Service nie aktualisiert wurde (keine vorherige Spec), sagt es das. Schreibgeschütztes Overlay — <kbd>j</kbd>/<kbd>k</kbd> scrollen, <kbd>Esc</kbd> schließt</td></tr>
+          <tr><td><kbd>R</kbd></td><td>auf die vorherige Version zurückrollen (großes <kbd>R</kbd>, also Shift+r, um es von <kbd>r</kbd> Ressourcen-Limits zu unterscheiden) — das Gegenstück zum <kbd>d</kbd>-Diff darüber: es macht das letzte Rolling Update rückgängig. Der Bestätigungsdialog zeigt <strong>genau dieses Diff umgekehrt</strong> unter „This will undo:“, denn das ist es, was der Rollback tatsächlich ändert — eine Zeile, die das Update <em>hinzugefügt</em> hat, steht dort als <span class="tc-red">- removed</span>, und eine, die es <em>entfernt</em> hat, kommt als <span class="tc-green">+ added</span> zurück. Die Vorschau ist auf <strong>12</strong> Einträge begrenzt, gefolgt von einem Hinweis „… and N more“, der für das vollständige Diff auf <kbd>d</kbd> verweist (haben sich nur Metadaten geändert, meldet er, dass es keine feldweisen Unterschiede gibt). Beim Bestätigen läuft ein <strong>serverseitiger</strong> Rollback — ein Manager-API-<code>ServiceUpdate</code> mit <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>kein</em> clientseitiges Neuanwenden der <code>PreviousSpec</code> — der <strong>Manager</strong> führt ihn also selbst aus, beachtet dabei die <strong>Rollback-Konfiguration</strong> des Service (Parallelität, Verzögerung, Failure-Action) und meldet den Fortschritt als Update-Status <code>rollback_started</code>: genau das oben beschriebene Badge <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span>, auf der Baumzeile und in diesem Overlay. Ein Service, der <strong>nie aktualisiert</strong> wurde, hat keine vorherige Spec — du bekommst einen erklärenden Hinweis, keinen Fehler. Auch über das <kbd>a</kbd>-Aktionsmenü erreichbar. Wie <kbd>d</kbd>, <kbd>D</kbd> und <kbd>X</kbd> ist das eine feste Inspect-Taste, keine umbelegbare Keymap-Aktion</td></tr>
           <tr><td><kbd>s</kbd></td><td>scale — fragt nach einer neuen Replica-Anzahl und wendet sie an (nur replizierte Services; ein globaler Service meldet, dass er nicht skaliert werden kann)</td></tr>
           <tr><td><kbd>f</kbd></td><td>force-update — deployt den Service neu, ohne seine Spec zu ändern (das Äquivalent zu <code>docker service update --force</code>: erhöht <code>TaskTemplate.ForceUpdate</code>), nach einer Bestätigung. Jede Task wird neu gestartet / neu geplant, womit du einen Service wieder in Gang bringst, der in einem <strong>unvollständigen Zustand</strong> feststeckt (z. B. <code>1/2</code> Replicas). Ein <code>ServiceUpdate</code> (Rolling Update)</td></tr>
           <tr><td><kbd>X</kbd></td><td>den Service entfernen (großes <kbd>X</kbd>) — <strong>löscht ihn dauerhaft</strong> und stoppt alle seine Tasks, hinter einer Bestätigung; kann nicht rückgängig gemacht werden. Ein Manager-API-<code>ServiceRemove</code>; bei Erfolg schließt sich das Inspect-Overlay und der Service-Baum aktualisiert sich. War der Service der <strong>einzige Nutzer eines oder mehrerer Secrets</strong>, fragt swarmexec anschließend, ob diese <strong>nun verwaisten Secrets</strong> ebenfalls gelöscht werden sollen (Secrets, die noch ein anderer Service referenziert, bleiben unberührt)</td></tr>
@@ -1991,8 +1919,8 @@ rules:
         Solange Änderungen noch vorgemerkt sind, werden sie <strong>hervorgehoben</strong>,
         sodass du genau siehst, was sich ändern wird: hinzugefügte oder bearbeitete
         Einträge erscheinen in
-        <span style="color:#3fb950;font-weight:600">Grün (neu)</span> und entfernte
-        Einträge bleiben als gedimmte <span style="color:#f85149">rote „removed“</span>-Zeilen
+        <span class="tc-green tc-b">Grün (neu)</span> und entfernte
+        Einträge bleiben als gedimmte <span class="tc-red">rote „removed“</span>-Zeilen
         stehen — die Hervorhebung verschwindet, sobald du anwendest. Die Editoren für
         <strong>Ports</strong>, <strong>Labels</strong>, <strong>Mounts</strong>,
         <strong>Env</strong> und <strong>Aliase</strong>
@@ -2108,7 +2036,7 @@ EOF</span></pre>
         ist und wie viele Services an jedes angeschlossen sind. Die
         <code>TYPE</code>-Spalte zeigt <code>overlay</code> oder den Driver-Namen (z. B.
         <code>bridge</code>) für einfache Netzwerke statt eines Strichs. Die
-        <code>ENC</code>-Spalte zeigt <span style="color:#3fb950">🔒&nbsp;yes</span>, wenn
+        <code>ENC</code>-Spalte zeigt <span class="tc-green">🔒&nbsp;yes</span>, wenn
         das Overlay-Netzwerk Data-Plane-Verschlüsselung aktiviert hat (erstellt mit
         <code>--opt encrypted</code>), sonst einen Strich. Der Name jedes Netzwerks und
         seine <code>TYPE</code>-Zelle sind nach Art farbcodiert (höchste Priorität zuerst):
@@ -2303,7 +2231,7 @@ EOF</span></pre>
         <thead><tr><th>Eintrag</th><th>Was entfernt wird</th></tr></thead>
         <tbody>
           <tr><td><strong>untagged leftovers</strong></td><td>die Layer, die Rebuilds zurücklassen und aus denen sich nichts starten lässt. <strong>Sicher</strong>: Das kann keinen Service stoppen und keinen Pull erzwingen</td></tr>
-          <tr><td><strong style="color:#f85149">every unused image</strong></td><td>entfernt zusätzlich <strong>getaggte</strong> Images, die <em>gerade jetzt</em> kein Container benutzt. Auf einem Swarm-Node gehören dazu jeder Service, der aktuell auf <strong>null skaliert</strong> ist, und jede Task <strong>zwischen zwei Restarts</strong> — jede davon muss ihr Image <strong>erneut ziehen</strong></td></tr>
+          <tr><td><strong class="tc-red">every unused image</strong></td><td>entfernt zusätzlich <strong>getaggte</strong> Images, die <em>gerade jetzt</em> kein Container benutzt. Auf einem Swarm-Node gehören dazu jeder Service, der aktuell auf <strong>null skaliert</strong> ist, und jede Task <strong>zwischen zwei Restarts</strong> — jede davon muss ihr Image <strong>erneut ziehen</strong></td></tr>
         </tbody>
       </table></div>
       <div class="warn">

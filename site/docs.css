@@ -1,0 +1,198 @@
+/* The docs pages (docs.html and its translations) in the landing page's look:
+   the same paper and ink, light and dark, Archivo for text and headings,
+   JetBrains Mono for code, and the same top bar. Fonts come from fonts/fonts.css.
+   The markup is the docs' own and identical in every language, so this file is
+   the only place the look lives. */
+
+:root {
+  --paper:   #eceee9;
+  --paper-2: #e1e6e1;
+  --card:    #f7f8f5;
+  --ink:     #14201e;
+  --ink-2:   #3f4d4a;
+  --muted:   #5f6d69;
+  --rule:    #c4ccc7;
+  --aqua:    #0a7680;
+  --amber:   #9c5300;
+  --red:     #b3261e;
+  --yellow:  #7a6100;
+  --green:   #2c6e35;
+  --grey:    #6b7672;
+  --focus:   #0a7680;
+
+  --term:    #142022;
+  --t-ink:   #d5e1dd;
+  --t-dim:   #7f928d;
+  --t-aqua:  #55d3db;
+  --t-amber: #f2a541;
+  --t-red:   #ff7b6f;
+  --t-yellow:#e7c650;
+  --t-green: #8fd694;
+
+  --display: "Archivo", "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --text:    "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --gutter: 16px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:   #0e1a1c;
+    --paper-2: #112124;
+    --card:    #16282b;
+    --ink:     #dde7e4;
+    --ink-2:   #b4c4c0;
+    --muted:   #8da39e;
+    --rule:    #29403f;
+    --aqua:    #52cfd8;
+    --amber:   #f0a13a;
+    --red:     #ff6b5e;
+    --yellow:  #e3c04a;
+    --green:   #8fd694;
+    --grey:    #8da39e;
+    --focus:   #52cfd8;
+    --term:    #081214;
+  }
+}
+
+@media (min-width: 720px) { :root { --gutter: 32px; } }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 72px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 1rem;
+  line-height: 1.6;
+  font-variation-settings: "wdth" 96;
+}
+
+a { color: var(--aqua); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
+
+.skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: var(--paper); padding: .5rem .8rem; z-index: 99; }
+.skip:focus { left: 8px; }
+
+/* ---------- top bar, as on the landing page ---------- */
+.rail {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem var(--gutter);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+.mark { display: inline-flex; align-items: center; gap: .5rem; color: var(--ink); text-decoration: none; font-family: var(--mono); font-weight: 700; font-size: .95rem; }
+.mark svg { color: var(--aqua); }
+.rail-nav { display: flex; gap: 1.1rem; align-items: center; font-size: .92rem; }
+.rail-nav > a { color: var(--ink-2); text-decoration: none; }
+.rail-nav > a:hover { color: var(--ink); text-decoration: underline; }
+.langbar { display: flex; gap: .15rem; font-family: var(--mono); font-size: .78rem; }
+.langbar a { color: var(--muted); text-decoration: none; padding: .15rem .4rem; border-radius: 999px; }
+.langbar a:hover { color: var(--ink); }
+.langbar a[aria-current="true"] { color: var(--paper); background: var(--ink); }
+
+/* ---------- page ---------- */
+main { width: 100%; max-width: 920px; margin: 0 auto; padding: 2.5rem var(--gutter) 4rem; }
+.card { background: none; border: 0; padding: 0; }
+.home { display: none; } /* the top bar's mark leads home now */
+
+h1 {
+  font-family: var(--display); font-variation-settings: "wdth" 70; font-weight: 750;
+  font-size: clamp(2.4rem, 7vw, 3.8rem); line-height: .95; letter-spacing: -.01em;
+  margin: 0 0 .6rem;
+}
+h1 .cursor { color: var(--aqua); }
+.tagline { font-family: var(--mono); color: var(--aqua); font-size: .92rem; margin: 0 0 1.6rem; }
+p.lead { color: var(--ink-2); font-size: 1.08rem; max-width: 44em; }
+
+h2 {
+  font-family: var(--display); font-variation-settings: "wdth" 75; font-weight: 700;
+  font-size: clamp(1.6rem, 4vw, 2.2rem); line-height: 1.05; letter-spacing: -.005em;
+  margin: 3.2rem 0 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--rule);
+}
+h3 { font-size: 1.12rem; font-weight: 700; margin: 2.1rem 0 .55rem; color: var(--ink); }
+h4 { font-size: 1rem; font-weight: 700; margin: 1.6rem 0 .45rem; color: var(--ink-2); }
+h2 code, h3 code, h4 code { font-size: .92em; color: var(--aqua); background: none; border: 0; padding: 0; }
+
+code, kbd, pre { font-family: var(--mono); }
+code {
+  font-size: .86em; overflow-wrap: anywhere;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: .05em .35em;
+}
+kbd {
+  font-size: .8em; white-space: nowrap;
+  background: var(--card); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 .4em;
+}
+
+/* Commands and example sessions: a terminal, in light and dark alike. */
+.prompt, .cmd {
+  background: var(--term); color: var(--t-ink);
+  border-radius: 8px; padding: .9rem 1.05rem; margin: 1.1rem 0;
+  overflow-x: auto; white-space: pre; font-family: var(--mono); font-size: .82rem; line-height: 1.7;
+}
+.prompt code, .cmd code { background: none; border: 0; padding: 0; font-size: 1em; color: inherit; }
+.prompt { color: var(--t-dim); }
+.prompt .c { color: var(--t-aqua); }
+.prompt .o { color: var(--t-dim); font-style: italic; }
+.cmd .k { color: var(--t-aqua); }
+
+.tablewrap { overflow-x: auto; margin: 1.1rem 0; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { padding: .55rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+tr:last-child td { border-bottom: 0; }
+th { background: var(--paper-2); color: var(--ink-2); font-weight: 700; white-space: nowrap; font-size: .82rem; letter-spacing: .02em; }
+td code { white-space: nowrap; }
+td + td { border-left: 1px solid var(--rule); }
+th + th { border-left: 1px solid var(--rule); }
+
+ul, ol { padding-left: 1.3rem; }
+li { margin: .3rem 0; }
+
+.note, .warn {
+  border-left: 3px solid var(--aqua); background: var(--card);
+  padding: .75rem 1rem; margin: 1.2rem 0; color: var(--ink-2); border-radius: 0 8px 8px 0;
+}
+.warn { border-left-color: var(--red); }
+.note strong, .warn strong { color: var(--ink); }
+
+.toc { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 1.2rem 1.4rem; margin: 2rem 0 1rem; }
+.toc .th { font-family: var(--mono); color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .1em; margin: 0 0 .7rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 2rem; }
+.toc li { margin: .22rem 0; break-inside: avoid; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover { color: var(--aqua); text-decoration: underline; }
+
+footer { color: var(--muted); font-size: .88rem; margin-top: 3rem; border-top: 1px solid var(--rule); padding-top: 1.4rem; }
+footer a { color: var(--ink-2); }
+footer code { font-size: .84em; }
+.legal { margin-top: .7rem; }
+.legal a { color: var(--muted); }
+.legal a:hover { color: var(--aqua); }
+
+/* Colours the TUI uses, named rather than hard-coded, so they read on paper in
+   both modes and as terminal colours inside a terminal block. */
+.tc-green  { color: var(--green); }
+.tc-red    { color: var(--red); }
+.tc-amber  { color: var(--amber); }
+.tc-yellow { color: var(--yellow); }
+.tc-grey   { color: var(--grey); }
+.tc-b      { font-weight: 700; }
+.prompt .tc-green, .cmd .tc-green { color: var(--t-green); }
+.prompt .tc-red, .cmd .tc-red { color: var(--t-red); }
+.prompt .tc-amber, .cmd .tc-amber { color: var(--t-amber); }
+.prompt .tc-yellow, .cmd .tc-yellow { color: var(--t-yellow); }
+.prompt .tc-grey, .cmd .tc-grey { color: var(--t-dim); }
+
+@media (max-width: 620px) {
+  .toc ol { columns: 1; }
+  .rail-nav { gap: .7rem; }
+  .rail-nav > .rail-link { display: none; }
+}
