@@ -28,6 +28,31 @@ case "$tag" in
 	;;
 esac
 
+# git_logged <what> <action> <git args...>: run git and, if it fails, say why.
+# git's own message is the useful part — "remote: Internal Server Error" is a
+# GitHub outage, "Permission denied" a token, "rejected (fetch first)" a race —
+# but it may repeat the remote URL, and the URL carries the token. So the
+# message is shown with the token cut out, never raw and never not at all.
+git_logged() {
+	what=$1 action=$2
+	shift 2
+	if ! out=$(git "$@" 2>&1); then
+		echo "$what: $action failed:"
+		printf '%s\n' "$out" | redact | sed 's/^/    /'
+		return 1
+	fi
+}
+
+redact() {
+	if [ -n "$token" ]; then
+		# The token as a literal, whatever characters it holds.
+		pat=$(printf '%s' "$token" | sed 's/[][\\.*^$|/&]/\\&/g')
+		sed "s|$pat|***|g"
+	else
+		cat
+	fi
+}
+
 # publish <repo> <source file> <path in repo> <what>
 publish() {
 	repo=$1 src=$2 dest=$3 what=$4
@@ -44,7 +69,7 @@ publish() {
 	https://*) url="https://x-access-token:${token}@${base#https://}/$repo.git" ;;
 	esac
 	# The token is in the URL only for git's own use; the log shows the repo.
-	git clone --quiet --depth 1 "$url" "$work" 2>/dev/null || { echo "$what: cannot clone $repo (does it exist, may the token write to it?)"; rm -rf "$work"; return 1; }
+	git_logged "$what" "clone of $repo (does it exist, may the token read it?)" clone --quiet --depth 1 "$url" "$work" || { rm -rf "$work"; return 1; }
 	cd "$work"
 	# An empty repository has no branch yet; give it main.
 	git rev-parse --verify --quiet HEAD >/dev/null || git checkout --quiet -b main
@@ -56,7 +81,7 @@ publish() {
 	else
 		git -c user.name="swarmexec release" -c user.email="noreply@cloud-surfers.de" \
 			commit --quiet -m "swarmexec $tag"
-		git push --quiet origin HEAD 2>/dev/null || { echo "$what: push to $repo failed"; cd - >/dev/null; rm -rf "$work"; return 1; }
+		git_logged "$what" "push to $repo" push --quiet origin HEAD || { cd - >/dev/null; rm -rf "$work"; return 1; }
 		echo "$what: published $tag to $repo"
 	fi
 	cd - >/dev/null
