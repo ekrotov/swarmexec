@@ -181,7 +181,8 @@ em { font-style: italic; }
 .rail-nav a:hover { color: var(--ink); text-decoration: underline; }
 .rail-nav .rail-cta { color: var(--paper); background: var(--ink); padding: .3rem .75rem; border-radius: 999px; }
 .rail-nav .rail-cta:hover { color: var(--paper); background: var(--aqua); text-decoration: none; }
-@media (max-width: 600px) { .rail-nav a:not(.rail-cta) { display: none; } }
+/* On a phone only the section links go; Docs stays, it is where people look first. */
+@media (max-width: 600px) { .rail-nav a:not(.rail-cta):not(.rail-docs) { display: none; } }
 
 main { display: block; }
 
