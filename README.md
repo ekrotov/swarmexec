@@ -98,8 +98,9 @@ token with `write_repository`) set, commits them to that branch.
   - and last, `verify-release`: it checks from the outside, anonymously, that
     all of it arrived — downloads against `SHA256SUMS`, the GitHub release, the
     formula and manifest hashes, the Docker Hub tag, `install.sh` from the live
-    site, and the site's release notes. It turns the pipeline red if not
-    (`ci/verify-release.sh`; run it by hand with a tag to check any release).
+    site, and that every site replica serves the new release. It turns the
+    pipeline red if not (`ci/verify-release.sh`; run it by hand with a tag to
+    check any release).
 
   A semver tag that is **not** on `main` fails the gate and builds nothing.
 
