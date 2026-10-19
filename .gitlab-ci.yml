@@ -23,7 +23,7 @@ stages:
   - deploy
 
 variables:
-  GO_IMAGE: "golang:1.27"
+  GO_IMAGE: "golang:1.27.2" # exact: runners keep an old image under a floating tag (if-not-present); keep equal to go.mod
   GOPATH: "$CI_PROJECT_DIR/.gocache"
 
 workflow:
