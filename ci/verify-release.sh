@@ -18,7 +18,7 @@
 #   scoop     the manifest is at this version and its hash is this build's
 #   dockerhub the agent image tag exists
 #   install   install.sh from the live site installs exactly this version
-#   site      the site's release notes list this version
+#   site      every replica serves this version, and its release notes list it
 #
 # Environment: GITHUB_MIRROR_REPO, GITHUB_TAP_REPO, GITHUB_SCOOP_REPO,
 # DOCKERHUB_IMAGE or DOCKERHUB_USER, SITE_URL, GITLAB_PROJECT_URL.
@@ -150,12 +150,23 @@ install_ok() {
 }
 retry install install_ok && ok "installs $TAG" || bad "install.sh did not install $TAG"
 
-echo "== site: release notes"
+echo "== site: every replica serves this release"
+# The site runs several replicas behind Traefik, and a rolling update can stall
+# halfway (v1.22.2: one node could not pull the image, and every second request
+# got the old page, without its new stylesheet). One request proves nothing about
+# the others, so the landing page is fetched SITE_SAMPLES times and each answer
+# must carry this release — its stylesheet is linked as landing.css?v=<tag>.
 site_ok() {
 	fetch "$SITE_URL/releases.json" "$work/releases.json" || return 1
-	jq -e --arg t "$TAG" 'map(.version) | index($t) != null' "$work/releases.json" >/dev/null || { echo "    (not deployed yet)"; return 1; }
+	jq -e --arg t "$TAG" 'map(.version) | index($t) != null' "$work/releases.json" >/dev/null || { echo "    (release notes do not list it yet)"; return 1; }
+	n=0 old=0
+	while [ "$n" -lt "${SITE_SAMPLES:-10}" ]; do
+		n=$((n + 1))
+		curl -fsS -H 'Cache-Control: no-cache' "$SITE_URL/?verify=$n" 2>/dev/null | grep -q "landing.css?v=$TAG\"" || old=$((old + 1))
+	done
+	[ "$old" -eq 0 ] || { echo "    ($old of $n answers are not $TAG yet)"; return 1; }
 }
-retry site site_ok && ok "lists $TAG" || bad "the site does not list $TAG"
+retry site site_ok && ok "all ${SITE_SAMPLES:-10} answers are $TAG" || bad "the site does not serve $TAG from every replica"
 
 if [ -n "$failed" ]; then
 	echo
