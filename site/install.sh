@@ -21,7 +21,9 @@
 
 set -eu
 
-PROJECT="https://gitlab.logle.io/cs-public/swarm-remote-exec"
+# The binaries are published as GitHub release assets (the GitLab project at
+# gitlab.logle.io/cs-public/swarm-remote-exec is where the code lives).
+RELEASES="https://github.com/ekrotov/swarmexec/releases"
 
 say() { printf '%s\n' "$*" >&2; }
 die() { say "swarmexec install: $*"; exit 1; }
@@ -32,7 +34,7 @@ platform() {
 	case "$os" in
 	Linux) os=linux ;;
 	Darwin) os=darwin ;;
-	*) die "unsupported OS '$os' (Linux and macOS only; Windows: use the .exe from $PROJECT/-/releases)" ;;
+	*) die "unsupported OS '$os' (Linux and macOS only; Windows: use the .exe from $RELEASES)" ;;
 	esac
 	case "$arch" in
 	x86_64 | amd64) arch=amd64 ;;
@@ -46,9 +48,9 @@ base_url() {
 	if [ -n "${SWARMEXEC_BASE_URL:-}" ]; then
 		printf '%s' "${SWARMEXEC_BASE_URL%/}"
 	elif [ -n "${SWARMEXEC_VERSION:-}" ]; then
-		printf '%s/-/releases/%s/downloads/bin' "$PROJECT" "$SWARMEXEC_VERSION"
+		printf '%s/download/%s' "$RELEASES" "$SWARMEXEC_VERSION"
 	else
-		printf '%s/-/releases/permalink/latest/downloads/bin' "$PROJECT"
+		printf '%s/latest/download' "$RELEASES"
 	fi
 }
 

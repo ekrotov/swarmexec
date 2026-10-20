@@ -12,16 +12,18 @@
 # were member-only, a GitHub release without binaries, a stale site).
 #
 # Checks (a target whose repository variable is unset is skipped, and says so):
-#   gitlab    every binary downloads anonymously and matches SHA256SUMS
-#   github    the release is published, carries all assets, the same SHA256SUMS
+#   github    the release is published and complete, and every binary downloads
+#             anonymously and matches this build's SHA256SUMS (the downloads live here)
+#   gitlab    the GitLab release page's links point at those same files
 #   homebrew  the formula is at this version and its hashes are this build's
 #   scoop     the manifest is at this version and its hash is this build's
 #   dockerhub the agent image tag exists
 #   install   install.sh from the live site installs exactly this version
 #   site      every replica serves this version, and its release notes list it
 #
-# Environment: GITHUB_MIRROR_REPO, GITHUB_TAP_REPO, GITHUB_SCOOP_REPO,
-# DOCKERHUB_IMAGE or DOCKERHUB_USER, SITE_URL, GITLAB_PROJECT_URL.
+# Environment: GITHUB_MIRROR_REPO (required), GITHUB_TAP_REPO, GITHUB_SCOOP_REPO,
+# DOCKERHUB_IMAGE or DOCKERHUB_USER, SITE_URL, GITLAB_PROJECT_URL, and
+# BUILD_SUMS — the build's own SHA256SUMS, the reference when given.
 # The GitHub CDN and the site deploy lag behind the tag by minutes, so the
 # checks that read them retry for up to VERIFY_WAIT seconds (default 900).
 
@@ -61,43 +63,61 @@ fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
 # hash_of NAME: this build's checksum for a binary.
 hash_of() { awk -v n="$1" '$2 == n || $2 == "*"n {print $1}' "$work/SHA256SUMS"; }
 
-echo "== gitlab: anonymous downloads"
-base="$GITLAB_PROJECT_URL/-/releases/$TAG/downloads/bin"
-if fetch "$base/SHA256SUMS" "$work/SHA256SUMS"; then
-	for b in $BINARIES; do
-		want="$(hash_of "$b")"
-		if [ -z "$want" ]; then
-			bad "$b is not in SHA256SUMS"
-			failed="$failed gitlab"
-		elif fetch "$base/$b" "$work/$b" && [ "$(sha256sum "$work/$b" | cut -d' ' -f1)" = "$want" ]; then
-			ok "$b"
-		else
-			bad "$b: download failed or checksum mismatch"
-			failed="$failed gitlab"
-		fi
-	done
-else
-	bad "SHA256SUMS cannot be downloaded anonymously from $base"
-	echo "verify-release: nothing else can be checked without it"
-	exit 1
-fi
-
-echo "== github: release"
+echo "== github: release and downloads"
+# The downloads live in the GitHub release. The reference is the build's own
+# SHA256SUMS when the pipeline hands it over (BUILD_SUMS), else the release's.
+[ -n "${GITHUB_MIRROR_REPO:-}" ] || { bad "GITHUB_MIRROR_REPO not set — it is where the downloads live"; exit 1; }
+gh_dl="https://github.com/$GITHUB_MIRROR_REPO/releases/download/$TAG"
 github_ok() {
 	api="https://api.github.com/repos/$GITHUB_MIRROR_REPO/releases/tags/$TAG"
 	curl -fsSL "$api" >"$work/gh.json" 2>/dev/null || { echo "    (not visible yet)"; return 1; }
-	draft="$(jq -r '.draft' "$work/gh.json")"
+	[ "$(jq -r '.draft' "$work/gh.json")" = "false" ] || { echo "    (still a draft)"; return 1; }
 	n="$(jq '.assets | length' "$work/gh.json")"
-	[ "$draft" = "false" ] || { echo "    (still a draft)"; return 1; }
 	[ "$n" -ge 6 ] || { echo "    (only $n assets)"; return 1; }
-	url="$(jq -r '.assets[] | select(.name == "SHA256SUMS") | .browser_download_url' "$work/gh.json")"
-	fetch "$url" "$work/gh-SHA256SUMS" && cmp -s "$work/gh-SHA256SUMS" "$work/SHA256SUMS"
+	fetch "$gh_dl/SHA256SUMS" "$work/gh-SHA256SUMS" || { echo "    (SHA256SUMS not downloadable)"; return 1; }
 }
-if [ -n "${GITHUB_MIRROR_REPO:-}" ]; then
-	retry github github_ok && ok "published, 6 assets, same SHA256SUMS" || bad "GitHub release incomplete or different"
-else
-	skip "GITHUB_MIRROR_REPO not set"
+if ! retry github github_ok; then
+	bad "the GitHub release is missing, a draft, or incomplete"
+	echo "verify-release: nothing else can be checked without it"
+	exit 1
 fi
+if [ -n "${BUILD_SUMS:-}" ]; then
+	if cmp -s "$BUILD_SUMS" "$work/gh-SHA256SUMS"; then
+		ok "published, SHA256SUMS equal to this build's"
+	else
+		bad "the GitHub SHA256SUMS differ from this build's"
+		failed="$failed github"
+	fi
+	cp "$BUILD_SUMS" "$work/SHA256SUMS"
+else
+	ok "published (reference: the release's own SHA256SUMS)"
+	cp "$work/gh-SHA256SUMS" "$work/SHA256SUMS"
+fi
+for b in $BINARIES; do
+	want="$(hash_of "$b")"
+	if [ -z "$want" ]; then
+		bad "$b is not in SHA256SUMS"
+		failed="$failed github"
+	elif fetch "$gh_dl/$b" "$work/$b" && [ "$(sha256sum "$work/$b" | cut -d' ' -f1)" = "$want" ]; then
+		ok "$b downloads anonymously and matches"
+	else
+		bad "$b: download failed or checksum mismatch"
+		failed="$failed github"
+	fi
+done
+
+echo "== gitlab: the release page links point at those files"
+# GitLab does not redirect to an external link; it shows a "you are being
+# redirected away" page, so the links are checked where they are defined —
+# the public releases API — rather than followed.
+gl_ok() {
+	pid="$(printf '%s' "${GITLAB_PROJECT_PATH:-cs-public/swarm-remote-exec}" | sed 's|/|%2F|g')"
+	curl -fsSL "${GITLAB_API_URL:-https://gitlab.logle.io/api/v4}/projects/$pid/releases/$TAG" >"$work/gl.json" 2>/dev/null || { echo "    (release not visible)"; return 1; }
+	for b in $BINARIES SHA256SUMS; do
+		jq -e --arg n "$b" --arg u "$gh_dl/$b" '.assets.links | any(.name == $n and .url == $u)' "$work/gl.json" >/dev/null || { echo "    ($b does not point at $gh_dl/$b)"; return 1; }
+	done
+}
+retry gitlab gl_ok && ok "all six links point at the GitHub files" || bad "the GitLab release links do not point at the GitHub release"
 
 echo "== homebrew: formula"
 brew_ok() {
