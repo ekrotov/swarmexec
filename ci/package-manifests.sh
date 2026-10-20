@@ -6,7 +6,7 @@
 #   ci/package-manifests.sh <tag> <base-url> <SHA256SUMS> <out-dir>
 #
 # <base-url> is the directory holding the release's binaries, e.g.
-# https://gitlab.logle.io/api/v4/projects/242/packages/generic/swarmexec/v1.19.2
+# https://github.com/ekrotov/swarmexec/releases/download/v1.19.2
 #
 # It only WRITES the two files; ci/publish-packages.sh pushes them to the tap
 # and the bucket (the publish-packages CI job), when those are configured.

@@ -11,11 +11,14 @@ It shows the project description and four links:
 
 ## Always current
 
-The release/download links are GitLab **`/-/releases/permalink/latest`** URLs, so
-they always point at the newest release **without rebuilding the page**. The build
-also bakes the current version string into the page; on each release the CI
-rebuilds `site:latest` and **Watchtower** refreshes the running service, so the
-displayed version tracks releases too.
+The download links are GitHub **`/releases/latest/download/<file>`** URLs, so they
+always point at the newest release **without rebuilding the page**. The binaries
+are GitHub release assets (uploaded by the `mirror-github` job); GitLab's package
+registry is not used, because this GitLab instance keeps package files only until
+its container is next recreated. The build also bakes the current version string
+into the page; the site itself is redeployed by `deploy-site` on every release tag
+(the running service is pinned to that version, so a change merged to `main` goes
+live with the next release, not before).
 
 > The direct download permalinks rely on `filepath` being set on the release
 > asset links (configured in `.gitlab-ci.yml`, `release-publish` job).

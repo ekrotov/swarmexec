@@ -303,21 +303,6 @@ build-cli:
       done
     - (cd dist && sha256sum swarmexec-* > SHA256SUMS)
     - ls -la dist
-    # On a release tag, publish the binaries to the generic Package Registry —
-    # permanent and (on this public project) publicly downloadable, unlike job
-    # artifacts (member-only + expire_in). The Release links below point here.
-    - |
-      if [ -n "$CI_COMMIT_TAG" ]; then
-        echo "uploading binaries to generic package swarmexec/$CI_COMMIT_TAG"
-        for f in dist/*; do
-          name="$(basename "$f")"
-          echo "  -> $name"
-          curl --fail --silent --show-error \
-            --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-            --upload-file "$f" \
-            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/swarmexec/${CI_COMMIT_TAG}/${name}"
-        done
-      fi
   artifacts:
     name: "swarmexec-cli-${CI_COMMIT_REF_SLUG}"
     paths:
@@ -462,29 +447,31 @@ release-publish:
       Container image: `$CI_REGISTRY_IMAGE/agent:$CI_COMMIT_TAG`
       (stable releases are also tagged `:latest`). cli binaries are attached below.
     assets:
-      # Links point at the generic Package Registry (uploaded by build-cli):
-      # permanent and publicly downloadable on this public project, unlike job
-      # artifacts. filepath gives each asset a stable vanity path, enabling the
-      # "always latest" permalinks used by the swarm-exec.cloud-surfers.net landing page:
-      # <project>/-/releases/permalink/latest/downloads/bin/<name>.
+      # The downloads live in the GitHub release (mirror-github uploads the exact
+      # files of this build). GitLab's package registry is not used: this GitLab
+      # keeps package files only until its container is next recreated, and every
+      # release download had become a 404. filepath keeps each asset's stable
+      # vanity path; note that GitLab answers it with a "you are being redirected
+      # away" page, not an HTTP redirect, so scripts, the site, install.sh,
+      # Homebrew and Scoop use the GitHub URLs directly.
       links:
         - name: swarmexec-linux-amd64
-          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-linux-amd64"
+          url: "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG/swarmexec-linux-amd64"
           filepath: /bin/swarmexec-linux-amd64
         - name: swarmexec-linux-arm64
-          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-linux-arm64"
+          url: "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG/swarmexec-linux-arm64"
           filepath: /bin/swarmexec-linux-arm64
         - name: swarmexec-darwin-amd64
-          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-darwin-amd64"
+          url: "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG/swarmexec-darwin-amd64"
           filepath: /bin/swarmexec-darwin-amd64
         - name: swarmexec-darwin-arm64
-          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-darwin-arm64"
+          url: "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG/swarmexec-darwin-arm64"
           filepath: /bin/swarmexec-darwin-arm64
         - name: swarmexec-windows-amd64.exe
-          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/swarmexec-windows-amd64.exe"
+          url: "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG/swarmexec-windows-amd64.exe"
           filepath: /bin/swarmexec-windows-amd64.exe
         - name: SHA256SUMS
-          url: "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG/SHA256SUMS"
+          url: "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG/SHA256SUMS"
           filepath: /bin/SHA256SUMS
   rules:
     - *semver-tag
@@ -622,9 +609,9 @@ mirror-github:
     GIT_DEPTH: "0" # a mirror needs the whole history, not the CI clone's slice
   before_script:
     - apk add --no-cache git ca-certificates curl jq >/dev/null
-  # The tag is already published by the time this runs, so a GitHub outage must
-  # not turn a finished release red.
-  allow_failure: true
+  # Not allow_failure: the GitHub release is where the downloads live — the
+  # GitLab release links, Homebrew, Scoop and install.sh all point at it — so a
+  # release whose GitHub upload failed is not out, and must not look green.
   script:
     - |
       if [ -z "$GITHUB_MIRROR_REPO" ] || [ -z "$GITHUB_MIRROR_TOKEN" ]; then
@@ -795,8 +782,9 @@ package-manifests:
   rules:
     - *semver-tag
   script:
+    - test -n "$GITHUB_MIRROR_REPO" || { echo "GITHUB_MIRROR_REPO is not set — the formula and manifest point at the GitHub release"; exit 1; }
     - sh ci/package-manifests.sh "$CI_COMMIT_TAG"
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/swarmexec/$CI_COMMIT_TAG"
+        "https://github.com/$GITHUB_MIRROR_REPO/releases/download/$CI_COMMIT_TAG"
         dist/SHA256SUMS packaging
   artifacts:
     expire_in: 1 year
@@ -822,6 +810,9 @@ publish-packages:
   needs:
     - job: package-manifests
       artifacts: true
+    # The formula and manifest point at the GitHub release's files; publish
+    # them only once those exist.
+    - job: mirror-github
   rules:
     - *semver-tag
   allow_failure: true
@@ -846,6 +837,8 @@ verify-release:
   stage: deploy
   image: alpine:3
   needs:
+    - job: build-cli
+      artifacts: true # dist/SHA256SUMS — the reference every download is checked against
     - job: release-publish
     - job: agent-image
     - job: mirror-github
@@ -858,7 +851,7 @@ verify-release:
   before_script:
     - apk add --no-cache curl jq coreutils >/dev/null
   script:
-    - sh ci/verify-release.sh "$CI_COMMIT_TAG"
+    - BUILD_SUMS=dist/SHA256SUMS sh ci/verify-release.sh "$CI_COMMIT_TAG"
 
 reddit-post:
   extends: .release-post

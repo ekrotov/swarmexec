@@ -93,12 +93,17 @@ token with `write_repository`) set, commits them to that branch.
   (enforced by the `verify-tag-on-main` gate). It produces:
   - cli binaries for linux/macOS/windows stamped with the version,
   - the agent image at `$CI_REGISTRY_IMAGE/agent:<version>` and `:latest`,
-  - a GitLab **Release** with the binaries attached,
-  - the GitHub mirror release, Homebrew formula and Scoop manifest, the site,
+  - the **GitHub release** (`mirror-github`), which holds the binaries — every
+    download points there: install.sh, Homebrew, Scoop, the site; a GitLab
+    **Release** whose asset links point at those GitHub files (GitLab's package
+    registry is not used: this instance loses package files whenever its
+    container is recreated),
+  - the Homebrew formula and Scoop manifest, the site,
   - and last, `verify-release`: it checks from the outside, anonymously, that
-    all of it arrived — downloads against `SHA256SUMS`, the GitHub release, the
-    formula and manifest hashes, the Docker Hub tag, `install.sh` from the live
-    site, and that every site replica serves the new release. It turns the
+    all of it arrived — the GitHub downloads against the build's `SHA256SUMS`,
+    the GitLab release links, the formula and manifest hashes, the Docker Hub
+    tag, `install.sh` from the live site, and that every site replica serves the
+    new release. It turns the
     pipeline red if not (`ci/verify-release.sh`; run it by hand with a tag to
     check any release).
 
