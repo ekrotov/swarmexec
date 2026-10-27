@@ -1,8 +1,10 @@
 # swarmexec agent
 
-**Cluster-wide `docker exec -it` for Docker Swarm** — plus logs and swarm-wide
-volume management, from a single terminal, without SSHing to the node that
-happens to run the task.
+**`docker exec`, logs and port-forward for any container in a Docker Swarm** —
+from one terminal, without SSH to the node that runs the task and without
+publishing a port. Plus a terminal UI across several clusters, volumes across all
+nodes, a content diff of deployed stacks, and a security gate before
+`docker stack deploy`. Apache-2.0, no node limit, no telemetry.
 
 🌐 **Website & documentation:** <https://swarm-exec.cloud-surfers.net> ·
 📦 **Source:** <https://github.com/ekrotov/swarmexec>

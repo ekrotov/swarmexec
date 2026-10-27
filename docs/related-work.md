@@ -48,12 +48,16 @@ typically exec-only (no aggregated logs/volume views), and access is whatever th
 node's Docker socket grants — no per-operator auth or audit.
 
 **GUI platforms** — [Portainer](https://docs.portainer.io/admin/environments/add/swarm/agent)
-(with the Portainer Agent), [Swarmpit](https://swarmpit.io) and
-[Komodo](https://komo.do/docs/swarm) solve the same node-local API limitation with
-a per-node agent and can exec/inspect cluster-wide — but as web platforms, not
-headless CLI/TUIs. Portainer's GitOps comparison is a commit-hash check rather
-than a content diff, and Swarmpit has had an open request for a container console
-since 2018.
+(with the Portainer Agent), [Swarmpit](https://swarmpit.io),
+[Komodo](https://komo.do/docs/swarm) and, newer,
+[Arcane](https://getarcane.app/docs) solve the same node-local API limitation with
+a per-node agent — but as web platforms, not headless CLI/TUIs. Portainer has a
+web console into containers; Komodo has container terminals per server, and exec
+into Swarm tasks on other nodes is not documented for it or for Arcane.
+Portainer's GitOps comparison is a commit-hash check rather than a content diff,
+and Swarmpit has no console: the requests for one (#259, #438) were closed in
+2019 without it. [Dockhand](https://github.com/Finsys/dockhand), often listed as
+a Portainer alternative, does not support Swarm (BSL-licensed).
 
 **Where swarmexec sits:** exec itself is no longer the distinguishing trait — d4s
 and swarmcli's Business Edition both have it. What has not turned up in any of
@@ -63,6 +67,6 @@ replacement**. Add the persistent per-node agent with its own mTLS /
 shared-secret identity and audit log, ssh-tunnel support for nodes behind a
 bastion — and all of it under Apache-2.0 with no node limit.
 
-*Checked against the projects' own repositories and READMEs on 2026-09-26.*
+*Checked against the projects' own repositories, READMEs and documentation on 2026-10-27.*
 
 ---
