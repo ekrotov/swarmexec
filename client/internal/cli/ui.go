@@ -437,9 +437,16 @@ func (u *ui) run(keyWarnings []string) error {
 	help := tview.NewTextView().SetDynamicColors(true)
 	status := tview.NewTextView().SetDynamicColors(true)
 	u.clusterText = "[gray]cluster: …[white]"
+	// The status line shares its row with a right-aligned part: the version of
+	// this client, and — while the context list is hidden for lack of width —
+	// the key that brings it up. Its width follows its text (statusRightText).
+	statusRight := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	statusRow := tview.NewFlex().
+		AddItem(status, 0, 1, false).
+		AddItem(statusRight, 0, 0, false)
 	footer := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(help, 1, 0, false).
-		AddItem(status, 1, 0, false)
+		AddItem(statusRow, 1, 0, false)
 	// "/" search bar: hidden (height 0) until activated; filters the container
 	// tree live by service / container id / node.
 	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
@@ -457,20 +464,21 @@ func (u *ui) run(keyWarnings []string) error {
 		AddItem(nil, 0, 0, false).
 		AddItem(sidebar, 0, 0, false)
 	u.body, u.sidebar = body, sidebar
-	// The width is decided at draw time from the space we actually have: tview
-	// runs this before the Flex lays its items out, so the new width applies to
-	// the very frame that measured it — no resize events to listen for, and no
-	// stale width after a terminal resize.
-	body.SetDrawFunc(func(_ tcell.Screen, x, y, w, h int) (int, int, int, int) {
-		u.resizeSidebar(w)
-		return x, y, w, h
-	})
-
 	root := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tabBar, 2, 0, false). // labels row + active-tab underline indicator
 		AddItem(body, 0, 1, true).
 		AddItem(search, 0, 0, false).
 		AddItem(footer, 2, 0, false)
+	// The sidebar width is decided at draw time from the space we actually have
+	// — no resize events to listen for, no stale width after a resize. It is
+	// decided in ROOT's draw func, which tview runs before root draws any child:
+	// a Flex draws its focused item LAST, and the body nearly always has focus,
+	// so a decision made in the body's own draw would reach the footer (the
+	// context-list hint) only one frame later. Body and root share the width.
+	root.SetDrawFunc(func(_ tcell.Screen, x, y, w, h int) (int, int, int, int) {
+		u.resizeSidebar(w)
+		return x, y, w, h
+	})
 	pages.AddPage(pageMain, root, true, true)
 
 	// Promote the shared widgets onto u so the infra methods (updateStatus,
@@ -481,6 +489,8 @@ func (u *ui) run(keyWarnings []string) error {
 	u.cfgtable = cfgtable
 	u.tabBar, u.help, u.status = tabBar, help, status
 	u.footer, u.root, u.search = footer, root, search
+	u.statusRow, u.statusRight = statusRow, statusRight
+	u.updateStatusRight()
 
 	// u.savedHelp holds the footer help to restore when search closes; u.searchMode
 	// selects what the shared "/" bar filters (container tree vs. volumes table).
@@ -1361,6 +1371,36 @@ func (u *ui) updateStatus() {
 		parts = append(parts, fmt.Sprintf("[yellow]▣ %d selected[white]", len(selectedVols)))
 	}
 	status.SetText(" " + strings.Join(parts, "  ·  "))
+}
+
+// statusRightText is the right end of the status line: the key that shows the
+// context list while it is hidden, then the client version.
+func statusRightText(version string, ctxKey rune, sidebarHidden bool, contexts int) string {
+	var b strings.Builder
+	if sidebarHidden && contexts > 0 {
+		fmt.Fprintf(&b, "[yellow]%s[white] contexts  ·  ", keyLabel(ctxKey))
+	}
+	b.WriteString("[gray]" + tview.Escape(version) + "[white] ")
+	return b.String()
+}
+
+// updateStatusRight redraws the right end of the status line and sizes it to
+// its text, so the status on the left keeps every column it does not need.
+func (u *ui) updateStatusRight() {
+	if u.statusRight == nil || u.statusRow == nil {
+		return
+	}
+	txt := statusRightText(u.binaryVersion(), u.km.CtxFocus, u.sidebarHidden, len(u.ctxs))
+	u.statusRight.SetText(txt)
+	u.statusRow.ResizeItem(u.statusRight, tview.TaggedStringWidth(txt), 0)
+}
+
+// binaryVersion is this client's release as `swarmexec --version` reports it.
+func (u *ui) binaryVersion() string {
+	if u.g == nil || u.g.version.Binary == "" {
+		return "dev"
+	}
+	return u.g.version.Binary
 }
 
 // toggleMouse flips tview's mouse capture. With it off, the terminal's own

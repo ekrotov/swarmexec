@@ -65,6 +65,7 @@ func (u *ui) loadContexts() {
 	}
 	u.ctxs = list
 	u.renderContexts()
+	u.updateStatusRight() // the hint needs to know there are contexts to show
 }
 
 // selectedContext maps the cursor row to a context.
