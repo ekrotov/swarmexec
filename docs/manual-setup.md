@@ -280,6 +280,13 @@ and the shared connection exits 60 s after the last command. Set
 `SWARMEXEC_SSH_MULTIPLEX=0` to turn it off; it is unavailable on Windows, whose
 OpenSSH does not implement connection sharing.
 
+A key with a passphrase works without `ssh-add`: with OpenSSH 8.4 or newer,
+swarmexec answers ssh's `SSH_ASKPASS` and asks you — in the TUI as a dialog,
+otherwise on the terminal — for the passphrase, a password or an unknown host
+key. With older OpenSSH or on Windows the TUI offers to run `ssh-add` for you and
+the CLI prints the exact command. `SWARMEXEC_SSH_ASKPASS=0` switches asking off.
+See [ssh passphrases and questions](https://swarm-exec.cloud-surfers.net/docs#sshprompt).
+
 ### Step 4.3 — Provide the mTLS material
 
 Via flags, env vars, or a config file (precedence: defaults → file → env →

@@ -326,6 +326,7 @@
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>atenuación del fondo del overlay (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_KEYS</code></td><td>ruta del archivo de atajos de teclado de la TUI (por defecto <code>keys.yaml</code> junto a la configuración)</td></tr>
           <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> desactiva las conexiones ssh compartidas (ver <a href="#sshsharing">Conexiones ssh compartidas</a>)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_ASKPASS</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> impide que ssh pregunte a través de swarmexec (ver <a href="#sshprompt">frases de paso y preguntas de ssh</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>contexto de Docker para la API del manager</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base para la ruta de configuración por defecto</td></tr>
         </tbody>
@@ -1205,6 +1206,46 @@ rules:
           conviene saberlo si configuras <code>ControlPath</code> por tu cuenta, ya que el
           ajuste de swarmexec se pasa en la línea de comandos de ssh y, por tanto, tiene
           prioridad sobre <code>~/.ssh/config</code>.
+        </li>
+      </ul>
+
+      <h3 id="sshprompt">Frases de paso y preguntas de ssh</h3>
+      <p>
+        Los procesos ssh que inicia swarmexec no tienen terminal propia, así que ssh no puede
+        preguntarte nada directamente. Con <strong>OpenSSH 8.4 o posterior</strong> (macOS y
+        las distribuciones Linux actuales) swarmexec pregunta por él, mediante
+        <code>SSH_ASKPASS</code> de ssh: la frase de paso de una clave, una contraseña o si
+        confiar en una clave de host que no ha visto antes.
+      </p>
+      <ul>
+        <li>
+          En <code>swarmexec ui</code> la pregunta se abre como un diálogo
+          (<kbd>Enter</kbd> envía, <kbd>Esc</kbd> cancela). En todo lo demás — y mientras la
+          TUI aún arranca — se pregunta en la terminal, oculta como hace ssh.
+        </li>
+        <li>
+          Respondes una vez. Las conexiones que hacen la misma pregunta en el mismo momento
+          comparten la respuesta, y después todas van por la
+          <a href="#sshsharing">conexión compartida</a>. swarmexec no guarda nada de lo que
+          escribes.
+        </li>
+        <li>
+          <kbd>Esc</kbd> cancela el inicio de sesión, y nada vuelve a preguntar por sí solo —
+          ni siquiera el refresco de la TUI cada diez segundos. Pulsa <kbd>r</kbd> o cambia de
+          contexto para que se vuelva a preguntar.
+        </li>
+        <li>
+          <strong>OpenSSH antiguo, Windows o desactivado</strong>
+          (<code>SWARMEXEC_SSH_ASKPASS=0</code>): cuando el inicio de sesión falla, la TUI
+          ofrece ejecutar <code>ssh-add</code> para la clave que usaría ssh, te cede la
+          terminal para su frase de paso y lo vuelve a intentar; la CLI indica el comando
+          <code>ssh-add</code> exacto. Ambos necesitan un <code>ssh-agent</code> en marcha.
+          Una clave de host que nunca has aceptado no se puede preguntar ahí: conéctate antes
+          una vez con <code>ssh</code> normal.
+        </li>
+        <li>
+          Si defines <code>SSH_ASKPASS_REQUIRE</code> tú mismo, swarmexec respeta tu
+          configuración de askpass.
         </li>
       </ul>
 

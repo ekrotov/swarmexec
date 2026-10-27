@@ -31,6 +31,7 @@ func sshDialerForHost(host, jump string) (func(context.Context, string) (net.Con
 	if !strings.HasPrefix(host, "ssh://") {
 		return nil, nil
 	}
+	prepareSSHPrompting()
 	sp, err := ssh.ParseURL(host)
 	if err != nil {
 		return nil, fmt.Errorf("parse ssh docker context %q: %w", host, err)

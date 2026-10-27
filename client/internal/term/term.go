@@ -69,3 +69,9 @@ func Size(fd uintptr) (width, height uint32, err error) {
 func NotifyResize() (events <-chan os.Signal, stop func()) {
 	return notifyResize()
 }
+
+// ReadPassword reads a line from the terminal at fd without echoing it. The
+// trailing newline is not included.
+func ReadPassword(fd uintptr) ([]byte, error) {
+	return xterm.ReadPassword(int(fd))
+}

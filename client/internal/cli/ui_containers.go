@@ -389,6 +389,12 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 	if err != nil {
 		croot.ClearChildren()
 		croot.AddChild(tview.NewTreeNode(errorText(err)).SetColor(tcell.ColorRed).SetSelectable(false))
+		if askpassActive() && isSSHAuthError(err) {
+			// After a cancelled sign-in nothing asks again on its own; say how.
+			croot.AddChild(tview.NewTreeNode(fmt.Sprintf("ssh could not sign in — press %c to be asked again", u.km.Refresh)).
+				SetColor(tcell.ColorYellow).SetSelectable(false))
+		}
+		u.offerSSHAdd(u.clusterState, err, u.loadContainers)
 		return
 	}
 	u.lastSvcs = svcs
@@ -414,6 +420,7 @@ func (u *ui) loadContainersSync() {
 // narrow the columns again; the background poll may not.
 func (u *ui) loadContainers() {
 	u.resetCols = true
+	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
 	gen := u.generation()
 	go func() {
 		svcs, cands, err := u.fetchContainers()
