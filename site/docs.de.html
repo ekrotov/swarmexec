@@ -1253,6 +1253,146 @@ rules:
         </li>
       </ul>
 
+      <h3 id="mcp"><code>mcp</code> — einen KI-Assistenten in den Swarm schauen lassen</h3>
+      <p>
+        <code>swarmexec mcp</code> ist ein <strong>Model-Context-Protocol</strong>-Server auf
+        stdin/stdout. Ein KI-Assistent wie Claude Code sieht den Swarm damit über dieselben
+        zwei Kanäle wie jeder andere Befehl — die Manager-API und die Node-Agenten — auf
+        jedem Docker-Kontext, <code>ssh://</code> eingeschlossen. Er liest Status, Tasks,
+        Logs und Ressourcenverbrauch, vergleicht und prüft Stack-Dateien und führt, wo du es
+        erlaubst, einen einzelnen nicht-interaktiven Befehl in einem Container aus. Er
+        ändert nichts.
+      </p>
+      <div class="cmd">claude mcp add swarmexec -- swarmexec mcp</div>
+      <p>
+        Jedes Tool nimmt ein optionales Argument <code>context</code>; ohne es nutzt der
+        Server den Kontext, mit dem er gestartet wurde (<code>--context</code>,
+        <code>DOCKER_CONTEXT</code>, <code>DOCKER_HOST</code>, Dockers aktueller Kontext).
+        Die Verbindungen bleiben je Kontext für die ganze Sitzung bestehen, wie in der TUI
+        beim Kontextwechsel.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Tool</th><th>Liefert</th><th>Braucht</th></tr></thead>
+        <tbody>
+          <tr><td><code>contexts_list</code></td><td>die Docker-Kontexte und welchen der Server nutzt</td><td>—</td></tr>
+          <tr><td><code>cluster_overview</code></td><td>Nodes sowie Replika- und Health-Zustand der sichtbaren Services</td><td>—</td></tr>
+          <tr><td><code>services_list</code></td><td>wie <code>ps</code>: Modus, Replikas, Image, Ports, Stack und laufende Container</td><td><code>enable</code></td></tr>
+          <tr><td><code>service_inspect</code></td><td>die Konfiguration eines Service und seine letzten Tasks</td><td><code>enable</code></td></tr>
+          <tr><td><code>logs_read</code></td><td>aktuelle Logs: tail, since, Regexp und Mindest-Level, begrenzt; folgt nie</td><td><code>logs</code></td></tr>
+          <tr><td><code>stats</code></td><td>CPU, Speicher und Healthcheck-Zustand je Container, live</td><td><code>enable</code></td></tr>
+          <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>nur Namen, und nur die, die sichtbare Services nutzen</td><td><code>enable</code></td></tr>
+          <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>was das Deployen einer Stack-Datei ändern würde / was die Deploy-Prüfung findet — deployt wird nichts</td><td><code>enable</code> auf jedem Service der Datei</td></tr>
+          <tr><td><code>security_report</code></td><td>der <a href="#securityreport">Sicherheitsbericht</a>, beschränkt auf die sichtbaren Services und was sie nutzen</td><td><code>--allow report</code></td></tr>
+          <tr><td><code>doctor</code></td><td>Zustand von Manager und Agenten, wie <code>doctor</code></td><td>—</td></tr>
+          <tr><td><code>exec_run</code></td><td>ein Befehl, ohne TTY, ohne stdin, mit Timeout und Ausgabegrenze</td><td><code>exec</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>Zugriff: Service-Labels</h4>
+      <p>
+        Was der Assistent sehen darf, entscheiden <strong>je Service</strong>
+        Service-Labels — in einer Compose-Datei <code>deploy.labels</code>, so wie Traefik
+        im Swarm-Modus konfiguriert wird. Ohne Label ist nichts sichtbar.
+      </p>
+      <div class="prompt"><span class="o"># Compose-Datei: deploy.labels, nicht die Container-Labels</span>
+services:
+  api:
+    image: registry.example.com/api:1.4
+    deploy:
+      labels:
+        swarmexec.mcp.enable: "true"   <span class="o"># der Service existiert für den Assistenten</span>
+        swarmexec.mcp.logs: "true"     <span class="o"># er darf die Logs lesen</span>
+        swarmexec.mcp.exec: "true"     <span class="o"># er darf einen Befehl im Container ausführen</span></div>
+      <ul>
+        <li>
+          <strong>Opt-in.</strong> Ein Service ohne <code>swarmexec.mcp.enable</code>
+          existiert für den Assistenten nicht. <code>--default read</code> macht Services
+          ohne Label sichtbar (Status, Tasks, Inspect, Stats) — nie ihre Logs, nie Exec.
+        </li>
+        <li>
+          <strong>Ein ausdrückliches <code>"false"</code> gewinnt immer</strong>, gegen den
+          Default und gegen die anderen Labels. Ein Wert, der weder true noch false ist,
+          zählt als false.
+        </li>
+        <li>
+          Ein unbekannter Schlüssel unter <code>swarmexec.mcp.</code> — ein Tippfehler wie
+          <code>swarmexec.mcp.exce</code> — gewährt nichts und landet als Warnung in der
+          Logdatei; ebenso ein Zugriffs-Label, das als <em>Container</em>-Label gesetzt ist.
+        </li>
+        <li>
+          Ein Service, den er nicht sehen darf, ist <strong>von einem nicht existierenden
+          nicht zu unterscheiden</strong>: dasselbe <em>no such service</em>, abwesend in
+          jeder Liste, jeder Zählung und jedem Stack-Diff. Ein sichtbarer Service ohne
+          <code>logs</code> oder <code>exec</code> antwortet schlicht <em>not permitted</em>.
+        </li>
+      </ul>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>--default</code></td><td><code>none</code></td><td>Zugriff für Services ohne <code>swarmexec.mcp.enable</code>: <code>none</code> oder <code>read</code></td></tr>
+          <tr><td><code>--allow</code></td><td>—</td><td>optionale Tools: <code>report</code> fügt <code>security_report</code> hinzu</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Timeout für den Verbindungsaufbau zu einem Agenten</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>Sicherheitshinweise</h4>
+      <ul>
+        <li>
+          <strong>Die Labels sind für den Assistenten unsichtbar.</strong> Sie werden aus
+          allem entfernt, was er erhält — Inspect, Listen, Task-Details, Stack-Diffs und
+          -Prüfungen, Fehlermeldungen —, aus Service- wie aus Container-Labels, und jedes
+          Ergebnis passiert auf dem Weg nach draußen einen letzten Filter. Aus dem, was
+          funktioniert, kann er auf seinen Zugriff schließen; das ist in Kauf genommen.
+        </li>
+        <li>
+          <strong>Über MCP lassen sie sich nicht ändern.</strong> Es gibt keine schreibenden
+          Tools. Jedes künftige muss eine Prüfung passieren, die den Service vor und nach
+          der Änderung vergleicht und ablehnt, wenn ein Zugriffs-Label hinzukäme, sich
+          änderte oder verschwände.
+        </li>
+        <li>
+          <strong>In einen Service, der den Docker-Daemon erreicht, wird nie per Exec
+          hineingegangen</strong>, egal was seine Labels sagen: eingebundener Docker-Socket
+          (die Regel des Sicherheitsscans), ein Bind des Verzeichnisses, in dem er liegt,
+          die Windows-Pipe und der swarmexec-Agent selbst. Über den Socket könnte alles
+          jeden Service umlabeln. Die eigene <a href="#policy">Autorisierungs-Policy</a> des
+          Agenten gilt zusätzlich.
+        </li>
+        <li>
+          <strong>Prompt Injection.</strong> Logzeilen und Befehlsausgaben schreiben die
+          Anwendungen. Wer Text in ein Log bringt, kann dem Assistenten Anweisungen
+          unterschieben; betrachte <code>logs</code> und <code>exec</code> deshalb auch als
+          Zugriff für jeden, der in diese Logs schreibt.
+        </li>
+        <li>
+          <strong>Daten gehen an den Modellanbieter.</strong> Was ein Tool zurückgibt, geht
+          an das Modell des Assistenten. Umgebungswerte, deren Namen nach Zugangsdaten
+          aussehen (die Regel <em>Secret in Umgebungsvariable</em> des Scans), werden
+          maskiert, Secrets und Configs nur mit Namen aufgeführt, und jedes Ergebnis ist in
+          der Größe begrenzt und sagt, wenn es gekürzt wurde — Logzeilen und
+          Befehlsausgaben gehen aber unverändert durch.
+        </li>
+        <li>
+          <strong>Audit.</strong> Den Agenten wird als Operator
+          <code>&lt;du&gt;+mcp</code> gemeldet, das Audit-Log zeigt also, welche Aktionen
+          der Assistent ausgelöst hat. Bei mTLS bestimmt der CN des Zertifikats die
+          Identität; gib dem Assistenten ein eigenes Client-Zertifikat, um ihn dort zu
+          unterscheiden.
+        </li>
+        <li>
+          <strong>ssh kann nicht fragen.</strong> stdin und stdout tragen das Protokoll,
+          ssh läuft daher im Batch-Modus: Ein Schlüssel mit Passphrase muss im
+          <code>ssh-agent</code> geladen sein, ein Host-Key schon in
+          <code>known_hosts</code> stehen. Die Fehlermeldung sagt, was fehlt. Geloggt wird
+          in die Logdatei, nie nach stdout.
+        </li>
+        <li>
+          Ein Assistent, der im Repository arbeitet, kann die Labels direkt in der
+          Compose-Datei lesen — sie sind aus den Antworten des Servers ausgeblendet, nicht
+          geheim.
+        </li>
+      </ul>
+
       <!-- 10 -->
       <h2 id="tui">10. Die TUI</h2>
       <p>
