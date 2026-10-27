@@ -4,7 +4,8 @@
 volume management, from a single terminal, without SSHing to the node that
 happens to run the task.
 
-📦 **Source & docs:** <https://gitlab.logle.io/cs-public/swarm-remote-exec>
+🌐 **Website & documentation:** <https://swarm-exec.cloud-surfers.net> ·
+📦 **Source:** <https://github.com/ekrotov/swarmexec>
 
 This image is the **agent**: it runs as a **global** Swarm service (one task per
 node), has the local Docker socket mounted, and serves an mTLS gRPC endpoint that
@@ -85,11 +86,15 @@ your Docker log driver (`docker service logs swarmexec_agent`).
 
 ## Links
 
-- **Source & full documentation:**
-  <https://gitlab.logle.io/cs-public/swarm-remote-exec> — build,
-  certificates, configuration reference, troubleshooting, security notes.
+- **Documentation:** <https://swarm-exec.cloud-surfers.net/docs> — install,
+  quick start, configuration, authentication, every command, the TUI.
+- **Manual agent setup** with your own CA, troubleshooting, security notes:
+  [docs/manual-setup.md](https://github.com/ekrotov/swarmexec/blob/main/docs/manual-setup.md).
 - **CLI binaries** (Linux / macOS / Windows) are attached to each
-  [release](https://gitlab.logle.io/cs-public/swarm-remote-exec/-/releases).
+  [release](https://github.com/ekrotov/swarmexec/releases); or
+  `curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh`.
+- **Source:** <https://github.com/ekrotov/swarmexec>, mirrored from
+  <https://gitlab.logle.io/cs-public/swarm-remote-exec>.
 
 ## License
 

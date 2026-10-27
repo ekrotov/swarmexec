@@ -8,7 +8,7 @@
 # The Hub image is public, so no registry login is needed to pull it:
 #   docker stack deploy -c deploy/agent-stack.yml swarmexec
 #
-# Create the required secrets first (see deploy/secrets.sh or the README):
+# Create the required secrets first (see deploy/secrets.sh or docs/manual-setup.md):
 #   docker secret create swarmexec_ca   ca.crt
 #   docker secret create swarmexec_cert agent.crt
 #   docker secret create swarmexec_key  agent.key

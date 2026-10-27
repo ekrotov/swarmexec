@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>swarmexec — ask the node, not only the manager</title>
-<meta name="description" content="For Docker Swarm: exec, logs and port-forward into any container through a small agent on every node, plus a content diff of deployed stacks and a security scan of service specs. Apache-2.0, no node limit.">
+<title>swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm</title>
+<meta name="description" content="swarmexec (swarm-exec) for Docker Swarm: exec, logs and port-forward into any container through a small agent on every node, plus a content diff of deployed stacks and a security scan of service specs. Apache-2.0, no node limit.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
@@ -12,7 +12,7 @@
 <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="swarmexec">
-<meta property="og:title" content="swarmexec — ask the node, not only the manager">
+<meta property="og:title" content="swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm">
 <meta property="og:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
 <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/">
 <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
@@ -20,7 +20,7 @@
 <meta property="og:image:height" content="470">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="swarmexec — ask the node, not only the manager">
+<meta name="twitter:title" content="swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm">
 <meta name="twitter:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
 <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
 <script type="application/ld+json">
@@ -28,13 +28,20 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "swarmexec",
+  "alternateName": ["swarm-exec", "swarm exec"],
   "description": "For Docker Swarm: exec, logs and port-forward into any container through a small agent on every node, plus a content diff of deployed stacks and a security scan of service specs. Apache-2.0, no node limit.",
   "url": "https://swarm-exec.cloud-surfers.net/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
-  "author": { "@type": "Organization", "name": "Cloud Surfers GmbH", "url": "https://www.cloud-surfers.com/" }
+  "author": { "@type": "Organization", "name": "Cloud Surfers GmbH", "url": "https://www.cloud-surfers.com/" },
+  "codeRepository": "https://github.com/ekrotov/swarmexec",
+  "sameAs": [
+    "https://github.com/ekrotov/swarmexec",
+    "https://gitlab.logle.io/cs-public/swarm-remote-exec",
+    "https://hub.docker.com/r/logleio/swarmexec-agent"
+  ]
 }
 </script>
 <script>document.documentElement.className = 'js';</script>
@@ -69,6 +76,7 @@
 <main id="main">
 
 <section class="hero" aria-labelledby="hero-title">
+  <p class="hero-kicker">swarmexec — <code>docker exec</code>, logs and port-forward for Docker Swarm</p>
   <div class="hero-text">
     <h1 id="hero-title"><span class="h1-part" style="--i:0">The manager says <span class="nb">running.</span></span> <span class="h1-part" style="--i:1">Ask the node.</span></h1>
     <div class="lead-cols">

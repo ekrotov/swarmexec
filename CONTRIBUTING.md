@@ -2,7 +2,7 @@
 
 Thanks for your interest in swarmexec. This document covers the legal side of
 contributing; for how the code is laid out, start with the
-[`README.md`](README.md) and [`CONTRACT.md`](CONTRACT.md).
+[`DEVELOPMENT.md`](DEVELOPMENT.md) and [`CONTRACT.md`](CONTRACT.md).
 
 ## License of contributions
 
