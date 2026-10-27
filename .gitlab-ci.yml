@@ -501,7 +501,7 @@ dockerhub-description:
       # Repo path (namespace/name). Strip any docker.io/ prefix from an override.
       REPO="${DOCKERHUB_IMAGE:-$DOCKERHUB_USER/swarmexec-agent}"
       REPO="${REPO#docker.io/}"
-      SHORT="Cluster-wide docker exec/logs/volumes for Docker Swarm — the per-node agent."
+      SHORT="Agent for swarmexec: docker exec, logs & port-forward into any Docker Swarm container, plus a TUI."
       SHORT="$(printf '%s' "$SHORT" | cut -c1-100)"   # Hub caps short description at 100 chars
       echo "syncing description for $REPO"
       TOKEN="$(curl -sf -H 'Content-Type: application/json' \

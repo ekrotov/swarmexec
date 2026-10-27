@@ -68,6 +68,7 @@
     <a href="#alone">Only here</a>
     <a href="#commands">Commands</a>
     <a href="#tui">TUI</a>
+    <a href="#compare">Compare</a>
     <a class="rail-docs" href="docs.html">Docs</a>
     <a class="rail-cta" href="#install">Install</a>
   </nav>
@@ -76,21 +77,31 @@
 <main id="main">
 
 <section class="hero" aria-labelledby="hero-title">
-  <p class="hero-kicker">swarmexec — <code>docker exec</code>, logs and port-forward for Docker Swarm</p>
+  <p class="hero-kicker">swarmexec <span class="nb">(swarm-exec)</span> — <code>docker exec</code>, logs and port-forward for Docker Swarm</p>
   <div class="hero-text">
-    <h1 id="hero-title"><span class="h1-part" style="--i:0">The manager says <span class="nb">running.</span></span> <span class="h1-part" style="--i:1">Ask the node.</span></h1>
+    <h1 id="hero-title"><span class="h1-part" style="--i:0">Every container in your Swarm,</span> <span class="h1-part" style="--i:1">one terminal away.</span></h1>
     <div class="lead-cols">
       <p class="lead">
-        In a Swarm the manager knows where every task is scheduled. What is true inside
-        the container — its healthcheck, its shell, a port nobody published, the volume on
-        its disk — lives on one node. swarmexec puts a small agent on every node and asks it
-        directly, from the terminal you are already sitting in.
+        <code>exec</code>, <code>logs -f</code> and <code>port-forward</code> into any task
+        on any node — what <code>kubectl</code> gives you on Kubernetes — with no SSH to the
+        node and no published port. A k9s-style UI across all your clusters, and a stack
+        diff and a security gate before you deploy.
       </p>
       <p class="lead-sub">
-        No SSH to whichever node runs the task, no throwaway helper container per command.
-        Apache-2.0, no node limit.
+        Apache-2.0 with no node limit and no edition above it. No telemetry.
+        <a href="#install">Install</a> · <a href="#compare">How it compares</a>
       </p>
     </div>
+  </div>
+
+  <div class="stage-intro">
+    <h2 class="stage-title">The manager says running. Ask the node.</h2>
+    <p>
+      In a Swarm the manager knows where every task is scheduled. What is true inside the
+      container — its healthcheck, its shell, a port nobody published, the volume on its
+      disk — lives on one node. swarmexec puts a small agent on every node and asks it
+      directly, from the terminal you are already sitting in.
+    </p>
   </div>
 
   <figure class="stage" id="stage" aria-labelledby="stage-cap">
@@ -178,14 +189,84 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
   </figure>
 </section>
 
+<section id="vs-ssh" class="band" aria-labelledby="vsssh-title">
+  <div class="band-head">
+    <h2 id="vsssh-title">Instead of SSH and docker exec</h2>
+    <p class="band-lead">
+      Docker has no <code>docker service exec</code>; the request has been open since 2016
+      (<a href="https://github.com/moby/moby/issues/27552">moby#27552</a>). So the way into a
+      task is a lookup on the manager, an SSH session on whichever node runs it, and a second
+      lookup there. Every time, and for every operator who needs it, an account on every node.
+    </p>
+  </div>
+
+  <div class="vs">
+    <div class="vs-row">
+      <h3>A shell in replica 2 of <code>web</code></h3>
+      <div class="vs-before">
+        <p class="vs-label">without</p>
+        <pre class="sh"><span class="p">$</span> docker service ps web -f desired-state=running  <span class="c-dim"># which node?</span>
+<span class="p">$</span> ssh node-3
+<span class="p">node-3$</span> docker ps -f name=web.2                     <span class="c-dim"># which container?</span>
+<span class="p">node-3$</span> docker exec -it 3f9a2b1c9e04 sh</pre>
+      </div>
+      <div class="vs-after">
+        <p class="vs-label">with swarmexec</p>
+        <pre class="sh"><span class="p">$</span> swarmexec exec web.2 -- sh</pre>
+      </div>
+    </div>
+
+    <div class="vs-row">
+      <h3>The database port nobody published</h3>
+      <div class="vs-before">
+        <p class="vs-label">without</p>
+        <pre class="sh"><span class="p">$</span> docker service update --publish-add 5432:5432 db
+<span class="c-dim"># …which changes the stack and opens the port on every node,
+# or a socat container on the overlay network, published, then removed again</span></pre>
+      </div>
+      <div class="vs-after">
+        <p class="vs-label">with swarmexec</p>
+        <pre class="sh"><span class="p">$</span> swarmexec port-forward db 5432   <span class="c-dim"># localhost:5432, nothing published</span></pre>
+      </div>
+    </div>
+
+    <div class="vs-row">
+      <h3>Which node holds which volume</h3>
+      <div class="vs-before">
+        <p class="vs-label">without</p>
+        <pre class="sh"><span class="p">$</span> for n in node-1 node-2 node-3; do ssh $n docker volume ls; done</pre>
+      </div>
+      <div class="vs-after">
+        <p class="vs-label">with swarmexec</p>
+        <pre class="sh"><span class="p">$</span> swarmexec volume ls   <span class="c-dim"># every node, and who uses each volume</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <figure class="shot vs-shot">
+    <img src="portforward.gif" width="860" height="470" loading="lazy" decoding="async"
+         alt="A terminal: swarmexec port-forward opens a local port onto a container port of a task on node-3, and a plain curl against localhost answers through it — no SSH and no published port.">
+    <figcaption>A forward to a task on another node, then plain <code>curl localhost</code> through it.</figcaption>
+  </figure>
+
+  <p class="footnote">
+    The agent runs as a global service, one task per node, and swarmexec reaches it through
+    your Docker context, including an <code>ssh://</code> one behind a jump host. Operators
+    need no account on the nodes. If you have SSH to every node and want nothing deployed on
+    the cluster, <a href="https://github.com/jr-k/d4s">d4s</a> is the better fit — see
+    <a href="#compare">the comparison</a>.
+  </p>
+</section>
+
 <section id="alone" class="band" aria-labelledby="alone-title">
   <div class="band-head">
     <h2 id="alone-title">Three things you will not find elsewhere</h2>
     <p class="band-lead">
-      Exec by itself is no longer rare — <a href="https://github.com/jr-k/d4s">d4s</a> has
-      it over an SSH tunnel, and <a href="https://github.com/Eldara-Tech/swarmcli">swarmcli</a>'s
-      Business Edition behind an mTLS proxy. These three have not turned up in either,
-      nor in Portainer, Swarmpit or Komodo.
+      Exec by itself is no longer rare — Portainer and Komodo have it in the browser,
+      <a href="https://github.com/jr-k/d4s">d4s</a> over an SSH tunnel, and
+      <a href="https://github.com/Eldara-Tech/swarmcli">swarmcli</a>'s Business Edition
+      behind an mTLS proxy. These three have not turned up in any of them, nor in Swarmpit,
+      Arcane or Dockhand.
     </p>
   </div>
 
@@ -331,7 +412,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     </div>
   </article>
 
-  <p class="footnote">Compared against the projects' own repositories and READMEs on 2026-09-26.</p>
+  <p class="footnote">Compared against the projects' own repositories, READMEs and documentation on 2026-10-27.</p>
 </section>
 
 <section id="commands" class="band" aria-labelledby="cmd-title">
@@ -402,7 +483,8 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <p>
         <code>swarmexec ui</code> has seven tabs — Stacks/Services, Volumes, Forwards,
         Networks, Secrets, Nodes, Configs — a context sidebar on the right, and exec, logs
-        and port-forwarding built in.
+        and port-forwarding built in. If your hands know k9s, they know the shape of it:
+        tabs by number, <kbd>/</kbd> to filter, the same keys on every cluster.
       </p>
       <ul class="ticks">
         <li>The tree is coloured by healthcheck as well as replica count — the rule the stage above lets you try.</li>
@@ -429,6 +511,65 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       </figure>
     </div>
   </div>
+</section>
+
+<section id="compare" class="band" aria-labelledby="compare-title">
+  <div class="band-head">
+    <h2 id="compare-title">How it compares</h2>
+    <p class="band-lead">
+      What decides between them, including the two rows where swarmexec is the wrong pick.
+    </p>
+  </div>
+
+  <div class="compare-wrap">
+  <table class="compare">
+    <thead>
+      <tr>
+        <th scope="col"><span class="vh">Capability</span></th>
+        <th scope="col" class="us">swarmexec</th>
+        <th scope="col">SSH + docker exec</th>
+        <th scope="col">Portainer CE / BE</th>
+        <th scope="col">d4s</th>
+        <th scope="col">swarmcli CE / BE</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">Exec into a task on any node, without SSH to it</th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b> an account per node</td><td><b class="m-y">✔</b> in the browser</td><td><b class="m-p"><span class="vh">partly</span></b> over SSH</td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td></tr>
+      <tr><th scope="row">Port-forward to a port published nowhere</th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b> publish it or add a sidecar</td><td><b class="m-n">✖</b> Kubernetes only</td><td><b class="m-y">✔</b> over SSH</td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td></tr>
+      <tr><th scope="row">Logs that follow a replaced container</th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td></tr>
+      <tr><th scope="row">Several clusters in one session</th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-y">✔</b></td><td><b class="m-y">✔</b></td><td><b class="m-y">✔</b></td></tr>
+      <tr><th scope="row">Content diff of a stack file against what is deployed</th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> its own chart revisions</td></tr>
+      <tr><th scope="row">Security gate before <code>stack deploy</code></th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td></tr>
+      <tr><th scope="row">Deny rules per action and an audit line per operator</th>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td></tr>
+      <tr class="against"><th scope="row">Nothing to deploy on the cluster</th>
+        <td class="us"><b class="m-n">✖</b> one agent per node</td><td><b class="m-y">✔</b></td><td><b class="m-n">✖</b> agent</td><td><b class="m-y">✔</b></td><td><b class="m-p"><span class="vh">partly</span></b> CE yes, BE agent</td></tr>
+      <tr class="against"><th scope="row">A web UI for colleagues without a terminal</th>
+        <td class="us"><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td></tr>
+      <tr><th scope="row">Cost beyond three nodes</th>
+        <td class="us">$0</td><td>$0</td><td>CE $0; BE from $1,045 a year (5–15 nodes)</td><td>$0</td><td>BE licence, price on request</td></tr>
+      <tr><th scope="row">Telemetry</th>
+        <td class="us">none</td><td>none</td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td><td>on by default, opt-out</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="footnote">
+    <b class="m-y">✔</b> yes · <b class="m-p"><span class="vh">partly</span></b> partly, or only in the paid edition ·
+    <b class="m-n">✖</b> no · <b class="m-u">–</b> not documented. Checked on 2026-10-27 against
+    each project's README, documentation and pricing page
+    (<a href="https://www.portainer.io/pricing">portainer.io/pricing</a>,
+    <a href="https://github.com/jr-k/d4s">d4s</a>,
+    <a href="https://swarmcli.io">swarmcli.io</a>). Arcane and Komodo are web platforms with
+    Swarm support; exec and port-forward into tasks on other nodes are not documented there.
+    Something out of date? <a href="https://github.com/ekrotov/swarmexec/issues">Tell us</a>.
+  </p>
 </section>
 
 <section id="checks" class="band" aria-labelledby="checks-title">
@@ -468,12 +609,55 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
   </table>
   </div>
 
+  <figure class="shot report-shot">
+    <img src="report.gif" width="860" height="470" loading="lazy" decoding="async"
+         alt="A terminal: swarmexec security report writes a Markdown file, then pages through it — the scanned counts, the summary table of findings by severity, and the cluster findings.">
+    <figcaption><code>swarmexec security report</code>: the whole cluster as one Markdown file.</figcaption>
+  </figure>
+
   <p class="footnote">
     The report is written <code>0600</code> into directories created <code>0700</code>: it
     names every service, network and secret together with every weakness found in it, which
     is a map of where to attack. Its order depends only on the findings, so two reports of an
     unchanged cluster differ in their timestamp alone.
   </p>
+</section>
+
+<section id="trust" class="band" aria-labelledby="trust-title">
+  <div class="band-head">
+    <h2 id="trust-title">The agent, honestly</h2>
+  </div>
+  <div class="faq">
+    <div class="faq-item">
+      <h3>It mounts the Docker socket. Isn't that what your own scan flags?</h3>
+      <p>
+        Yes, and for the same reason: whatever reaches the socket controls the node. The
+        agent needs it to exec, read logs and forward ports on its node, as Portainer's agent
+        does. What fences it: it answers no request it cannot authenticate (mutual TLS, or a
+        secret bound to the connection); a <a href="docs.html#policy">policy file</a> can
+        deny <code>exec</code>, <code>portforward</code> or volume actions per service, port
+        and user; every request lands in its audit log; <code>swarmexec down</code> removes
+        it again.
+      </p>
+    </div>
+    <div class="faq-item">
+      <h3>Why an agent rather than SSH?</h3>
+      <p>
+        So the people who need a shell in a container do not need an account on every node.
+        The agent is the one door, it knows who came in and what they did, and it can say
+        no per action. If you already have SSH to every node and want nothing on the
+        cluster, <a href="https://github.com/jr-k/d4s">d4s</a> takes that route.
+      </p>
+    </div>
+    <div class="faq-item">
+      <h3>Does it phone home?</h3>
+      <p>
+        No telemetry, no licence check, no account. The client talks to your manager and
+        your agents; the TUI also asks your images' registries whether a newer tag exists.
+        That is all the network it uses.
+      </p>
+    </div>
+  </div>
 </section>
 
 <section id="install" class="band band-install" aria-labelledby="install-title">
@@ -531,7 +715,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <span>linux/amd64, release <span id="ver">__VERSION__</span></span>
     </a>
     <a class="get-alt" href="docs.html"><b>Documentation</b><span>every command, flag and key</span></a>
-    <a class="get-alt" href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab"><b>GitLab</b><span>source and issues</span></a>
+    <a class="get-alt" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><b>GitHub</b><span>source, releases and issues</span></a>
     <a class="get-alt" href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><b>Docker Hub</b><span>logleio/swarmexec-agent</span></a>
     <a class="get-alt" href="releases.html"><b>Release notes</b><span>every version, what changed</span></a>
   </div>
@@ -556,7 +740,8 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     </p>
     <p>
       <code>docker pull logleio/swarmexec-agent:latest</code><br>
-      <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">gitlab.logle.io/cs-public/swarm-remote-exec</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a><br>
+      <span class="foot-mirror">mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec" data-umami-event="repo-gitlab">gitlab.logle.io</a></span>
     </p>
     <nav class="legal" aria-label="Project">
       <a href="docs.html">Documentation</a>
