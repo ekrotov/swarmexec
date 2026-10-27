@@ -68,6 +68,12 @@ func cmdContext(cmd *cobra.Command) context.Context {
 
 // Execute builds and runs the root command, returning a process exit code.
 func Execute(v Version) int {
+	// ssh runs us as its SSH_ASKPASS (see askpass.go): answer and leave.
+	if len(os.Args) > 1 && os.Args[1] == askpassHelperArg {
+		return runAskpassHelper(os.Args[2:], os.Stdout)
+	}
+	defer stopAskpass()
+
 	g := &globalFlags{version: v}
 	root := newRootCmd(g, v)
 
@@ -78,13 +84,23 @@ func Execute(v Version) int {
 	var ce *cliError
 	if errors.As(err, &ce) {
 		if !ce.silent && ce.err != nil {
-			fmt.Fprintln(os.Stderr, "swarmexec: "+ce.err.Error())
+			fmt.Fprintln(os.Stderr, "swarmexec: "+ce.err.Error()+sshAuthHintFor(ce.err, g))
 		}
 		return ce.code
 	}
 	// cobra usage / flag-parse errors.
 	fmt.Fprintln(os.Stderr, "swarmexec: "+err.Error())
 	return usageExitCode
+}
+
+// sshAuthHintFor names the way past an ssh sign-in failure on the endpoint
+// this run used. Resolved only on that failure: it reads the Docker context.
+func sshAuthHintFor(err error, g *globalFlags) string {
+	if !isSSHAuthError(err) {
+		return ""
+	}
+	ep := resolveEndpoint(g.dockerContext)
+	return sshAuthHint(err, ep.Host, ep.ProxyJump)
 }
 
 // newRootCmd assembles the whole command tree.

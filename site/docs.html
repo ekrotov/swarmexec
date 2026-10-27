@@ -320,6 +320,7 @@
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>overlay backdrop dim (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_KEYS</code></td><td>path to the TUI keymap file (default <code>keys.yaml</code> next to the config)</td></tr>
           <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> switches ssh connection sharing off (see <a href="#sshsharing">ssh connection sharing</a>)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_ASKPASS</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> stops ssh from asking through swarmexec (see <a href="#sshprompt">ssh passphrases and questions</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>Docker context for the manager API</td></tr>
           <tr><td><code>XDG_CONFIG_HOME</code></td><td>base for the default config path</td></tr>
         </tbody>
@@ -1152,6 +1153,46 @@ rules:
           worth knowing if you configure <code>ControlPath</code> yourself, since
           swarmexec's setting is passed on the ssh command line and takes precedence over
           <code>~/.ssh/config</code>.
+        </li>
+      </ul>
+
+      <h3 id="sshprompt">ssh passphrases and questions</h3>
+      <p>
+        The ssh processes swarmexec starts have no terminal of their own, so ssh cannot
+        ask you anything directly. With <strong>OpenSSH 8.4 or newer</strong> (macOS and
+        current Linux distributions) swarmexec asks for it, through ssh's
+        <code>SSH_ASKPASS</code>: a key's passphrase, a password, or whether to trust a
+        host key it has not seen before.
+      </p>
+      <ul>
+        <li>
+          In <code>swarmexec ui</code> the question opens as a dialog
+          (<kbd>Enter</kbd> sends, <kbd>Esc</kbd> cancels). Everywhere else — and while
+          the TUI is still starting — it is asked on the terminal, hidden like ssh does.
+        </li>
+        <li>
+          You answer once. Connections that ask the same question at the same moment
+          share the answer, and afterwards they all ride the
+          <a href="#sshsharing">shared connection</a>. swarmexec does not store
+          anything you type.
+        </li>
+        <li>
+          <kbd>Esc</kbd> cancels the sign-in, and nothing asks again on its own — not even
+          the TUI's ten-second refresh. Press <kbd>r</kbd> or switch context to be asked
+          again.
+        </li>
+        <li>
+          <strong>Older OpenSSH, Windows, or switched off</strong>
+          (<code>SWARMEXEC_SSH_ASKPASS=0</code>): when the sign-in fails, the TUI offers
+          to run <code>ssh-add</code> for the key ssh would use, hands you the terminal
+          for its passphrase and tries again; the CLI names the exact
+          <code>ssh-add</code> command. Both need a running <code>ssh-agent</code>. A
+          host key you have never accepted cannot be asked for there: connect once with
+          plain <code>ssh</code> first.
+        </li>
+        <li>
+          If you set <code>SSH_ASKPASS_REQUIRE</code> yourself, swarmexec leaves your
+          askpass setup alone.
         </li>
       </ul>
 

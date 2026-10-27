@@ -73,6 +73,10 @@ type clusterState struct {
 	// glance answers "that one is down" without trying again.
 	err error
 
+	// sshAddOffered: the ssh-add offer for a failed sign-in was shown, and is
+	// not shown again on every refresh (see offerSSHAdd).
+	sshAddOffered bool
+
 	// loaded says whether the first fetch has happened. A cluster is connected
 	// lazily on first switch, so "no services" and "not looked yet" stay
 	// distinguishable.
@@ -249,6 +253,7 @@ func (u *ui) switchCluster(name string) {
 		return
 	}
 	u.switching = true
+	resetAskpassDeclines() // a deliberate switch may ask ssh's questions again
 	u.flash(" [aqua]connecting[white] to " + name + " …")
 	go func() {
 		err := u.connectCluster(target)
@@ -277,6 +282,9 @@ func (u *ui) switchCluster(name string) {
 				// still on a working cluster.
 				target.err = err
 				u.renderContexts() // mark it unreachable in the list
+				if u.offerSSHAdd(target, err, func() { u.switchCluster(name) }) {
+					return
+				}
 				u.info(fmt.Sprintf("cannot switch to context %q:\n\n%v", name, err))
 				return
 			}
@@ -356,7 +364,7 @@ const clusterProbeTimeout = 15 * time.Second
 // cluster there? A refusal here is not a failure of the tool — it is the switch
 // declining to happen, which is why it is worth waiting for.
 func (c *clusterState) reach() error {
-	ctx, cancel := context.WithTimeout(c.ctx, clusterProbeTimeout)
+	ctx, cancel := promptAwareTimeout(c.ctx, clusterProbeTimeout)
 	defer cancel()
 	_, err := c.dcli.Ping(ctx, client.PingOptions{})
 	return err

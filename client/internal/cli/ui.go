@@ -162,6 +162,8 @@ const (
 	pageNodeLabelPrompt  = "nodelabelprompt"
 	pageNodeDetail       = "nodedetail"
 	pageNodeImages       = "nodeimages"
+	pageAskpass          = "askpass"
+	pageSSHAdd           = "sshadd"
 )
 
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error {
@@ -594,6 +596,12 @@ func (u *ui) run(keyWarnings []string) error {
 	app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		return ctrlCCapture(ev, app.GetFocus())
 	})
+
+	// From here ssh asks through a dialog instead of the terminal, which tview
+	// is about to own. Before this line — the first cluster's connection and
+	// load — the terminal is still the operator's, and ssh asks there.
+	setAskpassPrompter(u.askpassPrompt)
+	defer setAskpassPrompter(nil)
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}

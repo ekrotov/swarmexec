@@ -29,6 +29,7 @@ func newDockerClient(ctx context.Context, contextOverride string) (*client.Clien
 func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 	var opts []client.Opt // API-version negotiation is the default now
 	if strings.HasPrefix(host, "ssh://") {
+		prepareSSHPrompting()
 		// ssh endpoints need a connection helper (it tunnels the Docker API over
 		// ssh, the same way `docker --context <ssh-ctx>` does). Inject the
 		// context's ProxyJump (-J) so the API hop goes through the same bastion(s)
@@ -61,6 +62,7 @@ func dockerClientForHost(host, proxyJump string) (*client.Client, error) {
 func pingDockerHost(ctx context.Context, host, proxyJump string) error {
 	var opts []client.Opt // API-version negotiation is the default now
 	if strings.HasPrefix(host, "ssh://") {
+		prepareSSHPrompting()
 		// Same flags as the real client, not a second hand-rolled copy: a probe
 		// that connects differently from the thing it is probing for is a probe
 		// that can pass for a setup which then fails.
@@ -81,7 +83,7 @@ func pingDockerHost(ctx context.Context, host, proxyJump string) error {
 		return err
 	}
 	defer c.Close()
-	cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	cctx, cancel := promptAwareTimeout(ctx, 12*time.Second)
 	defer cancel()
 	_, err = c.Info(cctx, client.InfoOptions{})
 	return err
