@@ -11,9 +11,4 @@
   <url><loc>https://swarm-exec.cloud-surfers.net/releases.es.html</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/releases.fr.html</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/releases.pl.html</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/datenschutz</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/datenschutz.en.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/datenschutz.es.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/datenschutz.fr.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/datenschutz.pl.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>
