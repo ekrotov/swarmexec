@@ -161,6 +161,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newSecurityCmd(g))
 	root.AddCommand(newStackCmd(g))
 	root.AddCommand(newUICmd(g))
+	root.AddCommand(newMCPCmd(g))
 	registerCompletions(root, g)
 	return root
 }
