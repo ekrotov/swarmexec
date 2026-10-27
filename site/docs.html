@@ -1166,7 +1166,7 @@ rules:
         footer: the per-tab key hints on top, then a status line with the active docker
         context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
         you're on), a live cluster summary, the forward count and — on the Volumes tab —
-        how many volumes you have selected. These keys work on every tab:
+        how many volumes you have selected; at its far right it shows the client's own version. These keys work on every tab:
       </p>
       <div class="note">
         <strong>Changed:</strong> the contexts used to be tab&nbsp;6, and are now the
@@ -1990,7 +1990,7 @@ EOF</span></pre>
       <p>
         The sidebar sizes itself to the longest context name and <strong>steps aside on a
         narrow terminal</strong>: below roughly 92 columns it hides rather than clip the
-        tree, and reappears for as long as <kbd>c</kbd> holds it. Endpoints are not shown
+        tree, and reappears for as long as <kbd>c</kbd> holds it. While it is hidden, the right end of the status line says so: <kbd>c</kbd>&nbsp;contexts. Endpoints are not shown
         in the column — there is no room for them there, and <kbd>i</kbd> shows the full
         detail.
       </p>

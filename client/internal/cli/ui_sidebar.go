@@ -88,7 +88,7 @@ func (u *ui) contextNames() []string {
 // one that draws, so it is always the truth by the time it is read.
 func (u *ui) sidebarFocused() bool { return u.sidebarHasFocus }
 
-// resizeSidebar is called from the body's draw function, so the width tracks
+// resizeSidebar is called from the root layout's draw function, so the width tracks
 // the terminal without anything having to listen for resize events: tview hands
 // us the space we have, and the Flex lays its items out immediately after.
 func (u *ui) resizeSidebar(width int) {
@@ -97,6 +97,13 @@ func (u *ui) resizeSidebar(width int) {
 	}
 	w := sidebarWidth(width, u.contextNames(), u.sidebarFocused())
 	u.body.ResizeItem(u.sidebar, w, 0)
+	// Hidden for lack of width: the footer says which key shows it. This runs
+	// in root's draw, before any child is drawn, so the hint appears and goes
+	// in the same frame as the list.
+	if hidden := w == 0; hidden != u.sidebarHidden {
+		u.sidebarHidden = hidden
+		u.updateStatusRight()
+	}
 	// The gap goes away with the sidebar; a stray blank column on a terminal
 	// too narrow to show the list at all is exactly the column that terminal
 	// cannot spare. ResizeItem(nil) addresses it because the spacer is the only

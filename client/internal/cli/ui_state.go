@@ -123,7 +123,11 @@ type ui struct {
 	tabBar                                               *tabStrip
 	help, status                                         *tview.TextView
 	footer, root                                         *tview.Flex
-	search                                               *tview.InputField
+	// statusRow holds the status line (left) and statusRight: the context-list
+	// hint while that list is hidden, and the client version at the far right.
+	statusRow   *tview.Flex
+	statusRight *tview.TextView
+	search      *tview.InputField
 
 	// The context sidebar: `body` is the horizontal split holding the tab
 	// content and `sidebar` (the framed context list) side by side.
@@ -133,6 +137,9 @@ type ui struct {
 	// sidebarFocused — the draw path cannot ask the application).
 	sidebarReturn   string
 	sidebarHasFocus bool
+	// sidebarHidden is true while the terminal is too narrow to show the
+	// context list unasked; the footer then says which key brings it up.
+	sidebarHidden bool
 
 	// Preferences that belong to the operator's session, not to a cluster —
 	// they must survive a switch rather than reset with it.
