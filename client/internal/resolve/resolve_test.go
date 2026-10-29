@@ -677,3 +677,74 @@ func TestProgressIsRunningDesiredForAService(t *testing.T) {
 		t.Error("a replicated service is not a job")
 	}
 }
+
+func TestResolveNoRunningTaskIsTyped(t *testing.T) {
+	r := New(newFake(), AddrHostname)
+	_, err := r.Resolve(context.Background(), Request{Target: "web.2"})
+	var nr *NoRunningTaskError
+	if !errors.As(err, &nr) || nr.Service != "web" || nr.Slot != 2 {
+		t.Fatalf("want NoRunningTaskError for web.2, got %v", err)
+	}
+}
+
+// failedTask is a task that ran a container and exited, age ago.
+func failedTask(id, nodeID string, slot int, containerID string, age time.Duration) swarm.Task {
+	t := task(id, "svc-web", nodeID, slot, containerID)
+	t.DesiredState = swarm.TaskStateShutdown
+	t.Status.State = swarm.TaskStateFailed
+	t.Status.Err = "task: non-zero exit (1)"
+	t.Status.Timestamp = time.Now().Add(-age)
+	return t
+}
+
+// A crash-looping service: the newest task is still preparing and has no
+// container; per slot the newest task that has one is the one to read.
+func TestLastExitedNewestContainerPerSlot(t *testing.T) {
+	f := newFake()
+	pending := task("t-new", "svc-web", "node-a", 1, "")
+	pending.Status.State = swarm.TaskStatePreparing
+	pending.Status.Timestamp = time.Now()
+	f.tasks = []swarm.Task{
+		failedTask("t1-old", "node-a", 1, "cOLD", 30*time.Second),
+		pending,
+		failedTask("t1-new", "node-a", 1, "cNEW", 5*time.Second),
+		failedTask("t2", "node-b", 2, "cTWO", 10*time.Second),
+	}
+	r := New(f, AddrHostname)
+
+	cands, reason, err := r.LastExited(context.Background(), "web", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason != "preparing" {
+		t.Errorf("reason = %q, want the newest task's state", reason)
+	}
+	if len(cands) != 2 || cands[0].ContainerID != "cNEW" || cands[1].ContainerID != "cTWO" {
+		t.Fatalf("want cNEW (slot 1) and cTWO (slot 2), got %+v", cands)
+	}
+	if c := cands[0]; c.Service != "web" || c.State != "failed" || c.Err != "task: non-zero exit (1)" || c.NodeName != "host-a" {
+		t.Errorf("candidate fields wrong: %+v", c)
+	}
+
+	cands, _, _ = r.LastExited(context.Background(), "web", 2)
+	if len(cands) != 1 || cands[0].ContainerID != "cTWO" {
+		t.Fatalf("slot 2 only: got %+v", cands)
+	}
+}
+
+// No task ever got a container (image pull failure): no candidates, and the
+// task error is the explanation.
+func TestLastExitedNoContainerGivesReason(t *testing.T) {
+	f := newFake()
+	rej := task("t1", "svc-web", "node-a", 1, "")
+	rej.Status.State = swarm.TaskStateRejected
+	rej.Status.Err = "No such image: nope:1"
+	f.tasks = []swarm.Task{rej}
+	cands, reason, err := New(f, AddrHostname).LastExited(context.Background(), "web", 0)
+	if err != nil || len(cands) != 0 {
+		t.Fatalf("want no candidates, got %+v, %v", cands, err)
+	}
+	if reason != "rejected: No such image: nope:1" {
+		t.Errorf("reason = %q", reason)
+	}
+}

@@ -192,7 +192,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 // showServiceLogs streams the logs of every container of a service into one
 // viewer, each line prefixed with [container@node].
 func (u *ui) showServiceLogs(serviceName string, members []resolve.Candidate) {
-	u.showMemberLogs("service logs", serviceName, members, false)
+	u.showMemberLogs("service logs", serviceName, members, false, "")
 }
 
 // stackLogLimit bounds how many containers one stack view follows. Each is a
@@ -203,8 +203,9 @@ const stackLogLimit = 64
 // showMemberLogs streams several containers into one log view. byService
 // labels each line with its service as well as its slot — needed once the
 // members span services, as a stack's do — and starts each from a shorter
-// tail, so opening a stack does not begin with thousands of old lines.
-func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, byService bool) {
+// tail, so opening a stack does not begin with thousands of old lines. A
+// non-empty note heads the view, above the first line.
+func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, byService bool, note string) {
 	app, ctree := u.app, u.ctree
 	cfg, r, ctx, f := u.cfg, u.r, u.ctx, u.f
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
@@ -230,6 +231,9 @@ func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, bySe
 	// rather than being a second thing every exit has to remember.
 	closeLogs := func() { lcancel(); ov.Close() }
 	tv.SetInputCapture(u.logViewKeys(lv, follow, tv, closeLogs, setTitle, refreshHint))
+	if note != "" {
+		lv.addNote("── " + note + " ──")
+	}
 	for _, c := range members {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		target := resolve.FollowTarget{Service: c.Service, Slot: c.Slot, NodeID: c.NodeID}
@@ -284,13 +288,40 @@ func (u *ui) showLogsForNode(node *tview.TreeNode) {
 			members = append(members, c)
 		}
 	}
-	if len(members) > 0 {
-		title := trimFoldMarker(node.GetText())
-		if ref, ok := node.GetReference().(svcRef); ok {
-			title = ref.name // the row now carries mode/image/ports — log by name
-		}
-		u.showServiceLogs(title, members)
+	title := trimFoldMarker(node.GetText())
+	if ref, ok := node.GetReference().(svcRef); ok {
+		title = ref.name // the row now carries mode/image/ports — log by name
 	}
+	if len(members) == 0 {
+		u.showLastExitedLogs(title)
+		return
+	}
+	u.showServiceLogs(title, members)
+}
+
+// showLastExitedLogs is L on a service with no running container — the one
+// that most needs its logs read: crash-looping, failing its health check, or
+// exiting on a bad config. The containers it last ran still hold the output that
+// says why, so it shows the newest of them per slot. The view follows as usual,
+// so the next attempt of a crash loop arrives as a reconnect. With no container
+// at all (image pull failure, no suitable node) the task error is the answer.
+func (u *ui) showLastExitedLogs(service string) {
+	r, ctx := u.r, u.ctx
+	go func() {
+		cands, reason, err := r.LastExited(ctx, service, 0)
+		u.app.QueueUpdateDraw(func() {
+			switch {
+			case err != nil:
+				u.info(fmt.Sprintf("logs %s: %s", service, err))
+			case len(cands) == 0 && reason != "":
+				u.info(fmt.Sprintf("service %s has no container to read logs from.\n\nNewest task: %s", service, reason))
+			case len(cands) == 0:
+				u.info(fmt.Sprintf("service %s has no container to read logs from.", service))
+			default:
+				u.showMemberLogs("last logs", service, cands, false, lastExitedNote(service, cands))
+			}
+		})
+	}()
 }
 
 // showStackLogs follows every container of every service in a stack, like
@@ -309,7 +340,7 @@ func (u *ui) showStackLogs(stack string) {
 		u.info(fmt.Sprintf("stack %s has %d running containers; following more than %d at once is not readable and costs every agent a stream each.\n\nOpen logs on its services one at a time, or use swarmexec logs --stack %s with --grep.",
 			stack, len(members), stackLogLimit, stack))
 	default:
-		u.showMemberLogs("stack logs", stack, members, true)
+		u.showMemberLogs("stack logs", stack, members, true, "")
 	}
 }
 

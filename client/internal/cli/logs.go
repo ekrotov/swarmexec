@@ -57,7 +57,11 @@ One target that is one container streams exactly as before. Several targets,
 a service with several replicas, or --stack follow every source at once: each
 line is prefixed with where it came from (svc.slot, svc@node for a global
 service), each source reconnects across its own container replacements, and
-each has its own format detection.`,
+each has its own format detection.
+
+A service (or service.slot) with no running container — crash-looping,
+failing its health check — shows the newest exited container of each slot
+instead, so the logs that say why it fails are one command away.`,
 		// Every target is read: runLogs follows all of them. A target is
 		// required unless --stack names what to follow.
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -115,6 +119,10 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 				multi = append(multi, sourceFromCandidate(c))
 			}
 			err = nil
+		}
+		var nr *resolve.NoRunningTaskError
+		if errors.As(err, &nr) {
+			ep, multi, err = lastExitedSources(ctx, r, nr)
 		}
 	} else {
 		multi, notes, err = expandLogSources(ctx, r, args, f.stack, f.node)
@@ -190,6 +198,55 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		return &cliError{code: session.TransportFailure, err: enrichAgentError(ctx, dcli, err)}
 	}
 	return nil
+}
+
+// lastExitedSources is the fallback for a service with no running container:
+// a crash-looping or failing service has nothing to follow, yet the containers
+// it last ran still hold the logs that say why. It picks the newest of those per
+// slot — one becomes ep, several become multi — and says on stderr that these
+// are not live. With none (the task never got a container: image pull failure,
+// no suitable node) the task error is the answer.
+func lastExitedSources(ctx context.Context, r *resolve.Resolver, nr *resolve.NoRunningTaskError) (*resolve.Endpoint, []logSource, error) {
+	cands, reason, err := r.LastExited(ctx, nr.Service, nr.Slot)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(cands) == 0 {
+		if reason == "" {
+			return nil, nil, nr
+		}
+		return nil, nil, fmt.Errorf("%w; newest task: %s", nr, reason)
+	}
+	fmt.Fprintln(os.Stderr, "── "+lastExitedNote(nr.Service, cands)+" ──")
+	if len(cands) == 1 {
+		c := cands[0]
+		return &resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}, nil, nil
+	}
+	multi := make([]logSource, 0, len(cands))
+	for _, c := range cands {
+		multi = append(multi, sourceFromCandidate(c))
+	}
+	return nil, multi, nil
+}
+
+// lastExitedNote tells the operator the logs below come from containers that
+// are no longer running, and how the newest of them ended.
+func lastExitedNote(service string, cands []resolve.Candidate) string {
+	what := "the last container"
+	if len(cands) > 1 {
+		what = fmt.Sprintf("the last container of each of %d replicas", len(cands))
+	}
+	newest := cands[0]
+	for _, c := range cands[1:] {
+		if c.Uptime < newest.Uptime { // Uptime runs from the task's last status change
+			newest = c
+		}
+	}
+	end := newest.State
+	if newest.Err != "" {
+		end += ": " + newest.Err
+	}
+	return fmt.Sprintf("%s has no running container; showing %s (%s)", service, what, end)
 }
 
 // followTargetFromTarget derives the logical replica to keep following from the
