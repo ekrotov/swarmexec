@@ -975,6 +975,20 @@ rules:
         kontenerów na poziomie swarma.
       </div>
       <p>
+        <strong>Usługa bez żadnego działającego kontenera.</strong> Usługa, która wpada w
+        pętlę awarii, nie przechodzi health checka albo kończy działanie przez błędną
+        konfigurację, to właśnie ta, której logów potrzebujesz — a nic w niej nie działa.
+        Dla celu <em>service</em> lub <em>service.slot</em> bez działającego kontenera
+        <code>logs</code> pokazuje zamiast tego najnowszy zakończony kontener każdego slotu,
+        informuje o tym na stderr
+        (<code>web has no running container; showing the last container (failed: task: non-zero exit (1))</code>),
+        a z <code>-f</code> przejmuje każdą kolejną próbę jak wymianę kontenera. Jeśli żadne
+        zadanie nie dostało kontenera (obrazu nie da się pobrać, żaden węzeł nie spełnia
+        ograniczeń), nie ma logów do odczytania, a błąd podaje stan i przyczynę
+        najnowszego zadania. Przy kilku celach i <code>--stack</code> usługa, w której nic
+        nie działa, jest nadal pomijana z adnotacją.
+      </p>
+      <p>
         <strong>Kilka źródeł naraz.</strong> Przy kilku celach, usłudze z kilkoma
         replikami albo <code>--stack &lt;name&gt;</code> polecenie <code>logs</code> śledzi
         wszystkie źródła razem: usługa oznacza wszystkie jej działające repliki, jak w
@@ -2344,6 +2358,13 @@ EOF</span></pre>
         robi to polecenie <a href="#commands"><code>logs</code></a> — zarówno dla logów
         pojedynczego kontenera, jak i dla zagregowanych logów usługi (każda replika śledzona
         po slocie). Komunikaty o ponownym połączeniu pojawiają się bezpośrednio w widoku logów.
+      </p>
+      <p>
+        <kbd>L</kbd> na usłudze bez działającego kontenera otwiera jej ostatnie logi:
+        najnowszy zakończony kontener każdego slotu, z wierszem nagłówka mówiącym, jak się
+        zakończył, i nadal ze śledzeniem, więc kolejna próba pętli awarii pojawia się jako
+        ponowne połączenie. Jeśli żadne zadanie nie dostało kontenera, okno dialogowe
+        pokazuje zamiast tego błąd najnowszego zadania.
       </p>
 
       <h3>Podgląd logów</h3>

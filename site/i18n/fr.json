@@ -13,13 +13,13 @@
   "monitoring": "4c5355a6e9e6a20c",
   "policy": "f1a00de6badc1d65",
   "quickstart": "155979fdc883a3b0",
-  "reroll": "8af0ed85beb7ed0c",
+  "reroll": "3f75d987f1cc0a08",
   "securityreport": "ee28214301f636e3",
   "sshprompt": "8881aeda10c2e0de",
   "sshsharing": "165f920375a6b7d9",
   "stackdeploy": "69636e3e2cca823b",
   "stackfile": "92234d06f4314500",
   "targets": "fe60ce5c2bfc6d67",
-  "tui": "0bad23f4742beeba",
+  "tui": "7cb1daef59ca54fb",
   "wait": "3fe31e0b413ea099"
 }
