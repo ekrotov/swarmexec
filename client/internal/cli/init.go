@@ -306,10 +306,19 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 // resolveContext decides which Docker context to act on, informing the user and
 // — when several exist and stdin is a terminal — prompting them to choose.
 func resolveContext(out io.Writer, g *globalFlags) (dockerctx.Context, error) {
-	// An explicit --context / $DOCKER_CONTEXT wins; no prompt.
+	// An explicit --context / $DOCKER_CONTEXT wins; no prompt. Same order as
+	// dockerctx.ResolveHost, so the context named here is the daemon dialled.
 	if explicit := firstNonEmpty(g.dockerContext, os.Getenv("DOCKER_CONTEXT")); explicit != "" {
 		host, _ := dockerctx.ResolveHost(explicit)
 		return dockerctx.Context{Name: explicit, Host: host, Current: true}, nil
+	}
+	// Then $DOCKER_HOST, as for every other command and for the docker CLI: it
+	// overrides the active context. Skipping it here sent init/down to the
+	// active context — a production cluster — while the operator had pointed
+	// DOCKER_HOST at a test daemon. "default" is the context that resolves to it.
+	if h := os.Getenv("DOCKER_HOST"); h != "" {
+		fmt.Fprintf(out, "using $DOCKER_HOST (%s); unset it or set --context to pick a context\n", h)
+		return dockerctx.Context{Name: "default", Host: h, Current: true}, nil
 	}
 
 	contexts, err := dockerctx.List()
