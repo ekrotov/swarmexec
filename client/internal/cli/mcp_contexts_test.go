@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"swarmexec/client/internal/dockerctx"
 )
@@ -93,7 +92,9 @@ func TestMCPContextsRestricted(t *testing.T) {
 func TestMCPStatsWaitsForWarmup(t *testing.T) {
 	isolateDockerConfig(t)
 	fx := newMCPFixture(t, "none", false)
-	fx.agent.coldStats = 60 * time.Millisecond
+	// shop_web runs on two nodes, so one round is two requests: one round
+	// empty, one with memory only, then the full reading.
+	fx.agent.coldCalls = 2
 	cs := mcpSession(t, fx)
 
 	got := callTool(t, cs, mcpCall{"stats", map[string]any{"service": "shop_web"}})
@@ -108,7 +109,7 @@ func TestMCPStatsWaitsForWarmup(t *testing.T) {
 	fx.agent.mu.Lock()
 	calls := fx.agent.statsCalls
 	fx.agent.mu.Unlock()
-	if calls < 3 {
+	if calls < 5 {
 		t.Errorf("stats asked the agent %d times; a cold sampler needs more", calls)
 	}
 }
@@ -118,8 +119,8 @@ func TestMCPStatsWaitsForWarmup(t *testing.T) {
 func TestMCPStatsWarmingUpVsUnavailable(t *testing.T) {
 	isolateDockerConfig(t)
 	fx := newMCPFixture(t, "none", false)
-	fx.agent.coldStats = time.Hour // never warms up within the test
-	fx.srv.statsWait = 0           // ask once
+	fx.agent.coldCalls = 1000 // never warms up within the test
+	fx.srv.statsWait = 0      // ask once
 	fx.down["node-b:7000"] = true
 	cs := mcpSession(t, fx)
 

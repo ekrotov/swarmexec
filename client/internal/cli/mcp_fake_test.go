@@ -312,11 +312,11 @@ type fakeAgent struct {
 	logs      []string // container ids whose logs were read
 	operators []string // operator identities the agent was told
 
-	// coldStats makes Stats behave like a real agent whose sampler was asleep:
-	// for coldStats after the first request nothing, then memory without CPU
-	// for as long again, then everything.
-	coldStats  time.Duration
-	statsFirst time.Time
+	// coldCalls makes Stats behave like a real agent whose sampler was asleep:
+	// the first coldCalls requests get nothing, the next coldCalls memory
+	// without CPU, the rest everything. Counted, not timed, so a slow (-race)
+	// run cannot skip a stage.
+	coldCalls  int
 	statsCalls int
 }
 
@@ -352,17 +352,14 @@ func (a *fakeAgent) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error 
 func (a *fakeAgent) Stats(context.Context, *pb.StatsRequest) (*pb.StatsResponse, error) {
 	a.mu.Lock()
 	a.statsCalls++
-	if a.statsFirst.IsZero() {
-		a.statsFirst = time.Now()
-	}
-	age, cold := time.Since(a.statsFirst), a.coldStats
+	n, cold := a.statsCalls, a.coldCalls
 	a.mu.Unlock()
 
 	cpuReady := true
 	switch {
-	case age < cold:
+	case n <= cold:
 		return &pb.StatsResponse{NodeCpus: 4, NodeMemoryTotalBytes: 8 << 30}, nil
-	case age < 2*cold:
+	case n <= 2*cold:
 		cpuReady = false
 	}
 	var out []*pb.ContainerStats
