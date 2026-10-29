@@ -5,6 +5,9 @@ package cli
 
 import (
 	"context"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -137,5 +140,39 @@ func TestAgentServiceSpec_MetricsPort(t *testing.T) {
 	args := strings.Join(spec.TaskTemplate.ContainerSpec.Args, " ")
 	if !strings.Contains(args, "-metrics-addr=:9464") {
 		t.Errorf("agent not told to listen: %s", args)
+	}
+}
+
+// The bug: with several contexts and DOCKER_HOST set, init and down took the
+// active context instead — twice reaching a production cluster from a shell
+// that pointed DOCKER_HOST at a local test daemon. Pinned end to end: the
+// context resolveContext names must dial DOCKER_HOST.
+func TestResolveContextHonoursDockerHost(t *testing.T) {
+	writeContexts(t)
+	cfg := `{"currentContext":"alpha"}`
+	if err := os.WriteFile(filepath.Join(os.Getenv("DOCKER_CONFIG"), "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const local = "unix:///tmp/test-docker.sock"
+	t.Setenv("DOCKER_HOST", local)
+
+	c, err := resolveContext(io.Discard, &globalFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Host != local {
+		t.Errorf("resolved host %q, want DOCKER_HOST %q", c.Host, local)
+	}
+	if got := resolveEndpoint(c.Name).Host; got != local {
+		t.Errorf("context %q dials %q, want DOCKER_HOST %q", c.Name, got, local)
+	}
+
+	// An explicit --context still wins over DOCKER_HOST, as with docker.
+	c, err = resolveContext(io.Discard, &globalFlags{dockerContext: "beta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Name != "beta" || resolveEndpoint(c.Name).Host != "ssh://bastion-beta" {
+		t.Errorf("--context beta resolved to %q (%s)", c.Name, resolveEndpoint(c.Name).Host)
 	}
 }
