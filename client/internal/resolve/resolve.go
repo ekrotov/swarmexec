@@ -96,6 +96,11 @@ type Candidate struct {
 	DialHost    string
 	ContainerID string
 	Uptime      time.Duration
+
+	// State and Err are the task's state and error. Only LastExited fills
+	// them: a running candidate has nothing to explain.
+	State string
+	Err   string
 }
 
 // Service is a swarm service with its running/desired task counts, for the
@@ -184,6 +189,22 @@ func (e *AmbiguousError) Error() string {
 	}
 	return fmt.Sprintf("service %q has %d running tasks, specify a slot (%s) or pick interactively",
 		e.Service, len(e.Candidates), strings.Join(slots, ", "))
+}
+
+// NoRunningTaskError is returned when a service exists but has no running
+// container (Slot 0: the whole service; else that slot). A crash-looping or
+// failing service lands here, and its last exited containers still hold the
+// logs that explain why — see LastExited.
+type NoRunningTaskError struct {
+	Service string
+	Slot    int
+}
+
+func (e *NoRunningTaskError) Error() string {
+	if e.Slot > 0 {
+		return fmt.Sprintf("no running task for %s.%d", e.Service, e.Slot)
+	}
+	return fmt.Sprintf("no running task for service %q", e.Service)
 }
 
 // Resolver resolves targets against a Swarm manager.
@@ -289,7 +310,7 @@ func (r *Resolver) resolveService(ctx context.Context, svc *swarm.Service) (*End
 	}
 	switch len(cands) {
 	case 0:
-		return nil, fmt.Errorf("no running task for service %q", svc.Spec.Name)
+		return nil, &NoRunningTaskError{Service: svc.Spec.Name}
 	case 1:
 		return r.endpointFromCandidate(cands[0]), nil
 	default:
@@ -310,7 +331,7 @@ func (r *Resolver) resolveServiceSlot(ctx context.Context, svc *swarm.Service, s
 	}
 	switch len(match) {
 	case 0:
-		return nil, fmt.Errorf("no running task for %s.%d", svc.Spec.Name, slot)
+		return nil, &NoRunningTaskError{Service: svc.Spec.Name, Slot: slot}
 	case 1:
 		return r.endpointFromCandidate(match[0]), nil
 	default:
@@ -388,6 +409,72 @@ func (r *Resolver) candidatesForService(ctx context.Context, svc *swarm.Service)
 	}
 	sort.Slice(cands, func(i, j int) bool { return cands[i].Slot < cands[j].Slot })
 	return cands, nil
+}
+
+// LastExited returns, per slot (per node for a global service), the newest
+// task of a service that got as far as a container — the container a failing
+// service last ran, whose logs hold its last words. Slot > 0 narrows to that
+// slot. Candidates carry the task's State and Err.
+//
+// reason is the newest task's state and error, for when there is no container
+// to read at all (image pull failure, no suitable node): then the task error
+// is the only explanation there is.
+func (r *Resolver) LastExited(ctx context.Context, service string, slot int) (cands []Candidate, reason string, err error) {
+	svc, err := r.findService(ctx, service)
+	if err != nil {
+		return nil, "", err
+	}
+	if svc == nil {
+		return nil, "", fmt.Errorf("no such service %q", service)
+	}
+	f := make(client.Filters).Add("service", svc.ID)
+	res, err := r.cli.TaskList(ctx, client.TaskListOptions{Filters: f})
+	if err != nil {
+		return nil, "", err
+	}
+	tasks := res.Items
+	// Newest first, so the first task seen per slot is the one to keep.
+	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Status.Timestamp.After(tasks[j].Status.Timestamp) })
+	if len(tasks) > 0 {
+		reason = taskReason(tasks[0])
+	}
+	seen := map[string]bool{}
+	for _, t := range tasks {
+		if slot > 0 && t.Slot != slot {
+			continue
+		}
+		key := strconv.Itoa(t.Slot)
+		if t.Slot == 0 {
+			key = t.NodeID // global: one per node
+		}
+		if seen[key] || containerID(t) == "" {
+			continue
+		}
+		seen[key] = true
+		c, err := r.taskToCandidate(ctx, t)
+		if err != nil {
+			return nil, "", err
+		}
+		c.Service = svc.Spec.Name
+		c.State = string(t.Status.State)
+		c.Err = t.Status.Err
+		cands = append(cands, *c)
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].Slot != cands[j].Slot {
+			return cands[i].Slot < cands[j].Slot
+		}
+		return cands[i].NodeName < cands[j].NodeName
+	})
+	return cands, reason, nil
+}
+
+// taskReason is a task's state with its error, as docker service ps shows it.
+func taskReason(t swarm.Task) string {
+	if t.Status.Err != "" {
+		return string(t.Status.State) + ": " + t.Status.Err
+	}
+	return string(t.Status.State)
 }
 
 // ErrTargetGone reports that the service a FollowTarget names no longer exists,

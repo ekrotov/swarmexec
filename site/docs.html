@@ -943,6 +943,19 @@ rules:
         swarm-level replacements.
       </div>
       <p>
+        <strong>A service with no running container.</strong> A service that crash-loops,
+        fails its health check or exits on a bad config is the one whose logs you need,
+        and it has nothing running. For a <em>service</em> or <em>service.slot</em> target
+        with no running container, <code>logs</code> shows the newest exited container of
+        each slot instead, says so on stderr
+        (<code>web has no running container; showing the last container (failed: task: non-zero exit (1))</code>),
+        and with <code>-f</code> picks up each new attempt as a replacement. If no task ever
+        got a container (an image that cannot be pulled, no node that satisfies the
+        constraints), there are no logs to read and the error names the newest task's
+        state and reason instead. Several targets and <code>--stack</code> still skip a
+        service with nothing running, with a note.
+      </p>
+      <p>
         <strong>Several sources at once.</strong> Give several targets, a service with
         several replicas, or <code>--stack &lt;name&gt;</code>, and <code>logs</code> follows
         every source together: a service means all of its running replicas, as with
@@ -2259,6 +2272,12 @@ EOF</span></pre>
         the <a href="#commands"><code>logs</code></a> command does — for both a single
         container's logs and a service's aggregated logs (each replica followed by slot).
         Reconnect notices appear inline in the log view.
+      </p>
+      <p>
+        <kbd>L</kbd> on a service with no running container opens its last logs: the
+        newest exited container of each slot, headed by a line that says how it ended,
+        and still following, so a crash loop's next attempt appears as a reconnect. When
+        no task ever got a container, a dialog shows the newest task's error instead.
       </p>
 
       <h3>Log viewer</h3>

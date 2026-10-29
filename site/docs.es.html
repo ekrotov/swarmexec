@@ -987,6 +987,20 @@ rules:
         reemplazos a nivel de swarm.
       </div>
       <p>
+        <strong>Un servicio sin ningún contenedor en ejecución.</strong> Un servicio que
+        entra en un bucle de caídas, no supera su health check o termina por una
+        configuración errónea es justo aquel cuyos logs necesitas, y no tiene nada en
+        ejecución. Para un destino <em>service</em> o <em>service.slot</em> sin contenedor
+        en ejecución, <code>logs</code> muestra en su lugar el contenedor terminado más
+        reciente de cada slot, lo indica en stderr
+        (<code>web has no running container; showing the last container (failed: task: non-zero exit (1))</code>)
+        y, con <code>-f</code>, recoge cada nuevo intento como un reemplazo. Si ninguna tarea
+        llegó a tener contenedor (una imagen que no se puede descargar, ningún nodo que
+        cumpla las restricciones), no hay logs que leer y el error indica el estado y el
+        motivo de la tarea más reciente. Varios destinos y <code>--stack</code> siguen
+        omitiendo, con un aviso, un servicio sin nada en ejecución.
+      </p>
+      <p>
         <strong>Varias fuentes a la vez.</strong> Con varios destinos, un servicio con
         varias réplicas o <code>--stack &lt;name&gt;</code>, <code>logs</code> sigue todas
         las fuentes juntas: un servicio equivale a todas sus réplicas en ejecución, como con
@@ -2376,6 +2390,13 @@ EOF</span></pre>
         igual que el comando <a href="#commands"><code>logs</code></a> — tanto en los logs de
         un único contenedor como en los logs agregados de un servicio (cada réplica se sigue
         por su slot). Los avisos de reconexión aparecen intercalados en la vista de logs.
+      </p>
+      <p>
+        <kbd>L</kbd> sobre un servicio sin contenedor en ejecución abre sus últimos logs: el
+        contenedor terminado más reciente de cada slot, encabezado por una línea que dice
+        cómo terminó, y sin dejar de seguir, de modo que el siguiente intento de un bucle de
+        caídas aparece como una reconexión. Si ninguna tarea llegó a tener contenedor, un
+        diálogo muestra en su lugar el error de la tarea más reciente.
       </p>
 
       <h3>Visor de logs</h3>

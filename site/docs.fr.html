@@ -1010,6 +1010,21 @@ rules:
         pas voir les remplacements à l'échelle du swarm.
       </div>
       <p>
+        <strong>Un service sans aucun conteneur en cours d'exécution.</strong> Un service
+        qui redémarre en boucle, échoue à son health check ou s'arrête sur une mauvaise
+        configuration est justement celui dont il vous faut les logs, et rien n'y tourne.
+        Pour une cible <em>service</em> ou <em>service.slot</em> sans conteneur en cours
+        d'exécution, <code>logs</code> affiche à la place le conteneur terminé le plus
+        récent de chaque slot, le signale sur stderr
+        (<code>web has no running container; showing the last container (failed: task: non-zero exit (1))</code>)
+        et, avec <code>-f</code>, reprend chaque nouvelle tentative comme un remplacement. Si
+        aucune tâche n'a jamais obtenu de conteneur (une image impossible à récupérer,
+        aucun nœud qui satisfait les contraintes), il n'y a pas de logs à lire et l'erreur
+        donne l'état et la raison de la tâche la plus récente. Plusieurs cibles et
+        <code>--stack</code> continuent d'ignorer, avec une note, un service où rien ne
+        tourne.
+      </p>
+      <p>
         <strong>Plusieurs sources à la fois.</strong> Avec plusieurs cibles, un service à
         plusieurs réplicas ou <code>--stack &lt;name&gt;</code>, <code>logs</code> suit toutes
         les sources ensemble&nbsp;: un service désigne tous ses réplicas en cours d'exécution,
@@ -2442,6 +2457,14 @@ EOF</span></pre>
         bien pour les logs d'un seul conteneur que pour les logs agrégés d'un service
         (chaque réplica étant suivi par slot). Les messages de reconnexion s'affichent
         directement dans la vue des logs.
+      </p>
+      <p>
+        <kbd>L</kbd> sur un service sans conteneur en cours d'exécution ouvre ses derniers
+        logs&nbsp;: le conteneur terminé le plus récent de chaque slot, précédé d'une ligne
+        qui indique comment il s'est terminé, et toujours en mode suivi, si bien que la
+        tentative suivante d'une boucle de redémarrages apparaît comme une reconnexion. Si
+        aucune tâche n'a jamais obtenu de conteneur, une boîte de dialogue affiche à la
+        place l'erreur de la tâche la plus récente.
       </p>
 
       <h3>Visualiseur de logs</h3>
