@@ -1281,15 +1281,24 @@ rules:
         Las conexiones se mantienen por contexto durante toda la sesión, como hace la TUI al
         cambiar de contexto.
       </p>
+      <p>
+        <strong>Solo los contextos que permites.</strong> El asistente recibe el contexto
+        con el que arrancó el servidor, más los indicados con <code>--contexts</code> — nada
+        más. Cualquier otro contexto de la estación de trabajo, producción incluida, no
+        existe para él: <code>contexts_list</code> lo omite, nombre y dirección, y
+        nombrarlo responde <em>unknown docker context</em>, exactamente igual que un nombre
+        que no existe.
+      </p>
+      <div class="cmd">swarmexec mcp --context staging --contexts lab,test</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Herramienta</th><th>Responde</th><th>Necesita</th></tr></thead>
         <tbody>
-          <tr><td><code>contexts_list</code></td><td>los contextos de Docker y cuál usa el servidor</td><td>—</td></tr>
+          <tr><td><code>contexts_list</code></td><td>los contextos de Docker que el asistente puede usar (ver <code>--contexts</code>) y cuál usa el servidor</td><td>—</td></tr>
           <tr><td><code>cluster_overview</code></td><td>los nodos y el estado de réplicas y de salud de los servicios visibles</td><td>—</td></tr>
           <tr><td><code>services_list</code></td><td>como <code>ps</code>: modo, réplicas, imagen, puertos, stack y contenedores en marcha</td><td><code>enable</code></td></tr>
           <tr><td><code>service_inspect</code></td><td>la configuración de un servicio y sus tareas recientes</td><td><code>enable</code></td></tr>
           <tr><td><code>logs_read</code></td><td>logs recientes: tail, since, regexp y nivel mínimo, con límite; nunca sigue</td><td><code>logs</code></td></tr>
-          <tr><td><code>stats</code></td><td>CPU, memoria y estado del healthcheck por contenedor, en vivo</td><td><code>enable</code></td></tr>
+          <tr><td><code>stats</code></td><td>CPU, memoria y estado del healthcheck por contenedor, en vivo; espera unos segundos a un agente al que hacía tiempo que nadie preguntaba</td><td><code>enable</code></td></tr>
           <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>solo nombres, y solo los que usan los servicios visibles</td><td><code>enable</code></td></tr>
           <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>qué cambiaría desplegar un fichero de stack / qué encuentra la comprobación del despliegue — no se despliega nada</td><td><code>enable</code> en cada servicio del fichero</td></tr>
           <tr><td><code>security_report</code></td><td>el <a href="#securityreport">informe de seguridad</a>, limitado a los servicios visibles y a lo que usan</td><td><code>--allow report</code></td></tr>
@@ -1343,6 +1352,7 @@ services:
           <tr><td><code>--default</code></td><td><code>none</code></td><td>acceso para servicios sin <code>swarmexec.mcp.enable</code>: <code>none</code> o <code>read</code></td></tr>
           <tr><td><code>--allow</code></td><td>—</td><td>herramientas opcionales: <code>report</code> añade <code>security_report</code></td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout para conectar con un agente</td></tr>
+          <tr><td><code>--contexts</code></td><td>—</td><td>otros contextos de Docker que el asistente puede usar, además de aquel con el que arranca el servidor; lista separada por comas o repetido. Un nombre que no es un contexto falla al arrancar</td></tr>
         </tbody>
       </table></div>
 
@@ -1382,6 +1392,14 @@ services:
           se enmascaran, los secrets y configs se listan solo por nombre, y cada resultado
           tiene un límite de tamaño y avisa cuando se ha recortado — pero las líneas de log y
           la salida de los comandos pasan tal cual.
+        </li>
+        <li>
+          <strong>Con <code>exec</code>, el enmascarado es cosmético.</strong> Un comando
+          ejecutado en el contenedor puede imprimir su entorno y leer sus secrets montados
+          (<code>env</code>, <code>cat /run/secrets/…</code>), así que en un servicio con
+          <code>swarmexec.mcp.exec</code> el enmascarado de los resultados de inspect, diff
+          y comprobación no protege nada. Concede <code>exec</code> solo donde el asistente
+          — y el proveedor del modelo — puedan ver todo lo que ve el contenedor.
         </li>
         <li>
           <strong>Auditoría.</strong> El operador que se comunica a los agentes es

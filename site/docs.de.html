@@ -1285,15 +1285,24 @@ rules:
         Die Verbindungen bleiben je Kontext für die ganze Sitzung bestehen, wie in der TUI
         beim Kontextwechsel.
       </p>
+      <p>
+        <strong>Nur die Kontexte, die du freigibst.</strong> Der Assistent bekommt den
+        Kontext, mit dem der Server gestartet wurde, und die mit <code>--contexts</code>
+        genannten — sonst nichts. Jeder andere Kontext auf der Workstation, Produktion
+        eingeschlossen, existiert für ihn nicht: <code>contexts_list</code> lässt ihn weg,
+        Name und Adresse, und wer ihn nennt, bekommt <em>unknown docker context</em>, genau
+        wie bei einem Namen, den es nicht gibt.
+      </p>
+      <div class="cmd">swarmexec mcp --context staging --contexts lab,test</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Tool</th><th>Liefert</th><th>Braucht</th></tr></thead>
         <tbody>
-          <tr><td><code>contexts_list</code></td><td>die Docker-Kontexte und welchen der Server nutzt</td><td>—</td></tr>
+          <tr><td><code>contexts_list</code></td><td>die Docker-Kontexte, die der Assistent nutzen darf (siehe <code>--contexts</code>), und welchen der Server nutzt</td><td>—</td></tr>
           <tr><td><code>cluster_overview</code></td><td>Nodes sowie Replika- und Health-Zustand der sichtbaren Services</td><td>—</td></tr>
           <tr><td><code>services_list</code></td><td>wie <code>ps</code>: Modus, Replikas, Image, Ports, Stack und laufende Container</td><td><code>enable</code></td></tr>
           <tr><td><code>service_inspect</code></td><td>die Konfiguration eines Service und seine letzten Tasks</td><td><code>enable</code></td></tr>
           <tr><td><code>logs_read</code></td><td>aktuelle Logs: tail, since, Regexp und Mindest-Level, begrenzt; folgt nie</td><td><code>logs</code></td></tr>
-          <tr><td><code>stats</code></td><td>CPU, Speicher und Healthcheck-Zustand je Container, live</td><td><code>enable</code></td></tr>
+          <tr><td><code>stats</code></td><td>CPU, Speicher und Healthcheck-Zustand je Container, live; wartet einige Sekunden auf einen Agenten, der länger nicht gefragt wurde</td><td><code>enable</code></td></tr>
           <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>nur Namen, und nur die, die sichtbare Services nutzen</td><td><code>enable</code></td></tr>
           <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>was das Deployen einer Stack-Datei ändern würde / was die Deploy-Prüfung findet — deployt wird nichts</td><td><code>enable</code> auf jedem Service der Datei</td></tr>
           <tr><td><code>security_report</code></td><td>der <a href="#securityreport">Sicherheitsbericht</a>, beschränkt auf die sichtbaren Services und was sie nutzen</td><td><code>--allow report</code></td></tr>
@@ -1346,6 +1355,7 @@ services:
           <tr><td><code>--default</code></td><td><code>none</code></td><td>Zugriff für Services ohne <code>swarmexec.mcp.enable</code>: <code>none</code> oder <code>read</code></td></tr>
           <tr><td><code>--allow</code></td><td>—</td><td>optionale Tools: <code>report</code> fügt <code>security_report</code> hinzu</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>Timeout für den Verbindungsaufbau zu einem Agenten</td></tr>
+          <tr><td><code>--contexts</code></td><td>—</td><td>weitere Docker-Kontexte, die der Assistent nutzen darf, neben dem, mit dem der Server startet; kommagetrennt oder wiederholt. Ein Name, der kein Kontext ist, scheitert beim Start</td></tr>
         </tbody>
       </table></div>
 
@@ -1385,6 +1395,14 @@ services:
           maskiert, Secrets und Configs nur mit Namen aufgeführt, und jedes Ergebnis ist in
           der Größe begrenzt und sagt, wenn es gekürzt wurde — Logzeilen und
           Befehlsausgaben gehen aber unverändert durch.
+        </li>
+        <li>
+          <strong>Mit <code>exec</code> ist das Maskieren nur Kosmetik.</strong> Ein Befehl
+          im Container kann seine Umgebung ausgeben und seine eingebundenen Secrets lesen
+          (<code>env</code>, <code>cat /run/secrets/…</code>); auf einem Service mit
+          <code>swarmexec.mcp.exec</code> schützt das Maskieren in Inspect-, Diff- und
+          Prüfergebnissen also nichts. Gib <code>exec</code> nur dort frei, wo der
+          Assistent — und der Modellanbieter — alles sehen darf, was der Container sieht.
         </li>
         <li>
           <strong>Audit.</strong> Den Agenten wird als Operator

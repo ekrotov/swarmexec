@@ -1227,15 +1227,23 @@ rules:
         Connections are kept per context for the session, as the TUI does on a context
         switch.
       </p>
+      <p>
+        <strong>Only the contexts you allow.</strong> The assistant gets the context the
+        server was started with, plus those named with <code>--contexts</code> — nothing
+        else. Every other context on the workstation, production included, does not exist
+        for it: <code>contexts_list</code> leaves it out, name and address, and naming it
+        answers <em>unknown docker context</em>, exactly like a name that does not exist.
+      </p>
+      <div class="cmd">swarmexec mcp --context staging --contexts lab,test</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Tool</th><th>Answers</th><th>Needs</th></tr></thead>
         <tbody>
-          <tr><td><code>contexts_list</code></td><td>the Docker contexts, and which one the server uses</td><td>—</td></tr>
+          <tr><td><code>contexts_list</code></td><td>the Docker contexts the assistant may use (see <code>--contexts</code>), and which one the server uses</td><td>—</td></tr>
           <tr><td><code>cluster_overview</code></td><td>nodes, and replica and health state of the visible services</td><td>—</td></tr>
           <tr><td><code>services_list</code></td><td>like <code>ps</code>: mode, replicas, image, ports, stack and running containers</td><td><code>enable</code></td></tr>
           <tr><td><code>service_inspect</code></td><td>one service's configuration and its recent tasks</td><td><code>enable</code></td></tr>
           <tr><td><code>logs_read</code></td><td>recent logs: tail, since, regexp and minimum level, capped; never follows</td><td><code>logs</code></td></tr>
-          <tr><td><code>stats</code></td><td>live CPU, memory and healthcheck state per container</td><td><code>enable</code></td></tr>
+          <tr><td><code>stats</code></td><td>live CPU, memory and healthcheck state per container; waits a few seconds for an agent that has not been asked for a while</td><td><code>enable</code></td></tr>
           <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>names only, and only those the visible services use</td><td><code>enable</code></td></tr>
           <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>what deploying a stack file would change / what the deploy check finds — nothing is deployed</td><td><code>enable</code> on every service of the file</td></tr>
           <tr><td><code>security_report</code></td><td>the <a href="#securityreport">security report</a>, limited to the visible services and what they use</td><td><code>--allow report</code></td></tr>
@@ -1287,6 +1295,7 @@ services:
           <tr><td><code>--default</code></td><td><code>none</code></td><td>access for services without <code>swarmexec.mcp.enable</code>: <code>none</code> or <code>read</code></td></tr>
           <tr><td><code>--allow</code></td><td>—</td><td>optional tools: <code>report</code> adds <code>security_report</code></td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
+          <tr><td><code>--contexts</code></td><td>—</td><td>further Docker contexts the assistant may use, besides the one the server starts with; a comma list or repeated. A name that is not a context fails at startup</td></tr>
         </tbody>
       </table></div>
 
@@ -1323,6 +1332,14 @@ services:
           (the scan's <em>secret in environment variable</em> rule) are masked, secrets and
           configs are listed by name only, and every result is capped in size and says
           when it was cut — but log lines and command output are passed as they are.
+        </li>
+        <li>
+          <strong>Masking is cosmetic once <code>exec</code> is granted.</strong> A command
+          run in the container can print its environment and read its mounted secrets
+          (<code>env</code>, <code>cat /run/secrets/…</code>), so the masking in inspect,
+          diff and check results protects nothing on a service with
+          <code>swarmexec.mcp.exec</code>. Grant <code>exec</code> only where the
+          assistant — and the model provider — may see everything the container sees.
         </li>
         <li>
           <strong>Audit.</strong> The operator reported to the agents is

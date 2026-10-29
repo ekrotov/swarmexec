@@ -1266,15 +1266,23 @@ rules:
         Połączenia są utrzymywane per kontekst przez całą sesję, tak jak robi to TUI przy
         zmianie kontekstu.
       </p>
+      <p>
+        <strong>Tylko konteksty, na które pozwolisz.</strong> Asystent dostaje kontekst, z
+        którym uruchomiono serwer, oraz te podane w <code>--contexts</code> — nic więcej.
+        Każdy inny kontekst na stacji roboczej, łącznie z produkcją, dla niego nie istnieje:
+        <code>contexts_list</code> go pomija, nazwę i adres, a podanie go daje
+        <em>unknown docker context</em>, dokładnie tak jak nazwa, która nie istnieje.
+      </p>
+      <div class="cmd">swarmexec mcp --context staging --contexts lab,test</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Narzędzie</th><th>Odpowiada</th><th>Wymaga</th></tr></thead>
         <tbody>
-          <tr><td><code>contexts_list</code></td><td>konteksty Dockera i to, którego używa serwer</td><td>—</td></tr>
+          <tr><td><code>contexts_list</code></td><td>konteksty Dockera, których asystent może używać (zob. <code>--contexts</code>), i to, którego używa serwer</td><td>—</td></tr>
           <tr><td><code>cluster_overview</code></td><td>węzły oraz stan replik i zdrowia widocznych serwisów</td><td>—</td></tr>
           <tr><td><code>services_list</code></td><td>jak <code>ps</code>: tryb, repliki, obraz, porty, stack i działające kontenery</td><td><code>enable</code></td></tr>
           <tr><td><code>service_inspect</code></td><td>konfiguracja jednego serwisu i jego ostatnie taski</td><td><code>enable</code></td></tr>
           <tr><td><code>logs_read</code></td><td>ostatnie logi: tail, since, regexp i minimalny poziom, z limitem; nigdy nie śledzi</td><td><code>logs</code></td></tr>
-          <tr><td><code>stats</code></td><td>CPU, pamięć i stan healthchecka per kontener, na żywo</td><td><code>enable</code></td></tr>
+          <tr><td><code>stats</code></td><td>CPU, pamięć i stan healthchecka per kontener, na żywo; czeka kilka sekund na agenta, którego dawno nikt nie pytał</td><td><code>enable</code></td></tr>
           <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>tylko nazwy, i tylko te, których używają widoczne serwisy</td><td><code>enable</code></td></tr>
           <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>co zmieniłoby wdrożenie pliku stacka / co znajduje kontrola wdrożenia — nic nie jest wdrażane</td><td><code>enable</code> na każdym serwisie pliku</td></tr>
           <tr><td><code>security_report</code></td><td><a href="#securityreport">raport bezpieczeństwa</a>, ograniczony do widocznych serwisów i tego, czego używają</td><td><code>--allow report</code></td></tr>
@@ -1328,6 +1336,7 @@ services:
           <tr><td><code>--default</code></td><td><code>none</code></td><td>dostęp dla serwisów bez <code>swarmexec.mcp.enable</code>: <code>none</code> albo <code>read</code></td></tr>
           <tr><td><code>--allow</code></td><td>—</td><td>narzędzia opcjonalne: <code>report</code> dodaje <code>security_report</code></td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu łączenia z agentem</td></tr>
+          <tr><td><code>--contexts</code></td><td>—</td><td>dodatkowe konteksty Dockera, których asystent może używać, poza tym, z którym startuje serwer; lista po przecinkach lub powtarzana flaga. Nazwa, która nie jest kontekstem, kończy się błędem przy starcie</td></tr>
         </tbody>
       </table></div>
 
@@ -1366,6 +1375,14 @@ services:
           maskowane, secrets i configs podawane tylko z nazwy, a każdy wynik ma limit
           rozmiaru i mówi, gdy został ucięty — ale linie logów i wyjście poleceń przechodzą
           bez zmian.
+        </li>
+        <li>
+          <strong>Przy <code>exec</code> maskowanie jest tylko kosmetyczne.</strong>
+          Polecenie uruchomione w kontenerze może wypisać jego środowisko i odczytać
+          zamontowane secrets (<code>env</code>, <code>cat /run/secrets/…</code>), więc na
+          serwisie z <code>swarmexec.mcp.exec</code> maskowanie w wynikach inspect, diffu i
+          kontroli niczego nie chroni. Przyznawaj <code>exec</code> tylko tam, gdzie asystent
+          — i dostawca modelu — mogą widzieć wszystko, co widzi kontener.
         </li>
         <li>
           <strong>Audyt.</strong> Agentom zgłaszany jest operator

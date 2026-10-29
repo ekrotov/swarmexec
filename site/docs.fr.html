@@ -1308,15 +1308,24 @@ rules:
         docker). Les connexions sont conservées par contexte pendant toute la session, comme
         le fait la TUI lors d’un changement de contexte.
       </p>
+      <p>
+        <strong>Seulement les contextes que vous autorisez.</strong> L’assistant obtient le
+        contexte avec lequel le serveur a démarré, plus ceux nommés avec
+        <code>--contexts</code> — rien d’autre. Tout autre contexte du poste de travail,
+        production comprise, n’existe pas pour lui : <code>contexts_list</code> l’omet, nom
+        et adresse, et le nommer répond <em>unknown docker context</em>, exactement comme
+        un nom qui n’existe pas.
+      </p>
+      <div class="cmd">swarmexec mcp --context staging --contexts lab,test</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Outil</th><th>Répond</th><th>Exige</th></tr></thead>
         <tbody>
-          <tr><td><code>contexts_list</code></td><td>les contextes Docker, et celui qu’utilise le serveur</td><td>—</td></tr>
+          <tr><td><code>contexts_list</code></td><td>les contextes Docker que l’assistant peut utiliser (voir <code>--contexts</code>), et celui qu’utilise le serveur</td><td>—</td></tr>
           <tr><td><code>cluster_overview</code></td><td>les nœuds, et l’état des réplicas et de santé des services visibles</td><td>—</td></tr>
           <tr><td><code>services_list</code></td><td>comme <code>ps</code> : mode, réplicas, image, ports, stack et conteneurs en cours</td><td><code>enable</code></td></tr>
           <tr><td><code>service_inspect</code></td><td>la configuration d’un service et ses tâches récentes</td><td><code>enable</code></td></tr>
           <tr><td><code>logs_read</code></td><td>logs récents : tail, since, regexp et niveau minimal, plafonnés ; ne suit jamais</td><td><code>logs</code></td></tr>
-          <tr><td><code>stats</code></td><td>CPU, mémoire et état du healthcheck par conteneur, en direct</td><td><code>enable</code></td></tr>
+          <tr><td><code>stats</code></td><td>CPU, mémoire et état du healthcheck par conteneur, en direct ; attend quelques secondes un agent qu’on n’avait pas interrogé depuis un moment</td><td><code>enable</code></td></tr>
           <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>noms seulement, et seulement ceux qu’utilisent les services visibles</td><td><code>enable</code></td></tr>
           <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>ce que changerait le déploiement d’un fichier de stack / ce que trouve la vérification du déploiement — rien n’est déployé</td><td><code>enable</code> sur chaque service du fichier</td></tr>
           <tr><td><code>security_report</code></td><td>le <a href="#securityreport">rapport de sécurité</a>, limité aux services visibles et à ce qu’ils utilisent</td><td><code>--allow report</code></td></tr>
@@ -1371,6 +1380,7 @@ services:
           <tr><td><code>--default</code></td><td><code>none</code></td><td>accès des services sans <code>swarmexec.mcp.enable</code> : <code>none</code> ou <code>read</code></td></tr>
           <tr><td><code>--allow</code></td><td>—</td><td>outils facultatifs : <code>report</code> ajoute <code>security_report</code></td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>délai de connexion à un agent</td></tr>
+          <tr><td><code>--contexts</code></td><td>—</td><td>autres contextes Docker que l’assistant peut utiliser, en plus de celui avec lequel le serveur démarre ; liste séparée par des virgules ou répétée. Un nom qui n’est pas un contexte échoue au démarrage</td></tr>
         </tbody>
       </table></div>
 
@@ -1409,6 +1419,15 @@ services:
           d’environnement</em> du scan) sont masquées, secrets et configs ne sont listés que
           par leur nom, et chaque résultat est plafonné en taille et signale s’il a été
           coupé — mais les lignes de log et la sortie des commandes passent telles quelles.
+        </li>
+        <li>
+          <strong>Avec <code>exec</code>, le masquage n’est que cosmétique.</strong> Une
+          commande lancée dans le conteneur peut afficher son environnement et lire ses
+          secrets montés (<code>env</code>, <code>cat /run/secrets/…</code>) : sur un
+          service avec <code>swarmexec.mcp.exec</code>, le masquage dans les résultats
+          d’inspect, de diff et de vérification ne protège donc rien. N’accordez
+          <code>exec</code> que là où l’assistant — et le fournisseur du modèle — peuvent
+          voir tout ce que voit le conteneur.
         </li>
         <li>
           <strong>Audit.</strong> L’opérateur annoncé aux agents est
