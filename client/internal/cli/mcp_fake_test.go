@@ -311,6 +311,13 @@ type fakeAgent struct {
 	execs     []string // container ids exec'd into
 	logs      []string // container ids whose logs were read
 	operators []string // operator identities the agent was told
+
+	// coldStats makes Stats behave like a real agent whose sampler was asleep:
+	// for coldStats after the first request nothing, then memory without CPU
+	// for as long again, then everything.
+	coldStats  time.Duration
+	statsFirst time.Time
+	statsCalls int
 }
 
 func (a *fakeAgent) note(ctx context.Context, list *[]string, id string) {
@@ -343,11 +350,30 @@ func (a *fakeAgent) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error 
 }
 
 func (a *fakeAgent) Stats(context.Context, *pb.StatsRequest) (*pb.StatsResponse, error) {
+	a.mu.Lock()
+	a.statsCalls++
+	if a.statsFirst.IsZero() {
+		a.statsFirst = time.Now()
+	}
+	age, cold := time.Since(a.statsFirst), a.coldStats
+	a.mu.Unlock()
+
+	cpuReady := true
+	switch {
+	case age < cold:
+		return &pb.StatsResponse{NodeCpus: 4, NodeMemoryTotalBytes: 8 << 30}, nil
+	case age < 2*cold:
+		cpuReady = false
+	}
 	var out []*pb.ContainerStats
 	for _, id := range []string{"c-web1", "c-web2", "c-api1", "c-hidden", "c-off", "c-sock", "c-ghost"} {
-		out = append(out, &pb.ContainerStats{ContainerId: id, CpuPercent: 12, MemoryBytes: 64 << 20, MemoryLimitBytes: 256 << 20, MemoryLimited: true, Health: "healthy"})
+		cs := &pb.ContainerStats{ContainerId: id, MemoryBytes: 64 << 20, MemoryLimitBytes: 256 << 20, MemoryLimited: true, Health: "healthy"}
+		if cpuReady {
+			cs.CpuPercent = 12
+		}
+		out = append(out, cs)
 	}
-	return &pb.StatsResponse{Stats: out, CpuReady: true, NodeCpus: 4, NodeMemoryTotalBytes: 8 << 30}, nil
+	return &pb.StatsResponse{Stats: out, CpuReady: cpuReady, NodeCpus: 4, NodeMemoryTotalBytes: 8 << 30}, nil
 }
 
 func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
@@ -401,6 +427,12 @@ type mcpFixture struct {
 	swarm *fakeSwarm
 	agent *fakeAgent
 	srv   *mcpServer
+
+	// connected records the context names the server tried to connect to.
+	connected []string
+	// downMu guards down: agent addresses ("node-b:7000") that do not answer.
+	downMu sync.Mutex
+	down   map[string]bool
 }
 
 // newMCPFixture starts the fake manager and agent and returns an MCP server
@@ -428,13 +460,20 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 	t.Cleanup(func() { dcli.Close() })
 
 	agentAddr := lis.Addr().String()
+	fx := &mcpFixture{swarm: fs, agent: agent, down: map[string]bool{}}
 	cfg := config.Config{
 		Port:        7000,
 		AddrMode:    config.AddrModeHostname,
 		Insecure:    true,
 		AgentSecret: "s3cret", // so the operator identity travels in metadata
 		Operator:    mcpOperator("alice"),
-		ProxyDialer: func(ctx context.Context, _ string) (net.Conn, error) {
+		ProxyDialer: func(ctx context.Context, addr string) (net.Conn, error) {
+			fx.downMu.Lock()
+			down := fx.down[addr]
+			fx.downMu.Unlock()
+			if down {
+				return nil, fmt.Errorf("dial %s: connection refused", addr)
+			}
 			var d net.Dialer
 			return d.DialContext(ctx, "tcp", agentAddr)
 		},
@@ -446,15 +485,19 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 	}
 	g := &globalFlags{version: Version{Binary: "test", Proto: pb.ProtocolVersion}}
 	s := newMCPServer(g, nil, mcpaccess.Policy{Default: def}, allowReport, 3*time.Second)
+	// The real waits are seconds; the fake agent warms up in milliseconds.
+	s.statsWait, s.statsPoll = 2*time.Second, 20*time.Millisecond
 	fake := &mcpCluster{
 		label: "fake", dcli: dcli, r: resolve.New(dcli, resolve.AddrHostname),
 		cfg: cfg, cfgErr: cfg.Validate(), gate: newStatsGate(),
 	}
+	// Every context the server agrees to connect to is the fake cluster; which
+	// names it agrees to is the server's business (mcpServer.cluster), and is
+	// what the context tests check.
 	s.connect = func(_ context.Context, name string) (*mcpCluster, error) {
-		if name == "" {
-			return fake, nil
-		}
-		return nil, fmt.Errorf("unknown docker context %q (see contexts_list)", name)
+		fx.connected = append(fx.connected, name)
+		return fake, nil
 	}
-	return &mcpFixture{swarm: fs, agent: agent, srv: s}
+	fx.srv = s
+	return fx
 }

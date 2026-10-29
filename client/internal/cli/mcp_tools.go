@@ -151,15 +151,27 @@ type mcpContextRow struct {
 	Default bool   `json:"server_default,omitempty"`
 }
 
+// toolContexts lists the contexts the assistant may use, and nothing else: a
+// context it may not use is left out entirely, name and address, so the list
+// cannot tell it which other clusters exist.
 func (s *mcpServer) toolContexts(_ context.Context, _ mcpCtxIn) (string, error) {
 	list, err := dockerctx.List()
 	if err != nil {
 		return "", err
 	}
-	def := servedContextName(s.g.dockerContext)
-	rows := make([]mcpContextRow, 0, len(list))
+	rows := make([]mcpContextRow, 0, len(s.contexts))
+	seen := map[string]bool{}
 	for _, c := range list {
-		rows = append(rows, mcpContextRow{Name: c.Name, Host: c.Host, Current: c.Current, Default: c.Name == def})
+		if !s.contexts[c.Name] {
+			continue
+		}
+		seen[c.Name] = true
+		rows = append(rows, mcpContextRow{Name: c.Name, Host: c.Host, Current: c.Current, Default: c.Name == s.served})
+	}
+	if !seen[s.served] {
+		// Served but not on docker's list — removed since startup, say. It is
+		// still the one the requests go to, so it is still listed.
+		rows = append(rows, mcpContextRow{Name: s.served, Default: true})
 	}
 	return jsonText(rows)
 }
@@ -578,6 +590,44 @@ type mcpStatsRow struct {
 	CPU       string `json:"cpu"`
 	Memory    string `json:"memory"`
 	Health    string `json:"health,omitempty"`
+	Note      string `json:"note,omitempty"`
+}
+
+// What a stats row says when it has no number. The two cases want different
+// things from the assistant: a sampler that is warming up has the answer a few
+// seconds from now, an agent that did not answer does not.
+const (
+	statsWarmingUp     = "warming up"
+	statsWarmingUpNote = "the node's agent had not finished its first readings yet (it samples only while someone asks, and CPU needs two readings); ask again in a few seconds"
+	statsNoAgent       = "unavailable"
+	statsNoAgentNote   = "the agent on this node did not answer the stats request (unreachable, or too old to serve stats); doctor shows which"
+)
+
+// Defaults for how long the stats tool waits for a cold agent sampler.
+//
+// The agent samples only while someone is asking and stops after a minute
+// without a request. An assistant asks once, not every few seconds as the ui
+// does, so it almost always meets a sampler that is asleep: the first answer
+// is empty, the reading with memory arrives one sampling interval (5s) later,
+// and CPU — a delta — one more interval after that. Without waiting, every
+// answer was "unavailable".
+const (
+	mcpStatsWait = 12 * time.Second
+	mcpStatsPoll = 2 * time.Second
+)
+
+// statsComplete reports whether every container in mine has a full reading —
+// or cannot get one by waiting, because its node's agent did not answer.
+func statsComplete(mine []resolve.Candidate, usage map[string]containerUsage, answered map[string]bool) bool {
+	for _, cd := range mine {
+		if !answered[cd.NodeName] {
+			continue
+		}
+		if u, ok := usage[cd.ContainerID]; !ok || !u.CPUReady {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, error) {
@@ -622,14 +672,42 @@ func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, 
 			ask = append(ask, n)
 		}
 	}
-	usage, _ := collectUsage(ctx, cfg, ask, s.connectTimeout, c.gate)
+	// Ask, and while a node's sampler is still warming up, ask again — within a
+	// bound, so a node that never gets there costs seconds, not the session.
+	usage := map[string]containerUsage{}
+	answered := map[string]bool{}
+	deadline := time.Now().Add(s.statsWait)
+	for {
+		u, byNode := collectUsage(ctx, cfg, ask, s.connectTimeout, c.gate)
+		for id, cu := range u {
+			usage[id] = cu
+		}
+		for n := range byNode {
+			answered[n] = true
+		}
+		if len(byNode) == 0 || statsComplete(mine, usage, answered) || !time.Now().Add(s.statsPoll).Before(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(s.statsPoll):
+		}
+	}
 	rows := []mcpStatsRow{}
 	for _, cd := range mine {
 		row := mcpStatsRow{Service: cd.Service, Slot: cd.Slot, Node: orDash(cd.NodeName), Container: shortID(cd.ContainerID)}
-		if u, ok := usage[cd.ContainerID]; ok {
+		u, ok := usage[cd.ContainerID]
+		switch {
+		case ok:
 			row.CPU, row.Memory, row.Health = formatCPUUsage(u), formatMemUsage(u), u.Health
-		} else {
-			row.CPU, row.Memory = "unavailable", "unavailable"
+			if !u.CPUReady {
+				row.CPU, row.Note = statsWarmingUp, statsWarmingUpNote
+			}
+		case answered[cd.NodeName]:
+			row.CPU, row.Memory, row.Note = statsWarmingUp, statsWarmingUp, statsWarmingUpNote
+		default:
+			row.CPU, row.Memory, row.Note = statsNoAgent, statsNoAgent, statsNoAgentNote
 		}
 		rows = append(rows, row)
 	}

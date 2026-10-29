@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,7 @@ import (
 type mcpFlags struct {
 	defaultAccess  string
 	allow          []string
+	contexts       []string
 	connectTimeout time.Duration
 }
 
@@ -67,7 +69,13 @@ func newMCPCmd(g *globalFlags) *cobra.Command {
 			"changed through this server. A service that mounts the Docker socket is\n" +
 			"never exec'd into, whatever its labels say.\n\n" +
 			"ssh cannot prompt here: stdin and stdout are the protocol. Load the key for\n" +
-			"an ssh:// context into ssh-agent first. Logging goes to the log file.",
+			"an ssh:// context into ssh-agent first. Logging goes to the log file.\n\n" +
+			"Only the docker context the server starts with (--context, $DOCKER_CONTEXT,\n" +
+			"$DOCKER_HOST or docker's current one) is reachable, plus those named with\n" +
+			"--contexts. Every other context does not exist as far as the assistant can\n" +
+			"tell: it is not listed, and asking for it is \"unknown docker context\".\n\n" +
+			"Masking secrets in env and inspect output is cosmetic once exec is granted:\n" +
+			"a command run in the container can print its environment.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMCP(cmd, g, f)
@@ -76,6 +84,7 @@ func newMCPCmd(g *globalFlags) *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVar(&f.defaultAccess, "default", "none", "access for services without swarmexec.mcp.enable: none | read")
 	fl.StringSliceVar(&f.allow, "allow", nil, "enable optional tools: report (security_report)")
+	fl.StringSliceVar(&f.contexts, "contexts", nil, "further docker contexts the assistant may use, besides the one the server starts with (comma list or repeated)")
 	fl.DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to an agent")
 	return cmd
 }
@@ -86,6 +95,10 @@ func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 		return &cliError{code: usageExitCode, err: err}
 	}
 	allowReport, err := parseMCPAllow(f.allow)
+	if err != nil {
+		return &cliError{code: usageExitCode, err: err}
+	}
+	extra, err := parseMCPContexts(f.contexts)
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
@@ -105,8 +118,10 @@ func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 	sshNonInteractive.Store(true)
 
 	s := newMCPServer(g, cmd, mcpaccess.Policy{Default: def}, allowReport, f.connectTimeout)
+	s.allowContexts(extra)
 	defer s.close()
-	clientlog.L().Info("mcp server starting", "default", def.String(), "report", allowReport)
+	clientlog.L().Info("mcp server starting", "default", def.String(), "report", allowReport,
+		"context", s.served, "contexts", strings.Join(extra, ","))
 
 	err = s.build().Run(cmdContext(cmd), &mcp.IOTransport{Reader: os.Stdin, Writer: nopWriteCloser{protocol}})
 	clientlog.L().Info("mcp server stopped", "err", errString(err))
@@ -143,6 +158,24 @@ func parseMCPAllow(vals []string) (report bool, err error) {
 	return report, nil
 }
 
+// parseMCPContexts reads --contexts. A name that is not a docker context is an
+// error here, at startup, where the operator sees it — not a puzzle for the
+// assistant later, which would only ever hear "unknown docker context".
+func parseMCPContexts(vals []string) ([]string, error) {
+	var out []string
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" || slices.Contains(out, v) {
+			continue
+		}
+		if v != "default" && !dockerctx.Exists(v) {
+			return nil, fmt.Errorf("--contexts: no docker context %q (see swarmexec context ls)", v)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
 // mcpServer is the state behind one MCP session.
 type mcpServer struct {
 	g              *globalFlags
@@ -150,6 +183,21 @@ type mcpServer struct {
 	policy         mcpaccess.Policy
 	allowReport    bool
 	connectTimeout time.Duration
+
+	// statsWait bounds how long the stats tool waits for a node's sampler to
+	// warm up, asking every statsPoll. Fields so a test need not wait 12s.
+	statsWait time.Duration
+	statsPoll time.Duration
+
+	// served is the docker context the server was started with, and contexts
+	// the ones the assistant may name: served plus --contexts. Any other
+	// context is not there for it — not listed, and "unknown" when asked for,
+	// byte for byte what a context that does not exist gets. A workstation's
+	// context list is a map of every cluster its operator can reach,
+	// production included; the operator decides which of them the assistant
+	// gets, not the assistant.
+	served   string
+	contexts map[string]bool
 
 	// clusters are the connections, one per docker context, kept for the
 	// session — the same reuse the ui's clusterState gives a cluster switch.
@@ -182,11 +230,30 @@ type mcpCluster struct {
 func newMCPServer(g *globalFlags, cmd *cobra.Command, p mcpaccess.Policy, allowReport bool, connectTimeout time.Duration) *mcpServer {
 	s := &mcpServer{
 		g: g, cmd: cmd, policy: p, allowReport: allowReport, connectTimeout: connectTimeout,
-		clusters: map[string]*mcpCluster{},
-		warned:   map[string]bool{},
+		clusters:  map[string]*mcpCluster{},
+		warned:    map[string]bool{},
+		statsWait: mcpStatsWait,
+		statsPoll: mcpStatsPoll,
 	}
 	s.connect = s.connectContext
+	s.allowContexts(nil)
 	return s
+}
+
+// allowContexts sets the contexts the assistant may use: the one the server
+// runs against, plus extra.
+func (s *mcpServer) allowContexts(extra []string) {
+	s.served = servedContextName(s.g.dockerContext)
+	s.contexts = map[string]bool{s.served: true}
+	for _, n := range extra {
+		s.contexts[n] = true
+	}
+}
+
+// errUnknownContext is what a context the assistant may not use and one that
+// does not exist both get. One function, so the two cannot drift apart.
+func errUnknownContext(name string) error {
+	return fmt.Errorf("unknown docker context %q (see contexts_list)", name)
 }
 
 func (s *mcpServer) close() {
@@ -219,6 +286,14 @@ func mcpOperator(op string) string {
 // is the context the server was started with.
 func (s *mcpServer) cluster(ctx context.Context, name string) (*mcpCluster, error) {
 	name = strings.TrimSpace(name)
+	switch {
+	case name == s.served:
+		// The served context by name is the served context: one connection, and
+		// the same one $DOCKER_HOST picked when that is what "default" means.
+		name = ""
+	case name != "" && !s.contexts[name]:
+		return nil, errUnknownContext(name)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c, ok := s.clusters[name]; ok {
@@ -241,7 +316,7 @@ func (s *mcpServer) connectContext(ctx context.Context, name string) (*mcpCluste
 	if ctxName == "" {
 		ctxName = s.g.dockerContext
 	} else if name != "default" && !dockerctx.Exists(name) {
-		return nil, fmt.Errorf("unknown docker context %q (see contexts_list)", name)
+		return nil, errUnknownContext(name)
 	}
 	ep := resolveEndpoint(ctxName)
 	cfg, err := s.g.resolveConfig(s.cmd, ep)
