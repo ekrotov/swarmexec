@@ -363,10 +363,22 @@ func (u *ui) sortCands(cands []resolve.Candidate) {
 // returns sorted results. It is instrumented so a slow manager shows up in the
 // log viewer.
 func (u *ui) fetchContainers() ([]resolve.Service, []resolve.Candidate, error) {
-	r, ctx := u.r, u.ctx
+	svcs, cands, err := fetchServicesAndContainers(u.ctx, u.r, "ui.containers")
+	if err != nil {
+		return nil, nil, err
+	}
+	u.sortCands(cands)
+	return svcs, cands, nil
+}
+
+// fetchServicesAndContainers is the topology read the tree and the MCP server
+// share: every service with its counts, and every running container. op
+// prefixes the timing log lines so a slow manager shows up under whoever
+// asked.
+func fetchServicesAndContainers(ctx context.Context, r *resolve.Resolver, op string) ([]resolve.Service, []resolve.Candidate, error) {
 	start := time.Now()
 	svcs, err := r.Services(ctx)
-	clientlog.Timed("ui.containers.Services", start, err)
+	clientlog.Timed(op+".Services", start, err)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -374,11 +386,10 @@ func (u *ui) fetchContainers() ([]resolve.Service, []resolve.Candidate, error) {
 	// filters client-side so services with 0 containers still appear.
 	start = time.Now()
 	cands, err := r.Candidates(ctx, "")
-	clientlog.Timed("ui.containers.Candidates", start, err)
+	clientlog.Timed(op+".Candidates", start, err)
 	if err != nil {
 		return nil, nil, err
 	}
-	u.sortCands(cands)
 	return svcs, cands, nil
 }
 

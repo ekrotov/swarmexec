@@ -32,24 +32,33 @@ func probeShells(ctx context.Context, cfg config.Config, ep resolve.Endpoint, co
 // runProbe runs cmd non-interactively in the container and returns its stdout,
 // exit code, and any transport/exec error.
 func runProbe(ctx context.Context, cfg config.Config, ep resolve.Endpoint, cmd []string, connectTimeout time.Duration) (string, int, error) {
-	pctx, cancel := context.WithTimeout(ctx, connectTimeout+5*time.Second)
+	var buf strings.Builder
+	code, err := runNonInteractive(ctx, cfg, ep, cmd, connectTimeout+5*time.Second, &buf, io.Discard)
+	return buf.String(), code, err
+}
+
+// runNonInteractive is runProbe with the output streams and the overall
+// deadline left to the caller: no TTY, no stdin, one command, its exit code.
+// The MCP server's exec runs through here, so a command an assistant runs
+// takes exactly the path a shell probe does — same dial, same agent RPC, same
+// policy on the agent's side.
+func runNonInteractive(ctx context.Context, cfg config.Config, ep resolve.Endpoint, cmd []string, timeout time.Duration, stdout, stderr io.Writer) (int, error) {
+	pctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	conn, err := dial.Dial(pctx, ep.DialHost, cfg.Port, cfg)
 	if err != nil {
-		return "", 0, err
+		return 0, err
 	}
 	defer conn.Close()
 
 	stream, err := pb.NewAgentClient(conn).Exec(pctx)
 	if err != nil {
-		return "", 0, err
+		return 0, err
 	}
-	var buf strings.Builder
-	code, rerr := session.Run(pctx, stream, session.Options{
+	return session.Run(pctx, stream, session.Options{
 		Start:  &pb.StartExec{ContainerId: ep.ContainerID, Cmd: cmd},
-		Stdout: &buf,
-		Stderr: io.Discard,
+		Stdout: stdout,
+		Stderr: stderr,
 	})
-	return buf.String(), code, rerr
 }

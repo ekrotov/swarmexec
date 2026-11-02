@@ -136,6 +136,13 @@ func (secretEnvAnalyzer) Analyze(svc swarm.Service) []Finding {
 	return out
 }
 
+// IsCredentialEnvKey reports whether an env key names a credential, by the
+// same rule the secret-in-env check uses. The MCP server masks the values of
+// exactly these keys, so what the scan calls a secret is never handed out.
+func IsCredentialEnvKey(key string) bool {
+	return isCredentialKey(strings.ToUpper(strings.TrimSpace(key)))
+}
+
 // isCredentialKey reports whether an upper-cased env key names a credential.
 func isCredentialKey(key string) bool {
 	for _, suf := range nonSecretSuffixes {
@@ -193,27 +200,36 @@ func splitEnv(kv string) (key, val string, ok bool) {
 type dockerSocketAnalyzer struct{}
 
 func (dockerSocketAnalyzer) Analyze(svc swarm.Service) []Finding {
-	cs := containerSpec(svc)
-	if cs == nil {
+	m, ok := DockerSocketMount(containerSpec(svc))
+	if !ok {
 		return nil
 	}
-	for _, m := range cs.Mounts {
-		if m.Type != mount.TypeBind || !isDockerSocketPath(m.Source) {
-			continue
-		}
-		detail := "the Docker socket is bind-mounted at " + m.Target +
-			"; anything in this container can start a privileged container on the node, i.e. it is root on the host"
-		if m.ReadOnly {
-			detail += " (read-only does not help — the socket is an API, not a file)"
-		}
-		return []Finding{{
-			Rule:     "docker-socket",
-			Title:    "Docker socket mounted in",
-			Detail:   detail,
-			Severity: SevHigh,
-		}}
+	detail := "the Docker socket is bind-mounted at " + m.Target +
+		"; anything in this container can start a privileged container on the node, i.e. it is root on the host"
+	if m.ReadOnly {
+		detail += " (read-only does not help — the socket is an API, not a file)"
 	}
-	return nil
+	return []Finding{{
+		Rule:     "docker-socket",
+		Title:    "Docker socket mounted in",
+		Detail:   detail,
+		Severity: SevHigh,
+	}}
+}
+
+// DockerSocketMount returns the bind mount that hands the container the Docker
+// socket, if there is one. Exported so the MCP server refuses exec on exactly
+// the services this check flags — one rule, not a second copy that can drift.
+func DockerSocketMount(cs *swarm.ContainerSpec) (mount.Mount, bool) {
+	if cs == nil {
+		return mount.Mount{}, false
+	}
+	for _, m := range cs.Mounts {
+		if m.Type == mount.TypeBind && isDockerSocketPath(m.Source) {
+			return m, true
+		}
+	}
+	return mount.Mount{}, false
 }
 
 // isDockerSocketPath reports whether a bind source is the Docker daemon socket.

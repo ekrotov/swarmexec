@@ -180,6 +180,22 @@ func environMap() map[string]string {
 	return out
 }
 
+// ServiceLabels returns each service's deploy labels as the file declares
+// them, keyed by the service's short name — the labels the deployed service
+// will carry. Loaded through the same path a diff or deploy uses, so
+// interpolation and anchors resolve exactly as they will there.
+func ServiceLabels(path string) (map[string]map[string]string, error) {
+	cfg, err := loadComposeFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]string, len(cfg.Services))
+	for _, s := range cfg.Services {
+		out[s.Name] = map[string]string(s.Deploy.Labels)
+	}
+	return out, nil
+}
+
 // UnsupportedProperties names compose keys that swarm ignores outright —
 // `build`, `depends_on`, `restart` at service level and so on. They are not
 // errors and not differences, but a file that relies on them does not describe
