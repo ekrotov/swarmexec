@@ -52,6 +52,7 @@ type forwardEntry struct {
 	// and the tree would annotate a same-named container on the wrong cluster.
 	cluster   string
 	cand      resolve.Candidate
+	address   string // requested local bind address; empty means defaultForwardAddress
 	local     uint32 // requested local port; 0 means "kernel picks"
 	remote    uint32
 	localAddr string // actually bound address, known once active
@@ -100,6 +101,31 @@ func (e *forwardEntry) boundPort() uint32 {
 	return e.local
 }
 
+// bindAddress is the local address the forward was asked to listen on.
+//
+// The requested address, not the bound one: Go binds a 0.0.0.0 wildcard as the
+// dual-stack [::], so the listener's own address would show "[::]" for what the
+// operator typed as 0.0.0.0. The port is the other way round (see boundPort),
+// because only the listener knows which port the kernel picked for 0.
+func (e *forwardEntry) bindAddress() string {
+	if e.address == "" {
+		return defaultForwardAddress
+	}
+	return e.address
+}
+
+// localEndpoint renders address:port for the table and the detail view.
+func (e *forwardEntry) localEndpoint() string {
+	return net.JoinHostPort(e.bindAddress(), strconv.FormatUint(uint64(e.boundPort()), 10))
+}
+
+// url is what the copy-URL key puts on the clipboard. A forward bound to
+// 0.0.0.0 or :: listens on loopback too, and loopback is what a browser on this
+// machine can actually connect to.
+func (e *forwardEntry) url() string {
+	return "http://" + net.JoinHostPort(browseHost(e.bindAddress()), strconv.FormatUint(uint64(e.boundPort()), 10))
+}
+
 // forwardRegistry tracks the live forwards. Every method is safe to call from
 // any goroutine: forwards are started and torn down off the UI goroutine, but
 // rendered on it.
@@ -113,8 +139,13 @@ func newForwardRegistry() *forwardRegistry {
 	return &forwardRegistry{entries: map[int]*forwardEntry{}}
 }
 
-// add registers a forward in the starting state and returns it.
+// add registers a loopback forward in the starting state and returns it.
 func (r *forwardRegistry) add(cluster string, cand resolve.Candidate, local, remote uint32, stop func()) *forwardEntry {
+	return r.addAt(cluster, defaultForwardAddress, cand, local, remote, stop)
+}
+
+// addAt registers a forward bound to address in the starting state.
+func (r *forwardRegistry) addAt(cluster, address string, cand resolve.Candidate, local, remote uint32, stop func()) *forwardEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextID++
@@ -122,6 +153,7 @@ func (r *forwardRegistry) add(cluster string, cand resolve.Candidate, local, rem
 		id:      r.nextID,
 		cluster: cluster,
 		cand:    cand,
+		address: address,
 		local:   local,
 		remote:  remote,
 		state:   forwardStarting,

@@ -23,6 +23,11 @@ import (
 // The cluster is the part that matters and the part the operating system cannot
 // know: since forwards survive a cluster switch, the thing occupying port 8080
 // is quite often something you started on a cluster that is not on screen.
+//
+// The bind address is deliberately not part of the match. 0.0.0.0:8080 and
+// 127.0.0.1:8080 collide in the kernel anyway, and "this port is taken" is a
+// rule an operator can hold in their head; "taken on this address but not that
+// one" is not.
 func (u *ui) portConflict(local uint32) (string, bool) {
 	e, ok := u.forwards.byLocalPort(local)
 	if !ok {
@@ -39,7 +44,9 @@ func (u *ui) portConflict(local uint32) (string, bool) {
 // can take up to the connect timeout, and blocking the UI for that would
 // freeze the whole app. The entry is registered immediately in the starting
 // state so the operator sees that something is happening.
-func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
+//
+// address is the local bind address; the form defaults it to loopback.
+func (u *ui) startForward(c resolve.Candidate, address string, local, remote uint32) {
 	// Refuse a port we are already using, before anything is created — the
 	// backstop for every caller. The prompt checks too, so a typo can be
 	// corrected without this ever being reached.
@@ -55,13 +62,13 @@ func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
 	// somewhere else.
 	fctx, fcancel := context.WithCancel(u.runCtx)
 	var once sync.Once
-	entry := forwards.add(u.activeCtx, c, local, remote, func() { once.Do(fcancel) })
+	entry := forwards.addAt(u.activeCtx, address, c, local, remote, func() { once.Do(fcancel) })
 	u.refreshForwardViews()
 
 	go func() {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		fw, ferr := startForwarder(fctx, cfg, ep, forwardParams{
-			address:        "127.0.0.1", // loopback: do not re-expose an internal port to the local network
+			address:        address,
 			localPort:      local,
 			remotePort:     remote,
 			connectTimeout: f.connectTimeout,
@@ -109,71 +116,6 @@ func (u *ui) startForward(c resolve.Candidate, local, remote uint32) {
 	}()
 }
 
-// fwdPromptWidth is the port prompt's normal width: enough for the placeholder
-// that explains the "local:remote" spelling.
-const fwdPromptWidth = 54
-
-// promptWidthFor widens a prompt so a message fits inside its border, capped so
-// it cannot outgrow a modest terminal. Two columns for the border and two for
-// the spaces around the title.
-func promptWidthFor(msg string) int {
-	w := len([]rune(msg)) + 4
-	if w < fwdPromptWidth {
-		return fwdPromptWidth
-	}
-	if w > 100 {
-		return 100
-	}
-	return w
-}
-
-// portPrompt asks which port to forward. There is deliberately no list of
-// exposed ports to pick from: the manager API cannot inspect a container on
-// another node, and the services worth forwarding are exactly the ones that
-// publish nothing — so a suggestion list would be empty where it matters.
-func (u *ui) portPrompt(c resolve.Candidate) {
-	ctree := u.ctree
-	input := tview.NewInputField().SetLabel(" port: ").SetFieldWidth(20)
-	input.SetBorder(true).SetTitle(fmt.Sprintf(" forward %s on %s ", orDash(c.Service), orDash(c.NodeName)))
-	hint := "  8080  or  9090:8080 (local:remote)"
-	input.SetPlaceholder(hint)
-
-	ov := u.overlayFor(pageFwdPrompt, ctree, "")
-	closePrompt := ov.Close
-	input.SetDoneFunc(func(key tcell.Key) {
-		if key != tcell.KeyEnter {
-			closePrompt()
-			return
-		}
-		local, remote, perr := parsePortSpec(strings.TrimSpace(input.GetText()))
-		if perr != nil {
-			// Keep the prompt open so the operator can correct the typo
-			// instead of retyping the whole thing.
-			input.SetTitle(fmt.Sprintf(" %v ", perr))
-			return
-		}
-		// Same treatment for an occupied local port: it is a correctable
-		// mistake, so the prompt stays open with the reason — including WHICH
-		// forward has it, which is the part the operator cannot see from here.
-		//
-		// The box is re-laid-out to fit that sentence. At the prompt's normal
-		// width the title is clipped, and what gets clipped is the tail — the
-		// cluster name, which is the entire reason for saying anything. A
-		// message that ends in "on cluste…" is worse than the kernel's.
-		if msg, clash := u.portConflict(local); clash {
-			input.SetTitle(" " + msg + " ")
-			// Re-shown at a width that fits the reason: AddPage replaces a page
-			// of the same name, so this is a re-lay-out, not a second page.
-			ov.show(centeredPrompt(input, promptWidthFor(msg)), input)
-			return
-		}
-		closePrompt()
-		u.startForward(c, local, remote)
-		u.flash(fmt.Sprintf(" [green]forwarding[white] localhost:%d → %s:%d", local, shortID(c.ContainerID), remote))
-	})
-	ov.show(centeredPrompt(input, fwdPromptWidth), input)
-}
-
 // userPrompt asks which user/UID to exec as, then calls open with it. Mirrors
 // the CLI's `exec -u`: a name, a UID, or UID:GID.
 func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
@@ -207,8 +149,8 @@ func (u *ui) renderForwards() {
 	for i, e := range u.fRows {
 		row := i + 1
 		local := "-"
-		if p := e.boundPort(); p > 0 {
-			local = fmt.Sprintf("127.0.0.1:%d", p)
+		if e.boundPort() > 0 {
+			local = e.localEndpoint()
 		}
 		state := e.state.String()
 		color := tcell.ColorWhite
@@ -233,7 +175,15 @@ func (u *ui) renderForwards() {
 				state = "failed: " + e.err.Error()
 			}
 		}
-		ftable.SetCell(row, 0, tview.NewTableCell(local))
+		// Escaped: an IPv6 endpoint such as [::1]:8080 is otherwise read as
+		// a style tag and vanishes from the cell.
+		lcell := tview.NewTableCell(tview.Escape(local))
+		if !isLoopbackAddr(e.bindAddress()) {
+			// Reachable from the network: worth a second look in a column
+			// that is otherwise always loopback.
+			lcell.SetTextColor(tcell.ColorYellow)
+		}
+		ftable.SetCell(row, 0, lcell)
 		ftable.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", e.remote)))
 		ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.cand.ContainerID)))
 		ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.cand.Service)))
@@ -288,7 +238,10 @@ func (u *ui) showForwardDetail() {
 	// error string can contain "[".
 	esc := tview.Escape
 	var b strings.Builder
-	fmt.Fprintf(&b, "local:      127.0.0.1:%d\n", e.boundPort())
+	fmt.Fprintf(&b, "local:      %s\n", esc(e.localEndpoint()))
+	if !isLoopbackAddr(e.bindAddress()) {
+		b.WriteString("            [yellow]not loopback: reachable from your network[-]\n")
+	}
 	fmt.Fprintf(&b, "remote:     %d\n", e.remote)
 	fmt.Fprintf(&b, "container:  %s\n", esc(shortID(e.cand.ContainerID)))
 	fmt.Fprintf(&b, "service:    %s\n", esc(orDash(e.cand.Service)))
@@ -353,7 +306,7 @@ func (u *ui) forwardKeys(ev *tcell.EventKey) *tcell.EventKey {
 			// ssh, where opening a local browser would target the wrong
 			// machine — and the forward is bound on the operator's side.
 			if e, ok := u.selectedForward(); ok && e.state == forwardActive {
-				url := fmt.Sprintf("http://127.0.0.1:%d", e.boundPort())
+				url := e.url()
 				if screen != nil {
 					screen.SetClipboard([]byte(url))
 				}
