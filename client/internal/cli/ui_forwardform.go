@@ -119,7 +119,7 @@ func formatPorts(ports []uint32) string {
 	for i, p := range ports {
 		parts[i] = strconv.FormatUint(uint64(p), 10)
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, " · ")
 }
 
 // portCompletions is what the container-port field's drop-down offers for the
@@ -264,17 +264,219 @@ func containerPortsFor(list []*pb.ContainerInfo, containerID string) []uint32 {
 	return nil
 }
 
-// Port-forward form geometry: three fields, a spacer and up to four lines of
-// hints (suggestions, address warning, and an error that may wrap), inside a
-// border.
+// Port-forward dialog geometry. The width is fixed so the hint, warning and
+// error lines wrap at a known column instead of running past the border. The
+// height is not: the dialog is as tall as what it currently says (see
+// fwdDialog.height), growing when a warning or an error appears and shrinking
+// when it clears.
 const (
-	fwdFormWidth  = 64
-	fwdFormHeight = 11
+	fwdFormWidth = 60
+	// fwdLabelGap is the space between the label column and the fields.
+	fwdLabelGap = 2
+	// fwdLabelWidth is the label column including that gap. The service row
+	// uses it too, so its value lines up with the fields.
+	fwdLabelWidth = len("Container Port") + fwdLabelGap
+	// fwdPadX is the blank columns each row keeps inside the border, per side.
+	fwdPadX = 2
+	// fwdFixedRows is every row but the status lines: border (2), top gap,
+	// service row, its gap, three fields with a gap between each, the gap
+	// before the status, the gap before the buttons, the buttons.
+	fwdFixedRows = 2 + 1 + 1 + 1 + 5 + 1 + 1 + 1
 )
 
-// portPrompt opens the port-forward form: container port, local address, local
-// port — the same three things `swarmexec port-forward --address A svc L:R`
-// takes.
+// fwdField is an InputField that keeps Enter for itself. Inside a tview.Form,
+// Enter on a field moves to the next one; here Enter starts the forward from
+// whichever field it is pressed in, as it did before the form had buttons.
+//
+// The form installs its navigation handler through SetFinishedFunc each time
+// it takes focus, so wrapping that method is the one place the override can
+// live without fighting the form: finish sees every key first and returns true
+// for the ones it handled, everything else reaches the form's own handler.
+type fwdField struct {
+	*tview.InputField
+	finish func(tcell.Key) bool
+	// marker, when it reports true, draws a ▾ in the field's last cell: there
+	// is a list behind ↓. Needs the label width, which only the form knows.
+	marker     func() bool
+	labelWidth int
+}
+
+func newFwdField(label string, width int) *fwdField {
+	return &fwdField{InputField: tview.NewInputField().SetLabel(label).SetFieldWidth(width)}
+}
+
+func (f *fwdField) SetFinishedFunc(handler func(tcell.Key)) tview.FormItem {
+	f.InputField.SetFinishedFunc(func(key tcell.Key) {
+		if f.finish != nil && f.finish(key) {
+			return
+		}
+		if handler != nil {
+			handler(key)
+		}
+	})
+	return f
+}
+
+// SetFormAttributes widens the form's label column by one: tview.Form leaves a
+// single space after the longest label, which crowds the fields.
+func (f *fwdField) SetFormAttributes(labelWidth int, labelColor, bgColor, fieldTextColor, fieldBgColor tcell.Color) tview.FormItem {
+	f.labelWidth = labelWidth + fwdLabelGap - 1
+	f.InputField.SetFormAttributes(f.labelWidth, labelColor, bgColor, fieldTextColor, fieldBgColor)
+	return f
+}
+
+func (f *fwdField) Draw(screen tcell.Screen) {
+	f.InputField.Draw(screen)
+	if f.marker == nil || !f.marker() {
+		return
+	}
+	x, y, w, _ := f.GetInnerRect()
+	if mx := x + f.labelWidth + f.GetFieldWidth() - 1; mx < x+w {
+		screen.SetContent(mx, y, '▾', nil, tcell.StyleDefault.Background(palette.panel).Foreground(palette.textDim))
+	}
+}
+
+// fwdDialog is the port-forward dialog, k9s's PortForward in this app's theme:
+//
+//	╭──────────────────── Port Forward ────────────────────╮
+//	│                                                      │
+//	│  Service         api · 3f2a91c41b2e · node n1        │
+//	│                                                      │
+//	│  Container Port  80         ▾                        │
+//	│                                                      │
+//	│  Local Port      80                                  │
+//	│                                                      │
+//	│  Address         127.0.0.1                           │
+//	│                                                      │
+//	│  exposed 80 · 8080  ↓ to pick                        │
+//	│  ⚠ reachable from your network                       │
+//	│                                                      │
+//	│                 Forward    Cancel                    │
+//	╰──────────────────────────────────────────────────────╯
+//
+// Two tview.Forms, so the fields and the buttons get the look every other form
+// in the app has (label colour, field and button backgrounds, focus colours all
+// come from the theme), with the status lines between them. Tab and Shift-Tab
+// cross from one form to the other; see openForwardForm.
+type fwdDialog struct {
+	*tview.Flex
+	header             *tview.TextView
+	fields             *tview.Form
+	cport, lport, addr *fwdField
+	status             *tview.TextView
+	buttons            *tview.Form
+	top, afterHeader   *tview.Box
+	afterFields        *tview.Box
+	beforeButtons      *tview.Box
+}
+
+// statusLines is how many rows the status text takes at the given inner width.
+func (d *fwdDialog) statusLines(width int) int {
+	width -= 2 * fwdPadX
+	n := 0
+	for _, line := range strings.Split(d.status.GetText(false), "\n") {
+		n += max(1, len(tview.WordWrap(line, width)))
+	}
+	return n
+}
+
+// height is the dialog's full height for what it currently shows.
+func (d *fwdDialog) height() int {
+	return fwdFixedRows + d.statusLines(fwdFormWidth-2)
+}
+
+// Draw lays the rows out for the space centered() actually gave. On a terminal
+// too short for the full dialog the blank rows give way — the top gap first,
+// then the gaps between the fields, the one under the service row, the one
+// above the status, and the one above the buttons last — so the fields, the
+// messages and the buttons stay on screen and the footer stays free. Only when
+// every gap is gone does the status area shrink.
+func (d *fwdDialog) Draw(screen tcell.Screen) {
+	_, _, w, h := d.GetInnerRect()
+	deficit := fwdFixedRows - 2 + d.statusLines(w) - h
+	give := func() int {
+		if deficit > 0 {
+			deficit--
+			return 0
+		}
+		return 1
+	}
+	d.ResizeItem(d.top, give(), 0)
+	pad := 1 // both gaps between the fields go together: it is one setting
+	if deficit > 0 {
+		pad, deficit = 0, deficit-2
+	}
+	d.fields.SetItemPadding(pad)
+	d.ResizeItem(d.fields, 3+2*pad, 0)
+	d.ResizeItem(d.afterHeader, give(), 0)
+	d.ResizeItem(d.afterFields, give(), 0)
+	d.ResizeItem(d.beforeButtons, give(), 0)
+	d.Flex.Draw(screen)
+}
+
+func newFwdDialog(c resolve.Candidate) *fwdDialog {
+	d := &fwdDialog{
+		top: tview.NewBox(), afterHeader: tview.NewBox(),
+		afterFields: tview.NewBox(), beforeButtons: tview.NewBox(),
+	}
+
+	d.header = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	d.header.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
+	d.header.SetText(fmt.Sprintf("[%s]%-*s[-]%s", palette.textDim.CSS(), fwdLabelWidth, "Service",
+		tview.Escape(fmt.Sprintf("%s · %s · node %s", orDash(c.Service), orDash(shortID(c.ContainerID)), orDash(c.NodeName)))))
+
+	// k9s's order: what to reach, where to listen, on which address.
+	d.cport = newFwdField("Container Port", 12)
+	d.cport.SetAcceptanceFunc(tview.InputFieldInteger)
+	d.lport = newFwdField("Local Port", 12)
+	d.lport.SetAcceptanceFunc(tview.InputFieldInteger).
+		SetPlaceholder("= container").SetPlaceholderTextColor(palette.textFade)
+	d.addr = newFwdField("Address", 28)
+	d.addr.SetText(defaultForwardAddress)
+
+	// Item padding 1 is tview.Form's own default: a blank row between fields.
+	// Draw takes it back to 0 on a short terminal.
+	d.fields = tview.NewForm().SetItemPadding(1).
+		AddFormItem(d.cport).AddFormItem(d.lport).AddFormItem(d.addr)
+	d.fields.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
+
+	d.status = tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetWordWrap(true)
+	d.status.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
+
+	d.buttons = tview.NewForm().AddButton("Forward", nil).AddButton("Cancel", nil).
+		SetButtonsAlign(tview.AlignCenter)
+	d.buttons.SetBorderPadding(0, 0, fwdPadX, fwdPadX) // a Form pads by one all round; the row is one line
+
+	d.Flex = tview.NewFlex().SetDirection(tview.FlexRow)
+	// The status takes whatever rows are left: as many as its text needs when
+	// the dialog has its full height, fewer only on a very short terminal.
+	d.AddItem(d.top, 1, 0, false).
+		AddItem(d.header, 1, 0, false).
+		AddItem(d.afterHeader, 1, 0, false).
+		AddItem(d.fields, 5, 0, true).
+		AddItem(d.afterFields, 1, 0, false).
+		AddItem(d.status, 0, 1, false).
+		AddItem(d.beforeButtons, 1, 0, false).
+		AddItem(d.buttons, 1, 0, false)
+	// No padding on the Flex itself: a Flex does not clear its background, so
+	// padding cells would show the page beneath. Each item pads itself.
+	d.SetBorder(true).SetTitle(" Port Forward ")
+	return d
+}
+
+// portPrompt opens the port-forward dialog and starts the forward it is
+// filled in with.
+func (u *ui) portPrompt(c resolve.Candidate) {
+	u.openForwardForm(c, func(spec forwardSpec) {
+		u.startForward(c, spec.address, spec.local, spec.remote)
+		u.flash(fmt.Sprintf(" [green]forwarding[white] %s → %s:%d",
+			net.JoinHostPort(spec.address, strconv.FormatUint(uint64(spec.local), 10)), shortID(c.ContainerID), spec.remote))
+	})
+}
+
+// openForwardForm runs the dialog: container port, local port, address — the
+// same three things `swarmexec port-forward --address A svc L:R` takes — and
+// hands a valid, conflict-free spec to start once the form has closed.
 //
 // The container port is suggested from the container's real ports, which the
 // form looks up in the background while it is already open: the service's
@@ -282,56 +484,46 @@ const (
 // container's node. Neither is complete on its own — a service that publishes
 // nothing has no endpoint ports, and an agent that predates the field reports
 // no EXPOSE ports — so both are asked and merged. Any port can still be typed.
-func (u *ui) portPrompt(c resolve.Candidate) {
+func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 	app, ctree, cfg, dcli, ctx, f := u.app, u.ctree, u.cfg, u.dcli, u.ctx, u.f
 	gen := u.generation()
-
-	cport := tview.NewInputField().SetLabel(" container port ").SetFieldWidth(8).
-		SetAcceptanceFunc(tview.InputFieldInteger)
-	addr := tview.NewInputField().SetLabel(" local address  ").SetFieldWidth(28).
-		SetText(defaultForwardAddress)
-	lport := tview.NewInputField().SetLabel(" local port     ").SetFieldWidth(8).
-		SetAcceptanceFunc(tview.InputFieldInteger)
-	status := tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetWordWrap(true)
-	status.SetBorderPadding(0, 0, 1, 1)
-
-	box := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(cport, 1, 0, true).
-		AddItem(addr, 1, 0, false).
-		AddItem(lport, 1, 0, false).
-		AddItem(tview.NewBox(), 1, 0, false).
-		AddItem(status, 0, 1, false)
-	// No padding on the Flex itself: a Flex does not clear its background, so
-	// padding cells would show the page beneath. Each item pads itself.
-	box.SetBorder(true).
-		SetTitle(fmt.Sprintf(" forward %s on %s ", orDash(c.Service), orDash(c.NodeName)))
+	d := newFwdDialog(c)
+	cport, lport, addr, status := d.cport, d.lport, d.addr, d.status
 
 	var (
 		suggested []uint32
 		loading   = true
 		errMsg    string
 		follow    portFollow
-		showAll   bool
+		// relayout fits the dialog's height to what render just wrote; nil
+		// until the dialog is on screen.
+		relayout func()
+		showAll  bool
 	)
 	render := func() {
 		var b strings.Builder
+		dim := palette.textDim.CSS()
 		switch {
 		case loading:
-			b.WriteString("[gray]looking up the container's ports…[-]")
+			fmt.Fprintf(&b, "[%s]looking up the container's ports…[-]", dim)
 		case len(suggested) == 0:
-			b.WriteString("[gray]no ports advertised — type the port to forward[-]")
+			fmt.Fprintf(&b, "[%s]no ports found — type the port to forward[-]", dim)
 		default:
-			fmt.Fprintf(&b, "[gray]suggested:[-] %s  [gray](↓ to pick)[-]", formatPorts(suggested))
+			fmt.Fprintf(&b, "[%s]exposed[-] %s  [%s]↓ to pick[-]", dim, formatPorts(suggested), dim)
 		}
-		if a := strings.TrimSpace(addr.GetText()); !isLoopbackAddr(a) {
-			fmt.Fprintf(&b, "\n[yellow]⚠ %s is not loopback: reachable from your network[-]", tview.Escape(a))
+		if !isLoopbackAddr(addr.GetText()) {
+			b.WriteString("\n[yellow]⚠ reachable from your network[-]")
 		}
 		if errMsg != "" {
 			fmt.Fprintf(&b, "\n[red]%s[-]", tview.Escape(errMsg))
 		}
 		status.SetText(b.String())
+		if relayout != nil {
+			relayout()
+		}
 	}
 
+	cport.marker = func() bool { return len(suggested) > 0 }
 	cport.SetAutocompleteFunc(func(text string) []string {
 		all := showAll
 		showAll = false
@@ -361,8 +553,20 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 	})
 
 	ov := u.overlayFor(pageFwdPrompt, ctree,
-		footerKeys("Enter", "forward", "Tab", "next field", "↓", "suggested ports", "Esc", "cancel"))
-	closeForm := ov.Close
+		footerKeys("Enter", "forward", "Tab", "next", "↓", "ports", "Esc", "cancel"))
+	closed := false
+	closeForm := func() {
+		closed = true
+		ov.Close()
+	}
+
+	// focusIn moves focus to one element of one of the two forms. It goes
+	// through the form, not straight to the element, because the form wires
+	// its elements' navigation handlers when it takes focus.
+	focusIn := func(form *tview.Form, index int) {
+		form.SetFocus(index)
+		app.SetFocus(form)
+	}
 
 	submit := func() {
 		spec, err := parseForwardForm(cport.GetText(), addr.GetText(), lport.GetText())
@@ -375,38 +579,83 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 		}
 		// An occupied local port is a correctable mistake too, and the
 		// sentence names WHICH forward holds it — the part the operator
-		// cannot see from here. It wraps inside the form, so the cluster
+		// cannot see from here. It wraps inside the dialog, so the cluster
 		// name at its end is never clipped away.
 		if msg, clash := u.portConflict(spec.local); clash {
 			errMsg = msg
 			render()
-			app.SetFocus(lport)
+			focusIn(d.fields, 1)
 			return
 		}
 		closeForm()
-		u.startForward(c, spec.address, spec.local, spec.remote)
-		u.flash(fmt.Sprintf(" [green]forwarding[white] %s → %s:%d",
-			net.JoinHostPort(spec.address, strconv.FormatUint(uint64(spec.local), 10)), shortID(c.ContainerID), spec.remote))
-	}
-	fields := []*tview.InputField{cport, addr, lport}
-	for i, fld := range fields {
-		next, prev := fields[(i+1)%len(fields)], fields[(i+len(fields)-1)%len(fields)]
-		fld.SetDoneFunc(func(key tcell.Key) {
-			switch key {
-			case tcell.KeyEnter:
-				submit()
-			case tcell.KeyTab:
-				app.SetFocus(next)
-			case tcell.KeyBacktab:
-				app.SetFocus(prev)
-			case tcell.KeyEscape:
-				closeForm()
-			}
-		})
+		start(spec)
 	}
 
+	// Enter submits from any field; Tab and Shift-Tab run through the fields
+	// and on into the buttons, and back round.
+	fields := []*fwdField{cport, lport, addr}
+	for i, fld := range fields {
+		fld.finish = func(key tcell.Key) bool {
+			switch {
+			case key == tcell.KeyEnter:
+				submit()
+			case key == tcell.KeyTab && i == len(fields)-1:
+				focusIn(d.buttons, 0)
+			case key == tcell.KeyBacktab && i == 0:
+				focusIn(d.buttons, d.buttons.GetButtonCount()-1)
+			default:
+				return false
+			}
+			return true
+		}
+	}
+	d.buttons.GetButton(0).SetSelectedFunc(submit)
+	d.buttons.GetButton(1).SetSelectedFunc(closeForm)
+	d.buttons.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		_, btn := d.buttons.GetFocusedItemIndex()
+		last := d.buttons.GetButtonCount() - 1
+		// All of the navigation is done here rather than in the buttons' exit
+		// handlers: those are only wired once the form itself takes focus, and
+		// a button clicked with the mouse is focused without that.
+		switch ev.Key() {
+		case tcell.KeyTab:
+			if btn == last {
+				focusIn(d.fields, 0)
+			} else {
+				focusIn(d.buttons, btn+1)
+			}
+		case tcell.KeyBacktab:
+			if btn == 0 {
+				focusIn(d.fields, len(fields)-1)
+			} else {
+				focusIn(d.buttons, btn-1)
+			}
+		case tcell.KeyLeft, tcell.KeyRight:
+			// The buttons sit side by side; the arrows move between them.
+			focusIn(d.buttons, (btn+1)%(last+1))
+		case tcell.KeyEscape:
+			closeForm()
+		default:
+			return ev
+		}
+		return nil
+	})
+	d.fields.SetCancelFunc(closeForm)
+	d.buttons.SetCancelFunc(closeForm)
+
 	render()
-	ov.show(centered(box, fwdFormWidth, fwdFormHeight), cport)
+	shownH := d.height()
+	ov.show(centered(d, fwdFormWidth, shownH), d.fields)
+	// The dialog is as tall as its content: a warning or an error grows it,
+	// and it shrinks again once the message clears. Re-showing replaces the
+	// page of the same name; focus stays where the operator has it (AddPage
+	// would otherwise hand it to the fields form).
+	relayout = func() {
+		if h := d.height(); h != shownH && !closed && u.pages.HasPage(pageFwdPrompt) {
+			shownH = h
+			ov.show(centered(d, fwdFormWidth, h), app.GetFocus())
+		}
+	}
 
 	go func() {
 		// One budget for both lookups: a slow node must not keep the form

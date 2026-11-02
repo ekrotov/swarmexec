@@ -1545,7 +1545,7 @@ services:
           <tr><td><kbd>s</kbd></td><td>Stack-Gruppierung umschalten — gruppierter Baum ⟷ flache Service-Liste (siehe unten)</td></tr>
           <tr><td><kbd>L</kbd></td><td>Logs (großes <kbd>L</kbd>) — auf einem Container dessen eigene Logs, auf einem Service die aggregierten Logs aller seiner Tasks; auf einer <strong>Stack</strong>-Zeile jeder Container jedes Service im Stack, jede Zeile mit <code>[svc.slot]</code> markiert (bei einem globalen Service <code>[svc@node]</code>), je ab den letzten 50 Zeilen — wie <code>swarmexec logs --stack</code>. Bis zu 64 Container; die Zeile <em>(no stack)</em> ist eine Gruppierung, kein Stack, und öffnet nichts</td></tr>
           <tr><td><kbd>!</kbd></td><td>das Sicherheitsrisiken-Overlay für die gesamte Service-Liste öffnen (siehe unten)</td></tr>
-          <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor — öffnet das Forward-Formular (Container-Port, lokale Adresse, lokaler Port; siehe Forwards-Tab unten)</td></tr>
+          <tr><td><kbd>p</kbd></td><td>Port-Forward für die Task unter dem Cursor — öffnet den Port-Forward-Dialog (Container-Port, lokaler Port, Adresse; siehe Forwards-Tab unten)</td></tr>
           <tr><td><kbd>i</kbd></td><td>den Eintrag unter dem Cursor inspizieren — ein navigierbares Overlay mit tabellarischer Zusammenfassung; bewege die Auswahl mit <kbd>↑</kbd>/<kbd>↓</kbd> oder <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> kopiert die ausgewählte Zeile, eine <strong>Tab-Leiste</strong> oben benennt die drei Ansichten, <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> wählen Tabelle / Stats / rohes Daemon-JSON direkt aus und <kbd>t</kbd> schaltet reihum durch (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> schließt). Auf einem <strong>Service</strong> bearbeitet das Overlay ihn auch: <kbd>s</kbd> Skalieren, <kbd>f</kbd> Force-Update, <kbd>p</kbd> Ports, <kbd>l</kbd> Labels, <kbd>e</kbd> Env, <kbd>n</kbd> Netzwerke, <kbd>S</kbd> Secrets, <kbd>v</kbd> Mounts, <kbd>A</kbd> Aliase; <kbd>D</kbd> diagnostiziert, <em>warum</em> er nicht überall läuft; <kbd>X</kbd> entfernt ihn</td></tr>
           <tr><td><kbd>X</kbd></td><td>einen Service <strong>direkt aus dem Baum</strong> entfernen (großes <kbd>X</kbd>, also Shift+x) — ohne Umweg über das Inspect-Overlay. Worauf es wirkt, richtet sich nach der Zeile unter dem Cursor: auf einer <strong>Service</strong>-Zeile wird dieser Service entfernt; auf einer <strong>Container</strong>-Zeile der <strong>zugehörige Service</strong> des Containers, denn eine einzelne Task lässt sich nicht für sich entfernen — Swarm würde sie sofort neu einplanen; auf einer <strong>Stack</strong>-Zeile wird der <strong>ganze Stack</strong> entfernt, genau das, was <code>docker stack rm</code> entfernt: jeder Service, jedes Secret, jede Config und jedes Netzwerk mit dem Label <code>com.docker.stack.namespace</code> dieses Stacks. Die Bestätigung nennt vorher die gefundenen Zahlen (&bdquo;4 services, 2 secrets, 1 network&ldquo;), und Netzwerke werden ein paar Sekunden lang erneut versucht, weil die Endpoints eines Service nach dem Stoppen seiner Tasks noch einen Moment brauchen &mdash; <code>docker stack rm</code> gibt dort auf und lässt das Netzwerk zurück. Was sich verweigert, wird danach namentlich aufgelistet, damit klar ist, was übrig bleibt. Die Zeile <em>(no stack)</em> entfernt nichts: sie ist eine Anzeigegruppierung, kein Stack. Es läuft über <strong>dieselbe Bestätigung</strong> wie das <kbd>X</kbd> im Inspect weiter unten — es <strong>löscht den Service dauerhaft</strong> und stoppt alle seine Tasks, kann nicht rückgängig gemacht werden und bietet danach an, nun verwaiste Secrets ebenfalls zu löschen. Eine feste Großbuchstaben-Taste, keine umbelegbare Keymap-Aktion; die Fußzeile führt es rot als <span class="tc-red"><em>X remove</em></span>, das <kbd>?</kbd>-Overlay listet es ebenfalls. Das <kbd>X</kbd> im Inspect-Overlay bleibt unverändert</td></tr>
         </tbody>
@@ -2243,20 +2243,20 @@ EOF</span></pre>
       </p>
 
       <p>
-        <kbd>p</kbd> auf einem Container öffnet das <strong>Forward-Formular</strong> mit
-        drei Feldern: <strong>Container-Port</strong>, <strong>lokale Adresse</strong> und
-        <strong>lokaler Port</strong>. Der Container-Port wird aus den echten Ports des
+        <kbd>p</kbd> auf einem Container öffnet den <strong>Port-Forward</strong>-Dialog mit drei Feldern in der
+        Reihenfolge von k9s — <strong>Container Port</strong>, <strong>Local Port</strong> und
+        <strong>Address</strong> — über den Buttons <strong>Forward</strong> und <strong>Cancel</strong>. Der Container-Port wird aus den echten Ports des
         Containers <strong>vorgeschlagen</strong> — den Target-Ports des Service-Endpoints
         (vom Manager, funktioniert mit jedem Agent) und den Ports, die das Image per
         <code>EXPOSE</code> freigibt (vom Agent auf dem Node des Containers; braucht einen
         Agent, der sie meldet, ältere Agents tragen einfach nichts bei). Der erste Vorschlag
         ist vorausgefüllt, die Hinweiszeile listet die übrigen und <kbd>↓</kbd> öffnet sie
         als Dropdown; jeder andere Port lässt sich weiterhin eintippen. Der lokale Port folgt
-        dem Container-Port, bis du ihn änderst. Die lokale Adresse ist standardmäßig
+        dem Container-Port, bis du ihn änderst. Die Adresse ist standardmäßig
         <code>127.0.0.1</code>; alles, was kein Loopback ist (z. B. <code>0.0.0.0</code>),
         zeigt eine gelbe Warnung <em>reachable from your network</em>, und der Forwards-Tab
-        zeigt die Adresse dieses Forwards ebenfalls gelb. <kbd>Tab</kbd> wechselt zwischen
-        den Feldern, <kbd>Enter</kbd> startet den Forward und <kbd>Esc</kbd> bricht ab; ein
+        zeigt die Adresse dieses Forwards ebenfalls gelb. <kbd>Tab</kbd> und <kbd>Shift-Tab</kbd> wandern durch die Felder und die Buttons,
+        <kbd>Enter</kbd> in jedem Feld (oder auf <strong>Forward</strong>) startet den Forward und <kbd>Esc</kbd> bricht ab; ein
         Tippfehler oder ein belegter Port lässt das Formular mit dem Grund offen.
       </p>
 
