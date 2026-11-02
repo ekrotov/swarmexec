@@ -265,16 +265,23 @@ func containerPortsFor(list []*pb.ContainerInfo, containerID string) []uint32 {
 }
 
 // Port-forward dialog geometry. The width is fixed so the hint, warning and
-// error lines wrap at a known column instead of running past the border; the
-// height fits every row of the full layout (see fwdDialog), with room for a
-// hint, a warning and a two-line error at once.
+// error lines wrap at a known column instead of running past the border. The
+// height is not: the dialog is as tall as what it currently says (see
+// fwdDialog.height), growing when a warning or an error appears and shrinking
+// when it clears.
 const (
-	fwdFormWidth  = 58
-	fwdFormHeight = 15
-	// fwdLabelWidth is the label column: the longest label plus the space
-	// tview.Form puts after it. The service row uses it too, so its value
-	// lines up with the fields.
-	fwdLabelWidth = len("Container Port") + 1
+	fwdFormWidth = 60
+	// fwdLabelGap is the space between the label column and the fields.
+	fwdLabelGap = 2
+	// fwdLabelWidth is the label column including that gap. The service row
+	// uses it too, so its value lines up with the fields.
+	fwdLabelWidth = len("Container Port") + fwdLabelGap
+	// fwdPadX is the blank columns each row keeps inside the border, per side.
+	fwdPadX = 2
+	// fwdFixedRows is every row but the status lines: border (2), top gap,
+	// service row, its gap, three fields with a gap between each, the gap
+	// before the status, the gap before the buttons, the buttons.
+	fwdFixedRows = 2 + 1 + 1 + 1 + 5 + 1 + 1 + 1
 )
 
 // fwdField is an InputField that keeps Enter for itself. Inside a tview.Form,
@@ -310,9 +317,11 @@ func (f *fwdField) SetFinishedFunc(handler func(tcell.Key)) tview.FormItem {
 	return f
 }
 
+// SetFormAttributes widens the form's label column by one: tview.Form leaves a
+// single space after the longest label, which crowds the fields.
 func (f *fwdField) SetFormAttributes(labelWidth int, labelColor, bgColor, fieldTextColor, fieldBgColor tcell.Color) tview.FormItem {
-	f.labelWidth = labelWidth
-	f.InputField.SetFormAttributes(labelWidth, labelColor, bgColor, fieldTextColor, fieldBgColor)
+	f.labelWidth = labelWidth + fwdLabelGap - 1
+	f.InputField.SetFormAttributes(f.labelWidth, labelColor, bgColor, fieldTextColor, fieldBgColor)
 	return f
 }
 
@@ -331,11 +340,13 @@ func (f *fwdField) Draw(screen tcell.Screen) {
 //
 //	╭──────────────────── Port Forward ────────────────────╮
 //	│                                                      │
-//	│  Service        api · 3f2a91c41b2e · node n1         │
+//	│  Service         api · 3f2a91c41b2e · node n1        │
 //	│                                                      │
-//	│  Container Port 80         ▾                         │
-//	│  Local Port     80                                   │
-//	│  Address        127.0.0.1                            │
+//	│  Container Port  80         ▾                        │
+//	│                                                      │
+//	│  Local Port      80                                  │
+//	│                                                      │
+//	│  Address         127.0.0.1                           │
 //	│                                                      │
 //	│  exposed 80 · 8080  ↓ to pick                        │
 //	│  ⚠ reachable from your network                       │
@@ -346,7 +357,7 @@ func (f *fwdField) Draw(screen tcell.Screen) {
 // Two tview.Forms, so the fields and the buttons get the look every other form
 // in the app has (label colour, field and button backgrounds, focus colours all
 // come from the theme), with the status lines between them. Tab and Shift-Tab
-// cross from one form to the other; see portPrompt.
+// cross from one form to the other; see openForwardForm.
 type fwdDialog struct {
 	*tview.Flex
 	header             *tview.TextView
@@ -354,31 +365,63 @@ type fwdDialog struct {
 	cport, lport, addr *fwdField
 	status             *tview.TextView
 	buttons            *tview.Form
-	spacers            []*tview.Box // in the order they give way on a short screen
-	fullHeight         int
+	top, afterHeader   *tview.Box
+	afterFields        *tview.Box
+	beforeButtons      *tview.Box
 }
 
-// Draw drops the blank rows when the terminal is too short for the full
-// dialog — centered() shrinks the box to keep the footer visible, and without
-// this the Flex would cut the buttons off the bottom instead.
-func (d *fwdDialog) Draw(screen tcell.Screen) {
-	_, _, _, h := d.GetInnerRect()
-	deficit := d.fullHeight - h
-	for _, sp := range d.spacers {
-		size := 1
-		if deficit > 0 {
-			size, deficit = 0, deficit-1
-		}
-		d.ResizeItem(sp, size, 0)
+// statusLines is how many rows the status text takes at the given inner width.
+func (d *fwdDialog) statusLines(width int) int {
+	width -= 2 * fwdPadX
+	n := 0
+	for _, line := range strings.Split(d.status.GetText(false), "\n") {
+		n += max(1, len(tview.WordWrap(line, width)))
 	}
+	return n
+}
+
+// height is the dialog's full height for what it currently shows.
+func (d *fwdDialog) height() int {
+	return fwdFixedRows + d.statusLines(fwdFormWidth-2)
+}
+
+// Draw lays the rows out for the space centered() actually gave. On a terminal
+// too short for the full dialog the blank rows give way — the top gap first,
+// then the gaps between the fields, the one under the service row, the one
+// above the status, and the one above the buttons last — so the fields, the
+// messages and the buttons stay on screen and the footer stays free. Only when
+// every gap is gone does the status area shrink.
+func (d *fwdDialog) Draw(screen tcell.Screen) {
+	_, _, w, h := d.GetInnerRect()
+	deficit := fwdFixedRows - 2 + d.statusLines(w) - h
+	give := func() int {
+		if deficit > 0 {
+			deficit--
+			return 0
+		}
+		return 1
+	}
+	d.ResizeItem(d.top, give(), 0)
+	pad := 1 // both gaps between the fields go together: it is one setting
+	if deficit > 0 {
+		pad, deficit = 0, deficit-2
+	}
+	d.fields.SetItemPadding(pad)
+	d.ResizeItem(d.fields, 3+2*pad, 0)
+	d.ResizeItem(d.afterHeader, give(), 0)
+	d.ResizeItem(d.afterFields, give(), 0)
+	d.ResizeItem(d.beforeButtons, give(), 0)
 	d.Flex.Draw(screen)
 }
 
 func newFwdDialog(c resolve.Candidate) *fwdDialog {
-	d := &fwdDialog{}
+	d := &fwdDialog{
+		top: tview.NewBox(), afterHeader: tview.NewBox(),
+		afterFields: tview.NewBox(), beforeButtons: tview.NewBox(),
+	}
 
 	d.header = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
-	d.header.SetBorderPadding(0, 0, 2, 2)
+	d.header.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
 	d.header.SetText(fmt.Sprintf("[%s]%-*s[-]%s", palette.textDim.CSS(), fwdLabelWidth, "Service",
 		tview.Escape(fmt.Sprintf("%s · %s · node %s", orDash(c.Service), orDash(shortID(c.ContainerID)), orDash(c.NodeName)))))
 
@@ -391,34 +434,33 @@ func newFwdDialog(c resolve.Candidate) *fwdDialog {
 	d.addr = newFwdField("Address", 28)
 	d.addr.SetText(defaultForwardAddress)
 
-	d.fields = tview.NewForm().SetItemPadding(0).
+	// Item padding 1 is tview.Form's own default: a blank row between fields.
+	// Draw takes it back to 0 on a short terminal.
+	d.fields = tview.NewForm().SetItemPadding(1).
 		AddFormItem(d.cport).AddFormItem(d.lport).AddFormItem(d.addr)
-	d.fields.SetBorderPadding(0, 0, 2, 2)
+	d.fields.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
 
 	d.status = tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetWordWrap(true)
-	d.status.SetBorderPadding(0, 0, 2, 2)
+	d.status.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
 
 	d.buttons = tview.NewForm().AddButton("Forward", nil).AddButton("Cancel", nil).
 		SetButtonsAlign(tview.AlignCenter)
-	d.buttons.SetBorderPadding(0, 0, 2, 2) // a Form pads by one all round; the row is one line
+	d.buttons.SetBorderPadding(0, 0, fwdPadX, fwdPadX) // a Form pads by one all round; the row is one line
 
 	d.Flex = tview.NewFlex().SetDirection(tview.FlexRow)
-	top, afterHeader, afterFields, beforeButtons := tview.NewBox(), tview.NewBox(), tview.NewBox(), tview.NewBox()
-	// Give way top first, then around the header, then before the buttons;
-	// the gap between the fields and the hints goes last.
-	d.spacers = []*tview.Box{top, afterHeader, beforeButtons, afterFields}
-	d.AddItem(top, 1, 0, false).
+	// The status takes whatever rows are left: as many as its text needs when
+	// the dialog has its full height, fewer only on a very short terminal.
+	d.AddItem(d.top, 1, 0, false).
 		AddItem(d.header, 1, 0, false).
-		AddItem(afterHeader, 1, 0, false).
-		AddItem(d.fields, 3, 0, true).
-		AddItem(afterFields, 1, 0, false).
+		AddItem(d.afterHeader, 1, 0, false).
+		AddItem(d.fields, 5, 0, true).
+		AddItem(d.afterFields, 1, 0, false).
 		AddItem(d.status, 0, 1, false).
-		AddItem(beforeButtons, 1, 0, false).
+		AddItem(d.beforeButtons, 1, 0, false).
 		AddItem(d.buttons, 1, 0, false)
 	// No padding on the Flex itself: a Flex does not clear its background, so
 	// padding cells would show the page beneath. Each item pads itself.
 	d.SetBorder(true).SetTitle(" Port Forward ")
-	d.fullHeight = fwdFormHeight - 2
 	return d
 }
 
@@ -453,7 +495,10 @@ func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 		loading   = true
 		errMsg    string
 		follow    portFollow
-		showAll   bool
+		// relayout fits the dialog's height to what render just wrote; nil
+		// until the dialog is on screen.
+		relayout func()
+		showAll  bool
 	)
 	render := func() {
 		var b strings.Builder
@@ -473,6 +518,9 @@ func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 			fmt.Fprintf(&b, "\n[red]%s[-]", tview.Escape(errMsg))
 		}
 		status.SetText(b.String())
+		if relayout != nil {
+			relayout()
+		}
 	}
 
 	cport.marker = func() bool { return len(suggested) > 0 }
@@ -506,7 +554,11 @@ func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 
 	ov := u.overlayFor(pageFwdPrompt, ctree,
 		footerKeys("Enter", "forward", "Tab", "next", "↓", "ports", "Esc", "cancel"))
-	closeForm := ov.Close
+	closed := false
+	closeForm := func() {
+		closed = true
+		ov.Close()
+	}
 
 	// focusIn moves focus to one element of one of the two forms. It goes
 	// through the form, not straight to the element, because the form wires
@@ -592,7 +644,18 @@ func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 	d.buttons.SetCancelFunc(closeForm)
 
 	render()
-	ov.show(centered(d, fwdFormWidth, fwdFormHeight), d.fields)
+	shownH := d.height()
+	ov.show(centered(d, fwdFormWidth, shownH), d.fields)
+	// The dialog is as tall as its content: a warning or an error grows it,
+	// and it shrinks again once the message clears. Re-showing replaces the
+	// page of the same name; focus stays where the operator has it (AddPage
+	// would otherwise hand it to the fields form).
+	relayout = func() {
+		if h := d.height(); h != shownH && !closed && u.pages.HasPage(pageFwdPrompt) {
+			shownH = h
+			ov.show(centered(d, fwdFormWidth, h), app.GetFocus())
+		}
+	}
 
 	go func() {
 		// One budget for both lookups: a slow node must not keep the form

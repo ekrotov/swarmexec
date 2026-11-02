@@ -469,3 +469,104 @@ func TestForwardFormLayout(t *testing.T) {
 		t.Logf("%dx%d:\n%s", w, h, screen)
 	}
 }
+
+// rowOf returns the index of the first row containing s, or -1.
+func rowOf(rows []string, s string) int {
+	for y, r := range rows {
+		if strings.Contains(r, s) {
+			return y
+		}
+	}
+	return -1
+}
+
+// With room to spare the dialog is padded: a blank row between each pair of
+// rows from the service row down to the status, one blank row above the
+// buttons, and the fields two columns clear of the longest label.
+func TestForwardFormPaddedLayout(t *testing.T) {
+	applyTheme(backdropDim)
+	u := forwardFormUI()
+	u.portPrompt(cand("abc123456789", "api", "n1"))
+	d := openDialog(t, u)
+	d.cport.SetText("80")
+	rows := drawForm(u, 80, 24)
+	screen := strings.Join(rows, "\n")
+
+	order := []string{"Service", "Container Port", "Local Port", "Address", "looking up"}
+	for i := 1; i < len(order); i++ {
+		a, b := rowOf(rows, order[i-1]), rowOf(rows, order[i])
+		if a < 0 || b != a+2 {
+			t.Errorf("%q (row %d) and %q (row %d) must have one blank row between them:\n%s", order[i-1], a, order[i], b, screen)
+		}
+	}
+	status, buttons := rowOf(rows, "looking up"), rowOf(rows, "Cancel")
+	if buttons != status+2 {
+		t.Errorf("one blank row above the buttons: status on %d, buttons on %d:\n%s", status, buttons, screen)
+	}
+	if bottom := rowOf(rows, "╰"); bottom != buttons+1 {
+		t.Errorf("the dialog must end right under the buttons (row %d), ends on %d:\n%s", buttons+1, bottom, screen)
+	}
+	// Two spaces between "Container Port" and its value.
+	if r := rows[rowOf(rows, "Container Port")]; !strings.Contains(r, "Container Port  80") {
+		t.Errorf("label and field need a two-column gap: %q", r)
+	}
+	if r := rows[rowOf(rows, "Service")]; !strings.Contains(r, "Service         api") {
+		t.Errorf("the service row must line up with the fields: %q", r)
+	}
+}
+
+// The dialog is as tall as its content: a warning adds a row, an error adds
+// its wrapped lines, and clearing them takes the rows away again — while the
+// field being typed in keeps the focus.
+func TestForwardFormGrowsAndShrinks(t *testing.T) {
+	u := forwardFormUI()
+	u.portPrompt(cand("abc123456789", "api", "n1"))
+	d := openDialog(t, u)
+	height := func() int {
+		_, page := u.pages.GetFrontPage()
+		return page.(*centeredBox).height
+	}
+	base := height()
+	if base != fwdFixedRows+1 {
+		t.Fatalf("one hint line: height %d, want %d", base, fwdFixedRows+1)
+	}
+
+	focusIn := func(i int) {
+		d.fields.SetFocus(i)
+		u.app.SetFocus(d.fields)
+	}
+	focusIn(2)
+	d.addr.SetText("0.0.0.0")
+	if got := height(); got != base+1 {
+		t.Errorf("warning: height %d, want %d", got, base+1)
+	}
+	if u.app.GetFocus() != d.addr {
+		t.Errorf("growing the dialog must not move the focus, now on %T", u.app.GetFocus())
+	}
+	if d2 := openDialog(t, u); d2 != d {
+		t.Error("the re-shown page must be the same dialog")
+	}
+
+	focusIn(0)
+	d.cport.SetText("8080")
+	press(u, tcell.KeyEnter) // conflict: two more lines at this width
+	if got := height(); got != base+3 {
+		t.Errorf("warning and error: height %d, want %d", got, base+3)
+	}
+
+	d.lport.SetText("8081") // edits clear the error
+	if got := height(); got != base+1 {
+		t.Errorf("error cleared: height %d, want %d", got, base+1)
+	}
+	d.addr.SetText("127.0.0.1")
+	if got := height(); got != base {
+		t.Errorf("warning cleared: height %d, want %d", got, base)
+	}
+
+	// After closing, a late update (the port lookup) must not bring it back.
+	press(u, tcell.KeyEscape)
+	d.addr.SetText("0.0.0.0")
+	if u.overlayOpen() || u.pages.HasPage(pageFwdPrompt) {
+		t.Error("an update after Esc must not re-open the dialog")
+	}
+}
