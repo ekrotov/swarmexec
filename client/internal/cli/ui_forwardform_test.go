@@ -216,56 +216,256 @@ func TestPortCompletions(t *testing.T) {
 	}
 }
 
-// The form itself, driven through its widgets: the local port follows what is
-// typed into the container port, a non-loopback address shows the warning, and
-// a conflict keeps the form open with the reason.
-func TestPortPromptForm(t *testing.T) {
+// forwardFormUI is a ui with just enough state for the forward dialog, and
+// one forward already running on local port 8080 so a conflict can be hit.
+func forwardFormUI() *ui {
 	u := overlayUI()
 	u.forwards = newForwardRegistry()
 	u.clusterState = &clusterState{ctx: context.Background()}
 	u.f = &uiFlags{connectTimeout: time.Second}
 	u.ctree = tview.NewTreeView()
-	e := u.forwards.add("prod", cand("other", "db", "n2"), 8080, 5432, func() {})
+	// Long names, so the conflict sentence is longer than the dialog is wide.
+	e := u.forwards.add("prod-eu-west-1", cand("other", "billing-postgres-primary", "n2"), 8080, 5432, func() {})
 	u.forwards.markActive(e.id, "127.0.0.1:8080")
+	return u
+}
 
-	u.portPrompt(cand("abc123456789", "api", "n1"))
+// openDialog returns the dialog the front page shows.
+func openDialog(t *testing.T, u *ui) *fwdDialog {
+	t.Helper()
 	if !u.overlayOpen() {
 		t.Fatal("the form must be open")
 	}
 	_, page := u.pages.GetFrontPage()
-	box, ok := page.(*centeredBox).inner.(*tview.Flex)
+	cb, ok := page.(*centeredBox)
 	if !ok {
-		t.Fatalf("unexpected form layout %T", page)
+		t.Fatalf("the form must float through centered(), got %T", page)
 	}
-	cport := box.GetItem(0).(*tview.InputField)
-	addr := box.GetItem(1).(*tview.InputField)
-	lport := box.GetItem(2).(*tview.InputField)
-	status := box.GetItem(4).(*tview.TextView)
+	d, ok := cb.inner.(*fwdDialog)
+	if !ok {
+		t.Fatalf("unexpected form layout %T", cb.inner)
+	}
+	return d
+}
 
-	if addr.GetText() != "127.0.0.1" {
-		t.Errorf("address default = %q", addr.GetText())
+// press sends a key the way the running app would: into the front page, which
+// hands it down to whatever has focus — so the forms' own input captures see
+// it too.
+func press(u *ui, key tcell.Key) {
+	_, page := u.pages.GetFrontPage()
+	page.InputHandler()(tcell.NewEventKey(key, 0, tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
+}
+
+// The form itself, driven through its widgets: k9s's field order, the local
+// port follows what is typed into the container port, a non-loopback address
+// shows the warning, and a conflict keeps the form open with the reason.
+func TestPortPromptForm(t *testing.T) {
+	u := forwardFormUI()
+	u.portPrompt(cand("abc123456789", "api", "n1"))
+	d := openDialog(t, u)
+
+	for i, want := range []string{"Container Port", "Local Port", "Address"} {
+		if got := d.fields.GetFormItem(i).GetLabel(); got != want {
+			t.Errorf("field %d = %q, want %q", i, got, want)
+		}
 	}
-	cport.SetText("8080")
-	if lport.GetText() != "8080" {
-		t.Errorf("local port did not follow: %q", lport.GetText())
+	if d.addr.GetText() != "127.0.0.1" {
+		t.Errorf("address default = %q", d.addr.GetText())
 	}
-	addr.SetText("0.0.0.0")
-	if !strings.Contains(status.GetText(true), "reachable from your network") {
-		t.Errorf("no warning for 0.0.0.0: %q", status.GetText(true))
+	if u.app.GetFocus() != d.cport {
+		t.Errorf("the container port must have focus, got %T", u.app.GetFocus())
+	}
+	d.cport.SetText("8080")
+	if d.lport.GetText() != "8080" {
+		t.Errorf("local port did not follow: %q", d.lport.GetText())
+	}
+	if strings.Contains(d.status.GetText(true), "reachable") {
+		t.Errorf("loopback must not warn: %q", d.status.GetText(true))
+	}
+	d.addr.SetText("0.0.0.0")
+	if !strings.Contains(d.status.GetText(true), "reachable from your network") {
+		t.Errorf("no warning for 0.0.0.0: %q", d.status.GetText(true))
 	}
 
-	// Enter on a field submits; 8080 is taken, so the form stays with why.
-	cport.InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	// Enter on a field submits; 8080 is taken, so the form stays with why,
+	// and the local port — the field to correct — gets the focus.
+	press(u, tcell.KeyEnter)
 	if !u.overlayOpen() {
 		t.Fatal("a port conflict must keep the form open")
 	}
-	if txt := status.GetText(true); !strings.Contains(txt, "already forwarded") || !strings.Contains(txt, "prod") {
+	if txt := d.status.GetText(true); !strings.Contains(txt, "already forwarded") || !strings.Contains(txt, "prod") {
 		t.Errorf("conflict reason missing: %q", txt)
+	}
+	if u.app.GetFocus() != d.lport {
+		t.Errorf("a conflict must focus the local port, got %T", u.app.GetFocus())
 	}
 
 	// Esc cancels.
-	lport.InputHandler()(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone), func(tview.Primitive) {})
+	press(u, tcell.KeyEscape)
 	if u.overlayOpen() {
 		t.Error("Esc must close the form")
+	}
+}
+
+// Enter is "forward" in every field, the last one included — the form does
+// not use tview.Form's Enter-moves-on.
+func TestForwardFormEnterOnAddressSubmits(t *testing.T) {
+	u := forwardFormUI()
+	var got []forwardSpec
+	u.openForwardForm(cand("abc123456789", "api", "n1"), func(s forwardSpec) { got = append(got, s) })
+	d := openDialog(t, u)
+	d.cport.SetText("9000")
+	d.lport.SetText("9001")
+	press(u, tcell.KeyTab)
+	press(u, tcell.KeyTab)
+	if u.app.GetFocus() != d.addr {
+		t.Fatalf("two Tabs must reach the address, got %T", u.app.GetFocus())
+	}
+	press(u, tcell.KeyEnter)
+	if u.overlayOpen() {
+		t.Error("a valid form must close on Enter")
+	}
+	if want := (forwardSpec{address: "127.0.0.1", local: 9001, remote: 9000}); len(got) != 1 || got[0] != want {
+		t.Errorf("started %+v, want one %+v", got, want)
+	}
+}
+
+// Tab runs through the fields into the buttons and round again; Shift-Tab
+// goes the other way; the Forward button submits, by key and by mouse.
+func TestForwardFormButtons(t *testing.T) {
+	u := forwardFormUI()
+	var got []forwardSpec
+	u.openForwardForm(cand("abc123456789", "api", "n1"), func(s forwardSpec) { got = append(got, s) })
+	d := openDialog(t, u)
+	forward, cancel := d.buttons.GetButton(0), d.buttons.GetButton(1)
+
+	order := []tview.Primitive{d.lport, d.addr, forward, cancel, d.cport}
+	for i, want := range order {
+		press(u, tcell.KeyTab)
+		if u.app.GetFocus() != want {
+			t.Fatalf("Tab %d: focus on %T, want %T", i+1, u.app.GetFocus(), want)
+		}
+	}
+	press(u, tcell.KeyBacktab)
+	if u.app.GetFocus() != cancel {
+		t.Fatalf("Shift-Tab from the first field must wrap to Cancel, got %T", u.app.GetFocus())
+	}
+	press(u, tcell.KeyLeft)
+	if u.app.GetFocus() != forward {
+		t.Fatalf("← must move between the buttons, got %T", u.app.GetFocus())
+	}
+
+	// No container port yet: the button reports it the way Enter would.
+	press(u, tcell.KeyEnter)
+	if !u.overlayOpen() || !strings.Contains(d.status.GetText(true), "invalid container port") {
+		t.Fatalf("an empty container port must keep the form open: %q", d.status.GetText(true))
+	}
+
+	// A click on Forward submits too.
+	d.cport.SetText("8081")
+	drawForm(u, 80, 24)
+	bx, by, _, _ := forward.GetRect()
+	click := func(action tview.MouseAction) {
+		_, page := u.pages.GetFrontPage()
+		page.MouseHandler()(action, tcell.NewEventMouse(bx+1, by, tcell.Button1, tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
+	}
+	click(tview.MouseLeftDown)
+	click(tview.MouseLeftUp)
+	click(tview.MouseLeftClick)
+	if u.overlayOpen() {
+		t.Error("clicking Forward must close the form")
+	}
+	if want := (forwardSpec{address: "127.0.0.1", local: 8081, remote: 8081}); len(got) != 1 || got[0] != want {
+		t.Errorf("started %+v, want one %+v", got, want)
+	}
+}
+
+// Cancel closes without starting anything.
+func TestForwardFormCancelButton(t *testing.T) {
+	u := forwardFormUI()
+	started := false
+	u.openForwardForm(cand("abc123456789", "api", "n1"), func(forwardSpec) { started = true })
+	d := openDialog(t, u)
+	d.cport.SetText("8081")
+	press(u, tcell.KeyBacktab) // first field → last button
+	press(u, tcell.KeyEnter)
+	if u.overlayOpen() || started {
+		t.Errorf("Cancel must close without forwarding (open=%v started=%v)", u.overlayOpen(), started)
+	}
+}
+
+// drawForm renders the pages on a w×h screen and returns its rows.
+func drawForm(u *ui, w, h int) []string {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	_ = screen.Init()
+	screen.SetSize(w, h)
+	u.pages.SetRect(0, 0, w, h)
+	u.pages.Draw(screen)
+	rows := make([]string, h)
+	for y := range h {
+		var b strings.Builder
+		for x := 0; x < w; {
+			str, _, cw := screen.Get(x, y)
+			if str == "" {
+				str = " "
+			}
+			b.WriteString(str)
+			x += max(cw, 1)
+		}
+		rows[y] = b.String()
+	}
+	return rows
+}
+
+// The dialog keeps its border around everything it says: the warning and a
+// long error wrap inside it, on a roomy terminal and on a small one, where it
+// also leaves the footer rows free and still shows its buttons.
+func TestForwardFormLayout(t *testing.T) {
+	applyTheme(backdropDim) // the app's rounded borders, as the real UI draws them
+	for _, size := range [][2]int{{80, 24}, {90, 14}} {
+		w, h := size[0], size[1]
+		u := forwardFormUI()
+		u.portPrompt(cand("abc123456789", "api", "n1"))
+		d := openDialog(t, u)
+		d.addr.SetText("0.0.0.0")
+		d.cport.SetText("8080")
+		press(u, tcell.KeyEnter) // conflict: the longest status there is
+
+		rows := drawForm(u, w, h)
+		screen := strings.Join(rows, "\n")
+		for _, want := range []string{"Port Forward", "Container Port", "Local Port", "Address", "Forward ", "Cancel", "reachable from your network", "prod-eu-west-1"} {
+			if !strings.Contains(screen, want) {
+				t.Errorf("%dx%d: %q not on screen:\n%s", w, h, want, screen)
+			}
+		}
+		top, bottom := -1, -1
+		for y, r := range rows {
+			if strings.Contains(r, "╭") {
+				top = y
+			}
+			if strings.Contains(r, "╰") {
+				bottom = y
+			}
+		}
+		if top < 0 || bottom < 0 {
+			t.Fatalf("%dx%d: no dialog border:\n%s", w, h, screen)
+		}
+		// The right border is one column for the whole dialog; nothing may
+		// be drawn past it.
+		col := strings.IndexRune(string([]rune(rows[top])), '╮')
+		col = len([]rune(rows[top][:col]))
+		for y := top; y <= bottom; y++ {
+			r := []rune(rows[y])
+			if c := r[col]; c != '│' && c != '╮' && c != '╯' {
+				t.Errorf("%dx%d row %d: right border broken: %q", w, h, y, rows[y])
+			}
+			if rest := strings.TrimSpace(string(r[col+1:])); rest != "" {
+				t.Errorf("%dx%d row %d: text past the border: %q", w, h, y, rows[y])
+			}
+		}
+		if bottom >= h-overlayFooterReserve {
+			t.Errorf("%dx%d: the dialog covers the footer (bottom border on row %d)", w, h, bottom)
+		}
+		t.Logf("%dx%d:\n%s", w, h, screen)
 	}
 }

@@ -1544,7 +1544,7 @@ func (u *ui) showHelp() {
 	line(kl(km.Logs), "logs (container, service, or a whole stack)")
 	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
-	line(kl(km.Forward), "port-forward the task under the cursor (form: container port, local address, local port)")
+	line(kl(km.Forward), "port-forward the task under the cursor (form: container port, local port, address; Enter forwards from any field)")
 	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
 	line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
