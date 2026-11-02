@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -189,6 +190,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 			Name:    name,
 			Service: service,
 			Volumes: namedVolumes(c.Mounts),
+			Ports:   tcpPorts(c.Ports),
 		})
 	}
 	s.audit.ContainerList(identity, filter, len(resp.Containers))
@@ -213,6 +215,26 @@ func namedVolumes(mounts []container.MountPoint) []string {
 		}
 	}
 	return out
+}
+
+// tcpPorts returns the container-side TCP ports of a container summary,
+// deduplicated and ascending — the suggestion list a client offers for a port
+// forward.
+//
+// The summary lists a port once per host binding (IPv4 and IPv6 separately for
+// a published port) and also lists ports that are only EXPOSEd, with no binding
+// at all; PrivatePort is the container side in both cases, which is the side a
+// forward targets. UDP and SCTP are dropped because PortForward is TCP only.
+func tcpPorts(ports []container.PortSummary) []uint32 {
+	var out []uint32
+	for _, p := range ports {
+		if p.PrivatePort == 0 || (p.Type != "" && !strings.EqualFold(p.Type, "tcp")) {
+			continue
+		}
+		out = append(out, uint32(p.PrivatePort))
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // resolveService inspects the container to recover its swarm service name. A

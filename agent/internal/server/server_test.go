@@ -499,6 +499,45 @@ func TestListContainers_Filter(t *testing.T) {
 	}
 }
 
+// The ports a client suggests for a forward: container side, TCP only, one
+// entry per port however many host bindings it has, ascending. A container
+// with nothing exposed reports no ports rather than a zero.
+func TestListContainers_Ports(t *testing.T) {
+	d := newFakeDocker()
+	d.containers = []container.Summary{
+		{ID: "a1", Names: []string{"/web.1"}, Ports: []container.PortSummary{
+			{PrivatePort: 8080, Type: "tcp"},
+			{PrivatePort: 443, PublicPort: 8443, Type: "tcp"}, // IPv4 binding
+			{PrivatePort: 443, PublicPort: 8443, Type: "tcp"}, // IPv6 binding of the same port
+			{PrivatePort: 53, Type: "udp"},                    // not forwardable
+			{PrivatePort: 80, Type: "tcp"},
+		}},
+		{ID: "b2", Names: []string{"/plain"}},
+	}
+	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
+
+	resp, err := srv.ListContainers(context.Background(), &pb.ListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Containers) != 2 {
+		t.Fatalf("want 2 containers, got %d", len(resp.Containers))
+	}
+	got := resp.Containers[0].GetPorts()
+	want := []uint32{80, 443, 8080}
+	if len(got) != len(want) {
+		t.Fatalf("ports = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ports = %v, want %v", got, want)
+		}
+	}
+	if p := resp.Containers[1].GetPorts(); len(p) != 0 {
+		t.Errorf("a container exposing nothing must report no ports, got %v", p)
+	}
+}
+
 func TestListContainers_Error(t *testing.T) {
 	d := newFakeDocker()
 	d.listErr = errors.New("docker down")
