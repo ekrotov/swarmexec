@@ -49,7 +49,7 @@ func newPortForwardCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVar(&f.address, "address", "127.0.0.1",
+	fl.StringVar(&f.address, "address", defaultForwardAddress,
 		"local address to bind; loopback by default so the forwarded port is not exposed to your network")
 	fl.StringVar(&f.node, "node", "", "node hint/override for container-id targets")
 	fl.DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the agent")
@@ -69,6 +69,12 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 	localPort, remotePort, err := parsePortSpec(args[1])
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
+	}
+
+	if !isLoopbackAddr(f.address) {
+		// Same warning the TUI form shows: the internal port this reaches is
+		// now open to whoever can reach this machine.
+		fmt.Fprintf(cmd.ErrOrStderr(), "swarmexec: warning: --address %s is not loopback; the forwarded port is reachable from your network\n", f.address)
 	}
 
 	ctx := cmdContext(cmd)

@@ -16,7 +16,9 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
 ## Features
 
 - `ListContainers` — list running containers on the local node, with an
-  optional service/container-name substring filter.
+  optional service/container-name substring filter. Each entry carries the
+  container's named volumes and its exposed TCP ports (the TUI's port-forward
+  form suggests from them).
 - `Exec` — bidirectional interactive exec stream: TTY and non-TTY, terminal
   resize, correct stdout/stderr demuxing (`stdcopy`), real exit codes.
 - **Mandatory mTLS**: client certs are required and verified against a CA; the

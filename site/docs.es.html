@@ -1060,7 +1060,7 @@ rules:
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Por defecto</th><th>Descripción</th></tr></thead>
         <tbody>
-          <tr><td><code>--address</code></td><td><code>127.0.0.1</code></td><td>dirección local en la que escuchar (con loopback el puerto no queda expuesto a tu red)</td></tr>
+          <tr><td><code>--address</code></td><td><code>127.0.0.1</code></td><td>dirección local en la que escuchar (con loopback el puerto no queda expuesto a tu red); cualquier otra dirección muestra un aviso de que el puerto es accesible desde tu red</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>nodo que se usa (como pista o forzado) para destinos de tipo container-id</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>tiempo de espera para conectar con el agente</td></tr>
         </tbody>
@@ -1542,7 +1542,7 @@ services:
           <tr><td><kbd>s</kbd></td><td>activa/desactiva la agrupación por stack — árbol agrupado ⟷ lista plana de servicios (ver más abajo)</td></tr>
           <tr><td><kbd>L</kbd></td><td>logs (<kbd>L</kbd> mayúscula) — sobre un contenedor, sus propios logs; sobre un servicio, los logs agregados de todas sus tareas; sobre una fila de <strong>stack</strong>, todos los contenedores de todos los servicios del stack, con cada línea marcada <code>[svc.slot]</code> (o <code>[svc@node]</code> en un servicio global), empezando por las últimas 50 líneas de cada uno — como <code>swarmexec logs --stack</code>. Hasta 64 contenedores; la fila <em>(no stack)</em> es una agrupación, no un stack, y no abre nada</td></tr>
           <tr><td><kbd>!</kbd></td><td>abre el overlay de riesgos de seguridad para toda la lista de servicios (ver más abajo)</td></tr>
-          <tr><td><kbd>p</kbd></td><td>reenvía un puerto de la tarea bajo el cursor</td></tr>
+          <tr><td><kbd>p</kbd></td><td>reenvía un puerto de la tarea bajo el cursor — abre el formulario de reenvío (puerto del contenedor, dirección local, puerto local; ver la pestaña Forwards más abajo)</td></tr>
           <tr><td><kbd>i</kbd></td><td>inspecciona el elemento bajo el cursor — un overlay navegable con un resumen en tabla; mueve la selección con <kbd>↑</kbd>/<kbd>↓</kbd> o <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copia la línea seleccionada, una <strong>barra de pestañas</strong> en la parte superior muestra las tres vistas y <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> seleccionan directamente tabla / stats / JSON en bruto del daemon, mientras que <kbd>t</kbd> las va alternando (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> lo cierran). Sobre un <strong>servicio</strong>, el overlay también permite editarlo: <kbd>s</kbd> escalar, <kbd>f</kbd> forzar actualización, <kbd>p</kbd> puertos, <kbd>l</kbd> etiquetas, <kbd>e</kbd> env, <kbd>n</kbd> redes, <kbd>S</kbd> secretos, <kbd>v</kbd> montajes, <kbd>A</kbd> alias; <kbd>D</kbd> diagnostica <em>por qué</em> no se ejecuta en todas partes; <kbd>X</kbd> lo elimina</td></tr>
           <tr><td><kbd>X</kbd></td><td>elimina un servicio <strong>directamente desde el árbol</strong> (<kbd>X</kbd> mayúscula, es decir, Shift+x), sin pasar por el overlay de inspección. Sobre qué actúa depende de la fila bajo el cursor: en una fila de <strong>servicio</strong>, elimina ese servicio; en una fila de <strong>contenedor</strong>, elimina el <strong>servicio al que pertenece</strong> el contenedor, porque una tarea no puede eliminarse por sí sola — Swarm la volvería a programar de inmediato; en una fila de <strong>stack</strong>, elimina el <strong>stack entero</strong>, exactamente lo que elimina <code>docker stack rm</code>: todos los servicios, secretos, configs y redes que lleven la etiqueta <code>com.docker.stack.namespace</code> de ese stack. Antes de borrar nada, la confirmación indica cuántos objetos ha encontrado (&laquo;4 services, 2 secrets, 1 network&raquo;), y la eliminación de las redes se reintenta durante unos segundos, porque los endpoints de un servicio tardan un momento en liberarse después de que se detengan sus tareas &mdash; <code>docker stack rm</code> se rinde en ese punto y deja la red. Lo que no se pueda eliminar se enumera después por su nombre, para que sepas exactamente qué queda. La fila <em>(no stack)</em> no elimina nada: es una agrupación de la vista, no un stack. Pasa por la <strong>misma confirmación</strong> que la <kbd>X</kbd> del overlay de inspección (ver más abajo): <strong>borra definitivamente</strong> el servicio y detiene todas sus tareas, no se puede deshacer y, a continuación, ofrece borrar los secretos que hayan quedado huérfanos. Es una tecla mayúscula fija, no una acción reasignable del mapa de teclas; el pie la muestra en rojo como <span class="tc-red"><em>X remove</em></span> y el overlay <kbd>?</kbd> también la incluye. La <kbd>X</kbd> dentro del overlay de inspección no cambia</td></tr>
         </tbody>
@@ -2202,7 +2202,7 @@ EOF</span></pre>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>muestra el detalle completo del reenvío (incluido cualquier error)</td></tr>
           <tr><td><kbd>d</kbd></td><td>detiene el reenvío seleccionado</td></tr>
-          <tr><td><kbd>o</kbd></td><td>copia la URL del reenvío (<code>http://127.0.0.1:&lt;port&gt;</code>)</td></tr>
+          <tr><td><kbd>o</kbd></td><td>copia la URL del reenvío (<code>http://&lt;dirección&gt;:&lt;port&gt;</code>; un reenvío en <code>0.0.0.0</code> se copia como <code>127.0.0.1</code>)</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -2218,10 +2218,29 @@ EOF</span></pre>
       </p>
       <p>
         Por eso, un puerto local que ya estés usando se <strong>rechaza de entrada</strong>,
-        indicando el reenvío que lo ocupa y el clúster al que pertenece — el diálogo sigue
+        indicando el reenvío que lo ocupa y el clúster al que pertenece — el formulario sigue
         abierto para que elijas otro puerto. El «address already in use» del sistema
         operativo queda para el caso en que es correcto: un puerto ocupado por otro programa,
         que swarmexec no puede identificar.
+      </p>
+
+      <p>
+        <kbd>p</kbd> sobre un contenedor abre el <strong>formulario de reenvío</strong> con
+        tres campos: <strong>puerto del contenedor</strong>, <strong>dirección local</strong>
+        y <strong>puerto local</strong>. El puerto del contenedor se <strong>sugiere</strong>
+        a partir de los puertos reales del contenedor — los puertos de destino del endpoint
+        del servicio (del manager, funciona con cualquier agente) y los puertos que la imagen
+        declara con <code>EXPOSE</code> (del agente del nodo del contenedor; requiere un
+        agente que los informe, los agentes antiguos simplemente no aportan nada). La primera
+        sugerencia queda rellenada, la línea de ayuda enumera el resto y <kbd>↓</kbd> los
+        abre como lista desplegable; se puede seguir escribiendo cualquier otro puerto. El
+        puerto local sigue al puerto del contenedor hasta que lo cambies. La dirección local
+        es <code>127.0.0.1</code> por defecto; cualquier dirección que no sea loopback
+        (p. ej. <code>0.0.0.0</code>) muestra un aviso amarillo <em>reachable from your
+        network</em>, y la pestaña Forwards muestra también en amarillo la dirección de ese
+        reenvío. <kbd>Tab</kbd> pasa de un campo a otro, <kbd>Enter</kbd> inicia el reenvío
+        y <kbd>Esc</kbd> cancela; un error de escritura o un puerto ocupado mantienen el
+        formulario abierto con el motivo.
       </p>
 
       <h3>Pestaña Networks</h3>

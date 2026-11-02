@@ -191,6 +191,22 @@ it knows immediately.
 - A client must treat this as an ENRICHMENT. An agent that predates the RPC
   answers `Unimplemented`, and the view it decorates has to keep working.
 
+### 3.6 Container listing (normative)
+
+`ListContainers` reports the node's running containers. Two of its fields are
+derived, and how is part of the contract:
+
+- `volumes` names the **named** volumes a container mounts; bind mounts and
+  anonymous or tmpfs mounts have no name and are left out.
+- `ports` is the container's **TCP** ports, container side (Docker's
+  `PrivatePort`): those it `EXPOSE`s and those it publishes, deduplicated and
+  ascending. UDP and SCTP are left out because `PortForward` is TCP only.
+- `ports` was added after the RPC. An agent that predates it sends nothing, so
+  an empty list means "not known", never "nothing to forward". A client MUST use
+  it only as a suggestion, MUST still accept any port, and SHOULD merge it with
+  what the manager knows (a service's endpoint target ports), which works
+  against any agent.
+
 ## 4. Session Lifecycle (normative)
 
 1. Client opens the `Exec` stream.

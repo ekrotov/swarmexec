@@ -1544,7 +1544,7 @@ func (u *ui) showHelp() {
 	line(kl(km.Logs), "logs (container, service, or a whole stack)")
 	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
-	line(kl(km.Forward), "port-forward the task under the cursor")
+	line(kl(km.Forward), "port-forward the task under the cursor (form: container port, local address, local port)")
 	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
 	line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
@@ -1768,8 +1768,8 @@ func (u *ui) yankCurrent() {
 		fmt.Fprintln(&b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
 		for _, e := range forwards.list() {
 			local := "-"
-			if p := e.boundPort(); p > 0 {
-				local = fmt.Sprintf("127.0.0.1:%d", p)
+			if e.boundPort() > 0 {
+				local = e.localEndpoint()
 			}
 			fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%s\t%s\n",
 				local, e.remote, shortID(e.cand.ContainerID),

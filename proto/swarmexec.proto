@@ -88,6 +88,12 @@ message ContainerInfo {
   string name = 2;     // container name
   string service = 3;  // swarm service name if known, else empty
   repeated string volumes = 4;  // names of named volumes this container mounts
+  // TCP ports the container exposes (EXPOSE / published), container side,
+  // deduplicated and ascending. TCP only, because PortForward is TCP only: a
+  // UDP port here would be a suggestion that cannot work. Empty from agents
+  // that predate the field — a client MUST treat it as a hint, never as the
+  // list of forwardable ports.
+  repeated uint32 ports = 5;
 }
 
 message ClientMessage {
