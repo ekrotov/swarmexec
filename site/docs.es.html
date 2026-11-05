@@ -392,6 +392,18 @@
         <code>~/.docker/config.json</code> → el socket local
         <code>unix:///var/run/docker.sock</code>.
       </p>
+      <p>
+        Todas las indicaciones siguen el mismo orden. Con solo <code>$DOCKER_HOST</code>
+        definido, el contexto en uso es <code>default</code> — el que <em>es</em>
+        <code>$DOCKER_HOST</code>, como en el CLI de docker —, así que la barra de estado
+        de la TUI muestra <code>ctx default ($DOCKER_HOST)</code> y marca
+        <code>default</code> como activo en la lista de contextos, nunca el contexto
+        activo guardado en <code>config.json</code>. Cambiar a un contexto con nombre en
+        la TUI va al endpoint propio de ese contexto durante el resto de la sesión;
+        <code>default</code> sigue siendo <code>$DOCKER_HOST</code>. El cambio también
+        pasa a ser el contexto actual de docker, pero una shell que aún exporta
+        <code>$DOCKER_HOST</code> sigue yendo allí.
+      </p>
       <div class="note">
         <strong>No se requiere Docker local.</strong> El cliente nunca ejecuta el binario
         <code>docker</code>: incorpora el SDK de Docker para Go y habla directamente con la

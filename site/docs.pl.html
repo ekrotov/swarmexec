@@ -385,6 +385,18 @@
         <code>$DOCKER_HOST</code> → aktywny kontekst w <code>~/.docker/config.json</code>
         → lokalne gniazdo <code>unix:///var/run/docker.sock</code>.
       </p>
+      <p>
+        Każda etykieta stosuje tę samą kolejność. Gdy ustawiony jest tylko
+        <code>$DOCKER_HOST</code>, używanym kontekstem jest <code>default</code> — ten,
+        który <em>jest</em> <code>$DOCKER_HOST</code>, tak jak w docker CLI — więc pasek
+        stanu TUI pokazuje <code>ctx default ($DOCKER_HOST)</code> i oznacza
+        <code>default</code> jako aktywny na liście kontekstów, nigdy aktywny kontekst
+        zapisany w <code>config.json</code>. Przełączenie na nazwany kontekst w TUI
+        kieruje do własnego endpointu tego kontekstu do końca sesji;
+        <code>default</code> pozostaje <code>$DOCKER_HOST</code>. Przełączenie ustawia
+        też bieżący kontekst dockera, ale powłoka, która nadal eksportuje
+        <code>$DOCKER_HOST</code>, dalej tam trafia.
+      </p>
       <div class="note">
         <strong>Lokalny Docker nie jest potrzebny.</strong> Klient nigdy nie uruchamia
         pliku binarnego <code>docker</code> — zawiera wbudowane SDK Dockera dla Go i komunikuje
