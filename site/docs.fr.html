@@ -2240,7 +2240,7 @@ EOF</span></pre>
           <tr><td><kbd>n</kbd></td><td>crée un volume — un formulaire avec <strong>nom</strong>, <strong>driver</strong> (par défaut <code>local</code>), <strong>labels</strong> (<code>k=v,k=v</code>) et <strong>nœud</strong> cible (autocomplétion des noms de nœud&nbsp;; <strong>laissez vide pour le créer sur chaque nœud</strong>, puisque les volumes sont locaux aux nœuds). Le volume est créé par l'agent de chaque nœud cible, avec un compte rendu de succès/échec par nœud. <kbd>Tab</kbd> passe d'un champ à l'autre, <kbd>Esc</kbd> annule</td></tr>
           <tr><td><kbd>space</kbd></td><td>sélectionne / désélectionne le volume (marqué <code>▣</code>) pour une suppression groupée</td></tr>
           <tr><td><kbd>a</kbd></td><td>sélectionne / désélectionne tous les volumes actuellement affichés</td></tr>
-          <tr><td><kbd>d</kbd></td><td>supprime les volumes sélectionnés — ou celui sous le curseur — sur chaque nœud qui les héberge, après confirmation (avec une surcouche de progression&nbsp;; les suppressions s'exécutent avec un parallélisme limité)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>supprime les volumes sélectionnés — ou celui sous le curseur — sur chaque nœud qui les héberge, après confirmation (avec une surcouche de progression&nbsp;; les suppressions s'exécutent avec un parallélisme limité)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune&nbsp;: supprime tout volume qu'aucun conteneur en cours d'exécution ne monte <em>et</em> qu'aucun service ne déclare, après confirmation</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>affiche les nœuds qui hébergent le volume&nbsp;; les <strong>labels</strong> du volume sont listés en lecture seule au-dessus des nœuds (Docker n'a pas d'API de mise à jour des volumes&nbsp;: les labels ne peuvent donc pas être modifiés après coup — définissez-les à la création du volume)</td></tr>
           <tr><td><kbd>i</kbd></td><td>affiche les services/conteneurs qui l'utilisent</td></tr>
@@ -2263,7 +2263,7 @@ EOF</span></pre>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>affiche le détail complet de la redirection (y compris une éventuelle erreur)</td></tr>
-          <tr><td><kbd>d</kbd></td><td>arrête la redirection sélectionnée</td></tr>
+          <tr><td><kbd>X</kbd></td><td>arrête la redirection sélectionnée</td></tr>
           <tr><td><kbd>o</kbd></td><td>copie l'URL de la redirection (<code>http://&lt;adresse&gt;:&lt;port&gt;</code>&nbsp;; une redirection sur <code>0.0.0.0</code> est copiée en <code>127.0.0.1</code>)</td></tr>
         </tbody>
       </table></div>
@@ -2271,7 +2271,7 @@ EOF</span></pre>
         Dans l'arbre, un conteneur en cours d'exécution est annoté
         <code>local→remote</code> (p. ex. <code>9090→8080</code>). Les redirections
         continuent de fonctionner quand leur surcouche se ferme <em>et</em> quand vous
-        changez de cluster&nbsp;; elles s'arrêtent avec <kbd>d</kbd> ou quand vous quittez l'UI.
+        changez de cluster&nbsp;; elles s'arrêtent avec <kbd>X</kbd> ou quand vous quittez l'UI.
         La colonne <code>CLUSTER</code> indique le contexte auquel chacune appartient,
         atténuée pour le cluster que vous consultez — une redirection sur un autre cluster
         reste la vôtre et continue d'écouter, mais ses colonnes <code>CONTAINER</code> et
@@ -2355,7 +2355,7 @@ EOF</span></pre>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>affiche les métadonnées du secret et les services/conteneurs qui l'utilisent</td></tr>
-          <tr><td><kbd>d</kbd></td><td>dans la liste des secrets&nbsp;: <strong>supprime</strong> le secret sélectionné — définitivement (un <code>SecretRemove</code>), après confirmation&nbsp;; opération irréversible. Docker refuse de supprimer un secret encore référencé par un service&nbsp;: la confirmation <strong>avertit donc s'il est utilisé</strong> et liste ces services (détachez-le d'abord de ceux-ci). À ne pas confondre avec le <kbd>d</kbd> <em>de</em> la vue de détail, qui détache le secret d'un service</td></tr>
+          <tr><td><kbd>X</kbd></td><td>dans la liste des secrets&nbsp;: <strong>supprime</strong> le secret sélectionné — définitivement (un <code>SecretRemove</code>), après confirmation&nbsp;; opération irréversible. Docker refuse de supprimer un secret encore référencé par un service&nbsp;: la confirmation <strong>avertit donc s'il est utilisé</strong> et liste ces services (détachez-le d'abord de ceux-ci). À ne pas confondre avec le <kbd>d</kbd> <em>de</em> la vue de détail, qui détache le secret d'un service</td></tr>
           <tr><td><kbd>a</kbd></td><td>dans la vue de détail&nbsp;: attache le secret à un service — un champ avec autocomplétion (qui suggère les services ne l'utilisant pas encore&nbsp;; vous pouvez aussi saisir n'importe quel nom), puis une confirmation de la mise à jour progressive</td></tr>
           <tr><td><kbd>d</kbd></td><td>dans la vue de détail&nbsp;: détache le secret d'un service — un champ avec autocomplétion (qui suggère les services l'utilisant actuellement&nbsp;; vous pouvez aussi saisir n'importe quel nom), puis une confirmation de la mise à jour progressive</td></tr>
         </tbody>
@@ -2416,7 +2416,7 @@ EOF</span></pre>
           <tr><td><kbd>i</kbd></td><td>détails du contexte — point d'accès et hôtes de rebond, que la colonne n'a pas la place d'afficher</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>active le contexte sélectionné — en fait le contexte courant (y compris le contexte courant enregistré par docker) et bascule l'UI sur ce cluster, en conservant votre position, vos filtres et vos redirections de port</td></tr>
           <tr><td><kbd>n</kbd></td><td>crée un contexte — un formulaire <strong>guidé</strong>. Une case <strong>«&nbsp;Connect to Docker over SSH&nbsp;»</strong> détermine le point d'accès&nbsp;: cochée, vous renseignez <strong>utilisateur / hôte / port</strong> SSH, et une seconde case <strong>«&nbsp;Use a jump host&nbsp;»</strong> fait apparaître un champ <strong>jump host(s)</strong> (séparés par des virgules, <code>ProxyJump</code> à plusieurs sauts) — swarmexec les enregistre dans le contexte et ajoute <code>-J</code> aux <em>deux</em> connexions ssh, celle de l'API Docker et celle du tunnel vers l'agent, pour que les bastions fonctionnent sans modifier <code>~/.ssh/config</code>. Décochée, vous saisissez simplement un hôte <code>tcp://</code> / <code>unix://</code>. Le formulaire construit l'hôte docker pour vous, et <strong>Test</strong> vérifie le point d'accès ainsi construit avant l'enregistrement. Également en CLI&nbsp;: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
-          <tr><td><kbd>d</kbd></td><td>supprime le contexte sélectionné (après confirmation)&nbsp;; supprimer le contexte courant ramène la sélection à <code>default</code></td></tr>
+          <tr><td><kbd>X</kbd></td><td>supprime le contexte sélectionné (après confirmation)&nbsp;; supprimer le contexte courant ramène la sélection à <code>default</code></td></tr>
         </tbody>
       </table></div>
 
@@ -2681,13 +2681,16 @@ search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" doit être entre guillemets — YAML</span>
 stack_group: s
 volume_select: space               volume_select_all: a
-volume_delete: d volume_prune: P   volume_used_by: i
+volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
-context_use: u   context_new: n    context_delete: d
+context_use: u   context_new: n    context_delete: X
 node_edit_labels: l    node_availability: a    node_prune_images: P
-secret_delete: d secret_new: n
-forward_stop: d  forward_copy_url: o</div>
+secret_delete: X secret_new: n
+forward_stop: X  forward_copy_url: o</div>
+      <p>
+        Les touches destructrices — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> et <code>forward_stop</code> — sont par défaut sur le <kbd>X</kbd> majuscule, la même touche qui supprime un service ou une stack depuis l'arbre, et le pied de page ainsi que la surcouche <kbd>?</kbd> les affichent en <span class="tc-red">rouge</span>, quelle que soit la touche que vous leur attribuez. Elles étaient auparavant sur <kbd>d</kbd>&nbsp;; si vous y tenez, réaffectez-la dans <code>keys.yaml</code> — <code>volume_delete: d</code> et les autres fonctionnent toujours.
+      </p>
       <p>
         Le chargement n'échoue jamais&nbsp;: une touche invalide ou réservée, une action
         inconnue, ou deux actions associées à la même touche sur un même onglet

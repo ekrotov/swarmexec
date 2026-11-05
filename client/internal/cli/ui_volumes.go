@@ -322,7 +322,7 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 		return vimListKeys(ev)
 	})
 	help := tview.NewTextView().SetDynamicColors(true).SetText(
-		" [yellow]space[white] select  [yellow]d[white] delete selected  [yellow]a[white] delete all  [yellow]ESC[white] back")
+		" [yellow]space[white] select  " + keyTag(dangerKey("d")) + " delete selected  " + keyTag(dangerKey("a")) + " delete all  [yellow]ESC[white] back")
 	box := tview.NewFlex().SetDirection(tview.FlexRow)
 	labelH := 0
 	// The volume's labels (read-only) above the node list — Docker has no
