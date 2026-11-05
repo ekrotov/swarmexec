@@ -74,8 +74,21 @@ type vimEditor struct {
 	onMode func(vimMode)
 	// onHelp opens the help view (? and :help).
 	onHelp func()
-	// commands are extra ":" commands the owner adds (e.g. "list").
-	commands map[string]func(text string) error
+	// commands are extra ":" commands the owner adds (e.g. "list", "r"),
+	// keyed by name. arg is the rest of the line after the name (":r ~/a.pem"
+	// runs "r" with "~/a.pem"); a command that takes none should refuse one.
+	commands map[string]func(text, arg string) error
+	// onTab, when set, receives Tab (back=false) and Shift-Tab (back=true) in
+	// Normal mode, to move to a sibling field. Insert mode always types a tab.
+	onTab func(back bool)
+	// extraDirty adds the owner's own unsaved state (fields beside the text)
+	// to dirty, so :q and Esc refuse to drop it silently.
+	extraDirty func() bool
+	// posInfo, when set, is shown before the cursor position on the right of
+	// the status line (e.g. the size of the text).
+	posInfo func(text string) string
+
+	bar *tview.Flex
 }
 
 func newVimEditor(title, text string) *vimEditor {
@@ -84,10 +97,10 @@ func newVimEditor(title, text string) *vimEditor {
 	e.ta.SetWrap(true).SetWordWrap(false)
 	e.status = tview.NewTextView().SetDynamicColors(true)
 	e.pos = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
-	bar := tview.NewFlex().AddItem(e.status, 0, 1, false).AddItem(e.pos, 22, 0, false)
+	e.bar = tview.NewFlex().AddItem(e.status, 0, 1, false).AddItem(e.pos, 22, 0, false)
 	e.root = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(e.ta, 0, 1, true).
-		AddItem(bar, 1, 0, false)
+		AddItem(e.bar, 1, 0, false)
 	e.root.SetBorder(true).SetTitle(" " + tview.Escape(title) + " ")
 	e.ta.SetInputCapture(e.capture)
 	e.ta.SetMovedFunc(e.render)
@@ -96,8 +109,11 @@ func newVimEditor(title, text string) *vimEditor {
 	return e
 }
 
-// dirty reports whether the text differs from what the editor opened with.
-func (e *vimEditor) dirty() bool { return e.ta.GetText() != e.initial }
+// dirty reports whether the text differs from what the editor opened with, or
+// the owner has unsaved state of its own.
+func (e *vimEditor) dirty() bool {
+	return e.ta.GetText() != e.initial || e.extraDirty != nil && e.extraDirty()
+}
 
 // cursor returns the cursor's byte offset into the text.
 func (e *vimEditor) cursor() int {
@@ -152,7 +168,14 @@ func (e *vimEditor) render() {
 	if e.dirty() {
 		mod = "[yellow]modified[-]  "
 	}
-	e.pos.SetText(fmt.Sprintf("%s%d:%d ", mod, line, col))
+	right := fmt.Sprintf("%s%d:%d ", mod, line, col)
+	if e.posInfo != nil {
+		right = e.posInfo(text) + "  " + right
+		// Grow the right-hand cell to fit, so the size never pushes the
+		// cursor position out of view.
+		e.bar.ResizeItem(e.pos, max(22, tview.TaggedStringWidth(right)+1), 0)
+	}
+	e.pos.SetText(right)
 	e.status.SetText(left)
 }
 
@@ -398,6 +421,10 @@ func (e *vimEditor) normalKey(ev *tcell.EventKey) {
 	case r == '?':
 		if e.onHelp != nil {
 			e.onHelp()
+		}
+	case ev.Key() == tcell.KeyTab || ev.Key() == tcell.KeyBacktab:
+		if e.onTab != nil {
+			e.onTab(ev.Key() == tcell.KeyBacktab)
 		}
 	case ev.Key() == tcell.KeyEscape:
 		// Escape in Normal mode cancels a half-typed command; with nothing
@@ -766,8 +793,9 @@ func (e *vimEditor) run(cmd string) {
 			e.onHelp()
 		}
 	default:
-		if fn, ok := e.commands[c]; ok {
-			if err := fn(e.ta.GetText()); err != nil {
+		name, arg, _ := strings.Cut(c, " ")
+		if fn, ok := e.commands[name]; ok {
+			if err := fn(e.ta.GetText(), strings.TrimSpace(arg)); err != nil {
 				e.showErr(err)
 			}
 			return
@@ -805,6 +833,15 @@ func (e *vimEditor) quit(force bool) {
 	if e.onQuit != nil {
 		e.onQuit()
 	}
+}
+
+// insertAt inserts s before the cursor, as one undo step, and leaves the
+// cursor on the first inserted character, where vim's :r leaves it too.
+func (e *vimEditor) insertAt(s string) {
+	pos := e.cursor()
+	e.ta.Replace(pos, pos, s)
+	e.moveCol(e.ta.GetText(), pos)
+	e.render()
 }
 
 // markSaved makes the current text the clean state (after a successful :w

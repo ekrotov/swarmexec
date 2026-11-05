@@ -2291,6 +2291,7 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>crea un secreto nuevo — abre el <a href="#secret-editor">editor de secretos</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>muestra los metadatos del secreto y los servicios/contenedores que lo usan</td></tr>
           <tr><td><kbd>d</kbd></td><td>en la lista de secretos: <strong>elimina</strong> el secreto seleccionado — lo borra definitivamente (un único <code>SecretRemove</code>), previa confirmación; no se puede deshacer. Docker se niega a eliminar un secreto al que todavía hace referencia un servicio, así que la confirmación <strong>avisa si está en uso</strong> y lista esos servicios (desvincúlalo primero de esos servicios). No hay que confundirla con la <kbd>d</kbd> <em>dentro</em> de la vista de detalle, que desvincula el secreto de un servicio</td></tr>
           <tr><td><kbd>a</kbd></td><td>en la vista de detalle: adjunta el secreto a un servicio — un campo con autocompletado (sugiere servicios que aún no lo usan; también puedes escribir cualquier nombre) y, después, la confirmación de la actualización progresiva</td></tr>
@@ -2304,6 +2305,37 @@ EOF</span></pre>
         refresca la pestaña Secrets. Igual que al conectar/desconectar redes, cada operación
         es un <code>ServiceUpdate</code> de la API del manager que desencadena una
         <strong>actualización progresiva</strong> que reinicia las tareas del servicio.
+      </p>
+      <h4 id="secret-editor">El editor de secretos</h4>
+      <p>
+        <kbd>n</kbd> abre un único diálogo grande: arriba <strong>Name</strong> y
+        <strong>Labels</strong> (<code>k=v,k=v</code>, opcional) y, debajo, el valor en el
+        mismo editor al estilo vim que el <a href="#env-editor">editor de entorno</a>, que
+        ocupa toda la altura restante (y más pantalla en un terminal grande). El foco
+        empieza en Name. <kbd>Tab</kbd> / <kbd>Enter</kbd> pasan de Name a Labels y al
+        valor, <kbd>Shift-Tab</kbd> vuelve atrás; en el valor, <kbd>Tab</kbd> solo cambia de
+        campo en modo Normal — en modo Insert escribe un tabulador, que los ficheros pueden
+        necesitar. <kbd>Esc</kbd> en Name o Labels va al valor, o cierra el diálogo mientras
+        no se haya introducido nada. La línea de estado muestra el tamaño del valor en
+        líneas y bytes, en rojo en cuanto supera el límite.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Teclas</th><th>Acción</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>:r</kbd> fichero</td><td>inserta un fichero <strong>local</strong> en el cursor (también <kbd>:read</kbd>; <code>~</code> se expande a tu directorio personal, una ruta relativa es relativa al directorio donde se ejecuta swarmexec) — la forma práctica de crear un secreto a partir de un certificado, una clave o un fichero JSON</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>crea el secreto (también <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>; <kbd>Ctrl-S</kbd> funciona también en Name y Labels). Un nombre vacío, etiquetas mal formadas, un valor vacío o uno por encima del límite se indican en la línea de estado y el diálogo sigue abierto</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancela; <kbd>:q</kbd> se niega en cuanto se ha introducido algo (el nombre y las etiquetas cuentan), <kbd>:q!</kbd> lo descarta</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        El valor se envía <strong>byte a byte</strong> tal como lo tiene el editor: no se
+        añade ni se quita ningún salto de línea final, así que una contraseña escrita es
+        exactamente lo que escribiste, y un fichero leído con <kbd>:r</kbd> conserva sus
+        propios finales de línea y su salto de línea final. Swarm limita un secreto a
+        <strong>500&nbsp;KB</strong> (512000 bytes). El editor solo admite texto:
+        <kbd>:r</kbd> rechaza un fichero que no sea UTF-8 o que contenga bytes NUL — crea un
+        secreto binario (un keystore, un certificado DER) con
+        <code>docker secret create NAME FILE</code>.
       </p>
 
       <h3>Barra lateral de contextos</h3>

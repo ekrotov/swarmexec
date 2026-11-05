@@ -2263,6 +2263,7 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>utwórz nowy sekret — otwiera <a href="#secret-editor">edytor sekretów</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>pokaż metadane sekretu oraz usługi/kontenery, które go używają</td></tr>
           <tr><td><kbd>d</kbd></td><td>na liście sekretów: <strong>usuń</strong> zaznaczony sekret — trwale go usuwa (jedno <code>SecretRemove</code>), po potwierdzeniu; nie da się tego cofnąć. Docker odmawia usunięcia sekretu, do którego wciąż odwołuje się jakaś usługa, więc potwierdzenie <strong>ostrzega, gdy sekret jest w użyciu</strong> i wypisuje te usługi (najpierw odłącz go od nich). Nie mylić z <kbd>d</kbd> <em>wewnątrz</em> widoku szczegółów, który odłącza sekret od usługi</td></tr>
           <tr><td><kbd>a</kbd></td><td>w widoku szczegółów: podłącz sekret do usługi — pole z autouzupełnianiem (podpowiada usługi, które go jeszcze nie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
@@ -2276,6 +2277,37 @@ EOF</span></pre>
         się odświeża. Tak jak przy podłączaniu/odłączaniu sieci, każda z tych operacji to
         <code>ServiceUpdate</code> w API menedżera, które wyzwala
         <strong>aktualizację kroczącą</strong> restartującą zadania usługi.
+      </p>
+      <h4 id="secret-editor">Edytor sekretów</h4>
+      <p>
+        <kbd>n</kbd> otwiera jedno duże okno: na górze <strong>Name</strong> i
+        <strong>Labels</strong> (<code>k=v,k=v</code>, opcjonalnie), pod nimi wartość w tym
+        samym edytorze w stylu vim co <a href="#env-editor">edytor zmiennych środowiskowych</a>,
+        zajmującym całą pozostałą wysokość (a na dużym terminalu większą część ekranu).
+        Fokus zaczyna się na Name. <kbd>Tab</kbd> / <kbd>Enter</kbd> przechodzą Name →
+        Labels → wartość, <kbd>Shift-Tab</kbd> cofa; w wartości <kbd>Tab</kbd> przełącza pole
+        tylko w trybie Normal — w trybie Insert wstawia tabulator, którego pliki mogą
+        potrzebować. <kbd>Esc</kbd> w Name lub Labels przechodzi do wartości albo zamyka
+        okno, dopóki nic nie wpisano. Linia statusu pokazuje rozmiar wartości w liniach i
+        bajtach, na czerwono, gdy przekracza limit.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Klawisze</th><th>Akcja</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>:r</kbd> plik</td><td>wstaw <strong>lokalny</strong> plik w miejscu kursora (także <kbd>:read</kbd>; <code>~</code> rozwija się do katalogu domowego, ścieżka względna liczy się od katalogu, w którym działa swarmexec) — praktyczny sposób na utworzenie sekretu z certyfikatu, klucza lub pliku JSON</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>utwórz sekret (także <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>; <kbd>Ctrl-S</kbd> działa też w Name i Labels). Pusta nazwa, błędne etykiety, pusta wartość lub wartość ponad limit są zgłaszane w linii statusu, a okno pozostaje otwarte</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>anuluj; <kbd>:q</kbd> odmawia, gdy cokolwiek wpisano (nazwa i etykiety też się liczą), <kbd>:q!</kbd> to odrzuca</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Wartość jest wysyłana <strong>bajt w bajt</strong> tak, jak trzyma ją edytor: żaden
+        końcowy znak nowej linii nie jest dodawany ani usuwany, więc wpisane hasło to
+        dokładnie to, co wpisano, a plik wczytany przez <kbd>:r</kbd> zachowuje własne
+        zakończenia linii i końcowy znak nowej linii. Swarm ogranicza sekret do
+        <strong>500&nbsp;KB</strong> (512000 bajtów). Edytor przechowuje tylko tekst:
+        <kbd>:r</kbd> odrzuca plik, który nie jest w UTF-8 lub zawiera bajty NUL — sekret
+        binarny (keystore, certyfikat DER) utwórz zamiast tego przez
+        <code>docker secret create NAME FILE</code>.
       </p>
 
       <h3>Panel boczny kontekstów</h3>
