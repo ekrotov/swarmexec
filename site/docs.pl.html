@@ -746,9 +746,107 @@ swarmexec stack deploy web.yml --force    # wdróż mimo znalezisk, świadomie</
         sprawdzane <strong>najpierw</strong>, bo nieistniejąca sieć to najczęstszy powód
         zatrzymania wdrożenia w połowie. Istniejący <strong>sekret nigdy nie jest
         nadpisywany</strong>: jego wartość jest w swarmie niezmienna, więc zmiana oznacza
-        utworzenie nowego pod nową nazwą. Jeśli wdrożenie mimo to zawiedzie w trakcie, to,
+        utworzenie nowego pod nową nazwą — albo rotację pod tą samą za pomocą
+        <a href="#secretrotate"><code>secret rotate</code></a>. Jeśli wdrożenie mimo to zawiedzie w trakcie, to,
         co już zostało zastosowane, jest raportowane wraz z błędem, a nie pozostawione do
         odgadnięcia.
+      </p>
+
+      <h3 id="secretrotate"><code>secret rotate</code> — nowa zawartość, ta sama nazwa</h3>
+      <p>
+        Nadaje sekretowi nową zawartość <strong>bez zmiany nazwy</strong>, więc pliki
+        stacków i specyfikacje usług, które go wymieniają, zostają bez zmian. Sekrety
+        Swarma są niezmienne, a sekretu, do którego odwołuje się jeszcze jakaś usługa, nie
+        da się usunąć — dlatego zwykle wybiera się nową nazwę (<code>db_password_v2</code>)
+        i poprawia ją wszędzie, gdzie jest używana. Zamiast tego każda usługa używająca
+        sekretu zostaje „zaparkowana” na tymczasowym sekrecie, a oryginał jest w tym czasie
+        podmieniany:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Krok</th><th>Co się dzieje</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>tworzy <code>NAME_rotating</code> z nową zawartością — etykiety NAME plus etykieta-znacznik <code>swarmexec.rotating-for=NAME</code></td></tr>
+          <tr><td>2</td><td>przełącza <strong>każdą</strong> usługę używającą NAME na <code>NAME_rotating</code> — jeden <code>ServiceUpdate</code> na usługę, potem czeka, aż jej aktualizacja krocząca się zakończy</td></tr>
+          <tr><td>3</td><td>usuwa stary NAME, do którego nic już się nie odwołuje</td></tr>
+          <tr><td>4</td><td>tworzy NAME ponownie: nowa zawartość, <strong>oryginalne etykiety</strong> (łącznie z <code>com.docker.stack.namespace</code>, więc <code>docker stack rm</code> nadal go usuwa)</td></tr>
+          <tr><td>5</td><td>przełącza każdą usługę z powrotem na nowy NAME i znów czeka na zakończenie aktualizacji</td></tr>
+          <tr><td>6</td><td>usuwa <code>NAME_rotating</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="cmd">swarmexec secret rotate <span class="k">&lt;name&gt;</span> (--from-file FILE | --from-stdin) [--yes] [--timeout 5m]</div>
+      <div class="prompt"><span class="c">$</span> swarmexec secret rotate db_password --from-file ./db_password.txt
+<span class="c">$</span> printf %s "$NEW_TOKEN" | swarmexec secret rotate api_token --from-stdin --yes</div>
+      <p>
+        <strong>Zmienia się tylko sekret za każdym montowaniem.</strong> Ścieżka docelowa,
+        uid, gid i tryb każdego odwołania pozostają dokładnie takie same, a pozostałe
+        sekrety usługi nie są ruszane — w kontenerze ten sam plik zawiera nowe bajty.
+        Przełączane są wszystkie usługi używające sekretu, bez wyboru: stary obiekt może
+        zniknąć dopiero wtedy, gdy nic się do niego nie odwołuje. Usługa przeskalowana do 0
+        albo globalna bez odpowiedniego węzła i tak dostaje zaktualizowaną specyfikację;
+        po prostu nie ma zadań, na które trzeba czekać. Aktualizacja usługi, która zderzy
+        się z inną zmianą (<em>update out of sequence</em>), jest ponawiana na świeżo
+        odczytanym stanie.
+      </p>
+      <p>
+        <strong>Każda usługa restartuje się dwa razy</strong> — dwie aktualizacje kroczące,
+        zgodnie z jej własnym <code>update_config</code>. Usługi są przełączane po jednej i
+        każda musi się ustabilizować (żadne zadanie nie używa już starego sekretu, każde nowe
+        działa, a Swarm nie zgłasza aktualizacji jako wstrzymanej ani wycofanej), zanim
+        zacznie się następna; <code>--timeout</code> ogranicza każde z tych oczekiwań.
+        Postęp trafia na stderr, jedna linia na krok i usługę. Wartość <strong>nigdy nie
+        jest wypisywana</strong>.
+      </p>
+      <p>
+        <strong>Nie ma powrotu do starej zawartości</strong>: stary obiekt sekretu jest
+        usuwany w kroku 3. Późniejszy <code>docker service rollback</code> celowałby w
+        <code>NAME_rotating</code>, którego też już nie ma — jeśli stara wartość może się
+        przydać, zachowaj ją sam.
+      </p>
+      <p>
+        <strong>Sekrety z pliku stacka.</strong> Jeśli sekret utworzył
+        <code>docker stack deploy</code> z <code>file:</code>, swarmexec tego pliku nie
+        widzi: wpisz tam również nową zawartość. Inaczej następne wdrożenie zakończy się
+        błędem <em>only updates to Labels are allowed</em>, bo zawartość pliku nie zgadza
+        się już z sekretem. Sekret zadeklarowany w stacku jako <code>external: true</code>
+        nie ma tego problemu. Potwierdzenie pokazuje tę wskazówkę zawsze, gdy sekret ma
+        etykietę stacka.
+      </p>
+      <p>
+        <strong>Wznawianie.</strong> Jeśli przebieg zatrzyma się w połowie — przekroczony
+        czas, wstrzymana aktualizacja, zerwane połączenie, zabity proces — usługi zostają na
+        <code>NAME_rotating</code>, który zawiera już nową zawartość: to stan działający, a
+        nie zepsuty. Uruchom to samo polecenie jeszcze raz — odczyta z samego klastra, gdzie
+        zatrzymał się poprzedni przebieg, i będzie kontynuować od tego miejsca: usługi
+        nadal na NAME → krok 2; NAME nie istnieje → krok 4; NAME utworzony ponownie i w
+        użyciu → krok 5. Każdy krok przed działaniem odczytuje klaster na nowo, więc jego
+        powtórzenie jest nieszkodliwe. Nową wartość trzeba podać ponownie (API nie pozwala
+        odczytać sekretu); gdy NAME został już utworzony ponownie i usługi go używają,
+        zachowuje zawartość z przebiegu, który go utworzył, i potwierdzenie o tym mówi.
+        <code>NAME_rotating</code> <strong>bez</strong> etykiety-znacznika to cudzy sekret:
+        rotacja odmawia startu, zamiast go ruszać.
+      </p>
+      <p>
+        Sekret, <strong>którego nie używa żadna usługa</strong>, przechodzi te same kroki,
+        tylko nie ma czego przełączać — nic się nie restartuje. Bezpośrednie usunięcie i
+        ponowne utworzenie oszczędziłoby dwa wywołania API, ale zostawiłoby moment, w którym
+        NAME nie istnieje, a jego etykiety są tylko w procesie, który może paść; tymczasowy
+        sekret przechowuje je w klastrze, więc i ten przypadek da się wznowić jak każdy inny.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--from-file</code></td><td>—</td><td>czyta nową wartość z tego pliku, bajt w bajt (dane binarne są tu w porządku)</td></tr>
+          <tr><td><code>--from-stdin</code></td><td><code>false</code></td><td>czyta nową wartość ze stdin, bajt w bajt — <code>echo</code> dodaje znak nowej linii, <code>printf %s</code> nie</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nie pytaj. Bez tej flagi wypisywane są usługi, których to dotyczy, wraz ze ścieżkami docelowymi, a odpowiedź <code>y/N</code> jest czytana z terminala; bez terminala (lub z <code>--from-stdin</code>) polecenie bez <code>--yes</code> odmawia</td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>jak długo czekać na zakończenie aktualizacji kroczącej każdej usługi</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Wartość nie może być pusta i jest ograniczona do 500&nbsp;KB — sprawdzane, zanim
+        cokolwiek zostanie ruszone. Kod wyjścia <strong>0</strong> oznacza udaną rotację;
+        <strong>1</strong> błąd (komunikat podaje krok i sposób wznowienia, jeśli jest co
+        wznawiać); <strong>2</strong> błąd użycia; <strong>125</strong> niedostępny
+        manager. W TUI to samo robi <kbd>r</kbd> w widoku szczegółów sekretu.
       </p>
 
       <h3 id="monitoring">Monitorowanie agentów</h3>
@@ -2268,6 +2366,7 @@ EOF</span></pre>
           <tr><td><kbd>X</kbd></td><td>na liście sekretów: <strong>usuń</strong> zaznaczony sekret — trwale go usuwa (jedno <code>SecretRemove</code>), po potwierdzeniu; nie da się tego cofnąć. Docker odmawia usunięcia sekretu, do którego wciąż odwołuje się jakaś usługa, więc potwierdzenie <strong>ostrzega, gdy sekret jest w użyciu</strong> i wypisuje te usługi (najpierw odłącz go od nich). Nie mylić z <kbd>d</kbd> <em>wewnątrz</em> widoku szczegółów, który odłącza sekret od usługi</td></tr>
           <tr><td><kbd>a</kbd></td><td>w widoku szczegółów: podłącz sekret do usługi — pole z autouzupełnianiem (podpowiada usługi, które go jeszcze nie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
           <tr><td><kbd>d</kbd></td><td>w widoku szczegółów: odłącz sekret od usługi — pole z autouzupełnianiem (podpowiada usługi, które go obecnie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
+          <tr><td><kbd>r</kbd></td><td>w widoku szczegółów: <strong>rotacja</strong> — nadaj sekretowi nową zawartość, zachowując nazwę (<a href="#secretrotate">jak to działa</a>). Otwiera <a href="#secret-editor">edytor sekretów</a> z nazwą i etykietami widocznymi, ale niezmiennymi, oraz pustą wartością do wpisania lub wczytania przez <kbd>:r</kbd> plik; <kbd>:w</kbd> wypisuje usługi, które się zrestartują, wraz ze ścieżkami docelowymi, ostrzega, że każda restartuje się dwa razy i że nie ma wycofania, a dla sekretu ze stacka dodaje wskazówkę o <code>file:</code>. Po potwierdzeniu nakładka postępu śledzi sześć kroków (<kbd>Esc</kbd> ją ukrywa, rotacja trwa dalej); sukces jest krótko sygnalizowany, błąd podaje krok i to, że ponowne <kbd>r</kbd> na sekrecie wznawia rotację. Na wierszu <code>NAME_rotating</code> przerwanej rotacji <kbd>r</kbd> wznawia rotację NAME</td></tr>
         </tbody>
       </table></div>
       <p>

@@ -758,9 +758,110 @@ swarmexec stack deploy web.yml --force    # trotz Befunden ausrollen, bewusst</d
         werden <strong>zuerst</strong> geprüft, denn ein fehlendes externes Netzwerk ist der
         häufigste Grund, warum ein Deploy auf halber Strecke stehen bleibt. Ein vorhandenes
         <strong>Secret wird nie überschrieben</strong>: sein Wert ist in Swarm unveränderlich,
-        ein Secret zu ändern heißt, ein neues unter neuem Namen anzulegen. Scheitert ein
+        ein Secret zu ändern heißt, ein neues unter neuem Namen anzulegen — oder es unter
+        demselben Namen mit <a href="#secretrotate"><code>secret rotate</code></a> zu rotieren. Scheitert ein
         Deploy doch mittendrin, wird das bereits Angewandte zusammen mit dem Fehler
         gemeldet, statt es erraten zu lassen.
+      </p>
+
+      <h3 id="secretrotate"><code>secret rotate</code> — neuer Inhalt, gleicher Name</h3>
+      <p>
+        Gibt einem Secret neuen Inhalt, <strong>ohne es umzubenennen</strong> — die
+        Stack-Dateien und Service-Specs, die es nennen, bleiben, wie sie sind. Swarm-Secrets
+        sind unveränderlich, und eines, auf das ein Service noch verweist, lässt sich nicht
+        entfernen — deshalb ist die übliche Antwort ein neuer Name
+        (<code>db_password_v2</code>) und eine Änderung überall, wo er benutzt wird.
+        Stattdessen wird jeder Service, der das Secret nutzt, auf einem temporären Secret
+        geparkt, während das Original darunter ersetzt wird:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Schritt</th><th>Was passiert</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>NAME_rotating</code> mit dem neuen Inhalt anlegen — die Labels von NAME plus das Marker-Label <code>swarmexec.rotating-for=NAME</code></td></tr>
+          <tr><td>2</td><td><strong>jeden</strong> Service, der NAME nutzt, auf <code>NAME_rotating</code> umstellen — ein <code>ServiceUpdate</code> pro Service, dann warten, bis sein Rolling Update konvergiert ist</td></tr>
+          <tr><td>3</td><td>das alte NAME entfernen, auf das nichts mehr verweist</td></tr>
+          <tr><td>4</td><td>NAME neu anlegen: der neue Inhalt, die <strong>ursprünglichen Labels</strong> (inklusive <code>com.docker.stack.namespace</code>, sodass <code>docker stack rm</code> es weiterhin entfernt)</td></tr>
+          <tr><td>5</td><td>jeden Service zurück auf das neue NAME umstellen und wieder auf die Konvergenz warten</td></tr>
+          <tr><td>6</td><td><code>NAME_rotating</code> entfernen</td></tr>
+        </tbody>
+      </table></div>
+      <div class="cmd">swarmexec secret rotate <span class="k">&lt;name&gt;</span> (--from-file FILE | --from-stdin) [--yes] [--timeout 5m]</div>
+      <div class="prompt"><span class="c">$</span> swarmexec secret rotate db_password --from-file ./db_password.txt
+<span class="c">$</span> printf %s "$NEW_TOKEN" | swarmexec secret rotate api_token --from-stdin --yes</div>
+      <p>
+        <strong>Nur das Secret hinter jedem Mount ändert sich.</strong> Zielpfad, UID, GID
+        und Mode jeder Referenz bleiben genau so, wie sie waren, und die anderen Secrets
+        eines Service werden nicht angefasst — im Container enthält dieselbe Datei die
+        neuen Bytes. Alle Services, die das Secret nutzen, werden umgestellt, ohne Auswahl:
+        das alte Objekt kann erst weg, wenn nichts mehr darauf verweist. Ein auf 0
+        skalierter Service oder ein globaler ohne passenden Node bekommt seine Spec trotzdem
+        aktualisiert; er hat nur keine Tasks, auf die gewartet werden müsste. Ein
+        Service-Update, das mit einer anderen Änderung kollidiert (<em>update out of
+        sequence</em>), wird mit frisch gelesenem Stand wiederholt.
+      </p>
+      <p>
+        <strong>Jeder Service startet zweimal neu</strong> — zwei Rolling Updates, nach der
+        <code>update_config</code> des Service selbst. Es wird ein Service nach dem anderen
+        umgestellt, und jeder muss konvergieren (kein Task mehr auf dem alten Secret, jeder
+        neue läuft, Swarm meldet das Update nicht als pausiert oder zurückgerollt), bevor
+        der nächste beginnt; <code>--timeout</code> begrenzt jede dieser Wartezeiten. Der
+        Fortschritt geht nach stderr, eine Zeile pro Schritt und Service. Der Wert wird
+        <strong>nie ausgegeben</strong>.
+      </p>
+      <p>
+        <strong>Es gibt kein Zurück zum alten Inhalt</strong>: das alte Secret-Objekt wird in
+        Schritt 3 gelöscht. Ein <code>docker service rollback</code> danach würde auf
+        <code>NAME_rotating</code> zielen, das ebenfalls weg ist — heb den alten Wert selbst
+        auf, wenn du ihn noch brauchen könntest.
+      </p>
+      <p>
+        <strong>Secrets aus einer Stack-Datei.</strong> Wurde das Secret von
+        <code>docker stack deploy</code> aus einem <code>file:</code> angelegt, kann
+        swarmexec diese Datei nicht sehen: leg den neuen Inhalt auch dort ab. Sonst scheitert
+        das nächste Deploy mit <em>only updates to Labels are allowed</em>, weil der Inhalt
+        der Datei nicht mehr zu dem des Secrets passt. Ein Secret, das der Stack als
+        <code>external: true</code> deklariert, hat dieses Problem nicht. Die Bestätigung
+        zeigt das als Hinweis, sobald das Secret ein Stack-Label trägt.
+      </p>
+      <p>
+        <strong>Fortsetzen.</strong> Bricht ein Lauf mittendrin ab — ein Timeout, ein
+        pausiertes Update, eine verlorene Verbindung, ein beendeter Prozess —, bleiben die
+        Services auf <code>NAME_rotating</code>, das bereits den neuen Inhalt hält: ein
+        funktionierender Zustand, kein kaputter. Führ denselben Befehl noch einmal aus, und
+        er liest aus dem Cluster selbst, wo der letzte Lauf aufgehört hat, und macht dort
+        weiter: Services noch auf NAME → Schritt 2; NAME weg → Schritt 4; NAME neu angelegt
+        und in Benutzung → Schritt 5. Jeder Schritt liest den Cluster neu, bevor er handelt,
+        daher schadet es nicht, einen zu wiederholen. Der neue Wert muss erneut angegeben
+        werden (die API kann ein Secret nicht zurücklesen); sobald NAME neu angelegt ist und
+        Services es nutzen, behält es den Inhalt des Laufs, der es angelegt hat, und die
+        Bestätigung sagt das. Ein <code>NAME_rotating</code> <strong>ohne</strong> das
+        Marker-Label gehört jemand anderem: die Rotation startet dann gar nicht erst, statt
+        es anzufassen.
+      </p>
+      <p>
+        Ein Secret, das <strong>kein Service nutzt</strong>, durchläuft dieselben Schritte,
+        nur gibt es nichts umzustellen — nichts startet neu. Es direkt zu entfernen und neu
+        anzulegen, spart zwei API-Aufrufe, ließe aber einen Moment, in dem NAME weg ist und
+        seine Labels nur in einem Prozess existieren, der sterben könnte; das temporäre
+        Secret hält sie im Cluster fest, sodass auch dieser Fall wie jeder andere
+        fortgesetzt werden kann.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>--from-file</code></td><td>—</td><td>den neuen Wert aus dieser Datei lesen, Byte für Byte (binär ist hier in Ordnung)</td></tr>
+          <tr><td><code>--from-stdin</code></td><td><code>false</code></td><td>den neuen Wert von stdin lesen, Byte für Byte — <code>echo</code> hängt einen Zeilenumbruch an, <code>printf %s</code> nicht</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nicht nachfragen. Ohne diese Option werden die betroffenen Services und ihre Zielpfade aufgelistet und eine <code>y/N</code>-Antwort vom Terminal gelesen; ohne Terminal (oder mit <code>--from-stdin</code>) verweigert der Befehl ohne <code>--yes</code></td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>wie lange auf die Konvergenz des Rolling Updates jedes Service gewartet wird</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Der Wert darf nicht leer sein und ist auf 500&nbsp;KB begrenzt; geprüft wird, bevor
+        irgendetwas angefasst wird. Exit-Code <strong>0</strong> heißt rotiert;
+        <strong>1</strong> ein Fehler (die Meldung nennt den Schritt und, wenn es etwas
+        fortzusetzen gibt, wie); <strong>2</strong> ein Bedienfehler; <strong>125</strong> ein
+        nicht erreichbarer Manager. In der TUI tut <kbd>r</kbd> in der Detailansicht eines
+        Secrets dasselbe.
       </p>
 
       <h3 id="monitoring">Agents überwachen</h3>
@@ -2312,6 +2413,7 @@ EOF</span></pre>
           <tr><td><kbd>X</kbd></td><td>in der Secret-Liste: das ausgewählte Secret <strong>löschen</strong> — entfernt es dauerhaft (ein <code>SecretRemove</code>), hinter einer Bestätigung; nicht rückgängig zu machen. Docker verweigert das Entfernen eines Secrets, das noch ein Service referenziert, deshalb <strong>warnt die Bestätigung, wenn es verwendet wird</strong>, und nennt diese Services (dort zuerst lösen). Nicht zu verwechseln mit dem <kbd>d</kbd> <em>in</em> der Detailansicht, das das Secret von einem Service löst</td></tr>
           <tr><td><kbd>a</kbd></td><td>in der Detailansicht: das Secret an einen Service anhängen — eine Autocomplete-Eingabe (schlägt Services vor, die es noch nicht verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
           <tr><td><kbd>d</kbd></td><td>in der Detailansicht: das Secret von einem Service trennen — eine Autocomplete-Eingabe (schlägt Services vor, die es aktuell verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
+          <tr><td><kbd>r</kbd></td><td>in der Detailansicht: <strong>rotieren</strong> — dem Secret neuen Inhalt geben und seinen Namen behalten (<a href="#secretrotate">wie das funktioniert</a>). Öffnet den <a href="#secret-editor">Secret-Editor</a> mit Name und Labels angezeigt, aber fest, und einem leeren Wert zum Tippen oder zum Einlesen einer Datei mit <kbd>:r</kbd>; <kbd>:w</kbd> listet die Services, die neu starten, mit ihren Zielpfaden, warnt, dass jeder zweimal neu startet und es kein Zurück gibt, und ergänzt bei einem Stack-Secret den <code>file:</code>-Hinweis. Nach der Bestätigung verfolgt ein Fortschritts-Overlay die sechs Schritte (<kbd>Esc</kbd> blendet es aus, die Rotation läuft weiter); Erfolg wird kurz eingeblendet, ein Fehler nennt den Schritt und dass erneutes <kbd>r</kbd> auf dem Secret fortsetzt. Auf der Zeile <code>NAME_rotating</code> einer unterbrochenen Rotation setzt <kbd>r</kbd> die Rotation von NAME fort</td></tr>
         </tbody>
       </table></div>
       <p>
