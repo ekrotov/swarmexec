@@ -2354,6 +2354,7 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>crée un nouveau secret — ouvre l'<a href="#secret-editor">éditeur de secret</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>affiche les métadonnées du secret et les services/conteneurs qui l'utilisent</td></tr>
           <tr><td><kbd>X</kbd></td><td>dans la liste des secrets&nbsp;: <strong>supprime</strong> le secret sélectionné — définitivement (un <code>SecretRemove</code>), après confirmation&nbsp;; opération irréversible. Docker refuse de supprimer un secret encore référencé par un service&nbsp;: la confirmation <strong>avertit donc s'il est utilisé</strong> et liste ces services (détachez-le d'abord de ceux-ci). À ne pas confondre avec le <kbd>d</kbd> <em>de</em> la vue de détail, qui détache le secret d'un service</td></tr>
           <tr><td><kbd>a</kbd></td><td>dans la vue de détail&nbsp;: attache le secret à un service — un champ avec autocomplétion (qui suggère les services ne l'utilisant pas encore&nbsp;; vous pouvez aussi saisir n'importe quel nom), puis une confirmation de la mise à jour progressive</td></tr>
@@ -2367,6 +2368,38 @@ EOF</span></pre>
         se rafraîchit ensuite. Comme pour l'attachement/le détachement de réseaux, chaque
         opération est un <code>ServiceUpdate</code> de l'API du manager qui déclenche une
         <strong>mise à jour progressive</strong> redémarrant les tâches du service.
+      </p>
+      <h4 id="secret-editor">L'éditeur de secret</h4>
+      <p>
+        <kbd>n</kbd> ouvre un seul grand dialogue&nbsp;: en haut <strong>Name</strong> et
+        <strong>Labels</strong> (<code>k=v,k=v</code>, facultatif), en dessous la valeur dans
+        le même éditeur façon vim que l'<a href="#env-editor">éditeur d'environnement</a>, qui
+        occupe toute la hauteur restante (et davantage d'écran sur un grand terminal). Le
+        focus commence sur Name. <kbd>Tab</kbd> / <kbd>Enter</kbd> passent de Name à Labels
+        puis à la valeur, <kbd>Shift-Tab</kbd> revient en arrière&nbsp;; dans la valeur,
+        <kbd>Tab</kbd> ne change de champ qu'en mode Normal — en mode Insert il insère une
+        tabulation, dont un fichier peut avoir besoin. <kbd>Esc</kbd> dans Name ou Labels
+        rejoint la valeur, ou ferme le dialogue tant que rien n'a été saisi. La ligne d'état
+        affiche la taille de la valeur en lignes et en octets, en rouge dès qu'elle dépasse
+        la limite.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Touches</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>:r</kbd> fichier</td><td>insère un fichier <strong>local</strong> au curseur (aussi <kbd>:read</kbd>&nbsp;; <code>~</code> désigne votre répertoire personnel, un chemin relatif part du répertoire où swarmexec s'exécute) — la façon pratique de créer un secret à partir d'un certificat, d'une clé ou d'un fichier JSON</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>crée le secret (aussi <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>&nbsp;; <kbd>Ctrl-S</kbd> fonctionne aussi dans Name et Labels). Un nom vide, des labels mal formés, une valeur vide ou au-delà de la limite sont signalés sur la ligne d'état et le dialogue reste ouvert</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>annule&nbsp;; <kbd>:q</kbd> refuse dès que quelque chose a été saisi (le nom et les labels comptent), <kbd>:q!</kbd> l'abandonne</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        La valeur est envoyée <strong>octet pour octet</strong> telle que l'éditeur la
+        contient&nbsp;: aucun saut de ligne final n'est ajouté ni retiré, un mot de passe
+        tapé est donc exactement ce que vous avez tapé, et un fichier lu avec
+        <kbd>:r</kbd> garde ses propres fins de ligne et son saut de ligne final. Swarm
+        limite un secret à <strong>500&nbsp;Ko</strong> (512000 octets). L'éditeur ne
+        contient que du texte&nbsp;: <kbd>:r</kbd> refuse un fichier qui n'est pas en UTF-8
+        ou qui contient des octets NUL — créez un secret binaire (un keystore, un certificat
+        DER) avec <code>docker secret create NAME FILE</code>.
       </p>
 
       <h3>Barre latérale des contextes</h3>

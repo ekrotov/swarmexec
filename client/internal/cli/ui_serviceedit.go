@@ -667,8 +667,11 @@ func (u *ui) openEnvText(svcName string, items []string, back tview.Primitive, a
 			"# …", "a comment — commenting a line out removes the variable",
 			":list", "switch to the list editor"))
 	}
-	ed.commands = map[string]func(string) error{
-		"list": func(text string) error {
+	ed.commands = map[string]func(string, string) error{
+		"list": func(text, arg string) error {
+			if arg != "" {
+				return fmt.Errorf(":list takes no argument")
+			}
 			list, err := parseEnvText(text)
 			if err != nil {
 				return err

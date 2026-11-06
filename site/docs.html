@@ -2179,6 +2179,7 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>create a new secret — opens the <a href="#secret-editor">secret editor</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
           <tr><td><kbd>X</kbd></td><td>on the secrets list: <strong>delete</strong> the selected secret — permanently removes it (one <code>SecretRemove</code>), behind a confirm; cannot be undone. Docker refuses to remove a secret still referenced by a service, so the confirm <strong>warns when it's in use</strong> and lists those services (detach it there first). Not to be confused with the <kbd>d</kbd> <em>inside</em> the detail view, which detaches the secret from a service</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
@@ -2192,6 +2193,36 @@ EOF</span></pre>
         refreshes. Like the network attach/detach, each is a manager-API
         <code>ServiceUpdate</code> that triggers a <strong>rolling update</strong>
         restarting the service's tasks.
+      </p>
+      <h4 id="secret-editor">The secret editor</h4>
+      <p>
+        <kbd>n</kbd> opens one large dialog: <strong>Name</strong> and
+        <strong>Labels</strong> (<code>k=v,k=v</code>, optional) at the top, and below them
+        the value in the same vim-style editor as the <a href="#env-editor">env
+        editor</a>, taking all the remaining height (and more of the screen on a big
+        terminal). Focus starts on Name. <kbd>Tab</kbd> / <kbd>Enter</kbd> move Name →
+        Labels → value, <kbd>Shift-Tab</kbd> goes back; in the value, <kbd>Tab</kbd> moves
+        only in Normal mode — in Insert mode it types a tab, which files may need.
+        <kbd>Esc</kbd> in Name or Labels goes to the value, or closes the dialog while
+        nothing has been entered. The status line shows the value's size in lines and
+        bytes, red once it is over the limit.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>:r</kbd> file</td><td>insert a <strong>local</strong> file at the cursor (also <kbd>:read</kbd>; <code>~</code> expands to your home directory, a relative path is relative to where swarmexec runs) — the practical way to make a secret from a certificate, a key or a JSON file</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>create the secret (also <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>; <kbd>Ctrl-S</kbd> works in Name and Labels too). An empty name, malformed labels, an empty value or one over the limit is reported on the status line and the dialog stays open</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancel; <kbd>:q</kbd> refuses once anything was entered (the name and labels count), <kbd>:q!</kbd> discards it</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The value is sent <strong>byte for byte</strong> as the editor holds it: no
+        trailing newline is added or removed, so a typed password is exactly what you
+        typed, and a file read with <kbd>:r</kbd> keeps its own line endings and final
+        newline. Swarm limits a secret to <strong>500&nbsp;KB</strong> (512000 bytes).
+        The editor holds text only: <kbd>:r</kbd> refuses a file that is not UTF-8 or
+        contains NUL bytes — create a binary secret (a keystore, a DER certificate) with
+        <code>docker secret create NAME FILE</code> instead.
       </p>
 
       <h3>Context sidebar</h3>

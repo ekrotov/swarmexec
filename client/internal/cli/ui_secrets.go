@@ -207,45 +207,6 @@ func (u *ui) openDeleteSecret(s swarmSecret) {
 	})
 }
 
-// showCreateSecret creates a new swarm secret from a name, a (multi-line)
-// value and optional labels. The value is entered in a text area so certs and
-// keys can be pasted as-is.
-func (u *ui) showCreateSecret() {
-	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
-	var name, value, labels string
-	form := tview.NewForm()
-	form.SetBorder(true).SetTitle(" new secret ")
-	form.AddInputField("Name", "", 32, nil, func(t string) { name = t })
-	form.AddTextArea("Value", "", 40, 6, 0, func(t string) { value = t })
-	form.AddInputField("Labels (optional, k=v,k=v)", "", 40, nil, func(t string) { labels = t })
-	ov := u.overlayFor(pageSecForm, sectable, footerKeys("Tab", "next field", "Esc", "cancel"))
-	closeForm := ov.Close
-	form.AddButton("Create", func() {
-		lbls, err := parseKVList(labels)
-		if err != nil {
-			u.info("invalid labels: " + err.Error())
-			return
-		}
-		nm := strings.TrimSpace(name)
-		if err := createSecret(ctx, dcli, nm, []byte(value), lbls); err != nil {
-			u.info("create failed: " + err.Error())
-			return
-		}
-		closeForm()
-		u.loadSecrets()
-		u.flash(" [green]created[white] secret " + nm)
-	})
-	form.AddButton("Cancel", closeForm)
-	form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape {
-			closeForm()
-			return nil
-		}
-		return ev
-	})
-	ov.show(centered(form, formWidth, 18), form)
-}
-
 // secretKeys is the key handler of the Secrets table.
 func (u *ui) secretKeys(ev *tcell.EventKey) *tcell.EventKey {
 	km := u.km

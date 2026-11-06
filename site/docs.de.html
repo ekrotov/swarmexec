@@ -2307,6 +2307,7 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>ein neues Secret anlegen — öffnet den <a href="#secret-editor">Secret-Editor</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>die Metadaten des Secrets und die Services/Container zeigen, die es verwenden</td></tr>
           <tr><td><kbd>X</kbd></td><td>in der Secret-Liste: das ausgewählte Secret <strong>löschen</strong> — entfernt es dauerhaft (ein <code>SecretRemove</code>), hinter einer Bestätigung; nicht rückgängig zu machen. Docker verweigert das Entfernen eines Secrets, das noch ein Service referenziert, deshalb <strong>warnt die Bestätigung, wenn es verwendet wird</strong>, und nennt diese Services (dort zuerst lösen). Nicht zu verwechseln mit dem <kbd>d</kbd> <em>in</em> der Detailansicht, das das Secret von einem Service löst</td></tr>
           <tr><td><kbd>a</kbd></td><td>in der Detailansicht: das Secret an einen Service anhängen — eine Autocomplete-Eingabe (schlägt Services vor, die es noch nicht verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
@@ -2320,6 +2321,37 @@ EOF</span></pre>
         sich der Secrets-Tab. Wie beim Netzwerk-Anhängen/-Trennen ist jedes ein
         Manager-API-<code>ServiceUpdate</code>, das ein <strong>Rolling Update</strong>
         auslöst, das die Tasks des Service neu startet.
+      </p>
+      <h4 id="secret-editor">Der Secret-Editor</h4>
+      <p>
+        <kbd>n</kbd> öffnet einen großen Dialog: oben <strong>Name</strong> und
+        <strong>Labels</strong> (<code>k=v,k=v</code>, optional), darunter der Wert im selben
+        vim-artigen Editor wie der <a href="#env-editor">Env-Editor</a>, der die ganze
+        restliche Höhe einnimmt (und auf einem großen Terminal mehr vom Bildschirm). Der
+        Fokus beginnt auf Name. <kbd>Tab</kbd> / <kbd>Enter</kbd> wechseln Name → Labels →
+        Wert, <kbd>Shift-Tab</kbd> geht zurück; im Wert wechselt <kbd>Tab</kbd> nur im
+        Normal-Modus — im Insert-Modus tippt es einen Tabulator, den Dateien brauchen
+        können. <kbd>Esc</kbd> in Name oder Labels springt zum Wert oder schließt den
+        Dialog, solange nichts eingegeben wurde. Die Statuszeile zeigt die Größe des Werts
+        in Zeilen und Bytes, rot sobald er über dem Limit liegt.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Tasten</th><th>Aktion</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>:r</kbd> Datei</td><td>eine <strong>lokale</strong> Datei an der Cursorposition einfügen (auch <kbd>:read</kbd>; <code>~</code> wird zu deinem Home-Verzeichnis, ein relativer Pfad gilt relativ zum Startverzeichnis von swarmexec) — der praktische Weg, ein Secret aus einem Zertifikat, einem Schlüssel oder einer JSON-Datei anzulegen</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>das Secret anlegen (auch <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>; <kbd>Ctrl-S</kbd> wirkt auch in Name und Labels). Ein leerer Name, fehlerhafte Labels, ein leerer Wert oder einer über dem Limit wird in der Statuszeile gemeldet, und der Dialog bleibt offen</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>abbrechen; <kbd>:q</kbd> verweigert, sobald etwas eingegeben wurde (Name und Labels zählen mit), <kbd>:q!</kbd> verwirft es</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Der Wert wird <strong>Byte für Byte</strong> so gesendet, wie der Editor ihn hält: Es
+        wird kein abschließender Zeilenumbruch hinzugefügt oder entfernt, ein getipptes
+        Passwort ist also genau das Getippte, und eine mit <kbd>:r</kbd> gelesene Datei
+        behält ihre eigenen Zeilenenden und ihren letzten Zeilenumbruch. Swarm begrenzt ein
+        Secret auf <strong>500&nbsp;KB</strong> (512000 Bytes). Der Editor hält nur Text:
+        <kbd>:r</kbd> lehnt eine Datei ab, die kein UTF-8 ist oder NUL-Bytes enthält — ein
+        binäres Secret (ein Keystore, ein DER-Zertifikat) legst du stattdessen mit
+        <code>docker secret create NAME FILE</code> an.
       </p>
 
       <h3>Context-Sidebar</h3>

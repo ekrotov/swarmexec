@@ -1150,6 +1150,13 @@ func centered(p tview.Primitive, width, height int) tview.Primitive {
 	return &centeredBox{Box: tview.NewBox(), inner: p, width: width, height: height}
 }
 
+// centeredGrow is centered for an editor: at least width×height, and on a
+// bigger terminal frac of the screen (the space above the footer), so a large
+// text gets the room there is. The footer stays free exactly as with centered.
+func centeredGrow(p tview.Primitive, width, height int, frac float64) tview.Primitive {
+	return &centeredBox{Box: tview.NewBox(), inner: p, width: width, height: height, fill: frac}
+}
+
 // Recurring overlay dimensions. The widths still vary per overlay (a filename
 // prompt is narrower than a set-labels prompt), but the two shared intents —
 // "single-input prompt row" and "standard property form" — get a name so new
@@ -1174,6 +1181,7 @@ type centeredBox struct {
 	*tview.Box
 	inner         tview.Primitive
 	width, height int
+	fill          float64 // centeredGrow: the share of the screen to take, if more
 }
 
 func (c *centeredBox) Draw(screen tcell.Screen) {
@@ -1189,6 +1197,10 @@ func (c *centeredBox) Draw(screen tcell.Screen) {
 	// they carry this overlay's own shortcuts.
 	dimBehind(screen, x, y, w, avail)
 	bw, bh := c.width, c.height
+	if c.fill > 0 {
+		bw = max(bw, int(float64(w)*c.fill))
+		bh = max(bh, int(float64(avail)*c.fill))
+	}
 	if bw > w {
 		bw = w
 	}
@@ -1606,7 +1618,7 @@ func (u *ui) showHelp() {
 
 	sec("Secrets")
 	line("Enter / i", "details")
-	line(kl(km.SecNew), "new")
+	line(kl(km.SecNew), "new (vim editor, :r file)")
 	danger(kl(km.SecDelete), "delete")
 
 	sec("Contexts (sidebar, not a tab)")

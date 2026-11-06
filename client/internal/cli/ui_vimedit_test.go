@@ -36,11 +36,12 @@ func newTestVim(t *testing.T, text string) (*vimEditor, func(keys string)) {
 }
 
 // parseKeys turns "dd<Esc>:w<CR>" into key events: runes, plus <Esc>, <CR>,
-// <BS>, <C-r> and <C-s>.
+// <BS>, <C-r>, <C-s>, <Tab> and <S-Tab>.
 func parseKeys(t *testing.T, keys string) []*tcell.EventKey {
 	t.Helper()
 	special := map[string]tcell.Key{"<Esc>": tcell.KeyEscape, "<CR>": tcell.KeyEnter,
-		"<BS>": tcell.KeyBackspace2, "<C-r>": tcell.KeyCtrlR, "<C-s>": tcell.KeyCtrlS}
+		"<BS>": tcell.KeyBackspace2, "<C-r>": tcell.KeyCtrlR, "<C-s>": tcell.KeyCtrlS,
+		"<Tab>": tcell.KeyTab, "<S-Tab>": tcell.KeyBacktab}
 	var out []*tcell.EventKey
 	for keys != "" {
 		matched := false
@@ -243,7 +244,7 @@ func TestVimWriteAndQuit(t *testing.T) {
 	t.Run("owner commands run", func(t *testing.T) {
 		e, press := newTestVim(t, "A=1")
 		ran := ""
-		e.commands = map[string]func(string) error{"list": func(s string) error { ran = s; return nil }}
+		e.commands = map[string]func(string, string) error{"list": func(s, _ string) error { ran = s; return nil }}
 		press(":list<CR>")
 		if ran != "A=1" {
 			t.Fatalf(":list got %q", ran)
