@@ -18,6 +18,7 @@ small agent on every node and asks it directly.
 - **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs#commands)
 - **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarm-exec.cloud-surfers.net/docs#tui)
 - **Stack diff and a pre-deploy check for CI** — a content diff of a file against the deployed stack, and a security gate before `stack deploy`. [stack diff →](https://swarm-exec.cloud-surfers.net/docs#stackfile)
+- **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarm-exec.cloud-surfers.net/docs#nodeprune)
 - **A security report** of the whole cluster, as Markdown you can file and compare. [security report →](https://swarm-exec.cloud-surfers.net/docs#securityreport)
 - **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only, labels hidden from the assistant. [mcp →](https://swarm-exec.cloud-surfers.net/docs#mcp)
 - **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarm-exec.cloud-surfers.net/docs#auth)

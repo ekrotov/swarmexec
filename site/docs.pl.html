@@ -469,7 +469,7 @@
           <tr><td><code>--secret</code></td><td>losowy</td><td>współdzielony sekret, którego należy użyć (domyślnie generowany jest losowy). Uwaga: jeśli sekret agenta <strong>już istnieje</strong>, zostaje zachowany bez zmian (sekrety Dockera są niezmienne), więc <code>--secret</code> <strong>nie trafia do klastra</strong> — zostaje zapisany tylko w twojej konfiguracji klienta, a <code>init</code> ostrzega o ryzyku niezgodności. Żeby zmienić sekret klastra, usuń go najpierw (żadna usługa nie może się do niego odwoływać), a potem uruchom <code>init</code> ponownie</td></tr>
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nazwa usługi agenta</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>port hosta publikowany przez agenta</td></tr>
-          <tr><td><code>--force</code></td><td><code>false</code></td><td>zaktualizuj usługę, jeśli już istnieje</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>zaktualizuj usługę, jeśli już istnieje. Harmonogram <a href="#pruneschedule">prune</a> ustawiony na agentach zostaje zachowany</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>akceptuje surowy sekret od klientów sprzed uwierzytelniania związanego z połączeniem; ustaw <code>=false</code>, gdy wszyscy klienci są zaktualizowani</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publikuj metryki Prometheus agenta na tym porcie hosta (<code>0</code> = wyłączone) — zob. <a href="#monitoring">monitorowanie agentów</a></td></tr>
           <tr><td><code>--policy-file</code></td><td>—</td><td>plik reguł autoryzacji dla agentów, sprawdzany przed jakimkolwiek wdrożeniem — zob. <a href="#policy">polityka autoryzacji</a></td></tr>
@@ -785,7 +785,7 @@ swarmexec stack deploy web.yml --force    # wdróż mimo znalezisk, świadomie</
       <h3 id="policy">Polityka autoryzacji</h3>
       <p>
         Domyślnie agent przepuszcza każde żądanie, które przeszło uwierzytelnienie. Plik
-        reguł to zawęża, określając, które <strong>akcje</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>; obsługiwane są wzorce, np.
+        reguł to zawęża, określając, które <strong>akcje</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>, <code>reclaim.read</code>, <code>container.prune</code>, <code>buildcache.prune</code>, <code>network.prune</code>, <code>volume.prune</code>; obsługiwane są wzorce, np.
         <code>volume.*</code>) są dozwolone dla jakich <strong>usług</strong>, <strong>portów</strong>,
         <strong>użytkowników</strong> exec i — tylko przy certyfikatach klienta —
         <strong>tożsamości</strong> operatorów. W regule muszą być spełnione wszystkie warunki;
@@ -1099,6 +1099,30 @@ rules:
           <tr><td><code>--force</code></td><td><code>false</code></td><td>przekaż Dockerowi flagę force</td></tr>
           <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nie pytaj o potwierdzenie</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>limit czasu połączenia na węzeł</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 id="pruneschedulecmd"><code>prune-schedule</code> — harmonogram prune agentów</h3>
+      <p>
+        Pokazuje lub ustawia <a href="#pruneschedule">harmonogram prune</a> całego klastra.
+        <code>show</code> wypisuje go wraz z pięcioma najbliższymi uruchomieniami; <code>set</code>
+        zmienia tylko podane flagi i włącza harmonogram. Zapis aktualizuje usługę agenta, więc
+        agenty <strong>restartują się jeden po drugim</strong>; polecenie najpierw pyta.
+      </p>
+      <div class="cmd">swarmexec prune-schedule show
+swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flaga (set)</th><th>Domyślnie</th><th>Opis</th></tr></thead>
+        <tbody>
+          <tr><td><code>--days</code></td><td>codziennie</td><td><code>mon,tue,…</code> lub zakresy jak <code>mon-fri</code></td></tr>
+          <tr><td><code>--start</code></td><td><code>00:00</code></td><td>pierwsze uruchomienie dnia, <code>HH:MM</code></td></tr>
+          <tr><td><code>--times</code></td><td><code>1</code></td><td>uruchomienia na dobę (1–24), doba dzielona równo od <code>--start</code></td></tr>
+          <tr><td><code>--tz</code></td><td><code>UTC</code></td><td>strefa czasowa IANA dla <code>--days</code> i <code>--start</code></td></tr>
+          <tr><td><code>--categories</code></td><td><code>containers,images,buildcache,networks</code></td><td>także <code>dangling-images</code> i <code>volumes</code></td></tr>
+          <tr><td><code>--containers-until</code></td><td><code>24h</code></td><td>zatrzymane kontenery są zachowywane tak długo po zatrzymaniu; <code>0</code> nie zachowuje żadnego</td></tr>
+          <tr><td><code>--label-filter</code></td><td>—</td><td>prune tylko obiektów z tymi etykietami; <code>-</code> czyści filtr</td></tr>
+          <tr><td><code>--disable</code></td><td><code>false</code></td><td>wyłącza harmonogram, zachowując jego ustawienia</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>nie pytaj przed restartem agentów</td></tr>
         </tbody>
       </table></div>
 
@@ -2372,10 +2396,11 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, ID, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, sekcjami <strong>zarezerwowanych zasobów</strong>, <strong>rzeczywistego zużycia</strong> i <strong>obrazów na tym węźle</strong> (zob. niżej), liczbą wolumenów i pełną listą etykiet</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>szczegóły węzła — nakładka tylko do odczytu z nazwą hosta, ID, rolą/liderem, dostępnością, stanem, adresem, silnikiem, platformą, liczbą CPU, pamięcią, liczbą działających zadań, sekcjami <strong>zarezerwowanych zasobów</strong>, <strong>rzeczywistego zużycia</strong> i <strong>obrazów na tym węźle</strong> (zob. niżej), liczbą wolumenów i pełną listą etykiet, a także bloki <strong>do odzyskania</strong> i <strong>harmonogram prune</strong>. W nich <kbd>m</kbd> od razu mierzy miejsce do odzyskania, <kbd class="tc-red">P</kbd> otwiera okno prune, a <kbd>S</kbd> edytor harmonogramu</td></tr>
           <tr><td><kbd>l</kbd></td><td>edytuj <strong>etykiety</strong> zaznaczonego węzła — buforowany edytor listy (<kbd>a</kbd> dodaj / <kbd>e</kbd> edytuj / <kbd>d</kbd> usuń / <kbd>w</kbd> zastosuj / <kbd>Esc</kbd> anuluj) dla wpisów <code>key=value</code>. Zastosowanie wykonuje jeden <code>NodeUpdate</code> — w odróżnieniu od usługi aktualizacja węzła <strong>działa natychmiast</strong> (bez aktualizacji kroczącej). Etykiety węzłów są zwykle używane jako cele ograniczeń rozmieszczenia (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>ustaw <strong>dostępność</strong> węzła — menu <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong>, w którym zaznaczony jest bieżący stan węzła. <em>active</em> — zadania są tu planowane normalnie; <em>pause</em> — działające zadania zostają, blokowane są tylko <strong>nowe</strong> przydziały; <em>drain</em> — <strong>wszystkie</strong> zadania są przenoszone z węzła. Active i Pause działają od razu; Drain wymaga potwierdzenia, które podaje, ile działających zadań swarm zatrzyma i zaplanuje ponownie na innych węzłach (usług, których zadań nie da się umieścić nigdzie indziej, nie będzie można zaplanować). Tak jak zmiana etykiet jest to jeden <code>NodeUpdate</code> (odczyt-modyfikacja-zapis specyfikacji węzła) i <strong>działa natychmiast</strong> — węzły nie mają aktualizacji kroczącej. Można przemapować jako akcję <code>node_availability</code></td></tr>
-          <tr><td><kbd>P</kbd></td><td>odzyskaj miejsce na dysku zajęte przez obrazy na węźle (wielkie <kbd>P</kbd>, czyli Shift+p — ten sam skrót, którego zakładka Volumes używa do operacji prune). Otwiera małe menu z <strong>dwoma</strong> opisanymi niżej trybami odzyskiwania, każdy z własnym potwierdzeniem; zanim wybierzesz, warto przeczytać, który jest który. Stopka kończy się <em>P reclaim images</em>, a nakładka <kbd>?</kbd> wypisuje to jako <em>reclaim image disk space on the node</em>. Można przemapować jako akcję <code>node_prune_images</code></td></tr>
+          <tr><td><kbd class="tc-red">P</kbd></td><td>prune węzła (wielkie <kbd>P</kbd>, w kolorze czerwonym). Otwiera okno z polem wyboru dla każdej kategorii i oczekiwaną oszczędnością, potem potwierdzenie i wynik dla każdej kategorii — zob. <a href="#nodeprune">prune węzła</a>. Przy agencie starszym niż to wydanie otwiera zamiast tego dawne menu obrazów z dwoma pozycjami. Można przemapować jako akcję <code>node_prune</code> (stara nazwa <code>node_prune_images</code> nadal działa)</td></tr>
+          <tr><td><kbd>S</kbd></td><td><strong>harmonogram prune dla wszystkich węzłów</strong> — zob. <a href="#pruneschedule">harmonogram prune</a>. Można przemapować jako akcję <code>node_prune_schedule</code></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -2436,36 +2461,54 @@ EOF</span></pre>
         starymi warstwami, nie dało się nawet zobaczyć. Sekcja ładuje się samodzielnie,
         równolegle z listą węzłów, więc pojawia się chwilę po reszcie nakładki.
       </p>
-      <p>
-        <strong>Odzyskiwanie — <kbd>P</kbd> w zakładce Nodes.</strong> Menu, które się
-        otwiera, ma <strong>dwie pozycje, celowo nie jedną akcję z polem wyboru</strong>, bo
-        to dwie różne operacje, a pole wyboru wręcz zachęca, by przez przypadek wybrać tę
-        destrukcyjną:
+      <p id="nodeprune">
+        <strong>Miejsce do odzyskania i prune węzła.</strong> Szczegóły węzła kończą się
+        blokiem <em>reclaimable (measured on the node)</em>: dla każdej kategorii, ile obiektów
+        usunąłby prune i ile miejsca by zwolnił, oraz kiedy to zmierzono
+        (<em>measured 23 min ago</em>). Agent mierzy w tle, krótko po starcie, potem
+        <strong>co godzinę</strong> i po każdym prune; <kbd>m</kbd> w szczegółach zleca świeży
+        pomiar (agent pozwala na jeden co 30 sekund). <kbd class="tc-red">P</kbd> otwiera okno
+        prune: pole wyboru dla każdej kategorii z jej wartością, pod spodem oczekiwana suma,
+        potem potwierdzenie wymieniające każdą zaznaczoną kategorię, a na końcu wynik —
+        zwolnione bajty i liczba obiektów na kategorię.
       </p>
       <div class="tablewrap"><table>
-        <thead><tr><th>Pozycja</th><th>Co usuwa</th></tr></thead>
+        <thead><tr><th>Kategoria</th><th>Co usuwa prune</th><th>Akcja polityki</th></tr></thead>
         <tbody>
-          <tr><td><strong>untagged leftovers</strong></td><td>warstwy zostawione przez przebudowy, z których nic nie da się uruchomić. <strong>Bezpieczne</strong>: nie zatrzyma usługi ani nie wymusi pobrania</td></tr>
-          <tr><td><strong class="tc-red">every unused image</strong></td><td>usuwa dodatkowo obrazy <strong>otagowane</strong>, których <em>w tej chwili</em> nie uruchamia żaden kontener. Na węźle swarma obejmuje to każdą usługę <strong>przeskalowaną do zera</strong> i każde zadanie <strong>między restartami</strong> — każde z nich będzie musiało <strong>pobrać swój obraz na nowo</strong></td></tr>
+          <tr><td><strong>zatrzymane kontenery</strong></td><td>kontenery <strong>zatrzymane</strong> ponad 24 h temu (<kbd>t</kbd> w oknie zmienia wiek). Liczone od zatrzymania, nie od utworzenia, żeby logi zadania, które właśnie padło, dało się nadal przeczytać. Szczegóły pokazują, ile na razie zostaje</td><td><code>container.prune</code></td></tr>
+          <tr><td><strong>obrazy bez tagu</strong></td><td>warstwy pozostawione przez przebudowy, z których nic nie może wystartować. <strong>Bezpieczne</strong>: nie zatrzyma usługi i nie wymusi pobrania</td><td><code>image.prune</code></td></tr>
+          <tr><td><strong class="tc-red">every unused image</strong></td><td>usuwa też <strong>otagowane</strong> obrazy, których <em>w tej chwili</em> nie używa żaden kontener — każda usługa <strong>przeskalowana do zera</strong> i każde zadanie <strong>między restartami</strong> będzie musiało <strong>ponownie pobrać swój obraz</strong></td><td><code>image.prune.all</code></td></tr>
+          <tr><td><strong>pamięć podręczna buildów</strong></td><td>cała pamięć podręczna buildów, której nie używa żaden build</td><td><code>buildcache.prune</code></td></tr>
+          <tr><td><strong>nieużywane sieci lokalne</strong></td><td>sieci o zasięgu <code>local</code>, do których nie odwołuje się żaden kontener, także zatrzymany. Nigdy <code>bridge</code>, <code>host</code>, <code>none</code>, <code>docker_gwbridge</code>, <code>ingress</code> ani żaden overlay</td><td><code>network.prune</code></td></tr>
+          <tr><td><strong class="tc-red">wolumeny</strong></td><td>każdy wolumen, którego nie używa żaden kontener, <strong>łącznie z nazwanymi</strong> — ich dane są usuwane</td><td><code>volume.prune</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        Okno startuje z zaznaczonymi kontenerami, obrazami bez tagu, pamięcią podręczną buildów
+        i sieciami. <kbd>a</kbd> zaznacza <strong>wszystko oprócz wolumenów</strong>; wolumeny
+        to osobne, czerwone pole, którego nikt nie zaznaczy za ciebie. Dwie pozycje obrazów
+        wykluczają się nawzajem, bo „every unused image” obejmuje już obrazy bez tagu.
+      </p>
       <div class="warn">
-        <strong>Nie czytaj drugiej pozycji jako „to samo, tylko więcej”.</strong> „Every
-        unused image” usuwa obrazy należące do czegoś, co po prostu <em>nie działa w tej
-        chwili</em>: usługi przeskalowanej do zera, restartującego się zadania, stacka
-        zatrzymanego wczoraj. Wszystkie tracą swój obraz i muszą pobrać go ponownie, żeby
-        wrócić, a <strong>jeśli rejestr jest nieosiągalny, nie uruchomią się ponownie</strong>.
-        Każda z obu pozycji ma <strong>własne</strong> okno potwierdzenia, które wprost opisuje
-        tę konsekwencję i podaje, ile bajtów zwolni dana pozycja; to osobne teksty właśnie po
-        to, by żaden z nich nie zaczął z czasem opisywać drugiej operacji.
+        <strong>Nie czytaj „every unused image” jako „to samo, tylko więcej”.</strong> Usuwa
+        obrazy należące do czegoś, co po prostu <em>nie działa w tej chwili</em>. Usługa
+        przeskalowana do zera, restartujące się zadanie, stos zatrzymany wczoraj — wszystkie
+        tracą obraz i muszą pobrać go ponownie, żeby wrócić, a <strong>jeśli rejestr jest
+        nieosiągalny, nie wrócą</strong>. Potwierdzenie mówi o tym, gdy ta pozycja jest
+        zaznaczona, i na czerwono, że wolumeny zabierają ze sobą dane, gdy są zaznaczone.
+      </div>
+      <div class="note">
+        <strong>Dlaczego sieci nie są czyszczone po dockerowemu.</strong> Na menedżerze własny
+        prune sieci Dockera usuwa też każdą nieużywaną sieć <strong>overlay swarm</strong>, w
+        całym klastrze, i nie da się go ograniczyć zasięgiem. Dlatego agent nigdy go nie
+        wywołuje: listuje sieci węzła i usuwa nieużywane sieci lokalne pojedynczo.
       </div>
       <p>
-        <strong>Dwa tryby, dwa uprawnienia.</strong> Agent autoryzuje je jako dwie odrębne
-        akcje — <code>image.prune</code> dla nieotagowanych pozostałości i
-        <code>image.prune.all</code> dla pełnego czyszczenia — więc polityka może zezwolić
-        na odzyskiwanie nieotagowanych warstw <em>bez</em> zezwalania na tryb destrukcyjny.
-        Każdy prune jest zapisywany w <strong>logu audytu</strong> agenta wraz z użytym
-        trybem, ilością odzyskanego miejsca i liczbą usuniętych obrazów.
+        <strong>Jedno uprawnienie na kategorię.</strong> Agent autoryzuje każdą kategorię jako
+        osobną akcję (tabela wyżej; odczyt wartości to <code>reclaim.read</code>), więc polityka
+        może zezwolić na niegroźne porządki <em>bez</em> tych niszczących. Każda kategoria
+        każdego prune trafia do <strong>dziennika audytu</strong> agenta
+        (<code>event=prune</code>) wraz z tym, ile zwolniła i ile obiektów usunięto.
       </p>
       <div class="note">
         <strong>Skąd biorą się liczby.</strong> Pochodzą z tego samego źródła, z którego
@@ -2481,12 +2524,54 @@ EOF</span></pre>
         odrobinę <em>więcej</em>, niż zapowiada, nigdy mniej.
       </div>
       <p>
-        Obowiązuje ten sam warunek co dla danych o zużyciu i stanie zdrowia powyżej:
-        potrzebni są <strong>agenci z tego wydania lub nowszego</strong>. Węzeł ze starszym
-        agentem po prostu nie pokazuje sekcji obrazów, a po naciśnięciu <kbd>P</kbd> zgłasza,
-        że agent nie odpowiedział — wdróż agentów poleceniem
-        <a href="#reroll"><code>swarmexec init --force</code></a>.
+        Ten sam warunek co przy liczbach użycia i health powyżej: potrzebne są
+        <strong>agenty z tego wydania lub nowsze</strong>. Węzeł ze starszym agentem pokazuje w
+        bloku do odzyskania <em>agent too old for prune stats</em>, a <kbd>P</kbd> wraca do menu
+        obrazów z dwiema pozycjami (untagged leftovers / every unused image), które taki agent
+        jeszcze rozumie. Zaktualizuj obraz agenta — specyfikacja usługi agenta się nie zmieniła,
+        więc <code>init --force</code> nie jest potrzebne.
       </p>
+      <p id="pruneschedule">
+        <strong>Harmonogram prune (wszystkie węzły).</strong> <kbd>S</kbd> w zakładce Nodes
+        otwiera edytor harmonogramu, który każdy agent wykonuje na własnym węźle: przełączane dni
+        tygodnia, godzina startu, uruchomienia na dobę (doba jest dzielona równo od startu: 2
+        uruchomienia od 00:00 to 00:00 i 12:00, 3 to 00:00, 08:00 i 16:00), strefa czasowa,
+        kategorie — obrazy jako <em>every unused</em>, <em>untagged only</em> lub wyłączone, oraz
+        <span class="tc-red">wolumeny jako opcja domyślnie wyłączona</span> —, jak długo
+        zachowywać zatrzymane kontenery i opcjonalny filtr etykiet. Podgląd na żywo pokazuje
+        wynikowe godziny i najbliższe uruchomienia. <kbd>w</kbd> zapisuje po ostrzeżeniu.
+      </p>
+      <div class="warn">
+        <strong>Zapis restartuje agenty.</strong> Harmonogram jest przechowywany jako
+        <strong>etykiety kontenera w usłudze agenta</strong> — jedyne miejsce, które agent na
+        węźle worker może odczytać, inspekcjonując własny kontener. Zapis jest więc aktualizacją
+        usługi: agenty restartują się jeden po drugim, a otwarte powłoki, strumienie logów i
+        przekierowania portów na restartującym się węźle zostają przerwane.
+      </div>
+      <p>
+        Każdy agent odczytuje etykiety przy starcie; etykiety, których nie da się sparsować, są
+        logowane i wyłączają harmonogram, nigdy nie zatrzymują agenta. Zaplanowane uruchomienie
+        jest autoryzowane jak żądanie tożsamości <code>scheduler</code> (reguła taka jak
+        <code>deny: [volume.prune]</code> obejmuje więc też harmonogram) i audytowane z
+        <code>trigger=schedule</code>. Szczegóły węzła pokazują harmonogram tak, jak widzi go
+        agent tego węzła, następne uruchomienie i ostatnie — z tym, co zwolniło w każdej
+        kategorii, oraz ewentualnymi błędami. <code>swarmexec init --force</code> zachowuje
+        etykiety; odpowiednikiem w CLI jest
+        <a href="#pruneschedulecmd"><code>prune-schedule</code></a>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Etykieta kontenera</th><th>Domyślnie</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec.prune.enabled</code></td><td>brak etykiet: wyłączony</td><td><code>true</code> uruchamia harmonogram</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.days</code></td><td>codziennie</td><td><code>mon,tue,…,sun</code>, zakresy jak <code>mon-fri</code></td></tr>
+          <tr><td><code>swarmexec.prune.schedule.start</code></td><td><code>00:00</code></td><td>pierwsze uruchomienie dnia</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.times</code></td><td><code>1</code></td><td>uruchomienia na dobę (1–24)</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.tz</code></td><td><code>UTC</code></td><td>strefa czasowa IANA</td></tr>
+          <tr><td><code>swarmexec.prune.categories</code></td><td><code>containers,images,buildcache,networks</code></td><td>także <code>dangling-images</code> i <code>volumes</code></td></tr>
+          <tr><td><code>swarmexec.prune.containers.until</code></td><td><code>24h</code></td><td>zatrzymane kontenery są zachowywane tak długo po zatrzymaniu</td></tr>
+          <tr><td><code>swarmexec.prune.filter.label</code></td><td>—</td><td>tylko obiekty z tymi etykietami (<code>key</code> lub <code>key=value</code>, rozdzielone przecinkami); pamięć podręczna buildów jest wtedy pomijana</td></tr>
+        </tbody>
+      </table></div>
 
       <h3>Zakładka Configs</h3>
       <p>
@@ -2607,7 +2692,7 @@ volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: X
-node_edit_labels: l    node_availability: a    node_prune_images: P
+node_edit_labels: l    node_availability: a    node_prune: P    node_prune_schedule: S
 secret_delete: X secret_new: n
 forward_stop: X  forward_copy_url: o</div>
       <p>

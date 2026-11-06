@@ -490,7 +490,7 @@
           <tr><td><code>--secret</code></td><td>aléatoire</td><td>secret partagé à utiliser (par défaut&nbsp;: un secret aléatoire est généré). Attention&nbsp;: si le secret de l'agent <strong>existe déjà</strong>, il est conservé tel quel (les secrets Docker sont immuables)&nbsp;; <code>--secret</code> n'est donc <strong>pas appliqué au cluster</strong> — il est seulement écrit dans votre configuration client, et <code>init</code> avertit du risque d'incohérence. Pour changer le secret du cluster, supprimez-le d'abord (aucun service ne doit le référencer), puis relancez <code>init</code></td></tr>
           <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>nom du service de l'agent</td></tr>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>port de l'hôte publié par l'agent</td></tr>
-          <tr><td><code>--force</code></td><td><code>false</code></td><td>met à jour le service s'il existe déjà</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>met à jour le service s'il existe déjà. Un <a href="#pruneschedule">planning de prune</a> défini sur les agents est conservé</td></tr>
           <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accepte le secret partagé brut des clients antérieurs à l'authentification liée à la connexion&nbsp;; passez <code>=false</code> une fois tous les clients mis à jour</td></tr>
           <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publie les métriques Prometheus de l'agent sur ce port de l'hôte (<code>0</code> = désactivé) — voir <a href="#monitoring">surveiller les agents</a></td></tr>
           <tr><td><code>--policy-file</code></td><td>—</td><td>fichier de règles d'autorisation pour les agents, vérifié avant tout déploiement — voir <a href="#policy">politique d'autorisation</a></td></tr>
@@ -811,7 +811,7 @@ swarmexec stack deploy web.yml --force    # déployer malgré les constats, dél
       <h3 id="policy">Politique d'autorisation</h3>
       <p>
         Par défaut, un agent autorise toute requête authentifiée. Un fichier de règles
-        restreint cela&nbsp;: quelles <strong>actions</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>&nbsp;; les
+        restreint cela&nbsp;: quelles <strong>actions</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>, <code>reclaim.read</code>, <code>container.prune</code>, <code>buildcache.prune</code>, <code>network.prune</code>, <code>volume.prune</code>&nbsp;; les
         motifs comme <code>volume.*</code> sont acceptés) pour quels <strong>services</strong>,
         quels <strong>ports</strong>, quels <strong>utilisateurs</strong> d'exec et — avec des
         certificats client uniquement — quelles <strong>identités</strong> d'opérateur. Au
@@ -1137,6 +1137,30 @@ rules:
           <tr><td><code>--force</code></td><td><code>false</code></td><td>transmet l'option force de docker</td></tr>
           <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>ne pas demander de confirmation</td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>délai de connexion par nœud</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 id="pruneschedulecmd"><code>prune-schedule</code> — le planning de prune des agents</h3>
+      <p>
+        Affiche ou définit le <a href="#pruneschedule">planning de prune</a> de tout le cluster.
+        <code>show</code> l'affiche avec les cinq prochaines exécutions&nbsp;; <code>set</code> ne
+        modifie que les options fournies et active le planning. L'enregistrement met à jour le
+        service de l'agent, les agents <strong>redémarrent donc un par un</strong>&nbsp;; la commande demande d'abord.
+      </p>
+      <div class="cmd">swarmexec prune-schedule show
+swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Option (set)</th><th>Défaut</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--days</code></td><td>tous les jours</td><td><code>mon,tue,…</code> ou plages comme <code>mon-fri</code></td></tr>
+          <tr><td><code>--start</code></td><td><code>00:00</code></td><td>première exécution de la journée, <code>HH:MM</code></td></tr>
+          <tr><td><code>--times</code></td><td><code>1</code></td><td>exécutions par jour (1–24), la journée répartie également à partir de <code>--start</code></td></tr>
+          <tr><td><code>--tz</code></td><td><code>UTC</code></td><td>fuseau horaire IANA de <code>--days</code> et <code>--start</code></td></tr>
+          <tr><td><code>--categories</code></td><td><code>containers,images,buildcache,networks</code></td><td>aussi <code>dangling-images</code> et <code>volumes</code></td></tr>
+          <tr><td><code>--containers-until</code></td><td><code>24h</code></td><td>garde les conteneurs arrêtés aussi longtemps après leur arrêt&nbsp;; <code>0</code> n'en garde aucun</td></tr>
+          <tr><td><code>--label-filter</code></td><td>—</td><td>ne fait le prune que des objets portant ces labels&nbsp;; <code>-</code> le vide</td></tr>
+          <tr><td><code>--disable</code></td><td><code>false</code></td><td>désactive le planning en conservant ses réglages</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>ne demande pas avant le redémarrage des agents</td></tr>
         </tbody>
       </table></div>
 
@@ -2467,10 +2491,11 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Touche</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, les blocs <strong>ressources réservées</strong>, <strong>utilisation réelle</strong> et <strong>images sur ce nœud</strong> (voir ci-dessous), le nombre de volumes et la liste complète des labels</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>détails du nœud — une surcouche en lecture seule avec nom d'hôte, id, rôle/leader, disponibilité, état, adresse, moteur, plateforme, CPU, mémoire, nombre de tâches en cours d'exécution, les blocs <strong>ressources réservées</strong>, <strong>utilisation réelle</strong> et <strong>images sur ce nœud</strong> (voir ci-dessous), le nombre de volumes et la liste complète des labels, ainsi que les blocs <strong>récupérable</strong> et <strong>planning de prune</strong>. Dans la surcouche, <kbd>m</kbd> mesure tout de suite l'espace récupérable, <kbd class="tc-red">P</kbd> ouvre le dialogue de prune et <kbd>S</kbd> l'éditeur de planning</td></tr>
           <tr><td><kbd>l</kbd></td><td>modifie les <strong>labels</strong> du nœud sélectionné — un éditeur de liste à modifications différées (<kbd>a</kbd> ajouter / <kbd>e</kbd> modifier / <kbd>d</kbd> supprimer / <kbd>w</kbd> appliquer / <kbd>Esc</kbd> annuler) sur des entrées <code>key=value</code>. Appliquer effectue un seul <code>NodeUpdate</code> — contrairement à celle d'un service, la mise à jour d'un nœud <strong>s'applique immédiatement</strong> (pas de mise à jour progressive). Les labels de nœud servent couramment de cibles aux contraintes de placement (<code>node.labels.&lt;k&gt;</code>)</td></tr>
           <tr><td><kbd>a</kbd></td><td>définit la <strong>disponibilité</strong> du nœud — un menu <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong> qui indique l'état actuel du nœud. <em>active</em> y planifie les tâches normalement&nbsp;; <em>pause</em> conserve les tâches en cours d'exécution et empêche seulement les <strong>nouveaux</strong> placements&nbsp;; <em>drain</em> déplace <strong>toutes</strong> les tâches hors du nœud. Active et Pause s'appliquent aussitôt&nbsp;; Drain passe par une confirmation qui indique combien de tâches en cours d'exécution le swarm va arrêter et replanifier ailleurs (les services dont les tâches ne peuvent être placées nulle part ailleurs deviennent non planifiables). Comme une modification de labels, c'est un seul <code>NodeUpdate</code> (lecture-modification-écriture de la spec du nœud) qui <strong>s'applique immédiatement</strong> — les nœuds n'ont pas de mise à jour progressive. Réaffectable via <code>node_availability</code></td></tr>
-          <tr><td><kbd>P</kbd></td><td>libère l'espace disque occupé par les images sur le nœud (<kbd>P</kbd> majuscule, c.-à-d. Maj+p — le même geste que pour le prune de l'onglet Volumes). Ouvre un petit menu proposant les <strong>deux</strong> modes décrits ci-dessous, chacun avec sa propre confirmation&nbsp;; mieux vaut lire ce que fait chacun avant de choisir. Le pied de page se termine par <em>P reclaim images</em> et la surcouche <kbd>?</kbd> l'affiche sous la forme <em>reclaim image disk space on the node</em>. Réaffectable via <code>node_prune_images</code></td></tr>
+          <tr><td><kbd class="tc-red">P</kbd></td><td>fait un prune du nœud (<kbd>P</kbd> majuscule, affiché en rouge). Ouvre un dialogue avec une case par catégorie et le gain attendu, puis une confirmation et le résultat par catégorie — voir <a href="#nodeprune">faire un prune d'un nœud</a>. Face à un agent antérieur à cette version, il ouvre à la place l'ancien menu d'images à deux entrées. Réaffectable via <code>node_prune</code> (l'ancien nom <code>node_prune_images</code> fonctionne toujours)</td></tr>
+          <tr><td><kbd>S</kbd></td><td>le <strong>planning de prune de tous les nœuds</strong> — voir <a href="#pruneschedule">planning de prune</a>. Réaffectable via <code>node_prune_schedule</code></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -2534,38 +2559,57 @@ EOF</span></pre>
         visible. Le bloc se charge séparément, en parallèle de la liste des nœuds, et
         apparaît donc un instant après le reste de la surcouche.
       </p>
-      <p>
-        <strong>Libérer l'espace — <kbd>P</kbd> sur l'onglet Nodes.</strong> Le menu qui
-        s'ouvre comporte <strong>deux entrées — délibérément, et non une action avec une
-        case à cocher</strong> —, car ce sont deux actes différents et une case à cocher
-        expose à choisir par mégarde le mode destructeur&nbsp;:
+      <p id="nodeprune">
+        <strong>Espace récupérable et prune d'un nœud.</strong> Les détails du nœud se terminent
+        par le bloc <em>reclaimable (measured on the node)</em>&nbsp;: par catégorie, combien
+        d'objets un prune supprimerait et combien il libérerait, et quand cela a été mesuré
+        (<em>measured 23 min ago</em>). L'agent mesure en arrière-plan, peu après son démarrage
+        puis <strong>toutes les heures</strong>, ainsi qu'après chaque prune&nbsp;; <kbd>m</kbd>
+        dans les détails demande une nouvelle mesure (l'agent en accepte une toutes les 30
+        secondes). <kbd class="tc-red">P</kbd> ouvre le dialogue de prune&nbsp;: une case par
+        catégorie avec son chiffre, le total attendu en dessous, puis une confirmation qui liste
+        chaque catégorie cochée, et enfin le résultat — octets libérés et nombre par catégorie.
       </p>
       <div class="tablewrap"><table>
-        <thead><tr><th>Entrée</th><th>Ce qu'elle supprime</th></tr></thead>
+        <thead><tr><th>Catégorie</th><th>Ce qu'un prune supprime</th><th>Action de politique</th></tr></thead>
         <tbody>
-          <tr><td><strong>untagged leftovers</strong></td><td>les couches laissées par les rebuilds, à partir desquelles rien ne peut démarrer. <strong>Sans risque</strong>&nbsp;: cela ne peut ni arrêter un service ni forcer un pull</td></tr>
-          <tr><td><strong class="tc-red">every unused image</strong></td><td>supprime en plus les images <strong>taguées</strong> qu'aucun conteneur n'exécute <em>à cet instant</em>. Sur un nœud swarm, cela inclut tout service actuellement <strong>ramené à zéro réplica</strong> et toute tâche <strong>entre deux redémarrages</strong> — chacun devra <strong>retélécharger son image</strong></td></tr>
+          <tr><td><strong>conteneurs arrêtés</strong></td><td>les conteneurs <strong>arrêtés</strong> depuis plus de 24 h (<kbd>t</kbd> dans le dialogue change la durée). Compté depuis leur arrêt, pas depuis leur création, pour que les logs d'une tâche qui vient de planter restent lisibles. Les détails indiquent combien sont gardés pour l'instant</td><td><code>container.prune</code></td></tr>
+          <tr><td><strong>images sans tag</strong></td><td>les couches laissées par les rebuilds, à partir desquelles rien ne peut démarrer. <strong>Sûr</strong>&nbsp;: cela ne peut ni arrêter un service ni forcer un pull</td><td><code>image.prune</code></td></tr>
+          <tr><td><strong class="tc-red">every unused image</strong></td><td>supprime aussi les images <strong>taguées</strong> qu'aucun conteneur n'utilise <em>en ce moment</em> — chaque service <strong>mis à l'échelle zéro</strong> et chaque tâche <strong>entre deux redémarrages</strong> devra <strong>re-télécharger son image</strong></td><td><code>image.prune.all</code></td></tr>
+          <tr><td><strong>cache de build</strong></td><td>tout le cache de build qu'aucun build n'utilise</td><td><code>buildcache.prune</code></td></tr>
+          <tr><td><strong>réseaux locaux inutilisés</strong></td><td>les réseaux de scope <code>local</code> qu'aucun conteneur ne référence, conteneurs arrêtés compris. Jamais <code>bridge</code>, <code>host</code>, <code>none</code>, <code>docker_gwbridge</code>, <code>ingress</code> ni un overlay</td><td><code>network.prune</code></td></tr>
+          <tr><td><strong class="tc-red">volumes</strong></td><td>tout volume qu'aucun conteneur n'utilise, <strong>volumes nommés compris</strong> — leurs données sont effacées</td><td><code>volume.prune</code></td></tr>
         </tbody>
       </table></div>
+      <p>
+        Le dialogue démarre avec les conteneurs, les images sans tag, le cache de build et les
+        réseaux cochés. <kbd>a</kbd> coche <strong>tout sauf les volumes</strong>&nbsp;; les
+        volumes sont une case à part, en rouge, jamais cochée à votre place. Les deux entrées
+        d'images s'excluent, car «&nbsp;every unused image&nbsp;» inclut déjà celles sans tag.
+      </p>
       <div class="warn">
-        <strong>Ne lisez pas la seconde entrée comme «&nbsp;la même chose, en plus
-        large&nbsp;».</strong> «&nbsp;Every unused image&nbsp;» supprime des images qui appartiennent à
-        quelque chose qui, simplement, <em>ne tourne pas à cet instant</em>&nbsp;: un service
-        ramené à zéro, une tâche en train de redémarrer, une stack arrêtée la veille. Tous
-        perdent leur image et doivent la retélécharger pour redémarrer — et <strong>si le
-        registre est injoignable, ils ne redémarreront pas</strong>. Chacune des deux
-        entrées passe par sa <strong>propre</strong> boîte de confirmation, qui énonce
-        exactement cette conséquence et indique le nombre d'octets qu'elle libérerait&nbsp;; ce
-        sont deux textes distincts, précisément pour qu'aucun ne finisse par décrire
-        l'autre.
+        <strong>Ne lisez pas «&nbsp;every unused image&nbsp;» comme «&nbsp;la même chose, en
+        plus&nbsp;».</strong> Elle supprime des images appartenant à quelque chose qui
+        <em>ne tourne simplement pas à cet instant</em>. Un service mis à l'échelle zéro, une
+        tâche qui redémarre, une stack arrêtée hier — tous perdent leur image et doivent la
+        re-télécharger pour revenir, et <strong>si le registry est injoignable, ils ne
+        redémarreront pas</strong>. La confirmation le dit dès qu'elle est cochée, et dit en
+        rouge que les volumes emportent leurs données dès qu'ils sont cochés.
+      </div>
+      <div class="note">
+        <strong>Pourquoi les réseaux ne sont pas nettoyés à la manière de docker.</strong> Sur
+        un manager, le prune réseau de Docker supprime aussi tout réseau <strong>overlay
+        swarm</strong> inutilisé, dans tout le cluster, et ne peut pas être limité par scope.
+        L'agent ne l'appelle donc jamais&nbsp;: il liste les réseaux du nœud et supprime un par
+        un les réseaux locaux inutilisés.
       </div>
       <p>
-        <strong>Deux modes, deux autorisations.</strong> L'agent les autorise comme deux
-        actions distinctes — <code>image.prune</code> pour les restes sans tag et
-        <code>image.prune.all</code> pour le nettoyage complet — si bien qu'une politique
-        peut autoriser la récupération des couches sans tag <em>sans</em> autoriser le mode
-        destructeur. Chaque prune est inscrit dans le <strong>journal d'audit</strong> de
-        l'agent avec le mode utilisé, l'espace libéré et le nombre d'images supprimées.
+        <strong>Une permission par catégorie.</strong> L'agent autorise chaque catégorie comme
+        une action distincte (tableau ci-dessus&nbsp;; lire les chiffres correspond à
+        <code>reclaim.read</code>), si bien qu'une politique peut autoriser les nettoyages
+        anodins <em>sans</em> les destructeurs. Chaque catégorie de chaque prune est inscrite
+        dans le <strong>journal d'audit</strong> de l'agent (<code>event=prune</code>), avec
+        ce qu'elle a libéré et combien d'objets sont partis.
       </p>
       <div class="note">
         <strong>D'où viennent les chiffres.</strong> Ils proviennent de la même source que
@@ -2582,11 +2626,55 @@ EOF</span></pre>
       </div>
       <p>
         Même prérequis que pour les chiffres d'utilisation et de santé ci-dessus&nbsp;: il faut
-        des <strong>agents de cette release ou plus récents</strong>. Un nœud dont l'agent
-        est plus ancien n'affiche tout simplement aucun bloc images, et indique qu'il n'a pas
-        répondu si vous appuyez sur <kbd>P</kbd> — déployez les agents avec
-        <a href="#reroll"><code>swarmexec init --force</code></a>.
+        des <strong>agents de cette version ou plus récents</strong>. Un nœud dont l'agent est
+        plus ancien affiche <em>agent too old for prune stats</em> dans le bloc récupérable, et
+        <kbd>P</kbd> se rabat sur le menu d'images à deux entrées (untagged leftovers / every
+        unused image) qu'un tel agent comprend encore. Mettez à jour l'image de l'agent — la
+        spec du service de l'agent n'a pas changé, <code>init --force</code> n'est donc pas
+        nécessaire.
       </p>
+      <p id="pruneschedule">
+        <strong>Planning de prune (tous les nœuds).</strong> <kbd>S</kbd> dans l'onglet Nodes
+        ouvre un éditeur pour un planning que chaque agent exécute sur son propre nœud&nbsp;:
+        jours de la semaine à cocher, l'heure de début, le nombre d'exécutions par jour (la
+        journée est répartie également à partir du début&nbsp;: 2 exécutions depuis 00:00 donnent
+        00:00 et 12:00, 3 donnent 00:00, 08:00 et 16:00), le fuseau horaire, les catégories —
+        images en <em>every unused</em>, <em>untagged only</em> ou désactivées, et
+        <span class="tc-red">les volumes comme option désactivée par défaut</span> —, la durée
+        de conservation des conteneurs arrêtés et un filtre de labels facultatif. Un aperçu en
+        direct montre les heures obtenues et les prochaines exécutions. <kbd>w</kbd> enregistre
+        après un avertissement.
+      </p>
+      <div class="warn">
+        <strong>Enregistrer redémarre les agents.</strong> Le planning est stocké sous forme de
+        <strong>labels de conteneur sur le service de l'agent</strong> — le seul endroit qu'un
+        agent sur un nœud worker peut lire, en inspectant son propre conteneur. Enregistrer est
+        donc une mise à jour du service&nbsp;: les agents redémarrent un par un, et les shells,
+        flux de logs et port-forwards ouverts sur un nœud qui redémarre sont coupés.
+      </div>
+      <p>
+        Chaque agent lit les labels à son démarrage&nbsp;; des labels illisibles sont journalisés
+        et désactivent le planning, ils n'arrêtent jamais l'agent. Une exécution planifiée est
+        autorisée comme une requête de l'identité <code>scheduler</code> (une règle comme
+        <code>deny: [volume.prune]</code> couvre donc aussi le planning) et auditée avec
+        <code>trigger=schedule</code>. Les détails du nœud montrent le planning tel que l'agent
+        de ce nœud le voit, la prochaine exécution et la dernière, avec ce qu'elle a libéré par
+        catégorie et toute erreur. <code>swarmexec init --force</code> conserve les labels&nbsp;;
+        l'équivalent en CLI est <a href="#pruneschedulecmd"><code>prune-schedule</code></a>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Label de conteneur</th><th>Défaut</th><th>Signification</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec.prune.enabled</code></td><td>aucun label&nbsp;: désactivé</td><td><code>true</code> exécute le planning</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.days</code></td><td>tous les jours</td><td><code>mon,tue,…,sun</code>, plages comme <code>mon-fri</code></td></tr>
+          <tr><td><code>swarmexec.prune.schedule.start</code></td><td><code>00:00</code></td><td>première exécution de la journée</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.times</code></td><td><code>1</code></td><td>exécutions par jour (1–24)</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.tz</code></td><td><code>UTC</code></td><td>fuseau horaire IANA</td></tr>
+          <tr><td><code>swarmexec.prune.categories</code></td><td><code>containers,images,buildcache,networks</code></td><td>aussi <code>dangling-images</code> et <code>volumes</code></td></tr>
+          <tr><td><code>swarmexec.prune.containers.until</code></td><td><code>24h</code></td><td>garde les conteneurs arrêtés aussi longtemps après leur arrêt</td></tr>
+          <tr><td><code>swarmexec.prune.filter.label</code></td><td>—</td><td>uniquement les objets portant ces labels (<code>key</code> ou <code>key=value</code>, séparés par des virgules)&nbsp;; le cache de build est alors ignoré</td></tr>
+        </tbody>
+      </table></div>
 
       <h3>Onglet Configs</h3>
       <p>
@@ -2718,7 +2806,7 @@ volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
 context_use: u   context_new: n    context_delete: X
-node_edit_labels: l    node_availability: a    node_prune_images: P
+node_edit_labels: l    node_availability: a    node_prune: P    node_prune_schedule: S
 secret_delete: X secret_new: n
 forward_stop: X  forward_copy_url: o</div>
       <p>
