@@ -165,7 +165,7 @@ func (iv *inspectView) keysText() string {
 	if iv.editSvc != "" {
 		// The ~14 editor actions live behind the "a" menu (showActions);
 		// the footer stays short. X (destructive) stays a bare key.
-		parts = append(parts, "[yellow]a[white] actions", "[red]X[white] remove")
+		parts = append(parts, "[yellow]a[white] actions", keyTag(dangerKey("X"))+" remove")
 		// "u" is offered whenever a version can be set at all, not just when a
 		// newer one exists — pinning or rolling back to a specific tag is just
 		// as valid. The wording distinguishes the two.

@@ -2070,7 +2070,7 @@ EOF</span></pre>
           <tr><td><kbd>n</kbd></td><td>create a volume — a form with <strong>name</strong>, <strong>driver</strong> (default <code>local</code>), <strong>labels</strong> (<code>k=v,k=v</code>) and a <strong>node</strong> target (autocompletes node names; <strong>leave blank to create on every node</strong>, since volumes are node-local). Creates it on each target node's agent and reports per-node success/failure. <kbd>Tab</kbd> moves between fields, <kbd>Esc</kbd> cancels</td></tr>
           <tr><td><kbd>space</kbd></td><td>select / deselect the volume (marked <code>▣</code>) for a bulk delete</td></tr>
           <tr><td><kbd>a</kbd></td><td>select / deselect all currently displayed volumes</td></tr>
-          <tr><td><kbd>d</kbd></td><td>delete the selected volumes — or the one under the cursor — on every node that holds them, behind a confirm (with a progress overlay; deletes run with bounded parallelism)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>delete the selected volumes — or the one under the cursor — on every node that holds them, behind a confirm (with a progress overlay; deletes run with bounded parallelism)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: delete every volume no running container mounts <em>and</em> no service declares, behind a confirm</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>show which nodes hold the volume; the volume's <strong>labels</strong> are listed read-only above the nodes (Docker has no volume-update API, so labels can't be edited after creation — set them when you create the volume)</td></tr>
           <tr><td><kbd>i</kbd></td><td>show which services/containers use it</td></tr>
@@ -2082,7 +2082,7 @@ EOF</span></pre>
         Deleting is node-aware: a volume is removed on every node holding it. Prune
         spares volumes a service <em>declares</em> even when no task is running, so it
         won't wipe a stopped stack's data. For finer control, <kbd>Enter</kbd> opens the
-        per-node list where <kbd>space</kbd> selects nodes, <kbd>d</kbd> deletes the
+        per-node list where <kbd>space</kbd> selects nodes, <kbd>X</kbd> deletes the
         highlighted node's copy and <kbd>a</kbd> deletes on all nodes — each behind a
         confirmation.
       </p>
@@ -2092,14 +2092,14 @@ EOF</span></pre>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the forward's full detail (including any error)</td></tr>
-          <tr><td><kbd>d</kbd></td><td>stop the selected forward</td></tr>
+          <tr><td><kbd>X</kbd></td><td>stop the selected forward</td></tr>
           <tr><td><kbd>o</kbd></td><td>copy the forward's URL (<code>http://&lt;address&gt;:&lt;port&gt;</code>; a forward on <code>0.0.0.0</code> is copied as <code>127.0.0.1</code>)</td></tr>
         </tbody>
       </table></div>
       <p>
         A running container is annotated in the tree as <code>local→remote</code>
         (e.g. <code>9090→8080</code>). Forwards keep running when their overlay closes
-        <em>and</em> when you switch to another cluster; they stop on <kbd>d</kbd> or
+        <em>and</em> when you switch to another cluster; they stop on <kbd>X</kbd> or
         when you quit the UI. The <code>CLUSTER</code> column names the context each one
         belongs to, dimmed for the cluster you are currently looking at — a forward on
         another cluster is still yours and still listening, but its
@@ -2180,7 +2180,7 @@ EOF</span></pre>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>show the secret's metadata and the services/containers that use it</td></tr>
-          <tr><td><kbd>d</kbd></td><td>on the secrets list: <strong>delete</strong> the selected secret — permanently removes it (one <code>SecretRemove</code>), behind a confirm; cannot be undone. Docker refuses to remove a secret still referenced by a service, so the confirm <strong>warns when it's in use</strong> and lists those services (detach it there first). Not to be confused with the <kbd>d</kbd> <em>inside</em> the detail view, which detaches the secret from a service</td></tr>
+          <tr><td><kbd>X</kbd></td><td>on the secrets list: <strong>delete</strong> the selected secret — permanently removes it (one <code>SecretRemove</code>), behind a confirm; cannot be undone. Docker refuses to remove a secret still referenced by a service, so the confirm <strong>warns when it's in use</strong> and lists those services (detach it there first). Not to be confused with the <kbd>d</kbd> <em>inside</em> the detail view, which detaches the secret from a service</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
           <tr><td><kbd>d</kbd></td><td>in the detail view: detach the secret from a service — an autocomplete input (suggesting services that currently use it; you may also type any name), then a rolling-update confirmation</td></tr>
         </tbody>
@@ -2240,7 +2240,7 @@ EOF</span></pre>
           <tr><td><kbd>i</kbd></td><td>context details — endpoint and jump hosts, which the column itself has no room for</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one (docker's stored current context too) and switches the UI to that cluster, keeping your position, your filters and your port-forwards</td></tr>
           <tr><td><kbd>n</kbd></td><td>create a context — a <strong>guided</strong> form. A checkbox <strong>“Connect to Docker over SSH”</strong> decides the endpoint: when on, you fill in SSH <strong>user / host / port</strong> and a second checkbox <strong>“Use a jump host”</strong> reveals a <strong>jump host(s)</strong> field (comma-separated, multi-hop <code>ProxyJump</code>) — swarmexec stores them on the context and injects <code>-J</code> into <em>both</em> the Docker-API and the agent-tunnel ssh connections, so bastions work without editing <code>~/.ssh/config</code>. When off, you enter a plain <code>tcp://</code> / <code>unix://</code> host. The form assembles the docker host for you, and <strong>Test</strong> pings the assembled endpoint before you save. Also on the CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
-          <tr><td><kbd>d</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
         </tbody>
       </table></div>
 
@@ -2483,13 +2483,16 @@ search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
 stack_group: s
 volume_select: space               volume_select_all: a
-volume_delete: d volume_prune: P   volume_used_by: i
+volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
-context_use: u   context_new: n    context_delete: d
+context_use: u   context_new: n    context_delete: X
 node_edit_labels: l    node_availability: a    node_prune_images: P
-secret_delete: d secret_new: n
-forward_stop: d  forward_copy_url: o</div>
+secret_delete: X secret_new: n
+forward_stop: X  forward_copy_url: o</div>
+      <p>
+        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. They used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
+      </p>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two
         actions bound to the same key on one tab each fall back to the default, and the

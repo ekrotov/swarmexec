@@ -2152,7 +2152,7 @@ EOF</span></pre>
           <tr><td><kbd>n</kbd></td><td>utwórz wolumen — formularz z <strong>nazwą</strong>, <strong>sterownikiem</strong> (domyślnie <code>local</code>), <strong>etykietami</strong> (<code>k=v,k=v</code>) i docelowym <strong>węzłem</strong> (autouzupełnia nazwy węzłów; <strong>zostaw puste, żeby utworzyć na każdym węźle</strong>, bo wolumeny są lokalne dla węzła). Tworzy go przez agenta na każdym docelowym węźle i raportuje powodzenie/niepowodzenie dla każdego węzła. <kbd>Tab</kbd> przechodzi między polami, <kbd>Esc</kbd> anuluje</td></tr>
           <tr><td><kbd>space</kbd></td><td>zaznacz / odznacz wolumen (oznaczony <code>▣</code>) do zbiorczego usunięcia</td></tr>
           <tr><td><kbd>a</kbd></td><td>zaznacz / odznacz wszystkie aktualnie wyświetlane wolumeny</td></tr>
-          <tr><td><kbd>d</kbd></td><td>usuń zaznaczone wolumeny — albo ten pod kursorem — ze wszystkich węzłów, na których się znajdują, po potwierdzeniu (z nakładką postępu; usuwanie działa z ograniczoną równoległością)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>usuń zaznaczone wolumeny — albo ten pod kursorem — ze wszystkich węzłów, na których się znajdują, po potwierdzeniu (z nakładką postępu; usuwanie działa z ograniczoną równoległością)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: usuń każdy wolumen, którego nie montuje żaden działający kontener <em>i</em> którego nie deklaruje żadna usługa, po potwierdzeniu</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>pokaż, na których węzłach znajduje się wolumen; <strong>etykiety</strong> wolumenu są wypisane tylko do odczytu nad węzłami (Docker nie ma API aktualizacji wolumenu, więc etykiet nie da się edytować po utworzeniu — ustaw je przy tworzeniu wolumenu)</td></tr>
           <tr><td><kbd>i</kbd></td><td>pokaż, które usługi/kontenery go używają</td></tr>
@@ -2165,7 +2165,7 @@ EOF</span></pre>
         znajduje. Prune pomija wolumeny, które usługa <em>deklaruje</em>, nawet gdy żadne
         zadanie nie działa, więc nie wymaże danych zatrzymanego stacka. Dla większej kontroli
         <kbd>Enter</kbd> otwiera listę węzłów, gdzie <kbd>space</kbd> zaznacza węzły,
-        <kbd>d</kbd> usuwa kopię z podświetlonego węzła, a <kbd>a</kbd> usuwa ze wszystkich
+        <kbd>X</kbd> usuwa kopię z podświetlonego węzła, a <kbd>a</kbd> usuwa ze wszystkich
         węzłów — każda operacja po potwierdzeniu.
       </p>
 
@@ -2174,7 +2174,7 @@ EOF</span></pre>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>pokaż pełne szczegóły przekierowania (łącznie z ewentualnym błędem)</td></tr>
-          <tr><td><kbd>d</kbd></td><td>zatrzymaj zaznaczone przekierowanie</td></tr>
+          <tr><td><kbd>X</kbd></td><td>zatrzymaj zaznaczone przekierowanie</td></tr>
           <tr><td><kbd>o</kbd></td><td>skopiuj URL przekierowania (<code>http://&lt;adres&gt;:&lt;port&gt;</code>; przekierowanie na <code>0.0.0.0</code> jest kopiowane jako <code>127.0.0.1</code>)</td></tr>
         </tbody>
       </table></div>
@@ -2182,7 +2182,7 @@ EOF</span></pre>
         Działający kontener jest opisany w drzewie jako <code>local→remote</code>
         (np. <code>9090→8080</code>). Przekierowania działają dalej po zamknięciu nakładki
         <em>oraz</em> po przełączeniu na inny klaster; zatrzymują się po naciśnięciu
-        <kbd>d</kbd> albo po wyjściu z UI. Kolumna <code>CLUSTER</code> podaje kontekst, do
+        <kbd>X</kbd> albo po wyjściu z UI. Kolumna <code>CLUSTER</code> podaje kontekst, do
         którego należy każde przekierowanie, i jest przygaszona dla klastra, który właśnie
         oglądasz — przekierowanie w innym klastrze nadal jest twoje i nadal nasłuchuje, ale
         jego <code>CONTAINER</code> i <code>NODE</code> wskazują obiekty, których stąd nie
@@ -2264,7 +2264,7 @@ EOF</span></pre>
         <thead><tr><th>Klawisz</th><th>Akcja</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>pokaż metadane sekretu oraz usługi/kontenery, które go używają</td></tr>
-          <tr><td><kbd>d</kbd></td><td>na liście sekretów: <strong>usuń</strong> zaznaczony sekret — trwale go usuwa (jedno <code>SecretRemove</code>), po potwierdzeniu; nie da się tego cofnąć. Docker odmawia usunięcia sekretu, do którego wciąż odwołuje się jakaś usługa, więc potwierdzenie <strong>ostrzega, gdy sekret jest w użyciu</strong> i wypisuje te usługi (najpierw odłącz go od nich). Nie mylić z <kbd>d</kbd> <em>wewnątrz</em> widoku szczegółów, który odłącza sekret od usługi</td></tr>
+          <tr><td><kbd>X</kbd></td><td>na liście sekretów: <strong>usuń</strong> zaznaczony sekret — trwale go usuwa (jedno <code>SecretRemove</code>), po potwierdzeniu; nie da się tego cofnąć. Docker odmawia usunięcia sekretu, do którego wciąż odwołuje się jakaś usługa, więc potwierdzenie <strong>ostrzega, gdy sekret jest w użyciu</strong> i wypisuje te usługi (najpierw odłącz go od nich). Nie mylić z <kbd>d</kbd> <em>wewnątrz</em> widoku szczegółów, który odłącza sekret od usługi</td></tr>
           <tr><td><kbd>a</kbd></td><td>w widoku szczegółów: podłącz sekret do usługi — pole z autouzupełnianiem (podpowiada usługi, które go jeszcze nie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
           <tr><td><kbd>d</kbd></td><td>w widoku szczegółów: odłącz sekret od usługi — pole z autouzupełnianiem (podpowiada usługi, które go obecnie używają; możesz też wpisać dowolną nazwę), a potem potwierdzenie aktualizacji kroczącej</td></tr>
         </tbody>
@@ -2323,7 +2323,7 @@ EOF</span></pre>
           <tr><td><kbd>i</kbd></td><td>szczegóły kontekstu — punkt końcowy i hosty pośredniczące, na które w kolumnie nie ma miejsca</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>aktywuj zaznaczony kontekst — ustawia go jako bieżący (także jako bieżący kontekst zapisany przez Dockera) i przełącza UI na ten klaster, zachowując twoje położenie, filtry i przekierowania portów</td></tr>
           <tr><td><kbd>n</kbd></td><td>utwórz kontekst — formularz <strong>z przewodnikiem</strong>. Pole wyboru <strong>„Connect to Docker over SSH”</strong> decyduje o punkcie końcowym: gdy jest włączone, wypełniasz <strong>użytkownika / host / port</strong> SSH, a drugie pole wyboru <strong>„Use a jump host”</strong> odsłania pole <strong>host(y) pośredniczące</strong> (rozdzielone przecinkami, wieloetapowy <code>ProxyJump</code>) — swarmexec zapisuje je w kontekście i dodaje <code>-J</code> do <em>obu</em> połączeń ssh: z API Dockera i tunelu do agentów, dzięki czemu bastiony działają bez edytowania <code>~/.ssh/config</code>. Gdy jest wyłączone, podajesz zwykły host <code>tcp://</code> / <code>unix://</code>. Formularz sam składa adres hosta Dockera, a <strong>Test</strong> sprawdza złożony punkt końcowy, zanim zapiszesz kontekst. Także z CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
-          <tr><td><kbd>d</kbd></td><td>usuń zaznaczony kontekst (po potwierdzeniu); usunięcie bieżącego przywraca wybór na <code>default</code></td></tr>
+          <tr><td><kbd>X</kbd></td><td>usuń zaznaczony kontekst (po potwierdzeniu); usunięcie bieżącego przywraca wybór na <code>default</code></td></tr>
         </tbody>
       </table></div>
 
@@ -2571,13 +2571,16 @@ search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" musi być w cudzysłowie — YAML</span>
 stack_group: s
 volume_select: space               volume_select_all: a
-volume_delete: d volume_prune: P   volume_used_by: i
+volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
-context_use: u   context_new: n    context_delete: d
+context_use: u   context_new: n    context_delete: X
 node_edit_labels: l    node_availability: a    node_prune_images: P
-secret_delete: d secret_new: n
-forward_stop: d  forward_copy_url: o</div>
+secret_delete: X secret_new: n
+forward_stop: X  forward_copy_url: o</div>
+      <p>
+        Klawisze destrukcyjne — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> i <code>forward_stop</code> — domyślnie leżą pod wielkim <kbd>X</kbd>, tym samym klawiszem, którym drzewo usuwa usługę lub stos, a stopka i nakładka <kbd>?</kbd> rysują je na <span class="tc-red">czerwono</span>, niezależnie od tego, jaki klawisz im przypiszesz. Wcześniej domyślnym klawiszem było <kbd>d</kbd>; jeśli wolisz je, przypisz je w <code>keys.yaml</code> — <code>volume_delete: d</code> i pozostałe nadal działają.
+      </p>
       <p>
         Wczytywanie nigdy nie kończy się błędem: nieprawidłowy albo zarezerwowany klawisz, nieznana
         akcja czy dwie akcje przypisane do tego samego klawisza na jednej zakładce — każde
