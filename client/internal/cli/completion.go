@@ -61,15 +61,16 @@ func completionTargets(g *globalFlags) (map[string]completeFunc, map[string]map[
 	firstService := onlyFirstArg(completeServices(g, false))
 	stacks := completeStacks(g)
 	args := map[string]completeFunc{
-		"swarmexec exec":         firstService,
-		"swarmexec port-forward": firstService,
-		"swarmexec logs":         completeServices(g, true),
-		"swarmexec ps":           onlyFirstArg(services),
-		"swarmexec ui":           onlyFirstArg(services),
-		"swarmexec wait":         services,
-		"swarmexec stack export": onlyFirstArg(stacks),
-		"swarmexec context use":  onlyFirstArg(completeContexts),
-		"swarmexec context rm":   completeContexts,
+		"swarmexec exec":          firstService,
+		"swarmexec port-forward":  firstService,
+		"swarmexec logs":          completeServices(g, true),
+		"swarmexec ps":            onlyFirstArg(services),
+		"swarmexec ui":            onlyFirstArg(services),
+		"swarmexec wait":          services,
+		"swarmexec stack export":  onlyFirstArg(stacks),
+		"swarmexec context use":   onlyFirstArg(completeContexts),
+		"swarmexec context rm":    completeContexts,
+		"swarmexec secret rotate": onlyFirstArg(completeSecrets(g)),
 	}
 	flags := map[string]map[string]completeFunc{
 		"swarmexec logs":       {"stack": stacks},
@@ -160,6 +161,37 @@ func completeStacks(g *globalFlags) completeFunc {
 			if st := s.Spec.Labels["com.docker.stack.namespace"]; st != "" && !seen[st] {
 				seen[st] = true
 				out = append(out, st)
+			}
+		}
+		sort.Strings(out)
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// completeSecrets offers secret names. A rotation's stand-in is offered as
+// the secret it stands in for, which is the name a resume is run with.
+func completeSecrets(g *globalFlags) completeFunc {
+	return func(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+		defer cancel()
+		dcli, ok := completionClient(ctx, g)
+		if !ok {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		res, err := dcli.SecretList(ctx, client.SecretListOptions{})
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		seen := map[string]bool{}
+		var out []string
+		for _, s := range res.Items {
+			name := s.Spec.Name
+			if of := s.Spec.Labels[rotateMarkerLabel]; of != "" {
+				name = of
+			}
+			if !seen[name] {
+				seen[name] = true
+				out = append(out, name)
 			}
 		}
 		sort.Strings(out)

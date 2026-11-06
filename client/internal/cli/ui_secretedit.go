@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -240,19 +241,7 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 			"500 KB", "swarm's limit (512000 bytes); the status line shows the size",
 			"binary", "not editable here — use docker secret create NAME FILE"))
 	}
-	read := func(text, arg string) error {
-		data, err := readSecretFile(arg, len(text))
-		if err != nil {
-			return err
-		}
-		ed.insertAt(data)
-		lines := strings.Count(data, "\n")
-		if data != "" && !strings.HasSuffix(data, "\n") {
-			lines++
-		}
-		ed.setMsg(fmt.Sprintf("%q %dL, %dB read", arg, lines, len(data)), false) // as vim says it
-		return nil
-	}
+	read := secretReadCommand(ed)
 	ed.commands = map[string]func(string, string) error{"r": read, "read": read}
 
 	busy := false
@@ -315,5 +304,138 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 
 	ed.render() // the size, from the start
 	ov.show(centeredGrow(d.root, 110, 30, 0.85), d.name)
+	return d
+}
+
+// secretReadCommand is :r for a secret value editor: insert a local text file
+// at the cursor, refused when it would push the value over the limit.
+func secretReadCommand(ed *vimEditor) func(text, arg string) error {
+	return func(text, arg string) error {
+		data, err := readSecretFile(arg, len(text))
+		if err != nil {
+			return err
+		}
+		ed.insertAt(data)
+		lines := strings.Count(data, "\n")
+		if data != "" && !strings.HasSuffix(data, "\n") {
+			lines++
+		}
+		ed.setMsg(fmt.Sprintf("%q %dL, %dB read", arg, lines, len(data)), false) // as vim says it
+		return nil
+	}
+}
+
+// rotateFooterKeys is the rotate editor's footer.
+func rotateFooterKeys(m vimMode) string {
+	switch m {
+	case vimInsert:
+		return footerKeys("Esc", "normal mode", "Tab", "types a tab", "Ctrl-S", "rotate")
+	case vimCommand:
+		return footerKeys("Enter", "run", "Esc", "cancel", ":r file", "read", ":w", "rotate", ":q!", "discard")
+	}
+	return footerKeys("i", "insert", ":r file", "read", ":w", "rotate", ":q", "cancel", "?", "help")
+}
+
+// rotateHooks are what the rotate editor needs from outside; injected so the
+// dialog runs in a test without a cluster or an event loop.
+type rotateHooks struct {
+	// plan reads what the rotation would touch. It runs off the UI goroutine.
+	plan func() (rotatePlan, error)
+	// queue runs a function on the UI goroutine (QueueUpdateDraw).
+	queue func(func())
+	// confirm asks; ok runs when the operator agrees. Cancel returns to back.
+	confirm func(msg string, back tview.Primitive, ok func())
+	// start runs the rotation, once the editor is closed.
+	start func(data []byte)
+}
+
+// rotateDialog is the rotate-secret overlay: the fixed name and labels above
+// the vim editor that takes the new value.
+type rotateDialog struct {
+	root *tview.Flex
+	head *tview.TextView
+	ed   *vimEditor
+}
+
+// openRotateEditor opens the editor for a secret's new value. The name and
+// labels are shown but not editable — keeping them is the point of rotating.
+// :w (or Ctrl-S) checks the value, reads the services that use the secret and
+// asks; only a yes closes the editor and starts the rotation. The value is
+// sent byte for byte, as in the create dialog.
+func (u *ui) openRotateEditor(back tview.Primitive, name string, labels map[string]string, h rotateHooks) *rotateDialog {
+	d := &rotateDialog{ed: newVimEditor("new value", "")}
+	ed := d.ed
+	d.head = tview.NewTextView().SetDynamicColors(true)
+	head := fmt.Sprintf("Name    %s  [gray](kept)[-]\nLabels  ", tview.Escape(name))
+	if len(labels) == 0 {
+		head += "-"
+	} else {
+		keys := make([]string, 0, len(labels))
+		for k := range labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		kv := make([]string, len(keys))
+		for i, k := range keys {
+			kv[i] = k + "=" + labels[k]
+		}
+		head += tview.Escape(strings.Join(kv, ",")) + "  [gray](kept)[-]"
+	}
+	d.head.SetText(head)
+	padded := tview.NewFlex().
+		AddItem(tview.NewBox(), 1, 0, false).
+		AddItem(d.head, 0, 1, false).
+		AddItem(tview.NewBox(), 1, 0, false)
+	d.root = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(padded, 2, 0, false).
+		AddItem(ed.root, 0, 1, true)
+	d.root.SetBorder(true).SetTitle(" rotate secret " + tview.Escape(name) + " · ? help ")
+
+	ov := u.overlayFor(pageSecRotate, back, rotateFooterKeys(vimNormal))
+	ed.posInfo = secretSize
+	ed.onMode = func(m vimMode) { ov.setHelp(rotateFooterKeys(m)) }
+	ed.onQuit = ov.Close
+	ed.onHelp = func() {
+		u.showVimHelp(ed.ta, sectionHelp("Rotate",
+			":r <file>", "insert a local file at the cursor (~ works); text only",
+			":w  Ctrl-S", "rotate — lists the services that restart and asks first",
+			"name, labels", "kept; the services are parked on "+rotateTempName(name)+" meanwhile",
+			"restarts", "every service using the secret restarts twice",
+			"rollback", "none — the old secret object is deleted",
+			"500 KB", "swarm's limit (512000 bytes); the status line shows the size"))
+	}
+	read := secretReadCommand(ed)
+	ed.commands = map[string]func(string, string) error{"r": read, "read": read}
+
+	busy := false
+	ed.onWrite = func(text string) error {
+		if busy {
+			return errors.New("still reading the services — wait a moment")
+		}
+		if _, _, err := validateSecret(name, "", text); err != nil {
+			return err
+		}
+		busy = true
+		ed.setMsg("reading the services that use "+name+" …", false)
+		data := []byte(text)
+		go func() {
+			p, err := h.plan()
+			h.queue(func() {
+				busy = false
+				if err != nil {
+					ed.setMsg(err.Error(), true)
+					return
+				}
+				ed.setMsg("", false)
+				h.confirm(rotateConfirmText(p)+"\nRotate "+name+" now?", ed.ta, func() {
+					ov.Close()
+					h.start(data)
+				})
+			})
+		}()
+		return nil
+	}
+	ed.render()
+	ov.show(centeredGrow(d.root, 110, 30, 0.85), ed.ta)
 	return d
 }

@@ -34,6 +34,7 @@ var argContract = map[string][]int{
 	"swarmexec logs":            {1, 2, 3}, // every target is followed; 0 only with --stack
 	"swarmexec mcp":             {0},
 	"swarmexec port-forward":    {2}, // target and port spec
+	"swarmexec secret rotate":   {1},
 	"swarmexec ps":              {0, 1},
 	"swarmexec security report": {0},
 	"swarmexec stack deploy":    {1, 2}, // file, optional stack name
