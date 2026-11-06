@@ -253,7 +253,7 @@ func (u *ui) showForwardDetail() {
 	if e.connErr != nil {
 		fmt.Fprintf(&b, "\n\n[yellow]last connection failed:[-]\n%s", esc(e.connErr.Error()))
 	}
-	b.WriteString("\n\n[gray]d[-] stop   [gray]Esc[-] close")
+	b.WriteString("\n\n" + keyTag(dangerKey(keyLabel(u.km.FwdStop))) + " stop   [gray]Esc[-] close")
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
@@ -267,9 +267,9 @@ func (u *ui) showForwardDetail() {
 		case ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i'):
 			closeDetail()
 			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
+		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.FwdStop:
 			// Stop straight from the detail view — the operator is already
-			// looking at what they are about to kill.
+			// looking at what they are about to kill. Same key as the table.
 			forwards.remove(e.id)
 			closeDetail()
 			u.refreshForwardViews()
@@ -286,7 +286,8 @@ func (u *ui) showForwardDetail() {
 
 // forwardKeys is the key handler of the Forwards table.
 //
-// On the forwards table: Enter/i details, d stops the forward, o copies its URL.
+// On the forwards table: Enter/i details, forward_stop (X) stops the forward,
+// forward_copy_url (o) copies its URL.
 func (u *ui) forwardKeys(ev *tcell.EventKey) *tcell.EventKey {
 	km, forwards, screen := u.km, u.forwards, u.screen
 	if ev.Key() == tcell.KeyRune {

@@ -48,6 +48,11 @@ type keyAction struct {
 	field func(*keybinds) *rune
 }
 
+// The destructive actions — volume_delete, secret_delete, context_delete and
+// forward_stop — default to capital X, the same key the tree removes a
+// service or stack with: one deliberate, shifted key for "make it go away" on
+// every tab, drawn red in the footers (dangerKey). There is no lowercase d
+// alias; a keys.yaml that binds d still works, as any explicit binding does.
 var keyActions = []keyAction{
 	{"quit", []string{"*"}, 'q', func(k *keybinds) *rune { return &k.Quit }},
 	{"refresh", []string{"*"}, 'r', func(k *keybinds) *rune { return &k.Refresh }},
@@ -66,7 +71,7 @@ var keyActions = []keyAction{
 	{"stack_file", []string{"containers"}, 'E', func(k *keybinds) *rune { return &k.StackFile }},
 	{"volume_select", []string{"volumes"}, ' ', func(k *keybinds) *rune { return &k.VolSelect }},
 	{"volume_select_all", []string{"volumes"}, 'a', func(k *keybinds) *rune { return &k.VolSelectAll }},
-	{"volume_delete", []string{"volumes"}, 'd', func(k *keybinds) *rune { return &k.VolDelete }},
+	{"volume_delete", []string{"volumes"}, 'X', func(k *keybinds) *rune { return &k.VolDelete }},
 	{"volume_prune", []string{"volumes"}, 'P', func(k *keybinds) *rune { return &k.VolPrune }},
 	{"volume_used_by", []string{"volumes"}, 'i', func(k *keybinds) *rune { return &k.VolUsedBy }},
 	{"volume_sort", []string{"volumes"}, 's', func(k *keybinds) *rune { return &k.VolSort }},
@@ -80,7 +85,7 @@ var keyActions = []keyAction{
 	// Capital P, the same gesture the volumes tab uses for its prune — same verb,
 	// same shape, different scope.
 	{"node_prune_images", []string{"nodes"}, 'P', func(k *keybinds) *rune { return &k.NodeImages }},
-	{"secret_delete", []string{"secrets"}, 'd', func(k *keybinds) *rune { return &k.SecDelete }},
+	{"secret_delete", []string{"secrets"}, 'X', func(k *keybinds) *rune { return &k.SecDelete }},
 	{"secret_new", []string{"secrets"}, 'n', func(k *keybinds) *rune { return &k.SecNew }},
 	// "contexts" is a scope, not a tab, since the context list moved into the
 	// sidebar: these three apply while it has the keyboard. context_focus is the
@@ -88,8 +93,8 @@ var keyActions = []keyAction{
 	{"context_focus", []string{"*"}, 'c', func(k *keybinds) *rune { return &k.CtxFocus }},
 	{"context_use", []string{"contexts"}, 'u', func(k *keybinds) *rune { return &k.CtxUse }},
 	{"context_new", []string{"contexts"}, 'n', func(k *keybinds) *rune { return &k.CtxNew }},
-	{"context_delete", []string{"contexts"}, 'd', func(k *keybinds) *rune { return &k.CtxDelete }},
-	{"forward_stop", []string{"forwards"}, 'd', func(k *keybinds) *rune { return &k.FwdStop }},
+	{"context_delete", []string{"contexts"}, 'X', func(k *keybinds) *rune { return &k.CtxDelete }},
+	{"forward_stop", []string{"forwards"}, 'X', func(k *keybinds) *rune { return &k.FwdStop }},
 	{"forward_copy_url", []string{"forwards"}, 'o', func(k *keybinds) *rune { return &k.FwdCopyURL }},
 }
 

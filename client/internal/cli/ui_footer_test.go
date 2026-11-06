@@ -65,3 +65,42 @@ func TestFooterHintFollowsSidebar(t *testing.T) {
 		t.Fatalf("wide again: %q, want the hint gone", got)
 	}
 }
+
+// The destructive key in a tab footer is red, not yellow, and it is the LIVE
+// key: remap volume_delete to D and the footer shows a red D.
+func TestFooterDeleteKeyIsRedAndFollowsTheKeymap(t *testing.T) {
+	u := &ui{km: defaultKeybinds()}
+	for tab, want := range map[string]string{
+		"volumes":    "[red]X[white] delete",
+		"secrets":    "[red]X[white] delete",
+		"contexts":   "[red]X[white] delete",
+		"forwards":   "[red]X[white] stop",
+		"containers": "[red]X[white] remove",
+	} {
+		got := u.helpFor(tab)
+		if !strings.Contains(got, want) {
+			t.Errorf("%s footer %q lacks %q", tab, got, want)
+		}
+		if strings.Contains(got, "[yellow]X[white]") {
+			t.Errorf("%s footer draws X yellow: %q", tab, got)
+		}
+	}
+
+	u.km.VolDelete = 'D'
+	got := u.helpFor("volumes")
+	if !strings.Contains(got, "[red]D[white] delete") {
+		t.Errorf("remapped footer %q lacks a red D", got)
+	}
+	if strings.Contains(got, "X[white] delete") {
+		t.Errorf("remapped footer still names X: %q", got)
+	}
+
+	// footerKeys: only the marked pair turns red.
+	fk := footerKeys("a", "add", dangerKey("d"), "delete")
+	if !strings.Contains(fk, "[yellow]a[white] add") || !strings.Contains(fk, "[red]d[white] delete") {
+		t.Errorf("footerKeys = %q", fk)
+	}
+	if strings.Contains(fk, dangerMark) {
+		t.Errorf("footerKeys leaked the danger marker: %q", fk)
+	}
+}

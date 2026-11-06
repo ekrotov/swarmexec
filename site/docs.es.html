@@ -2191,7 +2191,7 @@ EOF</span></pre>
           <tr><td><kbd>n</kbd></td><td>crea un volumen — un formulario con <strong>nombre</strong>, <strong>driver</strong> (por defecto <code>local</code>), <strong>etiquetas</strong> (<code>k=v,k=v</code>) y un <strong>nodo</strong> de destino (autocompleta nombres de nodo; <strong>déjalo en blanco para crearlo en todos los nodos</strong>, ya que los volúmenes son locales a cada nodo). Lo crea a través del agente de cada nodo de destino e informa del resultado nodo por nodo. <kbd>Tab</kbd> pasa de un campo a otro, <kbd>Esc</kbd> cancela</td></tr>
           <tr><td><kbd>space</kbd></td><td>marca / desmarca el volumen (se señala con <code>▣</code>) para borrarlo junto con otros</td></tr>
           <tr><td><kbd>a</kbd></td><td>marca / desmarca todos los volúmenes que se muestran en ese momento</td></tr>
-          <tr><td><kbd>d</kbd></td><td>elimina los volúmenes marcados — o el que está bajo el cursor — en todos los nodos que los contienen, previa confirmación (con un overlay de progreso; los borrados se ejecutan en paralelo, con un límite)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>elimina los volúmenes marcados — o el que está bajo el cursor — en todos los nodos que los contienen, previa confirmación (con un overlay de progreso; los borrados se ejecutan en paralelo, con un límite)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: elimina todos los volúmenes que no monta ningún contenedor en ejecución <em>y</em> que no declara ningún servicio, previa confirmación</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>muestra qué nodos contienen el volumen; las <strong>etiquetas</strong> del volumen aparecen, en solo lectura, encima de los nodos (Docker no tiene API para actualizar volúmenes, así que las etiquetas no se pueden editar después de crearlo — defínelas al crear el volumen)</td></tr>
           <tr><td><kbd>i</kbd></td><td>muestra qué servicios/contenedores lo usan</td></tr>
@@ -2204,7 +2204,7 @@ EOF</span></pre>
         contienen. Prune respeta los volúmenes que un servicio <em>declara</em> aunque no haya
         ninguna tarea en ejecución, de modo que no borra los datos de un stack detenido. Para
         un control más preciso, <kbd>Enter</kbd> abre la lista por nodo, donde
-        <kbd>space</kbd> selecciona nodos, <kbd>d</kbd> elimina la copia del nodo resaltado y
+        <kbd>space</kbd> selecciona nodos, <kbd>X</kbd> elimina la copia del nodo resaltado y
         <kbd>a</kbd> lo elimina en todos los nodos — cada acción, previa confirmación.
       </p>
 
@@ -2213,14 +2213,14 @@ EOF</span></pre>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>muestra el detalle completo del reenvío (incluido cualquier error)</td></tr>
-          <tr><td><kbd>d</kbd></td><td>detiene el reenvío seleccionado</td></tr>
+          <tr><td><kbd>X</kbd></td><td>detiene el reenvío seleccionado</td></tr>
           <tr><td><kbd>o</kbd></td><td>copia la URL del reenvío (<code>http://&lt;dirección&gt;:&lt;port&gt;</code>; un reenvío en <code>0.0.0.0</code> se copia como <code>127.0.0.1</code>)</td></tr>
         </tbody>
       </table></div>
       <p>
         Un contenedor en ejecución se anota en el árbol como <code>local→remote</code>
         (p. ej. <code>9090→8080</code>). Los reenvíos siguen activos cuando se cierra su
-        overlay <em>y</em> cuando cambias a otro clúster; se detienen con <kbd>d</kbd> o al
+        overlay <em>y</em> cuando cambias a otro clúster; se detienen con <kbd>X</kbd> o al
         salir de la UI. La columna <code>CLUSTER</code> indica el contexto al que pertenece
         cada uno, atenuada para el clúster que estás viendo — un reenvío de otro clúster
         sigue siendo tuyo y sigue escuchando, pero su <code>CONTAINER</code> y su
@@ -2303,8 +2303,9 @@ EOF</span></pre>
       <div class="tablewrap"><table>
         <thead><tr><th>Tecla</th><th>Acción</th></tr></thead>
         <tbody>
+          <tr><td><kbd>n</kbd></td><td>crea un secreto nuevo — abre el <a href="#secret-editor">editor de secretos</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>muestra los metadatos del secreto y los servicios/contenedores que lo usan</td></tr>
-          <tr><td><kbd>d</kbd></td><td>en la lista de secretos: <strong>elimina</strong> el secreto seleccionado — lo borra definitivamente (un único <code>SecretRemove</code>), previa confirmación; no se puede deshacer. Docker se niega a eliminar un secreto al que todavía hace referencia un servicio, así que la confirmación <strong>avisa si está en uso</strong> y lista esos servicios (desvincúlalo primero de esos servicios). No hay que confundirla con la <kbd>d</kbd> <em>dentro</em> de la vista de detalle, que desvincula el secreto de un servicio</td></tr>
+          <tr><td><kbd>X</kbd></td><td>en la lista de secretos: <strong>elimina</strong> el secreto seleccionado — lo borra definitivamente (un único <code>SecretRemove</code>), previa confirmación; no se puede deshacer. Docker se niega a eliminar un secreto al que todavía hace referencia un servicio, así que la confirmación <strong>avisa si está en uso</strong> y lista esos servicios (desvincúlalo primero de esos servicios). No hay que confundirla con la <kbd>d</kbd> <em>dentro</em> de la vista de detalle, que desvincula el secreto de un servicio</td></tr>
           <tr><td><kbd>a</kbd></td><td>en la vista de detalle: adjunta el secreto a un servicio — un campo con autocompletado (sugiere servicios que aún no lo usan; también puedes escribir cualquier nombre) y, después, la confirmación de la actualización progresiva</td></tr>
           <tr><td><kbd>d</kbd></td><td>en la vista de detalle: desvincula el secreto de un servicio — un campo con autocompletado (sugiere los servicios que lo usan en ese momento; también puedes escribir cualquier nombre) y, después, la confirmación de la actualización progresiva</td></tr>
         </tbody>
@@ -2316,6 +2317,37 @@ EOF</span></pre>
         refresca la pestaña Secrets. Igual que al conectar/desconectar redes, cada operación
         es un <code>ServiceUpdate</code> de la API del manager que desencadena una
         <strong>actualización progresiva</strong> que reinicia las tareas del servicio.
+      </p>
+      <h4 id="secret-editor">El editor de secretos</h4>
+      <p>
+        <kbd>n</kbd> abre un único diálogo grande: arriba <strong>Name</strong> y
+        <strong>Labels</strong> (<code>k=v,k=v</code>, opcional) y, debajo, el valor en el
+        mismo editor al estilo vim que el <a href="#env-editor">editor de entorno</a>, que
+        ocupa toda la altura restante (y más pantalla en un terminal grande). El foco
+        empieza en Name. <kbd>Tab</kbd> / <kbd>Enter</kbd> pasan de Name a Labels y al
+        valor, <kbd>Shift-Tab</kbd> vuelve atrás; en el valor, <kbd>Tab</kbd> solo cambia de
+        campo en modo Normal — en modo Insert escribe un tabulador, que los ficheros pueden
+        necesitar. <kbd>Esc</kbd> en Name o Labels va al valor, o cierra el diálogo mientras
+        no se haya introducido nada. La línea de estado muestra el tamaño del valor en
+        líneas y bytes, en rojo en cuanto supera el límite.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Teclas</th><th>Acción</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>:r</kbd> fichero</td><td>inserta un fichero <strong>local</strong> en el cursor (también <kbd>:read</kbd>; <code>~</code> se expande a tu directorio personal, una ruta relativa es relativa al directorio donde se ejecuta swarmexec) — la forma práctica de crear un secreto a partir de un certificado, una clave o un fichero JSON</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>crea el secreto (también <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>; <kbd>Ctrl-S</kbd> funciona también en Name y Labels). Un nombre vacío, etiquetas mal formadas, un valor vacío o uno por encima del límite se indican en la línea de estado y el diálogo sigue abierto</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancela; <kbd>:q</kbd> se niega en cuanto se ha introducido algo (el nombre y las etiquetas cuentan), <kbd>:q!</kbd> lo descarta</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        El valor se envía <strong>byte a byte</strong> tal como lo tiene el editor: no se
+        añade ni se quita ningún salto de línea final, así que una contraseña escrita es
+        exactamente lo que escribiste, y un fichero leído con <kbd>:r</kbd> conserva sus
+        propios finales de línea y su salto de línea final. Swarm limita un secreto a
+        <strong>500&nbsp;KB</strong> (512000 bytes). El editor solo admite texto:
+        <kbd>:r</kbd> rechaza un fichero que no sea UTF-8 o que contenga bytes NUL — crea un
+        secreto binario (un keystore, un certificado DER) con
+        <code>docker secret create NAME FILE</code>.
       </p>
 
       <h3>Barra lateral de contextos</h3>
@@ -2364,7 +2396,7 @@ EOF</span></pre>
           <tr><td><kbd>i</kbd></td><td>detalles del contexto — endpoint y hosts de salto, que no caben en la columna</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activa el contexto seleccionado — lo convierte en el actual (también como contexto actual guardado de docker) y cambia la UI a ese clúster, conservando tu posición, tus filtros y tus reenvíos de puertos</td></tr>
           <tr><td><kbd>n</kbd></td><td>crea un contexto — un formulario <strong>guiado</strong>. Una casilla <strong>«Connect to Docker over SSH»</strong> determina el endpoint: si está marcada, rellenas <strong>usuario / host / puerto</strong> de SSH, y una segunda casilla, <strong>«Use a jump host»</strong>, muestra un campo de <strong>host(s) de salto</strong> (separados por comas, <code>ProxyJump</code> con varios saltos) — swarmexec los guarda en el contexto y añade <code>-J</code> a <em>las dos</em> conexiones ssh, la de la API de Docker y la del túnel hacia el agente, para que los bastiones funcionen sin editar <code>~/.ssh/config</code>. Si está desmarcada, introduces directamente un host <code>tcp://</code> / <code>unix://</code>. El formulario compone el docker host por ti, y <strong>Test</strong> comprueba el endpoint resultante antes de que guardes. También desde la CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
-          <tr><td><kbd>d</kbd></td><td>elimina el contexto seleccionado (previa confirmación); si eliminas el actual, la selección vuelve a <code>default</code></td></tr>
+          <tr><td><kbd>X</kbd></td><td>elimina el contexto seleccionado (previa confirmación); si eliminas el actual, la selección vuelve a <code>default</code></td></tr>
         </tbody>
       </table></div>
 
@@ -2624,13 +2656,16 @@ search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" debe ir entre comillas — YAML</span>
 stack_group: s
 volume_select: space               volume_select_all: a
-volume_delete: d volume_prune: P   volume_used_by: i
+volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
-context_use: u   context_new: n    context_delete: d
+context_use: u   context_new: n    context_delete: X
 node_edit_labels: l    node_availability: a    node_prune_images: P
-secret_delete: d secret_new: n
-forward_stop: d  forward_copy_url: o</div>
+secret_delete: X secret_new: n
+forward_stop: X  forward_copy_url: o</div>
+      <p>
+        Las teclas destructivas — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> y <code>forward_stop</code> — usan por defecto la <kbd>X</kbd> mayúscula, la misma tecla con la que el árbol elimina un servicio o un stack, y el pie de página y el overlay <kbd>?</kbd> las muestran en <span class="tc-red">rojo</span>, sea cual sea la tecla que les asignes. Antes el valor por defecto era <kbd>d</kbd>; si la prefieres, asígnala en <code>keys.yaml</code> — <code>volume_delete: d</code> y las demás siguen funcionando.
+      </p>
       <p>
         La carga nunca falla: una tecla no válida o reservada, una acción desconocida o dos
         acciones asignadas a la misma tecla en una pestaña vuelven, cada una, a su valor por

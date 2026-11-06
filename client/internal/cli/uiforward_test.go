@@ -167,7 +167,7 @@ func TestForwardRegistry_StopAll(t *testing.T) {
 	}
 }
 
-// Pressing "d" twice on the same row must not panic or double-stop.
+// Pressing the stop key (X) twice on the same row must not panic or double-stop.
 func TestForwardRegistry_RemoveIsIdempotent(t *testing.T) {
 	r := newForwardRegistry()
 	calls := 0
