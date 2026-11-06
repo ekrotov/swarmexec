@@ -85,7 +85,7 @@ func TestParseRefusesWhatWouldMislead(t *testing.T) {
 		"no default":      "rules: []",
 		"bad default":     "default: maybe",
 		"misspelt action": "default: allow\nrules:\n  - deny: [image.prunee]",
-		"glob of nothing": "default: allow\nrules:\n  - deny: [\"network.*\"]",
+		"glob of nothing": "default: allow\nrules:\n  - deny: [\"secret.*\"]",
 		"misspelt key":    "default: allow\nrules:\n  - deny: [exec]\n    user: [root]",
 		"both verdicts":   "default: allow\nrules:\n  - deny: [exec]\n    allow: [logs]",
 		"no actions":      "default: allow\nrules:\n  - reason: forgot",

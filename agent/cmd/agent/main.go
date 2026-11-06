@@ -187,6 +187,11 @@ func run(args []string) error {
 	// cache it idles unless a client is actually asking, so an agent nobody is
 	// watching costs nothing.
 	srv.StartStatsCache(cacheCtx)
+	// What a prune would free, measured hourly, and the prune schedule read
+	// from this agent's own container labels (swarmexec.prune.*). Invalid
+	// labels disable the schedule; they never stop the agent.
+	srv.StartReclaimCache(cacheCtx)
+	srv.StartPruneScheduler(cacheCtx)
 
 	serverOpts := []grpc.ServerOption{
 		grpc.Creds(credentials.NewTLS(tlsCfg)),

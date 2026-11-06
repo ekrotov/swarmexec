@@ -39,6 +39,8 @@ const (
 	Agent_Stats_FullMethodName                = "/swarmexec.Agent/Stats"
 	Agent_ListImages_FullMethodName           = "/swarmexec.Agent/ListImages"
 	Agent_PruneImages_FullMethodName          = "/swarmexec.Agent/PruneImages"
+	Agent_ReclaimStats_FullMethodName         = "/swarmexec.Agent/ReclaimStats"
+	Agent_Prune_FullMethodName                = "/swarmexec.Agent/Prune"
 	Agent_Version_FullMethodName              = "/swarmexec.Agent/Version"
 )
 
@@ -92,6 +94,15 @@ type AgentClient interface {
 	// Reclaim image disk space on THIS node (authorized + audited). Destructive:
 	// see PruneImagesRequest.all for the two very different things it can mean.
 	PruneImages(ctx context.Context, in *PruneImagesRequest, opts ...grpc.CallOption) (*PruneImagesResponse, error)
+	// What a prune would reclaim on THIS node, per category, plus the node's
+	// prune schedule and the result of its last scheduled run. The agent measures
+	// in the background (hourly) and answers from memory; measure_now asks for a
+	// fresh measurement, which the agent rate-limits. See CONTRACT.md §3.7.
+	ReclaimStats(ctx context.Context, in *ReclaimStatsRequest, opts ...grpc.CallOption) (*ReclaimStatsResponse, error)
+	// Reclaim disk space on THIS node for a set of categories, in order, each
+	// authorized and audited on its own. Destructive. Supersedes PruneImages,
+	// which stays for older clients. See CONTRACT.md §3.7.
+	Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -241,6 +252,26 @@ func (c *agentClient) PruneImages(ctx context.Context, in *PruneImagesRequest, o
 	return out, nil
 }
 
+func (c *agentClient) ReclaimStats(ctx context.Context, in *ReclaimStatsRequest, opts ...grpc.CallOption) (*ReclaimStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReclaimStatsResponse)
+	err := c.cc.Invoke(ctx, Agent_ReclaimStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentClient) Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PruneResponse)
+	err := c.cc.Invoke(ctx, Agent_Prune_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -301,6 +332,15 @@ type AgentServer interface {
 	// Reclaim image disk space on THIS node (authorized + audited). Destructive:
 	// see PruneImagesRequest.all for the two very different things it can mean.
 	PruneImages(context.Context, *PruneImagesRequest) (*PruneImagesResponse, error)
+	// What a prune would reclaim on THIS node, per category, plus the node's
+	// prune schedule and the result of its last scheduled run. The agent measures
+	// in the background (hourly) and answers from memory; measure_now asks for a
+	// fresh measurement, which the agent rate-limits. See CONTRACT.md §3.7.
+	ReclaimStats(context.Context, *ReclaimStatsRequest) (*ReclaimStatsResponse, error)
+	// Reclaim disk space on THIS node for a set of categories, in order, each
+	// authorized and audited on its own. Destructive. Supersedes PruneImages,
+	// which stays for older clients. See CONTRACT.md §3.7.
+	Prune(context.Context, *PruneRequest) (*PruneResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -348,6 +388,12 @@ func (UnimplementedAgentServer) ListImages(context.Context, *ListImagesRequest) 
 }
 func (UnimplementedAgentServer) PruneImages(context.Context, *PruneImagesRequest) (*PruneImagesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PruneImages not implemented")
+}
+func (UnimplementedAgentServer) ReclaimStats(context.Context, *ReclaimStatsRequest) (*ReclaimStatsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReclaimStats not implemented")
+}
+func (UnimplementedAgentServer) Prune(context.Context, *PruneRequest) (*PruneResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Prune not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -535,6 +581,42 @@ func _Agent_PruneImages_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_ReclaimStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReclaimStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).ReclaimStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_ReclaimStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).ReclaimStats(ctx, req.(*ReclaimStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Agent_Prune_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PruneRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).Prune(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_Prune_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).Prune(ctx, req.(*PruneRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -587,6 +669,14 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PruneImages",
 			Handler:    _Agent_PruneImages_Handler,
+		},
+		{
+			MethodName: "ReclaimStats",
+			Handler:    _Agent_ReclaimStats_Handler,
+		},
+		{
+			MethodName: "Prune",
+			Handler:    _Agent_Prune_Handler,
 		},
 		{
 			MethodName: "Version",

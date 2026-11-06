@@ -68,6 +68,17 @@ service Agent {
   // see PruneImagesRequest.all for the two very different things it can mean.
   rpc PruneImages(PruneImagesRequest) returns (PruneImagesResponse);
 
+  // What a prune would reclaim on THIS node, per category, plus the node's
+  // prune schedule and the result of its last scheduled run. The agent measures
+  // in the background (hourly) and answers from memory; measure_now asks for a
+  // fresh measurement, which the agent rate-limits. See CONTRACT.md §3.7.
+  rpc ReclaimStats(ReclaimStatsRequest) returns (ReclaimStatsResponse);
+
+  // Reclaim disk space on THIS node for a set of categories, in order, each
+  // authorized and audited on its own. Destructive. Supersedes PruneImages,
+  // which stays for older clients. See CONTRACT.md §3.7.
+  rpc Prune(PruneRequest) returns (PruneResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -341,4 +352,108 @@ message PruneImagesRequest {
 message PruneImagesResponse {
   int64 reclaimed_bytes = 1;
   repeated string deleted = 2;  // what the daemon reported removing
+}
+
+// PruneCategory is one kind of object a prune can remove. The names in the
+// comments are the ones the schedule labels and the cli use
+// (internal/prunesched).
+enum PruneCategory {
+  PRUNE_CATEGORY_UNSPECIFIED = 0;
+  // "containers": stopped containers that finished longer ago than
+  // containers_until. Authorized as container.prune.
+  PRUNE_CATEGORY_CONTAINERS = 1;
+  // "images": EVERY image no container uses, tagged or not — the same sweep as
+  // PruneImagesRequest.all=true, and authorized the same way, image.prune.all.
+  PRUNE_CATEGORY_IMAGES = 2;
+  // "dangling-images": untagged images only, authorized as image.prune.
+  // Selecting it together with IMAGES adds nothing.
+  PRUNE_CATEGORY_DANGLING_IMAGES = 3;
+  // "buildcache": all build cache no build is using. Authorized as
+  // buildcache.prune.
+  PRUNE_CATEGORY_BUILD_CACHE = 4;
+  // "networks": LOCAL-scope networks no container references, removed one by
+  // one — never the Engine's networks/prune, which on a manager also removes
+  // unused swarm overlay networks. Authorized as network.prune.
+  PRUNE_CATEGORY_NETWORKS = 5;
+  // "volumes": every volume no container references, NAMED ones included
+  // (Engine all=true). Data loss; never implied by anything else. Authorized
+  // as volume.prune.
+  PRUNE_CATEGORY_VOLUMES = 6;
+}
+
+message ReclaimStatsRequest {
+  // measure_now asks the agent to measure instead of answering from its last
+  // background measurement. Rate-limited: inside the limit the agent answers
+  // from memory and sets measure_throttled.
+  bool measure_now = 1;
+}
+
+message ReclaimCategory {
+  PruneCategory category = 1;
+  int64 count = 2;        // objects a prune of this category would remove
+  int64 bytes = 3;        // what it would free; meaningful only if bytes_known
+  bool bytes_known = 4;   // false for networks, and whenever the size is unknown
+  // held_back counts objects of this kind a prune deliberately KEEPS for now:
+  // stopped containers that finished more recently than containers_until.
+  int64 held_back = 5;
+}
+
+message ReclaimStatsResponse {
+  repeated ReclaimCategory categories = 1;
+  string measured_at = 2;        // RFC3339; empty until the first measurement
+  string measure_error = 3;      // the last measurement failed; figures are older
+  bool measure_throttled = 4;    // measure_now was refused by the rate limit
+  string containers_until = 5;   // the age filter the containers figure used
+  PruneSchedule schedule = 6;
+  PruneRun last_run = 7;         // unset until the schedule has run once
+}
+
+// PruneSchedule is the schedule as THIS agent read it from its own container
+// labels at start. Changing the labels restarts the agents, so it is current.
+message PruneSchedule {
+  bool enabled = 1;
+  string error = 2;                       // the labels did not parse; the schedule is off
+  repeated string days = 3;               // "mon".."sun"
+  string start = 4;                       // "HH:MM"
+  uint32 times_per_day = 5;
+  string tz = 6;                          // IANA name; "UTC" by default
+  repeated PruneCategory categories = 7;
+  string containers_until = 8;            // Go duration
+  repeated string label_filters = 9;      // "key" or "key=value"
+  string next_run = 10;                   // RFC3339; empty when disabled
+}
+
+message PruneRun {
+  string started_at = 1;                  // RFC3339
+  string finished_at = 2;                 // RFC3339
+  repeated PruneCategoryResult results = 3;
+  string error = 4;                       // first failure, if any
+}
+
+message PruneRequest {
+  // categories to prune. The agent runs them in ITS fixed order (containers,
+  // images, build cache, networks, volumes) whatever the order here, because
+  // removing containers is what leaves the rest unused. Duplicates are
+  // ignored. Empty is INVALID_ARGUMENT: there is no implicit "everything".
+  repeated PruneCategory categories = 1;
+  // containers_until is a Go duration: stopped containers that finished more
+  // recently than this are kept, so their logs stay readable. Empty means the
+  // agent's default (24h); "0s" removes every stopped container.
+  string containers_until = 2;
+  // label_filters scopes every category that supports it to objects carrying
+  // these labels ("key" or "key=value"; all must match). Build cache has no
+  // labels and is SKIPPED when a filter is set.
+  repeated string label_filters = 3;
+}
+
+message PruneCategoryResult {
+  PruneCategory category = 1;
+  int64 freed_bytes = 2;
+  int64 count = 3;           // objects removed
+  string error = 4;          // this category failed or was refused; the others still ran
+  bool skipped = 5;          // not attempted (build cache under a label filter)
+}
+
+message PruneResponse {
+  repeated PruneCategoryResult results = 1;
 }

@@ -15,7 +15,10 @@ type Request struct {
 	// "volume.list", "volume.remove", "stats.read", "image.list",
 	// "image.prune" or "image.prune.all" — the last two are distinct so a policy
 	// can allow reclaiming untagged layers without allowing the sweep that also
-	// removes images a stopped service still needs.
+	// removes images a stopped service still needs. The Prune RPC authorizes
+	// each category on its own: "container.prune", "image.prune",
+	// "image.prune.all", "buildcache.prune", "network.prune", "volume.prune";
+	// its stats are "reclaim.read".
 	Action string
 	// Port is the target TCP port inside the container for "portforward".
 	// Forwarding is a distinct exposure class from exec — it lifts an internal

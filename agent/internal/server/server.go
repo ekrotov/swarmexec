@@ -72,6 +72,11 @@ type Server struct {
 	opts       Options
 	sizeCache  *volumeSizeCache     // serves ListVolumes(with_size) from memory
 	statsCache *containerStatsCache // serves Stats from memory (see statscache.go)
+	reclaim    *reclaimCache        // serves ReclaimStats from memory (see reclaim.go)
+	scheduler  *pruneScheduler      // the node's prune schedule (see schedule.go)
+
+	// pruneMu serializes prunes, manual and scheduled (see runPrune).
+	pruneMu sync.Mutex
 
 	// identityFn extracts the authenticated client identity from the RPC
 	// context. Overridable in tests; defaults to the mTLS peer CN.
@@ -116,6 +121,8 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	}
 	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
 	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
+	s.reclaim = newReclaimCache(s, log)
+	s.scheduler = newPruneScheduler(s, log)
 	s.muxes = newMuxPool()
 	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
 	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
@@ -143,6 +150,12 @@ func (s *Server) StartVolumeSizeCache(ctx context.Context) {
 // after New.
 func (s *Server) StartStatsCache(ctx context.Context) {
 	go s.statsCache.run(ctx)
+}
+
+// StartReclaimCache launches the background reclaim measurement: once shortly
+// after start, then hourly, and after every prune. Call it once after New.
+func (s *Server) StartReclaimCache(ctx context.Context) {
+	go s.reclaim.run(ctx)
 }
 
 // ListContainers lists running containers on the local node, optionally

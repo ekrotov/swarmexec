@@ -26,6 +26,15 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
 - Pluggable **`Authorizer`** (default: allow any CA-signed client).
 - Structured **audit log** (session start/end, auth decisions) — never contains
   stdin/stdout payloads.
+- `ReclaimStats` / `Prune` — what a prune would free on the node per category
+  (stopped containers, images, build cache, networks, volumes), measured hourly
+  in the background, and the prune itself with one authorization action per
+  category. Networks are vetted and removed one by one (never the Engine's
+  `networks/prune`, which on a manager also removes unused swarm overlay
+  networks); stopped containers are kept for 24h after they stop.
+- **Prune schedule** read from the agent's own container labels
+  (`swarmexec.prune.*`, see below): the agent prunes at the scheduled times and
+  keeps the last run's result.
 - Graceful shutdown with a configurable drain window; no goroutine/conn leaks on
   client disconnect.
 - Optional **Prometheus** metrics.
@@ -225,6 +234,38 @@ services, secrets and stacks goes to the manager with the operator's own Docker
 credentials and never passes an agent. The format and its limits are in the
 docs, chapter "Authorization policy".
 
+The actions are `container.list`, `container.events`, `exec`, `logs`,
+`portforward`, `stats.read`, `image.list`, `image.prune`, `image.prune.all`,
+`volume.list`, `volume.create`, `volume.remove`, and for disk cleanup
+`reclaim.read` (the reclaimable figures), `container.prune`, `buildcache.prune`,
+`network.prune` and `volume.prune`. The `Prune` RPC authorizes every category
+on its own: "every unused image" is `image.prune.all`, "untagged images only" is
+`image.prune`. A scheduled prune is authorized like a request from the identity
+`scheduler`, so `deny: [volume.prune]` also keeps volumes out of the schedule.
+
+## Prune schedule
+
+The schedule is stored as **container labels** on the agent service
+(`TaskTemplate.ContainerSpec.Labels`) — the only configuration an agent on a
+worker can read, by inspecting its own container through the local socket. The
+agent reads them once at start; changing them is a service update, so the
+agents restart one by one. `swarmexec prune-schedule set` and the TUI (Nodes
+tab, `S`) edit them; `swarmexec init --force` keeps them.
+
+| Label | Default | Meaning |
+| --- | --- | --- |
+| `swarmexec.prune.enabled` | — (no labels: off) | `true` runs the schedule |
+| `swarmexec.prune.schedule.days` | every day | `mon,tue,…,sun`; ranges like `mon-fri` |
+| `swarmexec.prune.schedule.start` | `00:00` | first run of the day, `HH:MM` |
+| `swarmexec.prune.schedule.times` | `1` | runs per day (1–24), the day split evenly from `start` |
+| `swarmexec.prune.schedule.tz` | `UTC` | IANA time zone of `days` and `start` |
+| `swarmexec.prune.categories` | `containers,images,buildcache,networks` | also `dangling-images`, and `volumes` (never a default) |
+| `swarmexec.prune.containers.until` | `24h` | keep stopped containers this long after they stop; `0` keeps none |
+| `swarmexec.prune.filter.label` | — | only prune objects with these labels (`key` or `key=value`, comma separated); build cache is skipped |
+
+A label that does not parse is logged and disables the schedule; the agent
+starts regardless. A run belongs to the weekday it happens on, in `tz`.
+
 ## Audit & observability
 
 - **Audit log** (`-audit-dest`): one structured JSON line per event, each with
@@ -240,6 +281,9 @@ docs, chapter "Authorization policy".
     count of events, never their content)
   - `container_list` — discovery (filter and match count, never the listing)
   - `volume_create`, `volume_remove`, `image_prune` — with outcome and error
+  - `prune` — one record per category of a `Prune` call or a scheduled run
+    (`trigger` = `manual` / `schedule`, `category`, `freed_bytes`, `count`,
+    `skipped`, outcome and error)
 
   Payload bytes are never logged.
 - **Operational logs** go to stderr at the configured level/format.

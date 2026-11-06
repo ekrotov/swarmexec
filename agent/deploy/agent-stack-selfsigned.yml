@@ -46,6 +46,18 @@ services:
       - "-drain-timeout=5s"
       - "-log-format=json"
       - "-audit-dest=stdout"
+    # Optional prune schedule (agent/README.md, "Prune schedule"). These are
+    # CONTAINER labels — the service's labels:, not deploy.labels — because an
+    # agent on a worker can read only its own container. Volumes are never a
+    # default category.
+    # labels:
+    #   swarmexec.prune.enabled: "true"
+    #   swarmexec.prune.schedule.days: "mon-sun"
+    #   swarmexec.prune.schedule.start: "03:00"
+    #   swarmexec.prune.schedule.times: "1"
+    #   swarmexec.prune.schedule.tz: "UTC"
+    #   swarmexec.prune.categories: "containers,images,buildcache,networks"
+    #   swarmexec.prune.containers.until: "24h"
     deploy:
       mode: global
       # Same label the CLI stamps on init-created agents, so `swarmexec down`,
