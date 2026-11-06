@@ -22,28 +22,31 @@ import (
 // many positional arguments the command accepts; a command missing from the
 // table fails the test, so a new one cannot quietly skip the question.
 var argContract = map[string][]int{
-	"swarmexec config show":     {0},
-	"swarmexec context create":  {1},
-	"swarmexec context ls":      {0},
-	"swarmexec context rm":      {1, 2, 3}, // removes every name given
-	"swarmexec context use":     {1},
-	"swarmexec doctor":          {0},
-	"swarmexec down":            {0},
-	"swarmexec exec":            {1, 2, 3}, // target, then the command as args[1:]
-	"swarmexec init":            {0},
-	"swarmexec logs":            {1, 2, 3}, // every target is followed; 0 only with --stack
-	"swarmexec mcp":             {0},
-	"swarmexec port-forward":    {2}, // target and port spec
-	"swarmexec ps":              {0, 1},
-	"swarmexec security report": {0},
-	"swarmexec stack deploy":    {1, 2}, // file, optional stack name
-	"swarmexec stack diff":      {1, 2},
-	"swarmexec stack export":    {1},
-	"swarmexec stack ls":        {0},
-	"swarmexec ui":              {0, 1},
-	"swarmexec volume ls":       {0, 1},
-	"swarmexec volume rm":       {1},
-	"swarmexec wait":            {1, 2, 3}, // every service is waited for; 0 only with --stack
+	"swarmexec config show":         {0},
+	"swarmexec context create":      {1},
+	"swarmexec context ls":          {0},
+	"swarmexec context rm":          {1, 2, 3}, // removes every name given
+	"swarmexec context use":         {1},
+	"swarmexec doctor":              {0},
+	"swarmexec down":                {0},
+	"swarmexec prune-schedule":      {0},
+	"swarmexec prune-schedule set":  {0},
+	"swarmexec prune-schedule show": {0},
+	"swarmexec exec":                {1, 2, 3}, // target, then the command as args[1:]
+	"swarmexec init":                {0},
+	"swarmexec logs":                {1, 2, 3}, // every target is followed; 0 only with --stack
+	"swarmexec mcp":                 {0},
+	"swarmexec port-forward":        {2}, // target and port spec
+	"swarmexec ps":                  {0, 1},
+	"swarmexec security report":     {0},
+	"swarmexec stack deploy":        {1, 2}, // file, optional stack name
+	"swarmexec stack diff":          {1, 2},
+	"swarmexec stack export":        {1},
+	"swarmexec stack ls":            {0},
+	"swarmexec ui":                  {0, 1},
+	"swarmexec volume ls":           {0, 1},
+	"swarmexec volume rm":           {1},
+	"swarmexec wait":                {1, 2, 3}, // every service is waited for; 0 only with --stack
 }
 
 func TestEveryCommandTakesTheArgumentsItUses(t *testing.T) {

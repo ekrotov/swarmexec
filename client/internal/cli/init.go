@@ -34,6 +34,7 @@ import (
 	cterm "swarmexec/client/internal/term"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
+	"swarmexec/internal/prunesched"
 )
 
 // The deployment vocabulary lives in internal/deploy, which the agent imports
@@ -259,6 +260,9 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		serviceID = resp.ID
 		fmt.Fprintf(out, "created (%q, global)\n", f.serviceName)
 	case f.force:
+		if carryPruneSchedule(&spec, existing) {
+			fmt.Fprint(out, "(keeping the prune schedule) ")
+		}
 		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec, EncodedRegistryAuth: encodedAuth, QueryRegistry: true}); uerr != nil {
 			fmt.Fprintln(out, "failed")
 			return &cliError{code: session.TransportFailure, err: fmt.Errorf("update agent service: %w", uerr)}
@@ -563,6 +567,23 @@ func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 		},
 		EndpointSpec: &swarm.EndpointSpec{Ports: ports},
 	}
+}
+
+// carryPruneSchedule copies the prune-schedule labels of the running agent
+// into the spec init is about to write, and reports whether there were any.
+// The schedule is set from the TUI or `prune-schedule set`, never from init's
+// flags, so a re-init that rebuilt the spec from flags alone would switch it
+// off without a word.
+func carryPruneSchedule(spec *swarm.ServiceSpec, existing *swarm.Service) bool {
+	if existing == nil || existing.Spec.TaskTemplate.ContainerSpec == nil || spec.TaskTemplate.ContainerSpec == nil {
+		return false
+	}
+	old := existing.Spec.TaskTemplate.ContainerSpec.Labels
+	if !prunesched.HasLabels(old) {
+		return false
+	}
+	spec.TaskTemplate.ContainerSpec.Labels = prunesched.Carry(old, spec.TaskTemplate.ContainerSpec.Labels)
+	return true
 }
 
 func generateSecret() string {
