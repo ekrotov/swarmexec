@@ -31,15 +31,15 @@ func TestLoadKeybinds_DefaultsWhenNoFile(t *testing.T) {
 }
 
 func TestLoadKeybinds_ValidOverride(t *testing.T) {
-	km, warns := loadKeybinds(writeKeys(t, "quit: x\nvolume_delete: X\nvolume_select: space\n"))
+	km, warns := loadKeybinds(writeKeys(t, "quit: x\nvolume_delete: D\nvolume_select: space\n"))
 	if len(warns) != 0 {
 		t.Fatalf("unexpected warnings: %v", warns)
 	}
 	if km.Quit != 'x' {
 		t.Errorf("quit = %q, want x", km.Quit)
 	}
-	if km.VolDelete != 'X' {
-		t.Errorf("volume_delete = %q, want X", km.VolDelete)
+	if km.VolDelete != 'D' {
+		t.Errorf("volume_delete = %q, want D", km.VolDelete)
 	}
 	if km.VolSelect != ' ' {
 		t.Errorf("volume_select = %q, want space", km.VolSelect)
@@ -66,8 +66,8 @@ func TestLoadKeybinds_UnknownActionWarns(t *testing.T) {
 func TestLoadKeybinds_ConflictKeepsDefault(t *testing.T) {
 	// volume_delete=i collides with volume_used_by (default i) on the volumes tab.
 	km, warns := loadKeybinds(writeKeys(t, "volume_delete: i\n"))
-	if km.VolDelete != 'd' {
-		t.Errorf("conflicting override should keep default d, got %q", km.VolDelete)
+	if km.VolDelete != 'X' {
+		t.Errorf("conflicting override should keep default X, got %q", km.VolDelete)
 	}
 	if km.VolUsedBy != 'i' {
 		t.Errorf("volume_used_by should stay i, got %q", km.VolUsedBy)
@@ -78,9 +78,9 @@ func TestLoadKeybinds_ConflictKeepsDefault(t *testing.T) {
 }
 
 func TestLoadKeybinds_GlobalConflictAcrossTabs(t *testing.T) {
-	// quit is global; setting it to d collides with volume_delete on the volumes tab.
-	km, warns := loadKeybinds(writeKeys(t, "quit: d\n"))
-	if km.Quit != 'q' {
+	// refresh is global; setting it to X collides with volume_delete on the volumes tab.
+	km, warns := loadKeybinds(writeKeys(t, "refresh: X\n"))
+	if km.Refresh != 'r' {
 		t.Errorf("global override clashing with a tab action should keep default, got %q", km.Quit)
 	}
 	if len(warns) != 1 {
@@ -186,5 +186,36 @@ func TestDialogRunesMatchTheSource(t *testing.T) {
 		if !used[r] {
 			t.Errorf("dialogRunes lists %q, which no dialog handles any more", r)
 		}
+	}
+}
+
+// The destructive actions share one default, X — the key the tree removes a
+// service or stack with — and d is no longer bound in their scopes.
+func TestDefaultKeybinds_DestructiveActionsUseX(t *testing.T) {
+	k := defaultKeybinds()
+	for name, r := range map[string]rune{
+		"volume_delete": k.VolDelete, "secret_delete": k.SecDelete,
+		"context_delete": k.CtxDelete, "forward_stop": k.FwdStop,
+	} {
+		if r != 'X' {
+			t.Errorf("%s default = %q, want X", name, r)
+		}
+	}
+	for _, a := range keyActions {
+		if a.def == 'd' {
+			t.Errorf("%s still defaults to d", a.name)
+		}
+	}
+}
+
+// An existing keys.yaml that binds the old d keeps working: d is not reserved
+// and, with X now the default, it clashes with nothing in those scopes.
+func TestLoadKeybinds_OldDBindingStillWorks(t *testing.T) {
+	km, warns := loadKeybinds(writeKeys(t, "volume_delete: d\nsecret_delete: d\ncontext_delete: d\nforward_stop: d\n"))
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+	if km.VolDelete != 'd' || km.SecDelete != 'd' || km.CtxDelete != 'd' || km.FwdStop != 'd' {
+		t.Errorf("explicit d bindings must win, got %+v", km)
 	}
 }

@@ -2196,7 +2196,7 @@ EOF</span></pre>
           <tr><td><kbd>n</kbd></td><td>ein Volume erstellen — ein Formular mit <strong>Name</strong>, <strong>Driver</strong> (Standard <code>local</code>), <strong>Labels</strong> (<code>k=v,k=v</code>) und einem <strong>Node</strong>-Ziel (vervollständigt Node-Namen; <strong>leer lassen, um auf jedem Node zu erstellen</strong>, da Volumes node-lokal sind). Erstellt es auf dem Agent jedes Ziel-Nodes und meldet Erfolg/Fehler pro Node. <kbd>Tab</kbd> wechselt zwischen Feldern, <kbd>Esc</kbd> bricht ab</td></tr>
           <tr><td><kbd>space</kbd></td><td>das Volume aus-/abwählen (markiert <code>▣</code>) für ein Massen-Löschen</td></tr>
           <tr><td><kbd>a</kbd></td><td>alle aktuell angezeigten Volumes aus-/abwählen</td></tr>
-          <tr><td><kbd>d</kbd></td><td>die ausgewählten Volumes — oder das unter dem Cursor — auf jedem Node löschen, auf dem sie liegen, hinter einer Bestätigung (mit einem Fortschritts-Overlay; die Löschungen laufen mit begrenzter Parallelität)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>die ausgewählten Volumes — oder das unter dem Cursor — auf jedem Node löschen, auf dem sie liegen, hinter einer Bestätigung (mit einem Fortschritts-Overlay; die Löschungen laufen mit begrenzter Parallelität)</td></tr>
           <tr><td><kbd>P</kbd></td><td>prune: jedes Volume löschen, das kein laufender Container einhängt <em>und</em> kein Service deklariert, hinter einer Bestätigung</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>zeigen, auf welchen Nodes das Volume liegt; die <strong>Labels</strong> des Volumes werden schreibgeschützt über den Nodes aufgelistet (Docker hat keine Volume-Update-API, daher können Labels nach der Erstellung nicht bearbeitet werden — setze sie beim Erstellen des Volumes)</td></tr>
           <tr><td><kbd>i</kbd></td><td>zeigen, welche Services/Container es verwenden</td></tr>
@@ -2209,7 +2209,7 @@ EOF</span></pre>
         Prune verschont Volumes, die ein Service <em>deklariert</em>, selbst wenn keine
         Task läuft, sodass es die Daten eines gestoppten Stacks nicht löscht. Für feinere
         Kontrolle öffnet <kbd>Enter</kbd> die Liste pro Node, wo <kbd>space</kbd> Nodes
-        auswählt, <kbd>d</kbd> die Kopie des markierten Nodes löscht und <kbd>a</kbd> auf
+        auswählt, <kbd>X</kbd> die Kopie des markierten Nodes löscht und <kbd>a</kbd> auf
         allen Nodes löscht — jeweils hinter einer Bestätigung.
       </p>
 
@@ -2218,7 +2218,7 @@ EOF</span></pre>
         <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd></td><td>die vollständigen Details des Forwards anzeigen (inklusive etwaiger Fehler)</td></tr>
-          <tr><td><kbd>d</kbd></td><td>den ausgewählten Forward stoppen</td></tr>
+          <tr><td><kbd>X</kbd></td><td>den ausgewählten Forward stoppen</td></tr>
           <tr><td><kbd>o</kbd></td><td>die URL des Forwards kopieren (<code>http://&lt;adresse&gt;:&lt;port&gt;</code>; ein Forward auf <code>0.0.0.0</code> wird als <code>127.0.0.1</code> kopiert)</td></tr>
         </tbody>
       </table></div>
@@ -2226,7 +2226,7 @@ EOF</span></pre>
         Ein laufender Container wird im Baum als <code>local→remote</code> annotiert
         (z. B. <code>9090→8080</code>). Forwards laufen weiter, wenn ihr Overlay geschlossen wird
         <em>und</em> wenn du auf einen anderen Cluster wechselst; sie stoppen bei
-        <kbd>d</kbd> oder wenn du die UI beendest. Die <code>CLUSTER</code>-Spalte nennt
+        <kbd>X</kbd> oder wenn du die UI beendest. Die <code>CLUSTER</code>-Spalte nennt
         den Context, zu dem jeder gehört, gedimmt für den gerade sichtbaren — ein Forward
         auf einem anderen Cluster ist weiterhin deiner und lauscht weiter, aber sein
         <code>CONTAINER</code> und <code>NODE</code> benennen Dinge, die du von hier aus
@@ -2309,7 +2309,7 @@ EOF</span></pre>
         <tbody>
           <tr><td><kbd>n</kbd></td><td>ein neues Secret anlegen — öffnet den <a href="#secret-editor">Secret-Editor</a></td></tr>
           <tr><td><kbd>Enter</kbd></td><td>die Metadaten des Secrets und die Services/Container zeigen, die es verwenden</td></tr>
-          <tr><td><kbd>d</kbd></td><td>in der Secret-Liste: das ausgewählte Secret <strong>löschen</strong> — entfernt es dauerhaft (ein <code>SecretRemove</code>), hinter einer Bestätigung; nicht rückgängig zu machen. Docker verweigert das Entfernen eines Secrets, das noch ein Service referenziert, deshalb <strong>warnt die Bestätigung, wenn es verwendet wird</strong>, und nennt diese Services (dort zuerst lösen). Nicht zu verwechseln mit dem <kbd>d</kbd> <em>in</em> der Detailansicht, das das Secret von einem Service löst</td></tr>
+          <tr><td><kbd>X</kbd></td><td>in der Secret-Liste: das ausgewählte Secret <strong>löschen</strong> — entfernt es dauerhaft (ein <code>SecretRemove</code>), hinter einer Bestätigung; nicht rückgängig zu machen. Docker verweigert das Entfernen eines Secrets, das noch ein Service referenziert, deshalb <strong>warnt die Bestätigung, wenn es verwendet wird</strong>, und nennt diese Services (dort zuerst lösen). Nicht zu verwechseln mit dem <kbd>d</kbd> <em>in</em> der Detailansicht, das das Secret von einem Service löst</td></tr>
           <tr><td><kbd>a</kbd></td><td>in der Detailansicht: das Secret an einen Service anhängen — eine Autocomplete-Eingabe (schlägt Services vor, die es noch nicht verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
           <tr><td><kbd>d</kbd></td><td>in der Detailansicht: das Secret von einem Service trennen — eine Autocomplete-Eingabe (schlägt Services vor, die es aktuell verwenden; du kannst auch einen beliebigen Namen tippen), dann eine Rolling-Update-Bestätigung</td></tr>
         </tbody>
@@ -2400,7 +2400,7 @@ EOF</span></pre>
           <tr><td><kbd>i</kbd></td><td>Context-Details — Endpoint und Jump-Hosts, für die in der Spalte kein Platz ist</td></tr>
           <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>den ausgewählten Context aktivieren — macht ihn zum aktuellen (auch für dockers gespeicherten current context) und schaltet die UI auf diesen Cluster um, mit deiner Position, deinen Filtern und deinen Port-Forwards</td></tr>
           <tr><td><kbd>n</kbd></td><td>einen Context erstellen — ein <strong>geführtes</strong> Formular. Eine Checkbox <strong>„Connect to Docker over SSH“</strong> entscheidet den Endpoint: wenn an, füllst du SSH-<strong>User / Host / Port</strong> aus, und eine zweite Checkbox <strong>„Use a jump host“</strong> zeigt ein Feld <strong>Jump-Host(s)</strong> (kommagetrennt, Multi-Hop-<code>ProxyJump</code>) — swarmexec speichert sie am Context und injiziert <code>-J</code> in <em>beide</em> ssh-Verbindungen, die Docker-API und den Agent-Tunnel, sodass Bastions ohne Bearbeiten von <code>~/.ssh/config</code> funktionieren. Wenn aus, gibst du einen einfachen <code>tcp://</code> / <code>unix://</code>-Host ein. Das Formular setzt den Docker-Host für dich zusammen, und <strong>Test</strong> pingt den zusammengesetzten Endpoint, bevor du speicherst. Auch auf der CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
-          <tr><td><kbd>d</kbd></td><td>den ausgewählten Context entfernen (hinter einer Bestätigung); das Entfernen des aktuellen setzt die Auswahl auf <code>default</code> zurück</td></tr>
+          <tr><td><kbd>X</kbd></td><td>den ausgewählten Context entfernen (hinter einer Bestätigung); das Entfernen des aktuellen setzt die Auswahl auf <code>default</code> zurück</td></tr>
         </tbody>
       </table></div>
 
@@ -2658,13 +2658,16 @@ search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" muss in YAML in Anführungszeichen stehen</span>
 stack_group: s
 volume_select: space               volume_select_all: a
-volume_delete: d volume_prune: P   volume_used_by: i
+volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n
-context_use: u   context_new: n    context_delete: d
+context_use: u   context_new: n    context_delete: X
 node_edit_labels: l    node_availability: a    node_prune_images: P
-secret_delete: d secret_new: n
-forward_stop: d  forward_copy_url: o</div>
+secret_delete: X secret_new: n
+forward_stop: X  forward_copy_url: o</div>
+      <p>
+        Die destruktiven Tasten — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> und <code>forward_stop</code> — liegen standardmäßig auf dem großen <kbd>X</kbd>, derselben Taste, mit der der Baum einen Service oder Stack entfernt; Footer und <kbd>?</kbd>-Overlay zeichnen sie <span class="tc-red">rot</span>, egal auf welche Taste du sie legst. Früher war der Standard <kbd>d</kbd>; wer ihn zurück will, trägt ihn in <code>keys.yaml</code> ein — <code>volume_delete: d</code> und die anderen funktionieren weiterhin.
+      </p>
       <p>
         Das Laden schlägt nie fehl: eine ungültige oder reservierte Taste, eine unbekannte
         Aktion oder zwei Aktionen, die auf einem Tab an dieselbe Taste gebunden sind, fallen

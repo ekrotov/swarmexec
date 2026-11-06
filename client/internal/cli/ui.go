@@ -1288,12 +1288,32 @@ func (s *scrim) PasteHandler() func(string, func(p tview.Primitive)) {
 // footerKeys builds the markup for the bottom footer from key,description pairs
 // (dynamic-colour tags, as the footer is a TextView). Overlays hand it to
 // overlayFor so the single bottom footer describes the active view's keys.
+// A key passed through dangerKey renders red instead of yellow.
 func footerKeys(pairs ...string) string {
 	var b strings.Builder
 	for i := 0; i+1 < len(pairs); i += 2 {
-		fmt.Fprintf(&b, " [yellow]%s[white] %s ", pairs[i], pairs[i+1])
+		fmt.Fprintf(&b, " %s %s ", keyTag(pairs[i]), pairs[i+1])
 	}
 	return b.String()
+}
+
+// dangerMark prefixes a key label that names a destructive action (delete,
+// remove, stop). It is a NUL byte, which no key label or tview tag contains.
+const dangerMark = "\x00"
+
+// dangerKey marks a key label as destructive, so keyTag (and every footer and
+// help line built on it) draws it red — the same red the inspect actions menu
+// gives "remove service". It wraps the LIVE label, so a remapped delete key is
+// the one that turns red.
+func dangerKey(label string) string { return dangerMark + label }
+
+// keyTag renders one key label for a footer: yellow, or red when the label
+// came through dangerKey.
+func keyTag(label string) string {
+	if l, ok := strings.CutPrefix(label, dangerMark); ok {
+		return "[red]" + l + "[white]"
+	}
+	return "[yellow]" + label + "[white]"
 }
 
 // info shows a generic info modal. Every message is also logged (with context)
@@ -1501,22 +1521,22 @@ func (u *ui) helpFor(name string) string {
 		// terminal; anything past the edge wraps onto a hidden second row. So
 		// labels here are kept terse to make room for X (destructive, and it
 		// must not be the thing that silently falls off the end).
-		return head + fmt.Sprintf("[yellow]j/k[white] move  [yellow]Enter[white] open  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks  [red]X[white] remove",
-			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup))
+		return head + fmt.Sprintf("[yellow]j/k[white] move  [yellow]Enter[white] open  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks  %s remove",
+			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup), keyTag(dangerKey("X")))
 	case "volumes":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  [yellow]%s[white] delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
-			kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), kl(km.VolDelete), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  %s delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
+			kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), keyTag(dangerKey(kl(km.VolDelete))), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
 	case "networks":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", kl(km.NetAttached), kl(km.NetNew))
 	case "secrets":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete", kl(km.SecNew), kl(km.SecDelete))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  %s delete", kl(km.SecNew), keyTag(dangerKey(kl(km.SecDelete))))
 	case "contexts":
 		// The sidebar's footer, shown while it holds the keyboard. Esc is first
 		// after the movement keys because it is the way back out — the sidebar
 		// is the one focusable thing here that is not a tab, so "how do I get
 		// back" is the question it has to answer.
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Esc[white] back  [yellow]Enter/%s[white] switch  [yellow]i[white] details  [yellow]%s[white] new  [yellow]%s[white] delete",
-			kl(km.CtxUse), kl(km.CtxNew), kl(km.CtxDelete))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Esc[white] back  [yellow]Enter/%s[white] switch  [yellow]i[white] details  [yellow]%s[white] new  %s delete",
+			kl(km.CtxUse), kl(km.CtxNew), keyTag(dangerKey(kl(km.CtxDelete))))
 	case "nodes":
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  [yellow]%s[white] reclaim images",
 			kl(km.NodeLabels), kl(km.NodeAvail), kl(km.NodeImages))
@@ -1524,8 +1544,8 @@ func (u *ui) helpFor(name string) string {
 		return head + "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
 
 	default:
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] stop  [yellow]%s[white] copy url",
-			kl(km.FwdStop), kl(km.FwdCopyURL))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  %s stop  [yellow]%s[white] copy url",
+			keyTag(dangerKey(kl(km.FwdStop))), kl(km.FwdCopyURL))
 	}
 }
 
@@ -1538,6 +1558,10 @@ func (u *ui) showHelp() {
 	var b strings.Builder
 	sec := func(title string) { fmt.Fprintf(&b, "\n[aqua]%s[-]\n", title) }
 	line := func(keys, desc string) { fmt.Fprintf(&b, "  [yellow]%-9s[white] %s\n", keys, desc) }
+	// danger is line for a destructive key (delete / remove / stop): red, as
+	// in the footers. One key per line, so the colour never spills onto a
+	// harmless neighbour sharing the same column.
+	danger := func(keys, desc string) { fmt.Fprintf(&b, "  [red]%-9s[white] %s\n", keys, desc) }
 
 	b.WriteString("[aqua]Global[-]\n")
 	line("?", "this help")
@@ -1560,7 +1584,7 @@ func (u *ui) showHelp() {
 	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	line(kl(km.StackGroup), "group services by stack / flat list")
 	line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
-	line("X", "remove: service · container’s service · whole stack (confirmed)")
+	danger("X", "remove: service · container’s service · whole stack (confirmed)")
 	line(kl(km.Search), "search services / containers / nodes")
 
 	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
@@ -1575,13 +1599,14 @@ func (u *ui) showHelp() {
 	line("p l e", "edit ports · labels · env")
 	line("n S v", "edit networks · secrets · mounts")
 	line("r P", "edit resources · placement")
-	line("X", "remove the service")
+	danger("X", "remove the service")
 
 	sec("Volumes")
 	line(kl(km.VolNew), "new volume")
 	line(kl(km.VolSelect)+"/"+kl(km.VolSelectAll), "select / select all")
 	line(kl(km.VolAttach), "attach to a service")
-	line(kl(km.VolDelete)+"/"+kl(km.VolPrune), "delete / prune unused")
+	danger(kl(km.VolDelete), "delete")
+	line(kl(km.VolPrune), "prune unused")
 	line("Enter", "which nodes hold it")
 	line(kl(km.VolUsedBy), "used-by (containers / services)")
 	line(kl(km.VolSort)+"/"+kl(km.VolSortRev), "sort / reverse")
@@ -1593,13 +1618,15 @@ func (u *ui) showHelp() {
 
 	sec("Secrets")
 	line("Enter / i", "details")
-	line(kl(km.SecNew)+"/"+kl(km.SecDelete), "new (vim editor, :r file) / delete")
+	line(kl(km.SecNew), "new (vim editor, :r file)")
+	danger(kl(km.SecDelete), "delete")
 
 	sec("Contexts (sidebar, not a tab)")
 	line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
 	line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
 	line("i", "context details (endpoint, jump hosts)")
-	line(kl(km.CtxNew)+"/"+kl(km.CtxDelete), "new / delete")
+	line(kl(km.CtxNew), "new")
+	danger(kl(km.CtxDelete), "delete")
 	line("▶ · ✗", "active · connected (instant) · last attempt refused")
 
 	sec("Nodes")
@@ -1613,7 +1640,7 @@ func (u *ui) showHelp() {
 
 	sec("Forwards")
 	line("Enter / i", "details")
-	line(kl(km.FwdStop), "stop")
+	danger(kl(km.FwdStop), "stop")
 	line(kl(km.FwdCopyURL), "copy URL")
 
 	sec("Log view (`)")
