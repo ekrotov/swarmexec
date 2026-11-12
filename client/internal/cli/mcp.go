@@ -352,14 +352,11 @@ func (s *mcpServer) connectContext(ctx context.Context, name string) (*mcpCluste
 }
 
 // servedContextName names the context a run with this --context value
-// actually talks to. effectiveContextName (the ui's footer label) leaves
-// $DOCKER_HOST out; ResolveHost does not, and an assistant told which context
-// it is on must hear the one the requests really go to.
+// actually talks to — "default" when $DOCKER_HOST is what it dials. An
+// assistant told which context it is on must hear the one the requests really
+// go to. Same resolver as the ui's footer (dockerctx.ResolveName).
 func servedContextName(override string) string {
-	if override == "" && os.Getenv("DOCKER_CONTEXT") == "" && os.Getenv("DOCKER_HOST") != "" {
-		return "default"
-	}
-	return effectiveContextName(override)
+	return dockerctx.ResolveName(override)
 }
 
 // agents returns the agent configuration, or why the agents cannot be used.

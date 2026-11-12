@@ -20,24 +20,38 @@ import (
 	"swarmexec/client/internal/clientlog"
 )
 
-// ResolveHost returns the Docker daemon URL to dial. Precedence (matching the
-// docker CLI): an explicit context override (--context) or $DOCKER_CONTEXT wins;
-// otherwise $DOCKER_HOST; otherwise the config's current context; otherwise the
-// platform default socket.
+// ResolveName returns the name of the context a run with this override is
+// pointed at. It is the ONE place the precedence lives (matching the docker
+// CLI): an explicit context override (--context) or $DOCKER_CONTEXT wins;
+// otherwise $DOCKER_HOST, which is what the built-in "default" context means;
+// otherwise the config's current context; otherwise "default".
+//
+// Every label that names "where am I" (the ui footer and sidebar marker, the
+// mcp server's served context, `config show`) must come from here and not from
+// Current: with $DOCKER_HOST set, Current still names the stored context —
+// production, say — while every request goes to $DOCKER_HOST.
+func ResolveName(override string) string {
+	if override != "" {
+		return override
+	}
+	if n := os.Getenv("DOCKER_CONTEXT"); n != "" {
+		return n
+	}
+	if os.Getenv("DOCKER_HOST") != "" {
+		return "default"
+	}
+	if n := currentContextName(); n != "" {
+		return n
+	}
+	return "default"
+}
+
+// ResolveHost returns the Docker daemon URL to dial, for the context
+// ResolveName picks: "default" is $DOCKER_HOST when set, else the platform
+// default socket; any other name is that stored context's endpoint.
 func ResolveHost(override string) (string, error) {
-	name := override
-	if name == "" {
-		name = os.Getenv("DOCKER_CONTEXT")
-	}
-	if name == "" {
-		// No explicit context selected: DOCKER_HOST takes over, else fall back
-		// to whatever context the config has marked current.
-		if h := os.Getenv("DOCKER_HOST"); h != "" {
-			return h, nil
-		}
-		name = currentContextName()
-	}
-	if name == "" || name == "default" {
+	name := ResolveName(override)
+	if name == "default" {
 		if h := os.Getenv("DOCKER_HOST"); h != "" {
 			return h, nil
 		}
@@ -50,17 +64,8 @@ func ResolveHost(override string) (string, error) {
 // for the resolved context, or "" if none / not an ssh context. Same context
 // precedence as ResolveHost. Best-effort: any read error yields "".
 func ResolveProxyJump(override string) string {
-	name := override
-	if name == "" {
-		name = os.Getenv("DOCKER_CONTEXT")
-	}
-	if name == "" {
-		if os.Getenv("DOCKER_HOST") != "" {
-			return ""
-		}
-		name = currentContextName()
-	}
-	if name == "" || name == "default" {
+	name := ResolveName(override)
+	if name == "default" {
 		return ""
 	}
 	return contextMetaValue(name, ProxyJumpKey)
@@ -90,7 +95,9 @@ type Context struct {
 }
 
 // Current returns the active context name ($DOCKER_CONTEXT, else the config's
-// current context, else "default").
+// current context, else "default"). It deliberately ignores $DOCKER_HOST: it
+// answers "which context is selected", which List's marker and Remove's in-use
+// check need. To NAME the daemon a run talks to, use ResolveName.
 func Current() string {
 	if n := os.Getenv("DOCKER_CONTEXT"); n != "" {
 		return n

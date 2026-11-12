@@ -382,6 +382,17 @@
         <code>$DOCKER_HOST</code> → the active context in <code>~/.docker/config.json</code>
         → the local socket <code>unix:///var/run/docker.sock</code>.
       </p>
+      <p>
+        Every label follows the same order. With only <code>$DOCKER_HOST</code> set, the
+        context in use is <code>default</code> — the one that <em>is</em>
+        <code>$DOCKER_HOST</code>, as for the docker CLI — so the TUI status bar shows
+        <code>ctx default ($DOCKER_HOST)</code> and marks <code>default</code> active in
+        the context list, never the active context stored in
+        <code>config.json</code>. Switching to a named context in the TUI goes to that
+        context's own endpoint for the rest of the session; <code>default</code> stays
+        <code>$DOCKER_HOST</code>. The switch also becomes docker's current context,
+        but a shell that still exports <code>$DOCKER_HOST</code> keeps going there.
+      </p>
       <div class="note">
         <strong>No local Docker required.</strong> The client never runs the
         <code>docker</code> binary — it links the Docker Go SDK and speaks the manager

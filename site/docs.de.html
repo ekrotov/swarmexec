@@ -395,6 +395,18 @@
         <code>~/.docker/config.json</code> → der lokale Socket
         <code>unix:///var/run/docker.sock</code>.
       </p>
+      <p>
+        Jede Anzeige folgt derselben Reihenfolge. Ist nur <code>$DOCKER_HOST</code>
+        gesetzt, ist der verwendete Context <code>default</code> — derjenige, der
+        <code>$DOCKER_HOST</code> <em>ist</em>, wie beim docker-CLI —, also zeigt die
+        Statuszeile der TUI <code>ctx default ($DOCKER_HOST)</code> und markiert
+        <code>default</code> in der Context-Liste als aktiv, nie den in
+        <code>config.json</code> gespeicherten aktiven Context. Ein Wechsel auf einen
+        benannten Context in der TUI geht für den Rest der Sitzung an dessen eigenen
+        Endpunkt; <code>default</code> bleibt <code>$DOCKER_HOST</code>. Der Wechsel wird
+        auch docker's aktueller Context, aber eine Shell, die <code>$DOCKER_HOST</code>
+        noch exportiert, geht weiterhin dorthin.
+      </p>
       <div class="note">
         <strong>Kein lokales Docker erforderlich.</strong> Der Client führt nie das
         <code>docker</code>-Binary aus — er bindet das Docker-Go-SDK ein und spricht die
