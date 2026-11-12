@@ -227,16 +227,27 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 }
 
 // effectiveContextName is what the session is pointed at, by name: the explicit
-// choice, else $DOCKER_CONTEXT, else docker's stored current, else "default".
-// It is the label the footer shows and the key a cluster is remembered under —
-// never the thing it is resolved from (see clusterState.ctxOverride).
+// choice, else $DOCKER_CONTEXT, else "default" when $DOCKER_HOST is set, else
+// docker's stored current, else "default" — dockerctx.ResolveName, the same
+// order ResolveHost dials by. It is the label the footer shows, the sidebar's
+// ▶ marker and the key a cluster is remembered under — never the thing it is
+// resolved from (see clusterState.ctxOverride).
+//
+// It used to skip $DOCKER_HOST: the session dialled DOCKER_HOST's daemon while
+// the footer said "ctx <stored current>" — production, typically — which is
+// the one label that must never lie.
 func effectiveContextName(override string) string {
-	name := firstNonEmpty(override, os.Getenv("DOCKER_CONTEXT"))
-	if name == "" {
-		name = dockerctx.Current()
-	}
-	if name == "" {
-		name = "default"
+	return dockerctx.ResolveName(override)
+}
+
+// ctxStatusLabel is how the footer names a context. While $DOCKER_HOST is set
+// the built-in "default" context IS that daemon (for ResolveHost as for the
+// docker CLI), and a bare "default" reads as the local socket — so it says
+// where the requests go. Every other name is a stored context and dials its own
+// endpoint whatever DOCKER_HOST says.
+func ctxStatusLabel(name string) string {
+	if name == "default" && os.Getenv("DOCKER_HOST") != "" {
+		return "default [gray]($DOCKER_HOST)[white]"
 	}
 	return name
 }
@@ -1396,7 +1407,7 @@ func (u *ui) updateStatus() {
 	forwards := u.forwards
 	selectedVols := u.selectedVols
 	status := u.status
-	parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", activeCtx)}
+	parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", ctxStatusLabel(activeCtx))}
 	if clusterText != "" {
 		parts = append(parts, clusterText)
 	}

@@ -136,3 +136,47 @@ func TestResolveHost_MissingContext(t *testing.T) {
 		t.Fatal("expected error for missing context")
 	}
 }
+
+// ResolveName must name the same context ResolveHost dials, for every rung of
+// the precedence ladder. The rung that broke: DOCKER_HOST set, no context named
+// — the name was the stored current context (production) while the host was
+// DOCKER_HOST.
+func TestResolveName_MatchesResolveHost(t *testing.T) {
+	const local = "unix:///tmp/test-docker.sock"
+	cases := []struct {
+		name                 string
+		override, envCtx, dh string
+		want, wantHost       string
+	}{
+		{"stored current", "", "", "", "pk", "ssh://root@docker1"},
+		{"DOCKER_HOST beats stored current", "", "", local, "default", local},
+		{"DOCKER_CONTEXT beats DOCKER_HOST", "", "other", local, "other", "ssh://root@docker2"},
+		{"--context beats everything", "other", "pk", local, "other", "ssh://root@docker2"},
+		{"explicit default is DOCKER_HOST", "default", "", local, "default", local},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			isolate(t, dir)
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"currentContext":"pk"}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			writeContext(t, dir, "pk", "ssh://root@docker1")
+			writeContext(t, dir, "other", "ssh://root@docker2")
+			t.Setenv("DOCKER_CONTEXT", c.envCtx)
+			t.Setenv("DOCKER_HOST", c.dh)
+			if got := ResolveName(c.override); got != c.want {
+				t.Errorf("ResolveName(%q) = %q, want %q", c.override, got, c.want)
+			}
+			host, err := ResolveHost(c.override)
+			if err != nil || host != c.wantHost {
+				t.Errorf("ResolveHost(%q) = %q, %v; want %q", c.override, host, err, c.wantHost)
+			}
+			// Current is the stored selection and stays so: List marks it, and
+			// Remove's in-use check relies on it.
+			if c.envCtx == "" && Current() != "pk" {
+				t.Errorf("Current() = %q, want the stored pk", Current())
+			}
+		})
+	}
+}
