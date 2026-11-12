@@ -42,6 +42,15 @@ type DockerClient interface {
 	// per-node image view and its cleanup.
 	ImageList(ctx context.Context, options client.ImageListOptions) (client.ImageListResult, error)
 	ImagePrune(ctx context.Context, options client.ImagePruneOptions) (client.ImagePruneResult, error)
+	// The prune categories beyond images (see prune.go). There is deliberately
+	// no NetworksPrune here: on a manager the Engine's networks/prune also
+	// removes unused swarm-scope overlay networks, cluster-wide, and cannot be
+	// filtered by scope — so networks are listed, vetted and removed one by one.
+	NetworkList(ctx context.Context, options client.NetworkListOptions) (client.NetworkListResult, error)
+	NetworkInspect(ctx context.Context, networkID string, options client.NetworkInspectOptions) (client.NetworkInspectResult, error)
+	NetworkRemove(ctx context.Context, networkID string, options client.NetworkRemoveOptions) (client.NetworkRemoveResult, error)
+	VolumePrune(ctx context.Context, options client.VolumePruneOptions) (client.VolumePruneResult, error)
+	BuildCachePrune(ctx context.Context, options client.BuildCachePruneOptions) (client.BuildCachePruneResult, error)
 	// Info reports the node's own capacity (CPU count, total memory) — the
 	// denominator for "how loaded is this node".
 	Info(ctx context.Context, options client.InfoOptions) (client.SystemInfoResult, error)

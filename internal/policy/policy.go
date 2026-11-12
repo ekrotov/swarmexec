@@ -37,6 +37,7 @@ var Actions = []string{
 	"exec", "logs", "portforward", "stats.read",
 	"image.list", "image.prune", "image.prune.all",
 	"volume.list", "volume.create", "volume.remove",
+	"reclaim.read", "container.prune", "buildcache.prune", "network.prune", "volume.prune",
 }
 
 // Request is what a rule is matched against.

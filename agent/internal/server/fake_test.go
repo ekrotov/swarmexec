@@ -19,9 +19,11 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -88,6 +90,20 @@ type fakeDocker struct {
 	eventErrCh chan error
 	eventOpts  []client.EventsListOptions
 
+	// prune surface (prune.go)
+	listOpts          []client.ContainerListOptions
+	networks          []network.Summary
+	netInspect        map[string]network.Inspect
+	networkListOpts   []client.NetworkListOptions
+	removedNetworks   []string
+	volumePruneOpts   []client.VolumePruneOptions
+	volumePruneReport volume.PruneReport
+	buildPruneOpts    []client.BuildCachePruneOptions
+	buildPruneReport  build.CachePruneReport
+	buildCacheDU      client.BuildCacheDiskUsage
+	containerRemErr   map[string]error
+	ignoreLabels      bool // play a daemon that ignores label filters
+
 	// port-forward sidecar state
 	createContainerErr error
 	startErr           error
@@ -112,12 +128,108 @@ func newFakeDocker() *fakeDocker {
 // waitAttach blocks until the agent attaches and returns the container side.
 func (f *fakeDocker) waitAttach() net.Conn { return <-f.attachedCh }
 
-func (f *fakeDocker) ContainerList(_ context.Context, _ client.ContainerListOptions) (client.ContainerListResult, error) {
+// ContainerList mirrors the daemon's filtering closely enough for the prune
+// code: without All only running containers (a container with no State, as
+// most tests build them, counts as running); a status filter narrows by State;
+// a label filter needs every listed label.
+func (f *fakeDocker) ContainerList(_ context.Context, opts client.ContainerListOptions) (client.ContainerListResult, error) {
 	f.listCalls.Add(1)
+	f.mu.Lock()
+	f.listOpts = append(f.listOpts, opts)
+	f.mu.Unlock()
 	if f.listErr != nil {
 		return client.ContainerListResult{}, f.listErr
 	}
-	return client.ContainerListResult{Items: f.containers}, nil
+	statuses := filterValues(opts.Filters, "status")
+	labels := filterValues(opts.Filters, "label")
+	var out []container.Summary
+	for _, c := range f.containers {
+		state := string(c.State)
+		if !opts.All && state != "" && state != "running" {
+			continue
+		}
+		if len(statuses) > 0 && !containsStr(statuses, state) {
+			continue
+		}
+		if !f.ignoreLabels && !hasLabels(c.Labels, labels) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return client.ContainerListResult{Items: out}, nil
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// hasLabels applies a docker label filter: "key" needs the key, "key=value"
+// needs the value too.
+func hasLabels(have map[string]string, filters []string) bool {
+	for _, f := range filters {
+		k, v, withValue := strings.Cut(f, "=")
+		got, ok := have[k]
+		if !ok || (withValue && got != v) {
+			return false
+		}
+	}
+	return true
+}
+
+func (f *fakeDocker) NetworkList(_ context.Context, opts client.NetworkListOptions) (client.NetworkListResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.networkListOpts = append(f.networkListOpts, opts)
+	// Deliberately NOT applying the scope filter: the guard must hold even if
+	// the daemon ignored it.
+	labels := filterValues(opts.Filters, "label")
+	var out []network.Summary
+	for _, n := range f.networks {
+		if f.ignoreLabels || hasLabels(n.Labels, labels) {
+			out = append(out, n)
+		}
+	}
+	return client.NetworkListResult{Items: out}, nil
+}
+
+func (f *fakeDocker) NetworkInspect(_ context.Context, id string, _ client.NetworkInspectOptions) (client.NetworkInspectResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if in, ok := f.netInspect[id]; ok {
+		return client.NetworkInspectResult{Network: in}, nil
+	}
+	for _, n := range f.networks {
+		if n.ID == id {
+			return client.NetworkInspectResult{Network: network.Inspect{Network: n.Network}}, nil
+		}
+	}
+	return client.NetworkInspectResult{}, errors.New("no such network " + id)
+}
+
+func (f *fakeDocker) NetworkRemove(_ context.Context, id string, _ client.NetworkRemoveOptions) (client.NetworkRemoveResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removedNetworks = append(f.removedNetworks, id)
+	return client.NetworkRemoveResult{}, nil
+}
+
+func (f *fakeDocker) VolumePrune(_ context.Context, opts client.VolumePruneOptions) (client.VolumePruneResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.volumePruneOpts = append(f.volumePruneOpts, opts)
+	return client.VolumePruneResult{Report: f.volumePruneReport}, nil
+}
+
+func (f *fakeDocker) BuildCachePrune(_ context.Context, opts client.BuildCachePruneOptions) (client.BuildCachePruneResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.buildPruneOpts = append(f.buildPruneOpts, opts)
+	return client.BuildCachePruneResult{Report: f.buildPruneReport}, nil
 }
 
 func (f *fakeDocker) ContainerInspect(_ context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -189,6 +301,9 @@ func (f *fakeDocker) ContainerAttach(_ context.Context, _ string, _ client.Conta
 func (f *fakeDocker) ContainerRemove(_ context.Context, id string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.containerRemErr[id]; err != nil {
+		return client.ContainerRemoveResult{}, err
+	}
 	f.removedContainers = append(f.removedContainers, id)
 	return client.ContainerRemoveResult{}, nil
 }
@@ -328,6 +443,9 @@ func (f *fakeDocker) DiskUsage(_ context.Context, opts client.DiskUsageOptions) 
 		if !opts.Verbose {
 			r.Images.Items = nil
 		}
+	}
+	if opts.BuildCache {
+		r.BuildCache = f.buildCacheDU
 	}
 	if opts.Volumes {
 		r.Volumes.TotalCount = int64(len(f.volumes))

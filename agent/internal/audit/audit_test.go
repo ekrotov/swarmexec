@@ -98,6 +98,7 @@ var eventTable = map[string]func(*Logger){
 	"volume_remove":     func(l *Logger) { l.VolumeRemove("a", "v", true, "") },
 	"volume_create":     func(l *Logger) { l.VolumeCreate("a", "v", true, "") },
 	"image_prune":       func(l *Logger) { l.ImagePrune("a", true, 10, 1, true, "") },
+	"prune":             func(l *Logger) { l.Prune("a", "manual", "containers", 10, 1, false, true, "") },
 	"event_watch_start": func(l *Logger) { l.EventWatchStart("a", "c", "s", "addr") },
 	"event_watch_end":   func(l *Logger) { l.EventWatchEnd("a", "c", time.Second, 4) },
 	"container_list":    func(l *Logger) { l.ContainerList("a", "web", 1) },

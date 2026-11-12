@@ -164,6 +164,10 @@ const (
 	pageNodeLabelPrompt  = "nodelabelprompt"
 	pageNodeDetail       = "nodedetail"
 	pageNodeImages       = "nodeimages"
+	pageNodePrune        = "nodeprune"
+	pageNodePrunePrompt  = "nodepruneprompt"
+	pageNodeSchedule     = "nodeschedule"
+	pageNodeSchedPrompt  = "nodeschedprompt"
 	pageAskpass          = "askpass"
 	pageSSHAdd           = "sshadd"
 )
@@ -1551,8 +1555,8 @@ func (u *ui) helpFor(name string) string {
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Esc[white] back  [yellow]Enter/%s[white] switch  [yellow]i[white] details  [yellow]%s[white] new  %s delete",
 			kl(km.CtxUse), kl(km.CtxNew), keyTag(dangerKey(kl(km.CtxDelete))))
 	case "nodes":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  [yellow]%s[white] reclaim images",
-			kl(km.NodeLabels), kl(km.NodeAvail), kl(km.NodeImages))
+		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  %s prune  [yellow]%s[white] prune schedule (all nodes)",
+			kl(km.NodeLabels), kl(km.NodeAvail), keyTag(dangerKey(kl(km.NodePrune))), kl(km.NodePruneSched))
 	case "configs":
 		return head + "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
 
@@ -1648,7 +1652,9 @@ func (u *ui) showHelp() {
 	line("Enter / i", "details")
 	line(kl(km.NodeLabels), "edit labels")
 	line(kl(km.NodeAvail), "availability: active / pause / drain")
-	line(kl(km.NodeImages), "reclaim image disk space on the node")
+	danger(kl(km.NodePrune), "prune the node: containers, images, build cache, networks, volumes (choose + confirm)")
+	line(kl(km.NodePruneSched), "prune schedule for ALL nodes (restarts the agents on save)")
+	line("m", "in the details: measure reclaimable space now")
 
 	sec("Configs")
 	line("Enter / i", "details, including the config's content")

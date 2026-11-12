@@ -29,7 +29,7 @@ type keybinds struct {
 	// networks
 	NetAttached, NetNew rune
 	// nodes
-	NodeLabels, NodeAvail, NodeImages rune
+	NodeLabels, NodeAvail, NodePrune, NodePruneSched rune
 	// secrets
 	SecDelete, SecNew rune
 	// contexts
@@ -83,8 +83,13 @@ var keyActions = []keyAction{
 	{"node_edit_labels", []string{"nodes"}, 'l', func(k *keybinds) *rune { return &k.NodeLabels }},
 	{"node_availability", []string{"nodes"}, 'a', func(k *keybinds) *rune { return &k.NodeAvail }},
 	// Capital P, the same gesture the volumes tab uses for its prune — same verb,
-	// same shape, different scope.
-	{"node_prune_images", []string{"nodes"}, 'P', func(k *keybinds) *rune { return &k.NodeImages }},
+	// same shape, different scope. It opens the per-category prune dialog (it
+	// used to reclaim images only, as node_prune_images, which still works as a
+	// name in keys.yaml).
+	{"node_prune", []string{"nodes"}, 'P', func(k *keybinds) *rune { return &k.NodePrune }},
+	// Capital S: the prune schedule is cluster-wide, so it lives on the nodes
+	// tab rather than in one node's detail alone.
+	{"node_prune_schedule", []string{"nodes"}, 'S', func(k *keybinds) *rune { return &k.NodePruneSched }},
 	{"secret_delete", []string{"secrets"}, 'X', func(k *keybinds) *rune { return &k.SecDelete }},
 	{"secret_new", []string{"secrets"}, 'n', func(k *keybinds) *rune { return &k.SecNew }},
 	// "contexts" is a scope, not a tab, since the context list moved into the
@@ -127,6 +132,12 @@ var reservedRunes = map[rune]bool{
 	'j': true, 'k': true, 'g': true, 'G': true,
 	'1': true, '2': true, '3': true, '4': true, '5': true,
 	'6': true, '7': true, '8': true, '9': true,
+}
+
+// keyAliases are action names that were renamed, mapped to their current
+// name, so a keys.yaml written for an older release keeps working.
+var keyAliases = map[string]string{
+	"node_prune_images": "node_prune",
 }
 
 // defaultKeybinds returns the built-in bindings.
@@ -195,6 +206,9 @@ func loadKeybinds(path string) (keybinds, []string) {
 	byName := map[string]keyAction{}
 	for _, a := range keyActions {
 		byName[a.name] = a
+	}
+	for old, cur := range keyAliases {
+		byName[old] = byName[cur]
 	}
 
 	// Apply overrides in a stable order for deterministic warnings.

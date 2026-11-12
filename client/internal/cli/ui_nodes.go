@@ -14,6 +14,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/pb"
 )
 
 func (u *ui) renderNodes() {
@@ -344,6 +345,74 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	notable := u.notable
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
+	head := u.nodeDetailHead(n)
+	// The reclaim block arrives from the agent after the detail is open. It is
+	// re-rendered in place; `closed` (UI goroutine only) stops a late answer
+	// from writing into a detail the operator already left.
+	rec := &nodeReclaimView{loading: true}
+	closed := false
+	render := func() {
+		row, col := tv.GetScrollOffset()
+		tv.SetText(head + rec.text(time.Now()))
+		tv.ScrollTo(row, col)
+	}
+	apply := func(resp *pb.ReclaimStatsResponse, err error) {
+		if closed {
+			return
+		}
+		rec.loading, rec.err = false, err
+		if resp != nil {
+			rec.resp = resp
+		}
+		render()
+	}
+	render()
+	u.loadNodeReclaim(n.Hostname, false, apply)
+
+	ov := u.overlayFor(pageNodeDetail, notable, footerKeys("m", "measure now", dangerKey(keyLabel(u.km.NodePrune)), "prune…",
+		keyLabel(u.km.NodePruneSched), "schedule (all nodes)", "l", "edit labels", "j/k", "scroll", "Esc", "close"))
+	closeDetail := func() {
+		closed = true
+		ov.Close()
+	}
+	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		switch {
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
+			closeDetail()
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'm':
+			// Rule: never QueueUpdateDraw from here (the UI goroutine) — the
+			// "measuring" state is written straight into the widget.
+			if !rec.loading {
+				rec.loading = true
+				render()
+				u.loadNodeReclaim(n.Hostname, true, apply)
+			}
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.NodePrune:
+			closeDetail()
+			u.openNodePrune(n, notable, u.loadNodes)
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.NodePruneSched:
+			closeDetail()
+			u.openPruneSchedule(notable)
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
+			closeDetail()
+			u.editNodeLabels(n, u.loadNodes)
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	})
+	ov.show(centered(tv, 80, 40), tv)
+}
+
+// nodeDetailHead is everything in the node detail above the reclaim block.
+func (u *ui) nodeDetailHead(n swarmNodeInfo) string {
 	var b strings.Builder
 	kv := func(k, v string) { fmt.Fprintf(&b, "  [gray]%-13s[-] %s\n", k, tview.Escape(v)) }
 	role := n.Role
@@ -379,26 +448,7 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	} else {
 		b.WriteString("    [gray](none)[-]\n")
 	}
-	tv.SetText(b.String())
-	ov := u.overlayFor(pageNodeDetail, notable, footerKeys("l", "edit labels", "j/k", "scroll", "Esc", "close"))
-	closeDetail := ov.Close
-	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
-			closeDetail()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
-			closeDetail()
-			u.editNodeLabels(n, u.loadNodes)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-		}
-		return ev
-	})
-	ov.show(centered(tv, 72, 24), tv)
+	return b.String()
 }
 
 // nodeUsageSection renders what the node's containers are ACTUALLY using, as a
@@ -530,10 +580,14 @@ func (u *ui) nodeKeys(ev *tcell.EventKey) *tcell.EventKey {
 		}
 		return nil
 	}
-	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeImages {
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodePrune {
 		if n, ok := u.selectedNode(); ok {
-			u.openNodeImagePrune(n, notable, u.loadNodes)
+			u.openNodePrune(n, notable, u.loadNodes)
 		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodePruneSched {
+		u.openPruneSchedule(notable)
 		return nil
 	}
 	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeLabels {

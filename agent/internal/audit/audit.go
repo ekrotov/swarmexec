@@ -148,6 +148,25 @@ func (l *Logger) ImagePrune(identity string, all bool, reclaimed int64, deleted 
 	)
 }
 
+// Prune records one category of a Prune, manual or scheduled. One record per
+// category, because each is its own act with its own authorization: a policy
+// that allowed the containers and refused the volumes leaves exactly that in
+// the trail. trigger is "manual" (a client asked) or "schedule" (the agent's
+// own prune schedule, identity "scheduler").
+func (l *Logger) Prune(identity, trigger, category string, freed, count int64, skipped, ok bool, errMsg string) {
+	l.log.Info("prune",
+		"event", "prune",
+		"identity", identity,
+		"trigger", trigger,
+		"category", category,
+		"freed_bytes", freed,
+		"count", count,
+		"skipped", skipped,
+		"ok", ok,
+		"error", errMsg,
+	)
+}
+
 // EventWatchStart records the beginning of a container event watch. The watch
 // itself reveals nothing an operator could not see with logs on the same
 // container, but it is a long-lived subscription to a container's lifecycle and

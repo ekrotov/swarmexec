@@ -29,6 +29,7 @@ type volumeSizeCache struct {
 
 	mu         sync.RWMutex
 	sizes      map[string]int64
+	refs       map[string]int64 // containers referencing each volume (DiskUsage RefCount)
 	computedAt time.Time
 	ready      bool
 }
@@ -37,7 +38,7 @@ func newVolumeSizeCache(docker DockerClient, log *slog.Logger, interval time.Dur
 	if interval <= 0 {
 		interval = volumeSizeInterval
 	}
-	return &volumeSizeCache{docker: docker, log: log, interval: interval, sizes: map[string]int64{}}
+	return &volumeSizeCache{docker: docker, log: log, interval: interval, sizes: map[string]int64{}, refs: map[string]int64{}}
 }
 
 // get returns the cached sizes (treat as read-only; refresh swaps the whole
@@ -46,6 +47,16 @@ func (c *volumeSizeCache) get() (sizes map[string]int64, computedAt time.Time, r
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sizes, c.computedAt, c.ready
+}
+
+// usage returns sizes and reference counts together, for the reclaim
+// measurement: a volume with no references is what a volume prune removes. The
+// refcounts are as old as the last scan (container churn emits no volume
+// event), which is why a forced measurement refreshes the cache first.
+func (c *volumeSizeCache) usage() (sizes, refs map[string]int64, computedAt time.Time, ready bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sizes, c.refs, c.computedAt, c.ready
 }
 
 // run scans once immediately, then refreshes on volume create/destroy events
@@ -130,14 +141,17 @@ func (c *volumeSizeCache) refresh(ctx context.Context) {
 		return
 	}
 	sizes := make(map[string]int64, len(du.Volumes.Items))
+	refs := make(map[string]int64, len(du.Volumes.Items))
 	for _, v := range du.Volumes.Items {
 		if v.UsageData == nil {
 			continue
 		}
 		sizes[v.Name] = v.UsageData.Size // docker reports -1 for non-local drivers
+		refs[v.Name] = v.UsageData.RefCount
 	}
 	c.mu.Lock()
 	c.sizes = sizes
+	c.refs = refs
 	c.computedAt = time.Now()
 	c.ready = true
 	c.mu.Unlock()

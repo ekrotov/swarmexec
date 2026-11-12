@@ -207,6 +207,70 @@ derived, and how is part of the contract:
   what the manager knows (a service's endpoint target ports), which works
   against any agent.
 
+### 3.7 Reclaim stats and Prune (normative)
+
+`ReclaimStats` and `Prune` generalize the image accounting of §3.4 to every
+kind of object that collects on a node. `PruneImages` stays, unchanged, for
+older clients.
+
+Categories and their authorization actions — each category is authorized and
+audited on its own, so a policy can allow the cheap sweeps and refuse the
+dangerous ones:
+
+| Category | Name (labels, cli) | Action | What a prune removes |
+| --- | --- | --- | --- |
+| `CONTAINERS` | `containers` | `container.prune` | stopped containers that **finished** longer ago than `containers_until` |
+| `IMAGES` | `images` | `image.prune.all` | every image no container uses, tagged or not |
+| `DANGLING_IMAGES` | `dangling-images` | `image.prune` | untagged images only |
+| `BUILD_CACHE` | `buildcache` | `buildcache.prune` | all build cache no build is using |
+| `NETWORKS` | `networks` | `network.prune` | local-scope networks no container references |
+| `VOLUMES` | `volumes` | `volume.prune` | every volume no container references, named ones included |
+
+- `ReclaimStats` is authorized as `reclaim.read`. The agent measures in the
+  background (shortly after start, then hourly, and after every prune) and
+  answers from memory. `measure_now` forces a measurement; the agent MAY refuse
+  one inside its rate limit (30s) and then answers from memory with
+  `measure_throttled` set. A category whose measurement failed keeps its
+  previous figure and `measure_error` says why.
+- The figures are the same selection a prune makes: the containers figure
+  counts what `containers_until` lets go and reports what it keeps as
+  `held_back`; the image figures are §3.4's arithmetic (`IMAGES` = dangling +
+  unused, `DANGLING_IMAGES` a lower bound); the volume figures come from the
+  agent's volume-size cache. Networks have a count and no size
+  (`bytes_known=false`).
+- **Networks guard.** The agent MUST NOT call the Engine's `networks/prune`: on
+  a manager it also removes every unused swarm-scope overlay network,
+  cluster-wide, and cannot be filtered by scope. It lists networks and removes,
+  one by one, only those with scope `local` that are not predefined (`bridge`,
+  `host`, `none`, `docker_gwbridge`, `ingress`), not overlay, not config-only,
+  referenced by no container (stopped ones included) and with no endpoint
+  attached.
+- **Containers guard.** `containers_until` counts from when a container
+  STOPPED (its `FinishedAt`), not from its creation as Docker's own `until`
+  filter does: the logs a client shows for a crashed task live in that
+  container. Empty means 24h; `0s` removes every stopped container.
+- **Volumes** are data. A client MUST NOT select `VOLUMES` as part of any
+  default or "all" choice; it MUST be its own explicit choice. The agent prunes
+  with Engine `all=true`, so NAMED volumes no container references are removed,
+  not only anonymous ones.
+- The agent runs the categories in its own order (containers, images, build
+  cache, networks, volumes) whatever order the request lists them in, and
+  `IMAGES` makes `DANGLING_IMAGES` redundant. A refused or failed category does
+  not stop the others; each result carries its own `error`. `label_filters`
+  scope every category that supports labels; build cache does not, and is
+  reported `skipped` under a filter.
+- An agent that predates these RPCs answers `UNIMPLEMENTED`. A client MUST
+  treat that as "no prune stats" and keep working (it MAY fall back to
+  `ListImages` / `PruneImages`).
+
+**Prune schedule.** The agent reads a schedule from its OWN container labels at
+start (`swarmexec.prune.*`, see §8) and runs `Prune` at the scheduled times as
+the identity `scheduler` — authorized by the same policy, audited with
+`trigger=schedule`. Invalid labels disable the schedule and are reported in
+`schedule.error`; they never stop the agent. `schedule.next_run` and
+`last_run` (the last scheduled run: times, per-category results, first error)
+travel in every `ReclaimStatsResponse`.
+
 ## 4. Session Lifecycle (normative)
 
 1. Client opens the `Exec` stream.
@@ -286,6 +350,22 @@ review, then broke `swarmexec init` against every cluster.
   part of this contract and MUST NOT be renamed or repurposed on one side alone.
   Every other agent flag is the agent's own interface and carries no such
   promise.
+- The prune schedule is part of this vocabulary too: container labels on the
+  agent service, defined once in `internal/prunesched` and read by the agent at
+  start. A worker's agent can read only its own container, which is why the
+  schedule is not a service or node label. `swarmexec init --force` MUST carry
+  existing `swarmexec.prune.*` labels into the spec it writes.
+
+  | Label | Default |
+  | --- | --- |
+  | `swarmexec.prune.enabled` | absent: schedule off |
+  | `swarmexec.prune.schedule.days` | every day (`mon,…,sun`, ranges `mon-fri`) |
+  | `swarmexec.prune.schedule.start` | `00:00` |
+  | `swarmexec.prune.schedule.times` | `1` (1–24, the day split evenly from `start`) |
+  | `swarmexec.prune.schedule.tz` | `UTC` |
+  | `swarmexec.prune.categories` | `containers,images,buildcache,networks` |
+  | `swarmexec.prune.containers.until` | `24h` |
+  | `swarmexec.prune.filter.label` | none |
 - `-allow-legacy-secret` is written out only when turning the path OFF, so an
   agent deployed by an older client and one deployed by a current client carry
   identical command lines unless the operator asked for the change.
