@@ -123,7 +123,7 @@ and busybox `wget` tries `::1` without falling back.
   read-only + cap-drop).
 - `proposals/` — design drafts; not part of the image.
 
-The pages load Umami (self-hosted at `stats.cloud-surfers.net`) for page views,
-link clicks (`data-umami-event`) and session recordings; the privacy policy
+The pages load Umami (self-hosted at `stats.cloud-surfers.net`) for page views
+and link clicks (`data-umami-event`) — no session recording; the privacy policy
 describes it. The landing page says so next to "no telemetry", which is about the
 binary.
