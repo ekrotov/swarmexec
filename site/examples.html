@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec recipes — practical Docker Swarm workflows: debug, exec, port-forward, logs, deploy</title>
+  <meta name="description" content="Practical swarmexec workflows for Docker Swarm: debug a crashing service, shell into one replica, forward a database port, follow a stack's logs, rotate a secret, gate deploys in CI, and more — CLI and TUI side by side.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/examples">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec recipes — practical Docker Swarm workflows">
+  <meta property="og:description" content="Debug a crashing service, shell into one replica, forward a database port, rotate a secret, gate deploys in CI — CLI and TUI side by side.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/examples">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec recipes — practical Docker Swarm workflows">
+  <meta name="twitter:description" content="Debug a crashing service, shell into one replica, forward a database port, rotate a secret, gate deploys in CI — CLI and TUI side by side.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "swarmexec recipes — practical Docker Swarm workflows",
+    "description": "Practical swarmexec workflows for Docker Swarm, CLI and TUI side by side.",
+    "url": "https://swarm-exec.cloud-surfers.net/examples",
+    "inLanguage": "en",
+    "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+    "author": { "@type": "Organization", "name": "Cloud Surfers GmbH", "url": "https://www.cloud-surfers.com/" },
+    "about": { "@type": "SoftwareApplication", "name": "swarmexec", "url": "https://swarm-exec.cloud-surfers.net/" },
+    "mainEntity": {
+      "@type": "ItemList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Debug a crashing service", "url": "https://swarm-exec.cloud-surfers.net/examples#debug-crash" },
+        { "@type": "ListItem", "position": 2, "name": "Shell into exactly replica 2", "url": "https://swarm-exec.cloud-surfers.net/examples#exec-replica" },
+        { "@type": "ListItem", "position": 3, "name": "Forward a database port locally", "url": "https://swarm-exec.cloud-surfers.net/examples#forward-db" },
+        { "@type": "ListItem", "position": 4, "name": "Follow logs across all replicas and a whole stack", "url": "https://swarm-exec.cloud-surfers.net/examples#follow-logs" },
+        { "@type": "ListItem", "position": 5, "name": "Change env without redeploying the stack", "url": "https://swarm-exec.cloud-surfers.net/examples#edit-env" },
+        { "@type": "ListItem", "position": 6, "name": "Rotate a secret and keep its name", "url": "https://swarm-exec.cloud-surfers.net/examples#rotate-secret" },
+        { "@type": "ListItem", "position": 7, "name": "Catch drift in CI", "url": "https://swarm-exec.cloud-surfers.net/examples#drift-ci" },
+        { "@type": "ListItem", "position": 8, "name": "A deploy that is really done", "url": "https://swarm-exec.cloud-surfers.net/examples#deploy-done" },
+        { "@type": "ListItem", "position": 9, "name": "Let Claude inspect your swarm via MCP", "url": "https://swarm-exec.cloud-surfers.net/examples#mcp-claude" },
+        { "@type": "ListItem", "position": 10, "name": "Free disk space on a schedule", "url": "https://swarm-exec.cloud-surfers.net/examples#prune-schedule" },
+        { "@type": "ListItem", "position": 11, "name": "Security audit", "url": "https://swarm-exec.cloud-surfers.net/examples#security-audit" },
+        { "@type": "ListItem", "position": 12, "name": "Work with several clusters", "url": "https://swarm-exec.cloud-surfers.net/examples#many-clusters" }
+      ]
+    }
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="docs.html">Docs</a>
+      <a class="rail-link" href="releases.html">Releases</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <h1>swarmexec<span class="cursor">_</span> recipes</h1>
+      <p class="tagline">Practical workflows — the CLI and the TUI side by side.</p>
+
+      <p class="lead">
+        The <a href="docs.html">docs</a> describe every command, flag and key. This page puts
+        them together into the jobs you actually come for. Each recipe has the goal, the
+        commands, the same in the TUI (<code>swarmexec ui</code>), what you should see, the
+        pitfalls, and where the docs go deeper. The examples use a stack <code>shop</code>
+        with services such as <code>web</code>, <code>api</code> and <code>db</code>; swarm
+        names them <code>shop_web</code> and so on, which is what you type.
+      </p>
+
+      <div class="toc">
+        <p class="th">Recipes</p>
+        <ol>
+          <li><a href="#debug-crash">1. Debug a crashing service</a></li>
+          <li><a href="#exec-replica">2. Shell into exactly replica 2</a></li>
+          <li><a href="#forward-db">3. Forward a database port locally</a></li>
+          <li><a href="#follow-logs">4. Follow logs across a whole stack</a></li>
+          <li><a href="#edit-env">5. Change env without redeploying</a></li>
+          <li><a href="#rotate-secret">6. Rotate a secret, keep its name</a></li>
+          <li><a href="#drift-ci">7. Catch drift in CI</a></li>
+          <li><a href="#deploy-done">8. A deploy that is really done</a></li>
+          <li><a href="#mcp-claude">9. Let Claude inspect your swarm</a></li>
+          <li><a href="#prune-schedule">10. Free disk space on a schedule</a></li>
+          <li><a href="#security-audit">11. Security audit</a></li>
+          <li><a href="#many-clusters">12. Work with several clusters</a></li>
+        </ol>
+      </div>
+
+      <!-- 1 -->
+      <article class="recipe" aria-labelledby="debug-crash">
+        <h2 id="debug-crash">1. Debug a crashing service</h2>
+        <p class="goal"><strong>Goal:</strong> find out why <code>shop_api</code> keeps restarting — or never starts.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec ps shop_api                              <span class="o"># running tasks, node, uptime</span>
+<span class="c">$</span> swarmexec logs --since 30m shop_api               <span class="o"># works with nothing running, see below</span>
+<span class="c">$</span> swarmexec logs --since 30m --min-level warn --log-format auto shop_api</div>
+        <h3>In the TUI</h3>
+        <p>
+          Tab <kbd>1</kbd>, <kbd>/</kbd> and type <code>api</code> to filter. <kbd>L</kbd> on
+          the service opens its logs — on a service with no running container, the last
+          exited container of each slot. <kbd>i</kbd> on the service opens the inspect overlay;
+          <kbd>D</kbd> there is the <em>placement diagnosis</em>: why a task is missing.
+          <kbd>i</kbd> on a container row shows the task's status history instead.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          <code>ps</code> lists only running tasks, so a crash-looping service shows fewer
+          slots than replicas, a short <code>UPTIME</code>, or nothing at all. With no running
+          container, <code>logs</code> says so on stderr —
+          <code>shop_api has no running container; showing the last container (…)</code> with
+          how it ended — and prints that container's output. If no task ever got a container
+          (an image that cannot be pulled, no node satisfying the constraints) the error names
+          the newest task's state and reason instead. The placement diagnosis lists each
+          missing task with the scheduler's own message, or for a global service every node
+          and why it is excluded.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li><code>--min-level</code> lets lines with no detectable level through, so stack traces survive — but on a stream parsed in the wrong format it filters nothing. <code>--log-format auto</code> says when it cannot tell.</li>
+          <li>With several targets or <code>--stack</code>, a service with nothing running is skipped with a note; ask for it on its own to see its last container.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#logs"><code>logs</code></a> · <a href="docs.html#ps"><code>ps</code></a> · <a href="docs.html#tui-shell-logs">TUI logs</a> · <a href="docs.html#tui-services">Stacks/Services tab</a></p>
+      </article>
+
+      <!-- 2 -->
+      <article class="recipe" aria-labelledby="exec-replica">
+        <h2 id="exec-replica">2. Shell into exactly replica 2</h2>
+        <p class="goal"><strong>Goal:</strong> a shell in one specific replica — the one that misbehaves — whichever node it runs on.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec exec shop_web.2 -- sh
+<span class="c">$</span> swarmexec exec -u root -w /app shop_web.2 -- ls -la
+<span class="c">$</span> swarmexec exec -e DEBUG=1 shop_web.2 -- ./healthcheck.sh</div>
+        <h3>In the TUI</h3>
+        <p>
+          Tab <kbd>1</kbd>, unfold the service with <kbd>l</kbd>, move to the container of slot 2
+          and press <kbd>Enter</kbd>: the action menu offers <em>bash</em>, <em>sh</em> and
+          <em>shell as user…</em> (shells the image lacks are greyed out).
+          <kbd>Ctrl-]</kbd> detaches from the embedded shell.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          With no command, <code>exec</code> opens <code>/bin/sh</code> with a TTY when stdin is
+          a terminal. A one-off command's exit code comes back verbatim, so
+          <code>exec … -- test -f /app/ready</code> works in a script.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li>A bare service name with several replicas is ambiguous. <code>exec</code> offers a numbered list when interactive; in a script, name the slot (<code>shop_web.2</code>) or a task ID.</li>
+          <li>During a rolling update the newest task in the slot wins — the replica you exec into may be minutes old.</li>
+          <li><code>-u</code> takes a user name or UID (<code>1000:1000</code>); use it when the image's default user lacks the tools you need.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#exec"><code>exec</code></a> · <a href="docs.html#targets">target selectors</a></p>
+      </article>
+
+      <!-- 3 -->
+      <article class="recipe" aria-labelledby="forward-db">
+        <h2 id="forward-db">3. Forward a database port locally</h2>
+        <p class="goal"><strong>Goal:</strong> connect a local client to a database whose port is published nowhere.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec port-forward shop_db 5432          <span class="o"># localhost:5432 → container:5432</span>
+<span class="c">$</span> swarmexec pf shop_db 15432:5432              <span class="o"># local 15432, when 5432 is taken locally</span>
+<span class="c">$</span> psql -h 127.0.0.1 -p 15432 -U app</div>
+        <h3>In the TUI</h3>
+        <p>
+          <kbd>p</kbd> on the container opens the Port Forward dialog: <em>Container Port</em>
+          (suggested from the service's and image's ports), <em>Local Port</em> and
+          <em>Address</em>. <kbd>Enter</kbd> starts it. Tab <kbd>3</kbd> (Forwards) lists every
+          forward: <kbd>o</kbd> copies its URL, <kbd>X</kbd> stops it, <kbd>Enter</kbd> shows the
+          detail.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          The forward runs until <kbd>Ctrl-C</kbd>. The agent carries it through a short-lived
+          sidecar in the container's network namespace, which stays about two minutes after the
+          last connection so a reconnecting pool does not pay the start again. In the TUI,
+          forwards keep running when you switch cluster and stop when you quit.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li><code>--address</code> defaults to <code>127.0.0.1</code>. Any other address, <code>0.0.0.0</code> included, prints <code>swarmexec: warning: --address 0.0.0.0 is not loopback; the forwarded port is reachable from your network</code> — and it is.</li>
+          <li>A service target forwards to exactly one task, not across replicas. For a multi-replica service, <code>port-forward</code> never guesses: it prints the candidates and exits — name the slot.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#port-forward"><code>port-forward</code></a> · <a href="docs.html#tui-forwards">Forwards tab</a></p>
+      </article>
+
+      <!-- 4 -->
+      <article class="recipe" aria-labelledby="follow-logs">
+        <h2 id="follow-logs">4. Follow logs across all replicas and a whole stack</h2>
+        <p class="goal"><strong>Goal:</strong> one stream for every replica of every service in <code>shop</code>, filtered to what matters.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec logs -f shop_web                    <span class="o"># every running replica of one service</span>
+<span class="c">$</span> swarmexec logs -f --tail 20 --stack shop
+<span class="c">$</span> swarmexec logs -f --stack shop --log-format auto --min-level warn
+<span class="c">$</span> swarmexec logs -f -t --stack shop --grep 'timeout|refused'</div>
+        <h3>In the TUI</h3>
+        <p>
+          <kbd>L</kbd> on a <strong>stack</strong> row follows every container of every service,
+          starting from the last 50 lines each. In the log view, <kbd>a</kbd> auto-detects the
+          format, <kbd>l</kbd> cycles the minimum level, <kbd>/</kbd> sets a grep,
+          <kbd>F</kbd> cycles the format and <kbd>f</kbd> toggles follow.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          Every line is prefixed with its source — <code>web.2</code>, or
+          <code>agent@node-3</code> for a global service — padded and coloured on a terminal.
+          When a container is replaced, its source reconnects and prints a dim
+          <code>── container replaced; reconnected to … ──</code> line.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li>Lines are merged in arrival order, not sorted by time. Add <code>-t</code> when the order between services matters.</li>
+          <li>Each source is one stream to its node's agent and counts toward that agent's stream limit; a large stack is many streams.</li>
+          <li><code>--grep</code> is a Go regexp on the <em>parsed</em> message, so it depends on <code>--log-format</code>.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#logs"><code>logs</code></a> · <a href="docs.html#tui-shell-logs">TUI log view</a></p>
+      </article>
+
+      <!-- 5 -->
+      <article class="recipe" aria-labelledby="edit-env">
+        <h2 id="edit-env">5. Change env without redeploying the stack</h2>
+        <p class="goal"><strong>Goal:</strong> set <code>LOG_LEVEL=debug</code> on one service for an investigation, without touching the stack file.</p>
+        <h3>CLI</h3>
+        <p>
+          There is no swarmexec command for this — it is a TUI action (docker's own
+          <code>docker service update --env-add</code> does the same from a shell).
+        </p>
+        <h3>In the TUI</h3>
+        <p>
+          Tab <kbd>1</kbd>, cursor on the service, <kbd>i</kbd> for the inspect overlay,
+          <kbd>e</kbd> for the env editor: the whole environment as text, one
+          <code>KEY=VALUE</code> per line, in a small vim-style editor. <kbd>i</kbd> to insert,
+          <kbd>Esc</kbd>, then <kbd>:w</kbd> (or <kbd>Ctrl-S</kbd>). A line starting with
+          <code>#</code> is a comment, so commenting a variable out removes it.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          <kbd>:w</kbd> checks every line first — an error names the line and puts the cursor
+          on it — then shows which keys are added, changed and removed, and applies them in one
+          service update: a rolling update of that service.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li>The next <code>stack deploy</code> of the file puts the old environment back. That is drift by design — <a href="#drift-ci">recipe 7</a> shows it, and the change belongs in the file if it should stay.</li>
+          <li>Every save restarts the service's tasks, following its <code>update_config</code>.</li>
+          <li>Credentials do not belong in env: the security scan flags a literal value under a credential-looking key (<code>secret-in-env</code>). Use a secret and a <code>*_FILE</code> variable.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#env-editor">the env editor</a> · <a href="docs.html#tui-services">service inspect keys</a></p>
+      </article>
+
+      <!-- 6 -->
+      <article class="recipe" aria-labelledby="rotate-secret">
+        <h2 id="rotate-secret">6. Rotate a secret and keep its name</h2>
+        <p class="goal"><strong>Goal:</strong> new content for <code>db_password</code>, with every stack file and service spec that names it left as it is.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec secret rotate db_password --from-file ./db_password.txt
+<span class="c">$</span> printf %s "$NEW_TOKEN" | swarmexec secret rotate api_token --from-stdin --yes --timeout 10m</div>
+        <h3>In the TUI</h3>
+        <p>
+          Tab <kbd>5</kbd> (Secrets), <kbd>Enter</kbd> on the secret, <kbd>r</kbd> to rotate. Type
+          the value or read a file with <kbd>:r</kbd>, then <kbd>:w</kbd>: the confirm lists the
+          services that will restart and their target paths. A progress overlay follows the six
+          steps; <kbd>Esc</kbd> hides it and the rotation carries on.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          One progress line per step and service on stderr; the value is never printed. Every
+          service using the secret is moved to a temporary <code>db_password_rotating</code>, the
+          original is replaced, and every service is moved back.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li><strong>Each service restarts twice</strong> — two rolling updates, one service at a time. Plan for it.</li>
+          <li><strong>There is no rollback to the old content</strong>: the old secret is deleted half-way. Keep the old value yourself if you might need it.</li>
+          <li>A run that stops half-way is resumable: run the same command again (with the new value again) and it continues where the cluster says it stopped. In the TUI, <kbd>r</kbd> on the secret — or on its <code>_rotating</code> row — resumes.</li>
+          <li>A secret created by <code>docker stack deploy</code> from a <code>file:</code> needs that file updated too, or the next deploy fails with <em>only updates to Labels are allowed</em>. An <code>external: true</code> secret has no such problem.</li>
+          <li>Without a terminal, or with <code>--from-stdin</code>, the command refuses unless you pass <code>--yes</code>. <code>echo</code> adds a newline to the value; <code>printf %s</code> does not.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#secretrotate"><code>secret rotate</code></a> · <a href="docs.html#tui-secrets">Secrets tab</a></p>
+      </article>
+
+      <!-- 7 -->
+      <article class="recipe" aria-labelledby="drift-ci">
+        <h2 id="drift-ci">7. Catch drift in CI</h2>
+        <p class="goal"><strong>Goal:</strong> a nightly job that goes red when the cluster no longer matches the stack files in Git — and a merge-request job that refuses a risky file.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="o"># nightly: does the cluster still match Git?</span>
+<span class="c">$</span> swarmexec stack diff stacks/shop.yml shop --ignore 'services.*.deploy.replicas'
+<span class="o"># merge request: would this file pass the security gate?</span>
+<span class="c">$</span> swarmexec stack deploy stacks/shop.yml --check</div>
+        <h3>In the TUI</h3>
+        <p>
+          <kbd>E</kbd> on a stack row (or any service or container in it) offers the export and
+          the diff for that stack — useful to look before you decide what the file should say.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          A unified diff: <code>+</code> is what deploying the file would add, <code>-</code>
+          what it would remove; a clean run prints <code>no differences between …</code>.
+          Exit codes: <strong>0</strong> no difference, <strong>1</strong> a difference,
+          <strong>2</strong> a usage error, <strong>125</strong> an unreachable manager.
+          <code>stack deploy --check</code> exits <strong>1</strong> when something above
+          informational is found and never deploys.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li>Treat <strong>125</strong> as a broken job, not as drift.</li>
+          <li><code>--ignore</code> takes a field path, <code>*</code> for any service name, repeatable. Every ignored path is listed under <em>Not compared</em>, and a path that matched nothing is called out — a typo otherwise ignores nothing, silently.</li>
+          <li><code>${VARS}</code> in the file are interpolated from the job's environment, exactly as <code>docker stack deploy</code> does — set them as the deploy would.</li>
+          <li><code>--format json</code> is the machine form (<code>differs</code>, hunks, <code>ignored</code>, <code>not_compared</code>).</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#stackfile"><code>stack diff</code></a> · <a href="docs.html#stackdeploy"><code>stack deploy</code></a> · <a href="docs.html#exit">exit codes</a></p>
+      </article>
+
+      <!-- 8 -->
+      <article class="recipe" aria-labelledby="deploy-done">
+        <h2 id="deploy-done">8. A deploy that is really done</h2>
+        <p class="goal"><strong>Goal:</strong> a pipeline step that is green only when the new version runs — and is healthy — not when swarm has merely accepted it.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec stack deploy shop.yml --yes &amp;&amp; swarmexec wait --stack shop --healthy --timeout 5m</div>
+        <h3>In the TUI</h3>
+        <p>
+          <kbd>E</kbd> → <em>deploy a file</em> shows the security findings first;
+          <kbd>d</kbd> proceeds, <kbd>Esc</kbd> walks away. Convergence is then visible in the
+          tree: replica counts and the healthcheck colouring. <code>wait</code> itself has no TUI
+          counterpart — it is for pipelines.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          <code>wait</code> exits <strong>0</strong> with
+          <code>✓ N service(s) converged in …</code>, or <strong>1</strong> with a
+          <code>✗ service: reason</code> line — on timeout, typically the scheduler's own message
+          for a task that is not running.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li><code>--yes</code> means “do not ask”, not “ignore the findings”: a file with findings above informational is refused and the step fails before <code>wait</code> runs. Only <code>--force</code> deploys despite findings.</li>
+          <li>A paused update and a rollback during the wait count as <strong>failures</strong>, even though the service looks settled.</li>
+          <li>Without <code>--healthy</code>, running is enough. With it, a node whose agent cannot report health counts as <em>not yet</em>, never as healthy.</li>
+          <li>swarmexec only observes: it never rolls back or retries.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#wait"><code>wait</code></a> · <a href="docs.html#stackdeploy"><code>stack deploy</code></a></p>
+      </article>
+
+      <!-- 9 -->
+      <article class="recipe" aria-labelledby="mcp-claude">
+        <h2 id="mcp-claude">9. Let Claude inspect your swarm via MCP</h2>
+        <p class="goal"><strong>Goal:</strong> ask an AI assistant <em>“why is api unhealthy?”</em> and have it read status, logs and stack diffs itself — only for the services you allow.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="o"># register the server with Claude Code</span>
+<span class="c">$</span> claude mcp add swarmexec -- swarmexec mcp
+<span class="o"># or pin the context, and allow two more</span>
+<span class="c">$</span> claude mcp add swarmexec -- swarmexec mcp --context staging --contexts lab,test</div>
+        <p>Then opt services in with <strong>service</strong> labels — in a compose file, <code>deploy.labels</code>:</p>
+        <div class="prompt">services:
+  api:
+    deploy:
+      labels:
+        swarmexec.mcp.enable: "true"   <span class="o"># visible: status, tasks, inspect, stats, diffs</span>
+        swarmexec.mcp.logs: "true"     <span class="o"># may read its logs</span>
+        swarmexec.mcp.exec: "true"     <span class="o"># may run one non-interactive command</span></div>
+        <h3>In the TUI</h3>
+        <p>
+          No TUI part: the assistant is the interface. You can set the labels from the inspect
+          overlay's label editor (<kbd>i</kbd>, then <kbd>l</kbd>) — but the stack file is the
+          place they survive the next deploy.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          The assistant gets tools such as <code>cluster_overview</code>,
+          <code>services_list</code>, <code>logs_read</code>, <code>stack_diff</code> and
+          <code>stack_check</code>. It changes nothing; <code>exec_run</code> exists only where
+          you granted <code>exec</code>.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li><strong>Without <code>swarmexec.mcp.enable</code> a service is invisible</strong> — indistinguishable from one that does not exist. Use <code>deploy.labels</code>; a container label grants nothing and is logged as a warning. <code>--default read</code> makes unlabelled services readable, never their logs or exec.</li>
+          <li>Only the start context and those named with <code>--contexts</code> exist for the assistant. Production stays out unless you name it.</li>
+          <li>ssh cannot prompt: stdin/stdout carry the protocol. Load the key into <code>ssh-agent</code> and have the host key in <code>known_hosts</code> first.</li>
+          <li>What a tool returns goes to the model provider. Log lines and command output pass as they are, and anyone who writes to those logs can address the assistant.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#mcp"><code>mcp</code></a></p>
+      </article>
+
+      <!-- 10 -->
+      <article class="recipe" aria-labelledby="prune-schedule">
+        <h2 id="prune-schedule">10. Free disk space on a schedule</h2>
+        <p class="goal"><strong>Goal:</strong> see what each node could reclaim, prune one now, and let every agent prune its own node at night.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec prune-schedule show
+<span class="c">$</span> swarmexec prune-schedule set --days mon-fri --start 03:00 --tz Europe/Berlin \
+      --categories containers,dangling-images,buildcache,networks
+<span class="c">$</span> swarmexec prune-schedule set --disable           <span class="o"># off, settings kept</span></div>
+        <h3>In the TUI</h3>
+        <p>
+          Tab <kbd>6</kbd> (Nodes), <kbd>Enter</kbd> on a node: the detail ends with
+          <em>reclaimable (measured on the node)</em> per category; <kbd>m</kbd> measures again.
+          <kbd>P</kbd> opens the prune dialog — one checkbox per category with its figure;
+          <kbd>a</kbd> ticks everything except volumes. <kbd>S</kbd> on the Nodes tab edits the
+          schedule for all nodes with a live preview of the next runs; <kbd>w</kbd> saves.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          <code>show</code> prints the schedule and its next five runs. The node detail shows the
+          schedule as that node's agent sees it, the next run, and the last run with what it
+          freed per category.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li><strong>Saving restarts the agents</strong>, one by one: the schedule is stored as container labels on the agent service. Open shells, log streams and forwards on a restarting node drop. <code>set</code> asks first unless <code>--yes</code>.</li>
+          <li>The default categories include <code>images</code>, which is <em>every unused image</em> — a service scaled to zero must pull again. <code>dangling-images</code> is the untagged-only, safe choice.</li>
+          <li><strong>Volumes are pruned only when you choose them</strong> — <code>volumes</code> in <code>--categories</code>, or the red checkbox — and then named volumes go with their data.</li>
+          <li>Times are UTC unless you give <code>--tz</code>.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#pruneschedulecmd"><code>prune-schedule</code></a> · <a href="docs.html#nodeprune">pruning a node</a> · <a href="docs.html#pruneschedule">the schedule</a></p>
+      </article>
+
+      <!-- 11 -->
+      <article class="recipe" aria-labelledby="security-audit">
+        <h2 id="security-audit">11. Security audit</h2>
+        <p class="goal"><strong>Goal:</strong> one reviewable file that says what is risky in the whole cluster — and what was not checked.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec security report -o security.md
+<span class="c">$</span> swarmexec security report --skip-agents &gt; security.md    <span class="o"># faster, no agent checks</span></div>
+        <h3>In the TUI</h3>
+        <p>
+          <kbd>!</kbd> on tab <kbd>1</kbd> opens the security-risks overlay for the service list;
+          <kbd>w</kbd> there writes the full cluster report to a file you name.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          Markdown with the cluster, time and build it ran with, findings by severity per
+          service, the cluster-level checks (unencrypted overlay networks, managers without
+          autolock, agent version skew, unused secrets and configs), and a
+          <em>Not covered</em> section for anything it could not reach.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li>The file is written <code>0600</code>: it is a map of where to attack. Treat it like one before committing it anywhere.</li>
+          <li>With <code>--skip-agents</code>, agent skew is listed under <em>Not covered</em> — not passed.</li>
+          <li>Its order depends only on the findings, so two reports of an unchanged cluster differ in the timestamp alone — diff them release over release.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#securityreport"><code>security report</code></a></p>
+      </article>
+
+      <!-- 12 -->
+      <article class="recipe" aria-labelledby="many-clusters">
+        <h2 id="many-clusters">12. Work with several clusters</h2>
+        <p class="goal"><strong>Goal:</strong> staging and production side by side, reached over ssh through a bastion, without mixing them up.</p>
+        <h3>CLI</h3>
+        <div class="prompt"><span class="c">$</span> swarmexec context create staging --docker-host ssh://ops@mgr.staging --ssh-jump bastion
+<span class="c">$</span> swarmexec context ls
+<span class="c">$</span> swarmexec --context staging ps                 <span class="o"># one command</span>
+<span class="c">$</span> swarmexec context use staging                  <span class="o"># or switch for good</span></div>
+        <h3>In the TUI</h3>
+        <p>
+          <kbd>c</kbd> focuses the context sidebar; <kbd>u</kbd> or <kbd>Enter</kbd> switches,
+          <kbd>n</kbd> creates one in a guided form (SSH and jump host included, with a
+          <em>Test</em> button), <kbd>i</kbd> shows its endpoint, <kbd>X</kbd> removes it. The
+          status line always names the active context.
+        </p>
+        <h3>What you see</h3>
+        <p>
+          Switching keeps your place: cursor, unfolded stacks and the <kbd>/</kbd> filter are
+          remembered per cluster, and port forwards keep running — the Forwards tab's
+          <code>CLUSTER</code> column says which cluster each belongs to.
+        </p>
+        <h3>Pitfalls</h3>
+        <ul>
+          <li>Contexts live in docker's own store: <code>context use</code> changes the current context for the <code>docker</code> CLI too. Prefer <code>--context</code> for one-off commands against production.</li>
+          <li>The first switch to a cluster takes as long as connecting to it; if it fails you stay where you were.</li>
+          <li>Each cluster needs its own agents, but there is <strong>one client config</strong> for all contexts, so every cluster's agents must accept the same credentials. With the shared secret, provision the next cluster with the one you already have — <code>swarmexec --context staging init --secret "$SECRET"</code>. Without <code>--secret</code>, <code>init</code> generates a new secret and writes it to your client config, which the first cluster's agents do not accept. With mTLS, one CA covers them all.</li>
+        </ul>
+        <p class="more">More in the docs: <a href="docs.html#context-cmd"><code>context</code></a> · <a href="docs.html#tui-contexts">context sidebar</a> · <a href="docs.html#context">Docker context &amp; SSH</a></p>
+      </article>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="docs.html">documentation</a> · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

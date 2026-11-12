@@ -107,8 +107,8 @@ em { font-style: italic; }
 .rail-nav a:hover { color: var(--ink); text-decoration: underline; }
 .rail-nav .rail-cta { color: var(--paper); background: var(--ink); padding: .3rem .75rem; border-radius: 999px; }
 .rail-nav .rail-cta:hover { color: var(--paper); background: var(--aqua); text-decoration: none; }
-/* On a phone only the section links go; Docs stays, it is where people look first. */
-@media (max-width: 600px) { .rail-nav a:not(.rail-cta):not(.rail-docs) { display: none; } }
+/* On a phone only the section links go; Examples and Docs stay, they are where people look first. */
+@media (max-width: 600px) { .rail-nav a:not(.rail-cta):not(.rail-docs):not(.rail-ex) { display: none; } }
 
 main { display: block; }
 
@@ -357,6 +357,7 @@ main { display: block; }
 .cmdgroup dt { font: 700 .86rem/1.3 var(--mono); color: var(--aqua); margin-top: .75rem; overflow-wrap: anywhere; }
 .cmdgroup dd { margin: .15rem 0 0; color: var(--ink-2); font-size: .95rem; }
 .targets { margin: 2rem 0 0; max-width: 46em; color: var(--ink-2); }
+.targets + .targets { margin-top: 1rem; }
 
 /* tui */
 .tui-split { display: grid; gap: 2rem; }
@@ -387,6 +388,7 @@ main { display: block; }
 .vs-before, .vs-after { min-width: 0; }
 .vs-label { margin: 0 0 .35rem; font: 500 .78rem/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .vs-after .vs-label { color: var(--aqua); }
+.vs-more { display: inline-block; margin-top: .5rem; font: 500 .82rem/1.3 var(--mono); color: var(--aqua); }
 .vs-before .sh { opacity: .85; }
 .vs-shot { margin-top: 2rem; max-width: 860px; }
 

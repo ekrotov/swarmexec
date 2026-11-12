@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- __LASTMOD__ is replaced with the image's build date (UTC) by site/Dockerfile. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://swarm-exec.cloud-surfers.net/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/docs</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://swarm-exec.cloud-surfers.net/releases</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/examples</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/releases</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
 </urlset>
