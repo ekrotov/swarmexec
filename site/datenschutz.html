@@ -21,9 +21,6 @@
   <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/datenschutz">
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/datenschutz">
   <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/datenschutz.en.html">
-  <link rel="alternate" hreflang="es" href="https://swarm-exec.cloud-surfers.net/datenschutz.es.html">
-  <link rel="alternate" hreflang="fr" href="https://swarm-exec.cloud-surfers.net/datenschutz.fr.html">
-  <link rel="alternate" hreflang="pl" href="https://swarm-exec.cloud-surfers.net/datenschutz.pl.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/datenschutz">
   <style>
     :root {
@@ -72,14 +69,17 @@
     .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
   </style>
   <script>
-    // i18n: this privacy page's base language is German; redirect to the browser
-    // language on first visit; the switcher stores the choice.
-    window.__i18n = { base: 'datenschutz', baseLang: 'de' };
+    // This privacy page's base language is German, with an English version;
+    // redirect to the browser language on first visit; the switcher stores the choice.
+    window.__lang = { base: 'datenschutz', baseLang: 'de' };
     (function () {
-      var I = window.__i18n, L = ['en', 'de', 'es', 'fr', 'pl'], P = document.documentElement.lang || I.baseLang;
+      var I = window.__lang, L = ['en', 'de'], P = document.documentElement.lang || I.baseLang;
       try {
         var w = localStorage.getItem('sx-lang');
-        if (!w) { var b = (navigator.language || 'en').slice(0, 2).toLowerCase(); w = L.indexOf(b) >= 0 ? b : 'en'; }
+        if (!w) w = (navigator.language || 'en').slice(0, 2).toLowerCase();
+        // Only German and English exist; a choice stored when there were more
+        // languages (es/fr/pl) falls back to English.
+        if (L.indexOf(w) < 0) w = 'en';
         if (w !== P) { location.replace(w === I.baseLang ? I.base + '.html' : I.base + '.' + w + '.html'); return; }
       } catch (e) { }
       document.addEventListener('DOMContentLoaded', function () {
@@ -97,9 +97,6 @@
   <nav class="langbar" aria-label="Language">
     <a data-lang="en" hreflang="en" href="datenschutz.en.html">EN</a>
     <a data-lang="de" hreflang="de" href="datenschutz.html">DE</a>
-    <a data-lang="es" hreflang="es" href="datenschutz.es.html">ES</a>
-    <a data-lang="fr" hreflang="fr" href="datenschutz.fr.html">FR</a>
-    <a data-lang="pl" hreflang="pl" href="datenschutz.pl.html">PL</a>
   </nav>
   <main>
     <div class="card">

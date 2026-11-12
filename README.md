@@ -76,7 +76,7 @@ In this repository:
 
 - [`docs/manual-setup.md`](docs/manual-setup.md) — deploying the agent by hand with your own CA, the agent and client flags, troubleshooting, production notes.
 - [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts.
-- [`DEVELOPMENT.md`](DEVELOPMENT.md) — building, tests, the documentation translations, the release pipeline.
+- [`DEVELOPMENT.md`](DEVELOPMENT.md) — building, tests, the documentation site, the release pipeline.
 - [`CONTRACT.md`](CONTRACT.md) and [`proto/swarmexec.proto`](proto/swarmexec.proto) — the wire protocol; [`agent/README.md`](agent/README.md), [`client/README.md`](client/README.md) — the two components' internals.
 
 The agent image is public on Docker Hub as [`logleio/swarmexec-agent`](https://hub.docker.com/r/logleio/swarmexec-agent).
