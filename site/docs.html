@@ -14,14 +14,15 @@
   <meta property="og:title" content="swarmexec documentation — docker exec, logs and port-forward for Docker Swarm">
   <meta property="og:description" content="How to use the swarmexec client: commands, flags, configuration, authentication and the interactive TUI.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs">
-  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
-  <meta property="og:image:width" content="860">
-  <meta property="og:image:height" content="470">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec documentation — docker exec, logs and port-forward for Docker Swarm">
   <meta name="twitter:description" content="How to use the swarmexec client: commands, flags, configuration, authentication and the interactive TUI.">
-  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="fonts/fonts.css?v=__VERSION__">
@@ -40,6 +41,7 @@
       <span>swarmexec</span>
     </a>
     <div class="rail-nav">
+      <a href="examples.html">Examples</a>
       <a class="rail-link" href="releases.html">Releases</a>
     </div>
   </header>
@@ -55,7 +57,9 @@
         from one terminal. A small per-node <strong>agent</strong> (a global Swarm
         service) does the work on its node; the <strong>client</strong> asks the
         Swarm manager which node runs your target, then connects straight to that
-        node's agent over mTLS. This page documents the client.
+        node's agent over mTLS. This page documents the client; for whole workflows —
+        debugging a crash, rotating a secret, gating a deploy — see the
+        <a href="examples.html">recipes</a>.
       </p>
 
       <div class="toc">
@@ -193,9 +197,10 @@
       <p>
         <strong>Ambiguity.</strong> A bare service name with several replicas cannot be
         resolved to one task. <code>exec</code> prompts you to pick from a numbered list
-        when run interactively; <code>logs</code> and <code>port-forward</code> never
-        prompt — they print the candidate list and exit. Disambiguate with a slot
-        (<code>web.0</code>, <code>web.1</code>, …).
+        when run interactively; <code>port-forward</code> never prompts — it prints the
+        candidate list and exits. Disambiguate with a slot (<code>web.0</code>,
+        <code>web.1</code>, …). <code>logs</code> is the exception: it follows
+        <a href="#logs">every replica at once</a>, like <code>docker service logs</code>.
       </p>
       <div class="note">
         <strong>--node</strong> is only consulted for <em>container-id</em> targets and
@@ -214,7 +219,7 @@
         environment survives unless explicitly overridden.
       </p>
 
-      <h3>Config file</h3>
+      <h3 id="config-file">Config file</h3>
       <p>The default path is the first of these that is set:</p>
       <ol>
         <li><code>$SWARMEXEC_CONFIG</code></li>
@@ -258,7 +263,7 @@
       <p>Inspect the effective, merged configuration (secret masked) with:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
 
-      <h3>addr-mode</h3>
+      <h3 id="addr-mode">addr-mode</h3>
       <p>
         <code>hostname</code> (default) dials the node's reported hostname;
         <code>ip</code> dials its advertised address. Use <code>ip</code> when node
@@ -268,7 +273,7 @@
         address from the raft peer list automatically.
       </p>
 
-      <h3>Environment variables</h3>
+      <h3 id="env-vars">Environment variables</h3>
       <div class="tablewrap"><table>
         <thead><tr><th>Variable</th><th>Sets</th></tr></thead>
         <tbody>
@@ -454,7 +459,7 @@
         <a href="#reroll">re-rolling the agents without changing the secret</a>.
       </div>
 
-      <h3><code>down</code> — remove the agents</h3>
+      <h3 id="down"><code>down</code> — remove the agents</h3>
       <p>
         The inverse of <code>init</code>: removes the global agent service and, by
         default, the shared-secret Docker secret. It does <strong>not</strong> touch your
@@ -501,8 +506,9 @@ swarmexec wait api worker --healthy</div>
           <tr><td><code>--healthy</code></td><td><code>false</code></td><td>also require healthy containers (asks the agents)</td></tr>
         </tbody>
       </table></div>
+      <p class="recipe-link">See the recipe: <a href="examples.html#deploy-done">a deploy that is really done</a>.</p>
 
-      <h3><code>doctor</code> — diagnose the swarm</h3>
+      <h3 id="doctor"><code>doctor</code> — diagnose the swarm</h3>
       <p>
         Checks the manager connection, whether the agent service is deployed, and probes
         every ready node's agent for reachability and version skew. Prints a per-node
@@ -647,6 +653,7 @@ swarmexec stack diff postgres.yml postgres</div>
       </p>
       <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
 swarmexec stack diff shop.yml --format json | jq .differs</div>
+      <p class="recipe-link">See the recipe: <a href="examples.html#drift-ci">catch drift in CI</a>.</p>
 
       <h3 id="stackdeploy"><code>stack deploy</code> — apply a stack file, after checking it</h3>
       <p>
@@ -798,6 +805,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         to resume); <strong>2</strong> a usage error; <strong>125</strong> an unreachable
         manager. In the TUI, <kbd>r</kbd> in a secret's detail view does the same.
       </p>
+      <p class="recipe-link">See the recipe: <a href="examples.html#rotate-secret">rotate a secret and keep its name</a>.</p>
 
       <h3 id="monitoring">Monitoring the agents</h3>
       <p>
@@ -915,7 +923,7 @@ rules:
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
 
-      <h3><code>ps</code> — list tasks</h3>
+      <h3 id="ps"><code>ps</code> — list tasks</h3>
       <p>
         Lists candidate tasks/containers and the node each runs on. Takes an optional
         service filter. Columns: <code>SERVICE&nbsp;&nbsp;SLOT&nbsp;&nbsp;CONTAINER&nbsp;&nbsp;NODE&nbsp;&nbsp;IP&nbsp;&nbsp;UPTIME</code>.
@@ -929,7 +937,7 @@ rules:
         </tbody>
       </table></div>
 
-      <h3><code>exec</code> — run a command / open a shell</h3>
+      <h3 id="exec"><code>exec</code> — run a command / open a shell</h3>
       <p>
         Exec into a container running anywhere in the swarm. With no command it opens
         <code>/bin/sh</code>. A TTY is allocated automatically when stdin is a terminal
@@ -954,7 +962,7 @@ rules:
 <span class="c">$</span> swarmexec exec -u root -w /app web -- ls -la
 <span class="c">$</span> swarmexec exec -e FOO=bar web -- env</div>
 
-      <h3><code>logs</code> — stream logs</h3>
+      <h3 id="logs"><code>logs</code> — stream logs</h3>
       <p>Stream a container's logs from anywhere in the swarm.</p>
       <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
       <div class="tablewrap"><table>
@@ -1068,7 +1076,7 @@ rules:
         different source of the answer.
       </div>
 
-      <h3><code>port-forward</code> (alias <code>pf</code>) — forward a local port</h3>
+      <h3 id="port-forward"><code>port-forward</code> (alias <code>pf</code>) — forward a local port</h3>
       <p>
         Bind a local TCP port and forward it to a port inside a container, without
         publishing that port on the cluster. The local port defaults to the remote one.
@@ -1097,7 +1105,7 @@ rules:
         <kbd>Ctrl-C</kbd> is that pause, not a leak. The agent removes it on its own.
       </p>
 
-      <h3><code>volume ls</code> — list volumes</h3>
+      <h3 id="volume-ls"><code>volume ls</code> — list volumes</h3>
       <p>
         Lists volumes across all nodes and which nodes hold each. Swarm volumes are
         node-local, so the client queries every node and aggregates. Optional substring
@@ -1116,7 +1124,7 @@ rules:
         </tbody>
       </table></div>
 
-      <h3><code>volume rm</code> — remove a volume</h3>
+      <h3 id="volume-rm"><code>volume rm</code> — remove a volume</h3>
       <p>
         Remove a volume on every node that holds it (<code>--all</code>) or on specific
         nodes (<code>--node</code>, repeatable). One of the two is required.
@@ -1156,8 +1164,9 @@ swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/
           <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>do not prompt before the agents restart</td></tr>
         </tbody>
       </table></div>
+      <p class="recipe-link">See the recipe: <a href="examples.html#prune-schedule">free disk space on a schedule</a>.</p>
 
-      <h3><code>ui</code> — interactive TUI</h3>
+      <h3 id="ui"><code>ui</code> — interactive TUI</h3>
       <p>
         An interactive view of containers and volumes, with exec, logs and
         port-forwarding built in. Needs an interactive terminal. See
@@ -1171,11 +1180,11 @@ swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/
         </tbody>
       </table></div>
 
-      <h3><code>config show</code> — inspect config</h3>
+      <h3 id="config-show"><code>config show</code> — inspect config</h3>
       <p>Prints the effective, merged client configuration with the secret masked.</p>
       <div class="cmd">swarmexec config show  [--json]</div>
 
-      <h3><code>context</code> (alias <code>ctx</code>) — manage Docker contexts</h3>
+      <h3 id="context-cmd"><code>context</code> (alias <code>ctx</code>) — manage Docker contexts</h3>
       <p>
         Create and manage the Docker contexts that <code>--context</code> (and
         <code>$DOCKER_CONTEXT</code>) resolve for the manager API. swarmexec writes
@@ -1313,6 +1322,7 @@ swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/
         nothing.
       </p>
       <div class="cmd">claude mcp add swarmexec -- swarmexec mcp</div>
+      <p class="recipe-link">See the recipe: <a href="examples.html#mcp-claude">let Claude inspect your swarm</a>.</p>
       <p>
         Every tool takes an optional <code>context</code> argument; without it the server
         uses the context it was started with (<code>--context</code>,
@@ -1494,7 +1504,7 @@ services:
         </tbody>
       </table></div>
 
-      <h3>Stacks/Services tab</h3>
+      <h3 id="tui-services">Stacks/Services tab</h3>
       <p>
         Tab&nbsp;<kbd>1</kbd>, formerly labelled <em>Containers</em>. It is one tree,
         <strong>stack&nbsp;→ service&nbsp;→ container</strong>, and it is where exec,
@@ -2155,7 +2165,7 @@ EOF</span></pre>
         preserved. <kbd>r</kbd> still forces an immediate refresh.
       </p>
 
-      <h3>Volumes tab</h3>
+      <h3 id="tui-volumes">Volumes tab</h3>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
@@ -2180,7 +2190,7 @@ EOF</span></pre>
         confirmation.
       </p>
 
-      <h3>Forwards tab</h3>
+      <h3 id="tui-forwards">Forwards tab</h3>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
@@ -2226,7 +2236,7 @@ EOF</span></pre>
         reason.
       </p>
 
-      <h3>Networks tab</h3>
+      <h3 id="tui-networks">Networks tab</h3>
       <p>
         A list of the swarm's networks — name, driver, scope, type
         (ingress / internal / attachable), whether the network is <strong>encrypted</strong>
@@ -2263,7 +2273,7 @@ EOF</span></pre>
         and it triggers a <strong>rolling update</strong> that restarts the service's tasks.
       </p>
 
-      <h3>Secrets tab</h3>
+      <h3 id="tui-secrets">Secrets tab</h3>
       <p>
         A read-only list of the swarm's secrets — name, how many services use each,
         age, last update and label count. Secret <strong>values</strong> are never
@@ -2319,7 +2329,7 @@ EOF</span></pre>
         <code>docker secret create NAME FILE</code> instead.
       </p>
 
-      <h3>Context sidebar</h3>
+      <h3 id="tui-contexts">Context sidebar</h3>
       <p>
         The clusters live in a column down the right-hand side, not in a tab. Switching
         cluster is something you do <em>from</em> wherever you are — and the list of
@@ -2369,7 +2379,7 @@ EOF</span></pre>
         </tbody>
       </table></div>
 
-      <h3>Nodes tab</h3>
+      <h3 id="tui-nodes">Nodes tab</h3>
       <p>
         Lists the swarm's nodes with general info and a few aggregations — <code>NODE</code>
         (hostname; managers in aqua, the leader marked <code>★</code>), <code>ROLE</code>
@@ -2556,7 +2566,7 @@ EOF</span></pre>
         </tbody>
       </table></div>
 
-      <h3>Configs tab</h3>
+      <h3 id="tui-configs">Configs tab</h3>
       <p>
         Tab&nbsp;<kbd>7</kbd> — the Secrets tab's twin for the other object swarm hands to
         containers, with one decisive difference: <strong>a config's content is
@@ -2600,7 +2610,7 @@ EOF</span></pre>
         render, just without membership.
       </p>
 
-      <h3>Embedded shell &amp; logs</h3>
+      <h3 id="tui-shell-logs">Embedded shell &amp; logs</h3>
       <p>
         In an embedded shell, <kbd>Ctrl-]</kbd> detaches (without ending the process). The
         logs view — a single container or a service's aggregated logs — supports the same
@@ -2636,7 +2646,7 @@ EOF</span></pre>
         no task ever got a container, a dialog shows the newest task's error instead.
       </p>
 
-      <h3>Log viewer</h3>
+      <h3 id="tui-logviewer">Log viewer</h3>
       <p>
         Press <kbd>`</kbd> (backtick) from any tab to toggle a live log overlay. It
         shows the most recent records from the in-memory ring buffer — newest at the
@@ -2653,7 +2663,7 @@ EOF</span></pre>
         diagnosing sluggishness from the log viewer.
       </div>
 
-      <h3>Custom keys</h3>
+      <h3 id="tui-keys">Custom keys</h3>
       <p>
         The shortcut keys are remappable in <code>~/.config/swarmexec/keys.yaml</code>
         (next to <code>config.yaml</code>; override the path with

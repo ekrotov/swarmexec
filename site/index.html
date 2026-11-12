@@ -15,14 +15,15 @@
 <meta property="og:title" content="swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm">
 <meta property="og:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
 <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/">
-<meta property="og:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
-<meta property="og:image:width" content="860">
-<meta property="og:image:height" content="470">
+<meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm">
 <meta name="twitter:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
-<meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/demo.gif">
+<meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -69,6 +70,7 @@
     <a href="#commands">Commands</a>
     <a href="#tui">TUI</a>
     <a href="#compare">Compare</a>
+    <a class="rail-ex" href="examples.html">Examples</a>
     <a class="rail-docs" href="docs.html">Docs</a>
     <a class="rail-cta" href="#install">Install</a>
   </nav>
@@ -88,7 +90,8 @@
         diff and a security gate before you deploy.
       </p>
       <p class="lead-sub">
-        Apache-2.0 with no node limit and no edition above it. No telemetry.
+        Apache-2.0 with no node limit and no edition above it. No telemetry: the
+        binary sends nothing anywhere (<a href="#phone-home">this website does count visits</a>).
         <a href="#install">Install</a> · <a href="#compare">How it compares</a>
       </p>
     </div>
@@ -213,6 +216,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <div class="vs-after">
         <p class="vs-label">with swarmexec</p>
         <pre class="sh"><span class="p">$</span> swarmexec exec web.2 -- sh</pre>
+        <a class="vs-more" href="examples.html#exec-replica">Full recipe →</a>
       </div>
     </div>
 
@@ -227,6 +231,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <div class="vs-after">
         <p class="vs-label">with swarmexec</p>
         <pre class="sh"><span class="p">$</span> swarmexec port-forward db 5432   <span class="c-dim"># localhost:5432, nothing published</span></pre>
+        <a class="vs-more" href="examples.html#forward-db">Full recipe →</a>
       </div>
     </div>
 
@@ -443,6 +448,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
         <dt>logs -f &lt;target&gt;</dt><dd>follow across replacement; <code>--log-format auto</code>, <code>--min-level</code>, <code>--grep</code></dd>
         <dt>port-forward &lt;target&gt;</dt><dd>a local port onto a container port that is published nowhere</dd>
         <dt>ps</dt><dd>every task and the node it runs on, from the manager alone</dd>
+        <dt>mcp</dt><dd>an MCP server: your AI assistant reads status, logs and stack diffs of the services you label</dd>
       </dl>
     </div>
     <div class="cmdgroup">
@@ -460,6 +466,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
         <dt>stack export</dt><dd>read a deployed stack back out as compose-shaped YAML</dd>
         <dt>stack diff</dt><dd>compare a file against what is deployed; exits 1 on a difference</dd>
         <dt>stack deploy</dt><dd>check the file, then apply it; <code>--check</code> gates a pipeline</dd>
+        <dt>wait</dt><dd>block until a deploy has converged — <code>--healthy</code> too; exits 1 on a paused update or a rollback</dd>
         <dt>security report</dt><dd>a Markdown audit of services, networks, secrets and nodes</dd>
       </dl>
     </div>
@@ -469,8 +476,24 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     A target is <code>web</code> (the service's running task), <code>web.2</code> (a replica
     slot), <code>xxh8k1…</code> (a task ID) or <code>3f9a2b…</code> (a container ID). A bare
     service name with several replicas is ambiguous: <code>exec</code> offers a numbered list
-    when it is interactive; <code>logs</code> and <code>port-forward</code> print the
-    candidates and exit rather than pick for you.
+    when it is interactive, <code>port-forward</code> prints the candidates and exits rather
+    than pick for you, and <code>logs</code> follows every replica at once.
+  </p>
+
+  <p class="targets">
+    <strong>For your AI assistant.</strong> <code>swarmexec mcp</code> is a Model Context
+    Protocol server: Claude Code and other assistants read status, tasks, logs and stack
+    diffs through the same agents — but only of services you opt in with the service label
+    <code>swarmexec.mcp.enable=true</code>; every other service does not exist for them. It
+    has no write tools; reading logs needs <code>swarmexec.mcp.logs</code>, running a
+    single command needs <code>swarmexec.mcp.exec</code>. Register it with
+    <code>claude mcp add swarmexec -- swarmexec mcp</code> —
+    <a href="examples.html#mcp-claude">the recipe</a>.
+  </p>
+
+  <p class="targets">
+    Put together into whole workflows — debugging a crash, rotating a secret, gating a
+    deploy in CI — in the <a href="examples.html">recipes</a>.
   </p>
 </section>
 
@@ -650,11 +673,18 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       </p>
     </div>
     <div class="faq-item">
-      <h3>Does it phone home?</h3>
+      <h3 id="phone-home">Does it phone home?</h3>
       <p>
         No telemetry, no licence check, no account. The client talks to your manager and
         your agents; the TUI also asks your images' registries whether a newer tag exists.
         That is all the network it uses.
+      </p>
+      <p>
+        This website is another matter: it measures its use with Umami, which we host
+        ourselves at <code>stats.cloud-surfers.net</code> — page views and clicks on the download and repository links,
+        without cookies, and recordings of single visits (pointer movement, clicks,
+        scrolling) to see where the pages are hard to use. Nothing goes to a third party.
+        Details in the <a href="datenschutz.en.html">privacy policy</a>.
       </p>
     </div>
   </div>
@@ -745,6 +775,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     </p>
     <nav class="legal" aria-label="Project">
       <a href="docs.html">Documentation</a>
+      <a href="examples.html">Recipes</a>
       <a href="releases.html">Release notes</a>
     </nav>
     <nav class="legal" aria-label="Legal">
