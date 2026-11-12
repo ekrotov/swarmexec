@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"swarmexec/client/internal/clientlog"
+	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -131,7 +132,7 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 		init = append(init, netService{Name: name})
 	}
 	render(init, true)
-	ov := u.overlayFor(pageSecDetail, sectable, footerKeys("a", "attach", "d", "detach", "j/k", "scroll", "Esc", "back"))
+	ov := u.overlayFor(pageSecDetail, sectable, footerKeys("a", "attach", "d", "detach", "r", "rotate", "j/k", "scroll", "Esc", "back"))
 	closeSecret := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
@@ -161,6 +162,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				func() { closeSecret(); u.loadSecrets() },
 			)
 			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'r':
+			u.openRotateSecret(s, tv, closeSecret)
+			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
@@ -179,6 +183,114 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 			if pages.HasPage(pageSecDetail) {
 				render(members, false)
 			}
+		})
+	}()
+}
+
+// openRotateSecret opens the rotate editor for s from its detail view. The
+// stand-in of an interrupted rotation (NAME_rotating, carrying the marker
+// label) rotates — that is, resumes — the secret it stands in for: after a
+// failure in step 4 that is the only row left to press r on.
+func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail func()) {
+	name, labels := s.Name, s.Labels
+	if of := s.Labels[rotateMarkerLabel]; of != "" {
+		name, labels = of, map[string]string{}
+		for k, v := range s.Labels {
+			if k != rotateMarkerLabel {
+				labels[k] = v
+			}
+		}
+	}
+	if u.rotating[name] {
+		u.info("secret " + name + " is already being rotated — wait for it to finish")
+		return
+	}
+	dcli, ctx := u.dcli, u.ctx
+	u.openRotateEditor(back, name, labels, rotateHooks{
+		plan:  func() (rotatePlan, error) { return planRotation(ctx, dcli, name) },
+		queue: func(fn func()) { u.app.QueueUpdateDraw(fn) },
+		confirm: func(msg string, back tview.Primitive, ok func()) {
+			u.confirm(msg, "Rotate", back, ok)
+		},
+		start: func(data []byte) {
+			closeDetail()
+			u.runRotation(name, data)
+		},
+	})
+}
+
+// runRotation rotates name in the background behind a progress overlay. Esc
+// hides the overlay; the rotation carries on and still reports how it ended.
+//
+// Progress arrives on the rotating goroutine. It is collected under a lock
+// and drawn by at most one queued update at a time, so a burst of lines costs
+// one redraw, not one each.
+func (u *ui) runRotation(name string, data []byte) {
+	if u.rotating == nil {
+		u.rotating = map[string]bool{}
+	}
+	rotating := u.rotating // this cluster's, even if the operator switches away
+	rotating[name] = true
+	app, dcli, ctx := u.app, u.dcli, u.ctx
+
+	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
+	tv.SetBorder(true).SetTitle(" rotating secret " + tview.Escape(name) + " ")
+	ov := u.overlayFor(pageSecRotateRun, u.sectable, footerKeys("Esc", "hide (the rotation continues)"))
+	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape {
+			ov.Close()
+			return nil
+		}
+		return ev
+	})
+
+	var (
+		mu      sync.Mutex
+		lines   []string
+		pending bool
+	)
+	draw := func() { // on the UI goroutine
+		mu.Lock()
+		text := strings.Join(lines, "\n")
+		pending = false
+		mu.Unlock()
+		tv.SetText(text)
+		tv.ScrollToEnd()
+	}
+	add := func(line string) { // on the rotating goroutine
+		mu.Lock()
+		lines = append(lines, line)
+		queue := !pending
+		pending = true
+		mu.Unlock()
+		if queue {
+			app.QueueUpdateDraw(draw)
+		}
+	}
+	lines = append(lines, "[gray]starting…[-]")
+	draw()
+	ov.show(centered(tv, 90, 18), tv)
+
+	go func() {
+		err := rotateSecret(ctx, dcli, name, data, rotateOptions{
+			Progress: func(e rotateEvent) {
+				add(fmt.Sprintf("[yellow]%d/%d[-] %s", e.Step, rotateSteps, tview.Escape(e.Msg)))
+			},
+		})
+		app.QueueUpdateDraw(func() {
+			delete(rotating, name)
+			ov.Close()
+			u.loadSecrets()
+			if err != nil {
+				msg := "rotation of " + name + " failed:\n\n" + err.Error()
+				if rotateResumeHint(err, "") != "" {
+					msg += "\n\nThe services keep running on " + rotateTempName(name) +
+						", which holds the new content.\nRe-run r on " + name + " to resume."
+				}
+				u.info(msg)
+				return
+			}
+			u.flash(" [green]rotated[white] secret " + name)
 		})
 	}()
 }

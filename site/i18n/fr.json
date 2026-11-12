@@ -16,12 +16,13 @@
   "pruneschedulecmd": "28761f4b1b84e2f7",
   "quickstart": "155979fdc883a3b0",
   "reroll": "50d634eb2a314259",
+  "secretrotate": "ef8cc74f7b9d3946",
   "securityreport": "ee28214301f636e3",
   "sshprompt": "ca5f94d6b31afca6",
   "sshsharing": "165f920375a6b7d9",
-  "stackdeploy": "69636e3e2cca823b",
+  "stackdeploy": "040eab990524c87e",
   "stackfile": "92234d06f4314500",
   "targets": "fe60ce5c2bfc6d67",
-  "tui": "f20add7c8478a92c",
+  "tui": "a433bb445c4d1695",
   "wait": "3fe31e0b413ea099"
 }
