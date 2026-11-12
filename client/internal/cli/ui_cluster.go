@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -43,10 +44,12 @@ type clusterState struct {
 	// marker, the map key. Always a real name.
 	//
 	// ctxOverride is what it is RESOLVED from, which is not the same thing: at
-	// startup it is whatever --context/$DOCKER_CONTEXT said, and "" there means
-	// "whatever docker would use" — including $DOCKER_HOST, which resolving the
-	// name "default" would NOT pick up. Collapsing the two would quietly change
-	// which daemon a bare `swarmexec ui` talks to.
+	// startup it is whatever --context said, and "" there means "whatever
+	// docker would use" — $DOCKER_CONTEXT, then $DOCKER_HOST, then the stored
+	// current context. Both come out of dockerctx.ResolveName/ResolveHost, so
+	// the name always names the daemon dialled: with $DOCKER_HOST set and no
+	// context chosen the first cluster is "default", the context that IS
+	// DOCKER_HOST — never the stored current one, which may be production.
 	name        string
 	ctxOverride string
 
@@ -333,9 +336,15 @@ func (u *ui) activateCluster(c *clusterState) {
 	// context too, so a `docker` command in the next terminal agrees with what
 	// the footer says. A failure here is worth saying but not worth undoing the
 	// switch over: the operator asked for this cluster and is now on it.
-	if err := dockerctx.Use(c.name); err != nil {
-		u.flash(" [yellow]switched[white], but docker's current context was not updated: " + err.Error())
-	}
+	//
+	// $DOCKER_HOST does not undo an explicit switch: the cluster is dialled by
+	// its NAME from here on (ctxOverride == name), and a named stored context
+	// resolves to its own endpoint whatever DOCKER_HOST says — exactly as
+	// `docker --context X` does. DOCKER_HOST keeps exactly one meaning for the
+	// rest of the session: it is what "default" dials. A shell that still
+	// exports it ignores the stored current context, though, so the flash says
+	// so instead of promising agreement it cannot deliver.
+	useErr := dockerctx.Use(c.name)
 
 	// From cache first: if this cluster has been visited, the operator is back
 	// where they were before the network is touched at all.
@@ -348,11 +357,7 @@ func (u *ui) activateCluster(c *clusterState) {
 	u.updateStatus()
 	u.setTab(u.active) // re-renders the visible tab and kicks its own load
 
-	if c.loaded {
-		u.flash(" [green]switched to[white] " + c.name)
-	} else {
-		u.flash(" [green]switched to[white] " + c.name + " [gray]— loading[white]")
-	}
+	u.flash(switchedFlash(c.name, c.loaded, useErr, os.Getenv("DOCKER_HOST") != ""))
 	u.loadContainers()
 	u.refreshCluster()
 }
@@ -422,4 +427,24 @@ func (u *ui) onCluster(gen uint64, fn func()) {
 		}
 		fn()
 	})
+}
+
+// switchedFlash is the message a completed switch leaves in the footer. A
+// failed `docker context use` is reported here rather than in a flash of its
+// own, which the "switched to" flash would have overwritten at once. With
+// $DOCKER_HOST set, a stored context is now docker's current one but a shell
+// exporting DOCKER_HOST still goes to that host — worth one line, since the
+// comment above Use promises the two agree.
+func switchedFlash(name string, loaded bool, useErr error, dockerHostSet bool) string {
+	if useErr != nil {
+		return " [green]switched to[white] " + name + " [yellow]— docker's current context was not updated:[white] " + useErr.Error()
+	}
+	msg := " [green]switched to[white] " + name
+	if !loaded {
+		msg += " [gray]— loading[white]"
+	}
+	if dockerHostSet && name != "default" {
+		msg += " [gray]($DOCKER_HOST still wins for docker in your shell)[white]"
+	}
+	return msg
 }

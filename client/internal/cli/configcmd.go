@@ -82,10 +82,9 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 	if cfgFile == "" {
 		cfgFile = config.DefaultFilePath()
 	}
-	ctxName := firstNonEmpty(g.dockerContext, os.Getenv("DOCKER_CONTEXT"))
-	if ctxName == "" {
-		ctxName = dockerctx.Current()
-	}
+	// One resolver for the name and the host, so `config show` cannot print the
+	// stored current context next to $DOCKER_HOST's endpoint.
+	ctxName := dockerctx.ResolveName(g.dockerContext)
 	host, _ := dockerctx.ResolveHost(g.dockerContext)
 
 	secret := "(none)"
