@@ -59,13 +59,17 @@ none. Verified: read-only rootfs blocks writes, and it still serves as uid 101.
 
 ## Files
 
-- `index.html` — the landing page, English only (`__VERSION__` placeholder, also used
-  as `?v=` on its stylesheet and script). The former `index.de/es/fr/pl.html` are gone;
-  nginx answers them with a permanent redirect to `/`. Docs, release notes and the
-  privacy page stay in five languages.
+- `index.html` — the landing page (`__VERSION__` placeholder, also used as `?v=` on
+  its stylesheet and script).
+- `docs.html`, `releases.html` — the docs and the release notes.
+- `datenschutz.html`, `datenschutz.en.html` — the privacy page, German and English.
+
+The site is English only (the privacy page aside). The former translations
+(`index.*`, `docs.*`, `releases.*` in de/es/fr/pl, `datenschutz.es/fr/pl`) are
+gone; nginx answers their URLs with a permanent redirect to the English page.
 - `landing.css`, `landing.js` — the landing page's styles and its animated scenes
   (vanilla JS, no library).
-- `docs.css` — the look of the docs pages (all five languages share it), in the
+- `docs.css` — the look of the docs page, in the
   landing page's design: same colours, fonts, light/dark and top bar. Colours the
   TUI uses are classes (`tc-red`, `tc-yellow`, …), not inline styles, so they stay
   readable on paper in both modes and switch to terminal colours inside a

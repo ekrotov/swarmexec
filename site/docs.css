@@ -1,8 +1,7 @@
-/* The docs pages (docs.html and its translations) in the landing page's look:
+/* The docs page (docs.html) in the landing page's look:
    the same paper and ink, light and dark, Archivo for text and headings,
    JetBrains Mono for code, and the same top bar. Fonts come from fonts/fonts.css.
-   The markup is the docs' own and identical in every language, so this file is
-   the only place the look lives. */
+   This file is the only place the look lives. */
 
 :root {
   --paper:   #eceee9;
@@ -94,10 +93,6 @@ a:hover { text-decoration-thickness: 2px; }
 .rail-nav { display: flex; gap: 1.1rem; align-items: center; font-size: .92rem; }
 .rail-nav > a { color: var(--ink-2); text-decoration: none; }
 .rail-nav > a:hover { color: var(--ink); text-decoration: underline; }
-.langbar { display: flex; gap: .15rem; font-family: var(--mono); font-size: .78rem; }
-.langbar a { color: var(--muted); text-decoration: none; padding: .15rem .4rem; border-radius: 999px; }
-.langbar a:hover { color: var(--ink); }
-.langbar a[aria-current="true"] { color: var(--paper); background: var(--ink); }
 
 /* ---------- page ---------- */
 main { width: 100%; max-width: 920px; margin: 0 auto; padding: 2.5rem var(--gutter) 4rem; }

@@ -2,7 +2,7 @@
 
 <!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarm-exec.cloud-surfers.net for the rest. -->
 
-Building from source, the documentation translations and the release pipeline. For using swarmexec, see the [documentation](https://swarm-exec.cloud-surfers.net/docs).
+Building from source, the documentation site and the release pipeline. For using swarmexec, see the [documentation](https://swarm-exec.cloud-surfers.net/docs).
 
 ## Prerequisites
 
@@ -34,28 +34,11 @@ make generate        # buf generate -> internal/pb/
 make check-generate  # fail if internal/pb does not match the .proto (CI runs this)
 ```
 
-### Documentation translations
+### Documentation site
 
-`site/docs.html` (English) is the source of the docs page; `docs.de/es/fr/pl.html`
-are derived from it, section by section. `site/i18n/` records which English
-each translated section came from, and a test fails — naming the sections — as
-soon as the English changes without the translations following.
-
-```sh
-make docs-i18n-check   # which sections are stale (no network)
-make docs-i18n         # re-translate exactly those, via the Claude API (ANTHROPIC_API_KEY)
-make docs-i18n-accept  # or translate by hand, then record them as up to date
-```
-
-`docs-i18n` sends each stale section with the English it was translated from
-and the current translation, so only what changed is rewritten; every answer is
-checked (same tables, command blocks, flags and keys; the head's language,
-canonical and hreflang tags untouched) before it is written. CI checks on
-every pipeline; it calls the API only when you start the optional, manual
-`docs-i18n` job on a branch or merge request that changes the docs. That job
-needs `ANTHROPIC_API_KEY` as a CI/CD variable and leaves the translations as a
-`docs-i18n.patch` artifact — or, with `DOCS_I18N_PUSH_TOKEN` (a project access
-token with `write_repository`) set, commits them to that branch.
+`site/` is the website (landing page, docs, release notes) and is English
+only; the privacy page also exists in German (`datenschutz.html`) and English (`datenschutz.en.html`). See
+[`site/README.md`](site/README.md).
 
 ### Releases (CI/CD)
 
