@@ -737,8 +737,103 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         <strong>first</strong>, because one that does not exist is the most common way a
         deploy stops halfway. An existing <strong>secret is never overwritten</strong>: a
         secret's value is immutable in swarm, so changing one means creating a new one
-        under a new name. If a deploy does fail partway, what had already been applied is
+        under a new name — or rotating it under the same one with
+        <a href="#secretrotate"><code>secret rotate</code></a>. If a deploy does fail partway, what had already been applied is
         reported alongside the error rather than left to be guessed at.
+      </p>
+
+      <h3 id="secretrotate"><code>secret rotate</code> — new content, same name</h3>
+      <p>
+        Gives a secret new content <strong>without renaming it</strong>, so the stack
+        files and service specs that name it stay as they are. Swarm secrets are
+        immutable, and one a service still references cannot be removed — which is why
+        the usual answer is a new name (<code>db_password_v2</code>) and an edit
+        everywhere it is used. Instead, every service using the secret is parked on a
+        temporary secret while the original is replaced underneath it:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Step</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>create <code>NAME_rotating</code> with the new content — NAME's labels plus the marker label <code>swarmexec.rotating-for=NAME</code></td></tr>
+          <tr><td>2</td><td>switch <strong>every</strong> service that uses NAME to <code>NAME_rotating</code> — one <code>ServiceUpdate</code> per service, then wait for its rolling update to converge</td></tr>
+          <tr><td>3</td><td>remove the old NAME, which nothing references any more</td></tr>
+          <tr><td>4</td><td>create NAME again: the new content, the <strong>original labels</strong> (<code>com.docker.stack.namespace</code> included, so <code>docker stack rm</code> still removes it)</td></tr>
+          <tr><td>5</td><td>switch every service back to the new NAME, and wait for convergence again</td></tr>
+          <tr><td>6</td><td>remove <code>NAME_rotating</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="cmd">swarmexec secret rotate <span class="k">&lt;name&gt;</span> (--from-file FILE | --from-stdin) [--yes] [--timeout 5m]</div>
+      <div class="prompt"><span class="c">$</span> swarmexec secret rotate db_password --from-file ./db_password.txt
+<span class="c">$</span> printf %s "$NEW_TOKEN" | swarmexec secret rotate api_token --from-stdin --yes</div>
+      <p>
+        <strong>Only the secret behind each mount changes.</strong> The target path, uid,
+        gid and mode of every reference stay exactly as they were, and a service's other
+        secrets are not touched — inside the container the same file holds the new
+        bytes. All services using the secret are switched, with no choice: the old
+        object can only go once nothing references it. A service scaled to 0 or a global
+        one with no eligible node still gets its spec updated; it simply has no tasks to
+        wait for. A service update that collides with another change (<em>update out of
+        sequence</em>) is retried on a fresh read.
+      </p>
+      <p>
+        <strong>Each service restarts twice</strong> — two rolling updates, following the
+        service's own <code>update_config</code>. One service is switched at a time and
+        must converge (no task still on the old secret, every new one running, swarm not
+        reporting the update as paused or rolled back) before the next starts;
+        <code>--timeout</code> bounds each of these waits. Progress goes to stderr, one
+        line per step and service. The value is <strong>never printed</strong>.
+      </p>
+      <p>
+        <strong>There is no rollback to the old content</strong>: the old secret object
+        is deleted in step 3. A <code>docker service rollback</code> afterwards would aim
+        at <code>NAME_rotating</code>, which is gone too — keep the old value yourself if
+        you might need it.
+      </p>
+      <p>
+        <strong>Secrets from a stack file.</strong> If the secret was created by
+        <code>docker stack deploy</code> from a <code>file:</code>, swarmexec cannot see
+        that file: put the new content there too. Otherwise the next deploy fails with
+        <em>only updates to Labels are allowed</em>, because the file's content no longer
+        matches the secret's. A secret the stack declares <code>external: true</code> has
+        no such problem. The confirm shows this as a hint whenever the secret carries a
+        stack label.
+      </p>
+      <p>
+        <strong>Resume.</strong> If a run stops half-way — a timeout, a paused update, a
+        lost connection, a killed process — the services are left on
+        <code>NAME_rotating</code>, which already holds the new content: a working state,
+        not a broken one. Run the same command again and it reads where the last run
+        stopped from the cluster itself and continues there: services still on NAME →
+        step 2; NAME gone → step 4; NAME re-created and in use → step 5. Every step
+        re-reads the cluster before it acts, so repeating one is harmless. The new value
+        must be given again (the API cannot read a secret back); once NAME has been
+        re-created and services use it, it keeps the content of the run that created it
+        and the confirm says so. A <code>NAME_rotating</code> <strong>without</strong> the
+        marker label is someone else's secret: the rotation refuses to start rather than
+        touch it.
+      </p>
+      <p>
+        A secret <strong>no service uses</strong> goes through the same steps with nothing
+        to switch — nothing restarts. Removing and re-creating it directly would save two
+        API calls but leave a moment where NAME is gone and its labels exist only in a
+        process that might die; the temporary secret keeps them on the cluster, so that
+        case resumes like any other.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--from-file</code></td><td>—</td><td>read the new value from this file, byte for byte (binary is fine here)</td></tr>
+          <tr><td><code>--from-stdin</code></td><td><code>false</code></td><td>read the new value from stdin, byte for byte — <code>echo</code> adds a newline, <code>printf %s</code> does not</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>do not ask. Without it the affected services and their target paths are listed and a <code>y/N</code> answer is read from the terminal; with no terminal (or with <code>--from-stdin</code>) the command refuses without <code>--yes</code></td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>how long to wait for each service's rolling update to converge</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The value must not be empty and is limited to 500&nbsp;KB, checked before
+        anything is touched. Exit code <strong>0</strong> means rotated; <strong>1</strong>
+        a failure (the message says which step, and how to resume when there is something
+        to resume); <strong>2</strong> a usage error; <strong>125</strong> an unreachable
+        manager. In the TUI, <kbd>r</kbd> in a secret's detail view does the same.
       </p>
 
       <h3 id="monitoring">Monitoring the agents</h3>
@@ -2195,6 +2290,7 @@ EOF</span></pre>
           <tr><td><kbd>X</kbd></td><td>on the secrets list: <strong>delete</strong> the selected secret — permanently removes it (one <code>SecretRemove</code>), behind a confirm; cannot be undone. Docker refuses to remove a secret still referenced by a service, so the confirm <strong>warns when it's in use</strong> and lists those services (detach it there first). Not to be confused with the <kbd>d</kbd> <em>inside</em> the detail view, which detaches the secret from a service</td></tr>
           <tr><td><kbd>a</kbd></td><td>in the detail view: attach the secret to a service — an autocomplete input (suggesting services that don't already use it; you may also type any name), then a rolling-update confirmation</td></tr>
           <tr><td><kbd>d</kbd></td><td>in the detail view: detach the secret from a service — an autocomplete input (suggesting services that currently use it; you may also type any name), then a rolling-update confirmation</td></tr>
+          <tr><td><kbd>r</kbd></td><td>in the detail view: <strong>rotate</strong> — give the secret new content and keep its name (<a href="#secretrotate">how it works</a>). Opens the <a href="#secret-editor">secret editor</a> with the name and labels shown but fixed, and an empty value to type or <kbd>:r</kbd> a file into; <kbd>:w</kbd> lists the services that will restart and their target paths, warns that each restarts twice and that there is no rollback, and adds the <code>file:</code> hint for a stack's secret. After the confirm a progress overlay follows the six steps (<kbd>Esc</kbd> hides it, the rotation carries on); success is flashed, a failure says which step and that pressing <kbd>r</kbd> on the secret again resumes. On an interrupted rotation's <code>NAME_rotating</code> row, <kbd>r</kbd> resumes the rotation of NAME</td></tr>
         </tbody>
       </table></div>
       <p>

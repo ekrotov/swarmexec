@@ -53,6 +53,11 @@ type clusterState struct {
 	name        string
 	ctxOverride string
 
+	// rotating holds the secrets of this cluster with a rotation running in
+	// the background, so a second one cannot be started on top of it. Only
+	// touched on the UI goroutine.
+	rotating map[string]bool
+
 	// The two channels to this cluster, from one resolution (see dockerEndpoint).
 	dcli *client.Client
 	r    *resolve.Resolver

@@ -769,8 +769,107 @@ swarmexec stack deploy web.yml --force    # desplegar pese a los hallazgos, a co
         comprueban <strong>primero</strong>, porque una que no existe es el motivo más
         habitual de que un despliegue se quede a medias. Un <strong>secreto existente nunca
         se sobrescribe</strong>: su valor es inmutable en swarm, así que cambiarlo implica
-        crear uno nuevo con otro nombre. Si aun así un despliegue falla a mitad, lo que ya
+        crear uno nuevo con otro nombre — o rotarlo con el mismo mediante
+        <a href="#secretrotate"><code>secret rotate</code></a>. Si aun así un despliegue falla a mitad, lo que ya
         se había aplicado se indica junto al error en lugar de dejar que lo adivines.
+      </p>
+
+      <h3 id="secretrotate"><code>secret rotate</code> — contenido nuevo, mismo nombre</h3>
+      <p>
+        Da a un secreto un contenido nuevo <strong>sin cambiarle el nombre</strong>, de modo
+        que los archivos de stack y las specs de servicio que lo nombran se quedan como
+        están. Los secretos de swarm son inmutables, y uno al que un servicio todavía hace
+        referencia no se puede eliminar — por eso la respuesta habitual es un nombre nuevo
+        (<code>db_password_v2</code>) y editar cada sitio donde se usa. En su lugar, cada
+        servicio que usa el secreto se aparca en un secreto temporal mientras el original se
+        sustituye por debajo:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Paso</th><th>Qué ocurre</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>crea <code>NAME_rotating</code> con el contenido nuevo — las etiquetas de NAME más la etiqueta de marca <code>swarmexec.rotating-for=NAME</code></td></tr>
+          <tr><td>2</td><td>cambia <strong>todos</strong> los servicios que usan NAME a <code>NAME_rotating</code> — un <code>ServiceUpdate</code> por servicio, y después espera a que su actualización progresiva converja</td></tr>
+          <tr><td>3</td><td>elimina el NAME antiguo, al que ya nada hace referencia</td></tr>
+          <tr><td>4</td><td>vuelve a crear NAME: el contenido nuevo, las <strong>etiquetas originales</strong> (incluida <code>com.docker.stack.namespace</code>, para que <code>docker stack rm</code> lo siga eliminando)</td></tr>
+          <tr><td>5</td><td>devuelve todos los servicios al NAME nuevo y espera de nuevo a la convergencia</td></tr>
+          <tr><td>6</td><td>elimina <code>NAME_rotating</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="cmd">swarmexec secret rotate <span class="k">&lt;name&gt;</span> (--from-file FILE | --from-stdin) [--yes] [--timeout 5m]</div>
+      <div class="prompt"><span class="c">$</span> swarmexec secret rotate db_password --from-file ./db_password.txt
+<span class="c">$</span> printf %s "$NEW_TOKEN" | swarmexec secret rotate api_token --from-stdin --yes</div>
+      <p>
+        <strong>Solo cambia el secreto detrás de cada montaje.</strong> La ruta de destino,
+        el uid, el gid y el modo de cada referencia se quedan exactamente como estaban, y los
+        demás secretos de un servicio no se tocan — dentro del contenedor el mismo archivo
+        contiene los bytes nuevos. Se cambian todos los servicios que usan el secreto, sin
+        elección: el objeto antiguo solo puede desaparecer cuando nada lo referencia. Un
+        servicio escalado a 0 o uno global sin ningún nodo apto recibe igualmente la spec
+        actualizada; simplemente no tiene tareas que esperar. Una actualización de servicio
+        que choca con otro cambio (<em>update out of sequence</em>) se reintenta tras una
+        lectura nueva.
+      </p>
+      <p>
+        <strong>Cada servicio se reinicia dos veces</strong> — dos actualizaciones
+        progresivas, según el propio <code>update_config</code> del servicio. Se cambia un
+        servicio cada vez, y debe converger (ninguna tarea sigue con el secreto antiguo,
+        todas las nuevas están en marcha, swarm no informa de la actualización como pausada
+        o revertida) antes de empezar con el siguiente; <code>--timeout</code> limita cada
+        una de esas esperas. El progreso va a stderr, una línea por paso y servicio. El valor
+        <strong>nunca se imprime</strong>.
+      </p>
+      <p>
+        <strong>No hay vuelta al contenido antiguo</strong>: el objeto del secreto antiguo se
+        borra en el paso 3. Un <code>docker service rollback</code> posterior apuntaría a
+        <code>NAME_rotating</code>, que también ha desaparecido — guarda tú el valor antiguo
+        si puedes llegar a necesitarlo.
+      </p>
+      <p>
+        <strong>Secretos de un archivo de stack.</strong> Si el secreto lo creó
+        <code>docker stack deploy</code> a partir de un <code>file:</code>, swarmexec no puede
+        ver ese archivo: pon también ahí el contenido nuevo. Si no, el siguiente despliegue
+        falla con <em>only updates to Labels are allowed</em>, porque el contenido del
+        archivo ya no coincide con el del secreto. Un secreto que el stack declara como
+        <code>external: true</code> no tiene ese problema. La confirmación lo muestra como
+        aviso siempre que el secreto lleva una etiqueta de stack.
+      </p>
+      <p>
+        <strong>Reanudar.</strong> Si una ejecución se detiene a mitad — un timeout, una
+        actualización pausada, una conexión perdida, un proceso terminado —, los servicios
+        quedan en <code>NAME_rotating</code>, que ya contiene el contenido nuevo: un estado
+        que funciona, no uno roto. Ejecuta el mismo comando otra vez y leerá del propio
+        clúster dónde se detuvo la última ejecución para seguir desde ahí: servicios aún en
+        NAME → paso 2; NAME eliminado → paso 4; NAME recreado y en uso → paso 5. Cada paso
+        vuelve a leer el clúster antes de actuar, así que repetir uno no hace daño. Hay que
+        volver a dar el valor nuevo (la API no puede leer un secreto); una vez que NAME se ha
+        recreado y hay servicios usándolo, conserva el contenido de la ejecución que lo creó,
+        y la confirmación lo dice. Un <code>NAME_rotating</code> <strong>sin</strong> la
+        etiqueta de marca es un secreto de otro: la rotación se niega a empezar en lugar de
+        tocarlo.
+      </p>
+      <p>
+        Un secreto que <strong>ningún servicio usa</strong> pasa por los mismos pasos sin
+        nada que cambiar — no se reinicia nada. Eliminarlo y recrearlo directamente ahorraría
+        dos llamadas a la API, pero dejaría un momento en que NAME no existe y sus etiquetas
+        solo están en un proceso que podría morir; el secreto temporal las conserva en el
+        clúster, así que ese caso se reanuda como cualquier otro.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Por defecto</th><th>Descripción</th></tr></thead>
+        <tbody>
+          <tr><td><code>--from-file</code></td><td>—</td><td>lee el valor nuevo de este archivo, byte a byte (aquí se admite binario)</td></tr>
+          <tr><td><code>--from-stdin</code></td><td><code>false</code></td><td>lee el valor nuevo de stdin, byte a byte — <code>echo</code> añade un salto de línea, <code>printf %s</code> no</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>no preguntar. Sin esta opción se listan los servicios afectados y sus rutas de destino y se lee una respuesta <code>y/N</code> del terminal; sin terminal (o con <code>--from-stdin</code>) el comando se niega si no se pasa <code>--yes</code></td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>cuánto esperar a que converja la actualización progresiva de cada servicio</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        El valor no puede estar vacío y está limitado a 500&nbsp;KB, comprobado antes de
+        tocar nada. El código de salida <strong>0</strong> significa rotado; <strong>1</strong>
+        un fallo (el mensaje indica en qué paso y cómo reanudar cuando hay algo que
+        reanudar); <strong>2</strong> un error de uso; <strong>125</strong> un manager
+        inalcanzable. En la TUI, <kbd>r</kbd> en la vista de detalle de un secreto hace lo
+        mismo.
       </p>
 
       <h3 id="monitoring">Monitorizar los agentes</h3>
@@ -2308,6 +2407,7 @@ EOF</span></pre>
           <tr><td><kbd>X</kbd></td><td>en la lista de secretos: <strong>elimina</strong> el secreto seleccionado — lo borra definitivamente (un único <code>SecretRemove</code>), previa confirmación; no se puede deshacer. Docker se niega a eliminar un secreto al que todavía hace referencia un servicio, así que la confirmación <strong>avisa si está en uso</strong> y lista esos servicios (desvincúlalo primero de esos servicios). No hay que confundirla con la <kbd>d</kbd> <em>dentro</em> de la vista de detalle, que desvincula el secreto de un servicio</td></tr>
           <tr><td><kbd>a</kbd></td><td>en la vista de detalle: adjunta el secreto a un servicio — un campo con autocompletado (sugiere servicios que aún no lo usan; también puedes escribir cualquier nombre) y, después, la confirmación de la actualización progresiva</td></tr>
           <tr><td><kbd>d</kbd></td><td>en la vista de detalle: desvincula el secreto de un servicio — un campo con autocompletado (sugiere los servicios que lo usan en ese momento; también puedes escribir cualquier nombre) y, después, la confirmación de la actualización progresiva</td></tr>
+          <tr><td><kbd>r</kbd></td><td>en la vista de detalle: <strong>rotar</strong> — dar al secreto un contenido nuevo y conservar su nombre (<a href="#secretrotate">cómo funciona</a>). Abre el <a href="#secret-editor">editor de secretos</a> con el nombre y las etiquetas visibles pero fijos, y un valor vacío para escribir o para cargar un archivo con <kbd>:r</kbd>; <kbd>:w</kbd> lista los servicios que se reiniciarán y sus rutas de destino, avisa de que cada uno se reinicia dos veces y de que no hay vuelta atrás, y añade el aviso de <code>file:</code> para el secreto de un stack. Tras la confirmación, un overlay de progreso sigue los seis pasos (<kbd>Esc</kbd> lo oculta, la rotación continúa); el éxito se muestra brevemente, y un fallo indica el paso y que volver a pulsar <kbd>r</kbd> sobre el secreto reanuda. En la fila <code>NAME_rotating</code> de una rotación interrumpida, <kbd>r</kbd> reanuda la rotación de NAME</td></tr>
         </tbody>
       </table></div>
       <p>

@@ -156,6 +156,8 @@ const (
 	pageNetMembers       = "netmembers"
 	pageSecForm          = "secform"
 	pageSecDetail        = "secdetail"
+	pageSecRotate        = "secrotate"
+	pageSecRotateRun     = "secrotaterun"
 	pageCtxForm          = "ctxform"
 	pageCtxDetail        = "ctxdetail"
 	pageNodeLabels       = "nodelabels"
@@ -1629,6 +1631,8 @@ func (u *ui) showHelp() {
 
 	sec("Secrets")
 	line("Enter / i", "details")
+	line("  a · d", "in details: attach to · detach from a service")
+	line("  r", "in details: rotate — new content, same name (services restart twice)")
 	line(kl(km.SecNew), "new (vim editor, :r file)")
 	danger(kl(km.SecDelete), "delete")
 
