@@ -93,6 +93,11 @@ a:hover { text-decoration-thickness: 2px; }
 .rail-nav { display: flex; gap: 1.1rem; align-items: center; font-size: .92rem; }
 .rail-nav > a { color: var(--ink-2); text-decoration: none; }
 .rail-nav > a:hover { color: var(--ink); text-decoration: underline; }
+/* GitHub mark (Octicons mark-github, MIT) beside the "GitHub" link text; follows the link colour. */
+.gh { white-space: nowrap; }
+.gh-icon { width: 1em; height: 1em; vertical-align: -.125em; margin-right: .35em; fill: currentColor; }
+/* Below ~340px the docs bar (Docs, Examples, GitHub) only fits as text, as before. */
+@media (max-width: 339px) { .gh-icon { display: none; } }
 
 /* ---------- page ---------- */
 main { width: 100%; max-width: 920px; margin: 0 auto; padding: 2.5rem var(--gutter) 4rem; }

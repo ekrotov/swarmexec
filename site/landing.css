@@ -109,6 +109,9 @@ em { font-style: italic; }
 .rail-nav .rail-cta:hover { color: var(--paper); background: var(--aqua); text-decoration: none; }
 /* On a phone only the section links go; Examples and Docs stay, they are where people look first. */
 @media (max-width: 600px) { .rail-nav a:not(.rail-cta):not(.rail-docs):not(.rail-ex) { display: none; } }
+/* GitHub mark (Octicons mark-github, MIT) beside the "GitHub" link text; follows the link colour. */
+.gh { white-space: nowrap; }
+.gh-icon { width: 1em; height: 1em; vertical-align: -.125em; margin-right: .35em; fill: currentColor; }
 
 main { display: block; }
 
