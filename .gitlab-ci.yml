@@ -58,12 +58,41 @@ variables:
 # duplicate: the push always lands before the MR is created, so every MR ran
 # twice on the same SHA (once as a branch pipeline, once as an MR pipeline).
 # Open the MR (a draft is fine) to get CI on a branch, or use Run pipeline.
+#
+# Auto-cancel: a newer commit on the same ref (another MR push, the next merge
+# to main) cancels the older pipeline's INTERRUPTIBLE jobs; the rest finish.
+# Jobs are non-interruptible by default (see `default:`); only jobs without
+# side effects outside the pipeline opt in. Tags never get a newer commit, so
+# release pipelines are never auto-cancelled.
+#
+# Exception: a main pipeline that changes site/ is never cancelled. site-image
+# runs on main only when site/ changed, and `changes:` compares against the
+# previous push, so if this pipeline were cancelled, the newer one (whose
+# diff does not touch site/) would not rebuild the site image either. GitLab
+# reads this setting from the pipeline being cancelled, which is this one.
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - site/**/*
+      auto_cancel:
+        on_new_commit: none
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "schedule"
+
+# interruptible: false unless a job says otherwise. A job may opt in only if
+# cancelling it half-way leaves nothing behind outside this pipeline: tests,
+# checks and builds whose output is a job artifact. Pushes to a registry,
+# releases, the mirror, packages and deploys stay non-interruptible — a
+# half-done push or release is worse than a redundant one. (Once a
+# non-interruptible job runs, auto-cancel leaves it alone; its interruptible
+# siblings are still cancelled.)
+default:
+  interruptible: false
 
 # A semantic-version tag: vMAJOR.MINOR.PATCH with an optional -prerelease
 # (the leading "v" is optional). Anchored so it can be reused in several jobs.
@@ -146,6 +175,7 @@ workflow:
 verify-tag-on-main:
   stage: .pre
   image: $GO_IMAGE
+  interruptible: true # read-only check
   variables:
     GIT_DEPTH: "0" # full history so merge-base can see both the tag and main
   script:
@@ -167,6 +197,7 @@ verify-tag-on-main:
 test:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # no side effects
   cache:
     - <<: *cache-mod
       policy: pull-push # the one writer of the module cache
@@ -202,6 +233,7 @@ test:
 lint:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # no side effects
   cache:
     - *cache-mod
     - *cache-tools
@@ -232,6 +264,7 @@ lint:
 generate-check:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # no side effects
   cache:
     - *cache-mod
     - <<: *cache-tools
@@ -281,6 +314,7 @@ generate-check:
 vulncheck:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # no side effects
   <<: *go-cache
   variables:
     # GO-ID: reason. Reachable-but-unfixable in our dependency line.
@@ -353,6 +387,7 @@ vulncheck:
 code_navigation:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # output is a job artifact
   <<: *go-cache
   allow_failure: true
   script:
@@ -373,6 +408,7 @@ code_navigation:
 build-cli:
   stage: build
   image: $GO_IMAGE
+  interruptible: true # output is a job artifact; publishing jobs ship it
   cache:
     - *cache-mod # no tools needed
     - key: gobuild-build-cli-$GO_IMAGE
@@ -410,6 +446,7 @@ build-cli:
 # ----------------------------------------------------------------------------
 agent-image:
   stage: image
+  interruptible: false # pushes to a registry: never stop half-way
   # Gated on the tests, but not on build-cli: the image compiles the agent
   # itself and never used dist/ (which it used to download, 59 MB).
   needs: !reference [.release-gate, needs]
@@ -479,6 +516,7 @@ agent-image:
 # ----------------------------------------------------------------------------
 site-image:
   stage: image
+  interruptible: false # pushes to a registry: never stop half-way
   needs: !reference [.release-gate, needs]
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
@@ -873,6 +911,7 @@ linkedin-announce:
 # ----------------------------------------------------------------------------
 package-manifests:
   stage: deploy
+  interruptible: true # writes only its own artifacts / reads public URLs
   image: $ALPINE_IMAGE
   needs:
     - !reference [.release-gate, needs]
@@ -935,6 +974,7 @@ publish-packages:
 # ----------------------------------------------------------------------------
 verify-release:
   stage: deploy
+  interruptible: true # writes only its own artifacts / reads public URLs
   image: $ALPINE_IMAGE
   needs:
     - !reference [.release-gate, needs]
