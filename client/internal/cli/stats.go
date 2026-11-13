@@ -16,6 +16,7 @@ import (
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
@@ -173,7 +174,9 @@ func collectUsage(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 		resp *pb.StatsResponse
 	}
 	results := make([]result, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	// Best effort: a node not reached before ctx ended contributes nothing,
+	// exactly like an unreachable one.
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		if !gate.allowed(n.Name) {
 			return
 		}

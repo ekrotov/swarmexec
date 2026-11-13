@@ -14,6 +14,7 @@ import (
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	pb "swarmexec/internal/pb"
@@ -172,7 +173,10 @@ type nodeHealth struct {
 // checkNodes queries every node's agent Version RPC in parallel.
 func checkNodes(ctx context.Context, cfg config.Config, nodes []resolve.Node, connectTimeout time.Duration) []nodeHealth {
 	out := make([]nodeHealth, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	for i, n := range nodes {
+		out[i] = nodeHealth{node: n, err: fanout.ErrSkipped}
+	}
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		v, p, err := checkNodeVersion(ctx, cfg, n, connectTimeout)
 		out[i] = nodeHealth{node: n, version: v, proto: p, err: err}
 	})

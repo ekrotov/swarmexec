@@ -4,15 +4,17 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"swarmexec/client/internal/clientlog"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
@@ -86,7 +88,7 @@ func (u *ui) loadNodes() {
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
 			per := make([]nodeImages, len(ns))
 			ok := make([]bool, len(ns))
-			forEachNode(ns, func(i int, n resolve.Node) {
+			_ = fanout.Nodes(ctx, ns, func(ctx context.Context, i int, n resolve.Node) {
 				ni, ierr := listNodeImages(ctx, cfg, n, f.connectTimeout)
 				per[i], ok[i] = ni, ierr == nil
 			})
