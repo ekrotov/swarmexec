@@ -115,7 +115,7 @@ func (r *reclaimCache) measure(ctx context.Context, refreshVolumes bool) {
 	if refreshVolumes {
 		// The volume refcounts are only as fresh as the size cache's last scan,
 		// and removing a container emits no volume event.
-		r.s.sizeCache.refresh(ctx)
+		r.s.sizeCache.Refresh(ctx)
 	}
 	until := r.s.scheduler.containersUntil()
 	cats, err := r.s.measureReclaim(ctx, until)
@@ -218,7 +218,7 @@ func (s *Server) measureReclaim(ctx context.Context, until time.Duration) ([]*pb
 
 	// Volumes: from the volume-size cache, whose DiskUsage scan is the
 	// expensive one and already runs on its own schedule.
-	sizes, refs, _, ready := s.sizeCache.usage()
+	sizes, refs, _, ready := s.sizeCache.Usage()
 	vol := &pb.ReclaimCategory{Category: pb.PruneCategory_PRUNE_CATEGORY_VOLUMES}
 	if ready {
 		vol.BytesKnown = true

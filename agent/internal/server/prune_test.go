@@ -365,7 +365,7 @@ func TestMeasureReclaim(t *testing.T) {
 		{Name: "anon", UsageData: &volume.UsageData{Size: 10, RefCount: 0}},
 	}
 	s := imageTestServer(d)
-	s.sizeCache.refresh(context.Background())
+	s.sizeCache.Refresh(context.Background())
 
 	cats, err := s.measureReclaim(context.Background(), 24*time.Hour)
 	if err != nil {

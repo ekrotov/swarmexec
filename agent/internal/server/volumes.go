@@ -38,7 +38,7 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 		ready bool
 	)
 	if req.GetWithSize() {
-		sizes, _, ready = s.sizeCache.get()
+		sizes, _, ready = s.sizeCache.Get()
 	}
 
 	out := &pb.ListVolumesResponse{}

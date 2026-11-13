@@ -27,6 +27,7 @@ import (
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/limits"
+	"swarmexec/agent/internal/volsize"
 	"swarmexec/internal/pb"
 )
 
@@ -48,7 +49,7 @@ type Options struct {
 	// forward never blocks on a registry pull.
 	ForwardImage string
 	// VolumeSizeInterval sets the volume-size cache's periodic rescan interval.
-	// Zero uses the default (volumeSizeInterval).
+	// Zero uses the default (volsize.DefaultInterval).
 	VolumeSizeInterval time.Duration
 	// StatsInterval sets how often the container-stats sampler takes a reading —
 	// also the resolution of every CPU percentage, which is a delta between two
@@ -72,7 +73,7 @@ type Server struct {
 	log        *slog.Logger
 	metrics    Metrics
 	opts       Options
-	sizeCache  *volumeSizeCache     // serves ListVolumes(with_size) from memory
+	sizeCache  *volsize.Cache       // serves ListVolumes(with_size) from memory
 	statsCache *containerStatsCache // serves Stats from memory (see statscache.go)
 	reclaim    *reclaimCache        // serves ReclaimStats from memory (see reclaim.go)
 	scheduler  *pruneScheduler      // the node's prune schedule (see schedule.go)
@@ -125,7 +126,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 		metrics: metrics,
 		opts:    opts,
 	}
-	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
+	s.sizeCache = volsize.New(docker, log, opts.VolumeSizeInterval)
 	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
 	s.reclaim = newReclaimCache(s, log)
 	s.scheduler = newPruneScheduler(s, log)
@@ -147,7 +148,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 // scan, then reactive (volume create/destroy) and periodic refreshes, until ctx
 // is cancelled. Call it once after New.
 func (s *Server) StartVolumeSizeCache(ctx context.Context) {
-	go s.sizeCache.run(ctx)
+	go s.sizeCache.Run(ctx)
 }
 
 // StartStatsCache launches the background container-stats sampler. Unlike the
