@@ -352,8 +352,11 @@
         right network, a tunnel to the right node, and a helper to remove afterwards — and the
         service name in the relay load-balances across replicas, so you cannot pick which replica
         you are talking to. <code>swarmexec port-forward</code> is one command, to one chosen task,
-        bound to loopback, gone when you press <kbd>Ctrl-C</kbd>; the TUI's Forwards tab keeps several
-        open at once (<a href="docs.html#tui-forwards">Forwards tab</a>).
+        bound to loopback, stopped with <kbd>Ctrl-C</kbd>. Under the hood it uses a helper too — the
+        agent runs a short-lived sidecar in the task's network namespace — but the agent starts it
+        and removes it on its own, about two minutes after the last connection closes
+        (<a href="docs.html#port-forward">how it works</a>). The TUI's Forwards tab keeps several
+        forwards open at once (<a href="docs.html#tui-forwards">Forwards tab</a>).
       </p>
 
       <h3 id="vs-d4s-swarmcli">The close relatives: d4s and swarmcli</h3>
