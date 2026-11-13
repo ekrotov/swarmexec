@@ -78,7 +78,7 @@ func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, strea
 			// Reported in-band so the client can say why the live indicator
 			// stopped, rather than leaving it silently frozen.
 			_ = stream.Send(&pb.ContainerEvent{Error: err.Error()})
-			return status.Error(codes.Internal, err.Error())
+			return dockerStatus(err, "")
 
 		case ev, ok := <-msgs:
 			if !ok {

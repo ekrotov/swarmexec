@@ -273,6 +273,33 @@ the identity `scheduler` — authorized by the same policy, audited with
 `last_run` (the last scheduled run: times, per-category results, first error)
 travel in every `ReclaimStatsResponse`.
 
+### 3.8 Status codes (normative)
+
+Every RPC ends with a gRPC status. This table is every code an agent returns
+and what it means; a client SHOULD branch on the code, never on the message
+text, which is for the operator and may change. A streaming RPC that fails
+after it started (Exec, Logs, PortForward, WatchContainerEvents) MAY send one
+in-band `error` message first; the status that follows carries the same cause.
+
+| Code | When |
+| --- | --- |
+| `OK` | Success. A stream also ends `OK` when the client closed it, and when the target's output ended normally. |
+| `INVALID_ARGUMENT` | The request is malformed: the first stream message is not `StartExec` / `StartForward`, a required field is missing (`container_id`, `cmd`, volume `name`), `port` is outside 1–65535, a `PruneRequest` names no or an unknown category, `containers_until` or `label_filters` do not parse. Also the Engine refusing a parameter (HTTP 400 and any other unexpected 4xx). |
+| `UNAUTHENTICATED` | Transport authentication failed — **who** the caller is could not be established. Only these causes produce it: in shared-secret mode (§2.1) `missing agent secret` (the client sent no credentials — typically one configured for mTLS only), `invalid agent secret` (the binding or legacy secret does not match), a raw secret while `-allow-legacy-secret` is off, and `connection-bound authentication is unavailable on this agent`; in mTLS mode `client identity unavailable: …` (no verified client chain, or a certificate with an empty CN). A client certificate the agent's CA does not trust never reaches a handler: the TLS handshake fails, and the client sees a transport error, not this code. |
+| `PERMISSION_DENIED` | The caller is known and the Authorizer (policy, §2) refused the action: `authorization denied: <reason>`. Also the Engine refusing the **agent** (HTTP 401/403) — deliberately not `UNAUTHENTICATED`, which would point the operator at a credential that is fine. |
+| `NOT_FOUND` | The Engine does not have the object: the container, volume or image is gone (HTTP 404). |
+| `ALREADY_EXISTS` | The Engine already has an object of that name. |
+| `FAILED_PRECONDITION` | The object is in the wrong state for the action (Engine HTTP 409, 412, 304): exec into a stopped container, removing a volume a container uses — the latter with the message `volume <name> is in use`. |
+| `RESOURCE_EXHAUSTED` | A per-node cap is full: `too many concurrent <streams / port-forward sidecars> on this node (limit N); retry shortly or raise <-max-streams / -max-forward-sidecars>`. Retrying later is reasonable. Also the Engine's HTTP 429. |
+| `UNAVAILABLE` | The agent is draining for shutdown and refuses a new stream: `agent is shutting down; not accepting new <sessions / requests / forwards / watches>` — retry against the replacement. Also the Engine being unreachable or answering 503. A client cannot tell these from gRPC's own transport-level `UNAVAILABLE` (connection refused, TLS failure) by code alone. |
+| `CANCELED`, `DEADLINE_EXCEEDED` | The RPC's context ended while the agent was waiting on the Engine. |
+| `UNIMPLEMENTED` | Never sent by a handler. gRPC returns it for an RPC this agent predates, and a client MUST read it as "agent older than client" — which is why an Engine `NotImplemented` (HTTP 501) is reported as `INTERNAL`, not as this code. |
+| `INTERNAL` | Anything else: an Engine failure that fits no class above (HTTP 5xx, a broken stream), a sidecar that failed to come up, a recovered handler panic (`internal error`). |
+
+Engine failures are classified from the Engine's HTTP status (via the
+`containerd/errdefs` classes the Docker client attaches), never from message
+text, and the message is `<verb>: <Engine message>`, e.g. `list volumes: …`.
+
 ## 4. Session Lifecycle (normative)
 
 1. Client opens the `Exec` stream.

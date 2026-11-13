@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/clientlog"
 )
 
@@ -67,12 +68,13 @@ func async[T any](u *ui, op string, work func(ctx context.Context) (T, error), a
 	if cs.dcli != nil {
 		dcli = cs.dcli
 	}
+	auth := agenterr.AuthOf(cs.cfg)
 	go func() {
 		start := time.Now()
 		v, err := work(ctx)
 		logOp(ctx, op, start, err, "cluster", name)
 		if err != nil {
-			err = explainErr(ctx, dcli, err)
+			err = explainErr(ctx, auth, dcli, err)
 		}
 		u.deliver(gen, op, func() { apply(v, err) })
 	}()
@@ -115,39 +117,15 @@ func logOp(ctx context.Context, op string, start time.Time, err error, attrs ...
 // explainErr is the one place a background error is shaped before the
 // operator sees it. Every async apply receives its error through here.
 //
-// Today it applies what enrichAgentError did for the exec terminal — and
-// only to errors that came from an agent (a gRPC status), because the
-// "is an agent deployed at all" probe is meaningless for a manager-API or
-// local error and would misreport one as "no agent". Manager errors pass
-// through unchanged. This is the seam the review's A-05 error mapping
-// (agenterr.Explain) plugs into; keep it the only one.
+// It is agenterr.Explain for a background load: only an error that came from
+// an agent (a gRPC status) is explained, because the "is an agent deployed at
+// all" probe is meaningless for a manager-API or local error and would
+// misreport one as "no agent" — manager errors pass through unchanged. auth is
+// the cluster's configured credential, so an Unauthenticated names the one the
+// operator actually uses (secret or client certificate).
 //
 // The explained error still wraps the original, so errors.Is / status.Code on
 // what apply receives keep answering for the original cause.
-func explainErr(ctx context.Context, dcli serviceLister, err error) error {
-	if err == nil {
-		return nil
-	}
-	if _, ok := status.FromError(err); !ok {
-		return err // not from an agent
-	}
-	var shown error
-	switch {
-	case agentTooOld(err):
-		shown = errAgentTooOld
-	case status.Code(err) == codes.Unauthenticated:
-		shown = errSecretRejected
-	case status.Code(err) == codes.Unavailable && dcli != nil && !agentDeployed(ctx, dcli):
-		shown = errNoAgent
-	}
-	if shown == nil || errors.Is(err, shown) {
-		return err
-	}
-	return explained{shown: shown, cause: err}
+func explainErr(ctx context.Context, auth agenterr.Auth, dcli serviceLister, err error) error {
+	return agenterr.Explain(ctx, err, agenterr.Options{Auth: auth, AgentDeployed: deployedProbe(dcli)})
 }
-
-// explained shows one error and keeps another as its cause.
-type explained struct{ shown, cause error }
-
-func (e explained) Error() string   { return e.shown.Error() }
-func (e explained) Unwrap() []error { return []error{e.shown, e.cause} }

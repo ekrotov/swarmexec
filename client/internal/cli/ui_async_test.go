@@ -16,7 +16,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/config"
 )
 
 // runningUI is overlayUI with its event loop actually running, on a simulated
@@ -225,6 +227,39 @@ func (f fakeLister) ServiceList(context.Context, client.ServiceListOptions) (cli
 	return client.ServiceListResult{}, f.err
 }
 
+// The TUI path names the credential the cluster is configured with: async
+// takes it from the cluster's config, so an mTLS cluster's Unauthenticated
+// talks about the certificate, never about a secret it does not have.
+func TestAsyncExplainsUnauthenticatedByAuthMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  config.Config
+		want error
+	}{
+		{"shared secret", config.Config{AgentSecret: "s", Insecure: true}, agenterr.ErrSecretRejected},
+		{"mTLS", config.Config{CA: "/ca", Cert: "/c", Key: "/k"}, agenterr.ErrCertRejected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := runningUI(t)
+			got := make(chan error, 1)
+			onLoop(t, u, func() {
+				u.clusterState.cfg = tc.cfg
+				asyncDo(u, "test.auth", func(context.Context) error {
+					return status.Error(codes.Unauthenticated, "client identity unavailable: no verified client certificate chain")
+				}, func(err error) { got <- err })
+			})
+			select {
+			case err := <-got:
+				if !errors.Is(err, tc.want) {
+					t.Fatalf("got %v, want %v", err, tc.want)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("apply never ran")
+			}
+		})
+	}
+}
+
 func TestExplainErr(t *testing.T) {
 	ctx := context.Background()
 	manager := errors.New("Error response from daemon: service web not found")
@@ -240,14 +275,14 @@ func TestExplainErr(t *testing.T) {
 		{"too old", nil, status.Error(codes.Unimplemented, "x"), errAgentTooOld.Error()},
 		{"secret", nil, status.Error(codes.Unauthenticated, "invalid secret"), errSecretRejected.Error()},
 		{"unavailable, no agent", fakeLister{}, unavailable, errNoAgent.Error()},
-		{"unavailable, agent deployed", fakeLister{agent: true}, unavailable, unavailable.Error()},
-		{"unavailable, manager unreachable", fakeLister{err: errors.New("down")}, unavailable, unavailable.Error()},
-		{"unavailable, no manager client", nil, unavailable, unavailable.Error()},
+		{"unavailable, agent deployed", fakeLister{agent: true}, unavailable, "Unavailable: connection refused"},
+		{"unavailable, manager unreachable", fakeLister{err: errors.New("down")}, unavailable, "Unavailable: connection refused"},
+		{"unavailable, no manager client", nil, unavailable, "Unavailable: connection refused"},
 		{"already explained", nil, errAgentTooOld, errAgentTooOld.Error()},
-		{"other agent status", fakeLister{}, status.Error(codes.NotFound, "no such container"), "rpc error: code = NotFound desc = no such container"},
+		{"other agent status reads as Code: message", fakeLister{}, status.Error(codes.NotFound, "no such container"), "NotFound: no such container"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := explainErr(ctx, tc.lister, tc.err)
+			got := explainErr(ctx, agenterr.AuthSecret, tc.lister, tc.err)
 			if (got == nil) != (tc.err == nil) {
 				t.Fatalf("got %v for %v", got, tc.err)
 			}

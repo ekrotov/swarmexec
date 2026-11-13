@@ -511,7 +511,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 				closeTerm() // user detached (Ctrl-]) — just close
 			case rerr != nil:
 				closeTerm()
-				u.info(enrichAgentError(ctx, dcli, rerr).Error())
+				u.info(explainSession(ctx, cfg, dcli, rerr).Error())
 			case code == 126 || code == 127:
 				// The shell could not start (127 = not found, 126 = not
 				// executable — e.g. no bash in the image). Keep the pane up so

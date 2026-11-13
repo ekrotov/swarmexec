@@ -351,7 +351,7 @@ func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, wit
 	defer conn.Close()
 	resp, err := pb.NewAgentClient(conn).ListVolumes(cctx, &pb.ListVolumesRequest{WithSize: withSize})
 	if err != nil {
-		return nil, wrapGRPC(err)
+		return nil, wrapGRPC(ctx, cfg, err)
 	}
 	return resp.Volumes, nil
 }
@@ -534,7 +534,7 @@ func listNodeContainers(ctx context.Context, cfg config.Config, n resolve.Node, 
 	defer conn.Close()
 	resp, err := pb.NewAgentClient(conn).ListContainers(ctx, &pb.ListRequest{})
 	if err != nil {
-		return nil, wrapGRPC(err)
+		return nil, wrapGRPC(ctx, cfg, err)
 	}
 	return resp.Containers, nil
 }
@@ -573,7 +573,7 @@ func removeNodeVolume(ctx context.Context, cfg config.Config, n resolve.Node, na
 	}
 	defer conn.Close()
 	_, err = pb.NewAgentClient(conn).RemoveVolume(ctx, &pb.RemoveVolumeRequest{Name: name, Force: force})
-	return wrapGRPC(err)
+	return wrapGRPC(ctx, cfg, err)
 }
 
 // newVolumeOpts is the create-volume form's input. Driver empty means the
@@ -617,20 +617,10 @@ func createNodeVolume(ctx context.Context, cfg config.Config, n resolve.Node, re
 	}
 	defer conn.Close()
 	_, err = pb.NewAgentClient(conn).CreateVolume(ctx, req)
-	return wrapGRPC(err)
+	return wrapGRPC(ctx, cfg, err)
 }
 
 // helpers
-
-func wrapGRPC(err error) error {
-	if err == nil {
-		return nil
-	}
-	if agentTooOld(err) {
-		return errAgentTooOld
-	}
-	return session.WrapStatus(err)
-}
 
 func nodeNames(nodes []resolve.Node) []string {
 	out := make([]string, len(nodes))

@@ -69,7 +69,7 @@ func fetchReclaim(ctx context.Context, cfg config.Config, n resolve.Node, measur
 	defer conn.Close()
 	resp, err := pb.NewAgentClient(conn).ReclaimStats(cctx, &pb.ReclaimStatsRequest{MeasureNow: measureNow})
 	if err != nil {
-		return nil, wrapGRPC(err)
+		return nil, wrapGRPC(ctx, cfg, err)
 	}
 	return resp, nil
 }
@@ -84,7 +84,7 @@ func pruneNode(ctx context.Context, cfg config.Config, n resolve.Node, req *pb.P
 	defer conn.Close()
 	resp, err := pb.NewAgentClient(conn).Prune(cctx, req)
 	if err != nil {
-		return nil, wrapGRPC(err)
+		return nil, wrapGRPC(ctx, cfg, err)
 	}
 	return resp, nil
 }

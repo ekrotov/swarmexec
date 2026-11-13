@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +28,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/session"
@@ -48,24 +48,13 @@ const (
 	agentRoleValue    = deploy.RoleAgent
 )
 
-// errNoAgent is shown when an agent-needing command finds no agent deployed.
-var errNoAgent = errors.New("no swarmexec agent found in this swarm — run `swarmexec init` to provision it")
-
-// errAgentTooOld is shown when an agent rejects an RPC with Unimplemented.
-var errAgentTooOld = errors.New("agent is older than this client (missing RPC) — update it with `swarmexec init --force`")
-
-// errSecretRejected explains an Unauthenticated status, which since v1.17.3 has
-// a new and far more likely cause than a wrong secret: this client sends a proof
-// bound to the connection instead of the secret itself, and an agent predating
-// that does not recognise it. The bare "invalid or missing agent secret" the
-// agent returns is actively misleading in that case — the secret is fine.
-//
-//lint:ignore ST1005 shown verbatim to the operator; the layout is the message
-var errSecretRejected = errors.New("agent rejected the shared secret.\n" +
-	"  Most likely the agents predate connection-bound authentication (v1.17.3):\n" +
-	"  update them with `swarmexec init --force`, or set `legacy_secret: true` in\n" +
-	"  the client config to send the raw secret meanwhile.\n" +
-	"  Otherwise the configured secret does not match the one the agents hold.")
+// The agent-error explanations live in agenterr; these are local names for
+// them, so the many call sites in this package stay short.
+var (
+	errNoAgent        = agenterr.ErrNoAgent
+	errAgentTooOld    = agenterr.ErrAgentTooOld
+	errSecretRejected = agenterr.ErrSecretRejected
+)
 
 type initFlags struct {
 	image          string
@@ -708,24 +697,6 @@ func portConflict(ctx context.Context, dcli serviceLister, port int, ownName str
 		}
 	}
 	return "", false
-}
-
-// enrichAgentError replaces a transport failure with the "run init" hint when no
-// agent is deployed; otherwise it returns the original error unchanged.
-func enrichAgentError(ctx context.Context, dcli *client.Client, err error) error {
-	if err == nil {
-		return nil
-	}
-	if agentTooOld(err) {
-		return errAgentTooOld
-	}
-	if status.Code(err) == codes.Unauthenticated {
-		return errSecretRejected
-	}
-	if !agentDeployed(ctx, dcli) {
-		return errNoAgent
-	}
-	return err
 }
 
 // agentTooOld reports whether err is a gRPC Unimplemented status, i.e. the agent

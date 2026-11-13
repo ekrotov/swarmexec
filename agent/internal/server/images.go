@@ -8,8 +8,6 @@ import (
 
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/auth"
 	"swarmexec/internal/pb"
@@ -38,7 +36,7 @@ func (s *Server) ListImages(ctx context.Context, _ *pb.ListImagesRequest) (*pb.L
 	du, err := s.docker.DiskUsage(ctx, client.DiskUsageOptions{Images: true, Verbose: true})
 	if err != nil {
 		s.log.Error("DiskUsage(images) failed", "err", err)
-		return nil, status.Errorf(codes.Internal, "list images: %v", err)
+		return nil, dockerStatus(err, "list images")
 	}
 	return imagesResponse(du.Images), nil
 }
@@ -149,7 +147,7 @@ func (s *Server) PruneImages(ctx context.Context, req *pb.PruneImagesRequest) (*
 	if err != nil {
 		s.audit.ImagePrune(identity, req.GetAll(), 0, 0, false, err.Error())
 		s.log.Error("ImagePrune failed", "all", req.GetAll(), "err", err)
-		return nil, status.Errorf(codes.Internal, "prune images: %v", err)
+		return nil, dockerStatus(err, "prune images")
 	}
 
 	report := res.Report

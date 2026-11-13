@@ -155,6 +155,18 @@
         put the credential on the wire by accident.
       </div>
 
+      <h3>When the agent rejects the client</h3>
+      <p>
+        The message names the credential you are configured with. In Mode B it reads
+        <em>agent rejected the shared secret</em>, with the v1.17.3 hint above. In Mode A
+        a certificate the agents' CA does not trust already fails at the TLS handshake
+        (<em>cannot reach agent … mTLS/connection error</em>); a trusted certificate the
+        agent cannot take an identity from (no CN) reads <em>agent did not accept this
+        client's certificate identity</em>, followed by the agent's reason. A Mode A client
+        pointed at Mode B agents is told the agents <em>require a shared secret</em> and
+        that this client has none configured.
+      </p>
+
       <h2 id="policy">Authorization policy</h2>
       <p>
         By default an agent allows every request that passed authentication. A rule file

@@ -259,7 +259,7 @@ func fetchNodeStats(ctx context.Context, cfg config.Config, n resolve.Node, conn
 	// anyway, and the agent is answering from memory either way.
 	resp, err := pb.NewAgentClient(conn).Stats(cctx, &pb.StatsRequest{})
 	if err != nil {
-		return nil, wrapGRPC(err)
+		return nil, wrapGRPC(ctx, cfg, err)
 	}
 	return resp, nil
 }
