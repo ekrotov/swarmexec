@@ -18,8 +18,26 @@ AGENT_IMAGE   ?= swarmexec-agent:$(VERSION)
 # `make release`, and ci/verify-release.sh checks for exactly these binaries.
 PLATFORMS  := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-# staticcheck 2026.2.2, pinned like GO_IMAGE: bump deliberately.
-STATICCHECK_VERSION := v0.8.2
+# Tool versions (buf, protoc plugins, staticcheck, govulncheck, scip-go) live
+# in tools.mk, which also keys CI's tool cache.
+include tools.mk
+
+# A tool is installed once per (version, Go version): the stamp file records
+# what is in $(GOBIN), so a second `make tools` / `make lint` does not rebuild
+# it, while a version bump in tools.mk or a new Go toolchain does.
+GOVERSION  := $(shell go env GOVERSION)
+TOOLSTAMPS := $(GOBIN)/.swarmexec-tools
+
+# $(call install-tool,binary,package,version)
+define install-tool
+	@stamp="$(TOOLSTAMPS)/$(1)@$(3)-$(GOVERSION)"; \
+	if [ -x "$(GOBIN)/$(1)" ] && [ -f "$$stamp" ]; then \
+		echo "$(1) $(3) already installed ($(GOVERSION))"; \
+	else \
+		echo "go install $(2)@$(3)"; \
+		go install $(2)@$(3) && mkdir -p "$(TOOLSTAMPS)" && touch "$$stamp"; \
+	fi
+endef
 
 # Minimum total test coverage in percent (generated internal/pb excluded).
 # Set just below the measured value; raise it as coverage grows, never lower it.
@@ -28,7 +46,7 @@ COVER_MIN  ?= 52.8
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
 
-.PHONY: all tools generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
+.PHONY: all tools ci-tools tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
 
 all: generate build-all
 
@@ -36,10 +54,23 @@ all: generate build-all
 build-all: build agent
 
 ## tools: install codegen plugins (buf brings its own compiler; no protoc needed)
-tools:
-	go install github.com/bufbuild/buf/cmd/buf@v1.45.0
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+tools: tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc
+
+## ci-tools: every pinned tool (CI's generate-check fills the tool cache with it)
+ci-tools: tools tool-staticcheck tool-govulncheck tool-scip-go
+
+tool-buf:
+	$(call install-tool,buf,github.com/bufbuild/buf/cmd/buf,$(BUF_VERSION))
+tool-protoc-gen-go:
+	$(call install-tool,protoc-gen-go,google.golang.org/protobuf/cmd/protoc-gen-go,$(PROTOC_GEN_GO_VERSION))
+tool-protoc-gen-go-grpc:
+	$(call install-tool,protoc-gen-go-grpc,google.golang.org/grpc/cmd/protoc-gen-go-grpc,$(PROTOC_GEN_GO_GRPC_VERSION))
+tool-staticcheck:
+	$(call install-tool,staticcheck,honnef.co/go/tools/cmd/staticcheck,$(STATICCHECK_VERSION))
+tool-govulncheck:
+	$(call install-tool,govulncheck,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+tool-scip-go:
+	$(call install-tool,scip-go,github.com/scip-code/scip-go/cmd/scip-go,$(SCIP_GO_VERSION))
 
 ## generate: regenerate internal/pb from proto/swarmexec.proto
 generate:
@@ -101,8 +132,8 @@ cover:
 		if ($$3 + 0 < min + 0) { print "coverage is below the minimum"; exit 1 } }'
 
 ## lint: staticcheck at the pinned version (CI: lint)
-lint:
-	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
+lint: tool-staticcheck
+	$(GOBIN)/staticcheck ./...
 
 clean:
 	rm -rf bin dist coverage.raw coverage.out

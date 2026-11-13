@@ -34,6 +34,12 @@ variables:
   # release jobs, and runners keep floating tags stale anyway (see GO_IMAGE).
   ALPINE_IMAGE: "alpine:3.24"
   GOPATH: "$CI_PROJECT_DIR/.gocache"
+  # Cache archives: fastzip with the fastest compression. The caches are Go
+  # module sources and binaries; zipping them harder costs more CPU time on
+  # these shared, CPU-bound runners than it saves in transfer (the caches are
+  # local to each runner host, there is no remote cache server).
+  FF_USE_FASTZIP: "true"
+  CACHE_COMPRESSION_LEVEL: "fastest"
 
 # Which pipelines exist (GitLab's "merge request pipelines + default branch"
 # pattern):
@@ -60,14 +66,44 @@ workflow:
 .semver-tag: &semver-tag
   if: '$CI_COMMIT_TAG =~ /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/'
 
-# Reusable Go module cache (keyed on go.sum).
+# ----------------------------------------------------------------------------
+# Caches. Each cache key has exactly ONE writer (policy pull-push); every other
+# job only pulls it, so a job does not spend ~15-20 s re-zipping 60k unchanged
+# module files. Runner caches are per host and, with "separate caches for
+# protected branches", per protection level, so the writer must run in MR
+# pipelines too, or MR caches would never fill.
+#
+#   mod     Go module sources, keyed on go.sum.          Writer: test.
+#   tools   buf, protoc plugins, staticcheck, govulncheck, scip-go binaries
+#           in $GOPATH/bin, keyed on tools.mk (the pinned versions); the
+#           Makefile's stamps also record the Go version, so a toolchain bump
+#           reinstalls even under an unchanged key.   Writer: generate-check
+#           (`make ci-tools` installs all of them). Readers fall back to
+#           installing their one tool when the cache is cold.
+# ----------------------------------------------------------------------------
+.cache-mod: &cache-mod
+  key:
+    files:
+      - go.sum
+    prefix: mod
+  paths:
+    - .gocache/pkg/mod
+  policy: pull
+
+.cache-tools: &cache-tools
+  key:
+    files:
+      - tools.mk
+    prefix: tools
+  paths:
+    - .gocache/bin
+  policy: pull
+
+# Default for Go jobs: read both, write neither.
 .go-cache: &go-cache
   cache:
-    key:
-      files:
-        - go.sum
-    paths:
-      - .gocache/pkg/mod
+    - *cache-mod
+    - *cache-tools
 
 # The quality gate as a `needs:` list. Jobs run as a DAG (needs), not stage by
 # stage, so nothing waits for unrelated jobs — but every job that PUBLISHES
@@ -116,7 +152,9 @@ verify-tag-on-main:
 test:
   stage: test
   image: $GO_IMAGE
-  <<: *go-cache
+  cache:
+    - <<: *cache-mod
+      policy: pull-push # the one writer of the module cache
   script:
     - go vet ./...
     - |
@@ -147,7 +185,7 @@ lint:
   image: $GO_IMAGE
   <<: *go-cache
   script:
-    - make lint
+    - make lint # staticcheck from the tool cache (installed once, not `go run` per job)
 
 # ----------------------------------------------------------------------------
 # generate-check — the checked-in internal/pb must be exactly what
@@ -168,9 +206,14 @@ lint:
 generate-check:
   stage: test
   image: $GO_IMAGE
-  <<: *go-cache
+  cache:
+    - *cache-mod
+    - <<: *cache-tools
+      policy: pull-push # the one writer of the tool cache
   script:
-    - make tools
+    # Every pinned tool, not just the codegen ones: this job fills the tool
+    # cache for lint, vulncheck and code_navigation. No-op when it is warm.
+    - make ci-tools
     - make check-generate
     - |
       # Only the compared tree is needed (git archive), so depth 1 suffices.
@@ -217,7 +260,7 @@ vulncheck:
     # GO-ID: reason. Reachable-but-unfixable in our dependency line.
     VULNCHECK_ALLOW: ""
   script:
-    - go install golang.org/x/vuln/cmd/govulncheck@v1.9.0 # pinned: the gate below parses its JSON output
+    - make tool-govulncheck # pinned in tools.mk: the gate below parses its JSON output
     - "$(go env GOPATH)/bin/govulncheck -format json ./... > govulncheck.json || true"
     - "$(go env GOPATH)/bin/govulncheck ./... || true"   # human-readable log
     - |
@@ -287,7 +330,7 @@ code_navigation:
   <<: *go-cache
   allow_failure: true
   script:
-    - go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.9
+    - make tool-scip-go
     - "$(go env GOPATH)/bin/scip-go index"
   artifacts:
     paths:
@@ -304,7 +347,8 @@ code_navigation:
 build-cli:
   stage: build
   image: $GO_IMAGE
-  <<: *go-cache
+  cache:
+    - *cache-mod # no tools needed
   # Starts at once, in parallel with the test jobs: it needs nothing from them,
   # and it publishes nothing itself (dist/ is a job artifact). Everything that
   # ships dist/ needs the release gate. On a tag it still waits for the
