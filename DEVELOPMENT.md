@@ -24,7 +24,14 @@ make build           # cli only      -> ./bin/swarmexec
 make agent           # agent only    -> ./bin/agent
 make agent-image     # agent container image (swarmexec-agent:<version>)
 make test            # unit tests for the whole module
+make cover           # race tests + coverage; fails below COVER_MIN (CI job `test`)
+make lint            # staticcheck at the pinned STATICCHECK_VERSION (CI job `lint`)
+make release         # cli for every release platform -> ./dist + SHA256SUMS (CI job `build-cli`)
 ```
+
+`PLATFORMS` in the Makefile is the single list of release platforms. CI's
+coverage minimum (`COVER_MIN`, generated `internal/pb` excluded) sits just
+below the measured total: raise it when coverage grows, never lower it.
 
 Regenerating the gRPC code (only needed after editing the contract):
 
@@ -32,7 +39,14 @@ Regenerating the gRPC code (only needed after editing the contract):
 make tools           # installs buf + protoc-gen-go(-grpc) into $GOPATH/bin
 make generate        # buf generate -> internal/pb/
 make check-generate  # fail if internal/pb does not match the .proto (CI runs this)
+make proto-check     # buf lint + buf breaking against BUF_AGAINST (default origin/main)
 ```
+
+CI (`generate-check`) runs `proto-check` against the MR's target branch, and
+on branches and tags against the newest release tag. `buf breaking` uses the
+strict `FILE` rules: a removed or renumbered field fails the pipeline, as
+CONTRACT.md §7 asks. The lint exceptions in `buf.yaml` are wire names that
+cannot change without breaking deployed agents.
 
 ### Documentation site
 
