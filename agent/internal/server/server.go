@@ -82,11 +82,15 @@ type Server struct {
 	// context. Overridable in tests; defaults to the mTLS peer CN.
 	identityFn func(context.Context) (string, error)
 
-	// draining is set during graceful shutdown; new Exec sessions are rejected.
+	// draining is set during graceful shutdown; new streams (Exec, Logs,
+	// PortForward, WatchContainerEvents) are rejected.
 	draining atomic.Bool
-	// wg tracks in-flight Exec sessions so shutdown can wait for them to drain.
+	// wg tracks every in-flight stream — exec sessions, port-forwards, log
+	// streams and event watches — so shutdown can wait for them to drain and,
+	// after a forced stop, for each to write its end-of-stream audit record.
 	wg sync.WaitGroup
 
+	// active counts the streams wg tracks, for the shutdown log.
 	active atomic.Int64
 
 	// streams caps concurrent streaming RPCs; sidecars caps the containers a
@@ -327,14 +331,31 @@ func (s *Server) decide(ctx context.Context, req auth.Request) (reason string, a
 	return decision.Reason, decision.Allow
 }
 
-// StartDrain marks the server as draining so new Exec sessions are refused with
-// Unavailable. Existing sessions continue until they end or are forcibly stopped.
+// trackStream counts a stream into the drain (wg and active) for its lifetime;
+// call the returned func when it ends. Exec and PortForward do this inline.
+//
+// Logs and WatchContainerEvents need it most: a follow or an open view never
+// ends on its own, so a drain that did not count them reported "drained" at
+// once and GracefulStop then waited on them without limit.
+func (s *Server) trackStream() (done func()) {
+	s.wg.Add(1)
+	s.active.Add(1)
+	return func() {
+		s.active.Add(-1)
+		s.wg.Done()
+	}
+}
+
+// StartDrain marks the server as draining so new streams are refused with
+// Unavailable. Existing ones continue until they end or are forcibly stopped.
 func (s *Server) StartDrain() {
 	s.draining.Store(true)
 }
 
-// WaitForSessions blocks until all in-flight Exec sessions have ended or ctx is
-// cancelled. It returns true if all sessions drained, false on ctx timeout.
+// WaitForSessions blocks until every in-flight stream (exec, port-forward,
+// logs, event watch) has ended or ctx is cancelled. It returns true if all
+// drained, false on ctx timeout. After a forced stop it is called again, so
+// streams whose context was just cancelled get to write their end records.
 //
 // Forward sidecars are torn down either way: they are containers on the node,
 // and a shutdown that left them running would leak one per forward the agent
@@ -355,7 +376,8 @@ func (s *Server) WaitForSessions(ctx context.Context) bool {
 	}
 }
 
-// ActiveSessions reports the current number of live exec sessions.
+// ActiveSessions reports the current number of live streams the drain waits
+// for (exec, port-forward, logs, event watches).
 func (s *Server) ActiveSessions() int64 { return s.active.Load() }
 
 // identityFromPeer extracts the verified client-certificate Common Name from

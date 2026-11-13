@@ -258,10 +258,20 @@ func run(args []string) error {
 		defer cancel()
 		if srv.WaitForSessions(drainCtx) {
 			log.Info("all sessions drained; stopping gracefully")
-			grpcSrv.GracefulStop()
+			if !stopGracefully(grpcSrv, gracefulStopTimeout) {
+				log.Warn("graceful stop timed out; forced stop", "timeout", gracefulStopTimeout)
+			}
 		} else {
 			log.Warn("drain window elapsed; forcing stop", "active_sessions", srv.ActiveSessions())
 			grpcSrv.Stop()
+			// Stop cancelled every stream but does not wait for its handler.
+			// Give them a moment to return, so each writes its end-of-stream
+			// audit record before the audit writer closes.
+			exitCtx, c := context.WithTimeout(context.Background(), handlerExitTimeout)
+			if !srv.WaitForSessions(exitCtx) {
+				log.Warn("streams still running after forced stop", "active_sessions", srv.ActiveSessions())
+			}
+			c()
 		}
 
 		if metricsSrv != nil {
@@ -271,6 +281,47 @@ func run(args []string) error {
 		}
 		log.Info("agent stopped")
 		return nil
+	}
+}
+
+// Shutdown bounds after the drain window. Swarm sends SIGKILL after the
+// service's stop_grace_period (10s by default; the shipped specs set none), so the
+// drain window (5s) plus either bound has to finish well inside it.
+const (
+	// gracefulStopTimeout bounds GracefulStop once the streams have drained.
+	// It still waits for in-flight unary RPCs, and a client that never hangs
+	// up must not turn the graceful path into a SIGKILL.
+	gracefulStopTimeout = 2 * time.Second
+	// handlerExitTimeout bounds the wait, after a forced Stop, for cancelled
+	// streams to return and write their end-of-stream audit records.
+	handlerExitTimeout = 2 * time.Second
+)
+
+// grpcStopper is the part of *grpc.Server that shutdown uses.
+type grpcStopper interface {
+	GracefulStop()
+	Stop()
+}
+
+// stopGracefully runs GracefulStop for at most timeout, then falls back to
+// Stop. It reports whether the graceful stop finished in time.
+func stopGracefully(s grpcStopper, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		s.GracefulStop()
+		close(done)
+	}()
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	select {
+	case <-done:
+		return true
+	case <-t.C:
+		// Stop closes every connection and cancels every RPC, but does not
+		// wait for handlers; the goroutine above may linger on one that
+		// ignores its context, which is harmless in a process about to exit.
+		s.Stop()
+		return false
 	}
 }
 
