@@ -428,7 +428,16 @@ build-cli:
     - echo "building cli version $VERSION"
     # The platform list is PLATFORMS in the Makefile, the one definition;
     # `make release` writes dist/swarmexec-<os>-<arch>[.exe] and dist/SHA256SUMS.
-    - make release VERSION="$VERSION"
+    # An MR builds two of the five: the code has exactly one platform split
+    # (unix vs. other: client/internal/term/winch_*.go), which linux and
+    # windows cover; each extra target was ~85 s of compiling. main and tags
+    # build all five, so a release is unaffected.
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
+        make release VERSION="$VERSION" PLATFORMS="linux/amd64 windows/amd64"
+      else
+        make release VERSION="$VERSION"
+      fi
   artifacts:
     name: "swarmexec-cli-${CI_COMMIT_REF_SLUG}"
     paths:
@@ -567,7 +576,7 @@ release-publish:
   needs:
     - !reference [.release-gate, needs]
     - job: build-cli
-      artifacts: true
+      artifacts: false # the release links the GitHub files; dist/ is not read here
     - job: agent-image
   script:
     - echo "publishing GitLab Release $CI_COMMIT_TAG"
@@ -671,6 +680,8 @@ dockerhub-description:
 deploy-site:
   stage: deploy
   image: $ALPINE_IMAGE
+  variables:
+    GIT_STRATEGY: none # one curl to the trigger API; the repo is not needed
   needs:
     - !reference [.release-gate, needs]
     - job: site-image
