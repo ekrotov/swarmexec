@@ -15,16 +15,16 @@ scene: health, exec, port-forward and `logs -f`.
 
 ## What it does
 
-- **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarm-exec.cloud-surfers.net/docs#targets)
-- **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarm-exec.cloud-surfers.net/docs#logs)
-- **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs#port-forward) · [recipe: forward a database port](https://swarm-exec.cloud-surfers.net/examples#forward-db)
-- **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarm-exec.cloud-surfers.net/docs#tui)
-- **Stack diff and a pre-deploy check for CI** — a content diff of a file against the deployed stack, and a security gate before `stack deploy`. [stack diff →](https://swarm-exec.cloud-surfers.net/docs#stackfile)
-- **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarm-exec.cloud-surfers.net/docs#nodeprune)
-- **Secret rotation that keeps the name** — `swarmexec secret rotate NAME --from-file new.txt` gives a secret in use new content without a `_v2` rename; resumable if interrupted. [secret rotate →](https://swarm-exec.cloud-surfers.net/docs#secretrotate)
-- **A security report** of the whole cluster, as Markdown you can file and compare. [security report →](https://swarm-exec.cloud-surfers.net/docs#securityreport)
-- **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only, labels hidden from the assistant. [mcp →](https://swarm-exec.cloud-surfers.net/docs#mcp)
-- **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarm-exec.cloud-surfers.net/docs#auth)
+- **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarm-exec.cloud-surfers.net/docs/exec)
+- **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarm-exec.cloud-surfers.net/docs/logs)
+- **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs/port-forward) · [recipe: forward a database port](https://swarm-exec.cloud-surfers.net/examples#forward-db)
+- **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarm-exec.cloud-surfers.net/docs/tui#tui)
+- **Stack diff and a pre-deploy check for CI** — a content diff of a file against the deployed stack, and a security gate before `stack deploy`. [stack diff →](https://swarm-exec.cloud-surfers.net/docs/stack)
+- **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarm-exec.cloud-surfers.net/docs/tui-nodes#nodeprune)
+- **Secret rotation that keeps the name** — `swarmexec secret rotate NAME --from-file new.txt` gives a secret in use new content without a `_v2` rename; resumable if interrupted. [secret rotate →](https://swarm-exec.cloud-surfers.net/docs/secrets)
+- **A security report** of the whole cluster, as Markdown you can file and compare. [security report →](https://swarm-exec.cloud-surfers.net/docs/security-scan#securityreport)
+- **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only, labels hidden from the assistant. [mcp →](https://swarm-exec.cloud-surfers.net/docs/mcp)
+- **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarm-exec.cloud-surfers.net/docs/authentication)
 
 Apache-2.0, self-hosted, no telemetry, no node limit. Docker Engine 19.03 or newer.
 
@@ -41,7 +41,7 @@ scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
 scoop install swarmexec                                          # Windows
 ```
 
-Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/releases/latest). [Install →](https://swarm-exec.cloud-surfers.net/docs#install) · [What changed in each release →](https://swarm-exec.cloud-surfers.net/releases)
+Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/releases/latest). [Install →](https://swarm-exec.cloud-surfers.net/docs/install) · [What changed in each release →](https://swarm-exec.cloud-surfers.net/releases)
 
 ## Quick start
 
@@ -52,7 +52,7 @@ swarmexec exec web -- sh           # a shell in a task of the service "web"
 swarmexec ui                       # the terminal UI
 ```
 
-[Quick start →](https://swarm-exec.cloud-surfers.net/docs#quickstart)
+[Quick start →](https://swarm-exec.cloud-surfers.net/docs/install#quickstart)
 
 ## How it works
 
@@ -70,13 +70,13 @@ connects straight to that node's agent — there is no mesh between agents.
 ## Documentation
 
 The full documentation lives at **[swarm-exec.cloud-surfers.net/docs](https://swarm-exec.cloud-surfers.net/docs)**:
-[configuration](https://swarm-exec.cloud-surfers.net/docs#config) ·
-[Docker contexts and SSH](https://swarm-exec.cloud-surfers.net/docs#context) ·
+[configuration](https://swarm-exec.cloud-surfers.net/docs/configuration) ·
+[Docker contexts and SSH](https://swarm-exec.cloud-surfers.net/docs/contexts) ·
 [all commands](https://swarm-exec.cloud-surfers.net/docs#commands) ·
-[the TUI](https://swarm-exec.cloud-surfers.net/docs#tui) ·
-[monitoring](https://swarm-exec.cloud-surfers.net/docs#monitoring) ·
-[policy file](https://swarm-exec.cloud-surfers.net/docs#policy) ·
-[exit codes](https://swarm-exec.cloud-surfers.net/docs#exit)
+[the TUI](https://swarm-exec.cloud-surfers.net/docs/tui#tui) ·
+[monitoring](https://swarm-exec.cloud-surfers.net/docs/agents#monitoring) ·
+[policy file](https://swarm-exec.cloud-surfers.net/docs/authentication#policy) ·
+[exit codes](https://swarm-exec.cloud-surfers.net/docs/configuration#exit)
 
 In this repository:
 

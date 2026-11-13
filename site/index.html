@@ -661,7 +661,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
         Yes, and for the same reason: whatever reaches the socket controls the node. The
         agent needs it to exec, read logs and forward ports on its node, as Portainer's agent
         does. What fences it: it answers no request it cannot authenticate (mutual TLS, or a
-        secret bound to the connection); a <a href="docs.html#policy">policy file</a> can
+        secret bound to the connection); a <a href="/docs/authentication#policy">policy file</a> can
         deny <code>exec</code>, <code>portforward</code> or volume actions per service, port
         and user; every request lands in its audit log; <code>swarmexec down</code> removes
         it again.

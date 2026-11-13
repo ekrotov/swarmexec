@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec port-forward — port-forward to a Docker Swarm container without publishing</title>
+  <meta name="description" content="Forward a local TCP port to a port inside a container anywhere in a Docker Swarm, without publishing it: syntax, flags, loopback binding and why a service target means one task.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/port-forward">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec port-forward — port-forward to a Docker Swarm container without publishing">
+  <meta property="og:description" content="Forward a local TCP port to a port inside a container anywhere in a Docker Swarm, without publishing it: syntax, flags, loopback binding and why a service target means one task.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/port-forward">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec port-forward — port-forward to a Docker Swarm container without publishing">
+  <meta name="twitter:description" content="Forward a local TCP port to a port inside a container anywhere in a Docker Swarm, without publishing it: syntax, flags, loopback binding and why a service target means one task.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec port-forward — port-forward to a Docker Swarm container without publishing",
+        "description": "Forward a local TCP port to a port inside a container anywhere in a Docker Swarm, without publishing it: syntax, flags, loopback binding and why a service target means one task.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/port-forward",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "port-forward into the Swarm",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/port-forward"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › port-forward into the Swarm</p>
+      <h1>port-forward into the Swarm<span class="cursor">_</span></h1>
+      <p class="tagline">A local port onto a container port nobody published.</p>
+
+      <h2 id="port-forward"><code>port-forward</code> (alias <code>pf</code>) — forward a local port</h2>
+      <p>
+        Bind a local TCP port and forward it to a port inside a container, without
+        publishing that port on the cluster. The local port defaults to the remote one.
+        Targeting a service forwards to exactly <strong>one</strong> of its tasks (the one
+        the target resolves to), not across replicas. Bound to <code>127.0.0.1</code> by
+        default. Press <kbd>Ctrl-C</kbd> to stop.
+      </p>
+      <div class="cmd">swarmexec port-forward [flags] <span class="k">&lt;target&gt;</span> [local:]remote</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--address</code></td><td><code>127.0.0.1</code></td><td>local address to bind (loopback keeps the port off your network); any other address prints a warning that the port is reachable from your network</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+        </tbody>
+      </table></div>
+      <div class="prompt"><span class="c">$</span> swarmexec port-forward db 5432             <span class="o"># localhost:5432 → container:5432</span>
+<span class="c">$</span> swarmexec pf web 9090:8080                  <span class="o"># localhost:9090 → container:8080</span></div>
+      <p>
+        How it works: the agent starts a short-lived <strong>sidecar</strong> container in
+        the target's network namespace (the agent's own image, labelled
+        <code>swarmexec.role=port-forward</code>) and carries every connection of the
+        forward over it. After the last connection closes, the sidecar stays for about
+        <strong>two minutes</strong>, so a browser reload or a reconnecting connection pool
+        does not pay the container start again — a sidecar still there shortly after
+        <kbd>Ctrl-C</kbd> is that pause, not a leak. The agent removes it on its own.
+      </p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/logs" rel="prev"><span class="lbl">← Previous</span>Logs of services and stacks</a>
+        <a class="next" href="/docs/stack" rel="next"><span class="lbl">Next →</span>Stack export, diff &amp; wait</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward" aria-current="page">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

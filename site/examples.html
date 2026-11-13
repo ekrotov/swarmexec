@@ -140,7 +140,7 @@
           <li><code>--min-level</code> lets lines with no detectable level through, so stack traces survive — but on a stream parsed in the wrong format it filters nothing. <code>--log-format auto</code> says when it cannot tell.</li>
           <li>With several targets or <code>--stack</code>, a service with nothing running is skipped with a note; ask for it on its own to see its last container.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#logs"><code>logs</code></a> · <a href="docs.html#ps"><code>ps</code></a> · <a href="docs.html#tui-shell-logs">TUI logs</a> · <a href="docs.html#tui-services">Stacks/Services tab</a></p>
+        <p class="more">More in the docs: <a href="/docs/logs"><code>logs</code></a> · <a href="/docs/exec#ps"><code>ps</code></a> · <a href="/docs/tui#tui-shell-logs">TUI logs</a> · <a href="/docs/tui-services">Stacks/Services tab</a></p>
       </article>
 
       <!-- 2 -->
@@ -170,7 +170,7 @@
           <li>During a rolling update the newest task in the slot wins — the replica you exec into may be minutes old.</li>
           <li><code>-u</code> takes a user name or UID (<code>1000:1000</code>); use it when the image's default user lacks the tools you need.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#exec"><code>exec</code></a> · <a href="docs.html#targets">target selectors</a></p>
+        <p class="more">More in the docs: <a href="/docs/exec#exec"><code>exec</code></a> · <a href="/docs/exec">target selectors</a></p>
       </article>
 
       <!-- 3 -->
@@ -201,7 +201,7 @@
           <li><code>--address</code> defaults to <code>127.0.0.1</code>. Any other address, <code>0.0.0.0</code> included, prints <code>swarmexec: warning: --address 0.0.0.0 is not loopback; the forwarded port is reachable from your network</code> — and it is.</li>
           <li>A service target forwards to exactly one task, not across replicas. For a multi-replica service, <code>port-forward</code> never guesses: it prints the candidates and exits — name the slot.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#port-forward"><code>port-forward</code></a> · <a href="docs.html#tui-forwards">Forwards tab</a></p>
+        <p class="more">More in the docs: <a href="/docs/port-forward"><code>port-forward</code></a> · <a href="/docs/tui-tabs#tui-forwards">Forwards tab</a></p>
       </article>
 
       <!-- 4 -->
@@ -233,7 +233,7 @@
           <li>Each source is one stream to its node's agent and counts toward that agent's stream limit; a large stack is many streams.</li>
           <li><code>--grep</code> is a Go regexp on the <em>parsed</em> message, so it depends on <code>--log-format</code>.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#logs"><code>logs</code></a> · <a href="docs.html#tui-shell-logs">TUI log view</a></p>
+        <p class="more">More in the docs: <a href="/docs/logs"><code>logs</code></a> · <a href="/docs/tui#tui-shell-logs">TUI log view</a></p>
       </article>
 
       <!-- 5 -->
@@ -265,7 +265,7 @@
           <li>Every save restarts the service's tasks, following its <code>update_config</code>.</li>
           <li>Credentials do not belong in env: the security scan flags a literal value under a credential-looking key (<code>secret-in-env</code>). Use a secret and a <code>*_FILE</code> variable.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#env-editor">the env editor</a> · <a href="docs.html#tui-services">service inspect keys</a></p>
+        <p class="more">More in the docs: <a href="/docs/tui-services#env-editor">the env editor</a> · <a href="/docs/tui-services">service inspect keys</a></p>
       </article>
 
       <!-- 6 -->
@@ -296,7 +296,7 @@
           <li>A secret created by <code>docker stack deploy</code> from a <code>file:</code> needs that file updated too, or the next deploy fails with <em>only updates to Labels are allowed</em>. An <code>external: true</code> secret has no such problem.</li>
           <li>Without a terminal, or with <code>--from-stdin</code>, the command refuses unless you pass <code>--yes</code>. <code>echo</code> adds a newline to the value; <code>printf %s</code> does not.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#secretrotate"><code>secret rotate</code></a> · <a href="docs.html#tui-secrets">Secrets tab</a></p>
+        <p class="more">More in the docs: <a href="/docs/secrets"><code>secret rotate</code></a> · <a href="/docs/tui-tabs#tui-secrets">Secrets tab</a></p>
       </article>
 
       <!-- 7 -->
@@ -329,7 +329,7 @@
           <li><code>${VARS}</code> in the file are interpolated from the job's environment, exactly as <code>docker stack deploy</code> does — set them as the deploy would.</li>
           <li><code>--format json</code> is the machine form (<code>differs</code>, hunks, <code>ignored</code>, <code>not_compared</code>).</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#stackfile"><code>stack diff</code></a> · <a href="docs.html#stackdeploy"><code>stack deploy</code></a> · <a href="docs.html#exit">exit codes</a></p>
+        <p class="more">More in the docs: <a href="/docs/stack"><code>stack diff</code></a> · <a href="/docs/security-scan"><code>stack deploy</code></a> · <a href="/docs/configuration#exit">exit codes</a></p>
       </article>
 
       <!-- 8 -->
@@ -359,7 +359,7 @@
           <li>Without <code>--healthy</code>, running is enough. With it, a node whose agent cannot report health counts as <em>not yet</em>, never as healthy.</li>
           <li>swarmexec only observes: it never rolls back or retries.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#wait"><code>wait</code></a> · <a href="docs.html#stackdeploy"><code>stack deploy</code></a></p>
+        <p class="more">More in the docs: <a href="/docs/stack#wait"><code>wait</code></a> · <a href="/docs/security-scan"><code>stack deploy</code></a></p>
       </article>
 
       <!-- 9 -->
@@ -399,7 +399,7 @@
           <li>ssh cannot prompt: stdin/stdout carry the protocol. Load the key into <code>ssh-agent</code> and have the host key in <code>known_hosts</code> first.</li>
           <li>What a tool returns goes to the model provider. Log lines and command output pass as they are, and anyone who writes to those logs can address the assistant.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#mcp"><code>mcp</code></a></p>
+        <p class="more">More in the docs: <a href="/docs/mcp"><code>mcp</code></a></p>
       </article>
 
       <!-- 10 -->
@@ -432,7 +432,7 @@
           <li><strong>Volumes are pruned only when you choose them</strong> — <code>volumes</code> in <code>--categories</code>, or the red checkbox — and then named volumes go with their data.</li>
           <li>Times are UTC unless you give <code>--tz</code>.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#pruneschedulecmd"><code>prune-schedule</code></a> · <a href="docs.html#nodeprune">pruning a node</a> · <a href="docs.html#pruneschedule">the schedule</a></p>
+        <p class="more">More in the docs: <a href="/docs/volumes#pruneschedulecmd"><code>prune-schedule</code></a> · <a href="/docs/tui-nodes#nodeprune">pruning a node</a> · <a href="/docs/tui-nodes#pruneschedule">the schedule</a></p>
       </article>
 
       <!-- 11 -->
@@ -460,7 +460,7 @@
           <li>With <code>--skip-agents</code>, agent skew is listed under <em>Not covered</em> — not passed.</li>
           <li>Its order depends only on the findings, so two reports of an unchanged cluster differ in the timestamp alone — diff them release over release.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#securityreport"><code>security report</code></a></p>
+        <p class="more">More in the docs: <a href="/docs/security-scan#securityreport"><code>security report</code></a></p>
       </article>
 
       <!-- 12 -->
@@ -491,7 +491,7 @@
           <li>The first switch to a cluster takes as long as connecting to it; if it fails you stay where you were.</li>
           <li>Each cluster needs its own agents, but there is <strong>one client config</strong> for all contexts, so every cluster's agents must accept the same credentials. With the shared secret, provision the next cluster with the one you already have — <code>swarmexec --context staging init --secret "$SECRET"</code>. Without <code>--secret</code>, <code>init</code> generates a new secret and writes it to your client config, which the first cluster's agents do not accept. With mTLS, one CA covers them all.</li>
         </ul>
-        <p class="more">More in the docs: <a href="docs.html#context-cmd"><code>context</code></a> · <a href="docs.html#tui-contexts">context sidebar</a> · <a href="docs.html#context">Docker context &amp; SSH</a></p>
+        <p class="more">More in the docs: <a href="/docs/contexts#context-cmd"><code>context</code></a> · <a href="/docs/tui#tui-contexts">context sidebar</a> · <a href="/docs/contexts">Docker context &amp; SSH</a></p>
       </article>
 
       <footer>

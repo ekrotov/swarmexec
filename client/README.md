@@ -118,7 +118,7 @@ swarmexec --version
 `swarmexec mcp` is an MCP server on stdin/stdout for AI assistants
 (`claude mcp add swarmexec -- swarmexec mcp`); services opt in with the
 service label `swarmexec.mcp.enable=true`. See the
-[mcp docs](https://swarm-exec.cloud-surfers.net/docs#mcp).
+[mcp docs](https://swarm-exec.cloud-surfers.net/docs/mcp).
 
 Key `exec` flags: `-i/--stdin` (keep stdin open, default true), `-t/--tty`
 (allocate a TTY; default **auto** — true iff stdin is a terminal and no command

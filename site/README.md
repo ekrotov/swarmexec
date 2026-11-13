@@ -6,7 +6,8 @@ by nginx (non-root, port 8080) behind Traefik.
 | URL | File | What |
 |---|---|---|
 | `/` | `index.html` | landing page |
-| `/docs` | `docs.html` | client documentation — every command, flag and key |
+| `/docs` | `docs.html` | documentation index: how it works, and a list of every docs page |
+| `/docs/<topic>` | `docs/<topic>.html` | one docs page per topic — `install`, `exec`, `logs`, `port-forward`, `stack`, `security-scan`, `secrets`, `volumes`, `mcp`, `agents`, `authentication`, `contexts`, `configuration`, `tui`, `tui-services`, `tui-tabs`, `tui-nodes` |
 | `/examples` | `examples.html` | recipes: whole workflows, CLI and TUI side by side |
 | `/docker-swarm-exec-alternatives` (`/compare` redirects) | `compare.html` | swarmexec against SSH, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels and kubectl, with an FAQ |
 | `/releases` | `releases.html` | release notes, rendered from `releases.json` |
@@ -30,7 +31,7 @@ its container is next recreated. The other links on the page go to the GitHub
 repository (source, releases, issues), the GitLab original it is mirrored from,
 and the agent image on Docker Hub (`logleio/swarmexec-agent`).
 
-The build bakes the version into `index.html`, `docs.html`, `examples.html` and `compare.html`
+The build bakes the version into `index.html`, `docs.html`, `docs/*.html`, `examples.html` and `compare.html`
 (the `__VERSION__` placeholder, also used as `?v=` on stylesheets and scripts),
 stamps the build date into `sitemap.xml` (`<lastmod>`), and fetches the tag list
 from the GitLab API into `releases.json` for the release-notes page.
@@ -94,8 +95,17 @@ and busybox `wget` tries `::1` without falling back.
 ## Files
 
 - `index.html` — the landing page.
-- `docs.html` — the documentation. Command and TUI headings carry ids
-  (`#exec`, `#logs`, `#port-forward`, `#tui-secrets`, …) for deep links.
+- `docs.html` — the documentation index (how it works, and every docs page with a
+  one-line summary). It also carries a small script that forwards the fragments of
+  the old one-page docs (`/docs#exec`, `/docs#tui-secrets`, …) to the page that holds
+  them now; **when an id moves to another page, update that table**.
+- `docs/*.html` — the documentation, one topic per page so each can answer its own
+  question: own title, description, canonical URL, breadcrumb, previous/next and the
+  full page list at the end. Headings keep the ids of the old single page, so
+  `/docs/exec#exec`, `/docs/tui-tabs#tui-secrets` and so on are stable deep links.
+  Links between pages are absolute (`/docs/logs#logs`, `/examples#forward-db`),
+  because a relative link resolves differently under `/docs/`. A new page needs its
+  entry in every page's list and prev/next, the index, and `sitemap.xml`.
 - `examples.html` — the recipes. Every flag and key in it is checked against
   `client/internal/cli` (and `keymap.go` for the TUI); keep it that way when a
   command changes.
@@ -120,8 +130,9 @@ and busybox `wget` tries `::1` without falling back.
   `ui-gen.py`, `report-gen.py` and `contexts-gen.py`.
 - `sitemap.xml`, `robots.txt` — for search engines; `<lastmod>` is set at build time.
 - `nginx.conf` — listens on 8080; gzip, security headers, `/healthz`, the clean
-  URLs (`/docs`, `/examples`, `/docker-swarm-exec-alternatives`, `/releases`,
-  `/datenschutz`), `/compare` → the comparison, and the redirects of
+  URLs (`/docs`, `/docs/<topic>`, `/examples`, `/docker-swarm-exec-alternatives`,
+  `/releases`, `/datenschutz`), `/compare` → the comparison, `/docs/<topic>.html`
+  and `/docs/` → their clean URL, and the redirects of
   removed pages.
 - `Dockerfile` — `nginx-unprivileged` (non-root); bakes `VERSION`, the sitemap
   date and `releases.json` in.

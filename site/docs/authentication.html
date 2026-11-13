@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec authentication and authorization policy — mTLS or shared secret</title>
+  <meta name="description" content="How the swarmexec client authenticates to the agents with mutual TLS or a connection-bound shared secret, and the policy file that denies exec, port-forward or volume actions per service, port, user and operator.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/authentication">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec authentication and authorization policy — mTLS or shared secret">
+  <meta property="og:description" content="How the swarmexec client authenticates to the agents with mutual TLS or a connection-bound shared secret, and the policy file that denies exec, port-forward or volume actions per service, port, user and operator.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/authentication">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec authentication and authorization policy — mTLS or shared secret">
+  <meta name="twitter:description" content="How the swarmexec client authenticates to the agents with mutual TLS or a connection-bound shared secret, and the policy file that denies exec, port-forward or volume actions per service, port, user and operator.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec authentication and authorization policy — mTLS or shared secret",
+        "description": "How the swarmexec client authenticates to the agents with mutual TLS or a connection-bound shared secret, and the policy file that denies exec, port-forward or volume actions per service, port, user and operator.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/authentication",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Authentication & policy",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/authentication"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Authentication &amp; policy</p>
+      <h1>Authentication &amp; policy<span class="cursor">_</span></h1>
+      <p class="tagline">Who may talk to the agents, and what they may do.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#auth">Authentication</a></li>
+          <li><a href="#policy">Authorization policy</a></li>
+        </ol>
+      </div>
+
+      <h2 id="auth">Authentication</h2>
+      <p>The client authenticates to the agent in one of two modes.</p>
+
+      <h3>Mode A — mutual TLS (default)</h3>
+      <p>
+        Set <code>ca</code>, <code>cert</code> and <code>key</code> (all three
+        required). The client verifies the agent against your CA and presents its
+        certificate; the agent authorises and audits you by the certificate's
+        <strong>CN</strong>. This is the default and the recommended posture.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec --ca ca.crt --cert me.crt --key me.key ps</div>
+
+      <h3>Mode B — self-signed agent + shared secret</h3>
+      <p>
+        Simpler to run (one secret, no PKI) — this is what <code>init</code> sets up.
+        Set <code>agent_secret</code> (or <code>agent_secret_file</code>), and either a
+        <code>ca</code> to verify the agent <em>or</em> <code>insecure: true</code> to
+        skip verification. A client cert is optional (but <code>cert</code> and
+        <code>key</code> must be set together or both empty). Your audit identity is the
+        <code>operator</code> value (default: your OS username).
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec --agent-secret "$SECRET" --insecure ps</div>
+      <div class="warn">
+        <strong>insecure</strong> skips the agent's server-certificate check. It does
+        <em>not</em> put the secret at risk: the client never sends it, only a proof
+        computed from the secret and the certificate of the connection it travels on, so
+        a server you did not verify receives nothing that works against a real agent.
+        What remains is that the agent is <strong>not authenticated to you</strong> —
+        whoever answers can read what that session sends them. Prefer a <code>ca</code>
+        on any network you do not trust, and keep the secret out of your shell history
+        (use <code>agent_secret_file</code> or the config file).
+      </div>
+
+      <h3>Upgrading to v1.17.3 — update the agents first</h3>
+      <div class="warn">
+        <strong>A v1.17.3 client cannot authenticate to an older agent.</strong> It sends
+        only the connection-bound proof, and agents before v1.17.3 do not recognise that
+        form — they answer <code>invalid or missing agent secret</code> even though your
+        secret is correct. Update them first:
+        <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+        While a fleet is mixed, <code>legacy_secret: true</code> in the client config
+        also sends the raw secret, with the exposure described above. Remove it once the
+        agents are current, then re-run
+        <code>swarmexec init --force --allow-legacy-secret=false</code> so no client can
+        put the credential on the wire by accident.
+      </div>
+
+      <h2 id="policy">Authorization policy</h2>
+      <p>
+        By default an agent allows every request that passed authentication. A rule file
+        narrows that: which <strong>actions</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>, <code>reclaim.read</code>, <code>container.prune</code>, <code>buildcache.prune</code>, <code>network.prune</code>, <code>volume.prune</code>; globs like
+        <code>volume.*</code> work) for which <strong>services</strong>, <strong>ports</strong>,
+        exec <strong>users</strong> and — with client certificates only — operator
+        <strong>identities</strong>. Within a rule every condition must hold; the first rule
+        that matches decides, and <code>default</code> (required) covers the rest.
+      </p>
+      <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
+default: allow
+rules:
+  - deny: [image.prune.all]
+    reason: no sweeping prune on production
+  - deny: [portforward]
+    ports: [5432, 3306]
+    reason: no forwards to the databases
+  - deny: [exec]
+    users: [root, "0", "0:0"]
+  - deny: ["volume.*"]
+    services: ["prod_*"]</div>
+      <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
+      <p>
+        A refusal reaches the client as <em>permission denied</em> with the rule and its
+        reason, and the same text lands in the audit log. <code>init</code> checks the file
+        before deploying anything, and the agent refuses to start on one it cannot read:
+        an unknown action, a misspelt key or a broken pattern is an error, never a rule that
+        silently matches nothing. Rules on <code>identities</code> are refused while the
+        agents use a shared secret without client certificates — the identity is then
+        whatever the client claims. An exec without <code>-u</code> runs as the image's
+        user, which the agent cannot see; <code>users: [""]</code> matches it. Change the
+        file and re-run <code>init --force</code>; run it without the flag to drop the policy.
+      </p>
+      <div class="note">
+        <strong>What this is not.</strong> A policy prevents <em>accidents</em> and records
+        intent — no sweeping prune on production, no forward onto the database. It is not
+        access control: everything swarmexec changes on services, secrets, networks and
+        stacks goes to the swarm <em>manager</em> with your own Docker credentials and never
+        passes an agent, and whoever holds those can deploy a service that is root on every
+        node. Restrict the Docker credentials for that.
+      </div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/agents" rel="prev"><span class="lbl">← Previous</span>The agents: init, down, doctor</a>
+        <a class="next" href="/docs/contexts" rel="next"><span class="lbl">Next →</span>Docker contexts &amp; SSH</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication" aria-current="page">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec logs — follow Docker Swarm service and stack logs</title>
+  <meta name="description" content="Stream logs of a service, several services or a whole Docker Swarm stack: follow across container replacement, the last container of a crash-looping service, log-format parsing, --min-level and --grep.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/logs">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec logs — follow Docker Swarm service and stack logs">
+  <meta property="og:description" content="Stream logs of a service, several services or a whole Docker Swarm stack: follow across container replacement, the last container of a crash-looping service, log-format parsing, --min-level and --grep.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/logs">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec logs — follow Docker Swarm service and stack logs">
+  <meta name="twitter:description" content="Stream logs of a service, several services or a whole Docker Swarm stack: follow across container replacement, the last container of a crash-looping service, log-format parsing, --min-level and --grep.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec logs — follow Docker Swarm service and stack logs",
+        "description": "Stream logs of a service, several services or a whole Docker Swarm stack: follow across container replacement, the last container of a crash-looping service, log-format parsing, --min-level and --grep.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/logs",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Logs of services and stacks",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/logs"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Logs of services and stacks</p>
+      <h1>Logs of services and stacks<span class="cursor">_</span></h1>
+      <p class="tagline">Every replica, several services or a whole stack, in one stream.</p>
+
+      <h2 id="logs"><code>logs</code> — stream logs</h2>
+      <p>Stream a container's logs from anywhere in the swarm.</p>
+      <div class="cmd">swarmexec logs [flags] <span class="k">&lt;target&gt;…</span></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f</code>, <code>--follow</code></td><td><code>false</code></td><td>keep streaming new log lines</td></tr>
+          <tr><td><code>--tail</code></td><td><code>0</code></td><td>lines from the end to start with (<code>0</code> = all)</td></tr>
+          <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
+          <tr><td><code>--since</code></td><td><code>0</code></td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decides from the lines themselves (default from config, else <code>classic</code>)</td></tr>
+          <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
+          <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
+          <tr><td><code>--stack</code></td><td>—</td><td>follow every service of this stack (in addition to any targets)</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Format-aware parsing &amp; filtering.</strong> <code>--log-format</code>
+        tells the client how to read each line so it can pull out a <em>level</em> and a
+        <em>message</em>: <code>classic</code> extracts a level from a plain text line — a bracketed
+        field (<code>[error]</code>, <code>[ info]</code>), an ALL-CAPS word, or one
+        closed by a colon (<code>error:</code>), which is what keeps a node called
+        <code>node-error-2</code> from turning every line that mentions it red;
+        <code>json</code> parses logstash-style JSON (<code>level</code>/<code>message</code>
+        fields), <code>logfmt</code> parses the <code>key=value</code> style used by many Go
+        apps, the Docker daemon and HashiCorp tools (<code>msg</code>/<code>message</code>,
+        <code>level</code>/<code>lvl</code>/<code>severity</code>, <code>ts</code>/<code>time</code>),
+        <code>gelf</code> parses Graylog GELF JSON (numeric syslog level), and
+        <code>raw</code> passes lines through unchanged. <code>--min-level</code> then
+        drops anything below the chosen level, and <code>--grep</code> keeps only lines
+        whose parsed message matches the regexp.
+      </p>
+      <div class="note">
+        Lines with <strong>no detectable level</strong> always pass the
+        <code>--min-level</code> filter, so multi-line stack traces aren't lost. The same
+        defaults can be set once under the <a href="/docs/configuration#config"><code>logs:</code> config
+        section</a> (flags override).
+      </div>
+      <p>
+        <strong>Follow across container replacement.</strong> With <code>-f</code> on a
+        <em>service</em> or <em>service.slot</em> target, <code>logs</code> keeps
+        following when the container it is streaming is replaced by a rolling update,
+        restart or reschedule: it re-resolves the service's current running container
+        (the same slot, or the same node for a <code>global</code> service), reconnects
+        automatically — like <code>docker service logs -f</code> — and prints a dim
+        notice line (<code>container replaced; reconnected to &lt;id&gt; on &lt;node&gt;</code>).
+        It waits up to ~30s for a replacement to schedule before giving up, and stops
+        cleanly if the service is removed. A bare <em>container-id</em> target has no
+        successor, so it simply stops as before.
+      </p>
+      <div class="note">
+        Detection lives in the client: it learns topology from the swarm manager it is
+        already connected to — the per-node agents are local to their node and cannot see
+        swarm-level replacements.
+      </div>
+      <p>
+        <strong>A service with no running container.</strong> A service that crash-loops,
+        fails its health check or exits on a bad config is the one whose logs you need,
+        and it has nothing running. For a <em>service</em> or <em>service.slot</em> target
+        with no running container, <code>logs</code> shows the newest exited container of
+        each slot instead, says so on stderr
+        (<code>web has no running container; showing the last container (failed: task: non-zero exit (1))</code>),
+        and with <code>-f</code> picks up each new attempt as a replacement. If no task ever
+        got a container (an image that cannot be pulled, no node that satisfies the
+        constraints), there are no logs to read and the error names the newest task's
+        state and reason instead. Several targets and <code>--stack</code> still skip a
+        service with nothing running, with a note.
+      </p>
+      <p>
+        <strong>Several sources at once.</strong> Give several targets, a service with
+        several replicas, or <code>--stack &lt;name&gt;</code>, and <code>logs</code> follows
+        every source together: a service means all of its running replicas, as with
+        <code>docker service logs</code>. Each line is prefixed with where it came from —
+        <code>web.2</code>, or <code>agent@node-3</code> for a global service — padded so the
+        messages line up and coloured on a terminal (never with <code>NO_COLOR</code> set or
+        when piped). Every source keeps its own reconnect across container replacements
+        and its own <code>--log-format auto</code> detection, since services log
+        differently; lines are merged whole, never torn between sources. A source that
+        fails says so in its own lines and does not stop the others; the exit code tells
+        you at the end. One target that is one container streams exactly as before,
+        without a prefix.
+      </p>
+      <div class="note">
+        Lines are merged in the order they arrive, not sorted by time across sources —
+        add <code>-t</code> when the order between services matters. Each source is one
+        stream against its node's agent, which counts toward the agent's
+        <code>-max-streams</code> limit.
+      </div>
+      <div class="prompt"><span class="c">$</span> swarmexec logs -f --tail 100 web
+<span class="c">$</span> swarmexec logs --since 15m -t web
+<span class="c">$</span> swarmexec logs --log-format json --min-level warn web
+<span class="c">$</span> swarmexec logs --log-format auto --min-level warn web   <span class="o"># let the lines decide</span>
+<span class="c">$</span> swarmexec logs --grep 'timeout|refused' -f web
+<span class="c">$</span> swarmexec logs -f api worker db
+<span class="c">$</span> swarmexec logs -f --tail 20 --stack shop</div>
+      <div class="note">
+        <strong>Detecting the format.</strong> <code>--log-format auto</code> — and
+        <kbd>a</kbd> in the TUI log view — scores the lines themselves against every
+        built-in and takes the first one, most specific first, that explains at least two
+        lines in three. GELF is checked before JSON because every GELF line is also valid
+        JSON; a <code>key=value</code> line counts as <code>logfmt</code> only if it carries
+        a <code>msg</code> or <code>level</code> key, so a URL query string and an access log
+        do not. It samples the <em>most recent</em> lines, not the first ones, which are a
+        framework's startup banner rather than the application. When the sample is too small
+        or too mixed it says so and keeps the default instead of guessing: a wrong format is
+        worse than none, because <code>--min-level</code> on a stream parsed wrongly filters
+        nothing. On the pipe the first lines are held back until the verdict (at most 40, at
+        most a second), so the output is never printed in two shapes. Still ahead:
+        per-service detection from an online catalogue keyed by image — the same seam, a
+        different source of the answer.
+      </div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/exec" rel="prev"><span class="lbl">← Previous</span>exec into any Swarm container</a>
+        <a class="next" href="/docs/port-forward" rel="next"><span class="lbl">Next →</span>port-forward into the Swarm</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs" aria-current="page">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,4 +1,4 @@
-/* The docs page (docs.html) in the landing page's look:
+/* The docs (docs.html, docs/*.html), the recipes and the comparison in the landing page's look:
    the same paper and ink, light and dark, Archivo for text and headings,
    JetBrains Mono for code, and the same top bar. Fonts come from fonts/fonts.css.
    This file is the only place the look lives. */
@@ -182,6 +182,21 @@ footer code { font-size: .84em; }
 .legal { margin-top: .7rem; }
 .legal a { color: var(--muted); }
 .legal a:hover { color: var(--aqua); }
+
+/* The docs are one page per topic (docs/*.html) under an index (docs.html):
+   a breadcrumb above the title, previous/next at the end, then the full page list. */
+.crumbs { font-family: var(--mono); font-size: .8rem; color: var(--muted); margin: 0 0 1rem; }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--aqua); }
+.doclist { list-style: none; padding: 0; }
+.doclist li { margin: .55rem 0; color: var(--ink-2); }
+.doclist a { font-weight: 700; }
+.pager { display: flex; justify-content: space-between; gap: 1rem; margin: 3.2rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+.pager a { text-decoration: none; font-weight: 700; max-width: 48%; }
+.pager a:hover { text-decoration: underline; }
+.pager .next { margin-left: auto; text-align: right; }
+.pager .lbl { display: block; font-family: var(--mono); font-weight: 400; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.docnav a[aria-current="page"] { color: var(--aqua); font-weight: 700; }
 
 /* Colours the TUI uses, named rather than hard-coded, so they read on paper in
    both modes and as terminal colours inside a terminal block. */

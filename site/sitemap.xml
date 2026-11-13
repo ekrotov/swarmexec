@@ -3,6 +3,23 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://swarm-exec.cloud-surfers.net/</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/docs</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/install</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/exec</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/logs</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/port-forward</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/stack</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/security-scan</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/secrets</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/volumes</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/mcp</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/agents</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/authentication</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/contexts</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/configuration</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui-services</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui-tabs</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui-nodes</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives</loc><lastmod>__LASTMOD__</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/examples</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/releases</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>

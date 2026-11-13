@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec mcp — let an AI assistant inspect your Docker Swarm</title>
+  <meta name="description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/mcp">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec mcp — let an AI assistant inspect your Docker Swarm">
+  <meta property="og:description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/mcp">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec mcp — let an AI assistant inspect your Docker Swarm">
+  <meta name="twitter:description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec mcp — let an AI assistant inspect your Docker Swarm",
+        "description": "swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/mcp",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "MCP server for AI assistants",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/mcp"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › MCP server for AI assistants</p>
+      <h1>MCP server for AI assistants<span class="cursor">_</span></h1>
+      <p class="tagline">Read-only Swarm access for an AI assistant, per service, by label.</p>
+
+      <h2 id="mcp"><code>mcp</code> — let an AI assistant inspect the swarm</h2>
+      <p>
+        <code>swarmexec mcp</code> is a <strong>Model Context Protocol</strong> server on
+        stdin/stdout. An AI assistant such as Claude Code can then look at the swarm
+        through the same two channels every other command uses — the manager API and the
+        node agents — on any Docker context, <code>ssh://</code> included. It reads
+        status, tasks, logs and resource usage, diffs and checks stack files, and, where
+        you allow it, runs a single non-interactive command in a container. It changes
+        nothing.
+      </p>
+      <div class="cmd">claude mcp add swarmexec -- swarmexec mcp</div>
+      <p class="recipe-link">See the recipe: <a href="/examples#mcp-claude">let Claude inspect your swarm</a>.</p>
+      <p>
+        Every tool takes an optional <code>context</code> argument; without it the server
+        uses the context it was started with (<code>--context</code>,
+        <code>DOCKER_CONTEXT</code>, <code>DOCKER_HOST</code>, docker's current context).
+        Connections are kept per context for the session, as the TUI does on a context
+        switch.
+      </p>
+      <p>
+        <strong>Only the contexts you allow.</strong> The assistant gets the context the
+        server was started with, plus those named with <code>--contexts</code> — nothing
+        else. Every other context on the workstation, production included, does not exist
+        for it: <code>contexts_list</code> leaves it out, name and address, and naming it
+        answers <em>unknown docker context</em>, exactly like a name that does not exist.
+      </p>
+      <div class="cmd">swarmexec mcp --context staging --contexts lab,test</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Tool</th><th>Answers</th><th>Needs</th></tr></thead>
+        <tbody>
+          <tr><td><code>contexts_list</code></td><td>the Docker contexts the assistant may use (see <code>--contexts</code>), and which one the server uses</td><td>—</td></tr>
+          <tr><td><code>cluster_overview</code></td><td>nodes, and replica and health state of the visible services</td><td>—</td></tr>
+          <tr><td><code>services_list</code></td><td>like <code>ps</code>: mode, replicas, image, ports, stack and running containers</td><td><code>enable</code></td></tr>
+          <tr><td><code>service_inspect</code></td><td>one service's configuration and its recent tasks</td><td><code>enable</code></td></tr>
+          <tr><td><code>logs_read</code></td><td>recent logs: tail, since, regexp and minimum level, capped; never follows</td><td><code>logs</code></td></tr>
+          <tr><td><code>stats</code></td><td>live CPU, memory and healthcheck state per container; waits a few seconds for an agent that has not been asked for a while</td><td><code>enable</code></td></tr>
+          <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>names only, and only those the visible services use</td><td><code>enable</code></td></tr>
+          <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>what deploying a stack file would change / what the deploy check finds — nothing is deployed</td><td><code>enable</code> on every service of the file</td></tr>
+          <tr><td><code>security_report</code></td><td>the <a href="/docs/security-scan#securityreport">security report</a>, limited to the visible services and what they use</td><td><code>--allow report</code></td></tr>
+          <tr><td><code>doctor</code></td><td>manager and agent health, as <code>doctor</code></td><td>—</td></tr>
+          <tr><td><code>exec_run</code></td><td>one command, no TTY, no stdin, with a timeout and an output cap</td><td><code>exec</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Access: service labels</h3>
+      <p>
+        What the assistant may see is decided <strong>per service</strong> by service
+        labels — in a compose file, <code>deploy.labels</code>, the way Traefik is
+        configured in Swarm mode. Nothing is visible by default.
+      </p>
+      <div class="prompt"><span class="o"># compose file: deploy.labels, not the container labels</span>
+services:
+  api:
+    image: registry.example.com/api:1.4
+    deploy:
+      labels:
+        swarmexec.mcp.enable: "true"   <span class="o"># the service exists for the assistant</span>
+        swarmexec.mcp.logs: "true"     <span class="o"># it may read the logs</span>
+        swarmexec.mcp.exec: "true"     <span class="o"># it may run a command in a container</span></div>
+      <ul>
+        <li>
+          <strong>Opt-in.</strong> A service without <code>swarmexec.mcp.enable</code> does
+          not exist for the assistant. <code>--default read</code> makes unlabelled
+          services visible (status, tasks, inspect, stats) — never their logs, never exec.
+        </li>
+        <li>
+          <strong>An explicit <code>"false"</code> always wins</strong>, over the default and
+          over the other labels. A value that is neither true nor false counts as false.
+        </li>
+        <li>
+          An unknown key under <code>swarmexec.mcp.</code> — a typo such as
+          <code>swarmexec.mcp.exce</code> — grants nothing and is written to the log file
+          as a warning; so is an access label set as a <em>container</em> label.
+        </li>
+        <li>
+          A service it may not see is <strong>indistinguishable from one that does not
+          exist</strong>: the same <em>no such service</em>, absent from every list, count
+          and stack diff. A visible service without <code>logs</code> or
+          <code>exec</code> answers a plain <em>not permitted</em>.
+        </li>
+      </ul>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--default</code></td><td><code>none</code></td><td>access for services without <code>swarmexec.mcp.enable</code>: <code>none</code> or <code>read</code></td></tr>
+          <tr><td><code>--allow</code></td><td>—</td><td>optional tools: <code>report</code> adds <code>security_report</code></td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
+          <tr><td><code>--contexts</code></td><td>—</td><td>further Docker contexts the assistant may use, besides the one the server starts with; a comma list or repeated. A name that is not a context fails at startup</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Security notes</h3>
+      <ul>
+        <li>
+          <strong>The labels are invisible to the assistant.</strong> They are removed from
+          everything it receives — inspect, lists, task details, stack diffs and checks,
+          error messages — from service and container labels alike, and every result
+          passes one last filter on the way out. It can infer its access from what works,
+          which is accepted.
+        </li>
+        <li>
+          <strong>They cannot be changed through MCP.</strong> There are no write tools.
+          Any future one has to pass a guard that compares the service before and after the
+          change and refuses if an access label would be added, changed or removed.
+        </li>
+        <li>
+          <strong>A service that can reach the Docker daemon is never exec'd into</strong>,
+          whatever its labels say: the Docker socket bound in (the security scan's rule),
+          a bind of the directory it lives in, the Windows pipe, and the swarmexec agent
+          itself. Through the socket, anything could relabel any service. The agent's own
+          <a href="/docs/authentication#policy">authorization policy</a> still applies on top.
+        </li>
+        <li>
+          <strong>Prompt injection.</strong> Log lines and command output are written by
+          the applications. Anyone who can get text into a log can put instructions in
+          front of the assistant; treat <code>logs</code> and <code>exec</code> as access for
+          whoever writes to those logs, too.
+        </li>
+        <li>
+          <strong>Data goes to the model provider.</strong> Whatever a tool returns is sent
+          to the assistant's model. Environment values whose names look like credentials
+          (the scan's <em>secret in environment variable</em> rule) are masked, secrets and
+          configs are listed by name only, and every result is capped in size and says
+          when it was cut — but log lines and command output are passed as they are.
+        </li>
+        <li>
+          <strong>Masking is cosmetic once <code>exec</code> is granted.</strong> A command
+          run in the container can print its environment and read its mounted secrets
+          (<code>env</code>, <code>cat /run/secrets/…</code>), so the masking in inspect,
+          diff and check results protects nothing on a service with
+          <code>swarmexec.mcp.exec</code>. Grant <code>exec</code> only where the
+          assistant — and the model provider — may see everything the container sees.
+        </li>
+        <li>
+          <strong>Audit.</strong> The operator reported to the agents is
+          <code>&lt;you&gt;+mcp</code>, so the audit log shows which actions the assistant
+          took. With mTLS the certificate's CN decides the identity; give the assistant a
+          client certificate of its own to tell it apart there.
+        </li>
+        <li>
+          <strong>ssh cannot ask.</strong> stdin and stdout carry the protocol, so ssh runs
+          in batch mode: a passphrase-protected key must be loaded in
+          <code>ssh-agent</code>, and a host key must already be in
+          <code>known_hosts</code>. The error says which. Logging goes to the log file,
+          never to stdout.
+        </li>
+        <li>
+          An assistant working in the repository can read the labels straight from the
+          compose file — they are hidden from the server's answers, not secret.
+        </li>
+      </ul>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/volumes" rel="prev"><span class="lbl">← Previous</span>Volumes &amp; prune schedule</a>
+        <a class="next" href="/docs/agents" rel="next"><span class="lbl">Next →</span>The agents: init, down, doctor</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp" aria-current="page">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

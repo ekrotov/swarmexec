@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec with Docker contexts and SSH bastions</title>
+  <meta name="description" content="How swarmexec picks the Docker context, works through ssh:// bastions with no local Docker installed, manages contexts with swarmexec context, shares SSH connections and asks for passphrases.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/contexts">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec with Docker contexts and SSH bastions">
+  <meta property="og:description" content="How swarmexec picks the Docker context, works through ssh:// bastions with no local Docker installed, manages contexts with swarmexec context, shares SSH connections and asks for passphrases.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/contexts">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec with Docker contexts and SSH bastions">
+  <meta name="twitter:description" content="How swarmexec picks the Docker context, works through ssh:// bastions with no local Docker installed, manages contexts with swarmexec context, shares SSH connections and asks for passphrases.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec with Docker contexts and SSH bastions",
+        "description": "How swarmexec picks the Docker context, works through ssh:// bastions with no local Docker installed, manages contexts with swarmexec context, shares SSH connections and asks for passphrases.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/contexts",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Docker contexts & SSH",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/contexts"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Docker contexts &amp; SSH</p>
+      <h1>Docker contexts &amp; SSH<span class="cursor">_</span></h1>
+      <p class="tagline">Which cluster, and how to reach it — including through a bastion.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#context">Docker context &amp; SSH</a></li>
+          <li><a href="#context-cmd">context (alias ctx) — manage Docker contexts</a></li>
+          <li><a href="#sshsharing">ssh connection sharing</a></li>
+          <li><a href="#sshprompt">ssh passphrases and questions</a></li>
+        </ol>
+      </div>
+
+      <h2 id="context">Docker context &amp; SSH</h2>
+      <p>
+        <code>--context</code> selects the Docker CLI context used for the manager API.
+        Resolution order: <code>--context</code> → <code>$DOCKER_CONTEXT</code> →
+        <code>$DOCKER_HOST</code> → the active context in <code>~/.docker/config.json</code>
+        → the local socket <code>unix:///var/run/docker.sock</code>.
+      </p>
+      <p>
+        Every label follows the same order. With only <code>$DOCKER_HOST</code> set, the
+        context in use is <code>default</code> — the one that <em>is</em>
+        <code>$DOCKER_HOST</code>, as for the docker CLI — so the TUI status bar shows
+        <code>ctx default ($DOCKER_HOST)</code> and marks <code>default</code> active in
+        the context list, never the active context stored in
+        <code>config.json</code>. Switching to a named context in the TUI goes to that
+        context's own endpoint for the rest of the session; <code>default</code> stays
+        <code>$DOCKER_HOST</code>. The switch also becomes docker's current context,
+        but a shell that still exports <code>$DOCKER_HOST</code> keeps going there.
+      </p>
+      <div class="note">
+        <strong>No local Docker required.</strong> The client never runs the
+        <code>docker</code> binary — it links the Docker Go SDK and speaks the manager
+        API directly, reading any context metadata from files itself. All it needs is a
+        reachable Swarm <strong>manager</strong> endpoint (the node-resolution calls only
+        work against a manager):
+        <ul>
+          <li><code>$DOCKER_HOST</code> at a remote <code>tcp://</code> (mTLS) manager —
+            then there is no Docker installed on your workstation at all;</li>
+          <li>an <code>ssh://</code> context — needs the <code>ssh</code> client (not
+            docker); the manager and agent traffic both tunnel over it;</li>
+          <li>the local socket <code>unix:///var/run/docker.sock</code> — only the default
+            fallback, and the one option that implies a local daemon.</li>
+        </ul>
+        The <code>docker</code> CLI itself is needed only to <em>create</em> named
+        contexts (<code>docker context create</code>) — or create them with
+        <code>swarmexec context create &lt;name&gt; --docker-host …</code>, so the docker
+        CLI is no longer needed even for that; use <code>$DOCKER_HOST</code> to skip
+        named contexts entirely. (<code>init</code> reads local <code>docker login</code>
+        credentials only for a <em>private</em> agent image — not for the public default.)
+      </div>
+      <p>
+        <strong>SSH bastion.</strong> If the context host is an <code>ssh://</code>
+        endpoint, the manager API is tunnelled over SSH — and so is the agent
+        connection: since the nodes' <code>node:9443</code> endpoints usually aren't
+        routable from your workstation, the client tunnels the agent's gRPC traffic
+        over the same SSH host automatically. No extra flags needed.
+      </p>
+      <div class="prompt"><span class="c">$</span> docker context create swarm --docker host=ssh://ops@manager.example.com
+<span class="c">$</span> swarmexec --context swarm exec web -- sh</div>
+
+      <h2 id="context-cmd"><code>context</code> (alias <code>ctx</code>) — manage Docker contexts</h2>
+      <p>
+        Create and manage the Docker contexts that <code>--context</code> (and
+        <code>$DOCKER_CONTEXT</code>) resolve for the manager API. swarmexec writes
+        docker's own on-disk store, so contexts made here are interchangeable with the
+        <code>docker</code> CLI — and you no longer need docker installed even to create
+        one. The built-in <code>default</code> context cannot be removed.
+      </p>
+
+      <p><code>context create &lt;name&gt;</code> — create a context pointing at a manager host (takes exactly one name argument):</p>
+      <div class="cmd">swarmexec context create <span class="k">&lt;name&gt;</span> --docker-host &lt;endpoint&gt;</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--docker-host</code></td><td>—</td><td>required — docker daemon endpoint: <code>ssh://</code> | <code>tcp://</code> | <code>unix://</code> | <code>npipe://</code></td></tr>
+          <tr><td><code>--description</code></td><td>—</td><td>optional description</td></tr>
+          <tr><td><code>--ssh-jump</code></td><td>—</td><td>ssh jump host(s) for an <code>ssh://</code> context, comma-separated (multi-hop <code>ProxyJump</code> / <code>-J</code>); injected into both the Docker-API and the agent-tunnel connections</td></tr>
+          <tr><td><code>--use</code></td><td><code>false</code></td><td>also make it the current context</td></tr>
+        </tbody>
+      </table></div>
+
+      <p><code>context ls</code> (alias <code>list</code>) — list contexts; columns <code>NAME&nbsp;&nbsp;CURRENT&nbsp;&nbsp;DOCKER&nbsp;ENDPOINT</code> (the active one marked <code>*</code>):</p>
+      <div class="cmd">swarmexec context ls  [--json]</div>
+
+      <p><code>context use &lt;name&gt;</code> — set the current context:</p>
+      <div class="cmd">swarmexec context use <span class="k">&lt;name&gt;</span></div>
+
+      <p><code>context rm &lt;name&gt; [name...]</code> (alias <code>remove</code>) — remove one or more contexts:</p>
+      <div class="cmd">swarmexec context rm <span class="k">&lt;name&gt;</span> [name...]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f</code>, <code>--force</code></td><td><code>false</code></td><td>required to remove the <em>current</em> context (its selection resets to <code>default</code>)</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="prompt"><span class="c">$</span> swarmexec context create prod --docker-host ssh://ops@manager --use
+<span class="c">$</span> swarmexec context ls
+<span class="c">$</span> swarmexec --context prod ps</div>
+
+      <h2 id="sshsharing">ssh connection sharing</h2>
+      <p>
+        With an <code>ssh://</code> context, swarmexec reaches the cluster over ssh twice
+        over: the Docker manager API through ssh's connection helper, and every node
+        agent through its own tunnel to the same host. Each exec, log stream,
+        port-forward, stats poll and refresh cycle used to open a fresh ssh connection
+        — a TCP handshake, a key exchange and an authentication per dial, and again per
+        jump host — against a bastion that was connected a moment earlier.
+      </p>
+      <p>
+        swarmexec now lets them share one transport, using OpenSSH's own
+        <code>ControlMaster</code>: the first connection to a destination opens it, and
+        every later one becomes a channel on it. Measured on a three-node cluster behind
+        a jump host, <code>swarmexec doctor</code> went from <strong>8 authentications
+        and 3.6&nbsp;s</strong> to <strong>2 and 1.0&nbsp;s</strong>. Nothing about the
+        traffic itself changes, and the effect grows with how much you do in one session.
+      </p>
+      <ul>
+        <li>
+          The control sockets live in <code>$XDG_RUNTIME_DIR/swarmexec/ssh/</code>
+          (falling back to your cache directory), created <code>0700</code> — a control
+          socket is a live authenticated session, so it stays inside your own tree and
+          never in <code>/tmp</code>.
+        </li>
+        <li>
+          One socket per <em>destination and route</em>: two contexts reaching the same
+          manager through different jump hosts do not share, because they are not the
+          same connection.
+        </li>
+        <li>
+          The shared connection outlives the command by <strong>60&nbsp;s</strong>, so
+          the next one is cheap, and then it exits on its own. Nothing of swarmexec's is
+          left holding a connection afterwards.
+        </li>
+        <li>
+          A socket left behind by a master that was killed is harmless: ssh finds it
+          dead and opens an ordinary connection instead.
+        </li>
+        <li>
+          Not available on Windows, whose OpenSSH does not implement connection sharing.
+          Set <code>SWARMEXEC_SSH_MULTIPLEX=0</code> to switch it off everywhere else —
+          worth knowing if you configure <code>ControlPath</code> yourself, since
+          swarmexec's setting is passed on the ssh command line and takes precedence over
+          <code>~/.ssh/config</code>.
+        </li>
+      </ul>
+
+      <h2 id="sshprompt">ssh passphrases and questions</h2>
+      <p>
+        The ssh processes swarmexec starts have no terminal of their own, so ssh cannot
+        ask you anything directly. With <strong>OpenSSH 8.4 or newer</strong> (macOS and
+        current Linux distributions) swarmexec asks for it, through ssh's
+        <code>SSH_ASKPASS</code>: a key's passphrase, a password, or whether to trust a
+        host key it has not seen before.
+      </p>
+      <ul>
+        <li>
+          In <code>swarmexec ui</code> the question opens as a dialog
+          (<kbd>Enter</kbd> sends, <kbd>Esc</kbd> cancels). Everywhere else — and while
+          the TUI is still starting — it is asked on the terminal, hidden like ssh does.
+        </li>
+        <li>
+          You answer once. Connections that ask the same question at the same moment
+          share the answer, and afterwards they all ride the
+          <a href="#sshsharing">shared connection</a>. swarmexec does not store
+          anything you type.
+        </li>
+        <li>
+          <kbd>Esc</kbd> cancels the sign-in, and nothing asks again on its own — not even
+          the TUI's ten-second refresh. Press <kbd>r</kbd> or switch context to be asked
+          again.
+        </li>
+        <li>
+          <strong>Older OpenSSH, Windows, or switched off</strong>
+          (<code>SWARMEXEC_SSH_ASKPASS=0</code>): when the sign-in fails, the TUI offers
+          to run <code>ssh-add</code> for the key ssh would use, hands you the terminal
+          for its passphrase and tries again; the CLI names the exact
+          <code>ssh-add</code> command. Both need a running <code>ssh-agent</code>. A
+          host key you have never accepted cannot be asked for there: connect once with
+          plain <code>ssh</code> first.
+        </li>
+        <li>
+          If you set <code>SSH_ASKPASS_REQUIRE</code> yourself, swarmexec leaves your
+          askpass setup alone.
+        </li>
+      </ul>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/authentication" rel="prev"><span class="lbl">← Previous</span>Authentication &amp; policy</a>
+        <a class="next" href="/docs/configuration" rel="next"><span class="lbl">Next →</span>Configuration, flags &amp; exit codes</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts" aria-current="page">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

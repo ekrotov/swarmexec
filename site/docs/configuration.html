@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec configuration — config file, global flags and exit codes</title>
+  <meta name="description" content="The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/configuration">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec configuration — config file, global flags and exit codes">
+  <meta property="og:description" content="The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/configuration">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec configuration — config file, global flags and exit codes">
+  <meta name="twitter:description" content="The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec configuration — config file, global flags and exit codes",
+        "description": "The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/configuration",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Configuration, flags & exit codes",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/configuration"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Configuration, flags &amp; exit codes</p>
+      <h1>Configuration, flags &amp; exit codes<span class="cursor">_</span></h1>
+      <p class="tagline">The config file, the flags every command takes, and what the exit codes mean.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#config">Configuration</a></li>
+          <li><a href="#global">Global flags</a></li>
+          <li><a href="#config-show">config show — inspect config</a></li>
+          <li><a href="#exit">Exit codes</a></li>
+        </ol>
+      </div>
+
+      <h2 id="config">Configuration</h2>
+      <p>
+        Settings come from four layers, each overriding the one before it:
+      </p>
+      <div class="cmd">built-in defaults  <span class="k">→</span>  config file  <span class="k">→</span>  environment  <span class="k">→</span>  command-line flags</div>
+      <p>
+        A flag only overrides when you actually pass it, so a value in the file or the
+        environment survives unless explicitly overridden.
+      </p>
+
+      <h3 id="config-file">Config file</h3>
+      <p>The default path is the first of these that is set:</p>
+      <ol>
+        <li><code>$SWARMEXEC_CONFIG</code></li>
+        <li><code>$XDG_CONFIG_HOME/swarmexec/config.yaml</code></li>
+        <li><code>~/.config/swarmexec/config.yaml</code></li>
+      </ol>
+      <p>
+        Override it with <code>--config &lt;path&gt;</code>. The file is YAML; a missing
+        file is fine, a malformed one is an error. It is written <code>0600</code>
+        (it may hold the shared secret). The log file lives next to it by default —
+        <code>~/.config/swarmexec/swarmexec.log</code> — unless you set
+        <code>--log-file</code>. Keys:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Type</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>ca</code></td><td>string</td><td>CA cert that verifies the agent's server certificate (mTLS)</td></tr>
+          <tr><td><code>cert</code></td><td>string</td><td>client certificate — its CN is your operator identity</td></tr>
+          <tr><td><code>key</code></td><td>string</td><td>client private key</td></tr>
+          <tr><td><code>port</code></td><td>int</td><td>agent port (default <code>9443</code>)</td></tr>
+          <tr><td><code>addr_mode</code></td><td>string</td><td><code>hostname</code> (default) or <code>ip</code> — how to dial a node</td></tr>
+          <tr><td><code>server_name</code></td><td>string</td><td>override the TLS server name used to verify the agent</td></tr>
+          <tr><td><code>agent_secret</code></td><td>string</td><td>shared secret for a self-signed agent</td></tr>
+          <tr><td><code>agent_secret_file</code></td><td>string</td><td>read the secret from this file (takes precedence over <code>agent_secret</code>)</td></tr>
+          <tr><td><code>insecure</code></td><td>bool</td><td>skip agent server-cert verification (self-signed agents)</td></tr>
+          <tr><td><code>legacy_secret</code></td><td>bool</td><td>also send the <em>raw</em> shared secret, for agents older than v1.17.3 — off by default; see below</td></tr>
+          <tr><td><code>operator</code></td><td>string</td><td>audit identity when no client cert is used (default: OS username)</td></tr>
+          <tr><td><code>logs.format</code></td><td>string</td><td>default log format for <code>logs</code> and the TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (empty = <code>classic</code>)</td></tr>
+          <tr><td><code>logs.min_level</code></td><td>string</td><td>default minimum level: <code>trace</code>..<code>fatal</code> (omit for no level filter)</td></tr>
+          <tr><td><code>ui.dim</code></td><td>float</td><td>how far the backdrop behind an open overlay is faded, a fraction <code>0</code>–<code>1</code> (default <code>0.6</code>; <code>0</code> = no dimming)</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The <code>logs:</code> section sets defaults for format-aware log parsing and
+        filtering; the <code>logs</code> command's <code>--log-format</code> /
+        <code>--min-level</code> flags override them:
+      </p>
+      <div class="cmd">logs:
+  format: auto        <span class="k"># auto | classic | json | logfmt | gelf | raw</span>
+  min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
+      <p>Inspect the effective, merged configuration (secret masked) with:</p>
+      <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
+
+      <h3 id="addr-mode">addr-mode</h3>
+      <p>
+        <code>hostname</code> (default) dials the node's reported hostname;
+        <code>ip</code> dials its advertised address. Use <code>ip</code> when node
+        hostnames aren't resolvable from your workstation — <code>init</code> writes
+        <code>addr_mode: ip</code> into the generated config for exactly that reason. The
+        swarm leader reports <code>0.0.0.0</code> for itself; the client recovers its real
+        address from the raft peer list automatically.
+      </p>
+
+      <h3 id="env-vars">Environment variables</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Variable</th><th>Sets</th></tr></thead>
+        <tbody>
+          <tr><td><code>SWARMEXEC_CONFIG</code></td><td>config file path</td></tr>
+          <tr><td><code>SWARMEXEC_CA</code> / <code>_CERT</code> / <code>_KEY</code></td><td>mTLS material</td></tr>
+          <tr><td><code>SWARMEXEC_PORT</code></td><td>agent port</td></tr>
+          <tr><td><code>SWARMEXEC_ADDR_MODE</code></td><td><code>hostname</code> / <code>ip</code></td></tr>
+          <tr><td><code>SWARMEXEC_SERVER_NAME</code></td><td>TLS server name</td></tr>
+          <tr><td><code>SWARMEXEC_AGENT_SECRET</code> / <code>_FILE</code></td><td>shared secret / secret file</td></tr>
+          <tr><td><code>SWARMEXEC_INSECURE</code></td><td>skip verification (<code>1/true/yes/on</code>)</td></tr>
+          <tr><td><code>SWARMEXEC_OPERATOR</code></td><td>audit identity</td></tr>
+          <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>overlay backdrop dim (<code>ui.dim</code>)</td></tr>
+          <tr><td><code>SWARMEXEC_KEYS</code></td><td>path to the TUI keymap file (default <code>keys.yaml</code> next to the config)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> switches ssh connection sharing off (see <a href="/docs/contexts#sshsharing">ssh connection sharing</a>)</td></tr>
+          <tr><td><code>SWARMEXEC_SSH_ASKPASS</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> stops ssh from asking through swarmexec (see <a href="/docs/contexts#sshprompt">ssh passphrases and questions</a>)</td></tr>
+          <tr><td><code>DOCKER_CONTEXT</code></td><td>Docker context for the manager API</td></tr>
+          <tr><td><code>XDG_CONFIG_HOME</code></td><td>base for the default config path</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="global">Global flags</h2>
+      <p>These persistent flags apply to every command:</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--config</code></td><td>—</td><td>config file path (default <code>~/.config/swarmexec/config.yaml</code>)</td></tr>
+          <tr><td><code>--context</code></td><td>—</td><td>docker context for the manager API; supports <code>ssh://</code> (also <code>$DOCKER_CONTEXT</code>)</td></tr>
+          <tr><td><code>--port</code></td><td><code>9443</code></td><td>agent port</td></tr>
+          <tr><td><code>--addr-mode</code></td><td><code>hostname</code></td><td>node dial address: <code>hostname</code> | <code>ip</code></td></tr>
+          <tr><td><code>--ca</code></td><td>—</td><td>CA certificate to verify the agent (mTLS)</td></tr>
+          <tr><td><code>--cert</code></td><td>—</td><td>client certificate (mTLS; CN is the operator identity)</td></tr>
+          <tr><td><code>--key</code></td><td>—</td><td>client private key (mTLS)</td></tr>
+          <tr><td><code>--server-name</code></td><td>—</td><td>override TLS server name for agent verification</td></tr>
+          <tr><td><code>--agent-secret</code></td><td>—</td><td>shared secret for a self-signed agent</td></tr>
+          <tr><td><code>--agent-secret-file</code></td><td>—</td><td>file to read the shared secret from</td></tr>
+          <tr><td><code>--insecure</code></td><td><code>false</code></td><td>skip agent server-certificate verification</td></tr>
+          <tr><td><code>--operator</code></td><td>OS username</td><td>operator identity reported for audit</td></tr>
+          <tr><td><code>--log-level</code></td><td><code>info</code></td><td>log verbosity: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> disables logging entirely)</td></tr>
+          <tr><td><code>--log-file</code></td><td>—</td><td>log file path (default <code>swarmexec.log</code> next to the config file)</td></tr>
+          <tr><td><code>--info</code></td><td>—</td><td>show version, license, and contact info</td></tr>
+          <tr><td><code>--version</code></td><td>—</td><td>print the client and protocol version</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        <strong>Logging.</strong> swarmexec logs in structured form (Go
+        <code>slog</code>, text format) to the log file <em>and</em> an in-memory ring
+        buffer. In the TUI, logs are never written to the terminal (that would corrupt
+        the screen) — the ring buffer feeds a live in-app viewer instead
+        (see <a href="/docs/tui#tui">The TUI</a>). <code>--log-level off</code> disables logging
+        altogether; a log-file that can't be opened is non-fatal (it falls back to the
+        ring buffer only).
+      </div>
+
+      <h2 id="config-show"><code>config show</code> — inspect config</h2>
+      <p>Prints the effective, merged client configuration with the secret masked.</p>
+      <div class="cmd">swarmexec config show  [--json]</div>
+
+      <h2 id="exit">Exit codes</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>0</code></td><td>success</td></tr>
+          <tr><td><code>1</code></td><td>stack diff found a difference (and <code>--format json</code> still printed it)</td></tr>
+          <tr><td><code>2</code></td><td>usage / flag / configuration error, or an aborted interactive selection</td></tr>
+          <tr><td><code>125</code></td><td>transport failure — unreachable manager or agent, dial/TLS error, stream error, aborted confirmation (mirrors Docker's <code>125</code>)</td></tr>
+          <tr><td><code>N</code></td><td>for <code>exec</code>, the remote command's own non-zero exit code, propagated verbatim</td></tr>
+        </tbody>
+      </table></div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/contexts" rel="prev"><span class="lbl">← Previous</span>Docker contexts &amp; SSH</a>
+        <a class="next" href="/docs/tui" rel="next"><span class="lbl">Next →</span>The TUI</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration" aria-current="page">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec TUI — the Stacks/Services tab</title>
+  <meta name="description" content="The Stacks/Services tab of the swarmexec TUI: services and containers grouped by stack, live CPU, memory and health, the security-risks overlay, service inspect and placement, and the env editor.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/tui-services">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec TUI — the Stacks/Services tab">
+  <meta property="og:description" content="The Stacks/Services tab of the swarmexec TUI: services and containers grouped by stack, live CPU, memory and health, the security-risks overlay, service inspect and placement, and the env editor.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/tui-services">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec TUI — the Stacks/Services tab">
+  <meta name="twitter:description" content="The Stacks/Services tab of the swarmexec TUI: services and containers grouped by stack, live CPU, memory and health, the security-risks overlay, service inspect and placement, and the env editor.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec TUI — the Stacks/Services tab",
+        "description": "The Stacks/Services tab of the swarmexec TUI: services and containers grouped by stack, live CPU, memory and health, the security-risks overlay, service inspect and placement, and the env editor.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/tui-services",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "TUI: the Stacks/Services tab",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/tui-services"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › TUI: the Stacks/Services tab</p>
+      <h1>TUI: the Stacks/Services tab<span class="cursor">_</span></h1>
+      <p class="tagline">Services and their containers, and everything you can do to them.</p>
+
+      <h2 id="tui-services">Stacks/Services tab</h2>
+      <p>
+        Tab&nbsp;<kbd>1</kbd>, formerly labelled <em>Containers</em>. It is one tree,
+        <strong>stack&nbsp;→ service&nbsp;→ container</strong>, and it is where exec,
+        logs, port-forwarding, inspect and the service editors live.
+      </p>
+      <p>
+        <strong>:latest version check.</strong> Swarm pins <code>:latest</code> to a digest at
+        deploy time, so a service tagged <code>:latest</code> actually runs a fixed image.
+        swarmexec resolves that against the registry (using your local docker credentials) and
+        annotates the service row <strong>right after the image URI</strong>: the
+        <strong>real version</strong> in parentheses — read from the image's
+        <code>org.opencontainers.image.version</code> label — and an
+        <strong>up-arrow&nbsp;↑</strong> when the registry's current <code>:latest</code> is a
+        newer digest than the one the service is pinned to (e.g.
+        <code>nginx:latest (1.4.0) ↑</code>).
+        Best-effort and cached: registry errors just leave the row unannotated. The inspect
+        overlay's <code>IMAGE</code> section shows the same version and, when a newer image
+        exists, a selectable <em>newer&nbsp;version&nbsp;available</em> row — move onto it and
+        press <kbd>u</kbd> (or <kbd>Enter</kbd>) to <strong>update the service</strong>.
+      </p>
+      <p>
+        <strong>Setting a version with <kbd>u</kbd> — not only when an update exists.</strong>
+        <kbd>u</kbd> is <strong>not gated on an upgrade being offered</strong>. It is available on
+        <em>any</em> service inspect whose image tags swarmexec could read from the registry —
+        version-pinned <em>and</em> <code>:latest</code> services alike — and from <em>any</em> row
+        of the overlay, so you never have to hunt for the hint. Setting the <strong>same</strong> version again,
+        <strong>pinning</strong> what is currently running, or going back to an
+        <strong>older</strong> tag are all normal uses; you don't have to wait for an upgrade to
+        exist. The <strong>footer wording tells you which situation you are in</strong>:
+        <code>u&nbsp;update&nbsp;version</code> when a newer version was found (the
+        <em>newer&nbsp;version&nbsp;available</em> row is there too, carrying a concrete target),
+        and <code>u&nbsp;set&nbsp;version</code> when it wasn't.
+      </p>
+      <p>
+        What <kbd>u</kbd> opens depends on what the registry knows. On a
+        <strong>version-pinned</strong> service with a <strong>newer version</strong> it is the
+        <strong>version picker</strong>: an input whose autocomplete suggests the <strong>newer
+        same-family tags</strong>, highest first and prefilled with the highest. On one that is
+        <strong>already on the newest</strong> tag it is the same picker, only the suggestions
+        fall back to <strong>every tag the repo lists</strong> (prefilled with the running tag) —
+        that is how you pin or roll back. A service on <code>:latest</code> gets the picker too,
+        with all known tags: choosing a concrete version there is how you <strong>pin a
+        <code>:latest</code> service off the floating tag</strong>, which is exactly the fix the
+        <code>unpinned-image</code> risk finding (see the security-risks overlay below) asks for.
+        The one exception is a <code>:latest</code> service with a <strong>digest update
+        pending</strong> — that stays the <strong>single confirm</strong> on the registry's new
+        digest it has always been, because a picker there would invite typing
+        <code>latest</code>, which resolves to the bare tag and would silently drop the very
+        digest pinning that the update exists to refresh.
+      </p>
+      <p>
+        In the picker the suggestion list is capped at <strong>25</strong> entries (a busy repo
+        can list hundreds) and the field stays <strong>free-text</strong>, so you can
+        <strong>type any existing tag — including an older one to pin or roll back</strong> to a
+        known-good release. A typed tag is validated against the repo (a tag it doesn't list is
+        rejected), and choosing an older one shows a <strong>downgrade warning</strong> before it
+        applies. In every case the change is one <code>ServiceUpdate</code> / rolling update,
+        behind a confirm. If the registry returned <strong>no tags at all</strong> and there is no
+        concrete target to fall back on — a private or unreachable registry, or a service pinned
+        by digest — you get an explanatory <strong>notice and nothing is changed</strong>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>/</kbd></td><td>open the search bar (filters by service / container / node)</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>fold / unfold, walking all three levels. <kbd>h</kbd> folds the row under the cursor — a stack folds the whole group, an expanded service folds its containers — and where there is nothing left to fold it steps <em>out</em> to the parent instead, so repeated presses walk up container&nbsp;→ service&nbsp;→ stack. <kbd>l</kbd> expands the row under the cursor, or descends to its first child when it is already open</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>on a container: open the action menu; on a service or a stack: expand / collapse it</td></tr>
+          <tr><td><kbd>s</kbd></td><td>toggle stack grouping — grouped tree ⟷ flat service list (see below)</td></tr>
+          <tr><td><kbd>L</kbd></td><td>logs (capital <kbd>L</kbd>) — on a container its own logs, on a service the aggregated logs of all its tasks; on a <strong>stack</strong> row every container of every service in the stack, each line tagged <code>[svc.slot]</code> (or <code>[svc@node]</code> for a global service), starting from the last 50 lines each — like <code>swarmexec logs --stack</code>. Up to 64 containers; the <em>(no stack)</em> row is a grouping, not a stack, and opens nothing</td></tr>
+          <tr><td><kbd>!</kbd></td><td>open the security-risks overlay for the whole service list (see below)</td></tr>
+          <tr><td><kbd>p</kbd></td><td>port-forward the task under the cursor — opens the Port Forward dialog (container port, local port, address; see the Forwards tab below)</td></tr>
+          <tr><td><kbd>i</kbd></td><td>inspect the node under the cursor — a navigable overlay with a tabular summary; move the selection with <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd>, <kbd>y</kbd>/<kbd>Enter</kbd> copies the selected line, a <strong>tab strip</strong> at the top names the three views and <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> select table / stats / raw daemon JSON directly while <kbd>t</kbd> cycles them (<kbd>Esc</kbd>/<kbd>q</kbd>/<kbd>i</kbd> closes). On a <strong>service</strong> the overlay also edits it: <kbd>s</kbd> scale, <kbd>f</kbd> force-update, <kbd>p</kbd> ports, <kbd>l</kbd> labels, <kbd>e</kbd> env, <kbd>n</kbd> networks, <kbd>S</kbd> secrets, <kbd>v</kbd> mounts, <kbd>A</kbd> aliases; <kbd>D</kbd> diagnoses <em>why</em> it isn't running everywhere; <kbd>X</kbd> removes it</td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove a service <strong>straight from the tree</strong> (capital <kbd>X</kbd>, i.e. Shift+x) — no detour through the inspect overlay. What it acts on follows the row under the cursor: on a <strong>service</strong> row it removes that service; on a <strong>container</strong> row it removes that container's <strong>owning service</strong>, because a single task cannot be removed on its own — Swarm would immediately reschedule it; on a <strong>stack</strong> row it removes the <strong>whole stack</strong>, exactly what <code>docker stack rm</code> removes: every service, secret, config and network carrying that stack's <code>com.docker.stack.namespace</code> label. The confirm names the counts it found (&ldquo;4 services, 2 secrets, 1 network&rdquo;) before anything goes, and the networks are retried for a few seconds because a service's endpoints take a moment to drain after its tasks stop &mdash; <code>docker stack rm</code> gives up there and leaves the network behind. Whatever refuses is listed by name afterwards, so you know exactly what is left. The <em>(no stack)</em> row removes nothing: it is a display grouping, not a stack. It goes through the <strong>same confirm</strong> as the inspect <kbd>X</kbd> below — it <strong>permanently deletes</strong> the service and stops all its tasks, cannot be undone, and afterwards offers to delete any now-orphaned secrets. A fixed capital key, not a remappable keymap action; the footer lists it in red as <span class="tc-red"><em>X remove</em></span> and the <kbd>?</kbd> overlay lists it too. The <kbd>X</kbd> inside the inspect overlay is unchanged</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Every service is shown (even one scaled to zero), each row rendered like a
+        <code>docker service ls</code> line — name, mode, running/desired count, image
+        and published ports — and coloured by how it is actually doing: the
+        running/desired count sets the base colour (aqua = all tasks up, orange =
+        partial, red = down, grey = scaled to zero), and a failing
+        <strong>healthcheck</strong> overrides it (see below). A <code>▸</code>/<code>▾</code>
+        marker shows whether a service is collapsed or expanded; its running containers
+        nest underneath. A service that is <strong>mid rolling-update</strong> carries a
+        coloured badge on its tree row — <span class="tc-yellow">⟳&nbsp;updating</span> or
+        <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span> — and the same status appears
+        in the service inspect overlay; it clears once the update completes.
+      </p>
+      <p>
+        <strong>A job is counted by what it finished, not by what is running.</strong>
+        A <code>replicated-job</code> or <code>global-job</code> is not meant to stay up, so
+        its row shows <strong>completed/total</strong> instead of running/desired: a job that
+        ran through reads <strong>3/3</strong> in aqua where it used to read
+        <strong>0/1</strong> in red — the display of an outage, for a service that did
+        exactly what it was asked to do. Swarm reports a replicated job's <em>desired</em>
+        count as its <code>MaxConcurrent</code>, which is why the live count says nothing
+        useful once the job is done. The stack row above it counts the job the same way, so a
+        nightly backup no longer drags its whole stack into orange between runs.
+      </p>
+      <p>
+        <strong>Coloured by healthcheck, not only by replica count.</strong> A service
+        row's colour used to come from running vs desired alone — so a service whose
+        <em>every</em> container was failing its healthcheck still rendered as a calm aqua
+        <strong>3/3</strong>. The count was true and the row was misleading. Swarm's task
+        state does not help here either: a task reads <code>running</code> while its
+        container fails every probe, so the verdict has to come from the node. A failing
+        probe is now treated as degradation of the same kind as a missing replica:
+      </p>
+      <ul>
+        <li><strong>every</strong> checked container unhealthy → the row goes
+          <strong class="tc-red">red</strong>, which is as bad as none running;</li>
+        <li><strong>some</strong> of them unhealthy →
+          <strong class="tc-amber">orange</strong>, like a partial rollout;</li>
+        <li>all healthy → the colour the replica count already gave the row,
+          <strong>unchanged</strong>;</li>
+        <li>containers that declare <strong>no healthcheck</strong> → the row is
+          <strong>not recoloured at all</strong>. Nothing is known about them, and guessing
+          would be the same mistake in the other direction.</li>
+      </ul>
+      <p>
+        <strong>The markers.</strong> A service row carries
+        <span class="tc-red">✖&nbsp;N&nbsp;unhealthy</span> in red, or
+        <span class="tc-yellow">◌&nbsp;N&nbsp;starting</span> in yellow while the probes
+        have not passed yet; a container leaf carries
+        <span class="tc-red">✖&nbsp;unhealthy</span> /
+        <span class="tc-yellow">◌&nbsp;starting</span>. Unhealthy outranks starting — it
+        is the one that needs acting on. A stack row rolls the same marker up over everything
+        inside it (see <em>Grouped by stack</em> below). A <strong>healthy</strong> container gets
+        <strong>no</strong> marker, and neither does one <strong>without</strong> a
+        healthcheck, so the marker keeps meaning something. These sit alongside the
+        <code>cpu</code>/<code>mem</code> resource markers below, and health comes
+        <strong>first</strong> in the row: it is the thing contradicting the count standing
+        next to it.
+      </p>
+      <div class="note">
+        <strong>Where the verdict comes from — and what it costs.</strong> Nothing extra: it
+        rides along with the resource readings below, same agent, same call, <strong>no
+        additional API request</strong>. The container list the agent already fetches on each
+        sampling pass carries the verdict in its status line
+        (<code>Up 3 days (healthy)</code>) — the same string <code>docker ps</code> prints.
+        The parser is deliberately <strong>strict</strong>: anything it does not recognise
+        becomes <em>no verdict</em> rather than a guess, so if the daemon ever rewords that
+        line swarmexec stops claiming to know instead of reporting a failing container as
+        healthy. Same precondition as the usage numbers, too — it needs agents from this
+        release or newer, so a cluster that has not been re-rolled shows no health markers
+        at all until you roll them out with
+        <a href="/docs/agents#reroll"><code>swarmexec init --force</code></a>.
+      </div>
+      <p>
+        <strong>Live CPU &amp; memory markers.</strong> Next to those badges a row can also
+        carry what it is actually <em>using</em> right now — until now swarmexec could only
+        show what the scheduler had <em>booked</em> (see the Nodes tab below). A container
+        or a service whose usage crosses <strong>70%</strong> gets an orange marker and
+        <strong>90%</strong> a red one, at the end of the row: the resource named in
+        <strong>words</strong> — <code>cpu</code> or <code>mem</code> — followed by the
+        percentage (<span class="tc-red">cpu&nbsp;94%</span>,
+        <span class="tc-amber">mem&nbsp;91%</span>). Both appear when both are hot.
+        Words rather than symbols, and at the same width: a marker whose meaning has to be
+        looked up is not doing its job, and letters cannot fail to render in a terminal.
+        Below 70% nothing is drawn at all, so the markers stay a signal rather than
+        wallpaper. A <strong>service</strong> row takes the <strong>worst of its
+        replicas</strong>, not an average — an average hides the one container that is
+        about to die, which is exactly the one worth seeing. (Absolute memory on a service
+        row is the sum across replicas; the percentage is the peak.)
+      </p>
+      <p>
+        <strong>What the percentages are of.</strong> Each one is measured against what
+        that container may actually use: <strong>its own limit when it has one, the node's
+        capacity when it does not</strong>. That distinction is the whole point — 91% of a
+        256&nbsp;MB limit means an OOM kill is close, 91% of a 64&nbsp;GB node is a
+        different conversation. The inspect overlay's <a href="/docs/tui#tui">stats view</a> prints
+        both sides of that division per container and names the basis under the table.
+      </p>
+      <div class="note">
+        <strong>Where the numbers come from — and why they arrive late.</strong> Usage is
+        not in the manager API: container stats are <strong>per node</strong>. They come
+        from a node-local agent RPC (<code>Stats</code>); each agent samples its own
+        containers in the background and answers from memory, so the client just polls it
+        on the refresh cycle it already has. Two consequences worth knowing. A
+        <strong>CPU percentage is a delta between two readings</strong>, so it does not
+        exist until the agent has taken two (a few seconds) — while it isn't ready the
+        views show <code>…</code>, never <code>0%</code>; memory needs no delta and appears
+        from the first reading. And an agent only samples <strong>while someone is actually
+        looking</strong>: it stops about a minute after the last request, and forgets its
+        readings rather than serving stale ones. So the very first numbers after you open
+        the UI take a moment to fill in. That is deliberate — an agent nobody is watching
+        should cost nothing.
+      </div>
+      <div class="note">
+        <strong>No markers anywhere? Check the agent version.</strong> Usage is
+        supplementary, and it degrades quietly: a node whose agent is unreachable — or
+        <strong>older than this release and therefore unaware of the <code>Stats</code>
+        RPC</strong> — simply contributes no readings. The markers stay off, the node
+        block stays absent, and everything else is untouched; the client also backs off
+        from such a node rather than probing it every refresh. On a cluster that has not
+        been re-rolled yet there are therefore <strong>no usage numbers and no health
+        markers at all</strong>
+        until the agents are updated — roll them out with
+        <a href="/docs/agents#reroll"><code>swarmexec init --force</code></a>. This is by far the most
+        likely reason you see nothing.
+      </div>
+
+      <p>
+        <strong>Grouped by stack.</strong> <code>docker stack deploy</code> labels every
+        service it creates with <code>com.docker.stack.namespace</code>. swarmexec reads
+        that label off the service spec the manager already returned — Swarm has no stack
+        object, and this is the only link — and nests the tree three levels deep:
+        <strong>stack&nbsp;→ service&nbsp;→ container</strong>. A stack row shows the stack
+        name, how many services are under it and the <strong>summed running/desired</strong>
+        task count (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloured by exactly the same
+        rule as a service row — the summed running/desired count, <strong>with the same
+        healthcheck override</strong> on top of it. Roll-up counters follow it when they are
+        non-zero: <span class="tc-yellow">⟳&nbsp;n</span> — services in that stack currently
+        <strong>mid rolling-update</strong> — <span class="tc-red">🛡&nbsp;n</span> —
+        services with an <strong>actionable security finding</strong>, the same shield the
+        service rows carry — and then the health marker,
+        <span class="tc-red">✖&nbsp;N&nbsp;unhealthy</span> or
+        <span class="tc-yellow">◌&nbsp;N&nbsp;starting</span>, summed over every container
+        of every service in the stack. So a folded stack still tells you whether anything
+        inside it needs attention. Health rolling up matters most here: the stack row is the
+        level an operator scans <em>first</em>, so a misleading &ldquo;everything is up&rdquo;
+        is worse there than one tier down, not better.
+      </p>
+      <p>
+        Services created with <code>docker service create</code> carry no stack label; they
+        are collected under <strong><code>(no stack)</code></strong>, which always sorts
+        last so it never pushes real stacks down the list. <strong>Nothing is hidden</strong>
+        — every service still appears exactly once. Stacks sort by name and start expanded,
+        so the grouped tree shows the same services the flat one did; folds you make survive
+        the auto-refresh.
+      </p>
+      <p>
+        Grouping is <strong>on by default</strong> but only takes effect when at least one
+        service in the cluster actually carries a stack label — on a cluster without stacks
+        the tree looks exactly as it always did, with no pointless <code>(no stack)</code>
+        parent. Press <kbd>s</kbd> to switch between the grouped tree and the flat service
+        list (the footer lists it as <em>s stacks</em>); with no stack labels anywhere it
+        says so rather than redrawing an identical tree. The key is remappable as
+        <code>stack_group</code> in <a href="/docs/tui#tui">keys.yaml</a>.
+      </p>
+      <p>
+        Searching (<kbd>/</kbd>) is unchanged: the filter still matches service, container
+        and node. A stack the filter empties disappears from the tree, and each stack row's
+        counts describe what actually ended up under it — so the numbers follow the filter
+        instead of advertising services you filtered away.
+      </p>
+
+      <p>
+        The action menu offers <strong>logs</strong>, <strong>bash</strong>,
+        <strong>sh</strong>, <strong>shell as user…</strong> (prompts for a user/UID,
+        like <code>docker exec -u</code>, for images whose default user lacks the tools
+        or permissions you need) and <strong>port forward</strong> (unavailable shells are
+        greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
+        and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
+      </p>
+
+      <p>
+        <strong>Security risks (<kbd>!</kbd>).</strong>
+        Every time the service list is fetched, swarmexec runs a set of small
+        <strong>static analyzers over each service's spec</strong> — the same spec the
+        manager already returned, so there is no extra API call, no agent involvement and
+        nothing is executed inside your containers. A service with a finding worth acting
+        on is marked with a leading <strong>🛡</strong> in the service tree, in a
+        fixed-width slot ahead of the name, so the shields line up as a vertical scan
+        column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>, and
+        <kbd>w</kbd> inside it to write a
+        <a href="/docs/security-scan#securityreport">cluster-wide Markdown report</a> — which covers more than
+        the overlay does, since it adds the checks that belong to the cluster rather than
+        to a service.
+      </p>
+      <p>
+        The eight checks that ship today. The ones that can mark a service come first;
+        the purely informational ones are grouped at the end:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Severity</th><th>What it flags</th></tr></thead>
+        <tbody>
+          <tr><td><code>docker-socket</code> — “Docker socket mounted in”</td><td><span class="tc-red">high</span></td><td><strong>the most serious finding here.</strong> A <strong>bind mount</strong> whose source is the Docker daemon socket — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> or any source path ending in <code>/docker.sock</code>. Anything in that container can talk to the socket, and anything that can talk to the socket can <strong>start a privileged container on that node</strong> — so it is effectively <strong>root on the host</strong>, whatever the container itself runs as. <strong>Read-only does not mitigate it</strong>: the socket is an API, not a file whose contents matter — the finding says so itself when the mount is read-only. It names the target path the socket is mounted at</td></tr>
+          <tr><td><code>added-capability</code> — “capability <em>NAME</em> added”</td><td><span class="tc-red">high</span> / <span class="tc-yellow">medium</span></td><td>a Linux capability the service adds to its container. Swarm has <strong>no <code>--privileged</code></strong>, so capabilities are how a service asks for extra host power — which makes the added set worth reading. Eight are <strong>high</strong>, each reported with the reason it carries: <code>ALL</code> (grants every capability), <code>SYS_ADMIN</code> (near-root: mount, namespace and cgroup control), <code>SYS_MODULE</code> (can load kernel modules), <code>SYS_PTRACE</code> (can inspect and control other processes), <code>SYS_RAWIO</code> (raw I/O access to devices), <code>DAC_READ_SEARCH</code> (bypasses file read permission checks), <code>NET_ADMIN</code> (full control of the node's networking), <code>NET_RAW</code> (can forge and sniff raw packets). <strong>Any other</strong> added capability is <strong>medium</strong> — a privilege beyond the default set. One finding per added capability; both spellings are recognised, in any case (<code>CAP_SYS_ADMIN</code> and <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — “runs on the host network”</td><td><span class="tc-red">high</span></td><td>the service is attached to the network named <code>host</code>: the container shares the <strong>node's network stack</strong>, so there is no network isolation and swarm's published-port mapping no longer applies. It can reach anything the node can — <strong>including services bound to localhost</strong>, which are usually assumed to be out of a container's reach</td></tr>
+          <tr><td><code>unconfined</code> — “seccomp disabled” / “AppArmor disabled”</td><td><span class="tc-red">high</span></td><td>the container's kernel-level sandbox has been switched off: <strong>seccomp set to <code>unconfined</code></strong> — the container may make any syscall, which removes the main barrier to kernel exploits — or <strong>AppArmor confinement disabled</strong>. The two are reported separately, so a service that turns off both gets two findings</td></tr>
+          <tr><td><code>root-user</code> — “runs as root”</td><td><span class="tc-red">high</span></td><td>the spec pins the container to <strong>root explicitly</strong> — <code>User=root</code> or uid <code>0</code> (numeric forms like <code>00</code> or <code>+0</code> are caught too; only the user part of <code>user:group</code> is looked at)</td></tr>
+          <tr><td><code>secret-in-env</code> — “secret in environment variable”</td><td><span class="tc-red">high</span></td><td>a credential-looking env key holds a <strong>literal value in the service spec</strong>, readable by anyone who can read the spec. Use a Docker secret or the <code>*_FILE</code> convention instead</td></tr>
+          <tr><td><code>root-user</code> — “no user set”</td><td>low</td><td><strong>no</strong> user is set at all, so the container runs as the image's own default user, which is often root. <strong>Informational only, and it does not mark the service</strong>: an unset user is the Swarm default on nearly every service, and whether it really is root depends on the image's <code>USER</code>, which the manager spec doesn't reveal</td></tr>
+          <tr><td><code>no-resource-limits</code> — “no resource limits”</td><td>low</td><td>the task sets <strong>neither a CPU nor a memory limit</strong>, so a runaway container can consume the whole node and starve everything else on it. <strong>Informational only</strong> — see below</td></tr>
+          <tr><td><code>unpinned-image</code> — “image not pinned”</td><td>low</td><td>the image is pinned to <code>:latest</code>, or carries <strong>no tag at all</strong> (which resolves to <code>:latest</code>) — the running version can change without a spec change, so a deploy is not reproducible. A <strong>digest-pinned</strong> image (<code>…@sha256:…</code>) is exactly reproducible and is never flagged, and a colon that belongs to a registry host's port (<code>registry:5000/img</code>) is not mistaken for a tag. <strong>Informational only</strong> — see below</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Why the informational checks never mark a service.</strong> Only a finding
+        above <em>low</em> — high or medium — makes a service actionable and puts the
+        <strong>🛡</strong> on its tree row. The low ones (<code>no-resource-limits</code>,
+        <code>unpinned-image</code> and <code>root-user</code>'s “no user set”) are true of
+        <strong>almost every service in a real cluster</strong>: badging them would put a
+        shield on nearly every row and destroy the at-a-glance signal the marker exists for.
+        They are not swept under the rug, though — once a service is flagged for something
+        else, its low findings are listed with the rest in the overlay, so you see them where
+        they are actually worth reading.
+      </p>
+      <div class="note">
+        <strong>No secret value is ever displayed.</strong> Of the eight checks only
+        <code>secret-in-env</code> looks at environment variables at all, and its finding
+        names only the env var's <strong>key</strong>; the value is never read into
+        the finding, never rendered and never copied. The check is also written to stay
+        quiet: it matches whole <code>_</code>-delimited tokens
+        (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
+        <code>PASSPHRASE</code>, <code>SECRET</code>, <code>TOKEN</code>,
+        <code>APIKEY</code>, <code>CREDENTIAL(S)</code>, <code>PRIVATEKEY</code>, and the
+        pairs <code>API_KEY</code>, <code>ACCESS_KEY</code>, <code>PRIVATE_KEY</code>,
+        <code>SECRET_KEY</code>, <code>CLIENT_SECRET</code>, <code>AUTH_TOKEN</code>), so
+        <code>COMPASS</code>, <code>PASSENGER_PORT</code> or <code>BYPASS_AUTH</code> are
+        not reported. Keys that merely <em>reference</em> a credential are exempt
+        (<code>_FILE</code>, <code>_PATH</code>, <code>_URL</code>, <code>_URI</code>,
+        <code>_NAME</code>, <code>_ID</code>, <code>_TYPE</code>, <code>_ENABLED</code>,
+        <code>_REQUIRED</code>, <code>_LENGTH</code>, <code>_TIMEOUT</code>,
+        <code>_TTL</code>, <code>_EXPIRY</code>, <code>_ALGORITHM</code>), and so are
+        values that plainly aren't a credential — an absolute path, a boolean, a number.
+      </div>
+      <p>
+        The overlay lists <strong>every flagged service</strong> (“N of M service(s)
+        flagged · 8 checks”), grouped by service, each finding on its own line with a severity dot —
+        <span class="tc-red">● high</span>,
+        <span class="tc-yellow">● medium</span>, <span class="tc-grey">● low</span> —
+        a short title and a one-line explanation. Findings are ordered worst-first. Once a
+        service is flagged for something actionable, its informational low findings are
+        listed too. If the service under the cursor is among them it is pre-highlighted and
+        scrolled into view. When nothing is flagged the overlay says so explicitly
+        <strong>and names every check that ran</strong> (“Checked: Docker socket mounted in,
+        added Linux capabilities, host network, seccomp / AppArmor disabled, container user,
+        secrets in environment variables, missing resource limits, unpinned image.”), so an
+        all-clear tells you what it actually covers; when the service list hasn't loaded yet
+        it says <em>nothing has been scanned</em> rather than giving a false all-clear.
+        <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> (or <kbd>q</kbd>, or <kbd>!</kbd>
+        again) closes.
+      </p>
+      <div class="note">
+        The scan is an <strong>extensible registry</strong> of analyzers, not a fixed list:
+        a new check surfaces in both the tree marker and the overlay automatically. The
+        overlay's own wording comes from that registry too — the check count in its header
+        and the “Checked:” list are <strong>generated from the analyzers themselves</strong>,
+        so they cannot drift from what actually ran the way a hardcoded list does. The key
+        is remappable as <code>security_risks</code> in
+        <a href="/docs/tui#tui">keys.yaml</a>.
+      </div>
+      <p>
+        <kbd>i</kbd> opens an <strong>inspect overlay</strong> for the node under the
+        cursor — on a <strong>service</strong> it shows <code>docker service inspect</code>,
+        and on a <strong>container</strong> leaf the <strong>swarm task inspect</strong>
+        (the manager's view of that instance: state, slot, node, container id, container
+        spec, resources and status history). Both come from the swarm manager. The overlay
+        opens on a <strong>tabular, operator-first summary</strong> with sections ordered
+        by operational relevance — networks, labels, volumes/mounts and secrets (and
+        configs) first, then ports, image, mode, env, resources, placement and update
+        policy (plus state, node and container id for a container/task), with ids and
+        timestamps last. The overlay's first line, inside the border and pinned above the
+        scrolling content, is a <strong>tab strip</strong> naming its <strong>three</strong>
+        views — <code>table 1&nbsp;&nbsp; stats 2&nbsp;&nbsp; raw json 3</code> — with the
+        current one in the accent colour; it is the same shape as the main window's tab bar,
+        a label followed by the digit that selects it. <kbd>1</kbd>, <kbd>2</kbd> and
+        <kbd>3</kbd> jump <strong>straight</strong> to table, stats and raw daemon JSON, and
+        <kbd>t</kbd> still cycles <strong>table&nbsp;→ stats&nbsp;→ raw json</strong> and
+        back. The footer hint is simply <em>1-3/t view</em>, and the border title no longer
+        repeats the current view's name — it just reads <code>inspect service foo</code>,
+        because the strip already says where you are. Note this tabular view is the
+        manager's task view, not a full node-local <code>docker container inspect</code> of
+        the running container — a real container inspect via the agent is planned.
+      </p>
+      <p>
+        <strong>The stats view.</strong> The middle of the three is <em>live resource
+        usage</em> — the same readings that mark the tree, so opening it costs no extra
+        call and the numbers keep refreshing while it is open. It is a <strong>table</strong>,
+        one row per container of the service (or the single container of a task inspect):
+      </p>
+      <div class="cmd"><span class="k">RESOURCE USAGE</span>
+<span class="tc-grey">  measured on each node, refreshed with the tree</span>
+
+<span class="k">  CONTAINER    NODE       HEALTH   CPU                     MEMORY</span>
+  gl_gitlab.1  docker3v2  healthy  0.07 / 4.00 cores (2%)  6.823GiB / 8GiB (85%)
+
+<span class="tc-grey">  limits are the container's own where it has one, otherwise the node's capacity</span></div>
+      <p>
+        A table, because a bare percentage is not readable if you do not already know how
+        the tool measures — <em>94% of what?</em> Every cell carries <strong>its own
+        units</strong>, so <code>0.07 / 4.00 cores</code> needs no legend and the percentage
+        sits next to the figure it is a percentage <em>of</em>; and several replicas are
+        compared by <strong>scanning a column</strong> rather than by comparing stacked
+        blocks. The <strong>HEALTH</strong> column words the verdict —
+        <code>healthy</code>, <code>unhealthy</code>, <code>starting</code>, or
+        <code>none</code> for a container that declares no healthcheck. <code>none</code> and
+        <code>healthy</code> are deliberately <strong>different words</strong> rather than a
+        word and a blank: <em>no healthcheck configured</em> and <em>the probe passes</em> are
+        different facts, and a blank would read as the second. A container the agents did not
+        report — unreachable node, an agent too old for the <code>Stats</code> RPC, or one
+        started since the last reading — shows <code>no reading</code> in both resource
+        columns rather than a zero, which would read as idle.
+      </p>
+      <p>
+        <strong>The last minutes.</strong> Under the table each container gets two
+        sparklines, CPU and memory, over the last readings — so you can tell a service that
+        <em>stands</em> at 90% from one that just <em>shot up</em> to 90%. Both use a fixed
+        0–100% scale of the same denominator as the table, so two containers' lines compare
+        and an idle one stays flat. The history is kept in memory only, for at most
+        15 minutes, and readings keep arriving while the view is open. A
+        <strong>blank</strong> is a stretch without readings — a node that did not answer, a
+        cluster you were not looking at — never a drop to zero.
+      </p>
+      <div class="cmd"><span class="k">LAST MINUTES</span>
+  gl_gitlab.1  cpu ▁▁▂▂▁▁▃▇██▇▅▃▂▁   ▁▁▂▂▁▁▁  mem ▆▆▆▆▆▆▇▇▇▇▇▇▇▇▇   ▇▇▇▇▇▇▇  last 9 min
+<span class="tc-grey">  share of each container's limit (or its node), oldest left; a blank is no reading, not zero</span></div>
+      <p>
+        The footnote under the table names the <strong>denominator</strong>: the container's
+        own limit where it has one, otherwise the node's capacity. That is the thing that
+        makes a percentage mean something — 85% of an 8&nbsp;GiB limit and 85% of a 64&nbsp;GiB
+        node are different conversations. Memory is shown in <strong>binary units</strong>
+        (MiB/GiB), the same units the node detail uses and the same ones docker itself
+        reports, so the same figure never reads differently in two places. With more than one
+        measured container the view adds a roll-up under the table: CPU and memory of the
+        <strong>worst replica</strong> — not an average, which hides the one container about
+        to be OOM-killed — plus the total memory across them. The <kbd>?</kbd> help overlay's
+        <kbd>t</kbd> entry reads <em>cycle table / stats / raw JSON</em> accordingly.
+      </p>
+      <p>
+        The overlay is <strong>navigable and selectable</strong>, not just a plain scroll:
+        data lines are individually selectable and you move the cursor line by line with
+        <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd> (section headers and blank
+        lines are skipped). <kbd>y</kbd> always copies the selected line to your clipboard
+        over OSC52 — the same yank mechanism used elsewhere — so you can grab a single id,
+        mount or address without selecting text by hand. <kbd>Enter</kbd> also copies, except
+        on a collapsible <strong>NETWORKS</strong> row, where it instead expands/collapses that
+        row (see below). All three views
+        (the tabular summary, the stats view and the raw JSON, reached with
+        <kbd>1</kbd>–<kbd>3</kbd> or cycled with <kbd>t</kbd>)
+        are selectable and copyable line by line. A <strong>footer always lists the available keys</strong>,
+        so what you can do is visible at a glance; for a service the footer also shows the
+        edit keys below.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></td><td>move the selection between data lines (headers/blanks skipped)</td></tr>
+          <tr><td><kbd>y</kbd></td><td>copy the selected line to the clipboard (OSC52) — always</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>on a collapsible <strong>NETWORKS</strong> row, expand/collapse that level — the rows nest two deep, a network and its <code>N containers</code> drill-down; on any other line, copy it (OSC52)</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>select a view directly — <strong>1</strong> tabular summary, <strong>2</strong> <strong>stats</strong> (live CPU / memory, see below), <strong>3</strong> raw daemon JSON; these are the digits the tab strip shows</td></tr>
+          <tr><td><kbd>t</kbd></td><td>cycle the three views — tabular summary → <strong>stats</strong> (live CPU / memory, see below) → raw daemon JSON → back; all three selectable, and the tab strip at the top marks the one you are in</td></tr>
+          <tr><td><kbd>a</kbd></td><td>actions menu — every service editor and action in one list, no Shift needed (service only; see below)</td></tr>
+          <tr><td><kbd>s</kbd> <kbd>f</kbd> <kbd>p</kbd> <kbd>l</kbd> <kbd>e</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>A</kbd></td><td>edit the service — scale / force-update / ports / labels / env / networks / secrets / mounts / aliases (service only; <kbd>S</kbd> is capital, Shift+s, to distinguish it from <kbd>s</kbd> scale; <kbd>A</kbd> is capital too; see below)</td></tr>
+          <tr><td><kbd>Esc</kbd> <kbd>q</kbd> <kbd>i</kbd></td><td>close the overlay</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The <strong>NETWORKS</strong> section is <strong>collapsible</strong>, and it answers
+        “which address is this reached at” before you expand anything: each attached network
+        shows as a collapsed row
+        <code>+ &lt;network&gt; 🔒 vip 10.0.5.2/24 (2 dns names)</code>. A
+        <strong>🔒 lock icon</strong> after the network name marks an <strong>encrypted</strong>
+        overlay network (data-plane encryption, <code>--opt encrypted</code>); its absence means
+        unencrypted. On a <strong>service</strong> inspect the address is labelled
+        <code>vip</code> — the service's virtual IP on that network, the address the swarm load
+        balancer answers on, taken from the manager's <code>ServiceInspect</code>
+        (<code>Endpoint.VirtualIPs</code>). On a <strong>container/task</strong> inspect it is
+        labelled <code>addr</code>: that container's own address there. A service in
+        <strong>dnsrr</strong> endpoint mode has no VIP at all — that is by design, not missing
+        data — so instead of a blank the expanded network carries the line
+        <code>no vip — dnsrr endpoint mode, the DNS name resolves to the containers</code>. The
+        <strong>ingress</strong> network is listed here too, even though no spec ever mentions it
+        — swarm attaches the service to it by itself (see below). It is appended
+        <strong>after</strong> the networks the spec declares, never interleaved with them, and
+        its header reads <code>+ ingress  vip 10.0.0.250/24  (routing mesh)</code>: the
+        <code>(routing mesh)</code> note stands in for a dns-name count that could only ever say
+        <code>(0 dns names)</code>.
+      </p>
+      <p>
+        Move onto a network row and press <kbd>Enter</kbd> to expand or collapse it. Expanded, it
+        lists the DNS names that resolve to the service/container on that network — the service
+        name, <code>tasks.&lt;service&gt;</code> and any custom aliases — so you can see under
+        which DNS name it is reached and which aliases it carries, per network. Below them sits a
+        second collapsible row, <code>+ 2 containers</code> (singularised,
+        <code>+ 1 container</code>), and <kbd>Enter</kbd> on <em>that</em> opens the deepest level: one
+        column-aligned row per container, <code>web.1 10.0.1.5/24 host-a</code> — task name, its
+        address on this network, and the node it runs on (replicated tasks are named
+        <code>&lt;service&gt;.&lt;slot&gt;</code>, global ones
+        <code>&lt;service&gt;.&lt;node&gt;</code>, having no slot).
+      </p>
+      <p>
+        What is listed is filtered on the task's <strong>desired</strong> state, not its current
+        one — every task the manager still wants running appears, including ones that are only
+        <code>preparing</code>, <code>assigned</code> or <code>starting</code>: they already hold
+        their address, and during a rolling update that is most of them, so filtering on the
+        current state would empty the drill-down exactly when it is most interesting. A task the
+        manager has given up on — desired state <code>shutdown</code>, i.e. replaced by a rolling
+        update, scaled away or failed — is not listed: its address has been released and may
+        already belong to a different container, so showing it would be actively wrong. A task
+        that is not serving traffic yet carries its state in brackets at the end of its row,
+        <code>web.1 10.0.1.5/24 host-a (starting)</code>; a running one has no suffix. The rows
+        come from a manager-API <code>TaskList</code> filtered to the service and are best-effort
+        — an API error just leaves the drill-down empty. The two levels collapse independently;
+        collapsing the network hides the container level with it.
+      </p>
+      <p>
+        The <strong>ingress</strong> row is the one that is in no spec. Swarm joins a service to
+        the ingress network on its own as soon as the service publishes a port in
+        <strong>ingress</strong> mode, and that attachment appears nowhere in the service spec —
+        yet its <code>vip</code> is the address the <strong>routing mesh</strong> actually answers
+        on, which is the first thing you want when a published port misbehaves. So it gets a row
+        of its own, appended after the networks the spec declares and shaped slightly
+        differently. No service DNS name resolves on ingress, so where another network counts its
+        names this header carries the note <code>(routing mesh)</code>; expanded, the row lists
+        instead the <strong>ingress-published ports</strong> that put the service there — the
+        reason the row exists at all — one line each,
+        <code>published 2222 -&gt; 22/tcp</code>. Ports published in <strong>host</strong> mode
+        bypass the routing mesh and are deliberately not listed there. Below them it drills down
+        to the containers exactly like every other network row: the same
+        <code>+ 1 container</code> level, with each container's own address on the ingress
+        network. A service that publishes no ingress port has no ingress VIP — and therefore no
+        such row at all.
+      </p>
+      <p>A GitLab service publishing SSH on <code>2222</code>, both levels expanded:</p>
+      <div class="cmd">  - dbnet  vip 10.0.1.137/24  (2 dns names)
+      gl_gitlab
+      tasks.gl_gitlab
+      - 1 container
+          gl_gitlab.1  10.0.1.54/24  docker3v2
+  - ingress  vip 10.0.0.250/24  (routing mesh)
+      published 2222 -&gt; 22/tcp
+      - 1 container
+          gl_gitlab.1  10.0.0.64/24  docker3v2</div>
+      <p>
+        Copying inside <strong>NETWORKS</strong> yields the <strong>address without its
+        mask</strong> — <code>10.0.5.2</code>, the form you paste into a <code>curl</code> or a
+        <code>ping</code>: on a network row its vip/addr, on a container row that container's
+        address. A network row that has no address (dnsrr) copies the network name, as before. On
+        both kinds of collapsible row <kbd>Enter</kbd> toggles; on every other line it copies (and
+        <kbd>y</kbd> always copies).
+      </p>
+      <p>
+        When you inspect a <strong>service</strong> (not a container/task leaf, whose
+        overlay stays read-only), the overlay footer also exposes several edit keys, each a
+        manager-API <code>ServiceUpdate</code> that triggers a rolling update /
+        reconciliation of the service's tasks.
+      </p>
+      <p>
+        <strong>Start with <kbd>a</kbd> — the actions menu.</strong> On a service inspect
+        (service only), <kbd>a</kbd> opens a single list of every editor and action the
+        overlay offers, so you don't have to remember ~14 case-sensitive keys
+        (<kbd>d</kbd>/<kbd>D</kbd>, <kbd>s</kbd>/<kbd>f</kbd>,
+        <kbd>p</kbd>/<kbd>l</kbd>/<kbd>e</kbd>, <kbd>n</kbd>/<kbd>S</kbd>/<kbd>v</kbd>,
+        <kbd>r</kbd>/<kbd>P</kbd>, <kbd>R</kbd>, <kbd>X</kbd>). Every entry shows its direct key in front, so the menu is also where the keys are learned. It is the discoverable,
+        <strong>no-Shift</strong> path — and not a reduced one: choosing an entry closes the
+        menu and opens exactly what the direct key opens, so the two are <strong>equivalent</strong>,
+        not variants with different behaviour. The entries, in order:
+        <em>update image version…</em> (<em>set image version…</em> when no newer one was
+        found — pinning or rolling back to a tag of your choosing is just as valid),
+        <em>diff spec (previous → current)</em>, <em>roll back to the previous version</em>,
+        <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
+        <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
+        <em>edit secrets</em>, <em>edit mounts</em>, <em>edit resources</em>,
+        <em>edit placement</em>, <span class="tc-red"><em>remove service</em></span>
+        — the destructive one, marked in red — and <em>Cancel</em>. Move with
+        <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> jump to the first/last entry),
+        <kbd>Enter</kbd> selects; <kbd>Esc</kbd>, or the <em>Cancel</em> entry, closes the
+        menu without doing anything. The image-version picker is <strong>first</strong>,
+        because setting a version is the most ordinary service change there is; its direct
+        key <kbd>u</kbd> still works from any row of the inspect. When the image is one no
+        version can be chosen for — an untagged reference, or a registry that will not list
+        the repo's tags, typically a private one the client has no credentials for — the
+        entry stays in the list and <strong>says so</strong> rather than quietly
+        disappearing, and points at the <code>docker service update --image</code> that
+        does work. Each entry's direct key:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>d</kbd></td><td>diff — shows a unified diff of the service's <em>current</em> spec against its <em>previous</em> one (what the last rolling update changed), using Swarm's <code>PreviousSpec</code>. Changed fields are listed grouped by field with <span class="tc-red">- removed</span> / <span class="tc-green">+ added</span> lines (image, mode/replicas, env, labels, networks, aliases, secrets, mounts, ports, placement constraints, spread preferences, resource limits/reservations); unchanged fields are omitted. If the service has never been updated (no previous spec) it says so. Read-only overlay — <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> closes</td></tr>
+          <tr><td><kbd>R</kbd></td><td>roll back to the previous version (capital <kbd>R</kbd>, i.e. Shift+r, to distinguish it from <kbd>r</kbd> edit resources) — the counterpart of the <kbd>d</kbd> diff above: it undoes the last rolling update. The confirm dialog shows <strong>that same diff reversed</strong> under “This will undo:”, because that is what the rollback will actually change — a line the update <em>added</em> is listed as <span class="tc-red">- removed</span>, and one it <em>removed</em> comes back as <span class="tc-green">+ added</span>. The preview is capped at <strong>12</strong> entries, followed by an “… and N more” note pointing back at <kbd>d</kbd> for the full diff (if only metadata changed it says there are no field-level differences). Confirming does a <strong>server-side</strong> rollback — one manager-API <code>ServiceUpdate</code> with <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>not</em> a client-side re-apply of <code>PreviousSpec</code> — so the <strong>manager</strong> drives it and honours the service's own <strong>rollback configuration</strong> (parallelism, delay, failure action), and reports progress as the update state <code>rollback_started</code>: exactly the <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span> badge described above, on the tree row and in this overlay. A service that has <strong>never been updated</strong> has no previous spec — you get an explanatory notice, not an error. Also reachable from the <kbd>a</kbd> actions menu. Like <kbd>d</kbd>, <kbd>D</kbd> and <kbd>X</kbd> this is a fixed inspect key, not a remappable keymap action</td></tr>
+          <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
+          <tr><td><kbd>f</kbd></td><td>force-update — redeploys the service without changing its spec (the equivalent of <code>docker service update --force</code>: bumps <code>TaskTemplate.ForceUpdate</code>), after a confirm. Every task is restarted / rescheduled, which is how you unstick a service sitting in an <strong>incomplete state</strong> (e.g. <code>1/2</code> replicas). One <code>ServiceUpdate</code> (rolling update)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the service tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>
+          <tr><td><kbd>D</kbd></td><td>diagnose placement (capital <kbd>D</kbd>) — answers <em>why a service isn't running everywhere you expect</em> in one view, instead of chasing it through several <code>docker</code> commands. For a <strong>global</strong> service it lists every node with ✓ running or ✗ and the reason it is excluded (<strong>availability</strong> drain/pause, a <strong>down</strong> state, an unmet placement <strong>constraint</strong>, or a <strong>platform</strong> mismatch) — which is why a 3-node cluster can legitimately show <code>2/2</code> (the third node is not eligible). For a <strong>replicated</strong> service it lists each task that is <em>not</em> running with the scheduler's own message (constraints, insufficient resources, image-pull errors, …). Constraints that can't be checked client-side (<code>engine.labels.*</code>) are noted, not guessed. Read-only overlay</td></tr>
+          <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code>. The add/edit input is a wide field that wraps a long entry onto further rows instead of scrolling it out of sight; <kbd>Enter</kbd> saves</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small form with two wrapping fields, <strong>key</strong> and <strong>value</strong>, so a long key or a long value such as a Traefik rule stays readable as a whole; <kbd>Enter</kbd> moves to the next field</td></tr>
+          <tr><td><kbd>e</kbd></td><td>edit environment variables — opens the service's whole environment as <strong>text</strong> in a small <strong>vim-style editor</strong>, one <code>KEY=VALUE</code> per line (e.g. <code>LOG_LEVEL=debug</code>); the key is required, the value may be empty and may itself contain <code>=</code>. A value with newlines, such as <code>GITLAB_OMNIBUS_CONFIG</code>, is written as a heredoc: <code>KEY&lt;&lt;EOF</code>, the value's lines, then a line <code>EOF</code>. Lines starting with <code>#</code> are comments, so commenting a line out removes that variable. <kbd>:w</kbd> checks every line first — an error names the line and puts the cursor on it — then shows which keys are added, changed and removed and applies them in one <code>ServiceUpdate</code> (rolling update). <kbd>:list</kbd> switches to the staged list editor with your edits carried over. See <a href="#env-editor">the env editor</a> below for the keys</td></tr>
+          <tr><td><kbd>n</kbd></td><td>edit networks — a staged list editor over the service's network attachments; since an entry is just a name it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code>. <strong>DNS aliases</strong> are edited from here too: select a network in this editor and press <kbd>A</kbd> to open a staged list of the service's DNS aliases <em>on that network</em> (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>y</kbd> copy / <kbd>u</kbd> undo / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel); applying replaces that network's aliases in one <code>ServiceUpdate</code>. Works even when the service has no aliases yet. (You must apply a newly-added network first before you can set its aliases.)</td></tr>
+          <tr><td><kbd>S</kbd></td><td>edit secrets (capital <kbd>S</kbd>, i.e. Shift+s, to distinguish it from <kbd>s</kbd> scale) — the same staged list editor as networks over the secrets the service references; an entry is just a name, so it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes secret names</strong> (suggesting secrets the service doesn't already use, or type one yourself). Applying replaces the service's secret references in one <code>ServiceUpdate</code> (rolling update); each secret is mounted at <code>/run/secrets/&lt;name&gt;</code>. Works even when the service currently has no secrets</td></tr>
+          <tr><td><kbd>v</kbd></td><td>edit mounts — a staged list editor over the service's volumes and bind mounts. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small <strong>form</strong> instead of a single text field: a <strong>bind mount</strong> checkbox, a <strong>source</strong> (when the box is unchecked it's a <em>volume</em> name with <strong>autocomplete</strong> of existing cluster volumes; when checked it's a <em>host path</em>), a <strong>container path</strong>, and a <strong>read-only</strong> checkbox. The host path and the container path are wide fields that wrap a long path onto further rows, so the whole path stays visible; <kbd>Enter</kbd> moves to the next field. (Under the hood each entry is still <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind sources and all targets must be absolute paths. Applying replaces the mounts in one <code>ServiceUpdate</code> (rolling update). <strong>Bind-mount guard (soft):</strong> if the staged list contains any bind mounts, applying first shows a warning listing the nodes the service could be scheduled on (computed from placement constraints plus node role/labels/availability) and reminds you that each bind source must <strong>already exist</strong> on all of them — swarmexec cannot verify host paths (the agent has no host filesystem access), so bind paths are not autocompleted or existence-checked; it is advisory only</td></tr>
+          <tr><td><kbd>r</kbd></td><td>edit resource limits — a small form to set, change or clear the service's <strong>CPU</strong> and <strong>memory</strong> limits (and, optionally, reservations). CPU is given in cores (e.g. <code>0.5</code>, <code>2</code>); memory as a human size (e.g. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Leaving a field <strong>empty clears</strong> that limit (Swarm then treats it as unlimited). A reservation may not exceed its limit. Applying does one <code>ServiceUpdate</code> (rolling update); existing Pids limits and device/generic reservations are preserved</td></tr>
+          <tr><td><kbd>P</kbd></td><td>edit placement (capital <kbd>P</kbd>, i.e. Shift+p, to distinguish it from <kbd>p</kbd> ports) — opens a small menu with two staged editors: <strong>Constraints</strong> and <strong>Spread preferences</strong>.
+            <ul>
+              <li><strong>Constraints</strong> — the service's hard placement constraints (<code>node.role</code>, <code>node.hostname</code>, <code>node.id</code>, <code>node.platform.os</code>/<code>arch</code>, <code>node.labels.&lt;k&gt;</code>, <code>engine.labels.&lt;k&gt;</code>, each with <code>==</code> or <code>!=</code>, e.g. <code>node.role==manager</code>, <code>node.labels.zone!=eu</code>). The add/edit input <strong>autocompletes</strong> fully-formed candidates built from the current cluster — every node's role, hostname, platform and node/engine labels — so you can usually pick a constraint instead of typing it (the <code>==</code> form is suggested; type <code>!=</code> by hand for a negation). The resulting node set also feeds the mounts editor's bind-mount guard.</li>
+              <li><strong>Spread preferences</strong> — the soft <code>--placement-pref spread=…</code> strategies: a staged, ordered list of bare node attributes (e.g. <code>node.labels.zone</code>, <code>node.hostname</code>) that Swarm spreads tasks evenly over. The input autocompletes the cluster's node/engine label keys and node attributes (a descriptor is just the attribute — no operator or value).</li>
+            </ul>
+            Applying either replaces that part of the placement in one <code>ServiceUpdate</code> (rolling update); the other part is preserved.</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        These editors are <strong>staged</strong>: <kbd>a</kbd> adds an entry, <kbd>d</kbd>
+        deletes the one under the cursor, <kbd>y</kbd> copies the selected entry to your
+        clipboard over OSC52 (so you can grab e.g. a single environment variable while
+        viewing it), <kbd>u</kbd> undoes the last staged change
+        (add / edit / delete) as long as you haven't applied yet — press it repeatedly to
+        step back through the staged history — and <kbd>w</kbd> applies all changes at once
+        in a single <code>ServiceUpdate</code> (so adding, say, several volumes and then
+        pressing <kbd>w</kbd> triggers <em>one</em> rolling update, not one per entry),
+        behind a confirmation. If you press <kbd>Esc</kbd> while changes are still staged,
+        the editor doesn't silently drop them — it asks whether to <strong>apply</strong>,
+        <strong>discard</strong>, or <strong>keep editing</strong>.
+        While changes are still staged they are <strong>highlighted</strong> so you can
+        see exactly what will change: added or edited entries show in
+        <span class="tc-green tc-b">green (new)</span> and removed
+        entries linger as dim <span class="tc-red">red “removed”</span> rows —
+        the highlighting clears once you apply. The
+        <strong>ports</strong>, <strong>labels</strong>, <strong>mounts</strong>,
+        <strong>env</strong> and <strong>aliases</strong> editors
+        (aliases reached from the networks editor via <kbd>A</kbd>)
+        also have <kbd>e</kbd> to edit the entry under the cursor; the
+        <strong>networks</strong> and <strong>secrets</strong> editors have no <kbd>e</kbd> —
+        a network or secret entry is just a name, so it's add (<kbd>a</kbd>) /
+        remove (<kbd>d</kbd>) only. In the <strong>env</strong> list editor (reached with
+        <kbd>:list</kbd>) <kbd>e</kbd> opens a scrollable multi-line text area
+        (<kbd>Ctrl-S</kbd> save / <kbd>Esc</kbd> cancel) for long values; the ports
+        editor uses a wide input that wraps long values, and editors with
+        autocomplete (networks, secrets, placement) a single-line input — <kbd>Enter</kbd>
+        confirms in both.
+      </p>
+
+      <h3 id="env-editor">The env editor</h3>
+      <p>
+        The env editor works like vim, reduced to what editing a list of variables needs.
+        It opens in <strong>Normal</strong> mode, where keys are commands; <kbd>i</kbd>
+        switches to <strong>Insert</strong> mode to type, <kbd>Esc</kbd> back. The status
+        line at the bottom shows the mode, the cursor position and whether anything
+        changed; the footer always shows the keys that matter in the current mode, and
+        <kbd>?</kbd> opens the full list. <kbd>Esc</kbd> in Normal mode leaves the editor
+        when nothing changed.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>o</kbd> <kbd>O</kbd></td><td>insert before / after the cursor, at the line start / end, on a new line below / above</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd>, <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd>, <kbd>0</kbd> <kbd>^</kbd> <kbd>$</kbd>, <kbd>gg</kbd> <kbd>G</kbd></td><td>move by character and line, by word, to the line start / first non-blank / line end, to the first / last line (the arrow keys work too)</td></tr>
+          <tr><td><kbd>/</kbd>text, <kbd>n</kbd> <kbd>N</kbd></td><td>search, next / previous match</td></tr>
+          <tr><td><kbd>x</kbd> <kbd>dd</kbd> <kbd>D</kbd> <kbd>dw</kbd></td><td>delete a character, the line, to the line end, to the next word</td></tr>
+          <tr><td><kbd>cc</kbd> <kbd>cw</kbd> <kbd>C</kbd> <kbd>r</kbd></td><td>change the line, the word, to the line end; replace one character</td></tr>
+          <tr><td><kbd>yy</kbd> <kbd>p</kbd> <kbd>P</kbd> <kbd>J</kbd></td><td>copy the line, paste below / above, join the next line</td></tr>
+          <tr><td><kbd>u</kbd> <kbd>Ctrl-R</kbd></td><td>undo, redo; a count repeats a command (<kbd>3dd</kbd>, <kbd>5j</kbd>)</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>check and apply (also <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>)</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancel; <kbd>:q</kbd> refuses while there are changes, <kbd>:q!</kbd> discards them</td></tr>
+          <tr><td><kbd>:list</kbd> <kbd>:42</kbd> <kbd>?</kbd></td><td>switch to the list editor, go to line 42, show the help</td></tr>
+        </tbody>
+      </table></div>
+      <pre><span class="o">LOG_LEVEL=info
+# DEBUG=1
+GITLAB_OMNIBUS_CONFIG&lt;&lt;EOF
+external_url 'https://gitlab.example.com'
+gitlab_rails['backup_keep_time'] = 604800
+EOF</span></pre>
+      <p>
+        The tree auto-refreshes every ~10s, so a container replaced or a service scaled
+        in the background shows up on its own — the cursor and any expanded services are
+        preserved. <kbd>r</kbd> still forces an immediate refresh.
+      </p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/tui" rel="prev"><span class="lbl">← Previous</span>The TUI</a>
+        <a class="next" href="/docs/tui-tabs" rel="next"><span class="lbl">Next →</span>TUI: Volumes, Forwards, Networks, Secrets, Configs</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services" aria-current="page">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>
