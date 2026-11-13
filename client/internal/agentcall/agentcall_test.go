@@ -98,6 +98,9 @@ func TestCallsAgainstAFakeCluster(t *testing.T) {
 		t.Errorf("probe = bash %v sh %v, want both", bash, sh)
 	}
 
+	if calls := fc.totalCalls(); calls < 20 {
+		t.Errorf("the agents served %d calls, fewer than were made", calls)
+	}
 	if bad := fc.badBindings(); bad != 0 {
 		t.Errorf("%d call(s) carried a binding for another connection's certificate", bad)
 	}
@@ -148,6 +151,12 @@ func TestNodeFailuresStayPerNode(t *testing.T) {
 	}
 	if bash, sh := ac.ProbeShells(ctx, resolve.Endpoint{DialHost: "node-b"}, testTimeout); bash || sh {
 		t.Error("an unreachable container has no shells")
+	}
+
+	// An agent that goes away is reported as unreachable, not as an answer.
+	fc.stop("node-a")
+	if _, _, err := ac.Version(ctx, fc.nodes[0], testTimeout); err == nil {
+		t.Error("a stopped agent should not answer")
 	}
 }
 
