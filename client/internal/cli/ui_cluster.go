@@ -326,6 +326,7 @@ func (u *ui) activateCluster(c *clusterState) {
 	if c.ctx == nil || c.ctx.Err() != nil {
 		c.ctx, c.cancel = context.WithCancel(u.runCtx)
 	}
+	c.agents.Resume() // pool agent connections again (see leaveCluster)
 	// One topology watcher per activation, on this cluster's context — so it
 	// dies with the switch away, exactly like the polling does.
 	go u.watchTopology(c.ctx, c)
@@ -375,15 +376,21 @@ func (u *ui) activateCluster(c *clusterState) {
 // The order matters. The overlays go first, while their cluster is still the
 // visible one. Then the polling stops: that is what "only poll the visible
 // cluster" means in practice — not a flag every loader has to check, but the
-// context they already take. The connection itself stays, and costs nothing
-// while idle (the shared ssh master expires on its own, see sshMuxPersist).
-// Last the generation moves: past it, anything still in flight for the old
+// context they already take. The manager connection itself stays, and costs
+// nothing while idle (the shared ssh master expires on its own, see
+// sshMuxPersist). The pooled agent connections do not: one per node, each an
+// ssh channel behind a bastion, is a lot to keep for a cluster nobody looks
+// at, so they are dropped — except the ones still in use, like a port-forward,
+// which outlives the switch. Last the generation moves: past it, anything still in flight for the old
 // cluster is stale and async drops it — and the overlay it would have closed
 // is already gone.
 func (u *ui) leaveCluster() int {
 	closed := u.closeClusterOverlays()
 	if u.cancel != nil {
 		u.cancel()
+	}
+	if u.agents != nil {
+		u.agents.Suspend()
 	}
 	u.gen.Add(1)
 	return closed

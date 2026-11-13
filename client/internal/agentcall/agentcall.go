@@ -16,6 +16,7 @@ package agentcall
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/grpc"
 
@@ -30,50 +31,94 @@ import (
 // never be shared between clusters. Create one per cluster (the TUI) or per
 // command (the cli), and Close it when that cluster or command is done.
 //
+// A Client keeps one connection per node and reuses it (see pool.go).
+//
 // A Client is safe for concurrent use.
 type Client struct {
-	cfg config.Config
+	cfg  config.Config
+	pool *pool
 }
 
 // New returns a Client for one cluster's agent configuration.
 func New(cfg config.Config) *Client {
-	return &Client{cfg: cfg}
+	c := &Client{cfg: cfg}
+	c.pool = newPool(func(ctx context.Context, host string) (*grpc.ClientConn, error) {
+		return dial.Dial(ctx, host, cfg.Port, cfg)
+	}, poolIdle)
+	return c
 }
 
 // Config is the agent configuration this Client dials with.
 func (c *Client) Config() config.Config { return c.cfg }
 
-// Close releases the Client's connections. Conns handed out before keep
-// working until their own Close.
-func (c *Client) Close() {}
+// Close releases the Client's connections for good: idle ones now, ones still
+// held (a running exec, a port-forward) when their holder closes them. The
+// Client keeps working afterwards but keeps nothing: each call dials anew.
+func (c *Client) Close() {
+	if c != nil {
+		c.pool.stop(true)
+	}
+}
+
+// Suspend releases the Client's connections like Close but only until
+// Resume. The TUI suspends a cluster it switches away from: its tunnels are
+// not held open while the operator looks elsewhere, and what is still running
+// there (a port-forward survives a switch) keeps its connection.
+func (c *Client) Suspend() {
+	if c != nil {
+		c.pool.stop(false)
+	}
+}
+
+// Resume keeps connections again after Suspend. No-op after Close.
+//
+// Close, Suspend and Resume are no-ops on a nil Client.
+func (c *Client) Resume() {
+	if c != nil {
+		c.pool.start()
+	}
+}
 
 // Conn is one agent connection, ready when handed out. The holder must Close
-// it when done; Close is idempotent.
+// it when done; Close is idempotent. The connection may be shared with other
+// holders: Close gives it back, it does not tear it down.
 type Conn struct {
-	cc *grpc.ClientConn
+	cc   *grpc.ClientConn
+	p    *pool
+	e    *entry
+	once sync.Once
 }
 
 // Agent is the generated client on this connection.
 func (cn *Conn) Agent() pb.AgentClient { return pb.NewAgentClient(cn.cc) }
 
-// Close gives the connection back.
-func (cn *Conn) Close() {
-	if cn == nil || cn.cc == nil {
+// Close gives the connection back. A connection whose transport failed is
+// retired rather than handed to the next caller.
+func (cn *Conn) Close() { cn.done(nil) }
+
+// done is Close after a call that returned err: a transport failure retires
+// the connection even while gRPC still reports it READY.
+func (cn *Conn) done(err error) {
+	if cn == nil || cn.e == nil {
 		return
 	}
-	_ = cn.cc.Close()
-	cn.cc = nil
+	cn.once.Do(func() { cn.p.release(cn.e, transportFailure(err)) })
 }
 
-// Conn connects to the agent on host and returns the connection READY, or
-// the reason it is not (see dial.Dial): ctx bounds the connect, nothing after
-// it. Streaming callers use this; unary calls go through the methods below.
+// Conn returns a READY connection to the agent on host — a pooled one when
+// it is still up, otherwise a fresh dial — or the reason there is none (see
+// dial.Dial): ctx bounds the connect, nothing after it. Streaming callers use
+// this; unary calls go through the methods below.
 func (c *Client) Conn(ctx context.Context, host string) (*Conn, error) {
-	cc, err := dial.Dial(ctx, host, c.cfg.Port, c.cfg)
+	key, err := poolKey(c.cfg, host)
 	if err != nil {
 		return nil, err
 	}
-	return &Conn{cc: cc}, nil
+	e, err := c.pool.get(ctx, key, host)
+	if err != nil {
+		return nil, err
+	}
+	return &Conn{cc: e.cc, p: c.pool, e: e}, nil
 }
 
 // Explain turns an agent RPC error into what the operator reads, for this

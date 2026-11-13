@@ -107,6 +107,7 @@ func (c *Client) listNodeVolumes(ctx context.Context, n resolve.Node, withSize b
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().ListVolumes(cctx, &pb.ListVolumesRequest{WithSize: withSize})
+	conn.done(err)
 	if err != nil {
 		return nil, c.Explain(ctx, err)
 	}
@@ -189,6 +190,7 @@ func (c *Client) listNodeContainers(ctx context.Context, n resolve.Node, connect
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().ListContainers(ctx, &pb.ListRequest{})
+	conn.done(err)
 	if err != nil {
 		return nil, c.Explain(ctx, err)
 	}
@@ -224,6 +226,7 @@ func (c *Client) removeNodeVolume(ctx context.Context, n resolve.Node, name stri
 	}
 	defer conn.Close()
 	_, err = conn.Agent().RemoveVolume(ctx, &pb.RemoveVolumeRequest{Name: name, Force: force})
+	conn.done(err)
 	return c.Explain(ctx, err)
 }
 
@@ -246,5 +249,6 @@ func (c *Client) createNodeVolume(ctx context.Context, n resolve.Node, req *pb.C
 	}
 	defer conn.Close()
 	_, err = conn.Agent().CreateVolume(ctx, req)
+	conn.done(err)
 	return c.Explain(ctx, err)
 }
