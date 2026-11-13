@@ -207,6 +207,10 @@ func run(args []string) error {
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,
 		}),
+		// First in the chain, so a panic anywhere below — authentication
+		// included — costs one RPC, not every session on the node.
+		grpc.ChainUnaryInterceptor(server.RecoveryUnaryInterceptor(log)),
+		grpc.ChainStreamInterceptor(server.RecoveryStreamInterceptor(log)),
 	}
 	if secret != "" {
 		// The certificate a client's proof is computed over. Taken from the TLS
