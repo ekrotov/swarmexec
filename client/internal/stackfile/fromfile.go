@@ -14,7 +14,6 @@ import (
 	"github.com/docker/cli/cli/compose/loader"
 	composetypes "github.com/docker/cli/cli/compose/types"
 	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
 )
 
 // FromFile loads a stack file and reduces it the same way a deployed stack is
@@ -28,7 +27,7 @@ import (
 // what the file SAYS against what the cluster HAS, and those are different
 // languages: compose's short port syntax, its restart aliases, its variable
 // interpolation and its defaults all sit in between.
-func FromFile(ctx context.Context, cli client.APIClient, path, stackName string) (*Stack, error) {
+func FromFile(ctx context.Context, cli SwarmReader, path, stackName string) (*Stack, error) {
 	cfg, err := loadComposeFile(path)
 	if err != nil {
 		return nil, err

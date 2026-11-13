@@ -21,9 +21,9 @@ import (
 // engine, just services wearing the same label.
 const stackLabel = "com.docker.stack.namespace"
 
-// swarmReader is the slice of the docker client this needs. An interface, so
+// SwarmReader is the slice of the docker client this needs. An interface, so
 // the reduction can be tested against fixtures rather than a live cluster.
-type swarmReader interface {
+type SwarmReader interface {
 	ServiceList(ctx context.Context, options client.ServiceListOptions) (client.ServiceListResult, error)
 	NetworkList(ctx context.Context, options client.NetworkListOptions) (client.NetworkListResult, error)
 	SecretList(ctx context.Context, options client.SecretListOptions) (client.SecretListResult, error)
@@ -37,7 +37,7 @@ type swarmReader interface {
 // and a volume's CONTENTS live on the nodes. Both are therefore declared
 // external. An export is a description of a stack, not a backup of it, and the
 // difference matters most exactly when someone is relying on it.
-func FromSwarm(ctx context.Context, cli swarmReader, name string) (*Stack, error) {
+func FromSwarm(ctx context.Context, cli SwarmReader, name string) (*Stack, error) {
 	f := make(client.Filters).Add("label", stackLabel+"="+name)
 	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
 	svcs := svcsRes.Items
@@ -185,7 +185,7 @@ func driverOpts(in map[string]string) map[string]string {
 // ownSecretsConfigs adds the full names of the secrets and configs this stack
 // created. Best effort: if a listing fails nothing is marked owned, which keeps
 // full names on both sides — wordier, but never wrong.
-func ownSecretsConfigs(ctx context.Context, cli swarmReader, ns string, owned map[string]bool) {
+func ownSecretsConfigs(ctx context.Context, cli SwarmReader, ns string, owned map[string]bool) {
 	if secs, err := cli.SecretList(ctx, client.SecretListOptions{}); err == nil {
 		for _, s := range secs.Items {
 			if s.Spec.Labels[stackLabel] == ns {
@@ -225,7 +225,7 @@ func ownVolumes(svcs []swarm.Service, ns string, owned map[string]bool) {
 // belong to this stack. Best effort: a listing failure leaves them declared as
 // plain external references, which is what they are from the file's side
 // anyway, so it cannot produce a wrong comparison.
-func readSecretsAndConfigs(ctx context.Context, cli swarmReader, ns string, st *Stack) {
+func readSecretsAndConfigs(ctx context.Context, cli SwarmReader, ns string, st *Stack) {
 	wantSec, wantCfg := map[string]bool{}, map[string]bool{}
 	for _, s := range st.Services {
 		for _, m := range s.Secrets {
@@ -283,7 +283,7 @@ func collectVolumes(st *Stack, names Names) {
 
 // StackNames lists the stacks deployed on the cluster, for a picker that does
 // not make the operator remember them.
-func StackNames(ctx context.Context, cli swarmReader) ([]string, error) {
+func StackNames(ctx context.Context, cli SwarmReader) ([]string, error) {
 	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {

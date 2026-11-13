@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmapi"
 )
 
 // The security report is the scan the ui already shows under "!", written out
@@ -116,7 +116,7 @@ func writeReportFile(path, body string) error {
 // The manager calls are required: a report missing half the cluster is worse
 // than no report, because it looks complete. The agent round trip is optional
 // and its absence is recorded as a gap rather than passed over.
-func gatherSecurityReport(ctx context.Context, dcli *client.Client, cfg config.Config, g *globalFlags, f *securityFlags, contextName string) (secscan.Report, error) {
+func gatherSecurityReport(ctx context.Context, dcli swarmapi.Client, cfg config.Config, g *globalFlags, f *securityFlags, contextName string) (secscan.Report, error) {
 	svcs, err := listServicesForScan(ctx, dcli)
 	if err != nil {
 		return secscan.Report{}, fmt.Errorf("list services: %w", err)

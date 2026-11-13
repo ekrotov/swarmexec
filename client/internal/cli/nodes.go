@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sort"
 
+	"swarmexec/client/internal/swarmapi"
+
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
@@ -132,7 +134,7 @@ func taskHoldsResources(t swarm.Task) bool {
 // setNodeAvailability moves a node between active / pause / drain. Read-modify-
 // write on the node spec like setNodeLabels; applies immediately (nodes have no
 // rolling update). Draining reschedules the node's tasks elsewhere.
-func setNodeAvailability(ctx context.Context, dcli *client.Client, nodeID string, availability swarm.NodeAvailability) error {
+func setNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID string, availability swarm.NodeAvailability) error {
 	nodeRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	node := nodeRes.Node
 	if err != nil {
@@ -145,7 +147,7 @@ func setNodeAvailability(ctx context.Context, dcli *client.Client, nodeID string
 }
 
 // listNodeInfos returns the cluster's nodes with their running-task counts.
-func listNodeInfos(ctx context.Context, dcli *client.Client) ([]swarmNodeInfo, error) {
+func listNodeInfos(ctx context.Context, dcli swarmapi.Client) ([]swarmNodeInfo, error) {
 	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nodes := nodesRes.Items
 	if err != nil {
@@ -170,7 +172,7 @@ func volumeCountsByNode(vols []swarmVolume) map[string]int {
 
 // setNodeLabels replaces a node's labels via NodeUpdate (read-modify-write on the
 // node spec). Applies immediately — nodes have no rolling update.
-func setNodeLabels(ctx context.Context, dcli *client.Client, nodeID string, labels map[string]string) error {
+func setNodeLabels(ctx context.Context, dcli swarmapi.Client, nodeID string, labels map[string]string) error {
 	nRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	n := nRes.Node
 	if err != nil {

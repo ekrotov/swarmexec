@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"swarmexec/client/internal/swarmapi"
+
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
@@ -72,7 +74,7 @@ type swarmSecret struct {
 
 // listNetworks returns every network on the manager with attached-service
 // membership resolved from service specs.
-func listNetworks(ctx context.Context, dcli *client.Client) ([]swarmNetwork, error) {
+func listNetworks(ctx context.Context, dcli swarmapi.Client) ([]swarmNetwork, error) {
 	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
 	nets := netsRes.Items
 	if err != nil {
@@ -200,7 +202,7 @@ func buildNetworkCreateOptions(o newNetworkOpts) (string, client.NetworkCreateOp
 }
 
 // createNetwork creates a network from the form input (default driver overlay).
-func createNetwork(ctx context.Context, dcli *client.Client, o newNetworkOpts) error {
+func createNetwork(ctx context.Context, dcli swarmapi.Client, o newNetworkOpts) error {
 	name, opts, err := buildNetworkCreateOptions(o)
 	if err != nil {
 		return err
@@ -230,7 +232,7 @@ func servicesExcluding(all, exclude []string) []string {
 // read-modify-write ServiceUpdate. This triggers a rolling update of the
 // service. It errors (a no-op) if the service is already attached, or if the
 // service does not exist.
-func attachServiceToNetwork(ctx context.Context, dcli *client.Client, serviceName, networkID, networkName string) error {
+func attachServiceToNetwork(ctx context.Context, dcli swarmapi.Client, serviceName, networkID, networkName string) error {
 	svc, err := serviceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
@@ -256,7 +258,7 @@ func attachServiceToNetwork(ctx context.Context, dcli *client.Client, serviceNam
 // (read-modify-write ServiceUpdate), mounted at /run/secrets/<name> like
 // `docker service update --secret-add`. Triggers a rolling update. Errors (a
 // no-op) if the service already uses the secret, or does not exist.
-func attachSecretToService(ctx context.Context, dcli *client.Client, serviceName, secretID, secretName string) error {
+func attachSecretToService(ctx context.Context, dcli swarmapi.Client, serviceName, secretID, secretName string) error {
 	svc, err := serviceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
@@ -294,7 +296,7 @@ func attachSecretToService(ctx context.Context, dcli *client.Client, serviceName
 // detachServiceFromNetwork removes a network from a service's spec via a
 // read-modify-write ServiceUpdate (rolling update). Errors (a no-op) if the
 // service is not attached, or does not exist.
-func detachServiceFromNetwork(ctx context.Context, dcli *client.Client, serviceName, networkID, networkName string) error {
+func detachServiceFromNetwork(ctx context.Context, dcli swarmapi.Client, serviceName, networkID, networkName string) error {
 	svc, err := serviceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
@@ -334,7 +336,7 @@ func dropNetwork(nets []swarm.NetworkAttachmentConfig, matches func(string) bool
 // detachSecretFromService removes a secret reference from a service's container
 // spec via a read-modify-write ServiceUpdate (rolling update). Errors (a no-op)
 // if the service does not use the secret, or does not exist.
-func detachSecretFromService(ctx context.Context, dcli *client.Client, serviceName, secretID, secretName string) error {
+func detachSecretFromService(ctx context.Context, dcli swarmapi.Client, serviceName, secretID, secretName string) error {
 	svc, err := serviceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
@@ -371,7 +373,7 @@ func detachSecretFromService(ctx context.Context, dcli *client.Client, serviceNa
 // service's attachment Target may be either — to the services attached to it.
 // Best effort: a ServiceList failure yields an empty map so the network list
 // still renders (just without membership).
-func networkServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
+func networkServiceMembers(ctx context.Context, dcli swarmapi.Client) map[string][]string {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -406,7 +408,7 @@ func serviceNetworkMembership(svcs []swarm.Service) map[string][]string {
 // its networks. A service with a spec attachment but no running task still
 // appears (with zero containers). Best effort: failed API calls degrade to
 // empty rather than failing the view.
-func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) []netService {
+func networkMembers(ctx context.Context, dcli swarmapi.Client, net swarmNetwork) []netService {
 	nodeName := nodeHostnames(ctx, dcli)
 
 	// One ServiceList yields both id→name (to label each task's service) and each
@@ -467,7 +469,7 @@ func networkMembers(ctx context.Context, dcli *client.Client, net swarmNetwork) 
 }
 
 // nodeHostnames maps node ID to hostname, so a task's NodeID shows as a name.
-func nodeHostnames(ctx context.Context, dcli *client.Client) map[string]string {
+func nodeHostnames(ctx context.Context, dcli swarmapi.Client) map[string]string {
 	m := map[string]string{}
 	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nodes := nodesRes.Items
@@ -524,7 +526,7 @@ func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
 // "updated" — it is reported as an error the caller can surface. The name check
 // is best-effort (racy), but Docker also rejects a duplicate name server-side,
 // so correctness does not depend on it.
-func createSecret(ctx context.Context, dcli *client.Client, name string, data []byte, labels map[string]string) error {
+func createSecret(ctx context.Context, dcli swarmapi.Client, name string, data []byte, labels map[string]string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("name is required")
@@ -549,7 +551,7 @@ func createSecret(ctx context.Context, dcli *client.Client, name string, data []
 	return err
 }
 
-func listSecrets(ctx context.Context, dcli *client.Client) ([]swarmSecret, error) {
+func listSecrets(ctx context.Context, dcli swarmapi.Client) ([]swarmSecret, error) {
 	secsRes, err := dcli.SecretList(ctx, client.SecretListOptions{})
 	secs := secsRes.Items
 	if err != nil {
@@ -584,7 +586,7 @@ func listSecrets(ctx context.Context, dcli *client.Client) ([]swarmSecret, error
 // secretServiceMembers maps a secret — keyed by both ID and name — to the
 // services that reference it. Best effort: a ServiceList failure yields an empty
 // map so the secret list still renders.
-func secretServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
+func secretServiceMembers(ctx context.Context, dcli swarmapi.Client) map[string][]string {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -637,7 +639,7 @@ func orphanSecrets(target swarm.Service, all []swarm.Service) []secretRef {
 
 // secretsOnlyUsedBy returns the secrets referenced only by the named service —
 // the ones orphaned if it is removed. Best-effort (empty on error/not found).
-func secretsOnlyUsedBy(ctx context.Context, dcli *client.Client, name string) ([]secretRef, error) {
+func secretsOnlyUsedBy(ctx context.Context, dcli swarmapi.Client, name string) ([]secretRef, error) {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -682,7 +684,7 @@ func serviceSecretMembership(svcs []swarm.Service) map[string][]string {
 // running containers (swarm tasks) of that service. Structure mirrors
 // networkMembers so the detail views render the same way. Best effort: failed
 // API calls degrade to empty.
-func secretMembers(ctx context.Context, dcli *client.Client, secret swarmSecret) []netService {
+func secretMembers(ctx context.Context, dcli swarmapi.Client, secret swarmSecret) []netService {
 	usingIDs := map[string]bool{}
 	usingNames := map[string]bool{}
 	idName := map[string]string{}
@@ -747,7 +749,7 @@ func serviceUsesSecret(s swarm.Service, id, name string) bool {
 // spec (its TaskTemplate mounts). Used to spare service-declared volumes from a
 // prune even when no task currently runs. Best effort: a ServiceList failure
 // yields an empty set (prune then falls back to the running-container view).
-func serviceVolumeNames(ctx context.Context, dcli *client.Client) map[string]bool {
+func serviceVolumeNames(ctx context.Context, dcli swarmapi.Client) map[string]bool {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -789,7 +791,7 @@ type swarmConfig struct {
 // listConfigs returns every config on the manager with service membership
 // resolved from service specs — the same derivation listSecrets does, since
 // swarm has no reverse index either way.
-func listConfigs(ctx context.Context, dcli *client.Client) ([]swarmConfig, error) {
+func listConfigs(ctx context.Context, dcli swarmapi.Client) ([]swarmConfig, error) {
 	cfgsRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{})
 	cfgs := cfgsRes.Items
 	if err != nil {
@@ -823,7 +825,7 @@ func listConfigs(ctx context.Context, dcli *client.Client) ([]swarmConfig, error
 }
 
 // configServiceMembers maps config id/name -> service names that mount it.
-func configServiceMembers(ctx context.Context, dcli *client.Client) map[string][]string {
+func configServiceMembers(ctx context.Context, dcli swarmapi.Client) map[string][]string {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -864,7 +866,7 @@ func serviceConfigMembership(svcs []swarm.Service) map[string][]string {
 // configContent fetches a config's payload. Configs are readable (secrets are
 // not), so the detail view can show what a service actually receives. Fetched on
 // demand rather than with the list: a config can be a whole nginx.conf.
-func configContent(ctx context.Context, dcli *client.Client, id string) ([]byte, error) {
+func configContent(ctx context.Context, dcli swarmapi.Client, id string) ([]byte, error) {
 	res, err := dcli.ConfigInspect(ctx, id, client.ConfigInspectOptions{})
 	if err != nil {
 		return nil, err

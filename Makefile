@@ -23,7 +23,7 @@ STATICCHECK_VERSION := v0.8.2
 
 # Minimum total test coverage in percent (generated internal/pb excluded).
 # Set just below the measured value; raise it as coverage grows, never lower it.
-COVER_MIN  ?= 50.0
+COVER_MIN  ?= 52.8
 
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main

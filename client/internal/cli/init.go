@@ -32,6 +32,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmapi"
 	cterm "swarmexec/client/internal/term"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
@@ -591,7 +592,7 @@ func generateSecret() string {
 }
 
 // serviceByName returns the service with the given name, or nil.
-func serviceByName(ctx context.Context, dcli *client.Client, name string) (*swarm.Service, error) {
+func serviceByName(ctx context.Context, dcli swarmapi.Client, name string) (*swarm.Service, error) {
 	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{
 		Filters: make(client.Filters).Add("name", name),
 	})

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"swarmexec/client/internal/swarmapi"
+
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
@@ -170,7 +172,7 @@ func (b *inspBuilder) list(items []string) {
 
 // serviceInspectViews returns the formatted (tabular) lines and raw-JSON view of
 // a service inspect. ref is a service name or ID.
-func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, reg *registryCache) ([]inspLine, string, error) {
+func serviceInspectViews(ctx context.Context, dcli swarmapi.Client, ref string, reg *registryCache) ([]inspLine, string, error) {
 	svcRes, err := dcli.ServiceInspect(ctx, ref, client.ServiceInspectOptions{})
 	svc, rawb := svcRes.Service, []byte(svcRes.Raw)
 	if err != nil {
@@ -195,7 +197,7 @@ func serviceInspectViews(ctx context.Context, dcli *client.Client, ref string, r
 
 // taskInspectViews returns the formatted lines and raw-JSON view of a task
 // inspect — the manager's view of a container instance.
-func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) ([]inspLine, string, error) {
+func taskInspectViews(ctx context.Context, dcli swarmapi.Client, taskID string) ([]inspLine, string, error) {
 	taskRes, err := dcli.TaskInspect(ctx, taskID, client.TaskInspectOptions{})
 	task, rawb := taskRes.Task, []byte(taskRes.Raw)
 	if err != nil {
@@ -221,7 +223,7 @@ type specDiff struct {
 	hasPrev bool
 }
 
-func loadSpecDiff(ctx context.Context, dcli *client.Client, svc string) (specDiff, error) {
+func loadSpecDiff(ctx context.Context, dcli swarmapi.Client, svc string) (specDiff, error) {
 	lines, hasPrev, err := serviceDiffLines(ctx, dcli, svc)
 	return specDiff{lines, hasPrev}, err
 }
@@ -229,7 +231,7 @@ func loadSpecDiff(ctx context.Context, dcli *client.Client, svc string) (specDif
 // serviceDiffLines inspects a service and returns a unified diff of its current
 // spec against its PreviousSpec (what the last update changed). hasPrev is false
 // when the service has never been updated (no PreviousSpec to compare against).
-func serviceDiffLines(ctx context.Context, dcli *client.Client, ref string) (lines []string, hasPrev bool, err error) {
+func serviceDiffLines(ctx context.Context, dcli swarmapi.Client, ref string) (lines []string, hasPrev bool, err error) {
 	svcRes, err := dcli.ServiceInspect(ctx, ref, client.ServiceInspectOptions{})
 	svc := svcRes.Service
 	if err != nil {
@@ -373,7 +375,7 @@ type netInfo struct {
 
 // networkInfo fills the network half of a netInfo from one NetworkList. Best
 // effort; empty maps on error (the inspect still renders, just less readably).
-func networkInfo(ctx context.Context, dcli *client.Client) netInfo {
+func networkInfo(ctx context.Context, dcli swarmapi.Client) netInfo {
 	info := netInfo{names: map[string]string{}, encrypted: map[string]bool{}, ingress: map[string]bool{}}
 	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
 	nets := netsRes.Items

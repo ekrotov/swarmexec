@@ -92,11 +92,6 @@ func run(args []string) error {
 		return err
 	}
 	defer closeAudit()
-	// Identity is only verifiable when a client certificate is required and
-	// checked against a CA. In self-signed shared-secret mode the operator name
-	// is whatever the client put in a header, so say so on every record.
-	identityVerified := !(cfg.SelfSigned && cfg.CACert == "")
-	auditLog := audit.New(slog.New(slog.NewJSONHandler(auditWriter, &slog.HandlerOptions{Level: slog.LevelInfo})), identityVerified)
 
 	// API-version negotiation is the default in moby/moby/client (the old
 	// WithAPIVersionNegotiation option is a deprecated no-op).
@@ -108,10 +103,80 @@ func run(args []string) error {
 	}
 	defer dockerCli.Close()
 
+	a, err := buildServer(cfg, deps{log: log, audit: auditWriter, docker: dockerCli})
+	if err != nil {
+		return err
+	}
+
+	lis, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+	}
+
+	// Graceful shutdown on SIGTERM/SIGINT (REQUIREMENTS §4 graceful shutdown).
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	return a.serve(lis, sigCh)
+}
+
+// deps is what run takes from the outside world before it builds the agent: a
+// test hands buildServer a fake Docker client and a buffer for the audit log
+// instead of a socket and stdout.
+type deps struct {
+	log    *slog.Logger
+	audit  io.Writer
+	docker server.DockerClient
+}
+
+// agent is a built agent that is not serving yet: everything run assembles
+// from its configuration, split from serve so the two can be tested apart —
+// buildServer for "this configuration produces this wiring", serve and
+// shutdown for the order the agent stops in.
+type agent struct {
+	log  *slog.Logger
+	srv  drainer
+	grpc grpcServer
+
+	// metrics is the /metrics endpoint, nil when disabled.
+	metrics *http.Server
+	// background starts the caches and the prune scheduler; they run until
+	// the context serve gives them ends.
+	background func(context.Context)
+
+	drainTimeout    time.Duration
+	gracefulTimeout time.Duration // see gracefulStopTimeout
+	handlerTimeout  time.Duration // see handlerExitTimeout
+}
+
+// drainer is the part of *server.Server that shutdown uses.
+type drainer interface {
+	StartDrain()
+	WaitForSessions(ctx context.Context) bool
+	ActiveSessions() int64
+}
+
+// grpcServer is the part of *grpc.Server that serve and shutdown use.
+type grpcServer interface {
+	grpcStopper
+	Serve(net.Listener) error
+}
+
+// buildServer assembles the agent from its configuration: the audit log, the
+// TLS config (self-signed with SANs from the Docker node info, or provisioned),
+// the authorizer, the server with its options, the shared-secret check and the
+// interceptor chain. It starts nothing — no listener, no goroutine; serve does.
+func buildServer(cfg *config.Config, d deps) (*agent, error) {
+	log := d.log
+	// Identity is only verifiable when a client certificate is required and
+	// checked against a CA. In self-signed shared-secret mode the operator name
+	// is whatever the client put in a header, so say so on every record.
+	identityVerified := !(cfg.SelfSigned && cfg.CACert == "")
+	auditLog := audit.New(slog.New(slog.NewJSONHandler(d.audit, &slog.HandlerOptions{Level: slog.LevelInfo})), identityVerified)
+
 	// Resolve the optional shared secret (file or value).
 	secret, err := cfg.AgentSecretValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Build the TLS config: either a self-signed cert generated here (SANs from
@@ -119,12 +184,12 @@ func run(args []string) error {
 	var tlsCfg *tls.Config
 	if cfg.SelfSigned {
 		ictx, icancel := context.WithTimeout(context.Background(), 5*time.Second)
-		sans := gatherSANs(ictx, dockerCli, cfg, log)
+		sans := gatherSANs(ictx, d.docker, cfg, log)
 		icancel()
 		var sanDesc []string
 		tlsCfg, sanDesc, err = tlsconf.SelfSignedServerConfig(sans, cfg.CACert, time.Now())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		log.Info("using self-signed server certificate",
 			"sans", sanDesc,
@@ -134,11 +199,11 @@ func run(args []string) error {
 	} else {
 		tlsCfg, err = tlsconf.ServerConfig(cfg.CACert, cfg.ServerCert, cfg.ServerKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	// Optional Prometheus metrics endpoint.
+	// Optional Prometheus metrics endpoint; serve starts it.
 	var sink server.Metrics = server.NopMetrics{}
 	var metricsSrv *http.Server
 	if cfg.MetricsAddr != "" {
@@ -147,12 +212,6 @@ func run(args []string) error {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", prom.Handler())
 		metricsSrv = newMetricsServer(cfg.MetricsAddr, mux)
-		go func() {
-			log.Info("metrics endpoint listening", "addr", cfg.MetricsAddr)
-			if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Error("metrics server failed", "err", err)
-			}
-		}()
 	}
 
 	// Lenient audit identity only when no client certificate is required
@@ -167,13 +226,13 @@ func run(args []string) error {
 	if cfg.PolicyFile != "" {
 		p, err := auth.LoadPolicy(cfg.PolicyFile, identityVerified)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		authz = p
 		log.Info("authorization policy loaded", "file", cfg.PolicyFile)
 	}
 
-	srv := server.New(dockerCli, authz, auditLog, log, sink, server.Options{
+	srv := server.New(d.docker, authz, auditLog, log, sink, server.Options{
 		IdleTimeout:        cfg.IdleTimeout,
 		MaxSessionTime:     cfg.MaxSessionTime,
 		SecretAuth:         secretAuthIdentity,
@@ -181,22 +240,6 @@ func run(args []string) error {
 		MaxStreams:         cfg.MaxStreams,
 		MaxForwardSidecars: cfg.MaxForwardSidecars,
 	})
-
-	// Background volume-size cache: scans at startup, then refreshes on volume
-	// create/destroy events and periodically, so ListVolumes(with_size) answers
-	// from memory instead of running a slow du-style scan per request.
-	cacheCtx, cacheCancel := context.WithCancel(context.Background())
-	defer cacheCancel()
-	srv.StartVolumeSizeCache(cacheCtx)
-	// Background container-stats sampler for the Stats RPC. Unlike the volume
-	// cache it idles unless a client is actually asking, so an agent nobody is
-	// watching costs nothing.
-	srv.StartStatsCache(cacheCtx)
-	// What a prune would free, measured hourly, and the prune schedule read
-	// from this agent's own container labels (swarmexec.prune.*). Invalid
-	// labels disable the schedule; they never stop the agent.
-	srv.StartReclaimCache(cacheCtx)
-	srv.StartPruneScheduler(cacheCtx)
 
 	serverOpts := []grpc.ServerOption{
 		grpc.Creds(credentials.NewTLS(tlsCfg)),
@@ -235,56 +278,106 @@ func run(args []string) error {
 	grpcSrv := grpc.NewServer(serverOpts...)
 	pb.RegisterAgentServer(grpcSrv, srv)
 
-	lis, err := net.Listen("tcp", cfg.ListenAddr)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+	return &agent{
+		log:     log,
+		srv:     srv,
+		grpc:    grpcSrv,
+		metrics: metricsSrv,
+		background: func(ctx context.Context) {
+			// Background volume-size cache: scans at startup, then refreshes
+			// on volume create/destroy events and periodically, so
+			// ListVolumes(with_size) answers from memory instead of running a
+			// slow du-style scan per request.
+			srv.StartVolumeSizeCache(ctx)
+			// Background container-stats sampler for the Stats RPC. Unlike the
+			// volume cache it idles unless a client is actually asking, so an
+			// agent nobody is watching costs nothing.
+			srv.StartStatsCache(ctx)
+			// What a prune would free, measured hourly, and the prune schedule
+			// read from this agent's own container labels (swarmexec.prune.*).
+			// Invalid labels disable the schedule; they never stop the agent.
+			srv.StartReclaimCache(ctx)
+			srv.StartPruneScheduler(ctx)
+		},
+		drainTimeout:    cfg.DrainTimeout,
+		gracefulTimeout: gracefulStopTimeout,
+		handlerTimeout:  handlerExitTimeout,
+	}, nil
+}
+
+// serve starts the background work and the metrics endpoint, serves gRPC on
+// lis, and on the first value from stop shuts down (see shutdown). It returns
+// the serve error if serving fails first, nil after a shutdown.
+func (a *agent) serve(lis net.Listener, stop <-chan os.Signal) error {
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	a.background(bgCtx)
+
+	if a.metrics != nil {
+		go func() {
+			a.log.Info("metrics endpoint listening", "addr", a.metrics.Addr)
+			if err := a.metrics.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				a.log.Error("metrics server failed", "err", err)
+			}
+		}()
 	}
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Info("gRPC server listening", "addr", cfg.ListenAddr)
-		serveErr <- grpcSrv.Serve(lis)
+		a.log.Info("gRPC server listening", "addr", lis.Addr().String())
+		serveErr <- a.grpc.Serve(lis)
 	}()
-
-	// Graceful shutdown on SIGTERM/SIGINT (REQUIREMENTS §4 graceful shutdown).
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	select {
 	case err := <-serveErr:
 		return err
-	case sig := <-sigCh:
-		log.Info("shutdown signal received; draining", "signal", sig.String(), "drain_timeout", cfg.DrainTimeout)
-		srv.StartDrain()
-
-		drainCtx, cancel := context.WithTimeout(context.Background(), cfg.DrainTimeout)
-		defer cancel()
-		if srv.WaitForSessions(drainCtx) {
-			log.Info("all sessions drained; stopping gracefully")
-			if !stopGracefully(grpcSrv, gracefulStopTimeout) {
-				log.Warn("graceful stop timed out; forced stop", "timeout", gracefulStopTimeout)
-			}
-		} else {
-			log.Warn("drain window elapsed; forcing stop", "active_sessions", srv.ActiveSessions())
-			grpcSrv.Stop()
-			// Stop cancelled every stream but does not wait for its handler.
-			// Give them a moment to return, so each writes its end-of-stream
-			// audit record before the audit writer closes.
-			exitCtx, c := context.WithTimeout(context.Background(), handlerExitTimeout)
-			if !srv.WaitForSessions(exitCtx) {
-				log.Warn("streams still running after forced stop", "active_sessions", srv.ActiveSessions())
-			}
-			c()
-		}
-
-		if metricsSrv != nil {
-			shutCtx, c := context.WithTimeout(context.Background(), 2*time.Second)
-			defer c()
-			_ = metricsSrv.Shutdown(shutCtx)
-		}
-		log.Info("agent stopped")
+	case sig := <-stop:
+		a.shutdown(sig)
 		return nil
 	}
+}
+
+// shutdown is the stop sequence, and its order is the point (R-01):
+//
+//  1. StartDrain — new streams are refused with Unavailable from here on;
+//  2. wait up to drainTimeout for the running streams to end;
+//  3. drained: GracefulStop, bounded by gracefulTimeout and falling back to
+//     Stop, because it also waits for unary RPCs and a client that never
+//     hangs up must not turn the graceful path into a SIGKILL;
+//     not drained: Stop at once, then wait up to handlerTimeout for the
+//     cancelled handlers to return and write their end-of-stream audit
+//     records before the audit writer closes;
+//  4. the metrics endpoint last, so the drain stays observable to the end.
+//
+// Swarm sends SIGKILL after the service's stop_grace_period (10s by default),
+// so the drain window plus either bound has to finish well inside it.
+func (a *agent) shutdown(sig os.Signal) {
+	a.log.Info("shutdown signal received; draining", "signal", sig.String(), "drain_timeout", a.drainTimeout)
+	a.srv.StartDrain()
+
+	drainCtx, cancel := context.WithTimeout(context.Background(), a.drainTimeout)
+	defer cancel()
+	if a.srv.WaitForSessions(drainCtx) {
+		a.log.Info("all sessions drained; stopping gracefully")
+		if !stopGracefully(a.grpc, a.gracefulTimeout) {
+			a.log.Warn("graceful stop timed out; forced stop", "timeout", a.gracefulTimeout)
+		}
+	} else {
+		a.log.Warn("drain window elapsed; forcing stop", "active_sessions", a.srv.ActiveSessions())
+		a.grpc.Stop()
+		exitCtx, c := context.WithTimeout(context.Background(), a.handlerTimeout)
+		if !a.srv.WaitForSessions(exitCtx) {
+			a.log.Warn("streams still running after forced stop", "active_sessions", a.srv.ActiveSessions())
+		}
+		c()
+	}
+
+	if a.metrics != nil {
+		shutCtx, c := context.WithTimeout(context.Background(), 2*time.Second)
+		defer c()
+		_ = a.metrics.Shutdown(shutCtx)
+	}
+	a.log.Info("agent stopped")
 }
 
 // interceptors builds the server's interceptor chains. Order, outermost first
@@ -395,11 +488,16 @@ func newLogger(cfg *config.Config) *slog.Logger {
 	return slog.New(h)
 }
 
+// infoSource is what gatherSANs needs of the Docker client.
+type infoSource interface {
+	Info(ctx context.Context, options client.InfoOptions) (client.SystemInfoResult, error)
+}
+
 // gatherSANs builds the SAN list for the self-signed server cert: a stable
 // "swarmexec-agent" name (so clients can pin it via --server-name), loopback,
 // this node's hostname and advertised Swarm address (from the Docker API), and
 // any operator-supplied extras.
-func gatherSANs(ctx context.Context, cli *client.Client, cfg *config.Config, log *slog.Logger) []string {
+func gatherSANs(ctx context.Context, cli infoSource, cfg *config.Config, log *slog.Logger) []string {
 	sans := []string{"DNS:swarmexec-agent", "DNS:localhost", "IP:127.0.0.1", "IP:::1"}
 	if res, err := cli.Info(ctx, client.InfoOptions{}); err != nil {
 		log.Warn("could not read Docker info for cert SANs; using static SANs only", "err", err)

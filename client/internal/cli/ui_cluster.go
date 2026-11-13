@@ -16,6 +16,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmapi"
 )
 
 // Switching cluster used to mean tearing the whole UI down and building it
@@ -59,7 +60,7 @@ type clusterState struct {
 	rotating map[string]bool
 
 	// The two channels to this cluster, from one resolution (see dockerEndpoint).
-	dcli *client.Client
+	dcli swarmapi.Client
 	r    *resolve.Resolver
 	cfg  config.Config
 

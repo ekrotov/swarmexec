@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"swarmexec/client/internal/swarmapi"
+
 	units "github.com/docker/go-units"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -27,7 +29,7 @@ import (
 // "no service named" error, the version and the update call that every
 // mutating set*/scale*/updateService* function shares — so each caller is just
 // its spec mutation. mutate may return an error to abort before the update.
-func updateServiceSpec(ctx context.Context, dcli *client.Client, name string, mutate func(spec *swarm.ServiceSpec) error) error {
+func updateServiceSpec(ctx context.Context, dcli swarmapi.Client, name string, mutate func(spec *swarm.ServiceSpec) error) error {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return err
@@ -53,7 +55,7 @@ func updateServiceSpec(ctx context.Context, dcli *client.Client, name string, mu
 // it into the task template itself, would take that as "no networks" and
 // detach the service. Daemons since Docker 25 never return it, so for them
 // this costs one inspect and refuses nothing.
-func refuseLegacyNetworks(ctx context.Context, dcli *client.Client, id, name string) error {
+func refuseLegacyNetworks(ctx context.Context, dcli swarmapi.Client, id, name string) error {
 	res, err := dcli.ServiceInspect(ctx, id, client.ServiceInspectOptions{})
 	if err != nil {
 		return err
@@ -76,7 +78,7 @@ func hasLegacyNetworks(raw []byte) bool {
 }
 
 // scaleService sets the replica count of a replicated service.
-func scaleService(ctx context.Context, dcli *client.Client, name string, replicas uint64) error {
+func scaleService(ctx context.Context, dcli swarmapi.Client, name string, replicas uint64) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.Mode.Replicated == nil {
 			return fmt.Errorf("service %q is not replicated and cannot be scaled", name)
@@ -88,7 +90,7 @@ func scaleService(ctx context.Context, dcli *client.Client, name string, replica
 }
 
 // setServicePorts replaces a service's published ports.
-func setServicePorts(ctx context.Context, dcli *client.Client, name string, ports []swarm.PortConfig) error {
+func setServicePorts(ctx context.Context, dcli swarmapi.Client, name string, ports []swarm.PortConfig) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.EndpointSpec == nil {
 			spec.EndpointSpec = &swarm.EndpointSpec{}
@@ -99,7 +101,7 @@ func setServicePorts(ctx context.Context, dcli *client.Client, name string, port
 }
 
 // setServiceLabels replaces a service's labels.
-func setServiceLabels(ctx context.Context, dcli *client.Client, name string, labels map[string]string) error {
+func setServiceLabels(ctx context.Context, dcli swarmapi.Client, name string, labels map[string]string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		spec.Labels = labels
 		return nil
@@ -107,7 +109,7 @@ func setServiceLabels(ctx context.Context, dcli *client.Client, name string, lab
 }
 
 // currentServicePorts returns a service's published ports as editable strings.
-func currentServicePorts(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServicePorts(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -125,7 +127,7 @@ func currentServicePorts(ctx context.Context, dcli *client.Client, name string) 
 }
 
 // currentServiceLabels returns a service's labels as editable "key=value" strings.
-func currentServiceLabels(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServiceLabels(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -138,7 +140,7 @@ func currentServiceLabels(ctx context.Context, dcli *client.Client, name string)
 
 // currentServiceReplicas returns the replica count and whether the service is
 // replicated (and therefore scalable).
-func currentServiceReplicas(ctx context.Context, dcli *client.Client, name string) (replicas uint64, replicated bool, err error) {
+func currentServiceReplicas(ctx context.Context, dcli swarmapi.Client, name string) (replicas uint64, replicated bool, err error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return 0, false, err
@@ -159,7 +161,7 @@ func currentServiceReplicas(ctx context.Context, dcli *client.Client, name strin
 // setServiceNetworks replaces the networks a service is attached to. targetIDs
 // are network IDs (or names the daemon can resolve). It writes the current
 // TaskTemplate.Networks.
-func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, targetIDs []string) error {
+func setServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, targetIDs []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		var nets []swarm.NetworkAttachmentConfig
 		for _, id := range targetIDs {
@@ -172,7 +174,7 @@ func setServiceNetworks(ctx context.Context, dcli *client.Client, name string, t
 
 // listNetworkRefs returns name->ID and ID->name maps plus the sorted network
 // names, for the networks editor (autocomplete + name/ID resolution).
-func listNetworkRefs(ctx context.Context, dcli *client.Client) (idByName, idToName map[string]string, names []string) {
+func listNetworkRefs(ctx context.Context, dcli swarmapi.Client) (idByName, idToName map[string]string, names []string) {
 	idByName, idToName = map[string]string{}, map[string]string{}
 	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
 	nets := netsRes.Items
@@ -198,7 +200,7 @@ type attachedNet struct {
 
 // serviceAttachedNetworks lists a service's network attachments with their
 // current aliases.
-func serviceAttachedNetworks(ctx context.Context, dcli *client.Client, name string) ([]attachedNet, error) {
+func serviceAttachedNetworks(ctx context.Context, dcli swarmapi.Client, name string) ([]attachedNet, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -228,7 +230,7 @@ func serviceAttachedNetworks(ctx context.Context, dcli *client.Client, name stri
 
 // setNetworkAliases replaces the aliases of a service's attachment to one
 // network (read-modify-write ServiceUpdate, rolling update).
-func setNetworkAliases(ctx context.Context, dcli *client.Client, name, target string, aliases []string) error {
+func setNetworkAliases(ctx context.Context, dcli swarmapi.Client, name, target string, aliases []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		found := false
 		for i := range spec.TaskTemplate.Networks {
@@ -245,7 +247,7 @@ func setNetworkAliases(ctx context.Context, dcli *client.Client, name, target st
 }
 
 // currentServiceNetworks returns the network names a service is attached to.
-func currentServiceNetworks(ctx context.Context, dcli *client.Client, name string, idToName map[string]string) ([]string, error) {
+func currentServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, idToName map[string]string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -274,7 +276,7 @@ func currentServiceNetworks(ctx context.Context, dcli *client.Client, name strin
 
 // setServiceEnv replaces a service's environment variables ("KEY=VALUE").
 // Read-modify-write ServiceUpdate (rolling update).
-func setServiceEnv(ctx context.Context, dcli *client.Client, name string, env []string) error {
+func setServiceEnv(ctx context.Context, dcli swarmapi.Client, name string, env []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -289,7 +291,7 @@ func setServiceEnv(ctx context.Context, dcli *client.Client, name string, env []
 // makes Swarm reconcile every task (restart/reschedule), which is how you unstick
 // a service sitting in an incomplete state (e.g. 1/2 replicas). Read-modify-write
 // ServiceUpdate; nothing else in the spec changes.
-func forceUpdateService(ctx context.Context, dcli *client.Client, name string) error {
+func forceUpdateService(ctx context.Context, dcli swarmapi.Client, name string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		spec.TaskTemplate.ForceUpdate++
 		return nil
@@ -298,7 +300,7 @@ func forceUpdateService(ctx context.Context, dcli *client.Client, name string) e
 
 // removeService permanently deletes a service (and stops all its tasks). This
 // cannot be undone; the caller confirms first.
-func removeService(ctx context.Context, dcli *client.Client, name string) error {
+func removeService(ctx context.Context, dcli swarmapi.Client, name string) error {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return err
@@ -318,7 +320,7 @@ func removeService(ctx context.Context, dcli *client.Client, name string) error 
 // as UpdateStatus "rollback_started", which the tree's ↺ badge already renders.
 // The spec argument is required by the API but ignored when Rollback is set, so
 // the current spec is passed unchanged.
-func rollbackService(ctx context.Context, dcli *client.Client, name string) error {
+func rollbackService(ctx context.Context, dcli swarmapi.Client, name string) error {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return err
@@ -337,7 +339,7 @@ func rollbackService(ctx context.Context, dcli *client.Client, name string) erro
 // updateServiceImage sets a service's image (read-modify-write ServiceUpdate,
 // rolling update). Used to move a :latest service onto the registry's current
 // digest — the caller passes the fully-qualified ref (repo:latest@sha256:…).
-func updateServiceImage(ctx context.Context, dcli *client.Client, name, image string) error {
+func updateServiceImage(ctx context.Context, dcli swarmapi.Client, name, image string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -348,7 +350,7 @@ func updateServiceImage(ctx context.Context, dcli *client.Client, name, image st
 }
 
 // currentServiceEnv returns a service's environment variables as "KEY=VALUE".
-func currentServiceEnv(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServiceEnv(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -398,7 +400,7 @@ func envFromStrings(items []string) ([]string, error) {
 // setServiceSecrets replaces the secrets a service references. secretNames are
 // resolved to their IDs; each is mounted at /run/secrets/<name>. Read-modify-
 // write ServiceUpdate (rolling update).
-func setServiceSecrets(ctx context.Context, dcli *client.Client, name string, secretNames []string) error {
+func setServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string, secretNames []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -427,7 +429,7 @@ func setServiceSecrets(ctx context.Context, dcli *client.Client, name string, se
 }
 
 // currentServiceSecrets returns the secret names a service references.
-func currentServiceSecrets(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -446,7 +448,7 @@ func currentServiceSecrets(ctx context.Context, dcli *client.Client, name string
 
 // secretNames lists all secret names in the swarm, for the secrets editor's
 // autocomplete. Best effort.
-func secretNames(ctx context.Context, dcli *client.Client) []string {
+func secretNames(ctx context.Context, dcli swarmapi.Client) []string {
 	var out []string
 	if secs, e := dcli.SecretList(ctx, client.SecretListOptions{}); e == nil {
 		for _, s := range secs.Items {
@@ -459,7 +461,7 @@ func secretNames(ctx context.Context, dcli *client.Client) []string {
 
 // setServiceMounts replaces a service's mounts (volumes/binds). Read-modify-
 // write ServiceUpdate (rolling update).
-func setServiceMounts(ctx context.Context, dcli *client.Client, name string, mounts []mount.Mount) error {
+func setServiceMounts(ctx context.Context, dcli swarmapi.Client, name string, mounts []mount.Mount) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -471,7 +473,7 @@ func setServiceMounts(ctx context.Context, dcli *client.Client, name string, mou
 
 // addServiceMount appends a single mount to a service (read-modify-write
 // ServiceUpdate). Errors if a mount already exists at the same target.
-func addServiceMount(ctx context.Context, dcli *client.Client, name string, m mount.Mount) error {
+func addServiceMount(ctx context.Context, dcli swarmapi.Client, name string, m mount.Mount) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -487,7 +489,7 @@ func addServiceMount(ctx context.Context, dcli *client.Client, name string, m mo
 }
 
 // currentServiceMountSpecs returns a service's mounts as editable strings.
-func currentServiceMountSpecs(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServiceMountSpecs(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -572,7 +574,7 @@ func mountsFromStrings(items []string) ([]mount.Mount, error) {
 // evaluate, so the caller can qualify the result. Used for the bind-mount guard
 // warning — swarmexec cannot check host paths, so it at least tells the operator
 // which nodes must carry the path.
-func candidateNodesForService(ctx context.Context, dcli *client.Client, name string) (nodes []string, unevaluated []string, err error) {
+func candidateNodesForService(ctx context.Context, dcli swarmapi.Client, name string) (nodes []string, unevaluated []string, err error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, nil, err
@@ -661,7 +663,7 @@ func nodeMatchesConstraint(n swarm.Node, c string) (matches, known bool) {
 
 // currentServicePlacement returns the service's placement constraints (the
 // `node.*` / `engine.*` == / != expressions).
-func currentServicePlacement(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServicePlacement(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -678,7 +680,7 @@ func currentServicePlacement(ctx context.Context, dcli *client.Client, name stri
 // setServicePlacement replaces the service's placement constraints in one
 // ServiceUpdate (read-modify-write; preferences and other placement fields are
 // preserved).
-func setServicePlacement(ctx context.Context, dcli *client.Client, name string, constraints []string) error {
+func setServicePlacement(ctx context.Context, dcli swarmapi.Client, name string, constraints []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.Placement == nil {
 			spec.TaskTemplate.Placement = &swarm.Placement{}
@@ -725,7 +727,7 @@ func validatePlacementConstraint(s string) (string, error) {
 // current cluster (node roles, hostnames, platforms and labels) for the
 // placement editor's autocomplete. The operator offered is ==; the user can
 // still type an != constraint by hand.
-func placementSuggestions(ctx context.Context, dcli *client.Client) ([]string, error) {
+func placementSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, error) {
 	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nl := nlRes.Items
 	if err != nil {
@@ -759,7 +761,7 @@ func placementSuggestions(ctx context.Context, dcli *client.Client) ([]string, e
 
 // currentServiceSpread returns the descriptors of the service's spread
 // placement preferences (Placement.Preferences[].Spread.SpreadDescriptor).
-func currentServiceSpread(ctx context.Context, dcli *client.Client, name string) ([]string, error) {
+func currentServiceSpread(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
@@ -781,7 +783,7 @@ func currentServiceSpread(ctx context.Context, dcli *client.Client, name string)
 // setServiceSpread replaces the service's spread placement preferences (in the
 // given order) in one ServiceUpdate. Constraints and other placement fields are
 // preserved.
-func setServiceSpread(ctx context.Context, dcli *client.Client, name string, descriptors []string) error {
+func setServiceSpread(ctx context.Context, dcli swarmapi.Client, name string, descriptors []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.Placement == nil {
 			spec.TaskTemplate.Placement = &swarm.Placement{}
@@ -817,7 +819,7 @@ func validateSpreadDescriptor(s string) (string, error) {
 
 // spreadSuggestions builds candidate spread descriptors (bare node attributes)
 // from the current cluster for the spread editor's autocomplete.
-func spreadSuggestions(ctx context.Context, dcli *client.Client) ([]string, error) {
+func spreadSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, error) {
 	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nl := nlRes.Items
 	if err != nil {
@@ -852,7 +854,7 @@ type serviceResources struct {
 
 // currentServiceResources returns the service's current limits/reservations as
 // display strings for the resources editor.
-func currentServiceResources(ctx context.Context, dcli *client.Client, name string) (serviceResources, error) {
+func currentServiceResources(ctx context.Context, dcli swarmapi.Client, name string) (serviceResources, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return serviceResources{}, err
@@ -877,7 +879,7 @@ func currentServiceResources(ctx context.Context, dcli *client.Client, name stri
 // setServiceResources sets the service's CPU/memory limits and reservations in
 // one ServiceUpdate. A zero value clears that field (Swarm treats 0 as
 // unlimited). Pids limits and generic (device) reservations are preserved.
-func setServiceResources(ctx context.Context, dcli *client.Client, name string, cpuLimit, memLimit, cpuReservation, memReservation int64) error {
+func setServiceResources(ctx context.Context, dcli swarmapi.Client, name string, cpuLimit, memLimit, cpuReservation, memReservation int64) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.Resources == nil {
 			spec.TaskTemplate.Resources = &swarm.ResourceRequirements{}
