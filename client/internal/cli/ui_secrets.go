@@ -224,8 +224,24 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 	})
 }
 
-// runRotation rotates name in the background behind a progress overlay. Esc
-// hides the overlay; the rotation carries on and still reports how it ended.
+// rotateSecretFn is the rotation runRotation starts; a variable only so a test
+// can stand in for the cluster.
+var rotateSecretFn = rotateSecret
+
+// runRotation rotates name in the background behind a progress overlay.
+//
+// A rotation must finish once it has started, wherever the operator goes: it
+// deletes the old secret object before it recreates it under the old name, so
+// one stopped halfway leaves the services parked on the temporary secret. So
+// it runs on the SESSION context (runCtx), not the cluster's — a switch to
+// another cluster cancels the cluster's context, and must not cancel this. It
+// keeps the manager client of the cluster it started on (a switch away keeps
+// that connection open; only quitting the UI closes it).
+//
+// Esc only hides the progress overlay, and so does a switch (which closes the
+// old cluster's overlays). Either way the rotation still reports how it
+// ended; when another cluster is on screen by then, the report names the
+// cluster the rotation ran on. Quitting the UI does stop it — runCtx ends.
 //
 // Progress arrives on the rotating goroutine. It is collected under a lock
 // and drawn by at most one queued update at a time, so a burst of lines costs
@@ -236,7 +252,12 @@ func (u *ui) runRotation(name string, data []byte) {
 	}
 	rotating := u.rotating // this cluster's, even if the operator switches away
 	rotating[name] = true
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	cs := u.clusterState // the cluster the rotation runs on, whatever is visible later
+	app, ctx := u.app, u.runCtx
+	var dcli secretRotateAPI // a nil interface, not a nil *client.Client
+	if cs.dcli != nil {
+		dcli = cs.dcli
+	}
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" rotating secret " + tview.Escape(name) + " ")
@@ -276,18 +297,27 @@ func (u *ui) runRotation(name string, data []byte) {
 	draw()
 	ov.show(centered(tv, 90, 18), tv)
 
+	// Deliberately not async: that would drop the report after a switch.
 	go func() {
-		err := rotateSecret(ctx, dcli, name, data, rotateOptions{
+		start := time.Now()
+		err := rotateSecretFn(ctx, dcli, name, data, rotateOptions{
 			Progress: func(e rotateEvent) {
 				add(fmt.Sprintf("[yellow]%d/%d[-] %s", e.Step, rotateSteps, tview.Escape(e.Msg)))
 			},
 		})
+		logOp(ctx, "ui.secrets.rotate", start, err, "cluster", cs.name, "secret", name)
 		app.QueueUpdateDraw(func() {
 			delete(rotating, name)
 			ov.Close()
-			u.loadSecrets()
+			here := u.clusterState == cs
+			where := "" // nothing to say when the cluster on screen is the one it ran on
+			if here {
+				u.loadSecrets()
+			} else {
+				where = " on cluster " + cs.name
+			}
 			if err != nil {
-				msg := "rotation of " + name + " failed:\n\n" + err.Error()
+				msg := "rotation of " + name + where + " failed:\n\n" + err.Error()
 				if rotateResumeHint(err, "") != "" {
 					msg += "\n\nThe services keep running on " + rotateTempName(name) +
 						", which holds the new content.\nRe-run r on " + name + " to resume."
@@ -295,7 +325,7 @@ func (u *ui) runRotation(name string, data []byte) {
 				u.info(msg)
 				return
 			}
-			u.flash(" [green]rotated[white] secret " + name)
+			u.flash(" [green]rotated[white] secret " + name + where)
 		})
 	}()
 }
