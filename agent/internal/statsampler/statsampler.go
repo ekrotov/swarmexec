@@ -1,7 +1,11 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package server
+// Package statsampler is the agent's background container-stats sampler: it
+// reads every running container's resource usage on a ticker while someone is
+// asking, so the Stats RPC answers from memory and a CPU percentage — a delta
+// between two readings — has a previous reading to compare against.
+package statsampler
 
 import (
 	"context"
@@ -15,11 +19,21 @@ import (
 	"github.com/moby/moby/client"
 )
 
+// Docker is the part of the Docker client the sampler uses: the container
+// list, a one-off inspect for limits, the one-shot stats read and the node's
+// capacity. *client.Client satisfies it.
+type Docker interface {
+	ContainerList(ctx context.Context, options client.ContainerListOptions) (client.ContainerListResult, error)
+	ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error)
+	ContainerStats(ctx context.Context, containerID string, options client.ContainerStatsOptions) (client.ContainerStatsResult, error)
+	Info(ctx context.Context, options client.InfoOptions) (client.SystemInfoResult, error)
+}
+
 const (
-	// statsInterval is how often the sampler takes a reading. It is also the
+	// DefaultInterval is how often the sampler takes a reading. It is also the
 	// resolution of every CPU percentage, since that number is a delta between
 	// two consecutive readings.
-	statsInterval = 5 * time.Second
+	DefaultInterval = 5 * time.Second
 
 	// statsIdleAfter stops the sampling when nobody has asked for a while. A
 	// fleet agent spends almost all its life with no operator looking at it, and
@@ -38,23 +52,24 @@ const (
 	statsSampleTimeout = 3 * time.Second
 )
 
-// containerSample is one container's raw reading, kept so the next pass can
-// turn the CPU counters into a percentage.
-type containerSample struct {
+// Sample is one container's reading. The raw counters are kept so the next
+// pass can turn them into a percentage; the exported fields are what the Stats
+// RPC renders.
+type Sample struct {
 	cpuTotal    uint64 // cgroup cpuacct total, nanoseconds
 	systemTotal uint64 // host-wide cpu time at the same instant
 	onlineCPUs  uint32
 
-	health    string // healthcheck verdict, "" when there is none
-	memBytes  int64
-	memLimit  int64
-	memIsOwn  bool // the limit is the container's own, not the node's total
-	cpuLimit  float64
-	cpuUsable bool // a percentage could be computed (there was a previous sample)
-	cpuPct    float64
+	Health     string // healthcheck verdict, "" when there is none
+	MemBytes   int64  // usage minus the page cache (see memoryUsage)
+	MemLimit   int64  // the container's own limit when MemIsOwn, else the frame's (node total)
+	MemIsOwn   bool   // the limit is the container's own, not the node's total
+	CPULimit   float64
+	CPUUsable  bool // a percentage could be computed (there was a previous sample)
+	CPUPercent float64
 }
 
-// containerStatsCache samples container resource usage in the background so the
+// Sampler samples container resource usage in the background so the
 // Stats RPC answers from memory. Two reasons it is a cache and not a per-request
 // read: a CPU percentage is a delta between two readings, so something has to
 // remember the previous one; and several clients polling the same node would
@@ -63,13 +78,13 @@ type containerSample struct {
 // It samples only while someone is actually asking (see statsIdleAfter), and
 // drops what it holds when it goes idle rather than serving numbers from
 // minutes ago.
-type containerStatsCache struct {
-	docker   DockerClient
+type Sampler struct {
+	docker   Docker
 	log      *slog.Logger
 	interval time.Duration
 
 	mu          sync.RWMutex
-	samples     map[string]containerSample
+	samples     map[string]Sample
 	sampledAt   time.Time
 	cpuReady    bool
 	lastRequest time.Time
@@ -93,23 +108,25 @@ type containerLimits struct {
 	memBytes int64
 }
 
-func newContainerStatsCache(docker DockerClient, log *slog.Logger, interval time.Duration) *containerStatsCache {
+// New returns an idle sampler taking a reading every interval while wanted;
+// zero or negative uses DefaultInterval. Run starts it.
+func New(docker Docker, log *slog.Logger, interval time.Duration) *Sampler {
 	if interval <= 0 {
-		interval = statsInterval
+		interval = DefaultInterval
 	}
-	return &containerStatsCache{
+	return &Sampler{
 		docker:   docker,
 		log:      log,
 		interval: interval,
-		samples:  map[string]containerSample{},
+		samples:  map[string]Sample{},
 		limits:   map[string]containerLimits{},
 	}
 }
 
-// capacity returns the node's CPU count and total memory, reading it from the
+// Capacity returns the node's CPU count and total memory, reading it from the
 // daemon the first time it is needed. A failure is not fatal: the client falls
 // back to per-container limits and the next pass tries again.
-func (c *containerStatsCache) capacity(ctx context.Context) (cpus, mem int64) {
+func (c *Sampler) Capacity(ctx context.Context) (cpus, mem int64) {
 	c.mu.RLock()
 	cpus, mem = c.nodeCPUs, c.nodeMem
 	c.mu.RUnlock()
@@ -133,7 +150,7 @@ func (c *containerStatsCache) capacity(ctx context.Context) (cpus, mem int64) {
 // seen. live is the set of container ids in this pass; entries for containers
 // that have gone are dropped so the map cannot grow without bound on a node
 // that churns.
-func (c *containerStatsCache) limitsFor(ctx context.Context, id string) containerLimits {
+func (c *Sampler) limitsFor(ctx context.Context, id string) containerLimits {
 	c.mu.RLock()
 	lim, ok := c.limits[id]
 	c.mu.RUnlock()
@@ -158,7 +175,7 @@ func (c *containerStatsCache) limitsFor(ctx context.Context, id string) containe
 	return lim
 }
 
-func (c *containerStatsCache) pruneLimits(live map[string]containerSample) {
+func (c *Sampler) pruneLimits(live map[string]Sample) {
 	c.mu.Lock()
 	for id := range c.limits {
 		if _, ok := live[id]; !ok {
@@ -168,9 +185,9 @@ func (c *containerStatsCache) pruneLimits(live map[string]containerSample) {
 	c.mu.Unlock()
 }
 
-// get returns the current readings and marks the cache as wanted, which is what
+// Get returns the current readings and marks the cache as wanted, which is what
 // keeps the sampler running. Treat the map as read-only — a pass swaps it whole.
-func (c *containerStatsCache) get() (samples map[string]containerSample, sampledAt time.Time, cpuReady bool) {
+func (c *Sampler) Get() (samples map[string]Sample, sampledAt time.Time, cpuReady bool) {
 	c.mu.Lock()
 	c.lastRequest = time.Now()
 	samples, sampledAt, cpuReady = c.samples, c.sampledAt, c.cpuReady
@@ -179,7 +196,7 @@ func (c *containerStatsCache) get() (samples map[string]containerSample, sampled
 }
 
 // wanted reports whether anyone has asked recently enough to keep sampling.
-func (c *containerStatsCache) wanted() bool {
+func (c *Sampler) wanted() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return !c.lastRequest.IsZero() && time.Since(c.lastRequest) < statsIdleAfter
@@ -187,18 +204,18 @@ func (c *containerStatsCache) wanted() bool {
 
 // sleep drops the readings when the cache goes idle. Keeping them would mean the
 // next reader gets numbers from before the pause with no way to tell.
-func (c *containerStatsCache) sleep() {
+func (c *Sampler) sleep() {
 	c.mu.Lock()
 	if len(c.samples) > 0 || c.cpuReady {
-		c.samples = map[string]containerSample{}
+		c.samples = map[string]Sample{}
 		c.cpuReady = false
 		c.sampledAt = time.Time{}
 	}
 	c.mu.Unlock()
 }
 
-// run samples on a ticker for as long as someone is reading, until ctx ends.
-func (c *containerStatsCache) run(ctx context.Context) {
+// Run samples on a ticker for as long as someone is reading, until ctx ends.
+func (c *Sampler) Run(ctx context.Context) {
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
 	for {
@@ -218,7 +235,7 @@ func (c *containerStatsCache) run(ctx context.Context) {
 // refresh takes one reading of every running container and swaps it in. CPU
 // percentages are computed against the previous pass, so the first pass after
 // an idle period carries memory only.
-func (c *containerStatsCache) refresh(ctx context.Context) {
+func (c *Sampler) refresh(ctx context.Context) {
 	res, err := c.docker.ContainerList(ctx, client.ContainerListOptions{All: false})
 	if err != nil {
 		c.log.Warn("stats: container list failed; keeping previous readings", "err", err)
@@ -230,7 +247,7 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 	c.mu.RUnlock()
 
 	list := res.Items
-	next := make(map[string]containerSample, len(list))
+	next := make(map[string]Sample, len(list))
 	var mu sync.Mutex
 	anyCPU := false
 
@@ -250,23 +267,23 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 			if !ok {
 				return
 			}
-			s.health = health
+			s.Health = health
 			lim := c.limitsFor(ctx, id)
-			s.cpuLimit = lim.cpuCores
+			s.CPULimit = lim.cpuCores
 			// The stats frame reports the node's total memory as the "limit" for a
 			// container that has none, so the cgroup limit alone cannot say which
 			// it is. The container's own configured limit can.
 			if lim.memBytes > 0 {
-				s.memLimit, s.memIsOwn = lim.memBytes, true
+				s.MemLimit, s.MemIsOwn = lim.memBytes, true
 			}
 			if p, had := prev[id]; had {
 				if pct, ok := cpuPercent(p, s); ok {
-					s.cpuPct, s.cpuUsable = pct, true
+					s.CPUPercent, s.CPUUsable = pct, true
 				}
 			}
 			mu.Lock()
 			next[id] = s
-			if s.cpuUsable {
+			if s.CPUUsable {
 				anyCPU = true
 			}
 			mu.Unlock()
@@ -282,13 +299,13 @@ func (c *containerStatsCache) refresh(ctx context.Context) {
 	c.cpuReady = anyCPU
 	c.mu.Unlock()
 	c.pruneLimits(next)
-	c.capacity(ctx)
+	c.Capacity(ctx)
 }
 
 // sample reads one container's stats. A failure is silent-ish: a container that
 // stopped between the list and the read is the normal case, not an error worth
 // logging at volume.
-func (c *containerStatsCache) sample(ctx context.Context, id string) (containerSample, bool) {
+func (c *Sampler) sample(ctx context.Context, id string) (Sample, bool) {
 	cctx, cancel := context.WithTimeout(ctx, statsSampleTimeout)
 	defer cancel()
 	// Stream false + IncludePreviousSample false is the old ContainerStatsOneShot
@@ -297,14 +314,14 @@ func (c *containerStatsCache) sample(ctx context.Context, id string) (containerS
 	resp, err := c.docker.ContainerStats(cctx, id, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: false})
 	if err != nil {
 		c.log.Debug("stats: one-shot read failed", "container", id, "err", err)
-		return containerSample{}, false
+		return Sample{}, false
 	}
 	defer resp.Body.Close()
 
 	var raw container.StatsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		c.log.Debug("stats: decode failed", "container", id, "err", err)
-		return containerSample{}, false
+		return Sample{}, false
 	}
 	return sampleFrom(raw), true
 }
@@ -312,17 +329,17 @@ func (c *containerStatsCache) sample(ctx context.Context, id string) (containerS
 // sampleFrom converts a docker stats frame into the reading we keep. Split out
 // so the arithmetic — which is easy to get subtly wrong — is unit-testable
 // without a docker daemon.
-func sampleFrom(raw container.StatsResponse) containerSample {
-	s := containerSample{
+func sampleFrom(raw container.StatsResponse) Sample {
+	s := Sample{
 		cpuTotal:    raw.CPUStats.CPUUsage.TotalUsage,
 		systemTotal: raw.CPUStats.SystemUsage,
 		onlineCPUs:  raw.CPUStats.OnlineCPUs,
-		memBytes:    memoryUsage(raw.MemoryStats),
-		memLimit:    int64(raw.MemoryStats.Limit),
+		MemBytes:    memoryUsage(raw.MemoryStats),
+		MemLimit:    int64(raw.MemoryStats.Limit),
 	}
 	// Docker substitutes the node's total memory when a container has no limit of
 	// its own. We cannot tell the two apart from this frame alone, so the caller
-	// compares against the node total; see Server.Stats.
+	// compares against the node total; see the server's Stats handler.
 	return s
 }
 
@@ -349,7 +366,7 @@ func memoryUsage(m container.MemoryStats) int64 {
 // of ONE cpu, so 250.0 means two and a half cores busy. It reports ok=false when
 // the counters cannot produce a meaningful delta (a restarted container whose
 // counters went backwards, or two readings taken at the same instant).
-func cpuPercent(prev, cur containerSample) (float64, bool) {
+func cpuPercent(prev, cur Sample) (float64, bool) {
 	if cur.cpuTotal < prev.cpuTotal || cur.systemTotal < prev.systemTotal {
 		return 0, false // counters reset — container restarted
 	}

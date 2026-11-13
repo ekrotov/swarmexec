@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package server
+package statsampler
 
 import (
 	"context"
@@ -98,7 +98,7 @@ func TestMemoryUsageExcludesPageCache(t *testing.T) {
 // statsFake builds a fake docker with one container, two stats frames and a
 // known node capacity.
 func statsFake(limitMem int64, nanoCPUs int64) *fakeDocker {
-	d := newFakeDocker()
+	d := &fakeDocker{}
 	d.containers = []container.Summary{{ID: "c1"}}
 	var insp container.InspectResponse
 	insp.HostConfig = &container.HostConfig{}
@@ -119,7 +119,7 @@ func statsFake(limitMem int64, nanoCPUs int64) *fakeDocker {
 // read wait a second on the daemon.
 func TestStatsCacheReadsOneShot(t *testing.T) {
 	d := statsFake(0, 0)
-	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c := New(d, discardLog(), time.Hour)
 	c.refresh(context.Background())
 	c.refresh(context.Background())
 
@@ -137,24 +137,24 @@ func TestStatsCacheReadsOneShot(t *testing.T) {
 // The first pass carries memory but no CPU — a percentage needs two readings.
 // The second pass has both. Getting this wrong would show a confident 0%.
 func TestStatsCacheNeedsTwoPassesForCPU(t *testing.T) {
-	c := newContainerStatsCache(statsFake(0, 0), discardLog(), time.Hour)
+	c := New(statsFake(0, 0), discardLog(), time.Hour)
 	ctx := context.Background()
 
 	c.refresh(ctx)
-	samples, _, cpuReady := c.get()
+	samples, _, cpuReady := c.Get()
 	if cpuReady {
 		t.Error("cpu cannot be ready after a single reading")
 	}
-	if got := samples["c1"].memBytes; got != 600 {
+	if got := samples["c1"].MemBytes; got != 600 {
 		t.Errorf("memory = %d, want 600 from the very first reading", got)
 	}
 
 	c.refresh(ctx)
-	samples, sampledAt, cpuReady := c.get()
+	samples, sampledAt, cpuReady := c.Get()
 	if !cpuReady {
 		t.Fatal("cpu should be ready once two readings exist")
 	}
-	if pct := samples["c1"].cpuPct; pct < 199.9 || pct > 200.1 {
+	if pct := samples["c1"].CPUPercent; pct < 199.9 || pct > 200.1 {
 		t.Errorf("cpu = %.2f%%, want 200%%", pct)
 	}
 	if sampledAt.IsZero() {
@@ -167,20 +167,20 @@ func TestStatsCacheNeedsTwoPassesForCPU(t *testing.T) {
 func TestStatsCacheLimitOwnership(t *testing.T) {
 	ctx := context.Background()
 
-	unlimited := newContainerStatsCache(statsFake(0, 0), discardLog(), time.Hour)
+	unlimited := New(statsFake(0, 0), discardLog(), time.Hour)
 	unlimited.refresh(ctx)
-	if s := unlimited.samples["c1"]; s.memIsOwn {
+	if s := unlimited.samples["c1"]; s.MemIsOwn {
 		t.Error("a container without its own memory limit must not claim one")
 	}
 
-	limited := newContainerStatsCache(statsFake(512<<20, 2_000_000_000), discardLog(), time.Hour)
+	limited := New(statsFake(512<<20, 2_000_000_000), discardLog(), time.Hour)
 	limited.refresh(ctx)
 	s := limited.samples["c1"]
-	if !s.memIsOwn || s.memLimit != 512<<20 {
-		t.Errorf("own memory limit not picked up: own=%v limit=%d", s.memIsOwn, s.memLimit)
+	if !s.MemIsOwn || s.MemLimit != 512<<20 {
+		t.Errorf("own memory limit not picked up: own=%v limit=%d", s.MemIsOwn, s.MemLimit)
 	}
-	if s.cpuLimit < 1.99 || s.cpuLimit > 2.01 {
-		t.Errorf("cpu limit = %v cores, want 2", s.cpuLimit)
+	if s.CPULimit < 1.99 || s.CPULimit > 2.01 {
+		t.Errorf("cpu limit = %v cores, want 2", s.CPULimit)
 	}
 }
 
@@ -188,7 +188,7 @@ func TestStatsCacheLimitOwnership(t *testing.T) {
 // of caching them.
 func TestStatsCacheInspectsLimitsOnce(t *testing.T) {
 	d := statsFake(512<<20, 0)
-	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c := New(d, discardLog(), time.Hour)
 	ctx := context.Background()
 	c.refresh(ctx)
 	c.refresh(ctx)
@@ -201,20 +201,20 @@ func TestStatsCacheInspectsLimitsOnce(t *testing.T) {
 // The sampler must stop working when nobody is reading, and must drop what it
 // holds rather than serving numbers from before the pause.
 func TestStatsCacheIdlesAndForgets(t *testing.T) {
-	c := newContainerStatsCache(statsFake(0, 0), discardLog(), time.Hour)
+	c := New(statsFake(0, 0), discardLog(), time.Hour)
 	ctx := context.Background()
 
 	if c.wanted() {
 		t.Error("a cache nobody has asked for should not be sampling")
 	}
-	c.get() // a reader arms it
+	c.Get() // a reader arms it
 	if !c.wanted() {
 		t.Error("a recent reader should keep it sampling")
 	}
 
 	c.refresh(ctx)
 	c.refresh(ctx)
-	if _, _, ready := c.get(); !ready {
+	if _, _, ready := c.Get(); !ready {
 		t.Fatal("expected readings before going idle")
 	}
 
@@ -226,7 +226,7 @@ func TestStatsCacheIdlesAndForgets(t *testing.T) {
 		t.Error("a cache nobody has read for a while should stop sampling")
 	}
 	c.sleep()
-	samples, sampledAt, ready := c.get()
+	samples, sampledAt, ready := c.Get()
 	if len(samples) != 0 || ready || !sampledAt.IsZero() {
 		t.Errorf("going idle must drop the readings, got %d samples ready=%v", len(samples), ready)
 	}
@@ -235,7 +235,7 @@ func TestStatsCacheIdlesAndForgets(t *testing.T) {
 // A container that disappears must not leave its limits behind forever.
 func TestStatsCachePrunesLimits(t *testing.T) {
 	d := statsFake(512<<20, 0)
-	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c := New(d, discardLog(), time.Hour)
 	c.refresh(context.Background())
 	if len(c.limits) != 1 {
 		t.Fatalf("expected the container's limits to be cached, got %d", len(c.limits))
@@ -254,7 +254,7 @@ func TestStatsCachePrunesLimits(t *testing.T) {
 // than blanking the view on one transient error.
 func TestStatsCacheKeepsReadingsOnListError(t *testing.T) {
 	d := statsFake(0, 0)
-	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c := New(d, discardLog(), time.Hour)
 	ctx := context.Background()
 	c.refresh(ctx)
 	c.refresh(ctx)
@@ -264,7 +264,7 @@ func TestStatsCacheKeepsReadingsOnListError(t *testing.T) {
 	d.mu.Unlock()
 	c.refresh(ctx)
 
-	samples, _, ready := c.get()
+	samples, _, ready := c.Get()
 	if len(samples) != 1 || !ready {
 		t.Errorf("a failed list should keep the previous readings, got %d samples ready=%v", len(samples), ready)
 	}
@@ -302,12 +302,56 @@ func TestHealthFromStatus(t *testing.T) {
 func TestStatsCacheCarriesHealth(t *testing.T) {
 	d := statsFake(0, 0)
 	d.containers[0].Status = "Up 3 days (unhealthy)"
-	c := newContainerStatsCache(d, discardLog(), time.Hour)
+	c := New(d, discardLog(), time.Hour)
 	c.refresh(context.Background())
-	if got := c.samples["c1"].health; got != healthUnhealthy {
+	if got := c.samples["c1"].Health; got != healthUnhealthy {
 		t.Errorf("health = %q, want unhealthy", got)
 	}
 	if n := d.inspectCalls(); n != 1 {
 		t.Errorf("%d inspect calls — health must not add one per pass (only the one-off limits read)", n)
+	}
+}
+
+// Node capacity is read once and kept: a node does not grow CPUs while the
+// agent runs, and an Info round trip per Stats request would be pure waste.
+func TestSamplerReadsCapacityOnce(t *testing.T) {
+	d := statsFake(0, 0)
+	c := New(d, discardLog(), time.Hour)
+	for i := 0; i < 3; i++ {
+		cpus, mem := c.Capacity(context.Background())
+		if cpus != 4 || mem != 8<<30 {
+			t.Fatalf("capacity = %d cpus, %d bytes; want 4, 8 GiB", cpus, mem)
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.infoCalls != 1 {
+		t.Errorf("%d Info calls, want 1", d.infoCalls)
+	}
+}
+
+// Run samples only while wanted and returns when its context ends.
+func TestSamplerRunSamplesWhileWanted(t *testing.T) {
+	d := statsFake(0, 0)
+	c := New(d, discardLog(), time.Millisecond)
+	c.Get() // a reader arms it
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { c.Run(ctx); close(done) }()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, _, ready := c.Get(); ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Run never produced a CPU-ready pass")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancel")
 	}
 }

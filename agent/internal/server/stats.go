@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/statsampler"
 	"swarmexec/internal/pb"
 )
 
@@ -15,7 +16,7 @@ import (
 // are node-local — the manager API knows what the scheduler BOOKED, not what is
 // actually being used — so the cli queries every node and aggregates.
 //
-// The reading itself comes from a background sampler (see containerStatsCache),
+// The reading itself comes from a background sampler (see internal/statsampler),
 // not from this call: a CPU percentage is a delta between two readings, and
 // several clients polling the same node should not each trigger their own scan.
 // The first response after a quiet period therefore carries memory but no CPU,
@@ -25,8 +26,8 @@ func (s *Server) Stats(ctx context.Context, req *pb.StatsRequest) (*pb.StatsResp
 		return nil, err
 	}
 
-	samples, sampledAt, cpuReady := s.statsCache.get()
-	nodeCPUs, nodeMem := s.statsCache.capacity(ctx)
+	samples, sampledAt, cpuReady := s.statsCache.Get()
+	nodeCPUs, nodeMem := s.statsCache.Capacity(ctx)
 
 	// An empty id list means "everything you have"; a non-empty one is the cli
 	// telling us which containers it is actually displaying.
@@ -55,24 +56,24 @@ func (s *Server) Stats(ctx context.Context, req *pb.StatsRequest) (*pb.StatsResp
 // statsProto renders one reading for the wire. nodeMem resolves the memory
 // limit: docker reports the node's total for a container with no limit of its
 // own, and the client must not read that as "this container may use 64 GB".
-func statsProto(id string, s containerSample, nodeMem int64) *pb.ContainerStats {
+func statsProto(id string, s statsampler.Sample, nodeMem int64) *pb.ContainerStats {
 	out := &pb.ContainerStats{
 		ContainerId:   id,
-		MemoryBytes:   s.memBytes,
-		CpuLimitCores: s.cpuLimit,
-		MemoryLimited: s.memIsOwn,
-		Health:        s.health,
+		MemoryBytes:   s.MemBytes,
+		CpuLimitCores: s.CPULimit,
+		MemoryLimited: s.MemIsOwn,
+		Health:        s.Health,
 	}
 	switch {
-	case s.memIsOwn:
-		out.MemoryLimitBytes = s.memLimit
+	case s.MemIsOwn:
+		out.MemoryLimitBytes = s.MemLimit
 	case nodeMem > 0:
 		out.MemoryLimitBytes = nodeMem
 	default:
-		out.MemoryLimitBytes = s.memLimit // the frame's value, node total in practice
+		out.MemoryLimitBytes = s.MemLimit // the frame's value, node total in practice
 	}
-	if s.cpuUsable {
-		out.CpuPercent = s.cpuPct
+	if s.CPUUsable {
+		out.CpuPercent = s.CPUPercent
 	}
 	return out
 }

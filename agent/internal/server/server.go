@@ -27,6 +27,7 @@ import (
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/limits"
+	"swarmexec/agent/internal/statsampler"
 	"swarmexec/agent/internal/volsize"
 	"swarmexec/internal/pb"
 )
@@ -53,7 +54,7 @@ type Options struct {
 	VolumeSizeInterval time.Duration
 	// StatsInterval sets how often the container-stats sampler takes a reading —
 	// also the resolution of every CPU percentage, which is a delta between two
-	// of them. Zero uses the default (statsInterval).
+	// of them. Zero uses the default (statsampler.DefaultInterval).
 	StatsInterval time.Duration
 	// MaxStreams caps concurrent Exec + Logs + PortForward streams on this node.
 	// Zero uses the default (limits.DefaultMaxStreams); negative disables the cap.
@@ -74,7 +75,7 @@ type Server struct {
 	metrics    Metrics
 	opts       Options
 	sizeCache  *volsize.Cache       // serves ListVolumes(with_size) from memory
-	statsCache *containerStatsCache // serves Stats from memory (see statscache.go)
+	statsCache *statsampler.Sampler // serves Stats from memory (see internal/statsampler)
 	reclaim    *reclaimCache        // serves ReclaimStats from memory (see reclaim.go)
 	scheduler  *pruneScheduler      // the node's prune schedule (see schedule.go)
 
@@ -127,7 +128,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 		opts:    opts,
 	}
 	s.sizeCache = volsize.New(docker, log, opts.VolumeSizeInterval)
-	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
+	s.statsCache = statsampler.New(docker, log, opts.StatsInterval)
 	s.reclaim = newReclaimCache(s, log)
 	s.scheduler = newPruneScheduler(s, log)
 	s.muxes = newMuxPool()
@@ -153,10 +154,10 @@ func (s *Server) StartVolumeSizeCache(ctx context.Context) {
 
 // StartStatsCache launches the background container-stats sampler. Unlike the
 // volume cache it only does work while a client is actually asking for stats
-// (see statsIdleAfter), so an agent nobody is watching stays idle. Call it once
+// (see statsampler), so an agent nobody is watching stays idle. Call it once
 // after New.
 func (s *Server) StartStatsCache(ctx context.Context) {
-	go s.statsCache.run(ctx)
+	go s.statsCache.Run(ctx)
 }
 
 // StartReclaimCache launches the background reclaim measurement: once shortly
