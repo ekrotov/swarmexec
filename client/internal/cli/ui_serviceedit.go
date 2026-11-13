@@ -863,7 +863,7 @@ func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func(
 // access), so on apply it warns which nodes the service could run on and that
 // each bind source must already exist on all of them.
 func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()) {
-	r, cfg, dcli, f := u.r, u.cfg, u.dcli, u.f
+	r, ac, dcli, f := u.r, u.agents, u.dcli, u.f
 	type loaded struct {
 		items, nodes, uneval []string
 		nerr                 error
@@ -912,7 +912,7 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 			if e != nil {
 				return nil, e
 			}
-			vs, _ := indexVolumes(ctx, cfg, vnodes, f.connectTimeout)
+			vs, _ := ac.Volumes(ctx, vnodes, f.connectTimeout)
 			names := make([]string, 0, len(vs))
 			for _, v := range vs {
 				names = append(names, v.Name)

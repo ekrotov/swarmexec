@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	cterm "swarmexec/client/internal/term"
 )
@@ -228,7 +228,7 @@ type logFilterFactory func(dst io.Writer) (io.Writer, func())
 // streamManyLogs follows every source concurrently into the shared sinks. A
 // source that fails is reported in its own lines and does not stop the others;
 // the returned error says how many failed.
-func streamManyLogs(ctx context.Context, cfg config.Config, r *resolve.Resolver, sources []logSource, p logsParams, stdout, stderr io.Writer, color bool, wrap logFilterFactory) error {
+func streamManyLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Resolver, sources []logSource, p logsParams, stdout, stderr io.Writer, color bool, wrap logFilterFactory) error {
 	outSink, errSink := newLineSinks(stdout, stderr)
 	prefixes := sourcePrefixes(sources, color)
 
@@ -245,7 +245,7 @@ func streamManyLogs(ctx context.Context, cfg config.Config, r *resolve.Resolver,
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := streamServiceLogs(ctx, cfg, r, src.follow, src.ep, p, so, se, notify)
+			err := streamServiceLogs(ctx, ac, r, src.follow, src.ep, p, so, se, notify)
 			flushOut()
 			flushErr()
 			po.Flush()

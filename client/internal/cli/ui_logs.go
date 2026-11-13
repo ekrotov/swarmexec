@@ -140,7 +140,7 @@ func (u *ui) logPage(tv *tview.TextView, follow *atomic.Bool) (tview.Primitive, 
 
 func (u *ui) showLogs(c resolve.Candidate) {
 	app, ctree := u.app, u.ctree
-	cfg, r, ctx, f := u.cfg, u.r, u.ctx, u.f
+	ac, r, ctx, f := u.agents, u.r, u.ctx, u.f
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	follow := &atomic.Bool{}
@@ -177,9 +177,9 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	// Buffered by one: the follower only ever needs to know THAT something
 	// happened, not how often.
 	wake := make(chan struct{}, 1)
-	go watchContainerEvents(lctx, cfg, ep, f.connectTimeout, lv.addNote, wake)
+	go watchContainerEvents(lctx, ac, ep, f.connectTimeout, lv.addNote, wake)
 	go func() {
-		lerr := streamServiceLogs(lctx, cfg, r, target, ep,
+		lerr := streamServiceLogs(lctx, ac, r, target, ep,
 			logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout, wake: wake},
 			&logIngest{v: lv}, &logIngest{v: lv, stderr: true}, lv.addNote)
 		if lerr != nil && lctx.Err() == nil {
@@ -207,7 +207,7 @@ const stackLogLimit = 64
 // non-empty note heads the view, above the first line.
 func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, byService bool, note string) {
 	app, ctree := u.app, u.ctree
-	cfg, r, ctx, f := u.cfg, u.r, u.ctx, u.f
+	ac, r, ctx, f := u.agents, u.r, u.ctx, u.f
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	follow := &atomic.Bool{}
 	follow.Store(true)
@@ -251,7 +251,7 @@ func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, bySe
 			tail = 50
 		}
 		go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
-			lerr := streamServiceLogs(lctx, cfg, r, target, ep,
+			lerr := streamServiceLogs(lctx, ac, r, target, ep,
 				logsParams{follow: true, tail: tail, connectTimeout: f.connectTimeout},
 				&logIngest{v: lv, prefix: prefix},
 				&logIngest{v: lv, prefix: prefix, stderr: true},

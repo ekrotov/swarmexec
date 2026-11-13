@@ -264,9 +264,9 @@ func (s *mcpServer) toolOverview(ctx context.Context, in mcpCtxIn) (string, erro
 	// Health lives on the nodes, not the manager; it is best effort, and its
 	// absence is said rather than shown as "all healthy".
 	usage := map[string]containerUsage{}
-	if cfg, aerr := c.agents(); aerr == nil {
+	if ac, aerr := c.agents(); aerr == nil {
 		if rn, nerr := c.r.Nodes(ctx); nerr == nil {
-			usage, _ = collectUsage(ctx, cfg, rn, s.connectTimeout, c.gate)
+			usage, _ = ac.Usage(ctx, rn, s.connectTimeout, c.gate)
 		}
 	}
 	if len(usage) == 0 {
@@ -499,7 +499,7 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 	if !ms.access.Logs {
 		return "", errNotPermitted
 	}
-	cfg, err := c.agents()
+	ac, err := c.agents()
 	if err != nil {
 		return "", err
 	}
@@ -562,7 +562,7 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 		return fw, fw.Flush
 	}
 	params := logsParams{tail: uint32(tail), since: since, connectTimeout: s.connectTimeout}
-	serr := streamManyLogs(lctx, cfg, c.r, sources, params, buf, buf, false, wrap)
+	serr := streamManyLogs(lctx, ac, c.r, sources, params, buf, buf, false, wrap)
 
 	out := note + buf.String()
 	switch {
@@ -644,7 +644,7 @@ func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, 
 			return "", err
 		}
 	}
-	cfg, err := c.agents()
+	ac, err := c.agents()
 	if err != nil {
 		return "", err
 	}
@@ -678,7 +678,7 @@ func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, 
 	answered := map[string]bool{}
 	deadline := time.Now().Add(s.statsWait)
 	for {
-		u, byNode := collectUsage(ctx, cfg, ask, s.connectTimeout, c.gate)
+		u, byNode := ac.Usage(ctx, ask, s.connectTimeout, c.gate)
 		for id, cu := range u {
 			usage[id] = cu
 		}
@@ -1026,9 +1026,9 @@ func (s *mcpServer) toolReport(ctx context.Context, in mcpCtxIn) (string, error)
 	}
 	restrictCluster(&cluster, v)
 	cluster.ClientVersion, cluster.ClientProto = s.g.version.Binary, s.g.version.Proto
-	if cfg, aerr := c.agents(); aerr == nil {
+	if ac, aerr := c.agents(); aerr == nil {
 		if nodes, nerr := c.r.Nodes(ctx); nerr == nil {
-			applyAgentVersions(ctx, &cluster, cfg, nodes, s.connectTimeout)
+			applyAgentVersions(ctx, &cluster, ac, nodes, s.connectTimeout)
 		}
 	}
 	meta := secscan.ReportMeta{Context: c.label, Generated: time.Now(), Tool: "swarmexec " + s.g.version.Binary + " (mcp)"}
@@ -1091,7 +1091,7 @@ func (s *mcpServer) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error)
 		return "", err
 	}
 	out := mcpDoctor{Context: c.label, Client: s.g.version.Binary, Proto: s.g.version.Proto, Manager: info.Info.Name, Healthy: true}
-	cfg, err := c.agents()
+	ac, err := c.agents()
 	if err != nil {
 		out.Healthy, out.Problem = false, err.Error()
 		return jsonText(out)
@@ -1100,12 +1100,12 @@ func (s *mcpServer) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error)
 	if err != nil {
 		return "", err
 	}
-	for _, r := range checkNodes(ctx, cfg, nodes, s.connectTimeout) {
+	for _, r := range ac.Versions(ctx, nodes, s.connectTimeout) {
 		st, ver, proto, ok := classifyNode(r, s.g.version)
 		if !ok {
 			out.Healthy = false
 		}
-		out.Nodes = append(out.Nodes, mcpDoctorNode{Node: r.node.Name, Agent: st, Version: ver, Proto: proto})
+		out.Nodes = append(out.Nodes, mcpDoctorNode{Node: r.Node.Name, Agent: st, Version: ver, Proto: proto})
 	}
 	return jsonText(out)
 }
@@ -1180,7 +1180,7 @@ func (s *mcpServer) toolExec(ctx context.Context, in mcpExecIn) (string, error) 
 	if len(in.Command) > mcpExecMaxArgs {
 		return "", fmt.Errorf("command has %d arguments; at most %d", len(in.Command), mcpExecMaxArgs)
 	}
-	cfg, err := c.agents()
+	ac, err := c.agents()
 	if err != nil {
 		return "", err
 	}
@@ -1220,7 +1220,7 @@ func (s *mcpServer) toolExec(ctx context.Context, in mcpExecIn) (string, error) 
 
 	stdout := &capWriter{max: mcpExecMaxOutput}
 	stderr := &capWriter{max: mcpExecMaxOutput}
-	code, err := runNonInteractive(ctx, cfg, ep, in.Command, timeout, stdout, stderr)
+	code, err := ac.RunNonInteractive(ctx, ep, in.Command, timeout, stdout, stderr)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return "", fmt.Errorf("the command did not finish within %s", timeout)

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
 )
@@ -100,7 +101,7 @@ func TestOccupiedPortFailsBeforeDialling(t *testing.T) {
 	cfg := config.Config{Port: 9443, Insecure: true}
 
 	start := time.Now()
-	fw, err := startForwarder(context.Background(), cfg, ep, forwardParams{
+	fw, err := startForwarder(context.Background(), agentcall.New(cfg), ep, forwardParams{
 		address:        "127.0.0.1",
 		localPort:      uint32(port),
 		remotePort:     80,

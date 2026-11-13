@@ -478,7 +478,7 @@ func (u *ui) autoRefreshContainers() {
 }
 
 func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user string) {
-	app, cfg, dcli, f, ctx, ctree := u.app, u.cfg, u.dcli, u.f, u.ctx, u.ctree
+	app, ac, dcli, f, ctx, ctree := u.app, u.agents, u.dcli, u.f, u.ctx, u.ctree
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	tctx, tcancel := context.WithCancel(ctx)
 	tv := newTerminalView(app)
@@ -504,14 +504,14 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 		u.loadContainers()
 	}
 	tv.detach = closeTerm
-	tv.run(tctx, cfg, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
+	tv.run(tctx, ac, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
 		app.QueueUpdateDraw(func() {
 			switch {
 			case tctx.Err() != nil:
 				closeTerm() // user detached (Ctrl-]) — just close
 			case rerr != nil:
 				closeTerm()
-				u.info(explainSession(ctx, cfg, dcli, rerr).Error())
+				u.info(explainSession(ctx, ac.Config(), dcli, rerr).Error())
 			case code == 126 || code == 127:
 				// The shell could not start (127 = not found, 126 = not
 				// executable — e.g. no bash in the image). Keep the pane up so
@@ -530,7 +530,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 }
 
 func (u *ui) containerMenu(c resolve.Candidate) {
-	cfg, f, ctree := u.cfg, u.f, u.ctree
+	ac, f, ctree := u.agents, u.f, u.ctree
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
@@ -586,7 +586,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 	})
 
 	async(u, "ui.containers.probeShells", func(ctx context.Context) ([2]bool, error) {
-		b, s := probeShells(ctx, cfg, ep, f.connectTimeout)
+		b, s := ac.ProbeShells(ctx, ep, f.connectTimeout)
 		return [2]bool{b, s}, nil
 	}, func(ok [2]bool, _ error) {
 		bashOK, shOK, probed = ok[0], ok[1], true
@@ -650,7 +650,7 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // and an agent too old to know the RPC would then break the view instead of
 // just leaving the badges off.
 func (u *ui) loadUsage() {
-	ctx, cfg, r, timeout, gate := u.ctx, u.cfg, u.r, u.f.connectTimeout, u.statsGate
+	ctx, ac, r, timeout, gate := u.ctx, u.agents, u.r, u.f.connectTimeout, u.statsGate
 	// Fetched even while an overlay is open: the inspect STATS view shows these
 	// readings and promises to refresh, and the history must not have a hole
 	// for every minute someone spends in a dialog. The fan-out runs off the
@@ -668,7 +668,7 @@ func (u *ui) loadUsage() {
 			clientlog.Timed("ui.loadUsage", start, err)
 			return
 		}
-		byContainer, byNode := collectUsage(ctx, cfg, nodes, timeout, gate)
+		byContainer, byNode := ac.Usage(ctx, nodes, timeout, gate)
 		clientlog.Timed("ui.loadUsage", start, nil)
 		if ctx.Err() != nil {
 			return

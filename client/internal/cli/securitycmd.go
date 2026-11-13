@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/session"
@@ -76,7 +76,9 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 
-	report, err := gatherSecurityReport(ctx, dcli, cfg, g, f, dockerEP.Context)
+	ac := agentcall.New(cfg)
+	defer ac.Close()
+	report, err := gatherSecurityReport(ctx, dcli, ac, g, f, dockerEP.Context)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
@@ -116,7 +118,7 @@ func writeReportFile(path, body string) error {
 // The manager calls are required: a report missing half the cluster is worse
 // than no report, because it looks complete. The agent round trip is optional
 // and its absence is recorded as a gap rather than passed over.
-func gatherSecurityReport(ctx context.Context, dcli swarmapi.Client, cfg config.Config, g *globalFlags, f *securityFlags, contextName string) (secscan.Report, error) {
+func gatherSecurityReport(ctx context.Context, dcli swarmapi.Client, ac *agentcall.Client, g *globalFlags, f *securityFlags, contextName string) (secscan.Report, error) {
 	svcs, err := listServicesForScan(ctx, dcli)
 	if err != nil {
 		return secscan.Report{}, fmt.Errorf("list services: %w", err)
@@ -129,9 +131,9 @@ func gatherSecurityReport(ctx context.Context, dcli swarmapi.Client, cfg config.
 	cluster.ClientVersion, cluster.ClientProto = g.version.Binary, g.version.Proto
 
 	if !f.skipAgents {
-		nodes, nerr := resolve.New(dcli, addrModeOf(cfg)).Nodes(ctx)
+		nodes, nerr := resolve.New(dcli, addrModeOf(ac.Config())).Nodes(ctx)
 		if nerr == nil {
-			applyAgentVersions(ctx, &cluster, cfg, nodes, f.connectTimeout)
+			applyAgentVersions(ctx, &cluster, ac, nodes, f.connectTimeout)
 		}
 		// A failure to resolve dialable nodes leaves AgentsChecked false, which
 		// the report turns into a stated gap. Better than a half-filled node
@@ -148,11 +150,11 @@ func gatherSecurityReport(ctx context.Context, dcli swarmapi.Client, cfg config.
 
 // applyAgentVersions asks every node's agent for its version and records the
 // answer — including the failures, which are findings in their own right.
-func applyAgentVersions(ctx context.Context, c *secscan.Cluster, cfg config.Config, nodes []resolve.Node, timeout time.Duration) {
-	results := checkNodes(ctx, cfg, nodes, timeout)
+func applyAgentVersions(ctx context.Context, c *secscan.Cluster, ac *agentcall.Client, nodes []resolve.Node, timeout time.Duration) {
+	results := ac.Versions(ctx, nodes, timeout)
 	byName := map[string]nodeHealth{}
 	for _, r := range results {
-		byName[r.node.Name] = r
+		byName[r.Node.Name] = r
 	}
 	for i := range c.Nodes {
 		r, ok := byName[c.Nodes[i].Name]
@@ -160,14 +162,14 @@ func applyAgentVersions(ctx context.Context, c *secscan.Cluster, cfg config.Conf
 			continue
 		}
 		switch {
-		case r.err != nil && agentTooOld(r.err):
+		case r.Err != nil && agentTooOld(r.Err):
 			// The same signal doctor reads: an agent predating the Version RPC
 			// answers Unimplemented rather than failing to connect.
 			c.Nodes[i].AgentTooOld = true
-		case r.err != nil:
-			c.Nodes[i].AgentError = r.err.Error()
+		case r.Err != nil:
+			c.Nodes[i].AgentError = r.Err.Error()
 		default:
-			c.Nodes[i].AgentVersion, c.Nodes[i].AgentProto = r.version, r.proto
+			c.Nodes[i].AgentVersion, c.Nodes[i].AgentProto = r.Version, r.Proto
 		}
 	}
 	c.AgentsChecked = true

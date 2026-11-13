@@ -54,7 +54,7 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 		u.info(msg + ".\n\nStop it on the Forwards tab, or pick another local port.")
 		return
 	}
-	app, cfg, f, forwards := u.app, u.cfg, u.f, u.forwards
+	app, ac, f, forwards := u.app, u.agents, u.f, u.forwards
 	// runCtx, NOT the cluster's context: a forward is a local listener the
 	// operator started deliberately, and it now survives a switch to another
 	// cluster the way it already survived closing the overlay that started it.
@@ -67,7 +67,7 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 
 	go func() {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		fw, ferr := startForwarder(fctx, cfg, ep, forwardParams{
+		fw, ferr := startForwarder(fctx, ac, ep, forwardParams{
 			address:        address,
 			localPort:      local,
 			remotePort:     remote,

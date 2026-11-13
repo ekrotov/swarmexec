@@ -13,9 +13,8 @@
 // still wraps the original, so errors.Is and status.Code on the result keep
 // answering for the cause.
 //
-// The package is deliberately small and free of cli: it is where the agent
-// side of the future agentcall package (review A-01) will keep its error
-// mapping.
+// The package is deliberately small and free of cli: agentcall (review A-01)
+// explains every per-node RPC error through it.
 package agenterr
 
 import (

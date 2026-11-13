@@ -15,6 +15,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
@@ -280,6 +281,7 @@ func (u *ui) connectCluster(c *clusterState) error {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 	c.cfg = cfg
+	c.agents = agentcall.New(cfg)
 	c.dcli = dcli
 	c.r = resolve.New(dcli, addrModeOf(cfg))
 	c.ctx, c.cancel = context.WithCancel(u.runCtx)
@@ -1721,7 +1723,7 @@ func (u *ui) startSearch(mode string) {
 // summary. The agent probe (a Version RPC per node) can be slow, so it runs
 // off the UI goroutine and pushes the result back via QueueUpdateDraw.
 func (u *ui) refreshCluster() {
-	r, cfg, f := u.r, u.cfg, u.f
+	r, ac, f := u.r, u.agents, u.f
 	type census struct{ nodes, agents int }
 	async(u, "ui.refreshCluster", func(ctx context.Context) (census, error) {
 		nodes, err := r.Nodes(ctx)
@@ -1729,8 +1731,8 @@ func (u *ui) refreshCluster() {
 			return census{}, err
 		}
 		agents := 0
-		for _, h := range checkNodes(ctx, cfg, nodes, f.connectTimeout) {
-			if h.err == nil {
+		for _, h := range ac.Versions(ctx, nodes, f.connectTimeout) {
+			if h.Err == nil {
 				agents++
 			}
 		}

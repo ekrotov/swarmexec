@@ -15,8 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -93,7 +92,9 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 		}
 	}
 
-	code, runErr := execInto(ctx, cfg, *ep, execParams{
+	ac := agentcall.New(cfg)
+	defer ac.Close()
+	code, runErr := execInto(ctx, ac, *ep, execParams{
 		command:        command,
 		tty:            tty,
 		env:            f.env,
@@ -126,7 +127,7 @@ type execParams struct {
 // execInto dials the agent at ep, opens the Exec stream, bridges the terminal
 // (raw mode + resize when interactive), and returns the remote exit code. It is
 // shared by the `exec` command and the interactive `ui`.
-func execInto(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p execParams) (int, error) {
+func execInto(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p execParams) (int, error) {
 	stdinIsTerm := cterm.IsTerminal(os.Stdin.Fd())
 
 	var initW, initH uint32
@@ -146,14 +147,14 @@ func execInto(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p exe
 
 	// Connect (blocking, with timeout) so bad TLS/unreachable nodes fail fast.
 	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+	conn, err := ac.Conn(dctx, ep.DialHost)
 	dcancel()
 	if err != nil {
 		return session.TransportFailure, err
 	}
 	defer conn.Close()
 
-	stream, err := pb.NewAgentClient(conn).Exec(ctx)
+	stream, err := conn.Agent().Exec(ctx)
 	if err != nil {
 		return session.TransportFailure, fmt.Errorf("open exec stream: %w", err)
 	}

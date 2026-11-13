@@ -4,15 +4,12 @@
 package cli
 
 import (
-	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
@@ -25,7 +22,7 @@ func TestUsageOfPicksTheRightDenominator(t *testing.T) {
 
 	// Own limits: 1.8 of 2 allotted cores and 900 MB of a 1 GB cap — both hot,
 	// even though against the node they would look harmless.
-	own := usageOf(&pb.ContainerStats{
+	own := agentcall.UsageOf(&pb.ContainerStats{
 		CpuPercent: 180, CpuLimitCores: 2,
 		MemoryBytes: 900 << 20, MemoryLimitBytes: 1 << 30, MemoryLimited: true,
 	}, resp)
@@ -35,12 +32,12 @@ func TestUsageOfPicksTheRightDenominator(t *testing.T) {
 	if !own.MemLimited || own.MemRatio < 0.87 || own.MemRatio > 0.89 {
 		t.Errorf("mem ratio = %.3f, want ~0.88 of its own limit", own.MemRatio)
 	}
-	if own.level() != usageCrit {
-		t.Errorf("level = %v, want crit at 90%% of its own cpu limit", own.level())
+	if usageLevelOf(own) != usageCrit {
+		t.Errorf("level = %v, want crit at 90%% of its own cpu limit", usageLevelOf(own))
 	}
 
 	// Same absolute usage, no limits: now it is a share of the node, and modest.
-	free := usageOf(&pb.ContainerStats{
+	free := agentcall.UsageOf(&pb.ContainerStats{
 		CpuPercent:  180,
 		MemoryBytes: 900 << 20, MemoryLimitBytes: 16 << 30,
 	}, resp)
@@ -50,8 +47,8 @@ func TestUsageOfPicksTheRightDenominator(t *testing.T) {
 	if free.CPURatio < 0.22 || free.CPURatio > 0.23 {
 		t.Errorf("cpu ratio = %.3f, want ~0.225 of eight cores", free.CPURatio)
 	}
-	if free.level() != usageOK {
-		t.Errorf("level = %v, want ok", free.level())
+	if usageLevelOf(free) != usageOK {
+		t.Errorf("level = %v, want ok", usageLevelOf(free))
 	}
 }
 
@@ -59,14 +56,14 @@ func TestUsageOfPicksTheRightDenominator(t *testing.T) {
 func TestUsageIgnoresUnreadyCPU(t *testing.T) {
 	resp := &pb.StatsResponse{CpuReady: false, NodeCpus: 4, NodeMemoryTotalBytes: 8 << 30}
 	// 7.7 of 8 GiB — comfortably past the 90% mark on memory alone.
-	u := usageOf(&pb.ContainerStats{MemoryBytes: 7700 << 20, MemoryLimitBytes: 8 << 30}, resp)
+	u := agentcall.UsageOf(&pb.ContainerStats{MemoryBytes: 7700 << 20, MemoryLimitBytes: 8 << 30}, resp)
 
 	if u.CPUReady {
 		t.Error("cpu should not be marked ready")
 	}
 	// Memory alone still decides the level — it is valid from the first reading.
-	if u.level() != usageCrit {
-		t.Errorf("level = %v, want crit from memory alone", u.level())
+	if usageLevelOf(u) != usageCrit {
+		t.Errorf("level = %v, want crit from memory alone", usageLevelOf(u))
 	}
 	if got := formatCPUUsage(u); got != "…" {
 		t.Errorf("cpu display = %q, want a placeholder rather than a number", got)
@@ -203,52 +200,6 @@ func TestNodeUsageSectionAbsentWhenUnknown(t *testing.T) {
 	if !strings.Contains(warming, "measuring") {
 		t.Errorf("an unready cpu reading should say so:\n%s", warming)
 	}
-}
-
-// A cluster whose agents predate the Stats RPC must not cost a timeout per node
-// on every refresh — measured at a full 10s per cycle before the gate existed.
-func TestStatsGateBenchesFailingNodes(t *testing.T) {
-	g := newStatsGate()
-	if !g.allowed("node-a") {
-		t.Fatal("an unseen node should be probed")
-	}
-
-	// An agent too old to know the RPC will keep saying so until it is
-	// redeployed, so it waits far longer than a node that was merely away.
-	g.fail("node-a", status.Error(codes.Unimplemented, "unknown method Stats"))
-	g.fail("node-b", context.DeadlineExceeded)
-	if g.allowed("node-a") || g.allowed("node-b") {
-		t.Error("a node that just failed must not be probed again immediately")
-	}
-
-	g.mu.Lock()
-	unsupported, transient := g.skip["node-a"], g.skip["node-b"]
-	g.mu.Unlock()
-	if !unsupported.After(transient) {
-		t.Errorf("an unsupported agent should wait longer than an unreachable one: %v vs %v", unsupported, transient)
-	}
-
-	// A node that starts answering again is taken off the bench.
-	g.ok("node-b")
-	if !g.allowed("node-b") {
-		t.Error("a node that answered should be probed again")
-	}
-
-	// The bench is time-based, not permanent.
-	g.mu.Lock()
-	g.skip["node-a"] = time.Now().Add(-time.Second)
-	g.mu.Unlock()
-	if !g.allowed("node-a") {
-		t.Error("an expired bench should let the node be probed again")
-	}
-
-	// A nil gate is the no-op case, so callers need no special handling.
-	var none *statsGate
-	if !none.allowed("x") {
-		t.Error("a nil gate should allow everything")
-	}
-	none.fail("x", nil)
-	none.ok("x")
 }
 
 func healthCands() []resolve.Candidate {
@@ -478,7 +429,7 @@ func TestFormatCPUUsageWithoutALimit(t *testing.T) {
 
 // level is the container's overall level: the worse of cpu and memory, ignoring
 // a CPU reading that is not ready yet.
-func (u containerUsage) level() usageLevel {
+func usageLevelOf(u containerUsage) usageLevel {
 	lvl := levelOf(u.MemRatio)
 	if u.CPUReady {
 		lvl = worst(lvl, levelOf(u.CPURatio))
