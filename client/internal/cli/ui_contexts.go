@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"swarmexec/client/internal/dockerctx"
@@ -89,7 +90,7 @@ func (u *ui) selectedContext() (dockerctx.Context, bool) {
 // Docker-API and agent-tunnel ssh connections (no ~/.ssh/config needed).
 // "Test" verifies the assembled endpoint (a live daemon ping) before saving.
 func (u *ui) showCreateContext() {
-	app, ctx, cxtable := u.app, u.ctx, u.cxtable
+	app, cxtable := u.app, u.cxtable
 	var (
 		name, desc                      string
 		useSSH                          = true
@@ -162,16 +163,15 @@ func (u *ui) showCreateContext() {
 			}
 			pj := proxyJump()
 			u.flash(" [gray]testing " + host + " …[white]")
-			go func() {
-				terr := pingDockerHost(ctx, host, pj)
-				app.QueueUpdateDraw(func() {
-					if terr != nil {
-						u.info("test failed: " + terr.Error())
-						return
-					}
-					u.flash(" [green]✓ connection ok[white] — " + host)
-				})
-			}()
+			asyncDo(u, "ui.contexts.test", func(ctx context.Context) error {
+				return pingDockerHost(ctx, host, pj)
+			}, func(terr error) {
+				if terr != nil {
+					u.info("test failed: " + terr.Error())
+					return
+				}
+				u.flash(" [green]✓ connection ok[white] — " + host)
+			})
 		})
 		form.AddButton("Create", func() {
 			host, err := assembleHost()

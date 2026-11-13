@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -112,9 +113,9 @@ func (u *ui) promptStackPath(title, preset string, then func(string)) {
 }
 
 func (u *ui) exportStack(stack, path string) {
-	ctx, app, dcli := u.ctx, u.app, u.dcli
+	dcli := u.dcli
 	u.flash("exporting " + stack + "…")
-	go func() {
+	async(u, "ui.stack.export", func(ctx context.Context) (*stackfile.Stack, error) {
 		st, err := stackfile.FromSwarm(ctx, dcli, stack)
 		var doc string
 		if err == nil {
@@ -123,43 +124,42 @@ func (u *ui) exportStack(stack, path string) {
 		if err == nil {
 			err = writeReportFile(path, doc)
 		}
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("export failed: " + err.Error())
-				return
-			}
-			// The notes matter more than the count: an export is a description
-			// of the stack, not a backup, and this is the moment to say so.
-			msg := fmt.Sprintf("wrote %s — %d service(s)", path, len(st.Services))
-			if len(st.Notes) > 0 {
-				msg += "\n\n" + strings.Join(st.Notes, "\n\n")
-			}
-			u.info(msg)
-		})
-	}()
+		return st, err
+	}, func(st *stackfile.Stack, err error) {
+		if err != nil {
+			u.info("export failed: " + err.Error())
+			return
+		}
+		// The notes matter more than the count: an export is a description
+		// of the stack, not a backup, and this is the moment to say so.
+		msg := fmt.Sprintf("wrote %s — %d service(s)", path, len(st.Services))
+		if len(st.Notes) > 0 {
+			msg += "\n\n" + strings.Join(st.Notes, "\n\n")
+		}
+		u.info(msg)
+	})
 }
 
 func (u *ui) diffStack(stack, path string) {
-	ctx, app, dcli := u.ctx, u.app, u.dcli
+	dcli := u.dcli
 	u.flash("comparing " + stack + " with " + path + "…")
-	go func() {
+	async(u, "ui.stack.diff", func(ctx context.Context) (*stackfile.Diff, error) {
 		deployed, err := stackfile.FromSwarm(ctx, dcli, stack)
-		var d *stackfile.Diff
-		if err == nil {
-			var file *stackfile.Stack
-			file, err = stackfile.FromFile(ctx, dcli, path, stack)
-			if err == nil {
-				d, err = stackfile.Compare(deployed, file, path)
-			}
+		if err != nil {
+			return nil, err
 		}
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("compare failed: " + err.Error())
-				return
-			}
-			u.showStackDiff(stack, path, d)
-		})
-	}()
+		file, err := stackfile.FromFile(ctx, dcli, path, stack)
+		if err != nil {
+			return nil, err
+		}
+		return stackfile.Compare(deployed, file, path)
+	}, func(d *stackfile.Diff, err error) {
+		if err != nil {
+			u.info("compare failed: " + err.Error())
+			return
+		}
+		u.showStackDiff(stack, path, d)
+	})
 }
 
 // showStackDiff renders the diff with the colouring a reader expects from a
@@ -227,18 +227,17 @@ func defaultStackPath(stack string) string { return safeFileName(stack) + ".yml"
 // decorative — the point of it is that there is a moment in between where
 // nothing has happened yet and walking away is free.
 func (u *ui) planStack(stack, path string) {
-	ctx, app, dcli := u.ctx, u.app, u.dcli
+	dcli := u.dcli
 	u.flash("checking " + path + "…")
-	go func() {
-		plan, err := stackfile.PlanFile(ctx, dcli, path, stack)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot read " + path + ":\n\n" + err.Error())
-				return
-			}
-			u.showStackPlan(plan)
-		})
-	}()
+	async(u, "ui.stack.plan", func(ctx context.Context) (*stackfile.Plan, error) {
+		return stackfile.PlanFile(ctx, dcli, path, stack)
+	}, func(plan *stackfile.Plan, err error) {
+		if err != nil {
+			u.info("cannot read " + path + ":\n\n" + err.Error())
+			return
+		}
+		u.showStackPlan(plan)
+	})
 }
 
 // showStackPlan is what the operator reads before anything is created.
@@ -310,23 +309,22 @@ func (u *ui) confirmAndApply(plan *stackfile.Plan) {
 }
 
 func (u *ui) applyStack(plan *stackfile.Plan) {
-	ctx, app, dcli := u.ctx, u.app, u.dcli
+	dcli := u.dcli
 	u.flash("deploying " + plan.Stack + "…")
-	go func() {
-		res, err := stackfile.Apply(ctx, dcli, plan.Stack, plan.Config, stackfile.ApplyOptions{})
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				msg := "deploy failed: " + err.Error()
-				// A half-applied stack is the dangerous state; say what did
-				// happen before the error, not only the error.
-				if s := res.Summary(); s != "nothing to do" {
-					msg += "\n\npartially applied first: " + s
-				}
-				u.info(msg)
-				return
+	async(u, "ui.stack.apply", func(ctx context.Context) (*stackfile.ApplyResult, error) {
+		return stackfile.Apply(ctx, dcli, plan.Stack, plan.Config, stackfile.ApplyOptions{})
+	}, func(res *stackfile.ApplyResult, err error) {
+		if err != nil {
+			msg := "deploy failed: " + err.Error()
+			// A half-applied stack is the dangerous state; say what did
+			// happen before the error, not only the error.
+			if s := res.Summary(); s != "nothing to do" {
+				msg += "\n\npartially applied first: " + s
 			}
-			u.info("deployed " + plan.Stack + " — " + res.Summary())
-			u.loadContainers()
-		})
-	}()
+			u.info(msg)
+			return
+		}
+		u.info("deployed " + plan.Stack + " — " + res.Summary())
+		u.loadContainers()
+	})
 }

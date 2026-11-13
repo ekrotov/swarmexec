@@ -306,22 +306,27 @@ func (u *ui) showLogsForNode(node *tview.TreeNode) {
 // so the next attempt of a crash loop arrives as a reconnect. With no container
 // at all (image pull failure, no suitable node) the task error is the answer.
 func (u *ui) showLastExitedLogs(service string) {
-	r, ctx := u.r, u.ctx
-	go func() {
+	r := u.r
+	type lastExited struct {
+		cands  []resolve.Candidate
+		reason string
+	}
+	async(u, "ui.logs.lastExited", func(ctx context.Context) (lastExited, error) {
 		cands, reason, err := r.LastExited(ctx, service, 0)
-		u.app.QueueUpdateDraw(func() {
-			switch {
-			case err != nil:
-				u.info(fmt.Sprintf("logs %s: %s", service, err))
-			case len(cands) == 0 && reason != "":
-				u.info(fmt.Sprintf("service %s has no container to read logs from.\n\nNewest task: %s", service, reason))
-			case len(cands) == 0:
-				u.info(fmt.Sprintf("service %s has no container to read logs from.", service))
-			default:
-				u.showMemberLogs("last logs", service, cands, false, lastExitedNote(service, cands))
-			}
-		})
-	}()
+		return lastExited{cands, reason}, err
+	}, func(l lastExited, err error) {
+		cands, reason := l.cands, l.reason
+		switch {
+		case err != nil:
+			u.info(fmt.Sprintf("logs %s: %s", service, err))
+		case len(cands) == 0 && reason != "":
+			u.info(fmt.Sprintf("service %s has no container to read logs from.\n\nNewest task: %s", service, reason))
+		case len(cands) == 0:
+			u.info(fmt.Sprintf("service %s has no container to read logs from.", service))
+		default:
+			u.showMemberLogs("last logs", service, cands, false, lastExitedNote(service, cands))
+		}
+	})
 }
 
 // showStackLogs follows every container of every service in a stack, like

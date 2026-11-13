@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -26,48 +27,48 @@ func (u *ui) openRemoveStack(stack string, back tview.Primitive, onRemoved func(
 		return
 	}
 
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		contents, err := stackContentsOf(ctx, dcli, stack)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("could not read stack " + stack + ": " + err.Error())
-				return
-			}
-			if contents.empty() {
-				// Docker says "Nothing found in stack" here, and so do we: the
-				// stack row exists because services are grouped under it, so an
-				// empty answer means the label is gone, not that nothing ran.
-				u.info(fmt.Sprintf("nothing labelled for stack %q — nothing to remove", stack))
-				return
-			}
-			msg := fmt.Sprintf(
-				"Remove stack %q?\n\nThis deletes everything `docker stack rm` would:\n\n    %s\n\nAll its tasks stop. It cannot be undone.",
-				stack, contents.counts())
-			u.confirm(msg, "Remove", back, func() {
-				u.info(fmt.Sprintf("removing stack %q (%s)…", stack, contents.counts()))
-				go func() {
-					errs := removeStack(ctx, dcli, contents)
-					app.QueueUpdateDraw(func() {
-						if onRemoved != nil {
-							onRemoved()
-						}
-						if len(errs) == 0 {
-							u.info(fmt.Sprintf("removed stack %q (%s)", stack, contents.counts()))
-							return
-						}
-						// Say what did NOT go, not just that something failed:
-						// the rest is already gone, and the operator has to know
-						// precisely what is left behind.
-						var b strings.Builder
-						fmt.Fprintf(&b, "stack %q removed, except:\n\n", stack)
-						for _, e := range errs {
-							fmt.Fprintf(&b, "  • %s\n", e.Error())
-						}
-						u.info(b.String())
-					})
-				}()
+	dcli := u.dcli
+	async(u, "ui.stack.remove.list", func(ctx context.Context) (stackContents, error) {
+		return stackContentsOf(ctx, dcli, stack)
+	}, func(contents stackContents, err error) {
+		if err != nil {
+			u.info("could not read stack " + stack + ": " + err.Error())
+			return
+		}
+		if contents.empty() {
+			// Docker says "Nothing found in stack" here, and so do we: the
+			// stack row exists because services are grouped under it, so an
+			// empty answer means the label is gone, not that nothing ran.
+			u.info(fmt.Sprintf("nothing labelled for stack %q — nothing to remove", stack))
+			return
+		}
+		msg := fmt.Sprintf(
+			"Remove stack %q?\n\nThis deletes everything `docker stack rm` would:\n\n    %s\n\nAll its tasks stop. It cannot be undone.",
+			stack, contents.counts())
+		u.confirm(msg, "Remove", back, func() {
+			u.info(fmt.Sprintf("removing stack %q (%s)…", stack, contents.counts()))
+			// Per-object failures are the result, not an error: the rest
+			// is gone and the notice must say what is left behind.
+			async(u, "ui.stack.remove", func(ctx context.Context) ([]error, error) {
+				return removeStack(ctx, dcli, contents), nil
+			}, func(errs []error, _ error) {
+				if onRemoved != nil {
+					onRemoved()
+				}
+				if len(errs) == 0 {
+					u.info(fmt.Sprintf("removed stack %q (%s)", stack, contents.counts()))
+					return
+				}
+				// Say what did NOT go, not just that something failed:
+				// the rest is already gone, and the operator has to know
+				// precisely what is left behind.
+				var b strings.Builder
+				fmt.Fprintf(&b, "stack %q removed, except:\n\n", stack)
+				for _, e := range errs {
+					fmt.Fprintf(&b, "  • %s\n", e.Error())
+				}
+				u.info(b.String())
 			})
 		})
-	}()
+	})
 }

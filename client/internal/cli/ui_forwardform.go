@@ -485,8 +485,7 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 // nothing has no endpoint ports, and an agent that predates the field reports
 // no EXPOSE ports — so both are asked and merged. Any port can still be typed.
 func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
-	app, ctree, cfg, dcli, ctx, f := u.app, u.ctree, u.cfg, u.dcli, u.ctx, u.f
-	gen := u.generation()
+	app, ctree, cfg, dcli, f := u.app, u.ctree, u.cfg, u.dcli, u.f
 	d := newFwdDialog(c)
 	cport, lport, addr, status := d.cport, d.lport, d.addr, d.status
 
@@ -657,20 +656,19 @@ func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 		}
 	}
 
-	go func() {
+	async(u, "ui.forward.suggest", func(ctx context.Context) ([]uint32, error) {
 		// One budget for both lookups: a slow node must not keep the form
 		// saying "looking up" for longer than a connect would take.
 		tctx, cancel := context.WithTimeout(ctx, f.connectTimeout)
-		ports := forwardPortSuggestions(tctx, dcli, cfg, c)
-		cancel()
-		u.onCluster(gen, func() {
-			suggested, loading = ports, false
-			// Prefill only an untouched field: the operator may have typed
-			// a port while the lookup was running.
-			if cport.GetText() == "" && len(ports) > 0 {
-				cport.SetText(strconv.FormatUint(uint64(ports[0]), 10))
-			}
-			render()
-		})
-	}()
+		defer cancel()
+		return forwardPortSuggestions(tctx, dcli, cfg, c), nil
+	}, func(ports []uint32, _ error) {
+		suggested, loading = ports, false
+		// Prefill only an untouched field: the operator may have typed
+		// a port while the lookup was running.
+		if cport.GetText() == "" && len(ports) > 0 {
+			cport.SetText(strconv.FormatUint(uint64(ports[0]), 10))
+		}
+		render()
+	})
 }
