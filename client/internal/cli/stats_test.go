@@ -475,3 +475,23 @@ func TestFormatCPUUsageWithoutALimit(t *testing.T) {
 		t.Errorf("cpu = %q, want the measured cores", got)
 	}
 }
+
+// level is the container's overall level: the worse of cpu and memory, ignoring
+// a CPU reading that is not ready yet.
+func (u containerUsage) level() usageLevel {
+	lvl := levelOf(u.MemRatio)
+	if u.CPUReady {
+		lvl = worst(lvl, levelOf(u.CPURatio))
+	}
+	return lvl
+}
+
+// worst returns the more severe of two levels — a container is as alarming as
+// its worst resource, so cpu and memory fold together this way, and so does a
+// service over its containers.
+func worst(a, b usageLevel) usageLevel {
+	if b > a {
+		return b
+	}
+	return a
+}

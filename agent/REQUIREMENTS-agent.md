@@ -75,8 +75,12 @@ Follow `CONTRACT.md` §5 exactly.
 - **Timeouts**: configurable idle timeout per session (default: disabled, since
   interactive shells idle legitimately). Configurable max session duration
   (default: disabled).
-- **Graceful shutdown**: on SIGTERM, stop accepting new sessions, allow existing
-  ones a short drain window (configurable, default 5s), then `GracefulStop`.
+- **Graceful shutdown**: on SIGTERM, stop accepting new streams (exec, logs,
+  port-forward, event watches), allow existing ones a short drain window
+  (configurable, default 5s), then `GracefulStop` bounded to 2s (falling back to
+  `Stop`). Streams still open after the window are cancelled and given up to 2s
+  to write their end-of-stream audit records, so the whole shutdown stays inside
+  Swarm's default 10s `stop_grace_period`.
 
 ## 5. Security & authorization
 

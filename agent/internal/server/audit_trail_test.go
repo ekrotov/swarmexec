@@ -16,6 +16,8 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
@@ -234,4 +236,89 @@ func TestAuditTrail_ImagePrune(t *testing.T) {
 	wantFields(t, findAuditEvent(t, log.String(), "image_prune"), map[string]any{
 		"identity": "test-user", "all": true, "reclaimed_bytes": 1234.0, "deleted": 2.0, "ok": true,
 	})
+}
+
+// Every unary RPC goes through the same gate (authorizeUnary): a refusal is
+// PermissionDenied with the Authorizer's reason, exactly one auth_decision
+// record with no container or service, a counted denial, and the action and
+// volume the policy is asked about. A table, so an RPC whose gate drifts from
+// the others fails by name.
+func TestAuditTrail_UnaryDenied(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name   string
+		call   func(*Server) error
+		action string
+		volume string
+	}{
+		{"ListContainers", func(s *Server) error { _, err := s.ListContainers(ctx, &pb.ListRequest{}); return err }, "container.list", ""},
+		{"ListVolumes", func(s *Server) error { _, err := s.ListVolumes(ctx, &pb.ListVolumesRequest{}); return err }, "volume.list", ""},
+		{"CreateVolume", func(s *Server) error {
+			_, err := s.CreateVolume(ctx, &pb.CreateVolumeRequest{Name: "v1"})
+			return err
+		}, "volume.create", "v1"},
+		{"RemoveVolume", func(s *Server) error {
+			_, err := s.RemoveVolume(ctx, &pb.RemoveVolumeRequest{Name: "v2"})
+			return err
+		}, "volume.remove", "v2"},
+		{"Stats", func(s *Server) error { _, err := s.Stats(ctx, &pb.StatsRequest{}); return err }, "stats.read", ""},
+		{"ListImages", func(s *Server) error { _, err := s.ListImages(ctx, &pb.ListImagesRequest{}); return err }, "image.list", ""},
+		{"PruneImages", func(s *Server) error { _, err := s.PruneImages(ctx, &pb.PruneImagesRequest{}); return err }, "image.prune", ""},
+		{"PruneImagesAll", func(s *Server) error {
+			_, err := s.PruneImages(ctx, &pb.PruneImagesRequest{All: true})
+			return err
+		}, "image.prune.all", ""},
+		{"ReclaimStats", func(s *Server) error { _, err := s.ReclaimStats(ctx, &pb.ReclaimStatsRequest{}); return err }, "reclaim.read", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var asked []auth.Request
+			srv, m := newTestServer(newFakeDocker(), authFunc(func(_ context.Context, r auth.Request) auth.Decision {
+				asked = append(asked, r)
+				return auth.Decision{Allow: false, Reason: "test deny"}
+			}), Options{})
+			log := captureAudit(srv)
+
+			err := tc.call(srv)
+			if statusCode(err) != codes.PermissionDenied || status.Convert(err).Message() != "authorization denied: test deny" {
+				t.Fatalf("err = %v, want PermissionDenied with the reason", err)
+			}
+			if len(asked) != 1 {
+				t.Fatalf("Authorizer asked %d times, want 1", len(asked))
+			}
+			if got := asked[0]; got.Action != tc.action || got.Identity != "test-user" ||
+				got.Volume != tc.volume || got.ContainerID != "" || got.Service != "" {
+				t.Errorf("Authorizer asked %+v, want action %q volume %q as test-user", got, tc.action, tc.volume)
+			}
+			recs := auditRecords(log.String(), "auth_decision")
+			if len(recs) != 1 {
+				t.Fatalf("auth_decision records = %d, want 1", len(recs))
+			}
+			wantFields(t, recs[0], map[string]any{
+				"identity": "test-user", "container_id": "", "service": "", "allow": false, "reason": "test deny",
+			})
+			if m.denied.Load() != 1 {
+				t.Errorf("AuthDenied metric = %d, want 1", m.denied.Load())
+			}
+		})
+	}
+}
+
+// Without an identity there is nothing to authorize or attribute: the call is
+// Unauthenticated and the Authorizer is never consulted.
+func TestUnaryWithoutIdentity(t *testing.T) {
+	srv, m := newTestServer(newFakeDocker(), authFunc(func(context.Context, auth.Request) auth.Decision {
+		t.Error("Authorizer consulted without an identity")
+		return auth.Decision{Allow: true}
+	}), Options{})
+	srv.identityFn = func(context.Context) (string, error) { return "", errors.New("no cert") }
+	log := captureAudit(srv)
+
+	_, err := srv.ListVolumes(context.Background(), &pb.ListVolumesRequest{})
+	if statusCode(err) != codes.Unauthenticated {
+		t.Fatalf("err = %v, want Unauthenticated", err)
+	}
+	if recs := auditRecords(log.String(), "auth_decision"); len(recs) != 0 || m.denied.Load() != 0 {
+		t.Errorf("unauthenticated call audited as a decision: %v, denied=%d", recs, m.denied.Load())
+	}
 }

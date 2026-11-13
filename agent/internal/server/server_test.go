@@ -431,6 +431,60 @@ func TestServer_WaitForSessionsDrains(t *testing.T) {
 	}
 }
 
+// blockingReader stands in for a followed log: it delivers nothing until its
+// context ends, as the docker client's ctx-bound body does.
+type blockingReader struct{ ctx context.Context }
+
+func (r blockingReader) Read([]byte) (int, error) { <-r.ctx.Done(); return 0, r.ctx.Err() }
+func (r blockingReader) Close() error             { return nil }
+
+// A followed log and an open event view never end on their own. The drain must
+// count them — otherwise it reports "drained" at once and GracefulStop waits on
+// them without limit — and once their context is cancelled (a forced stop)
+// they must still write their end records before the drain completes.
+func TestServer_DrainCountsLogsAndEventWatches(t *testing.T) {
+	srv, d := eventServer(t, auth.AllowAll{})
+	log := captureAudit(srv)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.logsReader = blockingReader{ctx}
+
+	errs := make(chan error, 2)
+	go func() {
+		errs <- srv.Logs(&pb.LogsRequest{ContainerId: "c1", Follow: true}, &fakeLogsStream{ctx: ctx})
+	}()
+	go func() {
+		errs <- srv.WatchContainerEvents(&pb.WatchContainerEventsRequest{ContainerId: "c1"}, &fakeEventStream{ctx: ctx})
+	}()
+	waitFor(t, func() bool { return srv.ActiveSessions() == 2 })
+
+	srv.StartDrain()
+	dctx, dcancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer dcancel()
+	if srv.WaitForSessions(dctx) {
+		t.Fatal("WaitForSessions reported drained while a log follow and an event watch are open")
+	}
+
+	cancel() // what grpc.Server.Stop does to every open stream
+	dctx2, dcancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer dcancel2()
+	if !srv.WaitForSessions(dctx2) {
+		t.Fatal("WaitForSessions did not drain after the streams' context ended")
+	}
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Errorf("stream ended with %v, want a clean end", err)
+		}
+	}
+	out := log.String()
+	if len(auditRecords(out, "logs_end")) != 1 || len(auditRecords(out, "event_watch_end")) != 1 {
+		t.Errorf("end records missing after the drain:\n%s", out)
+	}
+	if srv.ActiveSessions() != 0 {
+		t.Errorf("active = %d after the drain, want 0", srv.ActiveSessions())
+	}
+}
+
 // --- idle timeout ---
 
 func TestExec_IdleTimeout(t *testing.T) {
