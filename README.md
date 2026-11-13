@@ -2,20 +2,22 @@
 
 **`docker exec`, logs and port-forward for any container in a Docker Swarm — from one terminal, without SSH to the node that runs it.**
 
-🌐 **Website and full documentation: [swarm-exec.cloud-surfers.net](https://swarm-exec.cloud-surfers.net)** — [docs](https://swarm-exec.cloud-surfers.net/docs) · [release notes](https://swarm-exec.cloud-surfers.net/releases)
+🌐 **Website and full documentation: [swarm-exec.cloud-surfers.net](https://swarm-exec.cloud-surfers.net)** — [docs](https://swarm-exec.cloud-surfers.net/docs) · [recipes](https://swarm-exec.cloud-surfers.net/examples) · [how it compares](https://swarm-exec.cloud-surfers.net/#compare) · [release notes](https://swarm-exec.cloud-surfers.net/releases)
 
 ![swarmexec vs docker exec: instead of docker node ls → find the node → ssh node-3 → docker exec, just run `swarmexec exec web -- sh`](site/demo.gif)
 
 Docker Swarm schedules tasks from the manager, but a container's shell, its logs,
 a port nobody published and the volume on its disk live on one node — and the
 manager API reaches none of them. swarmexec (also written *swarm-exec*) puts a
-small agent on every node and asks it directly.
+small agent on every node and asks it directly. The
+[website](https://swarm-exec.cloud-surfers.net) shows the mechanism as an animated
+scene: health, exec, port-forward and `logs -f`.
 
 ## What it does
 
 - **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarm-exec.cloud-surfers.net/docs#targets)
-- **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarm-exec.cloud-surfers.net/docs#commands)
-- **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs#commands)
+- **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarm-exec.cloud-surfers.net/docs#logs)
+- **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs#port-forward) · [recipe: forward a database port](https://swarm-exec.cloud-surfers.net/examples#forward-db)
 - **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarm-exec.cloud-surfers.net/docs#tui)
 - **Stack diff and a pre-deploy check for CI** — a content diff of a file against the deployed stack, and a security gate before `stack deploy`. [stack diff →](https://swarm-exec.cloud-surfers.net/docs#stackfile)
 - **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarm-exec.cloud-surfers.net/docs#nodeprune)
@@ -26,6 +28,10 @@ small agent on every node and asks it directly.
 
 Apache-2.0, self-hosted, no telemetry, no node limit. Docker Engine 19.03 or newer.
 
+Whole workflows — debugging a crash-looping service, shelling into one replica,
+gating a deploy in CI — are in the [recipes](https://swarm-exec.cloud-surfers.net/examples),
+CLI and TUI side by side.
+
 ## Install
 
 ```sh
@@ -35,7 +41,7 @@ scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
 scoop install swarmexec                                          # Windows
 ```
 
-Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/releases/latest). [Install →](https://swarm-exec.cloud-surfers.net/docs#install)
+Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/releases/latest). [Install →](https://swarm-exec.cloud-surfers.net/docs#install) · [What changed in each release →](https://swarm-exec.cloud-surfers.net/releases)
 
 ## Quick start
 
@@ -75,7 +81,7 @@ The full documentation lives at **[swarm-exec.cloud-surfers.net/docs](https://sw
 In this repository:
 
 - [`docs/manual-setup.md`](docs/manual-setup.md) — deploying the agent by hand with your own CA, the agent and client flags, troubleshooting, production notes.
-- [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts.
+- [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts; the short version is the [comparison table on the website](https://swarm-exec.cloud-surfers.net/#compare).
 - [`DEVELOPMENT.md`](DEVELOPMENT.md) — building, tests, the documentation site, the release pipeline.
 - [`CONTRACT.md`](CONTRACT.md) and [`proto/swarmexec.proto`](proto/swarmexec.proto) — the wire protocol; [`agent/README.md`](agent/README.md), [`client/README.md`](client/README.md) — the two components' internals.
 
