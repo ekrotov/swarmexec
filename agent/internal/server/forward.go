@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/muxpool"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/pb"
 )
@@ -209,13 +210,16 @@ type forwardChannel interface {
 	Close()
 }
 
+// A multiplexed connection is what every forward runs on today.
+var _ forwardChannel = (*muxpool.Conn)(nil)
+
 // openForwardChannel reaches the target port. It reports whether a sidecar was
 // used so the audit record can distinguish the two paths.
 func (s *Server) openForwardChannel(ctx context.Context, containerID string, port uint32) (forwardChannel, bool, error) {
 	// One sidecar per (container, port), shared by every connection of that
 	// forward — so the ~300 ms container start is paid once per forward instead
-	// of once per TCP connection. See forwardmux.go.
-	c, err := s.muxes.openConn(ctx, s, containerID, port)
+	// of once per TCP connection. See internal/muxpool.
+	c, err := s.muxes.OpenConn(ctx, containerID, port)
 	if err != nil {
 		return nil, true, err
 	}
@@ -309,6 +313,16 @@ func (c *sidecarChannel) Close() {
 			c.release()
 		}
 	})
+}
+
+// openSidecar is the pool's way to start a sidecar: openSidecarChannel, with
+// a failure returned as a nil interface rather than a typed nil pointer.
+func (s *Server) openSidecar(ctx context.Context, containerID string, port uint32) (muxpool.Channel, error) {
+	ch, err := s.openSidecarChannel(ctx, containerID, port)
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
 }
 
 // openSidecarChannel creates a container in the target's network namespace,

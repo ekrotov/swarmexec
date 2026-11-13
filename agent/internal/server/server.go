@@ -27,6 +27,7 @@ import (
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/limits"
+	"swarmexec/agent/internal/muxpool"
 	"swarmexec/agent/internal/reclaim"
 	"swarmexec/agent/internal/scheduler"
 	"swarmexec/agent/internal/statsampler"
@@ -107,7 +108,7 @@ type Server struct {
 
 	// muxes holds one port-forward sidecar per (container, port), shared by
 	// every connection of that forward.
-	muxes *muxPool
+	muxes *muxpool.Pool
 
 	// The agent's own image, resolved once by self-inspection and reused by
 	// every port-forward sidecar. See forwardImage.
@@ -137,7 +138,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	// closure, which runs only once the background work has started.
 	s.scheduler = scheduler.New(docker, s.runScheduledPrune, func() { s.reclaim.Kick() }, log)
 	s.reclaim = reclaim.New(s.measureReclaim, s.sizeCache, s.scheduler, log)
-	s.muxes = newMuxPool()
+	s.muxes = muxpool.New(s.openSidecar)
 	s.streams = limits.New(limits.OrDefault(opts.MaxStreams, limits.DefaultMaxStreams), "streams", "-max-streams",
 		func() { s.metrics.LimitRefused("streams") })
 	s.sidecars = limits.New(limits.OrDefault(opts.MaxForwardSidecars, limits.DefaultMaxForwardSidecars),
@@ -377,10 +378,10 @@ func (s *Server) StartDrain() {
 //
 // Forward sidecars are torn down either way: they are containers on the node,
 // and a shutdown that left them running would leak one per forward the agent
-// ever served. They linger for muxIdleLinger by design, so "no connections" is
+// ever served. They linger after their last connection by design (see internal/muxpool), so "no connections" is
 // not the same as "nothing to clean up".
 func (s *Server) WaitForSessions(ctx context.Context) bool {
-	defer s.muxes.closeAll()
+	defer s.muxes.CloseAll()
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
