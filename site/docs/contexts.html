@@ -234,6 +234,13 @@
           left holding a connection afterwards.
         </li>
         <li>
+          One level up, the agent connections are reused as well: within a session (the
+          TUI, the MCP server, a single command) swarmexec keeps one connection per node
+          agent instead of dialling for every call, and closes it after
+          <strong>2&nbsp;minutes</strong> unused, when you switch to another cluster, and
+          on exit. A running port-forward keeps its connection across a switch.
+        </li>
+        <li>
           A socket left behind by a master that was killed is harmless: ssh finds it
           dead and opens an ordinary connection instead.
         </li>

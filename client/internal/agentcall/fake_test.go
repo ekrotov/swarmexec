@@ -42,6 +42,9 @@ type fakeAgent struct {
 	// unimplemented names RPCs this agent answers Unimplemented, like an agent
 	// that predates them.
 	unimplemented map[string]bool
+	// fail makes an RPC answer with this error instead (see setFail).
+	failMu sync.Mutex
+	fail   map[string]error
 
 	calls     atomic.Int64
 	badBind   atomic.Int64 // calls whose binding did not match this agent's cert
@@ -62,7 +65,10 @@ func (a *fakeAgent) check(ctx context.Context, rpc string) error {
 	if a.unimplemented[rpc] {
 		return status.Errorf(codes.Unimplemented, "unknown method %s", rpc)
 	}
-	return nil
+	a.failMu.Lock()
+	err := a.fail[rpc]
+	a.failMu.Unlock()
+	return err
 }
 
 func (a *fakeAgent) Version(ctx context.Context, _ *pb.VersionRequest) (*pb.VersionResponse, error) {
@@ -155,7 +161,9 @@ func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
 		return err
 	}
 	cmd := strings.Join(first.GetStart().GetCmd(), " ")
+	a.failMu.Lock()
 	out := a.execOut
+	a.failMu.Unlock()
 	if out == "" {
 		out = "ran: " + cmd
 	}
@@ -163,6 +171,23 @@ func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
 		return err
 	}
 	return stream.Send(&pb.ServerMessage{Payload: &pb.ServerMessage_ExitCode{ExitCode: 0}})
+}
+
+// setFail makes rpc fail with err from now on (nil: answer normally).
+func (a *fakeAgent) setFail(rpc string, err error) {
+	a.failMu.Lock()
+	defer a.failMu.Unlock()
+	if a.fail == nil {
+		a.fail = map[string]error{}
+	}
+	a.fail[rpc] = err
+}
+
+// setExecOut sets what Exec prints.
+func (a *fakeAgent) setExecOut(out string) {
+	a.failMu.Lock()
+	a.execOut = out
+	a.failMu.Unlock()
 }
 
 // fakeCluster is a set of fake agents, one per node host, reachable only
@@ -178,8 +203,9 @@ type fakeCluster struct {
 	servers    map[string]*grpc.Server
 	addrs      map[string]string // "host:7000" -> listener address
 
-	mu   sync.Mutex
-	down map[string]bool // hosts that refuse connections
+	mu    sync.Mutex
+	down  map[string]bool // hosts that refuse connections
+	delay time.Duration   // added to every dial: an ssh channel is not free
 }
 
 const fakeSecret = "s3cret"
@@ -200,7 +226,15 @@ func newFakeCluster(t *testing.T, hosts ...string) *fakeCluster {
 			fc.mu.Lock()
 			real, ok := fc.addrs[addr]
 			down := fc.down[addr]
+			delay := fc.delay
 			fc.mu.Unlock()
+			if delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
 			if !ok || down {
 				return nil, fmt.Errorf("dial %s: connection refused", addr)
 			}

@@ -55,6 +55,7 @@ func (c *Client) RunNonInteractive(ctx context.Context, ep resolve.Endpoint, cmd
 
 	stream, err := conn.Agent().Exec(pctx)
 	if err != nil {
+		conn.done(err)
 		return 0, err
 	}
 	return session.Run(pctx, stream, session.Options{
@@ -74,6 +75,7 @@ func (c *Client) ListContainers(ctx context.Context, host, serviceFilter string)
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().ListContainers(ctx, &pb.ListRequest{ServiceFilter: serviceFilter})
+	conn.done(err)
 	if err != nil {
 		return nil, err
 	}

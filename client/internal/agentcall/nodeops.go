@@ -48,6 +48,7 @@ func (c *Client) Version(ctx context.Context, n resolve.Node, connectTimeout tim
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().Version(ctx, &pb.VersionRequest{})
+	conn.done(err)
 	if err != nil {
 		return "", "", err
 	}
@@ -89,6 +90,7 @@ func (c *Client) Images(ctx context.Context, n resolve.Node, connectTimeout time
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().ListImages(cctx, &pb.ListImagesRequest{})
+	conn.done(err)
 	if err != nil {
 		return NodeImages{}, c.Explain(ctx, err)
 	}
@@ -111,6 +113,7 @@ func (c *Client) PruneImages(ctx context.Context, n resolve.Node, all bool, conn
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().PruneImages(cctx, &pb.PruneImagesRequest{All: all})
+	conn.done(err)
 	if err != nil {
 		return 0, 0, c.Explain(ctx, err)
 	}
@@ -139,6 +142,7 @@ func (c *Client) ReclaimStats(ctx context.Context, n resolve.Node, measureNow bo
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().ReclaimStats(cctx, &pb.ReclaimStatsRequest{MeasureNow: measureNow})
+	conn.done(err)
 	if err != nil {
 		return nil, c.Explain(ctx, err)
 	}
@@ -155,6 +159,7 @@ func (c *Client) Prune(ctx context.Context, n resolve.Node, req *pb.PruneRequest
 	}
 	defer conn.Close()
 	resp, err := conn.Agent().Prune(cctx, req)
+	conn.done(err)
 	if err != nil {
 		return nil, c.Explain(ctx, err)
 	}

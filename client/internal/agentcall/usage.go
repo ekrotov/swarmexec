@@ -223,6 +223,7 @@ func (c *Client) Stats(ctx context.Context, n resolve.Node, connectTimeout time.
 	// No container_ids filter: the tree wants every container on the node
 	// anyway, and the agent is answering from memory either way.
 	resp, err := conn.Agent().Stats(cctx, &pb.StatsRequest{})
+	conn.done(err)
 	if err != nil {
 		return nil, c.Explain(ctx, err)
 	}

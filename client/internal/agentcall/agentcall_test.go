@@ -93,7 +93,7 @@ func TestCallsAgainstAFakeCluster(t *testing.T) {
 	if err != nil || code != 0 || out.String() != "ran: echo hi" {
 		t.Errorf("exec = %d %v %q", code, err, out.String())
 	}
-	fc.agents["node-a"].execOut = "/bin/bash\n/bin/sh\n"
+	fc.agents["node-a"].setExecOut("/bin/bash\n/bin/sh\n")
 	if bash, sh := ac.ProbeShells(ctx, ep, testTimeout); !bash || !sh {
 		t.Errorf("probe = bash %v sh %v, want both", bash, sh)
 	}
