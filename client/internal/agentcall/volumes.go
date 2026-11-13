@@ -90,7 +90,16 @@ func (c *Client) Volumes(ctx context.Context, nodes []resolve.Node, connectTimeo
 // du-style disk-usage scan that can take a while, far longer than a connect.
 const volumeSizeTimeout = 2 * time.Minute
 
+// listNodeVolumes is one node's ListVolumes. Gated, for Unimplemented only:
+// an agent predating volumes is not asked again on every load, but a node
+// that merely failed is, because the operator asked for this list.
 func (c *Client) listNodeVolumes(ctx context.Context, n resolve.Node, withSize bool, connectTimeout time.Duration) ([]*pb.VolumeInfo, error) {
+	return gated(c, ctx, n.DialHost, rpcListVolumes, func() ([]*pb.VolumeInfo, error) {
+		return c.listNodeVolumesNow(ctx, n, withSize, connectTimeout)
+	})
+}
+
+func (c *Client) listNodeVolumesNow(ctx context.Context, n resolve.Node, withSize bool, connectTimeout time.Duration) ([]*pb.VolumeInfo, error) {
 	// One context for dial AND the RPC, cancelled only when we're done. Cancelling
 	// the dial context early (the old pattern) tears down the connection while a
 	// slow with_size scan is still running — over the ssh tunnel that surfaces as

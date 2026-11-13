@@ -5,9 +5,7 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -100,30 +98,7 @@ func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.
 }
 
 func streamContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) error {
-	dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := ac.Conn(dctx, ep.DialHost)
-	dcancel()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	stream, err := conn.Agent().WatchContainerEvents(ctx,
-		&pb.WatchContainerEventsRequest{ContainerId: ep.ContainerID})
-	if err != nil {
-		return err
-	}
-	for {
-		ev, rerr := stream.Recv()
-		if rerr != nil {
-			if errors.Is(rerr, io.EOF) || ctx.Err() != nil {
-				return nil
-			}
-			return rerr
-		}
-		if ev.GetError() != "" {
-			return errors.New(ev.GetError())
-		}
+	return ac.ContainerEvents(ctx, ep, connectTimeout, func(ev *pb.ContainerEvent) {
 		if line := describeContainerEvent(ev); line != "" {
 			note(line)
 		}
@@ -133,7 +108,7 @@ func streamContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve
 			default: // a wake-up is already pending; one is enough
 			}
 		}
-	}
+	})
 }
 
 // describeContainerEvent renders one event as a log-view note, or "" for the

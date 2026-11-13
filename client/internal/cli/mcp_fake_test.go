@@ -487,7 +487,7 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 	s.statsWait, s.statsPoll = 2*time.Second, 20*time.Millisecond
 	fake := &mcpCluster{
 		label: "fake", dcli: dcli, r: resolve.New(dcli, resolve.AddrHostname),
-		agent: agentcall.New(cfg), cfgErr: cfg.Validate(), gate: agentcall.NewStatsGate(),
+		agent: agentcall.New(cfg), cfgErr: cfg.Validate(),
 	}
 	// Every context the server agrees to connect to is the fake cluster; which
 	// names it agrees to is the server's business (mcpServer.cluster), and is

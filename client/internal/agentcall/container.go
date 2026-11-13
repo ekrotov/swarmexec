@@ -5,6 +5,7 @@ package agentcall
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -80,4 +81,45 @@ func (c *Client) ListContainers(ctx context.Context, host, serviceFilter string)
 		return nil, err
 	}
 	return resp.GetContainers(), nil
+}
+
+// ContainerEvents streams one container's runtime events to fn until ctx
+// ends or the stream does (nil), or it fails. Gated for Unimplemented
+// (capgate.go): an agent that predates the RPC is not dialled again on every
+// retry of the log view's event side channel.
+func (c *Client) ContainerEvents(ctx context.Context, ep resolve.Endpoint, connectTimeout time.Duration, fn func(*pb.ContainerEvent)) error {
+	_, err := gated(c, ctx, ep.DialHost, rpcEvents, func() (struct{}, error) {
+		return struct{}{}, c.containerEvents(ctx, ep, connectTimeout, fn)
+	})
+	return err
+}
+
+func (c *Client) containerEvents(ctx context.Context, ep resolve.Endpoint, connectTimeout time.Duration, fn func(*pb.ContainerEvent)) error {
+	dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
+	conn, err := c.Conn(dctx, ep.DialHost)
+	dcancel()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	stream, err := conn.Agent().WatchContainerEvents(ctx,
+		&pb.WatchContainerEventsRequest{ContainerId: ep.ContainerID})
+	if err != nil {
+		conn.done(err)
+		return err
+	}
+	for {
+		ev, rerr := stream.Recv()
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) || ctx.Err() != nil {
+				return nil
+			}
+			return rerr
+		}
+		if ev.GetError() != "" {
+			return errors.New(ev.GetError())
+		}
+		fn(ev)
+	}
 }

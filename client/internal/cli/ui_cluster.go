@@ -102,7 +102,6 @@ type clusterState struct {
 	// and "this is the last thing we managed to read".
 	fetchErr error
 
-	statsGate *agentcall.StatsGate // nodes whose agent cannot serve stats, so we stop asking
 	regCache  *registryCache       // :latest version / newer-tag resolver
 
 	// containers tab
@@ -225,7 +224,6 @@ func newClusterState(name, ctxOverride string) *clusterState {
 	return &clusterState{
 		name:         name,
 		ctxOverride:  ctxOverride,
-		statsGate:    agentcall.NewStatsGate(),
 		selectedVols: map[string]bool{},
 	}
 }

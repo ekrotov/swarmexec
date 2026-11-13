@@ -39,7 +39,7 @@ func TestPoolReusesOneConnectionPerNode(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ac.Usage(context.Background(), fc.nodes, testTimeout, nil)
+			ac.Usage(context.Background(), fc.nodes, testTimeout)
 			ac.Volumes(context.Background(), fc.nodes, testTimeout)
 		}()
 	}
@@ -205,8 +205,8 @@ func TestPoolRetiresOnUnavailable(t *testing.T) {
 	n := fc.nodes[0]
 	version(t, ac, n)
 
-	fc.agents["node-a"].setFail("Stats", status.Error(codes.NotFound, "nope"))
-	if _, err := ac.Stats(context.Background(), n, testTimeout); err == nil {
+	fc.agents["node-a"].setFail("Prune", status.Error(codes.NotFound, "nope"))
+	if _, err := ac.Prune(context.Background(), n, &pb.PruneRequest{}, testTimeout); err == nil {
 		t.Fatal("want the NotFound")
 	}
 	version(t, ac, n)
@@ -214,8 +214,8 @@ func TestPoolRetiresOnUnavailable(t *testing.T) {
 		t.Errorf("%d dials after an ordinary error, want the connection kept", got)
 	}
 
-	fc.agents["node-a"].setFail("Stats", status.Error(codes.Unavailable, "agent is draining"))
-	if _, err := ac.Stats(context.Background(), n, testTimeout); status.Code(err) != codes.Unavailable {
+	fc.agents["node-a"].setFail("Prune", status.Error(codes.Unavailable, "agent is draining"))
+	if _, err := ac.Prune(context.Background(), n, &pb.PruneRequest{}, testTimeout); status.Code(err) != codes.Unavailable {
 		t.Fatalf("want Unavailable, got %v", err)
 	}
 	version(t, ac, n)

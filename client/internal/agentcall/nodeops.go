@@ -80,8 +80,14 @@ const (
 	imagePruneTimeout = 5 * time.Minute
 )
 
-// Images lists one node's image footprint.
+// Images lists one node's image footprint. Gated (capgate.go).
 func (c *Client) Images(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (NodeImages, error) {
+	return gated(c, ctx, n.DialHost, rpcListImages, func() (NodeImages, error) {
+		return c.images(ctx, n, connectTimeout)
+	})
+}
+
+func (c *Client) images(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (NodeImages, error) {
 	cctx, cancel := context.WithTimeout(ctx, max(connectTimeout, imageListTimeout))
 	defer cancel()
 	conn, err := c.Conn(cctx, n.DialHost)
@@ -128,8 +134,20 @@ const (
 	nodePruneTimeout    = 10 * time.Minute
 )
 
-// ReclaimStats asks one node what a prune would free there.
+// ReclaimStats asks one node what a prune would free there. Gated
+// (capgate.go), except measureNow: that is the operator asking, so it is sent
+// whatever the gate remembers, and its answer is what the gate remembers next.
 func (c *Client) ReclaimStats(ctx context.Context, n resolve.Node, measureNow bool, connectTimeout time.Duration) (*pb.ReclaimStatsResponse, error) {
+	call := func() (*pb.ReclaimStatsResponse, error) { return c.reclaimStats(ctx, n, measureNow, connectTimeout) }
+	if measureNow {
+		resp, err := call()
+		c.gate.record(ctx, n.DialHost, rpcReclaimStats, err)
+		return resp, err
+	}
+	return gated(c, ctx, n.DialHost, rpcReclaimStats, call)
+}
+
+func (c *Client) reclaimStats(ctx context.Context, n resolve.Node, measureNow bool, connectTimeout time.Duration) (*pb.ReclaimStatsResponse, error) {
 	timeout := max(connectTimeout, reclaimTimeout)
 	if measureNow {
 		timeout = max(timeout, reclaimMeasureLimit)

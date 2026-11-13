@@ -5,11 +5,7 @@ package agentcall
 
 import (
 	"context"
-	"sync"
 	"time"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
@@ -71,68 +67,14 @@ type NodeUsage struct {
 // on the view, never something worth making the operator wait for.
 const statsTimeout = 4 * time.Second
 
-// How long to leave a node alone after it fails to serve stats. The two cases
-// are genuinely different: an agent that predates the RPC will keep saying so
-// until someone redeploys it, and asking it every refresh forever is pure
-// waste — measured at a full timeout per node per cycle before this existed.
-const (
-	statsRetryAfter       = 45 * time.Second
-	statsUnsupportedAfter = 15 * time.Minute
-)
-
-// StatsGate remembers which node agents cannot serve stats, so a cluster that
-// has not been upgraded yet does not pay a timeout per node on every refresh.
-// A nil gate allows everything.
-type StatsGate struct {
-	mu   sync.Mutex
-	skip map[string]time.Time // node name -> do not ask again before this
-}
-
-// NewStatsGate returns an empty gate.
-func NewStatsGate() *StatsGate { return &StatsGate{skip: map[string]time.Time{}} }
-
-func (g *StatsGate) allowed(node string) bool {
-	if g == nil {
-		return true
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	until, ok := g.skip[node]
-	return !ok || time.Now().After(until)
-}
-
-// fail puts a node on the bench. An Unimplemented answer means the agent is too
-// old and will not change on its own, so it waits much longer than a node that
-// was merely unreachable.
-func (g *StatsGate) fail(node string, err error) {
-	if g == nil {
-		return
-	}
-	wait := statsRetryAfter
-	if status.Code(err) == codes.Unimplemented {
-		wait = statsUnsupportedAfter
-	}
-	g.mu.Lock()
-	g.skip[node] = time.Now().Add(wait)
-	g.mu.Unlock()
-}
-
-func (g *StatsGate) ok(node string) {
-	if g == nil {
-		return
-	}
-	g.mu.Lock()
-	delete(g.skip, node)
-	g.mu.Unlock()
-}
-
 // Usage asks every node's agent for its container usage and returns it keyed
 // by container id, plus per-node totals keyed by node name.
 //
 // Best effort throughout: a node whose agent is unreachable, too old to know
 // the RPC, or still warming up simply contributes nothing. Usage is an overlay
-// on the view, never a reason for it to fail.
-func (c *Client) Usage(ctx context.Context, nodes []resolve.Node, connectTimeout time.Duration, gate *StatsGate) (map[string]ContainerUsage, map[string]NodeUsage) {
+// on the view, never a reason for it to fail — and a node that cannot serve it
+// is not asked on every refresh (Stats is gated).
+func (c *Client) Usage(ctx context.Context, nodes []resolve.Node, connectTimeout time.Duration) (map[string]ContainerUsage, map[string]NodeUsage) {
 	type result struct {
 		node string
 		resp *pb.StatsResponse
@@ -141,15 +83,10 @@ func (c *Client) Usage(ctx context.Context, nodes []resolve.Node, connectTimeout
 	// Best effort: a node not reached before ctx ended contributes nothing,
 	// exactly like an unreachable one.
 	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
-		if !gate.allowed(n.Name) {
-			return
-		}
 		resp, err := c.Stats(ctx, n, connectTimeout)
 		if err != nil {
-			gate.fail(n.Name, err)
 			return
 		}
-		gate.ok(n.Name)
 		results[i] = result{node: n.Name, resp: resp}
 	})
 
@@ -204,8 +141,15 @@ func UsageOf(s *pb.ContainerStats, resp *pb.StatsResponse) ContainerUsage {
 	return u
 }
 
-// Stats is one node's Stats call.
+// Stats is one node's Stats call. Gated: a node whose agent predates the RPC,
+// or that just failed to answer, is not asked again for a while (capgate.go).
 func (c *Client) Stats(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (*pb.StatsResponse, error) {
+	return gated(c, ctx, n.DialHost, rpcStats, func() (*pb.StatsResponse, error) {
+		return c.stats(ctx, n, connectTimeout)
+	})
+}
+
+func (c *Client) stats(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (*pb.StatsResponse, error) {
 	// Deliberately NOT max(connectTimeout, …): stats are optional, and a long
 	// connect timeout configured for interactive work should not turn a silent
 	// node into a multi-second stall on every refresh.

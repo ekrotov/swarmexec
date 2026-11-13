@@ -37,14 +37,17 @@ import (
 type Client struct {
 	cfg  config.Config
 	pool *pool
+	gate *capGate
 }
 
 // New returns a Client for one cluster's agent configuration.
 func New(cfg config.Config) *Client {
-	c := &Client{cfg: cfg}
+	c := &Client{cfg: cfg, gate: newCapGate()}
 	c.pool = newPool(func(ctx context.Context, host string) (*grpc.ClientConn, error) {
 		return dial.Dial(ctx, host, cfg.Port, cfg)
 	}, poolIdle)
+	// A new connection may be a new agent: ask its capabilities again.
+	c.pool.onDial = c.gate.forget
 	return c
 }
 

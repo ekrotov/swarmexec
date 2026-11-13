@@ -29,8 +29,8 @@ func snapshot(fc *fakeCluster) measured {
 // tuiRefresh is what one TUI refresh asks of the agents when the Volumes tab
 // is open: the usage poll, the cluster census, and the volumes load with its
 // consumers and sizes.
-func tuiRefresh(ctx context.Context, ac *Client, fc *fakeCluster, gate *StatsGate) {
-	ac.Usage(ctx, fc.nodes, testTimeout, gate)
+func tuiRefresh(ctx context.Context, ac *Client, fc *fakeCluster) {
+	ac.Usage(ctx, fc.nodes, testTimeout)
 	ac.Versions(ctx, fc.nodes, testTimeout)
 	ac.Volumes(ctx, fc.nodes, testTimeout)
 	ac.VolumeUsage(ctx, fc.nodes, testTimeout)
@@ -45,13 +45,12 @@ func TestMeasureConnectionCost(t *testing.T) {
 	fc := newFakeCluster(t, "node-a", "node-b", "node-c")
 	fc.delay = 20 * time.Millisecond // what opening one ssh channel might cost
 	ac := New(fc.cfg)
-	gate := NewStatsGate()
 	began := time.Now()
 	start := snapshot(fc)
-	tuiRefresh(ctx, ac, fc, gate)
+	tuiRefresh(ctx, ac, fc)
 	first := measure(fc, start)
 	for i := 0; i < 4; i++ {
-		tuiRefresh(ctx, ac, fc, gate)
+		tuiRefresh(ctx, ac, fc)
 	}
 	five := measure(fc, start)
 	took := time.Since(began)
