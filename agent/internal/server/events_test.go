@@ -185,7 +185,7 @@ func TestWatchContainerEvents_CountsAgainstTheStreamCap(t *testing.T) {
 	}
 	defer release()
 
-	err = srv.WatchContainerEvents(&pb.WatchContainerEventsRequest{ContainerId: "c1"},
+	err = gatedEvents(srv, &pb.WatchContainerEventsRequest{ContainerId: "c1"},
 		&fakeEventStream{ctx: context.Background()})
 	if statusCode(err) != codes.ResourceExhausted {
 		t.Fatalf("want ResourceExhausted, got %v", err)
@@ -225,7 +225,7 @@ func TestWatchContainerEvents_ReportsAStreamFailure(t *testing.T) {
 func TestWatchContainerEvents_RefusedWhileDraining(t *testing.T) {
 	srv, _ := eventServer(t, auth.AllowAll{})
 	srv.draining.Store(true)
-	err := srv.WatchContainerEvents(&pb.WatchContainerEventsRequest{ContainerId: "c1"},
+	err := gatedEvents(srv, &pb.WatchContainerEventsRequest{ContainerId: "c1"},
 		&fakeEventStream{ctx: context.Background()})
 	if statusCode(err) != codes.Unavailable {
 		t.Fatalf("want Unavailable, got %v", err)

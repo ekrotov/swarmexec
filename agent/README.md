@@ -292,8 +292,10 @@ starts regardless. A run belongs to the weekday it happens on, in `tz`.
 - **Operational logs** go to stderr at the configured level/format.
 - **Metrics** (optional, `-metrics-addr`; `swarmexec init --metrics-port 9464`
   sets it and publishes the port): `/metrics` exposes `swarmexec_agent_info`
-  (build and protocol version), active/total exec sessions, auth denials, cap
-  refusals per limit, and bytes transferred. A scrape config, alert rules and a
+  (build and protocol version), active/total exec sessions, active/total
+  streams per streaming RPC (`swarmexec_active_streams{method}`,
+  `swarmexec_streams_total{method}`), auth denials, cap refusals per limit, and
+  bytes transferred (exec, logs and port-forward). A scrape config, alert rules and a
   Grafana dashboard are in [`deploy/monitoring/`](deploy/monitoring/).
 
 ## Rotating certs

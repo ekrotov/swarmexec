@@ -286,7 +286,7 @@ func TestPortForward_RejectedWhileDraining(t *testing.T) {
 	stream := newFakeForwardStream(ctx)
 	stream.queueStart("c1", 8080)
 
-	err := srv.PortForward(stream)
+	err := gatedForward(srv, stream)
 	if statusCode(err) != codes.Unavailable {
 		t.Fatalf("want Unavailable, got %v (%v)", statusCode(err), err)
 	}
@@ -407,7 +407,8 @@ func TestPortForward_BridgesBothDirections(t *testing.T) {
 	stream.queueStart("target-abc", 8080)
 
 	done := make(chan error, 1)
-	go func() { done <- srv.PortForward(stream) }()
+	// Through the stream gate, which reports the bytes the handler tallied.
+	go func() { done <- gatedForward(srv, stream) }()
 
 	mux := newMuxSide(t, d.waitAttach())
 	id := mux.acceptOpen()
@@ -509,7 +510,7 @@ func TestPortForward_RemovesSidecarOnTeardown(t *testing.T) {
 	stream.queueStart("target-abc", 8080)
 
 	done := make(chan error, 1)
-	go func() { done <- srv.PortForward(stream) }()
+	go func() { done <- gatedForward(srv, stream) }()
 
 	conn := d.waitAttach()
 	sidecarSpeak(t, conn, "ok", nil)
@@ -554,7 +555,7 @@ func TestPortForward_SidecarCreateFailureIsReported(t *testing.T) {
 }
 
 // The forward must count toward the drain wait group, or a rolling agent update
-// would cut live forwards mid-connection.
+// would cut live forwards mid-connection. The stream gate does the counting.
 func TestPortForward_CountsAsActiveSession(t *testing.T) {
 	d := newFakeDocker()
 	srv, _ := forwardTestServer(d, auth.AllowAll{})
@@ -565,7 +566,7 @@ func TestPortForward_CountsAsActiveSession(t *testing.T) {
 	stream.queueStart("target-abc", 8080)
 
 	done := make(chan error, 1)
-	go func() { done <- srv.PortForward(stream) }()
+	go func() { done <- gatedForward(srv, stream) }()
 
 	conn := d.waitAttach()
 	sidecarSpeak(t, conn, "ok", nil)

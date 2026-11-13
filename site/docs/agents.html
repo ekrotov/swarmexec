@@ -192,7 +192,9 @@
           <tr><td><code>swarmexec_sessions_total</code></td><td>exec sessions started</td></tr>
           <tr><td><code>swarmexec_auth_denials_total</code></td><td>requests the authorizer refused — the one signal that makes an attempt visible</td></tr>
           <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>requests refused at a node cap (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
-          <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>bytes forwarded to containers / to clients</td></tr>
+          <tr><td><code>swarmexec_active_streams{method}</code></td><td>streams open right now, per RPC (<code>Exec</code>, <code>Logs</code>, <code>PortForward</code>, <code>WatchContainerEvents</code>)</td></tr>
+          <tr><td><code>swarmexec_streams_total{method}</code></td><td>streams admitted past the drain and the stream cap, per RPC — including ones the authorizer then refuses</td></tr>
+          <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>bytes from clients (exec stdin, forwards) / to clients (exec output, logs, forwards)</td></tr>
         </tbody>
       </table></div>
       <p>

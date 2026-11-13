@@ -63,3 +63,27 @@ func TestScrapeCarriesInfoAndRefusals(t *testing.T) {
 		}
 	}
 }
+
+// Per-method stream series: every method present at 0 from the first scrape,
+// started counts up, active comes back down when the stream ends.
+func TestStreamSeries(t *testing.T) {
+	p := New("v1.2.3", "swarmexec/v1")
+	p.StreamStarted("Logs")
+	p.StreamStarted("Logs")
+	p.StreamEnded("Logs")
+	if got := testutil.ToFloat64(p.streamsTotal.WithLabelValues("Logs")); got != 2 {
+		t.Errorf("Logs streams total = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(p.activeStreams.WithLabelValues("Logs")); got != 1 {
+		t.Errorf("Logs active streams = %v, want 1", got)
+	}
+
+	rec := httptest.NewRecorder()
+	p.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body, _ := io.ReadAll(rec.Body)
+	for _, m := range StreamMethods {
+		if !strings.Contains(string(body), `swarmexec_streams_total{method="`+m+`"}`) {
+			t.Errorf("scrape has no streams_total series for %s:\n%s", m, body)
+		}
+	}
+}

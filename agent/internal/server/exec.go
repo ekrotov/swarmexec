@@ -25,21 +25,9 @@ import (
 const inspectTimeout = 5 * time.Second
 
 // Exec runs the bidirectional interactive exec bridge defined in CONTRACT.md §4.
+// The drain check, the stream slot and the drain accounting happen before it
+// runs, in the stream gate (streamgate.go).
 func (s *Server) Exec(stream pb.Agent_ExecServer) error {
-	if s.draining.Load() {
-		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new sessions")
-	}
-
-	// Take a stream slot BEFORE the first Recv, which blocks until the client
-	// sends. Counting only established sessions would leave the cheapest attack
-	// uncapped: open streams and never speak, holding a goroutine each.
-	release, err := s.streams.acquire()
-	if err != nil {
-		s.log.Warn("exec refused: stream limit reached", "in_use", s.streams.inUse())
-		return err
-	}
-	defer release()
-
 	// (1) The first message MUST be StartExec (CONTRACT §4.2).
 	first, err := stream.Recv()
 	if err != nil {
@@ -76,9 +64,6 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 // runSession creates the exec, attaches, and bridges both directions until the
 // process exits, the client disconnects, or a timeout fires.
 func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identity, service string) error {
-	s.wg.Add(1)
-	defer s.wg.Done()
-	s.active.Add(1)
 	s.metrics.SessionStarted()
 	start := time.Now()
 
@@ -137,7 +122,8 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 		}
 	}
 
-	var bytesIn, bytesOut atomic.Int64
+	tally := tallyFrom(stream.Context())
+	bytesIn, bytesOut := &tally.in, &tally.out
 	var idleHit, maxHit atomic.Bool
 
 	// Activity tracker for the idle timeout (no-op when disabled).
@@ -161,15 +147,15 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 
 	// Client -> container pump (stdin + resize). Runs until the client
 	// half-closes, disconnects, or the session context is cancelled.
-	go s.pumpInput(ctx, stream, &attach.HijackedResponse, execID, &bytesIn, touch, cancel)
+	go s.pumpInput(ctx, stream, &attach.HijackedResponse, execID, bytesIn, touch, cancel)
 
 	// Container -> client copy. Blocks until output ends or the conn is closed.
-	out := &msgWriter{stream: stream, count: &bytesOut, touch: touch}
+	out := &msgWriter{stream: stream, count: bytesOut, touch: touch}
 	var copyErr error
 	if se.GetTty() {
 		_, copyErr = io.Copy(out, attach.Reader)
 	} else {
-		errOut := &msgWriter{stream: stream, stderr: true, count: &bytesOut, touch: touch}
+		errOut := &msgWriter{stream: stream, stderr: true, count: bytesOut, touch: touch}
 		_, copyErr = stdcopy.StdCopy(out, errOut, attach.Reader)
 	}
 
@@ -196,9 +182,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 	}
 
 	s.audit.SessionEnd(identity, se.GetContainerId(), exitCode, dur, bIn, bOut)
-	s.metrics.BytesTransferred(bIn, bOut)
 	s.metrics.SessionEnded()
-	s.active.Add(-1)
 
 	if clientGone && !idleHit.Load() && !maxHit.Load() {
 		return status.FromContextError(stream.Context().Err()).Err()
@@ -297,9 +281,7 @@ func (s *Server) inspectExit(execID string) int {
 func (s *Server) failSession(stream pb.Agent_ExecServer, identity, containerID string, start time.Time, msg string) error {
 	_ = stream.Send(errorMsg(msg))
 	s.audit.SessionEnd(identity, containerID, -1, time.Since(start), 0, 0)
-	s.metrics.BytesTransferred(0, 0)
 	s.metrics.SessionEnded()
-	s.active.Add(-1)
 	s.log.Error("session setup failed", "container_id", containerID, "reason", msg)
 	return status.Error(codes.Internal, msg)
 }

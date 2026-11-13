@@ -14,6 +14,12 @@ type Metrics interface {
 	// LimitRefused counts a request refused because a node cap was reached;
 	// limit is "streams" or "forward_sidecars".
 	LimitRefused(limit string)
+	// StreamStarted and StreamEnded bracket every streaming RPC the stream gate
+	// admits (past the drain and the stream cap, before authorization); method
+	// is the RPC name, e.g. "Logs". SessionStarted/SessionEnded stay what they
+	// were: authorized exec sessions only.
+	StreamStarted(method string)
+	StreamEnded(method string)
 }
 
 // NopMetrics satisfies Metrics and does nothing.
@@ -24,5 +30,7 @@ func (NopMetrics) SessionEnded()               {}
 func (NopMetrics) AuthDenied()                 {}
 func (NopMetrics) BytesTransferred(_, _ int64) {}
 func (NopMetrics) LimitRefused(string)         {}
+func (NopMetrics) StreamStarted(string)        {}
+func (NopMetrics) StreamEnded(string)          {}
 
 var _ Metrics = NopMetrics{}

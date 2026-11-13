@@ -21,20 +21,12 @@ import (
 
 // Logs streams a container's logs to the client (CONTRACT.md §3.1). It authorizes
 // like Exec, then forwards Docker's log stream — raw for a TTY container, or
-// stdcopy-demultiplexed into stdout/stderr for a non-TTY one.
+// stdcopy-demultiplexed into stdout/stderr for a non-TTY one. The stream gate
+// (streamgate.go) has done the drain check, the slot and the accounting.
 func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
-	if s.draining.Load() {
-		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new requests")
-	}
 	if req.GetContainerId() == "" {
 		return status.Error(codes.InvalidArgument, "LogsRequest requires container_id")
 	}
-	release, err := s.streams.acquire()
-	if err != nil {
-		s.log.Warn("logs refused: stream limit reached", "in_use", s.streams.inUse())
-		return err
-	}
-	defer release()
 	ctx := stream.Context()
 
 	identity, service, err := s.authorize(ctx, auth.Request{
@@ -44,7 +36,6 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	if err != nil {
 		return err
 	}
-	defer s.trackStream()()
 
 	// A TTY container's log stream is raw; a non-TTY one is stdcopy-multiplexed.
 	tty := false
@@ -77,13 +68,13 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	start := time.Now()
 	s.audit.LogsStart(identity, req.GetContainerId(), service, req.GetFollow(), peerAddr(ctx))
 
-	var bytesOut atomic.Int64
-	out := &logWriter{stream: stream, count: &bytesOut}
+	bytesOut := &tallyFrom(ctx).out
+	out := &logWriter{stream: stream, count: bytesOut}
 	var copyErr error
 	if tty {
 		_, copyErr = io.Copy(out, rc)
 	} else {
-		errOut := &logWriter{stream: stream, stderr: true, count: &bytesOut}
+		errOut := &logWriter{stream: stream, stderr: true, count: bytesOut}
 		_, copyErr = stdcopy.StdCopy(out, errOut, rc)
 	}
 

@@ -33,6 +33,35 @@ type testMetrics struct {
 	in, out                atomic.Int64
 	refusedStreams         atomic.Int64
 	refusedSidecars        atomic.Int64
+
+	streamsMu     sync.Mutex
+	streamStarted map[string]int
+	streamEnded   map[string]int
+}
+
+func (m *testMetrics) StreamStarted(method string) {
+	m.streamsMu.Lock()
+	defer m.streamsMu.Unlock()
+	if m.streamStarted == nil {
+		m.streamStarted = map[string]int{}
+	}
+	m.streamStarted[method]++
+}
+
+func (m *testMetrics) StreamEnded(method string) {
+	m.streamsMu.Lock()
+	defer m.streamsMu.Unlock()
+	if m.streamEnded == nil {
+		m.streamEnded = map[string]int{}
+	}
+	m.streamEnded[method]++
+}
+
+// streams reports how many streams of method started and ended.
+func (m *testMetrics) streams(method string) (started, ended int) {
+	m.streamsMu.Lock()
+	defer m.streamsMu.Unlock()
+	return m.streamStarted[method], m.streamEnded[method]
 }
 
 func (m *testMetrics) SessionStarted()             { m.started.Add(1) }
@@ -391,7 +420,7 @@ func TestExec_RejectedWhileDraining(t *testing.T) {
 	stream := newFakeStream(ctx)
 	stream.queueStart(startExec("c1", []string{"/bin/sh"}, true))
 
-	if err := srv.Exec(stream); statusCode(err) != codes.Unavailable {
+	if err := gatedExec(srv, stream); statusCode(err) != codes.Unavailable {
 		t.Fatalf("want Unavailable while draining, got %v", err)
 	}
 }
@@ -405,7 +434,7 @@ func TestServer_WaitForSessionsDrains(t *testing.T) {
 	stream.queueStart(startExec("c1", []string{"/bin/sh"}, true))
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- srv.Exec(stream) }()
+	go func() { errCh <- gatedExec(srv, stream) }()
 	conn := d.waitAttach()
 
 	// Session is live now.
@@ -451,10 +480,10 @@ func TestServer_DrainCountsLogsAndEventWatches(t *testing.T) {
 
 	errs := make(chan error, 2)
 	go func() {
-		errs <- srv.Logs(&pb.LogsRequest{ContainerId: "c1", Follow: true}, &fakeLogsStream{ctx: ctx})
+		errs <- gatedLogs(srv, &pb.LogsRequest{ContainerId: "c1", Follow: true}, &fakeLogsStream{ctx: ctx})
 	}()
 	go func() {
-		errs <- srv.WatchContainerEvents(&pb.WatchContainerEventsRequest{ContainerId: "c1"}, &fakeEventStream{ctx: ctx})
+		errs <- gatedEvents(srv, &pb.WatchContainerEventsRequest{ContainerId: "c1"}, &fakeEventStream{ctx: ctx})
 	}()
 	waitFor(t, func() bool { return srv.ActiveSessions() == 2 })
 
