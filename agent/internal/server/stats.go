@@ -7,9 +7,6 @@ import (
 	"context"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"swarmexec/agent/internal/auth"
 	"swarmexec/internal/pb"
 )
@@ -24,15 +21,8 @@ import (
 // The first response after a quiet period therefore carries memory but no CPU,
 // flagged by cpu_ready.
 func (s *Server) Stats(ctx context.Context, req *pb.StatsRequest) (*pb.StatsResponse, error) {
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: "stats.read", Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if _, err := s.authorizeUnary(ctx, auth.Request{Action: "stats.read"}); err != nil {
+		return nil, err
 	}
 
 	samples, sampledAt, cpuReady := s.statsCache.get()

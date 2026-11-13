@@ -170,18 +170,13 @@ func (s *Server) StartReclaimCache(ctx context.Context) {
 // nothing.
 //
 // It does not go through s.authorize: that helper resolves the swarm service by
-// inspecting a container, and this RPC has no container to inspect. The
-// identity → authorize → audit sequence is the same one, without that step.
+// inspecting a container, and this RPC has no container to inspect.
+// authorizeUnary is the same identity → authorize → audit sequence without
+// that step.
 func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
-	identity, err := s.identityFn(ctx)
+	identity, err := s.authorizeUnary(ctx, auth.Request{Action: "container.list"})
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: "container.list", Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+		return nil, err
 	}
 
 	list, err := s.docker.ContainerList(ctx, client.ContainerListOptions{All: false})
@@ -275,20 +270,61 @@ func (s *Server) resolveService(ctx context.Context, containerID string) string 
 // Keeping the sequence in one place stops the drain/authorize/audit/deny order —
 // and the audit of denied requests — from drifting between handlers.
 func (s *Server) authorize(ctx context.Context, req auth.Request) (identity, service string, err error) {
-	identity, err = s.identityFn(ctx)
+	identity, err = s.identity(ctx)
 	if err != nil {
-		return "", "", status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+		return "", "", err
 	}
 	service = s.resolveService(ctx, req.ContainerID)
 	req.Identity = identity
 	req.Service = service
-	decision := s.authz.Authorize(ctx, req)
-	s.audit.AuthDecision(identity, req.ContainerID, service, decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return "", "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if reason, ok := s.decide(ctx, req); !ok {
+		return "", "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
 	}
 	return identity, service, nil
+}
+
+// authorizeUnary is the gate of the unary RPCs that act on the node rather than
+// on one container (listings, volumes, images, stats, reclaim): resolve the
+// identity, authorize req — whose Action and any Volume the caller has set —
+// audit the decision and count a denial. It fills req.Identity and returns the
+// identity, or a ready gRPC status error.
+//
+// One helper rather than the same nine lines in every handler: "every RPC is
+// authorized and audited" is then a property of the code's shape, not of
+// nobody ever forgetting a copy.
+func (s *Server) authorizeUnary(ctx context.Context, req auth.Request) (string, error) {
+	identity, err := s.identity(ctx)
+	if err != nil {
+		return "", err
+	}
+	req.Identity = identity
+	if reason, ok := s.decide(ctx, req); !ok {
+		return "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
+	}
+	return identity, nil
+}
+
+// identity resolves the caller's identity, as an Unauthenticated status error
+// when there is none.
+func (s *Server) identity(ctx context.Context) (string, error) {
+	identity, err := s.identityFn(ctx)
+	if err != nil {
+		return "", status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+	}
+	return identity, nil
+}
+
+// decide asks the Authorizer about req (Identity already set), audits the
+// decision with req's container and service, and counts a denial. It returns
+// the Authorizer's reason and whether req is allowed. Every authorization in
+// the agent goes through here, including each category of a Prune.
+func (s *Server) decide(ctx context.Context, req auth.Request) (reason string, allowed bool) {
+	decision := s.authz.Authorize(ctx, req)
+	s.audit.AuthDecision(req.Identity, req.ContainerID, req.Service, decision.Allow, decision.Reason)
+	if !decision.Allow {
+		s.metrics.AuthDenied()
+	}
+	return decision.Reason, decision.Allow
 }
 
 // StartDrain marks the server as draining so new Exec sessions are refused with

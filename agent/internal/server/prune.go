@@ -95,9 +95,9 @@ type pruneOptions struct {
 
 // Prune reclaims space on this node for the requested categories.
 func (s *Server) Prune(ctx context.Context, req *pb.PruneRequest) (*pb.PruneResponse, error) {
-	identity, err := s.identityFn(ctx)
+	identity, err := s.identity(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+		return nil, err
 	}
 	if len(req.GetCategories()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "PruneRequest names no categories; there is no implicit \"everything\"")
@@ -157,11 +157,8 @@ func (s *Server) runPrune(ctx context.Context, identity, trigger string, cats []
 		res := &pb.PruneCategoryResult{Category: pc.cat}
 		out = append(out, res)
 
-		decision := s.authz.Authorize(ctx, auth.Request{Action: pc.action, Identity: identity})
-		s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-		if !decision.Allow {
-			s.metrics.AuthDenied()
-			res.Error = "authorization denied: " + decision.Reason
+		if reason, ok := s.decide(ctx, auth.Request{Action: pc.action, Identity: identity}); !ok {
+			res.Error = "authorization denied: " + reason
 			s.audit.Prune(identity, trigger, pc.name, 0, 0, false, false, res.Error)
 			continue
 		}
