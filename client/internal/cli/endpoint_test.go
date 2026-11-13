@@ -118,7 +118,7 @@ func TestUnresolvableEndpointFailsAtTheClient(t *testing.T) {
 // — an error naming an API version nobody knows by heart is not actionable.
 func TestMinimumDockerVersionIsStated(t *testing.T) {
 	if minDockerAPI != "1.40" {
-		t.Errorf("minDockerAPI = %q; if this moved on purpose, update site/docs.html too", minDockerAPI)
+		t.Errorf("minDockerAPI = %q; if this moved on purpose, update site/docs/install.html too", minDockerAPI)
 	}
 	if minDockerEngine != "19.03" {
 		t.Errorf("minDockerEngine = %q, which must be the release that speaks API %s", minDockerEngine, minDockerAPI)
