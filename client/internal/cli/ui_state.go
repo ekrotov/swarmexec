@@ -171,6 +171,12 @@ type ui struct {
 	overlayMu sync.Mutex
 	overlays  map[string]bool
 
+	// shown is every overlay on screen, oldest first, so a cluster switch can
+	// close the ones that belong to the cluster being left (see
+	// closeClusterOverlays). UI goroutine only — unlike overlays above, nothing
+	// off the loop reads it.
+	shown []*overlay
+
 	// onUsage, when set, is told after every usage pass, on the main loop.
 	// The inspect view sets it while open so its STATS view follows the
 	// readings instead of freezing on the ones it opened with.

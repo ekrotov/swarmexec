@@ -315,17 +315,7 @@ func (u *ui) activateCluster(c *clusterState) {
 	// Save where the operator was standing before the widgets are rebuilt for
 	// somebody else's data.
 	u.pos = u.treePosFromWidget()
-
-	// Stop the outgoing cluster's polling. This is what "only poll the visible
-	// cluster" means in practice: not a flag every loader has to check, but the
-	// context they already take. The connection itself stays — and costs
-	// nothing while idle, because the shared ssh master expires on its own
-	// (see sshMuxPersist).
-	if u.cancel != nil {
-		u.cancel()
-	}
-	// Past this point, anything still in flight for the old cluster is stale.
-	u.gen.Add(1)
+	closed := u.leaveCluster()
 
 	u.clusterState = c
 	if c.ctx == nil || c.ctx.Err() != nil {
@@ -362,9 +352,36 @@ func (u *ui) activateCluster(c *clusterState) {
 	u.updateStatus()
 	u.setTab(u.active) // re-renders the visible tab and kicks its own load
 
-	u.flash(switchedFlash(c.name, c.loaded, useErr, os.Getenv("DOCKER_HOST") != ""))
+	u.refocusTopOverlay() // a session overlay the switch kept (askpass, client log) keeps the keyboard
+
+	msg := switchedFlash(c.name, c.loaded, useErr, os.Getenv("DOCKER_HOST") != "")
+	if closed > 0 {
+		msg += fmt.Sprintf(" [gray]— closed %d dialog(s) of the previous cluster[white]", closed)
+	}
+	u.flash(msg)
 	u.loadContainers()
 	u.refreshCluster()
+}
+
+// leaveCluster is everything a switch does to the cluster it leaves, before
+// the next one becomes visible, and returns how many of its overlays it
+// closed. UI goroutine only.
+//
+// The order matters. The overlays go first, while their cluster is still the
+// visible one. Then the polling stops: that is what "only poll the visible
+// cluster" means in practice — not a flag every loader has to check, but the
+// context they already take. The connection itself stays, and costs nothing
+// while idle (the shared ssh master expires on its own, see sshMuxPersist).
+// Last the generation moves: past it, anything still in flight for the old
+// cluster is stale and async drops it — and the overlay it would have closed
+// is already gone.
+func (u *ui) leaveCluster() int {
+	closed := u.closeClusterOverlays()
+	if u.cancel != nil {
+		u.cancel()
+	}
+	u.gen.Add(1)
+	return closed
 }
 
 // clusterProbeTimeout bounds the reachability check on a switch.
