@@ -93,7 +93,7 @@ type editListConfig struct {
 	applyVerb   string
 	items       []string
 	validate    func(string) (string, error)
-	onApply     func([]string) error
+	onApply     func(context.Context, []string) error // runs off the UI goroutine (async), with the cluster context
 	suggest     func(string) []string
 	allowEdit   bool
 	multiline   bool

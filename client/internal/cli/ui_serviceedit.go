@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -220,21 +221,21 @@ func (u *ui) editList(cfg editListConfig) {
 			}
 		}
 		u.confirm(text, "Apply", list, func() {
-			go func() {
-				err := onApply(cur)
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						u.info("update failed: " + err.Error())
-						app.SetFocus(list)
-						return
-					}
-					ov.Close()
-					u.info("service updated — rolling update started")
-					if after != nil {
-						after()
-					}
-				})
-			}()
+			staged := slices.Clone(cur) // cur keeps changing on the UI goroutine; work gets its own
+			asyncDo(u, "ui.serviceedit.apply", func(ctx context.Context) error {
+				return onApply(ctx, staged)
+			}, func(err error) {
+				if err != nil {
+					u.info("update failed: " + err.Error())
+					app.SetFocus(list)
+					return
+				}
+				ov.Close()
+				u.info("service updated — rolling update started")
+				if after != nil {
+					after()
+				}
+			})
 		})
 	}
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -332,75 +333,73 @@ func fieldText(ta *tview.TextArea) string {
 // openPortsEditor / openLabelsEditor fetch the service's current ports/labels
 // off the UI goroutine, then open the staged editor.
 func (u *ui) openPortsEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		items, err := currentServicePorts(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load ports: " + err.Error())
-				return
-			}
-			u.editList(editListConfig{
-				title:     "ports of " + svcName,
-				applyVerb: "Update the published ports",
-				items:     items,
-				validate: func(s string) (string, error) {
-					p, e := parseServicePort(s)
-					if e != nil {
-						return "", e
-					}
-					return formatServicePort(p), nil
-				},
-				onApply: func(list []string) error {
-					ports, e := portsFromStrings(list)
-					if e != nil {
-						return e
-					}
-					return setServicePorts(ctx, dcli, svcName, ports)
-				},
-				allowEdit: true,
-				back:      back,
-				after:     after,
-			})
+	dcli := u.dcli
+	async(u, "ui.serviceedit.ports.load", func(ctx context.Context) ([]string, error) {
+		return currentServicePorts(ctx, dcli, svcName)
+	}, func(items []string, err error) {
+		if err != nil {
+			u.info("cannot load ports: " + err.Error())
+			return
+		}
+		u.editList(editListConfig{
+			title:     "ports of " + svcName,
+			applyVerb: "Update the published ports",
+			items:     items,
+			validate: func(s string) (string, error) {
+				p, e := parseServicePort(s)
+				if e != nil {
+					return "", e
+				}
+				return formatServicePort(p), nil
+			},
+			onApply: func(ctx context.Context, list []string) error {
+				ports, e := portsFromStrings(list)
+				if e != nil {
+					return e
+				}
+				return setServicePorts(ctx, dcli, svcName, ports)
+			},
+			allowEdit: true,
+			back:      back,
+			after:     after,
 		})
-	}()
+	})
 }
 
 func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		items, err := currentServiceLabels(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load labels: " + err.Error())
-				return
-			}
-			u.editList(editListConfig{
-				title:     "labels of " + svcName,
-				applyVerb: "Update the labels",
-				items:     items,
-				validate: func(s string) (string, error) {
-					k, v, e := parseLabel(s)
-					if e != nil {
-						return "", e
-					}
-					return k + "=" + v, nil
-				},
-				onApply: func(list []string) error {
-					labels, e := labelsFromStrings(list)
-					if e != nil {
-						return e
-					}
-					return setServiceLabels(ctx, dcli, svcName, labels)
-				},
-				allowEdit:  true,
-				formPrompt: labelForm,
-				formHeight: 14,
-				back:       back,
-				after:      after,
-			})
+	dcli := u.dcli
+	async(u, "ui.serviceedit.labels.load", func(ctx context.Context) ([]string, error) {
+		return currentServiceLabels(ctx, dcli, svcName)
+	}, func(items []string, err error) {
+		if err != nil {
+			u.info("cannot load labels: " + err.Error())
+			return
+		}
+		u.editList(editListConfig{
+			title:     "labels of " + svcName,
+			applyVerb: "Update the labels",
+			items:     items,
+			validate: func(s string) (string, error) {
+				k, v, e := parseLabel(s)
+				if e != nil {
+					return "", e
+				}
+				return k + "=" + v, nil
+			},
+			onApply: func(ctx context.Context, list []string) error {
+				labels, e := labelsFromStrings(list)
+				if e != nil {
+					return e
+				}
+				return setServiceLabels(ctx, dcli, svcName, labels)
+			},
+			allowEdit:  true,
+			formPrompt: labelForm,
+			formHeight: 14,
+			back:       back,
+			after:      after,
 		})
-	}()
+	})
 }
 
 // labelForm edits one label as two wrapping fields, key and value, so a long
@@ -447,185 +446,194 @@ func labelForm(initial string, submit func(raw string) error, cancel func()) tvi
 // from the networks editor (select a network, press A), so aliases only show
 // in that context, not as a top-level inspect key.
 func (u *ui) openAliasEditorForNet(svcName, netName, target string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		att, err := serviceAttachedNetworks(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load aliases: " + err.Error())
-				return
+	dcli := u.dcli
+	async(u, "ui.serviceedit.aliases.load", func(ctx context.Context) ([]attachedNet, error) {
+		return serviceAttachedNetworks(ctx, dcli, svcName)
+	}, func(att []attachedNet, err error) {
+		if err != nil {
+			u.info("cannot load aliases: " + err.Error())
+			return
+		}
+		var aliases []string
+		found := false
+		for _, a := range att {
+			if a.Target == target || a.Name == netName {
+				aliases = a.Aliases
+				found = true
 			}
-			var aliases []string
-			found := false
-			for _, a := range att {
-				if a.Target == target || a.Name == netName {
-					aliases = a.Aliases
-					found = true
+		}
+		if !found {
+			u.info(fmt.Sprintf("service %q is not attached to network %q yet — apply the network first, then set aliases", svcName, netName))
+			return
+		}
+		u.editList(editListConfig{
+			title:     "aliases of " + svcName + " on " + netName,
+			applyVerb: "Update the aliases",
+			items:     aliases,
+			validate: func(s string) (string, error) {
+				s = strings.TrimSpace(s)
+				if s == "" {
+					return "", fmt.Errorf("alias must not be empty")
 				}
-			}
-			if !found {
-				u.info(fmt.Sprintf("service %q is not attached to network %q yet — apply the network first, then set aliases", svcName, netName))
-				return
-			}
-			u.editList(editListConfig{
-				title:     "aliases of " + svcName + " on " + netName,
-				applyVerb: "Update the aliases",
-				items:     aliases,
-				validate: func(s string) (string, error) {
-					s = strings.TrimSpace(s)
-					if s == "" {
-						return "", fmt.Errorf("alias must not be empty")
-					}
-					return s, nil
-				},
-				onApply:   func(list []string) error { return setNetworkAliases(ctx, dcli, svcName, target, list) },
-				allowEdit: true,
-				back:      back,
-				after:     after,
-			})
+				return s, nil
+			},
+			onApply: func(ctx context.Context, list []string) error {
+				return setNetworkAliases(ctx, dcli, svcName, target, list)
+			},
+			allowEdit: true,
+			back:      back,
+			after:     after,
 		})
-	}()
+	})
 }
 
 // openNetworksEditor edits the networks a service is attached to, with
 // autocomplete of network names (add/remove), applied in one ServiceUpdate.
 // Selecting a network and pressing A edits that network's DNS aliases.
 func (u *ui) openNetworksEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		idByName, idToName, allNames := listNetworkRefs(ctx, dcli)
-		current, err := currentServiceNetworks(ctx, dcli, svcName, idToName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load networks: " + err.Error())
-				return
-			}
-			attached := map[string]bool{}
-			for _, c := range current {
-				attached[c] = true
-			}
-			u.editList(editListConfig{
-				title:     "networks of " + svcName,
-				applyVerb: "Update the networks",
-				items:     current,
-				validate: func(s string) (string, error) {
-					if _, ok := idByName[s]; ok {
-						return s, nil // known name
+	dcli := u.dcli
+	type loaded struct {
+		idByName, idToName map[string]string
+		allNames, current  []string
+	}
+	async(u, "ui.serviceedit.networks.load", func(ctx context.Context) (loaded, error) {
+		var l loaded
+		l.idByName, l.idToName, l.allNames = listNetworkRefs(ctx, dcli)
+		var err error
+		l.current, err = currentServiceNetworks(ctx, dcli, svcName, l.idToName)
+		return l, err
+	}, func(l loaded, err error) {
+		idByName, idToName, allNames, current := l.idByName, l.idToName, l.allNames, l.current
+		if err != nil {
+			u.info("cannot load networks: " + err.Error())
+			return
+		}
+		attached := map[string]bool{}
+		for _, c := range current {
+			attached[c] = true
+		}
+		u.editList(editListConfig{
+			title:     "networks of " + svcName,
+			applyVerb: "Update the networks",
+			items:     current,
+			validate: func(s string) (string, error) {
+				if _, ok := idByName[s]; ok {
+					return s, nil // known name
+				}
+				if n := idToName[s]; n != "" {
+					return n, nil // an id → show its name
+				}
+				return "", fmt.Errorf("unknown network %q", s)
+			},
+			onApply: func(ctx context.Context, list []string) error {
+				ids := make([]string, 0, len(list))
+				for _, name := range list {
+					id := idByName[name]
+					if id == "" {
+						id = name // already an id
 					}
-					if n := idToName[s]; n != "" {
-						return n, nil // an id → show its name
+					ids = append(ids, id)
+				}
+				return setServiceNetworks(ctx, dcli, svcName, ids)
+			},
+			suggest: func(text string) []string {
+				text = strings.ToLower(strings.TrimSpace(text))
+				var out []string
+				for _, n := range allNames {
+					if attached[n] {
+						continue
 					}
-					return "", fmt.Errorf("unknown network %q", s)
-				},
-				onApply: func(list []string) error {
-					ids := make([]string, 0, len(list))
-					for _, name := range list {
-						id := idByName[name]
-						if id == "" {
-							id = name // already an id
-						}
-						ids = append(ids, id)
+					if text == "" || strings.Contains(strings.ToLower(n), text) {
+						out = append(out, n)
 					}
-					return setServiceNetworks(ctx, dcli, svcName, ids)
-				},
-				suggest: func(text string) []string {
-					text = strings.ToLower(strings.TrimSpace(text))
-					var out []string
-					for _, n := range allNames {
-						if attached[n] {
-							continue
-						}
-						if text == "" || strings.Contains(strings.ToLower(n), text) {
-							out = append(out, n)
-						}
-					}
-					return out
-				},
-				entryAction: &listEntryAction{
-					key:   'A',
-					label: "aliases",
-					run:   func(net string) { u.openAliasEditorForNet(svcName, net, idByName[net], back, after) },
-				},
-				back:  back,
-				after: after,
-			})
+				}
+				return out
+			},
+			entryAction: &listEntryAction{
+				key:   'A',
+				label: "aliases",
+				run:   func(net string) { u.openAliasEditorForNet(svcName, net, idByName[net], back, after) },
+			},
+			back:  back,
+			after: after,
 		})
-	}()
+	})
 }
 
 // openSecretsEditor edits the secrets a service references, with autocomplete
 // of secret names (add/remove), applied in one ServiceUpdate. Works even when
 // the service has none yet.
 func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
+	dcli := u.dcli
+	type loaded struct{ all, current []string }
+	async(u, "ui.serviceedit.secrets.load", func(ctx context.Context) (loaded, error) {
 		all := secretNames(ctx, dcli)
 		current, err := currentServiceSecrets(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load secrets: " + err.Error())
-				return
-			}
-			known := map[string]bool{}
-			for _, n := range all {
-				known[n] = true
-			}
-			attached := map[string]bool{}
-			for _, c := range current {
-				attached[c] = true
-			}
-			u.editList(editListConfig{
-				title:     "secrets of " + svcName,
-				applyVerb: "Update the secrets",
-				items:     current,
-				validate: func(s string) (string, error) {
-					if known[s] {
-						return s, nil
+		return loaded{all, current}, err
+	}, func(l loaded, err error) {
+		all, current := l.all, l.current
+		if err != nil {
+			u.info("cannot load secrets: " + err.Error())
+			return
+		}
+		known := map[string]bool{}
+		for _, n := range all {
+			known[n] = true
+		}
+		attached := map[string]bool{}
+		for _, c := range current {
+			attached[c] = true
+		}
+		u.editList(editListConfig{
+			title:     "secrets of " + svcName,
+			applyVerb: "Update the secrets",
+			items:     current,
+			validate: func(s string) (string, error) {
+				if known[s] {
+					return s, nil
+				}
+				return "", fmt.Errorf("unknown secret %q", s)
+			},
+			onApply: func(ctx context.Context, list []string) error { return setServiceSecrets(ctx, dcli, svcName, list) },
+			suggest: func(text string) []string {
+				text = strings.ToLower(strings.TrimSpace(text))
+				var out []string
+				for _, n := range all {
+					if attached[n] {
+						continue
 					}
-					return "", fmt.Errorf("unknown secret %q", s)
-				},
-				onApply: func(list []string) error { return setServiceSecrets(ctx, dcli, svcName, list) },
-				suggest: func(text string) []string {
-					text = strings.ToLower(strings.TrimSpace(text))
-					var out []string
-					for _, n := range all {
-						if attached[n] {
-							continue
-						}
-						if text == "" || strings.Contains(strings.ToLower(n), text) {
-							out = append(out, n)
-						}
+					if text == "" || strings.Contains(strings.ToLower(n), text) {
+						out = append(out, n)
 					}
-					return out
-				},
-				back:  back,
-				after: after,
-			})
+				}
+				return out
+			},
+			back:  back,
+			after: after,
 		})
-	}()
+	})
 }
 
 // openEnvEditor edits a service's environment variables. It opens the whole
 // environment as text in the vim editor (one KEY=VALUE per line, heredocs for
 // multi-line values); :list switches to the staged list editor instead.
 func (u *ui) openEnvEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		items, err := currentServiceEnv(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load env: " + err.Error())
-				return
-			}
-			u.openEnvText(svcName, items, back, after)
-		})
-	}()
+	dcli := u.dcli
+	async(u, "ui.serviceedit.env.load", func(ctx context.Context) ([]string, error) {
+		return currentServiceEnv(ctx, dcli, svcName)
+	}, func(items []string, err error) {
+		if err != nil {
+			u.info("cannot load env: " + err.Error())
+			return
+		}
+		u.openEnvText(svcName, items, back, after)
+	})
 }
 
 // envListConfig is the staged list editor for a service's environment: the
 // alternative view, reached from the text editor with :list.
 func (u *ui) envListConfig(svcName string, items []string, back tview.Primitive, after func()) editListConfig {
-	dcli, ctx := u.dcli, u.ctx
+	dcli := u.dcli
 	return editListConfig{
 		title:     "env of " + svcName,
 		applyVerb: "Update the environment",
@@ -637,7 +645,7 @@ func (u *ui) envListConfig(svcName string, items []string, back tview.Primitive,
 			}
 			return k + "=" + v, nil
 		},
-		onApply: func(list []string) error {
+		onApply: func(ctx context.Context, list []string) error {
 			env, e := envFromStrings(list)
 			if e != nil {
 				return e
@@ -655,7 +663,7 @@ func (u *ui) envListConfig(svcName string, items []string, back tview.Primitive,
 // every line (an error names it and moves the cursor there), confirms the
 // rolling update with what changes, and applies.
 func (u *ui) openEnvText(svcName string, items []string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	app, dcli := u.app, u.dcli
 	ed := newVimEditor("env of "+svcName+" · ? help", formatEnvText(items))
 	ov := u.overlayFor(pageEnvEdit, back, vimFooterKeys(vimNormal))
 	ed.onMode = func(m vimMode) { ov.setHelp(vimFooterKeys(m)) }
@@ -696,21 +704,20 @@ func (u *ui) openEnvText(svcName string, items []string, back tview.Primitive, a
 		}
 		msg := envChangeSummary(items, list) + "\n\nUpdate the environment?\n\nThis triggers a rolling update of the service."
 		u.confirm(msg, "Apply", ed.ta, func() {
-			go func() {
-				err := setServiceEnv(ctx, dcli, svcName, list)
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						ed.setMsg("update failed: "+err.Error(), true)
-						app.SetFocus(ed.ta)
-						return
-					}
-					ov.Close()
-					u.info("service updated — rolling update started")
-					if after != nil {
-						after()
-					}
-				})
-			}()
+			asyncDo(u, "ui.serviceedit.env.apply", func(ctx context.Context) error {
+				return setServiceEnv(ctx, dcli, svcName, list)
+			}, func(err error) {
+				if err != nil {
+					ed.setMsg("update failed: "+err.Error(), true)
+					app.SetFocus(ed.ta)
+					return
+				}
+				ov.Close()
+				u.info("service updated — rolling update started")
+				if after != nil {
+					after()
+				}
+			})
 		})
 		return nil
 	}
@@ -746,7 +753,7 @@ func (u *ui) showVimHelp(back tview.Primitive, extra string) {
 // placementListEditor opens a staged list editor whose add/edit input
 // autocompletes cluster-derived candidates (excluding ones already staged).
 // Shared by the constraints and the spread-preferences editors.
-func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, validate func(string) (string, error), apply func([]string) error, back tview.Primitive, after func()) {
+func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, validate func(string) (string, error), apply func(context.Context, []string) error, back tview.Primitive, after func()) {
 	have := map[string]bool{}
 	for _, it := range items {
 		have[it] = true
@@ -779,48 +786,52 @@ func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, 
 // openPlacementConstraintsEditor edits the service's hard placement
 // constraints (node.* / engine.* == / !=) with node-derived autocomplete.
 func (u *ui) openPlacementConstraintsEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
+	dcli := u.dcli
+	async(u, "ui.serviceedit.placement.load", func(ctx context.Context) (placementLoad, error) {
 		items, err := currentServicePlacement(ctx, dcli, svcName)
 		cand, cerr := placementSuggestions(ctx, dcli)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load placement: " + err.Error())
-				return
-			}
-			if cerr != nil {
-				cand = nil // autocomplete is best-effort
-			}
-			u.placementListEditor("constraints of "+svcName, "Update the placement constraints",
-				items, cand, validatePlacementConstraint,
-				func(list []string) error { return setServicePlacement(ctx, dcli, svcName, list) },
-				back, after)
-		})
-	}()
+		if cerr != nil {
+			cand = nil // autocomplete is best-effort
+		}
+		return placementLoad{items, cand}, err
+	}, func(l placementLoad, err error) {
+		if err != nil {
+			u.info("cannot load placement: " + err.Error())
+			return
+		}
+		u.placementListEditor("constraints of "+svcName, "Update the placement constraints",
+			l.items, l.cand, validatePlacementConstraint,
+			func(ctx context.Context, list []string) error { return setServicePlacement(ctx, dcli, svcName, list) },
+			back, after)
+	})
 }
+
+// placementLoad is what the two placement editors open with: the current
+// entries and the autocomplete candidates (nil when they could not be read).
+type placementLoad struct{ items, cand []string }
 
 // openSpreadEditor edits the service's spread placement preferences — bare
 // node attributes (e.g. node.labels.zone) that Swarm spreads tasks over — in
 // priority order, with node-derived autocomplete.
 func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
+	dcli := u.dcli
+	async(u, "ui.serviceedit.spread.load", func(ctx context.Context) (placementLoad, error) {
 		items, err := currentServiceSpread(ctx, dcli, svcName)
 		cand, cerr := spreadSuggestions(ctx, dcli)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load spread preferences: " + err.Error())
-				return
-			}
-			if cerr != nil {
-				cand = nil
-			}
-			u.placementListEditor("spread of "+svcName, "Update the spread preferences",
-				items, cand, validateSpreadDescriptor,
-				func(list []string) error { return setServiceSpread(ctx, dcli, svcName, list) },
-				back, after)
-		})
-	}()
+		if cerr != nil {
+			cand = nil
+		}
+		return placementLoad{items, cand}, err
+	}, func(l placementLoad, err error) {
+		if err != nil {
+			u.info("cannot load spread preferences: " + err.Error())
+			return
+		}
+		u.placementListEditor("spread of "+svcName, "Update the spread preferences",
+			l.items, l.cand, validateSpreadDescriptor,
+			func(ctx context.Context, list []string) error { return setServiceSpread(ctx, dcli, svcName, list) },
+			back, after)
+	})
 }
 
 // openPlacementMenu groups the two placement concerns (hard constraints and
@@ -852,244 +863,258 @@ func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func(
 // access), so on apply it warns which nodes the service could run on and that
 // each bind source must already exist on all of them.
 func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()) {
-	app, r, cfg, dcli, f, ctx := u.app, u.r, u.cfg, u.dcli, u.f, u.ctx
-	go func() {
-		items, err := currentServiceMountSpecs(ctx, dcli, svcName)
-		nodes, uneval, nerr := candidateNodesForService(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load mounts: " + err.Error())
-				return
+	r, cfg, dcli, f := u.r, u.cfg, u.dcli, u.f
+	type loaded struct {
+		items, nodes, uneval []string
+		nerr                 error
+	}
+	async(u, "ui.serviceedit.mounts.load", func(ctx context.Context) (loaded, error) {
+		var l loaded
+		var err error
+		l.items, err = currentServiceMountSpecs(ctx, dcli, svcName)
+		l.nodes, l.uneval, l.nerr = candidateNodesForService(ctx, dcli, svcName)
+		return l, err
+	}, func(l loaded, err error) {
+		items, nodes, uneval, nerr := l.items, l.nodes, l.uneval, l.nerr
+		if err != nil {
+			u.info("cannot load mounts: " + err.Error())
+			return
+		}
+		confirmNote := func(list []string) string {
+			var binds []string
+			for _, it := range list {
+				if m, e := parseServiceMount(it); e == nil && m.Type == mount.TypeBind {
+					binds = append(binds, m.Source)
+				}
 			}
-			confirmNote := func(list []string) string {
-				var binds []string
-				for _, it := range list {
-					if m, e := parseServiceMount(it); e == nil && m.Type == mount.TypeBind {
-						binds = append(binds, m.Source)
+			if len(binds) == 0 {
+				return ""
+			}
+			where := "(could not determine nodes)"
+			if nerr == nil {
+				where = fmt.Sprintf("%d node(s): %s", len(nodes), strings.Join(nodes, ", "))
+			}
+			msg := fmt.Sprintf("⚠ bind sources must ALREADY exist on every node this service can run on — swarmexec cannot verify this.\nnodes: %s\nbinds: %s", where, strings.Join(binds, ", "))
+			if nerr == nil && len(uneval) > 0 {
+				msg += fmt.Sprintf("\n(unevaluated constraints: %s — the real node set may be narrower)", strings.Join(uneval, ", "))
+			}
+			return msg
+		}
+		// volNames feeds the volume-mode autocomplete. Seed from whatever the
+		// Volumes tab already loaded, then refresh in the background (volume
+		// listing is a per-node agent fan-out, so we don't block opening).
+		volNames := make([]string, 0, len(u.vols))
+		for _, v := range u.vols {
+			volNames = append(volNames, v.Name)
+		}
+		async(u, "ui.serviceedit.mounts.volumes", func(ctx context.Context) ([]string, error) {
+			vnodes, e := r.Nodes(ctx)
+			if e != nil {
+				return nil, e
+			}
+			vs, _ := indexVolumes(ctx, cfg, vnodes, f.connectTimeout)
+			names := make([]string, 0, len(vs))
+			for _, v := range vs {
+				names = append(names, v.Name)
+			}
+			sort.Strings(names)
+			return names, nil
+		}, func(names []string, e error) {
+			if e == nil {
+				volNames = names
+			}
+		})
+		// mountForm splits a mount into separate inputs: a "bind mount" toggle,
+		// a source (host path when bind, else a volume name with autocomplete),
+		// the container path, and a read-only toggle. It replaces the old single
+		// "type:source:target[:ro]" text entry.
+		mountForm := func(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
+			isBind, src, tgt, ro := false, "", "", false
+			if m, e := parseServiceMount(initial); e == nil {
+				isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
+			}
+			form := tview.NewForm()
+			// Volume names are short and want autocomplete, so they keep an
+			// InputField; host and container paths get a wrapping field so a
+			// long path is visible whole. The bind toggle swaps which source
+			// field the form shows.
+			volField := tview.NewInputField().SetLabel("volume").SetPlaceholder("volume name").SetFieldWidth(0)
+			hostField := wrapField("host path", "", "/opt/app/config", 3)
+			tgtField := wrapField("container path", tgt, "/data", 3)
+			roCheck := tview.NewCheckbox().SetLabel("read-only").SetChecked(ro)
+			volSuggest := func(text string) []string {
+				text = strings.ToLower(strings.TrimSpace(text))
+				var out []string
+				for _, n := range volNames {
+					if text == "" || strings.Contains(strings.ToLower(n), text) {
+						out = append(out, n)
 					}
 				}
-				if len(binds) == 0 {
-					return ""
-				}
-				where := "(could not determine nodes)"
-				if nerr == nil {
-					where = fmt.Sprintf("%d node(s): %s", len(nodes), strings.Join(nodes, ", "))
-				}
-				msg := fmt.Sprintf("⚠ bind sources must ALREADY exist on every node this service can run on — swarmexec cannot verify this.\nnodes: %s\nbinds: %s", where, strings.Join(binds, ", "))
-				if nerr == nil && len(uneval) > 0 {
-					msg += fmt.Sprintf("\n(unevaluated constraints: %s — the real node set may be narrower)", strings.Join(uneval, ", "))
-				}
-				return msg
+				return out
 			}
-			// volNames feeds the volume-mode autocomplete. Seed from whatever the
-			// Volumes tab already loaded, then refresh in the background (volume
-			// listing is a per-node agent fan-out, so we don't block opening).
-			volNames := make([]string, 0, len(u.vols))
-			for _, v := range u.vols {
-				volNames = append(volNames, v.Name)
+			volField.SetAutocompleteFunc(volSuggest)
+			if isBind {
+				hostField.SetText(src, true)
+			} else {
+				volField.SetText(src)
 			}
-			go func() {
-				vnodes, e := r.Nodes(ctx)
-				if e != nil {
+			var bindCheck *tview.Checkbox
+			layout := func(bind bool) {
+				form.Clear(false)
+				form.AddFormItem(bindCheck)
+				if bind {
+					form.AddFormItem(hostField)
+				} else {
+					form.AddFormItem(volField)
+				}
+				form.AddFormItem(tgtField)
+				form.AddFormItem(roCheck)
+			}
+			bindCheck = tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).
+				SetChangedFunc(func(checked bool) {
+					// Carry what was typed over to the other field.
+					if checked {
+						hostField.SetText(strings.TrimSpace(volField.GetText()), true)
+					} else {
+						volField.SetText(fieldText(hostField))
+					}
+					layout(checked)
+				})
+			layout(isBind)
+			setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
+			save := func() {
+				typ, s := "volume", strings.TrimSpace(volField.GetText())
+				if bindCheck.IsChecked() {
+					typ, s = "bind", fieldText(hostField)
+				}
+				t := fieldText(tgtField)
+				if s == "" || t == "" {
+					setTitle(" ⚠ source and container path are required ")
 					return
 				}
-				vs, _ := indexVolumes(ctx, cfg, vnodes, f.connectTimeout)
-				names := make([]string, 0, len(vs))
-				for _, v := range vs {
-					names = append(names, v.Name)
+				raw := typ + ":" + s + ":" + t
+				if roCheck.IsChecked() {
+					raw += ":ro"
 				}
-				sort.Strings(names)
-				app.QueueUpdateDraw(func() { volNames = names })
-			}()
-			// mountForm splits a mount into separate inputs: a "bind mount" toggle,
-			// a source (host path when bind, else a volume name with autocomplete),
-			// the container path, and a read-only toggle. It replaces the old single
-			// "type:source:target[:ro]" text entry.
-			mountForm := func(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
-				isBind, src, tgt, ro := false, "", "", false
-				if m, e := parseServiceMount(initial); e == nil {
-					isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
+				if e := submit(raw); e != nil {
+					setTitle(" ⚠ " + e.Error() + " ")
 				}
-				form := tview.NewForm()
-				// Volume names are short and want autocomplete, so they keep an
-				// InputField; host and container paths get a wrapping field so a
-				// long path is visible whole. The bind toggle swaps which source
-				// field the form shows.
-				volField := tview.NewInputField().SetLabel("volume").SetPlaceholder("volume name").SetFieldWidth(0)
-				hostField := wrapField("host path", "", "/opt/app/config", 3)
-				tgtField := wrapField("container path", tgt, "/data", 3)
-				roCheck := tview.NewCheckbox().SetLabel("read-only").SetChecked(ro)
-				volSuggest := func(text string) []string {
-					text = strings.ToLower(strings.TrimSpace(text))
-					var out []string
-					for _, n := range volNames {
-						if text == "" || strings.Contains(strings.ToLower(n), text) {
-							out = append(out, n)
-						}
-					}
-					return out
-				}
-				volField.SetAutocompleteFunc(volSuggest)
-				if isBind {
-					hostField.SetText(src, true)
-				} else {
-					volField.SetText(src)
-				}
-				var bindCheck *tview.Checkbox
-				layout := func(bind bool) {
-					form.Clear(false)
-					form.AddFormItem(bindCheck)
-					if bind {
-						form.AddFormItem(hostField)
-					} else {
-						form.AddFormItem(volField)
-					}
-					form.AddFormItem(tgtField)
-					form.AddFormItem(roCheck)
-				}
-				bindCheck = tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).
-					SetChangedFunc(func(checked bool) {
-						// Carry what was typed over to the other field.
-						if checked {
-							hostField.SetText(strings.TrimSpace(volField.GetText()), true)
-						} else {
-							volField.SetText(fieldText(hostField))
-						}
-						layout(checked)
-					})
-				layout(isBind)
-				setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
-				save := func() {
-					typ, s := "volume", strings.TrimSpace(volField.GetText())
-					if bindCheck.IsChecked() {
-						typ, s = "bind", fieldText(hostField)
-					}
-					t := fieldText(tgtField)
-					if s == "" || t == "" {
-						setTitle(" ⚠ source and container path are required ")
-						return
-					}
-					raw := typ + ":" + s + ":" + t
-					if roCheck.IsChecked() {
-						raw += ":ro"
-					}
-					if e := submit(raw); e != nil {
-						setTitle(" ⚠ " + e.Error() + " ")
-					}
-				}
-				form.AddButton("Save", save)
-				form.AddButton("Cancel", cancel)
-				form.SetCancelFunc(cancel)
-				form.SetBorder(true)
-				if initial == "" {
-					setTitle(" add mount · Tab moves · Enter on Save ")
-				} else {
-					setTitle(" edit mount · Tab moves · Enter on Save ")
-				}
-				return form
 			}
-			u.editList(editListConfig{
-				title:     "mounts of " + svcName,
-				applyVerb: "Update the mounts",
-				items:     items,
-				validate: func(s string) (string, error) {
-					m, e := parseServiceMount(s)
-					if e != nil {
-						return "", e
-					}
-					return formatServiceMount(m), nil
-				},
-				onApply: func(list []string) error {
-					ms, e := mountsFromStrings(list)
-					if e != nil {
-						return e
-					}
-					return setServiceMounts(ctx, dcli, svcName, ms)
-				},
-				allowEdit:   true,
-				confirmNote: confirmNote,
-				formPrompt:  mountForm,
-				back:        back,
-				after:       after,
-			})
+			form.AddButton("Save", save)
+			form.AddButton("Cancel", cancel)
+			form.SetCancelFunc(cancel)
+			form.SetBorder(true)
+			if initial == "" {
+				setTitle(" add mount · Tab moves · Enter on Save ")
+			} else {
+				setTitle(" edit mount · Tab moves · Enter on Save ")
+			}
+			return form
+		}
+		u.editList(editListConfig{
+			title:     "mounts of " + svcName,
+			applyVerb: "Update the mounts",
+			items:     items,
+			validate: func(s string) (string, error) {
+				m, e := parseServiceMount(s)
+				if e != nil {
+					return "", e
+				}
+				return formatServiceMount(m), nil
+			},
+			onApply: func(ctx context.Context, list []string) error {
+				ms, e := mountsFromStrings(list)
+				if e != nil {
+					return e
+				}
+				return setServiceMounts(ctx, dcli, svcName, ms)
+			},
+			allowEdit:   true,
+			confirmNote: confirmNote,
+			formPrompt:  mountForm,
+			back:        back,
+			after:       after,
 		})
-	}()
+	})
 }
 
 // openScalePrompt asks for a new replica count and scales the service.
 func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
+	dcli := u.dcli
+	type replicas struct {
+		cur        uint64
+		replicated bool
+	}
+	async(u, "ui.serviceedit.scale.load", func(ctx context.Context) (replicas, error) {
 		cur, replicated, err := currentServiceReplicas(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load service: " + err.Error())
+		return replicas{cur, replicated}, err
+	}, func(rs replicas, err error) {
+		cur, replicated := rs.cur, rs.replicated
+		if err != nil {
+			u.info("cannot load service: " + err.Error())
+			return
+		}
+		if !replicated {
+			u.info(fmt.Sprintf("service %q is not replicated and cannot be scaled", svcName))
+			return
+		}
+		in := tview.NewInputField().SetLabel("replicas: ").SetText(fmt.Sprintf("%d", cur)).
+			SetFieldWidth(8).SetAcceptanceFunc(tview.InputFieldInteger)
+		sov := u.overlayFor(pageScalePrompt, back, "")
+		in.SetDoneFunc(func(k tcell.Key) {
+			sov.Close()
+			if k != tcell.KeyEnter {
 				return
 			}
-			if !replicated {
-				u.info(fmt.Sprintf("service %q is not replicated and cannot be scaled", svcName))
+			n, perr := strconv.ParseUint(strings.TrimSpace(in.GetText()), 10, 64)
+			if perr != nil {
+				u.info("invalid replica count")
 				return
 			}
-			in := tview.NewInputField().SetLabel("replicas: ").SetText(fmt.Sprintf("%d", cur)).
-				SetFieldWidth(8).SetAcceptanceFunc(tview.InputFieldInteger)
-			sov := u.overlayFor(pageScalePrompt, back, "")
-			in.SetDoneFunc(func(k tcell.Key) {
-				sov.Close()
-				if k != tcell.KeyEnter {
+			asyncDo(u, "ui.serviceedit.scale", func(ctx context.Context) error {
+				return scaleService(ctx, dcli, svcName, n)
+			}, func(serr error) {
+				if serr != nil {
+					u.info("scale failed: " + serr.Error())
 					return
 				}
-				n, perr := strconv.ParseUint(strings.TrimSpace(in.GetText()), 10, 64)
-				if perr != nil {
-					u.info("invalid replica count")
-					return
+				u.info(fmt.Sprintf("scaled %q to %d — reconciling", svcName, n))
+				if after != nil {
+					after()
 				}
-				go func() {
-					serr := scaleService(ctx, dcli, svcName, n)
-					app.QueueUpdateDraw(func() {
-						if serr != nil {
-							u.info("scale failed: " + serr.Error())
-							return
-						}
-						u.info(fmt.Sprintf("scaled %q to %d — reconciling", svcName, n))
-						if after != nil {
-							after()
-						}
-					})
-				}()
 			})
-			in.SetBorder(true).SetTitle(" scale service ")
-			sov.show(centeredPrompt(in, 50), in)
 		})
-	}()
+		in.SetBorder(true).SetTitle(" scale service ")
+		sov.show(centeredPrompt(in, 50), in)
+	})
 }
 
 // openForceUpdate redeploys a service (docker service update --force) after a
 // confirm — every task is restarted/rescheduled, which unsticks a service in
 // an incomplete state (e.g. 1/2). No spec change beyond bumping ForceUpdate.
 func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	app, dcli := u.app, u.dcli
 	u.confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
 		app.SetFocus(back)
-		go func() {
-			err := forceUpdateService(ctx, dcli, svcName)
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					u.info("force update failed: " + err.Error())
-					return
-				}
-				u.info(fmt.Sprintf("force-updating %q — reconciling", svcName))
-				if after != nil {
-					after()
-				}
-			})
-		}()
+		asyncDo(u, "ui.serviceedit.forceupdate", func(ctx context.Context) error {
+			return forceUpdateService(ctx, dcli, svcName)
+		}, func(err error) {
+			if err != nil {
+				u.info("force update failed: " + err.Error())
+				return
+			}
+			u.info(fmt.Sprintf("force-updating %q — reconciling", svcName))
+			if after != nil {
+				after()
+			}
+		})
 	})
 }
 
 // promptDeleteOrphanSecrets asks whether to also delete secrets that the
 // just-removed service was the only user of (nothing references them now).
 func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
-	app, dcli, ctx, ctree := u.app, u.dcli, u.ctx, u.ctree
+	dcli, ctree := u.dcli, u.ctree
 	names := make([]string, 0, len(orphans))
 	for _, o := range orphans {
 		names = append(names, o.Name)
@@ -1103,21 +1128,23 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 			if lbl != "Delete secrets" {
 				return
 			}
-			go func() {
+			// Per-secret failures are collected, not returned: one secret that
+			// cannot go must not hide which others did.
+			async(u, "ui.serviceedit.orphansecrets.delete", func(ctx context.Context) ([]string, error) {
 				var failed []string
 				for _, o := range orphans {
 					if err := removeSecret(ctx, dcli, o.Name); err != nil {
 						failed = append(failed, o.Name+": "+err.Error())
 					}
 				}
-				app.QueueUpdateDraw(func() {
-					if len(failed) == 0 {
-						u.flash(fmt.Sprintf(" [green]deleted[white] %d orphaned secret(s)", len(orphans)))
-						return
-					}
-					u.info("some secrets could not be deleted:\n" + joinLines(failed))
-				})
-			}()
+				return failed, nil
+			}, func(failed []string, _ error) {
+				if len(failed) == 0 {
+					u.flash(fmt.Sprintf(" [green]deleted[white] %d orphaned secret(s)", len(orphans)))
+					return
+				}
+				u.info("some secrets could not be deleted:\n" + joinLines(failed))
+			})
 		})
 	oov.show(newScrim(m), m)
 }
@@ -1127,37 +1154,36 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 // tree, since the service no longer exists). If the service was the sole user
 // of any secret, it then offers to delete those now-orphaned secrets.
 func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	app, dcli := u.app, u.dcli
 	u.confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
-		go func() {
+		async(u, "ui.serviceedit.remove", func(ctx context.Context) ([]secretRef, error) {
 			// Compute orphaned secrets BEFORE removal (we need the service's
 			// spec and the other services' current usage).
 			orphans, _ := secretsOnlyUsedBy(ctx, dcli, svcName)
-			err := removeService(ctx, dcli, svcName)
-			app.QueueUpdateDraw(func() {
-				// Order matters: whatever is shown LAST owns the focus. Both
-				// app.SetFocus(back) and onRemoved (which closes the inspect and
-				// refocuses the tree) used to run *after* u.info, leaving the
-				// notice on screen but unfocused — Esc/Enter went to the widget
-				// behind it and the dialog looked stuck.
-				if err != nil {
-					app.SetFocus(back)
-					u.info("remove failed: " + err.Error())
-					return
-				}
-				if onRemoved != nil {
-					onRemoved()
-				}
-				if len(orphans) > 0 {
-					// The orphan prompt is the actionable follow-up and its text
-					// already says the service was removed, so it replaces the
-					// notice rather than stacking on top of it.
-					u.promptDeleteOrphanSecrets(orphans)
-					return
-				}
-				u.info(fmt.Sprintf("removed service %q", svcName))
-			})
-		}()
+			return orphans, removeService(ctx, dcli, svcName)
+		}, func(orphans []secretRef, err error) {
+			// Order matters: whatever is shown LAST owns the focus. Both
+			// app.SetFocus(back) and onRemoved (which closes the inspect and
+			// refocuses the tree) used to run *after* u.info, leaving the
+			// notice on screen but unfocused — Esc/Enter went to the widget
+			// behind it and the dialog looked stuck.
+			if err != nil {
+				app.SetFocus(back)
+				u.info("remove failed: " + err.Error())
+				return
+			}
+			if onRemoved != nil {
+				onRemoved()
+			}
+			if len(orphans) > 0 {
+				// The orphan prompt is the actionable follow-up and its text
+				// already says the service was removed, so it replaces the
+				// notice rather than stacking on top of it.
+				u.promptDeleteOrphanSecrets(orphans)
+				return
+			}
+			u.info(fmt.Sprintf("removed service %q", svcName))
+		})
 	})
 }
 
@@ -1262,26 +1288,25 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 // confirmImageUpdate confirms and applies an image change (rolling update). When
 // downgrade is set the prompt warns that the target is older than what runs.
 func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	app, dcli := u.app, u.dcli
 	msg := fmt.Sprintf("Update %q to:\n\n%s\n\nThis triggers a rolling update.", svcName, target)
 	if downgrade {
 		msg = fmt.Sprintf("[yellow]⚠ This is a DOWNGRADE.[white]\n\nUpdate %q to:\n\n%s\n\nThis triggers a rolling update onto an older image.", svcName, target)
 	}
 	u.confirm(msg, "Update", back, func() {
 		app.SetFocus(back)
-		go func() {
-			err := updateServiceImage(ctx, dcli, svcName, target)
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					u.info("update failed: " + err.Error())
-					return
-				}
-				u.info(fmt.Sprintf("updating %q — rolling update started", svcName))
-				if after != nil {
-					after()
-				}
-			})
-		}()
+		asyncDo(u, "ui.serviceedit.image", func(ctx context.Context) error {
+			return updateServiceImage(ctx, dcli, svcName, target)
+		}, func(err error) {
+			if err != nil {
+				u.info("update failed: " + err.Error())
+				return
+			}
+			u.info(fmt.Sprintf("updating %q — rolling update started", svcName))
+			if after != nil {
+				after()
+			}
+		})
 	})
 }
 
@@ -1289,7 +1314,7 @@ func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tvi
 // expected to — per-node exclusion reasons for a global service, and the
 // scheduler's own message on each non-running task for a replicated one.
 func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
-	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	pages, dcli := u.pages, u.dcli
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" placement of %s ", svcName))
 	tv.SetText("  [gray]diagnosing…[-]")
@@ -1308,88 +1333,85 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 		return ev
 	})
 	ov.show(centered(tv, 90, 24), tv)
-	go func() {
-		rep, err := diagnoseServicePlacement(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if !pages.HasPage(pagePlaceDiag) {
-				return
-			}
-			if err != nil {
-				tv.SetText("  [red]diagnosis failed:[-] " + tview.Escape(err.Error()))
-				return
-			}
-			tv.SetText(renderPlaceReport(rep))
-		})
-	}()
+	async(u, "ui.serviceedit.placement.diagnose", func(ctx context.Context) (placeReport, error) {
+		return diagnoseServicePlacement(ctx, dcli, svcName)
+	}, func(rep placeReport, err error) {
+		if !pages.HasPage(pagePlaceDiag) {
+			return
+		}
+		if err != nil {
+			tv.SetText("  [red]diagnosis failed:[-] " + tview.Escape(err.Error()))
+			return
+		}
+		tv.SetText(renderPlaceReport(rep))
+	})
 }
 
 // openResourcesEditor sets/edits/clears the service's CPU and memory limits
 // (and reservations) in a form. An empty field clears that limit; applying
 // does one ServiceUpdate (rolling update).
 func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		rc, err := currentServiceResources(ctx, dcli, svcName)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("cannot load resources: " + err.Error())
+	app, dcli := u.app, u.dcli
+	async(u, "ui.serviceedit.resources.load", func(ctx context.Context) (serviceResources, error) {
+		return currentServiceResources(ctx, dcli, svcName)
+	}, func(rc serviceResources, err error) {
+		if err != nil {
+			u.info("cannot load resources: " + err.Error())
+			return
+		}
+		form := tview.NewForm()
+		cpuL := tview.NewInputField().SetLabel("CPU limit (cores)").SetText(rc.CPULimit).SetFieldWidth(16).SetPlaceholder("e.g. 0.5 — empty = none")
+		memL := tview.NewInputField().SetLabel("Memory limit").SetText(rc.MemLimit).SetFieldWidth(16).SetPlaceholder("e.g. 512m — empty = none")
+		cpuR := tview.NewInputField().SetLabel("CPU reservation").SetText(rc.CPUReservation).SetFieldWidth(16).SetPlaceholder("optional")
+		memR := tview.NewInputField().SetLabel("Memory reservation").SetText(rc.MemReservation).SetFieldWidth(16).SetPlaceholder("optional")
+		setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
+		rov := u.overlayFor(pageResEdit, back, footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
+		closeForm := rov.Close
+		apply := func() {
+			cl, e1 := parseCPUCores(cpuL.GetText())
+			ml, e2 := parseMemBytes(memL.GetText())
+			cr, e3 := parseCPUCores(cpuR.GetText())
+			mr, e4 := parseMemBytes(memR.GetText())
+			for _, e := range []error{e1, e2, e3, e4} {
+				if e != nil {
+					setTitle(" ⚠ " + e.Error() + " ")
+					return
+				}
+			}
+			if cl > 0 && cr > cl {
+				setTitle(" ⚠ CPU reservation exceeds the limit ")
 				return
 			}
-			form := tview.NewForm()
-			cpuL := tview.NewInputField().SetLabel("CPU limit (cores)").SetText(rc.CPULimit).SetFieldWidth(16).SetPlaceholder("e.g. 0.5 — empty = none")
-			memL := tview.NewInputField().SetLabel("Memory limit").SetText(rc.MemLimit).SetFieldWidth(16).SetPlaceholder("e.g. 512m — empty = none")
-			cpuR := tview.NewInputField().SetLabel("CPU reservation").SetText(rc.CPUReservation).SetFieldWidth(16).SetPlaceholder("optional")
-			memR := tview.NewInputField().SetLabel("Memory reservation").SetText(rc.MemReservation).SetFieldWidth(16).SetPlaceholder("optional")
-			setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
-			rov := u.overlayFor(pageResEdit, back, footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
-			closeForm := rov.Close
-			apply := func() {
-				cl, e1 := parseCPUCores(cpuL.GetText())
-				ml, e2 := parseMemBytes(memL.GetText())
-				cr, e3 := parseCPUCores(cpuR.GetText())
-				mr, e4 := parseMemBytes(memR.GetText())
-				for _, e := range []error{e1, e2, e3, e4} {
-					if e != nil {
-						setTitle(" ⚠ " + e.Error() + " ")
+			if ml > 0 && mr > ml {
+				setTitle(" ⚠ memory reservation exceeds the limit ")
+				return
+			}
+			u.confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
+				asyncDo(u, "ui.serviceedit.resources.apply", func(ctx context.Context) error {
+					return setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
+				}, func(aerr error) {
+					if aerr != nil {
+						u.info("update failed: " + aerr.Error())
+						app.SetFocus(form)
 						return
 					}
-				}
-				if cl > 0 && cr > cl {
-					setTitle(" ⚠ CPU reservation exceeds the limit ")
-					return
-				}
-				if ml > 0 && mr > ml {
-					setTitle(" ⚠ memory reservation exceeds the limit ")
-					return
-				}
-				u.confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
-					go func() {
-						aerr := setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
-						app.QueueUpdateDraw(func() {
-							if aerr != nil {
-								u.info("update failed: " + aerr.Error())
-								app.SetFocus(form)
-								return
-							}
-							closeForm()
-							u.info("service updated — rolling update started")
-							if after != nil {
-								after()
-							}
-						})
-					}()
+					closeForm()
+					u.info("service updated — rolling update started")
+					if after != nil {
+						after()
+					}
 				})
-			}
-			form.AddFormItem(cpuL)
-			form.AddFormItem(memL)
-			form.AddFormItem(cpuR)
-			form.AddFormItem(memR)
-			form.AddButton("Apply", apply)
-			form.AddButton("Cancel", closeForm)
-			form.SetCancelFunc(closeForm)
-			form.SetBorder(true)
-			setTitle(" resource limits of " + svcName + " — empty clears a limit ")
-			rov.show(centered(form, 70, 15), form)
-		})
-	}()
+			})
+		}
+		form.AddFormItem(cpuL)
+		form.AddFormItem(memL)
+		form.AddFormItem(cpuR)
+		form.AddFormItem(memR)
+		form.AddButton("Apply", apply)
+		form.AddButton("Cancel", closeForm)
+		form.SetCancelFunc(closeForm)
+		form.SetBorder(true)
+		setTitle(" resource limits of " + svcName + " — empty clears a limit ")
+		rov.show(centered(form, 70, 15), form)
+	})
 }
