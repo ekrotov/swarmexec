@@ -109,6 +109,6 @@ func (s *Server) ReclaimStats(ctx context.Context, req *pb.ReclaimStatsRequest) 
 		out.MeasuredAt = at.UTC().Format(time.RFC3339)
 		out.ContainersUntil = until.String()
 	}
-	out.Schedule, out.LastRun = s.scheduler.status(time.Now())
+	out.Schedule, out.LastRun = s.scheduler.Status(time.Now())
 	return out, nil
 }

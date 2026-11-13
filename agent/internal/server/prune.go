@@ -91,6 +91,12 @@ func (s *Server) Prune(ctx context.Context, req *pb.PruneRequest) (*pb.PruneResp
 	return &pb.PruneResponse{Results: results}, nil
 }
 
+// runScheduledPrune is runPrune for the prune scheduler, whose knobs come
+// from the schedule labels.
+func (s *Server) runScheduledPrune(ctx context.Context, identity, trigger string, cats []pb.PruneCategory, containersUntil time.Duration, labelFilters []string) []*pb.PruneCategoryResult {
+	return s.runPrune(ctx, identity, trigger, cats, pruneOptions{containersUntil: containersUntil, labelFilters: labelFilters})
+}
+
 // runPrune runs the categories in prunecat.Order, each authorized and audited on
 // its own. A refused or failed category does not stop the others: they are
 // independent acts, and a run that removed the containers and then gave up on
