@@ -528,7 +528,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 }
 
 func (u *ui) containerMenu(c resolve.Candidate) {
-	app, cfg, f, ctx, ctree := u.app, u.cfg, u.f, u.ctx, u.ctree
+	cfg, f, ctree := u.cfg, u.f, u.ctree
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
@@ -583,14 +583,14 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 		return vimListKeys(ev)
 	})
 
-	go func() {
+	async(u, "ui.containers.probeShells", func(ctx context.Context) ([2]bool, error) {
 		b, s := probeShells(ctx, cfg, ep, f.connectTimeout)
-		app.QueueUpdateDraw(func() {
-			bashOK, shOK, probed = b, s, true
-			list.SetTitle(fmt.Sprintf(" %s on %s — actions ", orDash(c.Service), orDash(c.NodeName)))
-			render()
-		})
-	}()
+		return [2]bool{b, s}, nil
+	}, func(ok [2]bool, _ error) {
+		bashOK, shOK, probed = ok[0], ok[1], true
+		list.SetTitle(fmt.Sprintf(" %s on %s — actions ", orDash(c.Service), orDash(c.NodeName)))
+		render()
+	})
 
 	// Height tracks the item count: 6 items plus the border.
 	ov.show(centered(list, 48, 8), list)

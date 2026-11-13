@@ -10,7 +10,6 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-
 )
 
 func (u *ui) renderConfigs() {
