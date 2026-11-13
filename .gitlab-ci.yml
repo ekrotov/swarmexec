@@ -5,9 +5,14 @@
 #   test    — go vet, gofmt check, race tests + coverage gate, staticcheck,
 #             generated-code + proto lint/breaking check, code navigation
 #   build   — cross-compile the cli (linux / macOS / windows) -> artifacts
+#
+# Stages only order the pipeline view: the jobs run as a DAG (`needs:`), so
+# build-cli starts alongside the tests, and every publishing job waits for
+# the explicit quality gate (.release-gate) instead of a whole stage.
 #   image   — build the agent image and push it to the GitLab Container Registry
 #   release — publish a GitLab Release for the tag
-#   deploy  — mirror, packages, site; verify-release checks it all arrived
+#   deploy  — mirror, packages, site; verify-release checks the downloads
+#             arrived, verify-site (non-blocking) that the site serves them
 #
 # Versioning:
 #   * Branch / MR pipelines  -> dev builds stamped with the short commit SHA.
@@ -30,14 +35,65 @@ variables:
   # release jobs, and runners keep floating tags stale anyway (see GO_IMAGE).
   ALPINE_IMAGE: "alpine:3.24"
   GOPATH: "$CI_PROJECT_DIR/.gocache"
+  # Go's build cache, inside the project dir so the GitLab cache can keep it
+  # (the default, /root/.cache/go-build, died with every job container, and
+  # ~80% of Go job time was recompiling unchanged code). STATICCHECK_CACHE is
+  # staticcheck's analysis cache, kept by the lint job.
+  GOCACHE: "$CI_PROJECT_DIR/.gocache/build"
+  STATICCHECK_CACHE: "$CI_PROJECT_DIR/.gocache/staticcheck"
+  # Cache archives: fastzip with the fastest compression. The caches are Go
+  # module sources and binaries; zipping them harder costs more CPU time on
+  # these shared, CPU-bound runners than it saves in transfer (the caches are
+  # local to each runner host, there is no remote cache server).
+  FF_USE_FASTZIP: "true"
+  CACHE_COMPRESSION_LEVEL: "fastest"
 
+# Which pipelines exist (GitLab's "merge request pipelines + default branch"
+# pattern):
+#   * a merge request       -> one MR pipeline per push to its source branch
+#   * the default branch    -> a branch pipeline (dev image, code navigation)
+#   * a tag                 -> a tag pipeline (semver tags release, see below)
+#   * Run pipeline (web UI) -> any branch, e.g. one that has no MR yet
+# A push to any other branch creates NO pipeline by itself. The old rule
+# ("branch pipeline unless $CI_OPEN_MERGE_REQUESTS") could not prevent the
+# duplicate: the push always lands before the MR is created, so every MR ran
+# twice on the same SHA (once as a branch pipeline, once as an MR pipeline).
+# Open the MR (a draft is fine) to get CI on a branch, or use Run pipeline.
+#
+# Auto-cancel: a newer commit on the same ref (another MR push, the next merge
+# to main) cancels the older pipeline's INTERRUPTIBLE jobs; the rest finish.
+# Jobs are non-interruptible by default (see `default:`); only jobs without
+# side effects outside the pipeline opt in. Tags never get a newer commit, so
+# release pipelines are never auto-cancelled.
+#
+# Exception: a main pipeline that changes site/ is never cancelled. site-image
+# runs on main only when site/ changed, and `changes:` compares against the
+# previous push, so if this pipeline were cancelled, the newer one (whose
+# diff does not touch site/) would not rebuild the site image either. GitLab
+# reads this setting from the pipeline being cancelled, which is this one.
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
-      when: never
-    - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - site/**/*
+      auto_cancel:
+        on_new_commit: none
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "schedule"
+
+# interruptible: false unless a job says otherwise. A job may opt in only if
+# cancelling it half-way leaves nothing behind outside this pipeline: tests,
+# checks and builds whose output is a job artifact. Pushes to a registry,
+# releases, the mirror, packages and deploys stay non-interruptible — a
+# half-done push or release is worse than a redundant one. (Once a
+# non-interruptible job runs, auto-cancel leaves it alone; its interruptible
+# siblings are still cancelled.)
+default:
+  interruptible: false
 
 # A semantic-version tag: vMAJOR.MINOR.PATCH with an optional -prerelease
 # (the leading "v" is optional). Anchored so it can be reused in several jobs.
@@ -46,14 +102,78 @@ workflow:
 .semver-tag: &semver-tag
   if: '$CI_COMMIT_TAG =~ /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/'
 
-# Reusable Go module cache (keyed on go.sum).
+# ----------------------------------------------------------------------------
+# Caches. Measured on this runner fleet (MR !279): the GitLab cache is NOT
+# shared, not even per host — without a cache server each runner keeps it in a
+# Docker volume per concurrent slot (runner-...-concurrent-<n>-cache), so there
+# are ~10 independent copies (3 hosts, ~10 slots). A cache only a designated
+# writer job pushes therefore stays cold in every slot that writer never ran
+# in, which on 10 slots is most of them. So every job that uses a cache also
+# pushes it (pull-push), and the caches are shaped to be cheap to re-zip:
+#
+#   mod     Go's module DOWNLOAD cache ($GOPATH/pkg/mod/cache/download: the
+#           module zips, ~700 files) keyed on go.sum — not the extracted tree
+#           (~25-60k files), whose zipping cost every job 15-20 s. go
+#           extracts what a build needs from the zips locally, offline.
+#   tools   buf, protoc plugins, staticcheck, govulncheck, scip-go binaries
+#           in $GOPATH/bin, keyed on tools.mk (the pinned versions); the
+#           Makefile's stamps also record the Go version, so a toolchain bump
+#           reinstalls even under an unchanged key. Each job installs the
+#           tools it needs only when they are missing (`make tool-<name>`),
+#           and the slot's cache accumulates them.
+#   gobuild-<job>-<Go image>   GOCACHE of one job (test: vet + race; lint:
+#           plus staticcheck's cache; build-cli: the cross targets). One key
+#           per job because each compiles in a different mode. Keyed on the
+#           Go image, NOT on go.sum: the build cache is content-addressed, so
+#           a dependency bump still reuses everything unchanged (std, the
+#           race runtime, untouched modules), and Go itself trims entries
+#           unused for 5 days. when: always — a failed test run's compile
+#           results are just as valid, and the fix-up push wants them.
+#
+# Every slot warms up on its own, the first time a job runs there. The real
+# fix is runner-side (a shared cache server, or Go cache volumes mounted on
+# each host), which needs no zipping at all.
+# ----------------------------------------------------------------------------
+.cache-mod: &cache-mod
+  key:
+    files:
+      - go.sum
+    prefix: mod
+  paths:
+    - .gocache/pkg/mod/cache/download
+
+.cache-tools: &cache-tools
+  key:
+    files:
+      - tools.mk
+    prefix: tools
+  paths:
+    - .gocache/bin
+
 .go-cache: &go-cache
   cache:
-    key:
-      files:
-        - go.sum
-    paths:
-      - .gocache/pkg/mod
+    - *cache-mod
+    - *cache-tools
+
+# The quality gate as a `needs:` list. Jobs run as a DAG (needs), not stage by
+# stage, so nothing waits for unrelated jobs — but every job that PUBLISHES
+# something (images, the release, the mirror, packages, the site deploy) lists
+# this gate explicitly, so it starts only after test, lint, generate-check and
+# vulncheck passed (and, on a tag, verify-tag-on-main). code_navigation is not
+# in it: it is allow_failure and gates nothing. Used via
+#   needs: [!reference [.release-gate, needs], ...]
+.release-gate:
+  needs:
+    - job: verify-tag-on-main
+      optional: true # exists on semver tags only
+    - job: test
+      artifacts: false
+    - job: lint
+      artifacts: false
+    - job: generate-check
+      artifacts: false
+    - job: vulncheck
+      artifacts: false
 
 # ----------------------------------------------------------------------------
 # .pre — release gate: a semver tag must point at a commit that is on main
@@ -61,6 +181,7 @@ workflow:
 verify-tag-on-main:
   stage: .pre
   image: $GO_IMAGE
+  interruptible: true # read-only check
   variables:
     GIT_DEPTH: "0" # full history so merge-base can see both the tag and main
   script:
@@ -82,7 +203,13 @@ verify-tag-on-main:
 test:
   stage: test
   image: $GO_IMAGE
-  <<: *go-cache
+  interruptible: true # no side effects
+  cache:
+    - *cache-mod
+    - key: gobuild-test-$GO_IMAGE
+      paths:
+        - .gocache/build
+      when: always
   script:
     - go vet ./...
     - |
@@ -111,9 +238,17 @@ test:
 lint:
   stage: test
   image: $GO_IMAGE
-  <<: *go-cache
+  interruptible: true # no side effects
+  cache:
+    - *cache-mod
+    - *cache-tools
+    - key: gobuild-lint-$GO_IMAGE
+      paths:
+        - .gocache/build # staticcheck loads packages via `go list -export`
+        - .gocache/staticcheck
+      when: always
   script:
-    - make lint
+    - make lint # staticcheck from the tool cache (installed once, not `go run` per job)
 
 # ----------------------------------------------------------------------------
 # generate-check — the checked-in internal/pb must be exactly what
@@ -134,9 +269,10 @@ lint:
 generate-check:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # no side effects
   <<: *go-cache
   script:
-    - make tools
+    - make tools # buf + plugins; no-op when the tool cache has them
     - make check-generate
     - |
       # Only the compared tree is needed (git archive), so depth 1 suffices.
@@ -178,12 +314,13 @@ generate-check:
 vulncheck:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # no side effects
   <<: *go-cache
   variables:
     # GO-ID: reason. Reachable-but-unfixable in our dependency line.
     VULNCHECK_ALLOW: ""
   script:
-    - go install golang.org/x/vuln/cmd/govulncheck@v1.9.0 # pinned: the gate below parses its JSON output
+    - make tool-govulncheck # pinned in tools.mk: the gate below parses its JSON output
     - "$(go env GOPATH)/bin/govulncheck -format json ./... > govulncheck.json || true"
     - "$(go env GOPATH)/bin/govulncheck ./... || true"   # human-readable log
     - |
@@ -250,10 +387,11 @@ vulncheck:
 code_navigation:
   stage: test
   image: $GO_IMAGE
+  interruptible: true # output is a job artifact
   <<: *go-cache
   allow_failure: true
   script:
-    - go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.9
+    - make tool-scip-go
     - "$(go env GOPATH)/bin/scip-go index"
   artifacts:
     paths:
@@ -270,13 +408,35 @@ code_navigation:
 build-cli:
   stage: build
   image: $GO_IMAGE
-  <<: *go-cache
+  interruptible: true # output is a job artifact; publishing jobs ship it
+  cache:
+    - *cache-mod # no tools needed
+    - key: gobuild-build-cli-$GO_IMAGE
+      paths:
+        - .gocache/build
+      when: always
+  # Starts at once, in parallel with the test jobs: it needs nothing from them,
+  # and it publishes nothing itself (dist/ is a job artifact). Everything that
+  # ships dist/ needs the release gate. On a tag it still waits for the
+  # verify-tag-on-main gate.
+  needs:
+    - job: verify-tag-on-main
+      optional: true
   script:
     - VERSION="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
     - echo "building cli version $VERSION"
     # The platform list is PLATFORMS in the Makefile, the one definition;
     # `make release` writes dist/swarmexec-<os>-<arch>[.exe] and dist/SHA256SUMS.
-    - make release VERSION="$VERSION"
+    # An MR builds two of the five: the code has exactly one platform split
+    # (unix vs. other: client/internal/term/winch_*.go), which linux and
+    # windows cover; each extra target was ~85 s of compiling. main and tags
+    # build all five, so a release is unaffected.
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
+        make release VERSION="$VERSION" PLATFORMS="linux/amd64 windows/amd64"
+      else
+        make release VERSION="$VERSION"
+      fi
   artifacts:
     name: "swarmexec-cli-${CI_COMMIT_REF_SLUG}"
     paths:
@@ -295,6 +455,10 @@ build-cli:
 # ----------------------------------------------------------------------------
 agent-image:
   stage: image
+  interruptible: false # pushes to a registry: never stop half-way
+  # Gated on the tests, but not on build-cli: the image compiles the agent
+  # itself and never used dist/ (which it used to download, 59 MB).
+  needs: !reference [.release-gate, needs]
   # Build with Kaniko (no Docker daemon, no privileged mode). This runner cannot
   # run docker:dind — the service is unreachable (TLS certs not shared on 2376;
   # host "docker" unresolvable on 2375), which means dind never starts. Kaniko
@@ -361,6 +525,8 @@ agent-image:
 # ----------------------------------------------------------------------------
 site-image:
   stage: image
+  interruptible: false # pushes to a registry: never stop half-way
+  needs: !reference [.release-gate, needs]
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: [""]
@@ -407,8 +573,9 @@ release-publish:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:v0.24.0 # pinned; was :latest (same digest as of 2026-11)
   needs:
+    - !reference [.release-gate, needs]
     - job: build-cli
-      artifacts: true
+      artifacts: false # the release links the GitHub files; dist/ is not read here
     - job: agent-image
   script:
     - echo "publishing GitLab Release $CI_COMMIT_TAG"
@@ -463,6 +630,7 @@ dockerhub-description:
   stage: release
   image: $ALPINE_IMAGE
   needs:
+    - !reference [.release-gate, needs]
     - job: agent-image
   before_script:
     - apk add --no-cache curl jq >/dev/null
@@ -511,7 +679,10 @@ dockerhub-description:
 deploy-site:
   stage: deploy
   image: $ALPINE_IMAGE
+  variables:
+    GIT_STRATEGY: none # one curl to the trigger API; the repo is not needed
   needs:
+    - !reference [.release-gate, needs]
     - job: site-image
   rules:
     - *semver-tag
@@ -574,6 +745,7 @@ mirror-github:
   stage: deploy
   image: $ALPINE_IMAGE
   needs:
+    - !reference [.release-gate, needs]
     - job: release-publish
     - job: build-cli
       artifacts: true # dist/ — the exact files GitLab released
@@ -715,6 +887,7 @@ mirror-github:
   stage: deploy
   image: $ALPINE_IMAGE
   needs:
+    - !reference [.release-gate, needs]
     - job: release-publish
   rules:
     - *semver-tag
@@ -749,8 +922,10 @@ linkedin-announce:
 # ----------------------------------------------------------------------------
 package-manifests:
   stage: deploy
+  interruptible: true # writes only its own artifacts / reads public URLs
   image: $ALPINE_IMAGE
   needs:
+    - !reference [.release-gate, needs]
     - job: build-cli
       artifacts: true
   rules:
@@ -782,6 +957,7 @@ publish-packages:
   stage: deploy
   image: $ALPINE_IMAGE
   needs:
+    - !reference [.release-gate, needs]
     - job: package-manifests
       artifacts: true
     # The formula and manifest point at the GitHub release's files; publish
@@ -801,16 +977,21 @@ publish-packages:
 # Every job above checks its own step; this one checks the result, the way a
 # user meets it — anonymously, through the public URLs, against the checksums
 # build-cli produced: GitLab downloads, the GitHub release, the Homebrew formula
-# and Scoop manifest, the Docker Hub tag, install.sh from the live site, and the
-# site's release notes. Each of those went wrong once without anyone noticing
-# for a while. The GitHub CDN and the site deploy lag by minutes, so those
-# checks retry for up to VERIFY_WAIT seconds. Not allow_failure: a release that
-# did not arrive must turn the pipeline red. See ci/verify-release.sh.
+# and Scoop manifest, the Docker Hub tag and install.sh from the live site.
+# Each of those went wrong once without anyone noticing for a while. The
+# GitHub CDN lags by minutes, so those checks retry for up to VERIFY_WAIT
+# seconds. Not allow_failure: a release whose downloads did not arrive must
+# turn the pipeline red. See ci/verify-release.sh.
+#
+# The site itself (every replica serves the release, its notes list it) is
+# checked by verify-site below, not here.
 # ----------------------------------------------------------------------------
 verify-release:
   stage: deploy
+  interruptible: true # writes only its own artifacts / reads public URLs
   image: $ALPINE_IMAGE
   needs:
+    - !reference [.release-gate, needs]
     - job: build-cli
       artifacts: true # dist/SHA256SUMS — the reference every download is checked against
     - job: release-publish
@@ -822,10 +1003,45 @@ verify-release:
     - *semver-tag
   variables:
     VERIFY_WAIT: "900"
+    VERIFY_SKIP: "site" # verify-site
   before_script:
     - apk add --no-cache curl jq coreutils >/dev/null
   script:
     - BUILD_SUMS=dist/SHA256SUMS sh ci/verify-release.sh "$CI_COMMIT_TAG"
+
+# ----------------------------------------------------------------------------
+# verify-site — the site serves the release from every replica, and its
+# release notes list it.
+#
+# Its own job, and allow_failure, because the site rollout is the one step
+# that regularly stalls for a reason outside this pipeline: a swarm task pulls
+# its image once, and when that pull fails (registry TLS timeouts on some
+# nodes) the task waits in "Preparing" until someone forces an update. Inside
+# verify-release that turned v1.22.3, v1.23.2, v1.23.3 and v1.24.0 red after
+# 15 minutes, each time with all downloads fine. Here it is an orange warning, and the log says what
+# to run (`docker service update --force swarm-exec-site_site`), then retry
+# the job. A real defect in the site image (the release notes lacking the tag
+# on an otherwise current site) is reported as such, not as a slow rollout.
+# ----------------------------------------------------------------------------
+verify-site:
+  stage: deploy
+  interruptible: true # reads public URLs only
+  image: $ALPINE_IMAGE
+  needs:
+    - !reference [.release-gate, needs]
+    - job: site-image
+      artifacts: false
+    - job: deploy-site
+  rules:
+    - *semver-tag
+  allow_failure: true
+  variables:
+    VERIFY_ONLY: "site"
+    VERIFY_WAIT: "900"
+  before_script:
+    - apk add --no-cache curl jq coreutils >/dev/null
+  script:
+    - sh ci/verify-release.sh "$CI_COMMIT_TAG"
 
 reddit-post:
   extends: .release-post

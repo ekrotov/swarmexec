@@ -26,10 +26,14 @@ make agent-image     # agent container image (swarmexec-agent:<version>)
 make test            # unit tests for the whole module
 make cover           # race tests + coverage; fails below COVER_MIN (CI job `test`)
 make lint            # staticcheck at the pinned STATICCHECK_VERSION (CI job `lint`)
+make ci-tools        # every pinned tool: buf + plugins, staticcheck, govulncheck, scip-go
 make release         # cli for every release platform -> ./dist + SHA256SUMS (CI job `build-cli`)
 ```
 
-`PLATFORMS` in the Makefile is the single list of release platforms. CI's
+`PLATFORMS` in the Makefile is the single list of release platforms. Tool
+versions live in [`tools.mk`](tools.mk); each tool is installed into
+`$GOPATH/bin` once per version and Go toolchain (a stamp file remembers it), so
+repeated `make tools` / `make lint` runs do not rebuild it. CI's
 coverage minimum (`COVER_MIN`, generated `internal/pb` excluded) sits just
 below the measured total: raise it when coverage grows, never lower it.
 
@@ -58,10 +62,14 @@ only; the privacy page also exists in German (`datenschutz.html`) and English (`
 
 [`.gitlab-ci.yml`](.gitlab-ci.yml) builds and versions automatically:
 
-- **Branches / merge requests** — run tests and produce dev cli binaries
-  (stamped with the short commit SHA) as job artifacts.
-- **Default branch (`main`)** — additionally push a dev agent image
-  (`$CI_REGISTRY_IMAGE/agent:main` and `:<short-sha>`).
+- **Merge requests** — run the tests and produce dev cli binaries for
+  linux/amd64 and windows/amd64 (stamped with the short commit SHA) as job
+  artifacts; those two cover the code's one platform split. A push to a
+  branch **without** an MR runs no pipeline (open a draft MR, or use
+  *Build > Pipelines > Run pipeline*): before, every MR push ran twice, once
+  as a branch pipeline and once as an MR pipeline.
+- **Default branch (`main`)** — all five cli platforms, and additionally push
+  a dev agent image (`$CI_REGISTRY_IMAGE/agent:main` and `:<short-sha>`).
 - **Semantic-version tag on `main`** — cut a release. A release is built
   **exactly when** the tag matches `vMAJOR.MINOR.PATCH` (e.g. `v1.2.3`,
   optionally `-rc.1` / `+build`) **and** the tagged commit is on `main`
@@ -77,12 +85,33 @@ only; the privacy page also exists in German (`datenschutz.html`) and English (`
   - and last, `verify-release`: it checks from the outside, anonymously, that
     all of it arrived — the GitHub downloads against the build's `SHA256SUMS`,
     the GitLab release links, the formula and manifest hashes, the Docker Hub
-    tag, `install.sh` from the live site, and that every site replica serves the
-    new release. It turns the
-    pipeline red if not (`ci/verify-release.sh`; run it by hand with a tag to
-    check any release).
+    tag and `install.sh` from the live site. It turns the pipeline red if not
+    (`ci/verify-release.sh`; run it by hand with a tag to check any release).
+    `verify-site` checks that every site replica serves the new release; it
+    is non-blocking because the site rollout stalls now and then for a known
+    infrastructure reason, and its log says what to run
+    (`docker service update --force swarm-exec-site_site`), then retry it.
 
   A semver tag that is **not** on `main` fails the gate and builds nothing.
+
+How the pipeline stays fast (details in the comments of `.gitlab-ci.yml`):
+
+- **DAG, not stages.** Jobs start as soon as their `needs:` are met:
+  `build-cli` runs alongside the tests. Every job that publishes something
+  (images, release, mirror, packages, site deploy) lists the quality gate
+  `.release-gate` explicitly: test, lint, generate-check and vulncheck (and
+  `verify-tag-on-main` on a tag) must pass first.
+- **Caches.** Go's module download cache (keyed on `go.sum`), the tool
+  binaries (keyed on `tools.mk`), and Go's build cache per job
+  (`gobuild-<job>-<Go image>`). Without a cache server, the runners keep each
+  cache in a Docker volume per runner host *and concurrent slot* (~10 copies),
+  so every job that uses a cache also writes it: each slot warms up the first
+  time a job runs there.
+- **Auto-cancel.** A newer push to the same MR or to `main` cancels the older
+  pipeline's interruptible jobs: checks and builds. Registry pushes, releases,
+  the mirror, packages and deploys are never interrupted, and a `main`
+  pipeline that changes `site/` is never cancelled (its site image would be
+  lost otherwise).
 
 Cut a release:
 

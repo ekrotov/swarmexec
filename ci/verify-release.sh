@@ -21,11 +21,18 @@
 #   install   install.sh from the live site installs exactly this version
 #   site      every replica serves this version, and its release notes list it
 #
-# Environment: GITHUB_MIRROR_REPO (required), GITHUB_TAP_REPO, GITHUB_SCOOP_REPO,
-# DOCKERHUB_IMAGE or DOCKERHUB_USER, SITE_URL, GITLAB_PROJECT_URL, and
-# BUILD_SUMS — the build's own SHA256SUMS, the reference when given.
+# Environment: GITHUB_MIRROR_REPO (required unless only "site" is checked),
+# GITHUB_TAP_REPO, GITHUB_SCOOP_REPO, DOCKERHUB_IMAGE or DOCKERHUB_USER,
+# SITE_URL, GITLAB_PROJECT_URL, and BUILD_SUMS — the build's own SHA256SUMS,
+# the reference when given.
 # The GitHub CDN and the site deploy lag behind the tag by minutes, so the
 # checks that read them retry for up to VERIFY_WAIT seconds (default 900).
+#
+# VERIFY_ONLY / VERIFY_SKIP: space-separated check names from the list above,
+# to run only those / all but those. CI runs the site check as its own,
+# non-blocking job (verify-site): a stalled site rollout is an infrastructure
+# problem with a known manual fix, and must not turn a release red whose
+# downloads are all fine. By hand: VERIFY_ONLY=site ci/verify-release.sh v1.2.3
 
 set -u
 
@@ -57,12 +64,24 @@ retry() {
 	done
 }
 
+# want NAME: is this check selected (VERIFY_ONLY / VERIFY_SKIP)?
+want() {
+	if [ -n "${VERIFY_ONLY:-}" ]; then
+		case " $VERIFY_ONLY " in *" $1 "*) ;; *) return 1 ;; esac
+	fi
+	case " ${VERIFY_SKIP:-} " in *" $1 "*) return 1 ;; esac
+	return 0
+}
+
 # fetch URL FILE: anonymous download; no credentials on purpose.
 fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
 
 # hash_of NAME: this build's checksum for a binary.
 hash_of() { awk -v n="$1" '$2 == n || $2 == "*"n {print $1}' "$work/SHA256SUMS"; }
 
+# github, gitlab, homebrew and scoop all compare against the GitHub release
+# and its SHA256SUMS, so the github check runs whenever any of them does.
+if want github || want gitlab || want homebrew || want scoop; then
 echo "== github: release and downloads"
 # The downloads live in the GitHub release. The reference is the build's own
 # SHA256SUMS when the pipeline hands it over (BUILD_SUMS), else the release's.
@@ -105,7 +124,9 @@ for b in $BINARIES; do
 		failed="$failed github"
 	fi
 done
+fi
 
+if want gitlab; then
 echo "== gitlab: the release page links point at those files"
 # GitLab does not redirect to an external link; it shows a "you are being
 # redirected away" page, so the links are checked where they are defined —
@@ -118,7 +139,9 @@ gl_ok() {
 	done
 }
 retry gitlab gl_ok && ok "all six links point at the GitHub files" || bad "the GitLab release links do not point at the GitHub release"
+fi
 
+if want homebrew; then
 echo "== homebrew: formula"
 brew_ok() {
 	fetch "https://raw.githubusercontent.com/$GITHUB_TAP_REPO/HEAD/Formula/swarmexec.rb" "$work/swarmexec.rb" || return 1
@@ -132,7 +155,9 @@ if [ -n "${GITHUB_TAP_REPO:-}" ]; then
 else
 	skip "GITHUB_TAP_REPO not set"
 fi
+fi
 
+if want scoop; then
 echo "== scoop: manifest"
 scoop_ok() {
 	fetch "https://raw.githubusercontent.com/$GITHUB_SCOOP_REPO/HEAD/bucket/swarmexec.json" "$work/swarmexec.json" || return 1
@@ -144,7 +169,9 @@ if [ -n "${GITHUB_SCOOP_REPO:-}" ]; then
 else
 	skip "GITHUB_SCOOP_REPO not set"
 fi
+fi
 
+if want dockerhub; then
 echo "== dockerhub: agent image"
 hub_repo=""
 if [ -n "${DOCKERHUB_IMAGE:-}" ]; then
@@ -158,7 +185,9 @@ if [ -n "$hub_repo" ]; then
 else
 	skip "no Docker Hub image configured"
 fi
+fi
 
+if want install; then
 echo "== install.sh from the live site"
 install_ok() {
 	rm -rf "$work/bin"
@@ -169,24 +198,73 @@ install_ok() {
 	"$work/bin/swarmexec" --version 2>/dev/null | grep -q "$TAG"
 }
 retry install install_ok && ok "installs $TAG" || bad "install.sh did not install $TAG"
+fi
 
+if want site; then
 echo "== site: every replica serves this release"
 # The site runs several replicas behind Traefik, and a rolling update can stall
 # halfway (v1.22.2: one node could not pull the image, and every second request
 # got the old page, without its new stylesheet). One request proves nothing about
 # the others, so the landing page is fetched SITE_SAMPLES times and each answer
 # must carry this release — its stylesheet is linked as landing.css?v=<tag>.
+# Only then are the release notes checked: they come from the same image, so
+# "every replica is new but releases.json lacks the tag" is a broken image
+# (its build could not read the GitLab tags API), not a slow rollout.
+site_state=""
 site_ok() {
-	fetch "$SITE_URL/releases.json" "$work/releases.json" || return 1
-	jq -e --arg t "$TAG" 'map(.version) | index($t) != null' "$work/releases.json" >/dev/null || { echo "    (release notes do not list it yet)"; return 1; }
-	n=0 old=0
+	n=0 old=0 seen=""
 	while [ "$n" -lt "${SITE_SAMPLES:-10}" ]; do
 		n=$((n + 1))
-		curl -fsS -H 'Cache-Control: no-cache' "$SITE_URL/?verify=$n" 2>/dev/null | grep -q "landing.css?v=$TAG\"" || old=$((old + 1))
+		v="$(curl -fsS -H 'Cache-Control: no-cache' "$SITE_URL/?verify=$n" 2>/dev/null |
+			sed -n 's/.*landing\.css?v=\([^"]*\)".*/\1/p' | head -n 1)"
+		[ "$v" = "$TAG" ] && continue
+		old=$((old + 1))
+		case " $seen " in *" ${v:-unreachable} "*) ;; *) seen="$seen ${v:-unreachable}" ;; esac
 	done
-	[ "$old" -eq 0 ] || { echo "    ($old of $n answers are not $TAG yet)"; return 1; }
+	if [ "$old" -ne 0 ]; then
+		site_state=rollout
+		echo "    ($old of $n answers still serve:$seen)"
+		return 1
+	fi
+	curl -fsSL -H 'Cache-Control: no-cache' -o "$work/releases.json" "$SITE_URL/releases.json" || {
+		site_state=notes
+		echo "    (every replica serves $TAG, but /releases.json is not downloadable)"
+		return 1
+	}
+	jq -e --arg t "$TAG" 'map(.version) | index($t) != null' "$work/releases.json" >/dev/null || {
+		site_state=notes
+		echo "    (every replica serves $TAG, but /releases.json does not list it)"
+		return 1
+	}
 }
-retry site site_ok && ok "all ${SITE_SAMPLES:-10} answers are $TAG" || bad "the site does not serve $TAG from every replica"
+if retry site site_ok; then
+	ok "all ${SITE_SAMPLES:-10} answers are $TAG, and the release notes list it"
+else
+	bad "the site does not serve $TAG after ${WAIT}s"
+	if [ "$site_state" = notes ]; then
+		cat <<-EOF
+		    The new image is live, but its release notes lack $TAG: the site image
+		    is built with releases.json from the GitLab tags API, and that build
+		    fell back to stale or empty data. Re-run site-image (then deploy-site)
+		    for $TAG, and check that the build can reach the tags API.
+		EOF
+	else
+		cat <<-EOF
+		    Replicas still serve an older release: the rollout has not happened or
+		    has stalled. The known cause: a swarm task pulls its image exactly once,
+		    and when that pull fails (a TLS handshake timeout to the registry) the
+		    task sits in "Preparing" for ever and the start-first update waits on it.
+		    It never retries by itself. On a manager of the site's cluster:
+		        docker service ps swarm-exec-site_site      # a task stuck in Preparing?
+		        docker service update --force swarm-exec-site_site
+		    then retry this job (or: VERIFY_ONLY=site ci/verify-release.sh $TAG).
+		    If no task is stuck and the service is not at $TAG, the deploy itself
+		    did not arrive: check the deploy-site job and the triggered pipeline
+		    in infrastruktur/swar-exec-site.
+		EOF
+	fi
+fi
+fi
 
 if [ -n "$failed" ]; then
 	echo
