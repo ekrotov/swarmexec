@@ -215,6 +215,17 @@ func taskInspectViews(ctx context.Context, dcli *client.Client, taskID string) (
 	return formatTaskInspect(task, owning, info), prettyJSON(rawb), nil
 }
 
+// specDiff is serviceDiffLines' answer as one value (for the TUI's async).
+type specDiff struct {
+	lines   []string
+	hasPrev bool
+}
+
+func loadSpecDiff(ctx context.Context, dcli *client.Client, svc string) (specDiff, error) {
+	lines, hasPrev, err := serviceDiffLines(ctx, dcli, svc)
+	return specDiff{lines, hasPrev}, err
+}
+
 // serviceDiffLines inspects a service and returns a unified diff of its current
 // spec against its PreviousSpec (what the last update changed). hasPrev is false
 // when the service has never been updated (no PreviousSpec to compare against).

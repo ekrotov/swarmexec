@@ -4,14 +4,16 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"swarmexec/client/internal/clientlog"
-	"swarmexec/client/internal/resolve"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/resolve"
 )
 
 // inspectView is one open inspect overlay: a table rendered from structured
@@ -395,23 +397,20 @@ func (iv *inspectView) close() {
 func (iv *inspectView) reload() {
 	u := iv.u
 	u.loadContainers()
-	go func() {
-		f, raw, err := iv.fetch()
-		u.app.QueueUpdateDraw(func() {
-			if err != nil || !u.pages.HasPage(pageInspect) {
-				return
-			}
-			iv.lines, iv.rawJSON, iv.loaded = f, raw, true
-			iv.populate()
-		})
-	}()
+	async(u, iv.op+".reload", iv.fetchCtx, func(d inspData, err error) {
+		if err != nil || !u.pages.HasPage(pageInspect) {
+			return
+		}
+		iv.lines, iv.rawJSON, iv.loaded = d.lines, d.raw, true
+		iv.populate()
+	})
 }
 
 // openDiff shows a unified diff of the service's current spec against its
 // PreviousSpec (what the last rolling update changed). Service-only.
 func (iv *inspectView) openDiff() {
 	u := iv.u
-	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	pages, dcli, svc := u.pages, u.dcli, iv.editSvc
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" diff %s — previous → current ", iv.editSvc))
 	dov := u.overlayFor(pageInspectDiff, iv.table, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
@@ -425,37 +424,37 @@ func (iv *inspectView) openDiff() {
 	})
 	tv.SetText(loadingText)
 	dov.show(centered(tv, 100, 32), tv)
-	go func() {
-		lines, hasPrev, derr := serviceDiffLines(ctx, dcli, iv.editSvc)
-		app.QueueUpdateDraw(func() {
-			if !pages.HasPage(pageInspectDiff) {
-				return
-			}
-			switch {
-			case derr != nil:
-				tv.SetText("[red]error: " + tview.Escape(derr.Error()) + "[white]")
-			case !hasPrev:
-				tv.SetText("[gray]No previous version to diff — this service has not been updated since it was created.[white]")
-			case len(lines) == 0:
-				tv.SetText("[gray]No field-level differences between the current and previous spec (only metadata changed).[white]")
-			default:
-				var b strings.Builder
-				b.WriteString("previous → current   ([red]- removed[white]  [green]+ added[white])\n\n")
-				for _, l := range lines {
-					switch {
-					case strings.HasPrefix(l, "+ "):
-						b.WriteString("[green]" + tview.Escape(l) + "[white]\n")
-					case strings.HasPrefix(l, "- "):
-						b.WriteString("[red]" + tview.Escape(l) + "[white]\n")
-					default:
-						b.WriteString(tview.Escape(l) + "\n")
-					}
+	async(u, "ui.inspect.diff", func(ctx context.Context) (specDiff, error) {
+		return loadSpecDiff(ctx, dcli, svc)
+	}, func(d specDiff, derr error) {
+		lines, hasPrev := d.lines, d.hasPrev
+		if !pages.HasPage(pageInspectDiff) {
+			return
+		}
+		switch {
+		case derr != nil:
+			tv.SetText("[red]error: " + tview.Escape(derr.Error()) + "[white]")
+		case !hasPrev:
+			tv.SetText("[gray]No previous version to diff — this service has not been updated since it was created.[white]")
+		case len(lines) == 0:
+			tv.SetText("[gray]No field-level differences between the current and previous spec (only metadata changed).[white]")
+		default:
+			var b strings.Builder
+			b.WriteString("previous → current   ([red]- removed[white]  [green]+ added[white])\n\n")
+			for _, l := range lines {
+				switch {
+				case strings.HasPrefix(l, "+ "):
+					b.WriteString("[green]" + tview.Escape(l) + "[white]\n")
+				case strings.HasPrefix(l, "- "):
+					b.WriteString("[red]" + tview.Escape(l) + "[white]\n")
+				default:
+					b.WriteString(tview.Escape(l) + "\n")
 				}
-				tv.SetText(b.String())
-				tv.ScrollToBeginning()
 			}
-		})
-	}()
+			tv.SetText(b.String())
+			tv.ScrollToBeginning()
+		}
+	})
 }
 
 // openRollback rolls the service back to its previous spec. The diff is shown
@@ -464,37 +463,36 @@ func (iv *inspectView) openDiff() {
 // the reason to do this here rather than on the command line.
 func (iv *inspectView) openRollback() {
 	u := iv.u
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	dcli := u.dcli
 	svc := iv.editSvc
 
-	go func() {
-		lines, hasPrev, err := serviceDiffLines(ctx, dcli, svc)
-		app.QueueUpdateDraw(func() {
-			switch {
-			case err != nil:
-				u.info("rollback: " + err.Error())
-				return
-			case !hasPrev:
-				// Not an error: the service simply has never been updated.
-				u.info(fmt.Sprintf("%q has no previous version to roll back to —\nit has not been updated since it was created.", svc))
-				return
-			}
+	async(u, "ui.inspect.rollback.diff", func(ctx context.Context) (specDiff, error) {
+		return loadSpecDiff(ctx, dcli, svc)
+	}, func(d specDiff, err error) {
+		lines, hasPrev := d.lines, d.hasPrev
+		switch {
+		case err != nil:
+			u.info("rollback: " + err.Error())
+			return
+		case !hasPrev:
+			// Not an error: the service simply has never been updated.
+			u.info(fmt.Sprintf("%q has no previous version to roll back to —\nit has not been updated since it was created.", svc))
+			return
+		}
 
-			u.confirm(rollbackConfirmText(svc, lines), "Roll back", iv.table, func() {
-				go func() {
-					rerr := rollbackService(ctx, dcli, svc)
-					app.QueueUpdateDraw(func() {
-						if rerr != nil {
-							u.info("rollback failed: " + rerr.Error())
-							return
-						}
-						u.flash(fmt.Sprintf(" [green]✓ rolling back %q[white]", svc))
-						iv.reload()
-					})
-				}()
+		u.confirm(rollbackConfirmText(svc, lines), "Roll back", iv.table, func() {
+			asyncDo(u, "ui.inspect.rollback", func(ctx context.Context) error {
+				return rollbackService(ctx, dcli, svc)
+			}, func(rerr error) {
+				if rerr != nil {
+					u.info("rollback failed: " + rerr.Error())
+					return
+				}
+				u.flash(fmt.Sprintf(" [green]✓ rolling back %q[white]", svc))
+				iv.reload()
 			})
 		})
-	}()
+	})
 }
 
 // rollbackDiffPreviewLines caps the diff shown inside the confirm dialog; the
@@ -708,7 +706,7 @@ func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 // open wires the widget to its input/footer and kicks off the initial fetch.
 func (iv *inspectView) open() {
 	u := iv.u
-	app, pages := u.app, u.pages
+	pages := u.pages
 	table := iv.table
 	table.SetSelectionChangedFunc(func(int, int) { iv.setFooter("") })
 	table.SetInputCapture(iv.handleKey)
@@ -721,24 +719,33 @@ func (iv *inspectView) open() {
 	iv.setHelp = iv.ov.setHelp
 	iv.populate() // shows "loading…"
 	iv.ov.show(centered(iv.frame, 110, 40), table)
-	go func() {
-		start := time.Now()
-		f, raw, err := iv.fetch()
-		clientlog.Timed(iv.op, start, err)
-		app.QueueUpdateDraw(func() {
-			if !pages.HasPage(pageInspect) {
-				return
-			}
-			if err != nil {
-				table.Clear()
-				table.SetCell(0, 0, errorCell(err))
-				iv.setFooter("")
-				return
-			}
-			iv.lines, iv.rawJSON, iv.loaded = f, raw, true
-			iv.populate()
-		})
-	}()
+	async(u, iv.op, iv.fetchCtx, func(d inspData, err error) {
+		if !pages.HasPage(pageInspect) {
+			return
+		}
+		if err != nil {
+			table.Clear()
+			table.SetCell(0, 0, errorCell(err))
+			iv.setFooter("")
+			return
+		}
+		iv.lines, iv.rawJSON, iv.loaded = d.lines, d.raw, true
+		iv.populate()
+	})
+}
+
+// inspData is one fetch's answer: the structured lines and the raw JSON.
+type inspData struct {
+	lines []inspLine
+	raw   string
+}
+
+// fetchCtx adapts fetch to async's work shape. fetch closes over the context
+// of the cluster the inspect was opened on, which is the cluster async would
+// hand it too.
+func (iv *inspectView) fetchCtx(context.Context) (inspData, error) {
+	lines, raw, err := iv.fetch()
+	return inspData{lines, raw}, err
 }
 
 // inspectCurrent shows service inspect on a service node, task inspect on a
