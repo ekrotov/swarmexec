@@ -124,8 +124,10 @@ vet:
 	go vet ./...
 
 ## cover: race tests with a coverage profile; fails below COVER_MIN percent (CI: test)
+# -count=1: always run the tests. CI keeps GOCACHE between pipelines, and a
+# gate that reports "(cached)" results did not test this commit.
 cover:
-	go test -race -covermode=atomic -coverprofile=coverage.raw ./...
+	go test -race -count=1 -covermode=atomic -coverprofile=coverage.raw ./...
 	grep -v '^swarmexec/internal/pb/' coverage.raw > coverage.out
 	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
 		sub("%", "", $$3); printf "total coverage %s%% (minimum %s%%)\n", $$3, min; \

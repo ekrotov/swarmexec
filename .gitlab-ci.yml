@@ -34,6 +34,12 @@ variables:
   # release jobs, and runners keep floating tags stale anyway (see GO_IMAGE).
   ALPINE_IMAGE: "alpine:3.24"
   GOPATH: "$CI_PROJECT_DIR/.gocache"
+  # Go's build cache, inside the project dir so the GitLab cache can keep it
+  # (the default, /root/.cache/go-build, died with every job container, and
+  # ~80% of Go job time was recompiling unchanged code). STATICCHECK_CACHE is
+  # staticcheck's analysis cache, kept by the lint job.
+  GOCACHE: "$CI_PROJECT_DIR/.gocache/build"
+  STATICCHECK_CACHE: "$CI_PROJECT_DIR/.gocache/staticcheck"
   # Cache archives: fastzip with the fastest compression. The caches are Go
   # module sources and binaries; zipping them harder costs more CPU time on
   # these shared, CPU-bound runners than it saves in transfer (the caches are
@@ -80,6 +86,15 @@ workflow:
 #           reinstalls even under an unchanged key.   Writer: generate-check
 #           (`make ci-tools` installs all of them). Readers fall back to
 #           installing their one tool when the cache is cold.
+#   gobuild-<job>-<Go image>   GOCACHE of one job (test: vet + race; lint:
+#           plus staticcheck's cache; build-cli: the cross targets). One key
+#           per job because each compiles in a different mode, so each job is
+#           its own (only) writer. Keyed on the Go image, NOT on go.sum: the
+#           build cache is content-addressed, so a dependency bump still
+#           reuses everything unchanged (std, the race runtime, untouched
+#           modules), and Go itself trims entries unused for 5 days.
+#           when: always — a failed test run's compile results are just as
+#           valid, and the fix-up push is exactly the run that wants them.
 # ----------------------------------------------------------------------------
 .cache-mod: &cache-mod
   key:
@@ -155,6 +170,10 @@ test:
   cache:
     - <<: *cache-mod
       policy: pull-push # the one writer of the module cache
+    - key: gobuild-test-$GO_IMAGE
+      paths:
+        - .gocache/build
+      when: always
   script:
     - go vet ./...
     - |
@@ -183,7 +202,14 @@ test:
 lint:
   stage: test
   image: $GO_IMAGE
-  <<: *go-cache
+  cache:
+    - *cache-mod
+    - *cache-tools
+    - key: gobuild-lint-$GO_IMAGE
+      paths:
+        - .gocache/build # staticcheck loads packages via `go list -export`
+        - .gocache/staticcheck
+      when: always
   script:
     - make lint # staticcheck from the tool cache (installed once, not `go run` per job)
 
@@ -349,6 +375,10 @@ build-cli:
   image: $GO_IMAGE
   cache:
     - *cache-mod # no tools needed
+    - key: gobuild-build-cli-$GO_IMAGE
+      paths:
+        - .gocache/build
+      when: always
   # Starts at once, in parallel with the test jobs: it needs nothing from them,
   # and it publishes nothing itself (dist/ is a job artifact). Everything that
   # ships dist/ needs the release gate. On a tag it still waits for the
