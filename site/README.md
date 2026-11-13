@@ -8,6 +8,7 @@ by nginx (non-root, port 8080) behind Traefik.
 | `/` | `index.html` | landing page |
 | `/docs` | `docs.html` | client documentation — every command, flag and key |
 | `/examples` | `examples.html` | recipes: whole workflows, CLI and TUI side by side |
+| `/docker-swarm-exec-alternatives` (`/compare` redirects) | `compare.html` | swarmexec against SSH, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels and kubectl, with an FAQ |
 | `/releases` | `releases.html` | release notes, rendered from `releases.json` |
 | `/datenschutz`, `/datenschutz.en.html` | `datenschutz.html`, `datenschutz.en.html` | privacy policy, German and English |
 | `/install.sh` | `install.sh` | the installer (`curl -fsSL …/install.sh \| sh`) |
@@ -29,7 +30,7 @@ its container is next recreated. The other links on the page go to the GitHub
 repository (source, releases, issues), the GitLab original it is mirrored from,
 and the agent image on Docker Hub (`logleio/swarmexec-agent`).
 
-The build bakes the version into `index.html`, `docs.html` and `examples.html`
+The build bakes the version into `index.html`, `docs.html`, `examples.html` and `compare.html`
 (the `__VERSION__` placeholder, also used as `?v=` on stylesheets and scripts),
 stamps the build date into `sitemap.xml` (`<lastmod>`), and fetches the tag list
 from the GitLab API into `releases.json` for the release-notes page.
@@ -98,6 +99,10 @@ and busybox `wget` tries `::1` without falling back.
 - `examples.html` — the recipes. Every flag and key in it is checked against
   `client/internal/cli` (and `keymap.go` for the TUI); keep it that way when a
   command changes.
+- `compare.html` — the comparison with other ways to exec, forward and read logs on a
+  Swarm. Its headings and FAQ are phrased like the searches it answers; the FAQ's
+  JSON-LD (`FAQPage`) must say the same as the visible FAQ. swarmexec claims are
+  checked against `client/internal/cli`; third-party ones carry a checked-on date.
 - `releases.html` — the release notes, rendered in the browser from `releases.json`.
 - `datenschutz.html`, `datenschutz.en.html` — the privacy policy.
 - `landing.css`, `landing.js` — the landing page's styles and its animated scenes
@@ -115,7 +120,8 @@ and busybox `wget` tries `::1` without falling back.
   `ui-gen.py`, `report-gen.py` and `contexts-gen.py`.
 - `sitemap.xml`, `robots.txt` — for search engines; `<lastmod>` is set at build time.
 - `nginx.conf` — listens on 8080; gzip, security headers, `/healthz`, the clean
-  URLs (`/docs`, `/examples`, `/releases`, `/datenschutz`) and the redirects of
+  URLs (`/docs`, `/examples`, `/docker-swarm-exec-alternatives`, `/releases`,
+  `/datenschutz`), `/compare` → the comparison, and the redirects of
   removed pages.
 - `Dockerfile` — `nginx-unprivileged` (non-root); bakes `VERSION`, the sitemap
   date and `releases.json` in.
