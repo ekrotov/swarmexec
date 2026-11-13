@@ -110,6 +110,7 @@ build and protocol version.
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
 | `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |
 | `-metrics-addr` | `SWARMEXEC_METRICS_ADDR` | — (disabled) | Prometheus listen addr, e.g. `:9100` |
+| `-healthcheck` | — | — | run the container health probe instead of the agent and exit 0/1 (see [Health check](#health-check)) |
 
 ### Shared-secret authentication
 
@@ -199,6 +200,36 @@ Deployed as a **global** Swarm service. The TLS key is injected via a Docker
    docker login registry.gitlab.example.com
    docker stack deploy --with-registry-auth -c deploy/agent-stack.yml swarmexec
    ```
+
+### Health check
+
+The image carries a Docker `HEALTHCHECK` that runs the agent binary itself as
+the probe (`/agent -healthcheck`, exec form — the image is distroless and has
+no shell). Because it is in the image, an image-only agent update (the TUI's
+image update) is enough to turn it on; `init --force` is not needed. The probe:
+
+1. reads the agent's command line from `/proc/1/cmdline` (Docker does not pass
+   the service's args to a health check) and resolves the listen address the
+   way the agent does — `-port`, `-listen`, `SWARMEXEC_*` env, defaults;
+2. dials that port on `127.0.0.1` with TLS (`InsecureSkipVerify`: it is the
+   container's own loopback) and calls `Version` without credentials. A reply,
+   or the shared-secret layer's `Unauthenticated`, or — with `-ca-cert` — the
+   TLS refusal of a client without a certificate, all prove the listener is
+   serving; refused, reset or silent for 3s is a failure;
+3. pings Docker over the agent's socket. This catches the one failure a restart
+   fixes and nothing else reports: a daemon restarted with live-restore
+   recreates `/var/run/docker.sock`, and the agent's bind mount keeps pointing
+   at the dead one.
+
+Timings: every 10s, 10s timeout, 6 retries, 30s start period. A dead or wedged
+agent is replaced after a minute or two; a brief daemon restart is not enough
+to trip it — the daemon runs no probes while it is down. Swarm holds a new task
+in `starting` until its first passing probe, so a rolling agent update now
+takes about 10s per node longer. `swarmexec init` and the stack files set the same timings but leave the
+command to the image, so an agent rolled back to an image without the probe
+just has no health check rather than a restart loop. The result, with the
+probe's one-line reason, is in `docker inspect --format '{{json .State.Health}}'
+<container>` on the node.
 
 ## Reachability model
 

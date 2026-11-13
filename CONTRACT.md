@@ -378,6 +378,18 @@ review, then broke `swarmexec init` against every cluster.
 - `-metrics-addr` is written only when `swarmexec init --metrics-port` asks for
   it, as `:<port>`, and that port is then published in host mode next to the
   agent port. Without it the command line is unchanged.
+- Container health. The agent image carries `HEALTHCHECK CMD ["/agent",
+  "-healthcheck"]`; the spec `init` writes and the stack files carry only the
+  timings (`deploy.HealthInterval` 10s, `deploy.HealthTimeout` 10s,
+  `deploy.HealthStartPeriod` 30s, `deploy.HealthRetries` 6) and MUST NOT name
+  the command: an agent rolled back to an image without the probe would
+  otherwise fail every check and be restarted in a loop. The probe reads the
+  agent's flags from `/proc/1/cmdline`, dials the agent's port on loopback and
+  calls `Version` without credentials — a transport-auth refusal
+  (`Unauthenticated`, or the TLS alert of an agent that requires client
+  certificates) counts as an answer, so no RPC is exempted from authentication
+  for it — then pings Docker over the agent's socket. `-healthcheck` is the
+  agent's own flag, not part of the `deploy.Flag*` set: only the image names it.
 - A round-trip test in `agent/internal/config` parses what `deploy.AgentArgs`
   produces and asserts the resulting `Config`. A rename is therefore a compile
   error on one side or a red test on the other — never a broken deployment.

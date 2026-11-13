@@ -30,4 +30,10 @@ COPY --from=build /agent /agent
 # Apache-2.0 §4(a)/(d): the license and attribution notice travel with the image.
 COPY LICENSE NOTICE /licenses/
 EXPOSE 9443
+# Container health: the probe is the agent binary itself (distroless has no
+# shell to run anything else), exec form. It reads the agent's command line
+# from /proc/1/cmdline, dials the agent's port on loopback and pings Docker.
+# Being in the image, an image-only agent update turns it on. Timings mirror
+# internal/deploy (Health*), which a test keeps in step.
+HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=6 CMD ["/agent", "-healthcheck"]
 ENTRYPOINT ["/agent"]

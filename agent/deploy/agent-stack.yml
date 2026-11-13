@@ -28,6 +28,15 @@ services:
       - "-drain-timeout=5s"
       - "-log-format=json"
       - "-audit-dest=stdout"
+    # Container health: the probe command comes from the image (agent/Dockerfile
+    # HEALTHCHECK, `/agent -healthcheck`); these are its timings, written out so
+    # the stack says what it does. No `test:` on purpose — pinning an older image
+    # without the probe then simply has no healthcheck instead of a restart loop.
+    healthcheck:
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 6
     # Optional prune schedule (agent/README.md, "Prune schedule"). These are
     # CONTAINER labels — the service's labels:, not deploy.labels — because an
     # agent on a worker can read only its own container. Volumes are never a

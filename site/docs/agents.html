@@ -204,6 +204,25 @@
         than 30 minutes, cap refusals, an agent not answering — and a Grafana dashboard
         (<code>grafana-dashboard.json</code>, import and pick your Prometheus).
       </p>
+      <h3 id="healthcheck">Health check</h3>
+      <p>
+        Independently of metrics, every agent has a Docker health check, and Swarm acts on
+        it: a task that turns <em>unhealthy</em> is replaced. It ships in the agent image,
+        so the TUI's image update turns it on — no <code>init --force</code> needed. The
+        probe is the agent binary itself (<code>/agent -healthcheck</code>; the image has no
+        shell): it dials the agent's own port on loopback, calls <code>Version</code> —
+        without credentials; the agent refusing them is an answer too — and pings Docker
+        over the agent's socket, which catches the one failure a restart fixes: a daemon
+        restarted with live-restore leaves the agent holding a dead socket.
+      </p>
+      <p>
+        It runs every 10&nbsp;s with a 10&nbsp;s timeout, after a 30&nbsp;s start period, and
+        needs 6 failures in a row — a minute or two of a dead or wedged agent — before Swarm
+        replaces it, so a brief daemon restart does not trip it. A rolling agent update now
+        waits for each node's new agent to pass its first check, about 10&nbsp;s per node. On a node,
+        <code>docker inspect --format '{{json .State.Health}}' &lt;agent container&gt;</code>
+        shows the last results with the probe's reason.
+      </p>
 
       <h2 id="reroll">Re-rolling the agents without changing the secret</h2>
       <p>
