@@ -43,7 +43,7 @@ func TestCallsAgainstAFakeCluster(t *testing.T) {
 		}
 	}
 
-	byC, byN := ac.Usage(ctx, fc.nodes, testTimeout, NewStatsGate())
+	byC, byN := ac.Usage(ctx, fc.nodes, testTimeout)
 	if len(byC) != 3 || len(byN) != 3 || byC["c-node-b"].Health != "healthy" || byN["node-c"].NodeCPUs != 4 {
 		t.Errorf("usage = %v / %v", byC, byN)
 	}
@@ -112,7 +112,7 @@ func TestCallsAgainstAFakeCluster(t *testing.T) {
 func TestNodeFailuresStayPerNode(t *testing.T) {
 	fc := newFakeCluster(t, "node-a", "node-b")
 	fc.setDown("node-b", true)
-	fc.agents["node-a"].unimplemented = map[string]bool{"ListImages": true}
+	fc.agents["node-a"].setUnimplemented("ListImages")
 	ac := New(fc.cfg)
 	defer ac.Close()
 	ctx := context.Background()

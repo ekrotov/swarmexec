@@ -350,6 +350,17 @@ that send the live read buffer are non-conformant.
   identity a policy denies everything else, including a `deny: ["*"]` rule.
 - Both binaries SHOULD expose `--version` and log the protocol/proto version on
   startup.
+- New RPCs are added within `swarmexec/v1`, so a cluster may run agents older
+  than the client. `UNIMPLEMENTED` from **any** RPC means "this agent is older
+  than the RPC" (§3.8: no handler ever sends it). A client MUST degrade — leave
+  out what that agent cannot provide, or tell the operator to redeploy it
+  (`swarmexec init --force`) — and MUST NOT treat it as a transport failure or
+  an unreachable node. A client MAY remember the answer per agent and RPC
+  instead of asking again; the reference client does so for 15 minutes for the
+  RPCs it issues on its own (stats, image list, reclaim stats, volume list,
+  container events) and forgets it as soon as it opens a new connection to
+  that agent, since a redeployed agent is a new connection. An operator's
+  explicit action is always sent.
 
 ## 8. Deployment (normative)
 

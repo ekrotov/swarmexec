@@ -224,7 +224,6 @@ type mcpCluster struct {
 	// tools still work without the agents, so it fails only the tools that need
 	// them, and says why.
 	cfgErr error
-	gate   *agentcall.StatsGate
 }
 
 func newMCPServer(g *globalFlags, cmd *cobra.Command, p mcpaccess.Policy, allowReport bool, connectTimeout time.Duration) *mcpServer {
@@ -350,7 +349,6 @@ func (s *mcpServer) connectContext(ctx context.Context, name string) (*mcpCluste
 		r:      resolve.New(dcli, addrModeOf(cfg)),
 		agent:  agentcall.New(cfg),
 		cfgErr: cfg.Validate(),
-		gate:   agentcall.NewStatsGate(),
 	}, nil
 }
 

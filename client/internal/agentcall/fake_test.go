@@ -45,6 +45,7 @@ type fakeAgent struct {
 	// fail makes an RPC answer with this error instead (see setFail).
 	failMu sync.Mutex
 	fail   map[string]error
+	byRPC  map[string]int // calls served, per RPC
 
 	calls     atomic.Int64
 	badBind   atomic.Int64 // calls whose binding did not match this agent's cert
@@ -62,13 +63,26 @@ func (a *fakeAgent) check(ctx context.Context, rpc string) error {
 		a.badBind.Add(1)
 		return status.Error(codes.Unauthenticated, "binding does not match this connection")
 	}
+	a.failMu.Lock()
+	defer a.failMu.Unlock()
+	if a.byRPC == nil {
+		a.byRPC = map[string]int{}
+	}
+	a.byRPC[rpc]++
 	if a.unimplemented[rpc] {
 		return status.Errorf(codes.Unimplemented, "unknown method %s", rpc)
 	}
+	return a.fail[rpc]
+}
+
+// setUnimplemented makes the agent predate the given RPCs (and only those).
+func (a *fakeAgent) setUnimplemented(rpcs ...string) {
 	a.failMu.Lock()
-	err := a.fail[rpc]
-	a.failMu.Unlock()
-	return err
+	defer a.failMu.Unlock()
+	a.unimplemented = map[string]bool{}
+	for _, r := range rpcs {
+		a.unimplemented[r] = true
+	}
 }
 
 func (a *fakeAgent) Version(ctx context.Context, _ *pb.VersionRequest) (*pb.VersionResponse, error) {
@@ -173,6 +187,27 @@ func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
 	return stream.Send(&pb.ServerMessage{Payload: &pb.ServerMessage_ExitCode{ExitCode: 0}})
 }
 
+func (a *fakeAgent) WatchContainerEvents(_ *pb.WatchContainerEventsRequest, stream pb.Agent_WatchContainerEventsServer) error {
+	if err := a.check(stream.Context(), "WatchContainerEvents"); err != nil {
+		return err
+	}
+	if err := stream.Send(&pb.ContainerEvent{Action: "start"}); err != nil {
+		return err
+	}
+	return stream.Send(&pb.ContainerEvent{Action: "die", ExitCode: 1})
+}
+
+// count adds n to rpc's call count and returns it.
+func (a *fakeAgent) count(rpc string, n int) int {
+	a.failMu.Lock()
+	defer a.failMu.Unlock()
+	if a.byRPC == nil {
+		a.byRPC = map[string]int{}
+	}
+	a.byRPC[rpc] += n
+	return a.byRPC[rpc]
+}
+
 // setFail makes rpc fail with err from now on (nil: answer normally).
 func (a *fakeAgent) setFail(rpc string, err error) {
 	a.failMu.Lock()
@@ -270,9 +305,6 @@ func (fc *fakeCluster) start(t *testing.T, host string) *fakeAgent {
 	}
 	cert := selfSigned(t, host)
 	a := &fakeAgent{secret: fakeSecret, cert: cert, vols: []string{"data"}}
-	if old := fc.agents[host]; old != nil {
-		a.unimplemented = old.unimplemented
-	}
 	tlsCfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {

@@ -57,6 +57,9 @@ const poolIdle = 2 * time.Minute
 type pool struct {
 	dialFn func(ctx context.Context, host string) (*grpc.ClientConn, error)
 	idle   time.Duration
+	// onDial, when set, is told about every connection the pool dials and
+	// keeps (not a reuse, and not the uncached dials of a stopped pool).
+	onDial func(host string)
 
 	mu      sync.Mutex
 	entries map[string]*entry
@@ -179,6 +182,8 @@ func (p *pool) dial(ctx context.Context, e *entry, host string) (*entry, error) 
 	}
 	if p.stopped {
 		e.retired = true // stopped during the dial: close on release
+	} else if p.onDial != nil {
+		p.onDial(host)
 	}
 	return e, nil
 }

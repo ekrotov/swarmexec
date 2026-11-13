@@ -650,7 +650,7 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // and an agent too old to know the RPC would then break the view instead of
 // just leaving the badges off.
 func (u *ui) loadUsage() {
-	ctx, ac, r, timeout, gate := u.ctx, u.agents, u.r, u.f.connectTimeout, u.statsGate
+	ctx, ac, r, timeout := u.ctx, u.agents, u.r, u.f.connectTimeout
 	// Fetched even while an overlay is open: the inspect STATS view shows these
 	// readings and promises to refresh, and the history must not have a hole
 	// for every minute someone spends in a dialog. The fan-out runs off the
@@ -668,7 +668,7 @@ func (u *ui) loadUsage() {
 			clientlog.Timed("ui.loadUsage", start, err)
 			return
 		}
-		byContainer, byNode := ac.Usage(ctx, nodes, timeout, gate)
+		byContainer, byNode := ac.Usage(ctx, nodes, timeout)
 		clientlog.Timed("ui.loadUsage", start, nil)
 		if ctx.Err() != nil {
 			return

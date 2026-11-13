@@ -266,7 +266,7 @@ func (s *mcpServer) toolOverview(ctx context.Context, in mcpCtxIn) (string, erro
 	usage := map[string]containerUsage{}
 	if ac, aerr := c.agents(); aerr == nil {
 		if rn, nerr := c.r.Nodes(ctx); nerr == nil {
-			usage, _ = ac.Usage(ctx, rn, s.connectTimeout, c.gate)
+			usage, _ = ac.Usage(ctx, rn, s.connectTimeout)
 		}
 	}
 	if len(usage) == 0 {
@@ -678,7 +678,7 @@ func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, 
 	answered := map[string]bool{}
 	deadline := time.Now().Add(s.statsWait)
 	for {
-		u, byNode := ac.Usage(ctx, ask, s.connectTimeout, c.gate)
+		u, byNode := ac.Usage(ctx, ask, s.connectTimeout)
 		for id, cu := range u {
 			usage[id] = cu
 		}
