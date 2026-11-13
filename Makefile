@@ -56,7 +56,7 @@ build-all: build agent
 ## tools: install codegen plugins (buf brings its own compiler; no protoc needed)
 tools: tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc
 
-## ci-tools: every pinned tool (CI's generate-check fills the tool cache with it)
+## ci-tools: install every pinned tool at once (CI installs each where it is used)
 ci-tools: tools tool-staticcheck tool-govulncheck tool-scip-go
 
 tool-buf:

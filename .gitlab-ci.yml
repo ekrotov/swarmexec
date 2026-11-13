@@ -103,28 +103,36 @@ default:
   if: '$CI_COMMIT_TAG =~ /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/'
 
 # ----------------------------------------------------------------------------
-# Caches. Each cache key has exactly ONE writer (policy pull-push); every other
-# job only pulls it, so a job does not spend ~15-20 s re-zipping 60k unchanged
-# module files. Runner caches are per host and, with "separate caches for
-# protected branches", per protection level, so the writer must run in MR
-# pipelines too, or MR caches would never fill.
+# Caches. Measured on this runner fleet (MR !279): the GitLab cache is NOT
+# shared, not even per host — without a cache server each runner keeps it in a
+# Docker volume per concurrent slot (runner-...-concurrent-<n>-cache), so there
+# are ~10 independent copies (3 hosts, ~10 slots). A cache only a designated
+# writer job pushes therefore stays cold in every slot that writer never ran
+# in, which on 10 slots is most of them. So every job that uses a cache also
+# pushes it (pull-push), and the caches are shaped to be cheap to re-zip:
 #
-#   mod     Go module sources, keyed on go.sum.          Writer: test.
+#   mod     Go's module DOWNLOAD cache ($GOPATH/pkg/mod/cache/download: the
+#           module zips, ~700 files) keyed on go.sum — not the extracted tree
+#           (~25-60k files), whose zipping cost every job 15-20 s. go
+#           extracts what a build needs from the zips locally, offline.
 #   tools   buf, protoc plugins, staticcheck, govulncheck, scip-go binaries
 #           in $GOPATH/bin, keyed on tools.mk (the pinned versions); the
 #           Makefile's stamps also record the Go version, so a toolchain bump
-#           reinstalls even under an unchanged key.   Writer: generate-check
-#           (`make ci-tools` installs all of them). Readers fall back to
-#           installing their one tool when the cache is cold.
+#           reinstalls even under an unchanged key. Each job installs the
+#           tools it needs only when they are missing (`make tool-<name>`),
+#           and the slot's cache accumulates them.
 #   gobuild-<job>-<Go image>   GOCACHE of one job (test: vet + race; lint:
 #           plus staticcheck's cache; build-cli: the cross targets). One key
-#           per job because each compiles in a different mode, so each job is
-#           its own (only) writer. Keyed on the Go image, NOT on go.sum: the
-#           build cache is content-addressed, so a dependency bump still
-#           reuses everything unchanged (std, the race runtime, untouched
-#           modules), and Go itself trims entries unused for 5 days.
-#           when: always — a failed test run's compile results are just as
-#           valid, and the fix-up push is exactly the run that wants them.
+#           per job because each compiles in a different mode. Keyed on the
+#           Go image, NOT on go.sum: the build cache is content-addressed, so
+#           a dependency bump still reuses everything unchanged (std, the
+#           race runtime, untouched modules), and Go itself trims entries
+#           unused for 5 days. when: always — a failed test run's compile
+#           results are just as valid, and the fix-up push wants them.
+#
+# Every slot warms up on its own, the first time a job runs there. The real
+# fix is runner-side (a shared cache server, or Go cache volumes mounted on
+# each host), which needs no zipping at all.
 # ----------------------------------------------------------------------------
 .cache-mod: &cache-mod
   key:
@@ -132,8 +140,7 @@ default:
       - go.sum
     prefix: mod
   paths:
-    - .gocache/pkg/mod
-  policy: pull
+    - .gocache/pkg/mod/cache/download
 
 .cache-tools: &cache-tools
   key:
@@ -142,9 +149,7 @@ default:
     prefix: tools
   paths:
     - .gocache/bin
-  policy: pull
 
-# Default for Go jobs: read both, write neither.
 .go-cache: &go-cache
   cache:
     - *cache-mod
@@ -200,8 +205,7 @@ test:
   image: $GO_IMAGE
   interruptible: true # no side effects
   cache:
-    - <<: *cache-mod
-      policy: pull-push # the one writer of the module cache
+    - *cache-mod
     - key: gobuild-test-$GO_IMAGE
       paths:
         - .gocache/build
@@ -266,14 +270,9 @@ generate-check:
   stage: test
   image: $GO_IMAGE
   interruptible: true # no side effects
-  cache:
-    - *cache-mod
-    - <<: *cache-tools
-      policy: pull-push # the one writer of the tool cache
+  <<: *go-cache
   script:
-    # Every pinned tool, not just the codegen ones: this job fills the tool
-    # cache for lint, vulncheck and code_navigation. No-op when it is warm.
-    - make ci-tools
+    - make tools # buf + plugins; no-op when the tool cache has them
     - make check-generate
     - |
       # Only the compared tree is needed (git archive), so depth 1 suffices.

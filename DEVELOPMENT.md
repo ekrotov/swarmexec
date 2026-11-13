@@ -101,11 +101,12 @@ How the pipeline stays fast (details in the comments of `.gitlab-ci.yml`):
   (images, release, mirror, packages, site deploy) lists the quality gate
   `.release-gate` explicitly: test, lint, generate-check and vulncheck (and
   `verify-tag-on-main` on a tag) must pass first.
-- **Caches, one writer each.** Go modules (keyed on `go.sum`, written by
-  `test`), the tool binaries (keyed on `tools.mk`, written by
-  `generate-check`), and Go's build cache per job (`gobuild-<job>-<Go image>`,
-  each job its own writer). Every other job only pulls. Runner caches are per
-  runner host and separate for protected refs (main, tags) and MRs.
+- **Caches.** Go's module download cache (keyed on `go.sum`), the tool
+  binaries (keyed on `tools.mk`), and Go's build cache per job
+  (`gobuild-<job>-<Go image>`). Without a cache server, the runners keep each
+  cache in a Docker volume per runner host *and concurrent slot* (~10 copies),
+  so every job that uses a cache also writes it: each slot warms up the first
+  time a job runs there.
 - **Auto-cancel.** A newer push to the same MR or to `main` cancels the older
   pipeline's interruptible jobs: checks and builds. Registry pushes, releases,
   the mirror, packages and deploys are never interrupted, and a `main`
