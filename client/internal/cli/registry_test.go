@@ -290,3 +290,14 @@ func TestCheckLatestToleratesTagListFailure(t *testing.T) {
 		t.Errorf("knownTags = %v, want empty", st.knownTags)
 	}
 }
+
+// highestNewerTag is the single-answer form of newerTagsInFamily, kept for the
+// family-rule tests: the highest candidate tag that is a newer version than
+// current within the SAME variant family — identical trailing suffix AND the
+// same number of numeric components — or "" if none is newer.
+func highestNewerTag(current string, candidates []string) string {
+	if newer := newerTagsInFamily(current, candidates); len(newer) > 0 {
+		return newer[0]
+	}
+	return ""
+}

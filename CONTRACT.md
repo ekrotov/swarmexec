@@ -37,9 +37,11 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
 - The agent authenticates the client via its client certificate. The client
   certificate's Common Name (CN) is the operator identity used for
   authorization and audit.
-- The agent authorizes each exec request before starting it (authorization
-  policy is defined in the agent requirements; default policy = allow any cert
-  signed by the trusted CA).
+- The agent authorizes each request (exec, logs, port-forward, volume, image,
+  stats and prune actions) before starting it. Without a policy file the
+  default is to allow any authenticated client; with `-policy-file` (§8) the
+  rule file defined in `internal/policy` decides per action, identity,
+  service, port and exec user.
 - Default agent port: **9443** (gRPC, TLS).
 
 ### 2.1 Shared-secret authentication (self-signed agents)

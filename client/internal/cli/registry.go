@@ -170,23 +170,12 @@ func cmpNums(a, b []int) int {
 	return 0
 }
 
-// highestNewerTag returns the highest candidate tag that is a newer version than
-// current within the SAME variant family — identical trailing suffix AND the
-// same number of numeric components — or "" if none is newer. The conservative
-// family match avoids cross-variant (2.11.1 vs 2.11.1-alpine) and rolling-minor
-// (2.11.1 vs 2.12) false positives.
-func highestNewerTag(current string, candidates []string) string {
-	if newer := newerTagsInFamily(current, candidates); len(newer) > 0 {
-		return newer[0]
-	}
-	return ""
-}
-
 // newerTagsInFamily returns every candidate that is a newer version than current
 // within the SAME variant family (identical trailing suffix AND the same number
 // of numeric components), sorted highest first. Empty if current is not a
-// parseable version tag or nothing outranks it. Same family rules as
-// highestNewerTag — this is the list form that feeds the version picker.
+// parseable version tag or nothing outranks it. It feeds the version picker.
+// The conservative family match avoids cross-variant (2.11.1 vs 2.11.1-alpine)
+// and rolling-minor (2.11.1 vs 2.12) false positives.
 func newerTagsInFamily(current string, candidates []string) []string {
 	curNums, curSuffix, ok := splitTag(current)
 	if !ok {

@@ -119,6 +119,9 @@ func (u *ui) selectedNode() (swarmNodeInfo, bool) {
 	return selectedRow(notable, u.nodeInfos)
 }
 
+// editNodeLabels is a compact staged editor (add/edit/delete/apply) over a
+// node's labels, applied via NodeUpdate. Dedicated (not the service editList)
+// because a node update is immediate — there is no rolling update.
 func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 	app, dcli, ctx, notable := u.app, u.dcli, u.ctx, u.notable
 	cur := kvPairs(n.Labels)

@@ -154,6 +154,10 @@ type netMembersView struct {
 	ov *overlay
 }
 
+// showNetworkMembers lists the services attached to a network with the
+// containers of each service nested under it. Service membership is known
+// synchronously (from the list); the per-service containers need a task
+// lookup, so they fill in lazily after the overlay is up.
 func (u *ui) showNetworkMembers(n swarmNetwork) {
 	list := tview.NewList().ShowSecondaryText(false)
 	badge := ""

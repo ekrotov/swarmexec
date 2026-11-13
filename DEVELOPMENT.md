@@ -6,7 +6,7 @@ Building from source, the documentation site and the release pipeline. For using
 
 ## Prerequisites
 
-- **Go 1.27.3** to build — exactly the version `go.mod`, the CI image and the agent
+- **Go 1.27.4** to build — exactly the version `go.mod`, the CI image and the agent
   Dockerfile pin (they move together; a Go security patch bumps all three).
 - **Docker Swarm** already initialised, and access to a **manager** node.
 - TLS certificates (see step 2.1). The project does **no** PKI bootstrap — certs
