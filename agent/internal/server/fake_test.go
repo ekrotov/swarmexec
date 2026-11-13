@@ -113,14 +113,6 @@ type fakeDocker struct {
 	removedContainers  []string
 }
 
-// inspectCalls reports how often ContainerInspect was called, so a test can
-// assert that per-container limits are read once and then cached.
-func (f *fakeDocker) inspectCalls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.inspects
-}
-
 func newFakeDocker() *fakeDocker {
 	return &fakeDocker{inspect: map[string]container.InspectResponse{}, attachedCh: make(chan net.Conn, 1)}
 }
@@ -390,13 +382,6 @@ func (f *fakeDocker) ContainerStats(_ context.Context, id string, opts client.Co
 		return client.ContainerStatsResult{}, err
 	}
 	return client.ContainerStatsResult{Body: io.NopCloser(bytes.NewReader(body))}, nil
-}
-
-// statsCallOpts returns the options of every ContainerStats call so far.
-func (f *fakeDocker) statsCallOpts() []client.ContainerStatsOptions {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]client.ContainerStatsOptions(nil), f.statsOpts...)
 }
 
 func (f *fakeDocker) ImageList(_ context.Context, _ client.ImageListOptions) (client.ImageListResult, error) {
