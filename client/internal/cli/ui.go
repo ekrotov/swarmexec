@@ -299,14 +299,13 @@ func (u *ui) connectCluster(c *clusterState) error {
 	return nil
 }
 
-// run drives one UI session over the infrastructure runUI prepared on u. The
-// per-tab closures still live here (they will move to their own files in later
-// stages); the shared infra closures are now methods on *ui. The aliases below
-// keep those closure bodies referring to app/pages/… unchanged.
+// run drives one UI session over the infrastructure runUI prepared on u: it
+// builds the per-tab widgets, wires their callbacks to the *ui methods that
+// implement them, and starts the session-wide loops. The aliases below keep the
+// remaining inline bodies referring to app/pages/… unchanged.
 func (u *ui) run(keyWarnings []string) error {
 	app, pages, content := u.app, u.pages, u.content
 	g := u.g
-	service := u.service
 	selStyle := u.selStyle
 	// The session context, NOT the cluster's: the loops below outlive a cluster
 	// switch. The tree ticker refreshes whichever cluster is visible at the time,
@@ -326,21 +325,10 @@ func (u *ui) run(keyWarnings []string) error {
 	ctree := tview.NewTreeView()
 	croot := tview.NewTreeNode("")
 	ctree.SetRoot(croot).SetTopLevel(1) // hide the synthetic root; services are top-level
-	// filter holds the active "/" search query; empty means show everything. A
-	// candidate matches when the query is a substring of its service, container
-	// id or node (case-insensitive). It starts from the optional `ui [service]`
-	// argument so `swarmexec ui web` opens pre-narrowed to matching services.
-	u.filter = service
-	// regCache resolves the real version behind a service's :latest tag and whether
-	// the registry has a newer one; assigned just below. Its result is appended to
-	// the service row (e.g. "(1.2.3) ↑").
-	// When a background registry check completes, re-mark the service rows so the
-	// version / ↑ appears without a full tree reload.
-	u.regCache = newRegistryCache(func() {
-		app.QueueUpdateDraw(func() {
-			eachServiceNode(croot, u.markService)
-		})
-	})
+	// The per-cluster state the tree reads — the "/" filter (pre-set from the
+	// optional `ui [service]` argument), the registry cache and the volume
+	// selection — is owned by the clusterState: newClusterState, connectCluster
+	// and runUI set it up, so a later cluster gets the same setup as the first.
 
 	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
 		if ref, ok := node.GetReference().(resolve.Candidate); ok {
@@ -363,10 +351,6 @@ func (u *ui) run(keyWarnings []string) error {
 	// ------------------------------------------------------------------- volumes
 	vtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	vtable.SetSelectedStyle(selStyle)
-	// selectedVols holds the volumes marked with space for a bulk delete, keyed
-	// by name so the selection survives sorting and re-render.
-	u.selectedVols = map[string]bool{}
-
 	vtable.SetSelectedFunc(func(int, int) {
 		if v, ok := u.selectedVolume(); ok && len(v.Nodes) > 0 {
 			u.showVolumeNodes(v)
@@ -381,10 +365,6 @@ func (u *ui) run(keyWarnings []string) error {
 	nettable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	nettable.SetSelectedStyle(selStyle)
 
-	// showNetworkMembers lists the services attached to a network with the
-	// containers of each service nested under it. Service membership is known
-	// synchronously (from the list); the per-service containers need a task
-	// lookup, so they fill in lazily after the overlay is up.
 	nettable.SetSelectedFunc(func(int, int) {
 		if n, ok := u.selectedNetwork(); ok {
 			u.showNetworkMembers(n)
@@ -394,10 +374,6 @@ func (u *ui) run(keyWarnings []string) error {
 	// ------------------------------------------------------------------- secrets
 	sectable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	sectable.SetSelectedStyle(selStyle)
-	// showSecretDetail shows a secret's metadata and the services/containers that
-	// use it. The value is deliberately absent: the Docker API never returns it,
-	// and the overlay says so. Usage (services with their running containers)
-	// needs a task lookup, so it fills in lazily after the overlay is up.
 	sectable.SetSelectedFunc(func(int, int) {
 		if s, ok := u.selectedSecret(); ok {
 			u.showSecretDetail(s)
@@ -417,9 +393,6 @@ func (u *ui) run(keyWarnings []string) error {
 	// -------------------------------------------------------------------- nodes
 	notable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	notable.SetSelectedStyle(selStyle)
-	// editNodeLabels is a compact staged editor (add/edit/delete/apply) over a
-	// node's labels, applied via NodeUpdate. Dedicated (not the service editList)
-	// because a node update is immediate — there is no rolling update.
 	notable.SetSelectedFunc(func(int, int) {
 		if n, ok := u.selectedNode(); ok {
 			u.showNodeDetail(n)
@@ -876,15 +849,6 @@ func nodeStateColor(s string) tcell.Color {
 	default:
 		return tcell.ColorYellow
 	}
-}
-
-// serviceParent returns the service node that owns leaf, or nil. tview.TreeNode
-// exposes no parent pointer, so we scan the (shallow, two-level) tree.
-func serviceParent(root, leaf *tview.TreeNode) *tview.TreeNode {
-	if p := parentOf(root, leaf); p != nil && isServiceNode(p) {
-		return p
-	}
-	return nil
 }
 
 // serviceColor maps a service's running/desired task counts to a health color

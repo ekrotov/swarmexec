@@ -1,8 +1,9 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-// Package server implements the Agent gRPC service: container discovery and the
-// bidirectional interactive exec bridge defined in CONTRACT.md.
+// Package server implements the Agent gRPC service defined in CONTRACT.md:
+// container discovery, the interactive exec bridge, logs and container events,
+// port forwarding, volumes, images, resource stats, prune and version.
 package server
 
 import (
@@ -82,11 +83,15 @@ type Server struct {
 	// context. Overridable in tests; defaults to the mTLS peer CN.
 	identityFn func(context.Context) (string, error)
 
-	// draining is set during graceful shutdown; new Exec sessions are rejected.
+	// draining is set during graceful shutdown; new streams (Exec, Logs,
+	// PortForward, WatchContainerEvents) are rejected.
 	draining atomic.Bool
-	// wg tracks in-flight Exec sessions so shutdown can wait for them to drain.
+	// wg tracks every in-flight stream — exec sessions, port-forwards, log
+	// streams and event watches — so shutdown can wait for them to drain and,
+	// after a forced stop, for each to write its end-of-stream audit record.
 	wg sync.WaitGroup
 
+	// active counts the streams wg tracks, for the shutdown log.
 	active atomic.Int64
 
 	// streams caps concurrent streaming RPCs; sidecars caps the containers a
@@ -170,18 +175,13 @@ func (s *Server) StartReclaimCache(ctx context.Context) {
 // nothing.
 //
 // It does not go through s.authorize: that helper resolves the swarm service by
-// inspecting a container, and this RPC has no container to inspect. The
-// identity → authorize → audit sequence is the same one, without that step.
+// inspecting a container, and this RPC has no container to inspect.
+// authorizeUnary is the same identity → authorize → audit sequence without
+// that step.
 func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
-	identity, err := s.identityFn(ctx)
+	identity, err := s.authorizeUnary(ctx, auth.Request{Action: "container.list"})
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: "container.list", Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+		return nil, err
 	}
 
 	list, err := s.docker.ContainerList(ctx, client.ContainerListOptions{All: false})
@@ -275,30 +275,88 @@ func (s *Server) resolveService(ctx context.Context, containerID string) string 
 // Keeping the sequence in one place stops the drain/authorize/audit/deny order —
 // and the audit of denied requests — from drifting between handlers.
 func (s *Server) authorize(ctx context.Context, req auth.Request) (identity, service string, err error) {
-	identity, err = s.identityFn(ctx)
+	identity, err = s.identity(ctx)
 	if err != nil {
-		return "", "", status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+		return "", "", err
 	}
 	service = s.resolveService(ctx, req.ContainerID)
 	req.Identity = identity
 	req.Service = service
-	decision := s.authz.Authorize(ctx, req)
-	s.audit.AuthDecision(identity, req.ContainerID, service, decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return "", "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if reason, ok := s.decide(ctx, req); !ok {
+		return "", "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
 	}
 	return identity, service, nil
 }
 
-// StartDrain marks the server as draining so new Exec sessions are refused with
-// Unavailable. Existing sessions continue until they end or are forcibly stopped.
+// authorizeUnary is the gate of the unary RPCs that act on the node rather than
+// on one container (listings, volumes, images, stats, reclaim): resolve the
+// identity, authorize req — whose Action and any Volume the caller has set —
+// audit the decision and count a denial. It fills req.Identity and returns the
+// identity, or a ready gRPC status error.
+//
+// One helper rather than the same nine lines in every handler: "every RPC is
+// authorized and audited" is then a property of the code's shape, not of
+// nobody ever forgetting a copy.
+func (s *Server) authorizeUnary(ctx context.Context, req auth.Request) (string, error) {
+	identity, err := s.identity(ctx)
+	if err != nil {
+		return "", err
+	}
+	req.Identity = identity
+	if reason, ok := s.decide(ctx, req); !ok {
+		return "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
+	}
+	return identity, nil
+}
+
+// identity resolves the caller's identity, as an Unauthenticated status error
+// when there is none.
+func (s *Server) identity(ctx context.Context) (string, error) {
+	identity, err := s.identityFn(ctx)
+	if err != nil {
+		return "", status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
+	}
+	return identity, nil
+}
+
+// decide asks the Authorizer about req (Identity already set), audits the
+// decision with req's container and service, and counts a denial. It returns
+// the Authorizer's reason and whether req is allowed. Every authorization in
+// the agent goes through here, including each category of a Prune.
+func (s *Server) decide(ctx context.Context, req auth.Request) (reason string, allowed bool) {
+	decision := s.authz.Authorize(ctx, req)
+	s.audit.AuthDecision(req.Identity, req.ContainerID, req.Service, decision.Allow, decision.Reason)
+	if !decision.Allow {
+		s.metrics.AuthDenied()
+	}
+	return decision.Reason, decision.Allow
+}
+
+// trackStream counts a stream into the drain (wg and active) for its lifetime;
+// call the returned func when it ends. Exec and PortForward do this inline.
+//
+// Logs and WatchContainerEvents need it most: a follow or an open view never
+// ends on its own, so a drain that did not count them reported "drained" at
+// once and GracefulStop then waited on them without limit.
+func (s *Server) trackStream() (done func()) {
+	s.wg.Add(1)
+	s.active.Add(1)
+	return func() {
+		s.active.Add(-1)
+		s.wg.Done()
+	}
+}
+
+// StartDrain marks the server as draining so new streams are refused with
+// Unavailable. Existing ones continue until they end or are forcibly stopped.
 func (s *Server) StartDrain() {
 	s.draining.Store(true)
 }
 
-// WaitForSessions blocks until all in-flight Exec sessions have ended or ctx is
-// cancelled. It returns true if all sessions drained, false on ctx timeout.
+// WaitForSessions blocks until every in-flight stream (exec, port-forward,
+// logs, event watch) has ended or ctx is cancelled. It returns true if all
+// drained, false on ctx timeout. After a forced stop it is called again, so
+// streams whose context was just cancelled get to write their end records.
 //
 // Forward sidecars are torn down either way: they are containers on the node,
 // and a shutdown that left them running would leak one per forward the agent
@@ -319,7 +377,8 @@ func (s *Server) WaitForSessions(ctx context.Context) bool {
 	}
 }
 
-// ActiveSessions reports the current number of live exec sessions.
+// ActiveSessions reports the current number of live streams the drain waits
+// for (exec, port-forward, logs, event watches).
 func (s *Server) ActiveSessions() int64 { return s.active.Load() }
 
 // identityFromPeer extracts the verified client-certificate Common Name from

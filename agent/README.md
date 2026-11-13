@@ -21,9 +21,12 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
   form suggests from them).
 - `Exec` — bidirectional interactive exec stream: TTY and non-TTY, terminal
   resize, correct stdout/stderr demuxing (`stdcopy`), real exit codes.
-- **Mandatory mTLS**: client certs are required and verified against a CA; the
-  client cert CN is the operator identity used for authorization and audit.
-- Pluggable **`Authorizer`** (default: allow any CA-signed client).
+- **Authenticated clients only**: either mTLS with client certs verified
+  against a CA (the cert CN is the operator identity used for authorization
+  and audit), or — the `swarmexec init` default — a self-signed agent cert plus
+  a shared secret, proven per connection (CONTRACT.md §2.1).
+- Pluggable **`Authorizer`** (default: allow any authenticated client;
+  `-policy-file` loads a rule file instead).
 - Structured **audit log** (session start/end, auth decisions) — never contains
   stdin/stdout payloads.
 - `ReclaimStats` / `Prune` — what a prune would free on the node per category

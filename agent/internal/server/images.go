@@ -23,15 +23,8 @@ import (
 // ListImages reports the images on this node, what each costs on disk, and
 // whether a running container is using it.
 func (s *Server) ListImages(ctx context.Context, _ *pb.ListImagesRequest) (*pb.ListImagesResponse, error) {
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: "image.list", Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if _, err := s.authorizeUnary(ctx, auth.Request{Action: "image.list"}); err != nil {
+		return nil, err
 	}
 
 	// DiskUsage, not ImageList. Summing each image's Size double-counts every
@@ -141,21 +134,15 @@ func imageTags(img image.Summary) []string {
 // includes every service scaled to zero or between restarts, each of which then
 // has to be pulled again. The audit records which one was asked for.
 func (s *Server) PruneImages(ctx context.Context, req *pb.PruneImagesRequest) (*pb.PruneImagesResponse, error) {
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
 	action := "image.prune"
 	if req.GetAll() {
 		// A separate action string so a policy can allow reclaiming dangling
 		// layers without also allowing the destructive sweep.
 		action = "image.prune.all"
 	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: action, Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	identity, err := s.authorizeUnary(ctx, auth.Request{Action: action})
+	if err != nil {
+		return nil, err
 	}
 
 	res, err := s.docker.ImagePrune(ctx, client.ImagePruneOptions{Filters: pruneFilters(req.GetAll())})
