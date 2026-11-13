@@ -4,7 +4,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"text/tabwriter"
 	"time"
@@ -12,12 +11,9 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
-	"swarmexec/client/internal/fanout"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
-	pb "swarmexec/internal/pb"
 )
 
 type doctorFlags struct {
@@ -92,7 +88,9 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
 	}
-	results := checkNodes(ctx, cfg, nodes, f.connectTimeout)
+	ac := agentcall.New(cfg)
+	defer ac.Close()
+	results := ac.Versions(ctx, nodes, f.connectTimeout)
 
 	healthy := agentDep
 	rows := make([]doctorNode, 0, len(results))
@@ -101,7 +99,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 		if !ok {
 			healthy = false
 		}
-		rows = append(rows, doctorNode{Node: r.node.Name, Status: st, Version: ver, Proto: proto})
+		rows = append(rows, doctorNode{Node: r.Node.Name, Status: st, Version: ver, Proto: proto})
 	}
 
 	if f.json {
@@ -150,50 +148,18 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 // classifyNode turns a node's version-probe result into a display status.
 func classifyNode(r nodeHealth, v Version) (status, version, proto string, ok bool) {
 	switch {
-	case r.err != nil && agentTooOld(r.err):
+	case r.Err != nil && agentTooOld(r.Err):
 		return "too old (init --force)", "-", "-", false
-	case r.err != nil:
+	case r.Err != nil:
 		return "unreachable", "-", "-", false
-	case r.proto != v.Proto:
-		return "PROTO MISMATCH", r.version, r.proto, false
-	case r.version != v.Binary && v.Binary != "" && v.Binary != "dev":
-		return "ok (version skew)", r.version, r.proto, true
+	case r.Proto != v.Proto:
+		return "PROTO MISMATCH", r.Version, r.Proto, false
+	case r.Version != v.Binary && v.Binary != "" && v.Binary != "dev":
+		return "ok (version skew)", r.Version, r.Proto, true
 	default:
-		return "ok", r.version, r.proto, true
+		return "ok", r.Version, r.Proto, true
 	}
 }
 
-type nodeHealth struct {
-	node    resolve.Node
-	version string
-	proto   string
-	err     error
-}
-
-// checkNodes queries every node's agent Version RPC in parallel.
-func checkNodes(ctx context.Context, cfg config.Config, nodes []resolve.Node, connectTimeout time.Duration) []nodeHealth {
-	out := make([]nodeHealth, len(nodes))
-	for i, n := range nodes {
-		out[i] = nodeHealth{node: n, err: fanout.ErrSkipped}
-	}
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
-		v, p, err := checkNodeVersion(ctx, cfg, n, connectTimeout)
-		out[i] = nodeHealth{node: n, version: v, proto: p, err: err}
-	})
-	return out
-}
-
-func checkNodeVersion(ctx context.Context, cfg config.Config, n resolve.Node, connectTimeout time.Duration) (version, proto string, err error) {
-	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := dial.Dial(dctx, n.DialHost, cfg.Port, cfg)
-	cancel()
-	if err != nil {
-		return "", "", err
-	}
-	defer conn.Close()
-	resp, err := pb.NewAgentClient(conn).Version(ctx, &pb.VersionRequest{})
-	if err != nil {
-		return "", "", err
-	}
-	return resp.Version, resp.ProtoVersion, nil
-}
+// nodeHealth is one node's Version answer (agentcall.Versions).
+type nodeHealth = agentcall.NodeVersion

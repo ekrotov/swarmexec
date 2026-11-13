@@ -16,8 +16,7 @@ import (
 	"github.com/hinshun/vt10x"
 	"github.com/rivo/tview"
 
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	pb "swarmexec/internal/pb"
@@ -65,7 +64,7 @@ func newTerminalView(app *tview.Application) *terminalView {
 
 // run dials the agent and runs the exec session, feeding output into the
 // emulator. onDone is invoked (off the UI goroutine) when the session ends.
-func (v *terminalView) run(ctx context.Context, cfg config.Config, ep resolve.Endpoint, command []string, tty bool, user string, connectTimeout time.Duration, onDone func(int, error)) {
+func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, command []string, tty bool, user string, connectTimeout time.Duration, onDone func(int, error)) {
 	pr, pw := io.Pipe()
 	v.mu.Lock()
 	v.stdin = pw
@@ -74,7 +73,7 @@ func (v *terminalView) run(ctx context.Context, cfg config.Config, ep resolve.En
 
 	go func() {
 		dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
-		conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+		conn, err := ac.Conn(dctx, ep.DialHost)
 		dcancel()
 		if err != nil {
 			onDone(session.TransportFailure, err)
@@ -82,7 +81,7 @@ func (v *terminalView) run(ctx context.Context, cfg config.Config, ep resolve.En
 		}
 		defer conn.Close()
 
-		stream, err := pb.NewAgentClient(conn).Exec(ctx)
+		stream, err := conn.Agent().Exec(ctx)
 		if err != nil {
 			onDone(session.TransportFailure, fmt.Errorf("open exec stream: %w", err))
 			return

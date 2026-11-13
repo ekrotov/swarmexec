@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
@@ -163,6 +164,7 @@ func volumesUI(t *testing.T, mgr *fakeManager, cfg config.Config) *ui {
 		u.dcli = mgr
 		u.r = resolve.New(mgr, resolve.AddrHostname)
 		u.cfg = cfg
+		u.agents = agentcall.New(cfg)
 		u.f = &uiFlags{connectTimeout: 3 * time.Second}
 		u.vtable = tview.NewTable()
 	})

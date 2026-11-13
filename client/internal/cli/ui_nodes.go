@@ -64,7 +64,7 @@ func (u *ui) renderNodes() {
 }
 
 func (u *ui) loadNodes() {
-	r, cfg, dcli, f, notable := u.r, u.cfg, u.dcli, u.f, u.notable
+	r, ac, dcli, f, notable := u.r, u.agents, u.dcli, u.f, u.notable
 	tableState(notable, noHeaders, loadingCell())
 	async(u, "ui.loadNodes", func(ctx context.Context) ([]swarmNodeInfo, error) {
 		return listNodeInfos(ctx, dcli)
@@ -84,7 +84,7 @@ func (u *ui) loadNodes() {
 			per := make([]nodeImages, len(ns))
 			ok := make([]bool, len(ns))
 			_ = fanout.Nodes(ctx, ns, func(ctx context.Context, i int, n resolve.Node) {
-				ni, ierr := listNodeImages(ctx, cfg, n, f.connectTimeout)
+				ni, ierr := ac.Images(ctx, n, f.connectTimeout)
 				per[i], ok[i] = ni, ierr == nil
 			})
 			for i, n := range ns {
@@ -100,7 +100,7 @@ func (u *ui) loadNodes() {
 	async(u, "ui.loadNodes.volumes", func(ctx context.Context) (map[string]int, error) {
 		counts := map[string]int{}
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
-			vs, _ := indexVolumes(ctx, cfg, ns, f.connectTimeout)
+			vs, _ := ac.Volumes(ctx, ns, f.connectTimeout)
 			counts = volumeCountsByNode(vs)
 		}
 		return counts, nil
@@ -511,7 +511,7 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 // operator name which one they mean, and each still goes through its own
 // confirm spelling out the consequence.
 func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
-	r, cfg, f := u.r, u.cfg, u.f
+	r, ac, f := u.r, u.agents, u.f
 	ni, known := u.nodeImgs[n.Hostname]
 	if !known {
 		u.info(fmt.Sprintf("No image information for %q.\n\n"+
@@ -540,7 +540,7 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 				if terr != nil {
 					return pruned{}, terr
 				}
-				reclaimed, deleted, err := pruneNodeImages(ctx, cfg, target, all, f.connectTimeout)
+				reclaimed, deleted, err := ac.PruneImages(ctx, target, all, f.connectTimeout)
 				return pruned{reclaimed, deleted}, err
 			}, func(p pruned, err error) {
 				if err != nil {

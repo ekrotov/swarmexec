@@ -4,15 +4,11 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
-	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -20,12 +16,6 @@ import (
 // Disk cleanup on a node: what a prune would free there (the agent measures it
 // hourly) and the prune itself, per category. Like images, all of it is
 // node-local and invisible to the manager, so it goes to each agent directly.
-
-const (
-	reclaimTimeout      = 15 * time.Second
-	reclaimMeasureLimit = 3 * time.Minute // measure_now runs a full measurement
-	nodePruneTimeout    = 10 * time.Minute
-)
 
 // pruneCat describes one category for the views: how it is named, whether it
 // is the dangerous one, and what it means — in one table so the dialog, the
@@ -53,40 +43,6 @@ func catLabel(c pb.PruneCategory) string {
 		}
 	}
 	return c.String()
-}
-
-func fetchReclaim(ctx context.Context, cfg config.Config, n resolve.Node, measureNow bool, connectTimeout time.Duration) (*pb.ReclaimStatsResponse, error) {
-	timeout := max(connectTimeout, reclaimTimeout)
-	if measureNow {
-		timeout = max(timeout, reclaimMeasureLimit)
-	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	conn, err := dial.Dial(cctx, n.DialHost, cfg.Port, cfg)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	resp, err := pb.NewAgentClient(conn).ReclaimStats(cctx, &pb.ReclaimStatsRequest{MeasureNow: measureNow})
-	if err != nil {
-		return nil, wrapGRPC(ctx, cfg, err)
-	}
-	return resp, nil
-}
-
-func pruneNode(ctx context.Context, cfg config.Config, n resolve.Node, req *pb.PruneRequest, connectTimeout time.Duration) (*pb.PruneResponse, error) {
-	cctx, cancel := context.WithTimeout(ctx, max(connectTimeout, nodePruneTimeout))
-	defer cancel()
-	conn, err := dial.Dial(cctx, n.DialHost, cfg.Port, cfg)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	resp, err := pb.NewAgentClient(conn).Prune(cctx, req)
-	if err != nil {
-		return nil, wrapGRPC(ctx, cfg, err)
-	}
-	return resp, nil
 }
 
 // reclaimFigure finds one category in a stats response.

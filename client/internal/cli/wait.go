@@ -16,7 +16,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 )
@@ -169,9 +169,11 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 			return &cliError{code: usageExitCode, err: err}
 		}
 		r = resolve.New(dcli, addrModeOf(cfg))
-		gate := newStatsGate()
+		ac := agentcall.New(cfg)
+		defer ac.Close()
+		gate := agentcall.NewStatsGate()
 		health = func(ctx context.Context, svcs []string) (map[string]serviceHealth, map[string][]string, error) {
-			return waitHealth(ctx, r, cfg, gate, svcs, f.connectTimeout)
+			return waitHealth(ctx, r, ac, gate, svcs, f.connectTimeout)
 		}
 	}
 
@@ -366,12 +368,12 @@ func latestTaskError(ctx context.Context, dcli serviceTaskLister, serviceID stri
 // waitHealth asks the agents for health and maps it onto the services. A node
 // whose agent did not answer is reported per service as unknown, so --healthy
 // cannot pass on a node it could not see.
-func waitHealth(ctx context.Context, r *resolve.Resolver, cfg config.Config, gate *statsGate, names []string, connectTimeout time.Duration) (map[string]serviceHealth, map[string][]string, error) {
+func waitHealth(ctx context.Context, r *resolve.Resolver, ac *agentcall.Client, gate *agentcall.StatsGate, names []string, connectTimeout time.Duration) (map[string]serviceHealth, map[string][]string, error) {
 	nodes, err := r.Nodes(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	usage, nodeUse := collectUsage(ctx, cfg, nodes, connectTimeout, gate)
+	usage, nodeUse := ac.Usage(ctx, nodes, connectTimeout, gate)
 	out := map[string]serviceHealth{}
 	unknown := map[string][]string{}
 	for _, n := range names {

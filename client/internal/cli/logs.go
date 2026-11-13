@@ -17,9 +17,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	pb "swarmexec/internal/pb"
@@ -106,6 +105,8 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
+	ac := agentcall.New(cfg)
+	defer ac.Close()
 
 	// One target that is one container keeps the single-stream path and its
 	// unprefixed output. A service with several replicas used to stop here as
@@ -165,7 +166,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 			}
 			return fw, fw.Flush
 		}
-		if err := streamManyLogs(ctx, cfg, r, multi, params, os.Stdout, os.Stderr, colorOutput(os.Stdout), wrap); err != nil {
+		if err := streamManyLogs(ctx, ac, r, multi, params, os.Stdout, os.Stderr, colorOutput(os.Stdout), wrap); err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
 		}
 		return nil
@@ -190,7 +191,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	// so `logs -f <service>` keeps streaming after a swap, like `docker service
 	// logs -f`. Reconnect notices go straight to the real stderr, bypassing the
 	// filter so they are never dropped.
-	err = streamServiceLogs(ctx, cfg, r, followTargetFromTarget(args[0]), *ep, params,
+	err = streamServiceLogs(ctx, ac, r, followTargetFromTarget(args[0]), *ep, params,
 		stdout, stderr, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	for _, w := range flushers {
 		w.Flush()
@@ -284,16 +285,16 @@ type logsParams struct {
 // streamLogs dials the agent and streams the container's logs into stdout/stderr.
 // It is shared by the `logs` command and the interactive `ui`. Returns nil when
 // the stream ends or ctx is cancelled.
-func streamLogs(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer) error {
+func streamLogs(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer) error {
 	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+	conn, err := ac.Conn(dctx, ep.DialHost)
 	dcancel()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	stream, err := pb.NewAgentClient(conn).Logs(ctx, &pb.LogsRequest{
+	stream, err := conn.Agent().Logs(ctx, &pb.LogsRequest{
 		ContainerId:  ep.ContainerID,
 		Follow:       p.follow,
 		Tail:         p.tail,
@@ -330,11 +331,11 @@ func streamLogs(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p l
 // via notify. It returns when: follow is false and the stream ends; ctx is
 // cancelled; a real transport/agent error occurs; or the target has no running
 // container left. notify may be nil.
-func streamServiceLogs(ctx context.Context, cfg config.Config, r *resolve.Resolver, t resolve.FollowTarget, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer, notify func(string)) error {
+func streamServiceLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Resolver, t resolve.FollowTarget, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer, notify func(string)) error {
 	lastCID := ep.ContainerID
 	params := p
 	for {
-		if err := streamLogs(ctx, cfg, ep, params, stdout, stderr); err != nil {
+		if err := streamLogs(ctx, ac, ep, params, stdout, stderr); err != nil {
 			return err
 		}
 		if !p.follow || ctx.Err() != nil || t.Service == "" {

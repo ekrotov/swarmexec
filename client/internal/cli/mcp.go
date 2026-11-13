@@ -21,8 +21,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
-	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
@@ -219,12 +219,12 @@ type mcpCluster struct {
 	label string // what reports call this cluster
 	dcli  *client.Client
 	r     *resolve.Resolver
-	cfg   config.Config
+	agent *agentcall.Client
 	// cfgErr is an agent configuration that does not validate. The manager
 	// tools still work without the agents, so it fails only the tools that need
 	// them, and says why.
 	cfgErr error
-	gate   *statsGate
+	gate   *agentcall.StatsGate
 }
 
 func newMCPServer(g *globalFlags, cmd *cobra.Command, p mcpaccess.Policy, allowReport bool, connectTimeout time.Duration) *mcpServer {
@@ -262,6 +262,9 @@ func (s *mcpServer) close() {
 	for _, c := range s.clusters {
 		if c.dcli != nil {
 			c.dcli.Close()
+		}
+		if c.agent != nil {
+			c.agent.Close()
 		}
 	}
 	s.clusters = map[string]*mcpCluster{}
@@ -345,9 +348,9 @@ func (s *mcpServer) connectContext(ctx context.Context, name string) (*mcpCluste
 		label:  label,
 		dcli:   dcli,
 		r:      resolve.New(dcli, addrModeOf(cfg)),
-		cfg:    cfg,
+		agent:  agentcall.New(cfg),
 		cfgErr: cfg.Validate(),
-		gate:   newStatsGate(),
+		gate:   agentcall.NewStatsGate(),
 	}, nil
 }
 
@@ -359,12 +362,12 @@ func servedContextName(override string) string {
 	return dockerctx.ResolveName(override)
 }
 
-// agents returns the agent configuration, or why the agents cannot be used.
-func (c *mcpCluster) agents() (config.Config, error) {
+// agents returns the cluster's agent client, or why the agents cannot be used.
+func (c *mcpCluster) agents() (*agentcall.Client, error) {
 	if c.cfgErr != nil {
-		return c.cfg, fmt.Errorf("agent configuration: %w", c.cfgErr)
+		return nil, fmt.Errorf("agent configuration: %w", c.cfgErr)
 	}
-	return c.cfg, nil
+	return c.agent, nil
 }
 
 // --- access ------------------------------------------------------------------

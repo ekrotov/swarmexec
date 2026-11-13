@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
 	"sync"
@@ -165,7 +166,7 @@ func (u *ui) renderVolumeTable() {
 }
 
 func (u *ui) loadVolumes() {
-	r, cfg, dcli, f, ctx, vtable := u.r, u.cfg, u.dcli, u.f, u.ctx, u.vtable
+	r, ac, dcli, f, ctx, vtable := u.r, u.agents, u.dcli, u.f, u.ctx, u.vtable
 	tableState(vtable, vHeaders, loadingCell())
 	gen := u.generation()
 	go func() {
@@ -176,8 +177,8 @@ func (u *ui) loadVolumes() {
 		var usage map[string][]volumeConsumer
 		noAgent := false
 		if nerr == nil {
-			vs, errs = indexVolumes(ctx, cfg, nodes, f.connectTimeout)
-			usage = indexVolumeUsage(ctx, cfg, nodes, f.connectTimeout)
+			vs, errs = ac.Volumes(ctx, nodes, f.connectTimeout)
+			usage = ac.VolumeUsage(ctx, nodes, f.connectTimeout)
 			if len(nodes) > 0 && len(errs) == len(nodes) && !agentDeployed(ctx, dcli) {
 				noAgent = true
 			}
@@ -223,7 +224,7 @@ func (u *ui) loadVolumes() {
 					}
 				}
 			}()
-			sz := indexVolumeSizes(ctx, cfg, nodes, f.connectTimeout)
+			sz := ac.VolumeSizes(ctx, nodes, f.connectTimeout)
 			close(stop)
 			u.onCluster(gen, func() {
 				u.volSizesLoading = false
@@ -240,7 +241,7 @@ func (u *ui) selectedVolume() (swarmVolume, bool) {
 }
 
 func (u *ui) showVolumeNodes(v swarmVolume) {
-	cfg, f, vtable := u.cfg, u.f, u.vtable
+	ac, f, vtable := u.agents, u.f, u.vtable
 	list := tview.NewList().ShowSecondaryText(false)
 	title := fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
 	if !v.Created.IsZero() {
@@ -267,17 +268,17 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 	closeNodes := ov.Close
 
 	runDelete := func(targets []resolve.Node) {
-		async(u, "ui.volumes.remove", func(ctx context.Context) ([]rmResult, error) {
-			return removeOnNodes(ctx, cfg, targets, v.Name, false, f.connectTimeout), nil
-		}, func(results []rmResult, _ error) {
+		async(u, "ui.volumes.remove", func(ctx context.Context) ([]agentcall.NodeResult, error) {
+			return ac.RemoveVolume(ctx, targets, v.Name, false, f.connectTimeout), nil
+		}, func(results []agentcall.NodeResult, _ error) {
 			closeNodes()
 			u.loadVolumes()
 			var b []string
 			for _, res := range results {
-				if res.err != nil {
-					b = append(b, fmt.Sprintf("%s: error: %v", res.node.Name, res.err))
+				if res.Err != nil {
+					b = append(b, fmt.Sprintf("%s: error: %v", res.Node.Name, res.Err))
 				} else {
-					b = append(b, fmt.Sprintf("%s: removed", res.node.Name))
+					b = append(b, fmt.Sprintf("%s: removed", res.Node.Name))
 				}
 			}
 			u.info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(b)))
@@ -344,7 +345,7 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 // labels, targeting one node or (blank) all nodes — volumes are node-local, so
 // creation goes to each target node's agent.
 func (u *ui) showCreateVolume() {
-	r, cfg, f, vtable := u.r, u.cfg, u.f, u.vtable
+	r, ac, f, vtable := u.r, u.agents, u.f, u.vtable
 	o := newVolumeOpts{Driver: "local"}
 	var labels, nodeSel string
 	var allNodes []resolve.Node // fetched on open, for autocomplete + targeting
@@ -397,16 +398,16 @@ func (u *ui) showCreateVolume() {
 			u.info("no nodes available")
 			return
 		}
-		async(u, "ui.volumes.create", func(ctx context.Context) ([]rmResult, error) {
-			return createVolumeOnNodes(ctx, cfg, targets, req, f.connectTimeout), nil
-		}, func(results []rmResult, _ error) {
+		async(u, "ui.volumes.create", func(ctx context.Context) ([]agentcall.NodeResult, error) {
+			return ac.CreateVolume(ctx, targets, req, f.connectTimeout), nil
+		}, func(results []agentcall.NodeResult, _ error) {
 			closeForm()
 			u.loadVolumes()
 			ok := 0
 			var failed []string
 			for _, res := range results {
-				if res.err != nil {
-					failed = append(failed, res.node.Name+": "+res.err.Error())
+				if res.Err != nil {
+					failed = append(failed, res.Node.Name+": "+res.Err.Error())
 				} else {
 					ok++
 				}
@@ -471,7 +472,7 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 // a single confirm. Volumes are node-local, so a volume is removed across all
 // its v.Nodes. Shared by the multi-select delete and prune.
 func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
-	cfg, f, vtable := u.cfg, u.f, u.vtable
+	ac, f, vtable := u.agents, u.f, u.vtable
 	if len(targets) == 0 {
 		return
 	}
@@ -527,10 +528,10 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 					defer func() { <-sem }()
 					ok := true
 					var vf []string
-					for _, res := range removeOnNodes(ctx, cfg, v.Nodes, v.Name, false, f.connectTimeout) {
-						if res.err != nil {
+					for _, res := range ac.RemoveVolume(ctx, v.Nodes, v.Name, false, f.connectTimeout) {
+						if res.Err != nil {
 							ok = false
-							vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.node.Name, res.err))
+							vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.Node.Name, res.Err))
 						}
 					}
 					mu.Lock()

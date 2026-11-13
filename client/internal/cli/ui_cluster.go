@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
@@ -63,6 +64,9 @@ type clusterState struct {
 	dcli swarmapi.Client
 	r    *resolve.Resolver
 	cfg  config.Config
+	// agents talks to this cluster's node agents, with cfg. Created with the
+	// manager client and closed with it: never shared with another cluster.
+	agents *agentcall.Client
 
 	// ctx bounds this cluster's background work — the tree refresh, the usage
 	// poll, every load. It is cancelled when the UI switches AWAY, which is how
@@ -98,8 +102,8 @@ type clusterState struct {
 	// and "this is the last thing we managed to read".
 	fetchErr error
 
-	statsGate *statsGate     // nodes whose agent cannot serve stats, so we stop asking
-	regCache  *registryCache // :latest version / newer-tag resolver
+	statsGate *agentcall.StatsGate // nodes whose agent cannot serve stats, so we stop asking
+	regCache  *registryCache       // :latest version / newer-tag resolver
 
 	// containers tab
 	//
@@ -221,7 +225,7 @@ func newClusterState(name, ctxOverride string) *clusterState {
 	return &clusterState{
 		name:         name,
 		ctxOverride:  ctxOverride,
-		statsGate:    newStatsGate(),
+		statsGate:    agentcall.NewStatsGate(),
 		selectedVols: map[string]bool{},
 	}
 }
@@ -412,6 +416,10 @@ func (c *clusterState) close() {
 	if c.dcli != nil {
 		c.dcli.Close()
 		c.dcli = nil
+	}
+	if c.agents != nil {
+		c.agents.Close()
+		c.agents = nil
 	}
 	c.ctx, c.r = nil, nil
 }

@@ -43,7 +43,7 @@ func (u *ui) openNodePrune(n swarmNodeInfo, back tview.Primitive, after func()) 
 // red, and "all" (a) leaves them alone: they are data, and the only way to
 // prune them is to tick them on purpose.
 func (u *ui) showPruneDialog(n swarmNodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
-	r, cfg, f := u.r, u.cfg, u.f
+	r, ac, f := u.r, u.agents, u.f
 	choice := defaultPruneChoice()
 
 	table := tview.NewTable().SetSelectable(true, false)
@@ -133,7 +133,7 @@ func (u *ui) showPruneDialog(n swarmNodeInfo, stats *pb.ReclaimStatsResponse, ba
 				if err != nil {
 					return nil, err
 				}
-				return pruneNode(ctx, cfg, target, req, f.connectTimeout)
+				return ac.Prune(ctx, target, req, f.connectTimeout)
 			}, func(resp *pb.PruneResponse, err error) {
 				if err != nil {
 					u.info("prune: " + err.Error())
@@ -193,13 +193,13 @@ func (v *nodeReclaimView) text(now time.Time) string {
 // loadNodeReclaim fetches the node's reclaim stats in the background and hands
 // them to apply on the UI goroutine. measureNow forces a fresh measurement.
 func (u *ui) loadNodeReclaim(hostname string, measureNow bool, apply func(*pb.ReclaimStatsResponse, error)) {
-	r, cfg, f := u.r, u.cfg, u.f
+	r, ac, f := u.r, u.agents, u.f
 	async(u, "ui.nodes.reclaim", func(ctx context.Context) (*pb.ReclaimStatsResponse, error) {
 		target, err := nodeByHostname(ctx, r, hostname)
 		if err != nil {
 			return nil, err
 		}
-		return fetchReclaim(ctx, cfg, target, measureNow, f.connectTimeout)
+		return ac.ReclaimStats(ctx, target, measureNow, f.connectTimeout)
 	}, apply)
 }
 

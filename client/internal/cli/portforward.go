@@ -15,11 +15,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	pb "swarmexec/internal/pb"
@@ -95,7 +93,9 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 		}
 	}
 
-	err = runForwarder(ctx, cfg, *ep, forwardParams{
+	ac := agentcall.New(cfg)
+	defer ac.Close()
+	err = runForwarder(ctx, ac, *ep, forwardParams{
 		address:        f.address,
 		localPort:      localPort,
 		remotePort:     remotePort,
@@ -147,7 +147,7 @@ type forwardParams struct {
 // the bound address — and surface a bind conflict — before committing to a
 // blocking loop. The TUI needs exactly that; the command just chains the two.
 type forwarder struct {
-	conn        *grpc.ClientConn
+	conn        *agentcall.Conn
 	ln          net.Listener
 	containerID string
 	remotePort  uint32
@@ -167,7 +167,7 @@ type forwarder struct {
 // The listener existing slightly before the agent is reachable is harmless:
 // Serve is a separate call, so nothing is accepted in between. Early arrivals
 // wait in the listen backlog and are reset if the dial fails and we close it.
-func startForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p forwardParams) (*forwarder, error) {
+func startForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p forwardParams) (*forwarder, error) {
 	bind := net.JoinHostPort(p.address, strconv.FormatUint(uint64(p.localPort), 10))
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", bind)
@@ -176,13 +176,13 @@ func startForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint,
 	}
 
 	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+	conn, err := ac.Conn(dctx, ep.DialHost)
 	dcancel()
 	if err != nil {
 		ln.Close()
 		return nil, err
 	}
-	return &forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.remotePort, auth: agenterr.AuthOf(cfg)}, nil
+	return &forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.remotePort, auth: agenterr.AuthOf(ac.Config())}, nil
 }
 
 // LocalAddr is the address actually bound, which is what to show the operator:
@@ -206,7 +206,7 @@ func (f *forwarder) Serve(ctx context.Context, onConnErr func(error)) error {
 		_ = f.ln.Close()
 	}()
 
-	client := pb.NewAgentClient(f.conn)
+	client := f.conn.Agent()
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
@@ -234,8 +234,8 @@ func (f *forwarder) Serve(ctx context.Context, onConnErr func(error)) error {
 }
 
 // runForwarder is the blocking command-line path: set up, announce, serve.
-func runForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p forwardParams, stdout, stderr io.Writer) error {
-	fw, err := startForwarder(ctx, cfg, ep, p)
+func runForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p forwardParams, stdout, stderr io.Writer) error {
+	fw, err := startForwarder(ctx, ac, ep, p)
 	if err != nil {
 		return err
 	}

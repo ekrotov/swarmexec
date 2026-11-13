@@ -10,8 +10,9 @@ import (
 	"swarmexec/client/internal/config"
 )
 
-// The three ways this package hands an agent error to agenterr.Explain. They
-// differ only in what they know; the mapping itself is agenterr's.
+// The ways this package hands an agent error to agenterr.Explain. They differ
+// only in what they know; the mapping itself is agenterr's. (A per-node RPC
+// is explained inside agentcall, by Client.Explain.)
 
 // explainSession explains the failure that ended a whole agent session — CLI
 // exec, logs, port-forward, the TUI terminal. Any failure there, a dial error
@@ -22,13 +23,6 @@ func explainSession(ctx context.Context, cfg config.Config, dcli serviceLister, 
 		AgentDeployed: deployedProbe(dcli),
 		Session:       true,
 	})
-}
-
-// wrapGRPC explains the error of one per-node agent RPC (volumes, images,
-// stats, prune). Whether an agent is deployed at all is the fan-out caller's
-// question, asked once rather than per node, so it is not asked here.
-func wrapGRPC(ctx context.Context, cfg config.Config, err error) error {
-	return agenterr.Explain(ctx, err, agenterr.Options{Auth: agenterr.AuthOf(cfg)})
 }
 
 // deployedProbe adapts agentDeployed to agenterr's question, or returns nil

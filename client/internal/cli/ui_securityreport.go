@@ -52,9 +52,9 @@ func (u *ui) writeSecurityReportPrompt(back tview.Primitive, setHelp func(string
 // which must never be called from the ui goroutine itself.
 func (u *ui) writeSecurityReport(path string, setHelp func(string), keys string) {
 	setHelp(" [yellow]writing security report…[white] " + tview.Escape(path))
-	dcli, cfg, g, timeout, name := u.dcli, u.cfg, u.g, u.f.connectTimeout, u.contextName()
+	dcli, ac, g, timeout, name := u.dcli, u.agents, u.g, u.f.connectTimeout, u.contextName()
 	async(u, "ui.securityreport", func(ctx context.Context) (secscan.Report, error) {
-		report, err := gatherSecurityReport(ctx, dcli, cfg, g,
+		report, err := gatherSecurityReport(ctx, dcli, ac, g,
 			&securityFlags{output: path, connectTimeout: timeout}, name)
 		if err == nil {
 			err = writeReportFile(path, report.Markdown())

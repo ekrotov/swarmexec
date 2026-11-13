@@ -11,8 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	pb "swarmexec/internal/pb"
 )
@@ -69,11 +68,11 @@ var lifecycleEvents = map[string]bool{
 // ctx ends. wake, when non-nil, is nudged on lifecycle events; it must be
 // buffered, and a full buffer is simply skipped — one pending wake-up is as
 // good as five.
-func watchContainerEvents(ctx context.Context, cfg config.Config, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) {
+func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) {
 	backoff := eventRetryMin
 	reported := false
 	for ctx.Err() == nil {
-		err := streamContainerEvents(ctx, cfg, ep, connectTimeout, note, wake)
+		err := streamContainerEvents(ctx, ac, ep, connectTimeout, note, wake)
 		if ctx.Err() != nil {
 			return
 		}
@@ -100,16 +99,16 @@ func watchContainerEvents(ctx context.Context, cfg config.Config, ep resolve.End
 	}
 }
 
-func streamContainerEvents(ctx context.Context, cfg config.Config, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) error {
+func streamContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) error {
 	dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := dial.Dial(dctx, ep.DialHost, cfg.Port, cfg)
+	conn, err := ac.Conn(dctx, ep.DialHost)
 	dcancel()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	stream, err := pb.NewAgentClient(conn).WatchContainerEvents(ctx,
+	stream, err := conn.Agent().WatchContainerEvents(ctx,
 		&pb.WatchContainerEventsRequest{ContainerId: ep.ContainerID})
 	if err != nil {
 		return err

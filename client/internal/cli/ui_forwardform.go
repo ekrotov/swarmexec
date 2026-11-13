@@ -17,8 +17,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
-	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
 	pb "swarmexec/internal/pb"
@@ -209,7 +208,7 @@ func parseForwardForm(container, address, local string) (forwardSpec, error) {
 // which works against any agent) and the container's own agent (its EXPOSE
 // ports, which only agents that fill ContainerInfo.ports report). The two are
 // asked concurrently and either may fail — what one returns is still used.
-func forwardPortSuggestions(ctx context.Context, dcli swarmapi.Client, cfg config.Config, c resolve.Candidate) []uint32 {
+func forwardPortSuggestions(ctx context.Context, dcli swarmapi.Client, ac *agentcall.Client, c resolve.Candidate) []uint32 {
 	var (
 		wg              sync.WaitGroup
 		svcPorts, agent []uint32
@@ -227,7 +226,7 @@ func forwardPortSuggestions(ctx context.Context, dcli swarmapi.Client, cfg confi
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			agent = agentContainerPorts(ctx, cfg, c)
+			agent = agentContainerPorts(ctx, ac, c)
 		}()
 	}
 	wg.Wait()
@@ -237,17 +236,12 @@ func forwardPortSuggestions(ctx context.Context, dcli swarmapi.Client, cfg confi
 // agentContainerPorts asks the container's own agent which TCP ports the
 // container exposes. Nil on any failure, and from an agent that predates the
 // field: suggestions are a convenience, never a precondition.
-func agentContainerPorts(ctx context.Context, cfg config.Config, c resolve.Candidate) []uint32 {
-	conn, err := dial.Dial(ctx, c.DialHost, cfg.Port, cfg)
+func agentContainerPorts(ctx context.Context, ac *agentcall.Client, c resolve.Candidate) []uint32 {
+	list, err := ac.ListContainers(ctx, c.DialHost, c.Service)
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
-	resp, err := pb.NewAgentClient(conn).ListContainers(ctx, &pb.ListRequest{ServiceFilter: c.Service})
-	if err != nil {
-		return nil
-	}
-	return containerPortsFor(resp.GetContainers(), c.ContainerID)
+	return containerPortsFor(list, c.ContainerID)
 }
 
 // containerPortsFor picks one container's ports out of a ListContainers reply.
@@ -486,7 +480,7 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 // nothing has no endpoint ports, and an agent that predates the field reports
 // no EXPOSE ports — so both are asked and merged. Any port can still be typed.
 func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
-	app, ctree, cfg, dcli, f := u.app, u.ctree, u.cfg, u.dcli, u.f
+	app, ctree, ac, dcli, f := u.app, u.ctree, u.agents, u.dcli, u.f
 	d := newFwdDialog(c)
 	cport, lport, addr, status := d.cport, d.lport, d.addr, d.status
 
@@ -662,7 +656,7 @@ func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
 		// saying "looking up" for longer than a connect would take.
 		tctx, cancel := context.WithTimeout(ctx, f.connectTimeout)
 		defer cancel()
-		return forwardPortSuggestions(tctx, dcli, cfg, c), nil
+		return forwardPortSuggestions(tctx, dcli, ac, c), nil
 	}, func(ports []uint32, _ error) {
 		suggested, loading = ports, false
 		// Prefill only an untouched field: the operator may have typed
