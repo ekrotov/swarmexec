@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/scheduler"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -365,7 +366,7 @@ func TestMeasureReclaim(t *testing.T) {
 		{Name: "anon", UsageData: &volume.UsageData{Size: 10, RefCount: 0}},
 	}
 	s := imageTestServer(d)
-	s.sizeCache.refresh(context.Background())
+	s.sizeCache.Refresh(context.Background())
 
 	cats, err := s.measureReclaim(context.Background(), 24*time.Hour)
 	if err != nil {
@@ -431,10 +432,10 @@ func TestReclaimKeepsPreviousFigureOnError(t *testing.T) {
 	d := newFakeDocker()
 	d.imageDiskUsage = du(100, img("sha256:a", 100, 0, 0, "x:1"))
 	s := imageTestServer(d)
-	s.reclaim.measure(context.Background(), false)
+	s.reclaim.Measure(context.Background(), false)
 	d.diskUsageErr = errors.New("daemon busy")
-	s.reclaim.measure(context.Background(), false)
-	cats, _, errMsg, _ := s.reclaim.snapshot()
+	s.reclaim.Measure(context.Background(), false)
+	cats, _, errMsg, _ := s.reclaim.Snapshot()
 	if !strings.Contains(errMsg, "daemon busy") {
 		t.Errorf("error = %q", errMsg)
 	}
@@ -452,22 +453,22 @@ func TestScheduledRunIsAuditedAndKept(t *testing.T) {
 	stopped(d, "old", 50, 72*time.Hour, 48*time.Hour, nil)
 	var seen []auth.Request
 	s, log := auditedTestServer(d, denyActions{seen: &seen})
-	s.scheduler.load(map[string]string{
+	s.scheduler.Load(map[string]string{
 		prunesched.LabelEnabled:    "true",
 		prunesched.LabelCategories: "containers,networks",
 		prunesched.LabelStart:      "03:00",
 		prunesched.LabelTimes:      "2",
 	})
-	sched, err, _ := s.scheduler.schedule()
+	sched, err, _ := s.scheduler.Schedule()
 	if err != nil || !sched.Enabled {
 		t.Fatalf("schedule = %+v, %v", sched, err)
 	}
-	run := s.scheduler.runOnce(context.Background(), sched)
+	run := s.scheduler.RunOnce(context.Background(), sched)
 	if run.GetError() != "" || len(run.GetResults()) != 2 {
 		t.Fatalf("run = %+v", run)
 	}
 	for _, r := range seen {
-		if r.Identity != schedulerIdentity {
+		if r.Identity != scheduler.Identity {
 			t.Errorf("scheduled run authorized as %q", r.Identity)
 		}
 	}
@@ -475,50 +476,11 @@ func TestScheduledRunIsAuditedAndKept(t *testing.T) {
 	wantFields(t, rec, map[string]any{"trigger": "schedule", "identity": "scheduler", "category": "containers", "count": 1})
 
 	now := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
-	st, last := s.scheduler.status(now)
+	st, last := s.scheduler.Status(now)
 	if !st.GetEnabled() || st.GetNextRun() != "2026-11-06T15:00:00Z" || st.GetTimesPerDay() != 2 {
 		t.Errorf("status = %+v", st)
 	}
 	if last.GetStartedAt() == "" || len(last.GetResults()) != 2 {
 		t.Errorf("last run = %+v", last)
-	}
-}
-
-func TestInvalidScheduleLabelsDisable(t *testing.T) {
-	s := imageTestServer(newFakeDocker())
-	s.scheduler.load(map[string]string{prunesched.LabelEnabled: "true", prunesched.LabelTimes: "lots"})
-	st, _ := s.scheduler.status(time.Now())
-	if st.GetEnabled() || !strings.Contains(st.GetError(), prunesched.LabelTimes) || st.GetNextRun() != "" {
-		t.Errorf("invalid labels must disable the schedule and say why: %+v", st)
-	}
-	// run returns at once for a disabled schedule instead of spinning.
-	done := make(chan struct{})
-	go func() { s.scheduler.run(context.Background()); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("run kept going on an invalid schedule")
-	}
-}
-
-func TestSchedulerWaitUntilUsesTheWallClock(t *testing.T) {
-	s := imageTestServer(newFakeDocker())
-	base := time.Now()
-	calls := 0
-	s.scheduler.maxSleep = time.Millisecond
-	s.scheduler.now = func() time.Time { calls++; return base.Add(time.Duration(calls) * time.Hour) }
-	if !s.scheduler.waitUntil(context.Background(), base.Add(90*time.Minute)) {
-		t.Fatal("waitUntil gave up")
-	}
-	// It woke after one short sleep because the WALL clock passed the target,
-	// not because the sleep was as long as the gap.
-	if calls != 2 {
-		t.Errorf("clock read %d times, want 2", calls)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	s.scheduler.now = time.Now
-	if s.scheduler.waitUntil(ctx, time.Now().Add(time.Hour)) {
-		t.Error("a cancelled context must stop the wait")
 	}
 }

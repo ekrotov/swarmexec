@@ -1,7 +1,10 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package server
+// Package limits holds the node caps of the agent: a counting semaphore that
+// refuses, rather than queues, a caller beyond its limit, and the defaults for
+// the two caps the server applies (concurrent streams, live forward sidecars).
+package limits
 
 import (
 	"sync/atomic"
@@ -22,33 +25,33 @@ import (
 // Swarm workload sharing that machine, from a client that only ever spoke the
 // protocol correctly.
 const (
-	// defaultMaxStreams caps Exec + Logs + PortForward streams in flight at once.
-	defaultMaxStreams = 256
-	// defaultMaxForwardSidecars caps live port-forward sidecar CONTAINERS, which
+	// DefaultMaxStreams caps Exec + Logs + PortForward streams in flight at once.
+	DefaultMaxStreams = 256
+	// DefaultMaxForwardSidecars caps live port-forward sidecar CONTAINERS, which
 	// are far more expensive than a stream and are what actually exhausts a node.
-	// Lower than defaultMaxStreams on purpose: reaching this one first means the
+	// Lower than DefaultMaxStreams on purpose: reaching this one first means the
 	// client is refused before the containers exist.
-	defaultMaxForwardSidecars = 64
+	DefaultMaxForwardSidecars = 64
 )
 
-// orDefault maps the "0 means default, negative means off" convention onto the
+// OrDefault maps the "0 means default, negative means off" convention onto the
 // limiter's "<= 0 means off". Zero has to mean "default" rather than "no limit"
 // because an Options built without thinking about limits is the common case —
 // every existing caller — and that case must come out capped, not uncapped.
-func orDefault(v, def int) int {
+func OrDefault(v, def int) int {
 	if v == 0 {
 		return def
 	}
 	return v
 }
 
-// limiter is a counting semaphore that reports exhaustion as a gRPC status.
+// Limiter is a counting semaphore that reports exhaustion as a gRPC status.
 //
 // Deliberately a counter and not a buffered channel: a client that would exceed
 // the cap must be REFUSED, not queued. Queueing turns a resource limit into
 // unbounded latency, and the caller — a person waiting on a shell — cannot tell
 // the two apart. "No" is an answer they can act on.
-type limiter struct {
+type Limiter struct {
 	cur  atomic.Int64
 	max  int64
 	what string // named in the error, so the operator knows which knob to raise
@@ -59,17 +62,20 @@ type limiter struct {
 	refused func()
 }
 
-func newLimiter(max int, what, flag string) *limiter {
-	return &limiter{max: int64(max), what: what, flag: flag}
+// New returns a limiter of max slots. what and flag name the resource and the
+// flag that raises the cap in the refusal; refused, when non-nil, is called on
+// every refusal.
+func New(max int, what, flag string, refused func()) *Limiter {
+	return &Limiter{max: int64(max), what: what, flag: flag, refused: refused}
 }
 
-// acquire takes a slot, returning the release function. When the cap is
+// Acquire takes a slot, returning the release function. When the cap is
 // reached it returns a ResourceExhausted error — the code a client may
 // reasonably retry on later, unlike the Unavailable used for draining.
 //
 // Zero or negative max disables the limit, matching how the timeout options
 // already spell "off".
-func (l *limiter) acquire() (func(), error) {
+func (l *Limiter) Acquire() (func(), error) {
 	if l == nil || l.max <= 0 {
 		return func() {}, nil
 	}
@@ -93,10 +99,18 @@ func (l *limiter) acquire() (func(), error) {
 	}, nil
 }
 
-// inUse reports the current count, for tests and diagnostics.
-func (l *limiter) inUse() int64 {
+// InUse reports the current count, for tests and diagnostics.
+func (l *Limiter) InUse() int64 {
 	if l == nil {
 		return 0
 	}
 	return l.cur.Load()
+}
+
+// Max reports the cap; zero or negative means no limit.
+func (l *Limiter) Max() int64 {
+	if l == nil {
+		return 0
+	}
+	return l.max
 }

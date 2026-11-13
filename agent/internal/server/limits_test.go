@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -16,96 +15,27 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/limits"
 	"swarmexec/internal/pb"
 )
 
-func TestLimiter_RefusesBeyondTheCapAndReleases(t *testing.T) {
-	l := newLimiter(2, "things", "-max-things")
-
-	r1, err := l.acquire()
-	if err != nil {
-		t.Fatal(err)
-	}
-	r2, err := l.acquire()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := l.acquire(); statusCode(err) != codes.ResourceExhausted {
-		t.Fatalf("third acquire: want ResourceExhausted, got %v", err)
-	}
-	// The error has to tell the operator which knob to turn; a bare "limit
-	// reached" leaves them guessing at a value they own.
-	if _, err := l.acquire(); err == nil || !strings.Contains(err.Error(), "-max-things") {
-		t.Errorf("error should name the flag: %v", err)
-	}
-
-	// A released slot is reusable: the cap is "not now", not a permanent
-	// degradation of the node.
-	r1()
-	r3, err := l.acquire()
-	if err != nil {
-		t.Fatalf("a released slot must be reusable: %v", err)
-	}
-	if got := l.inUse(); got != 2 {
-		t.Fatalf("in use = %d, want 2", got)
-	}
-
-	// A rejected acquire must not leak a slot: the counter is incremented
-	// speculatively and has to be given back on the failing path. Fifty
-	// rejections must leave the count exactly where it was.
-	for i := 0; i < 50; i++ {
-		if _, err := l.acquire(); err == nil {
-			t.Fatal("expected the cap to hold")
-		}
-	}
-	if got := l.inUse(); got != 2 {
-		t.Errorf("rejections leaked slots: in use = %d, want 2", got)
-	}
-
-	// Release is idempotent — the forward path can reach it twice.
-	r3()
-	r3()
-	if got := l.inUse(); got != 1 {
-		t.Errorf("double release freed a slot that was not held: in use = %d, want 1", got)
-	}
-	r2()
-}
-
-func TestLimiter_ZeroOrNegativeMeansUnlimited(t *testing.T) {
-	for _, max := range []int{0, -1} {
-		l := newLimiter(max, "things", "-max-things")
-		for i := 0; i < 1000; i++ {
-			if _, err := l.acquire(); err != nil {
-				t.Fatalf("max=%d: acquire %d refused: %v", max, i, err)
-			}
-		}
-	}
-	// A nil limiter is also "no limit", so a zero-value Server in a test cannot
-	// panic on the hot path.
-	var nilLim *limiter
-	if _, err := nilLim.acquire(); err != nil {
-		t.Errorf("nil limiter must not refuse: %v", err)
-	}
-}
-
-// An Options built without an opinion about limits — which is every existing
 // caller — must come out capped rather than uncapped.
 func TestNew_AppliesDefaultCaps(t *testing.T) {
 	s, _ := newTestServer(newFakeDocker(), auth.AllowAll{}, Options{})
-	if s.streams.max != defaultMaxStreams {
-		t.Errorf("stream cap = %d, want %d", s.streams.max, defaultMaxStreams)
+	if s.streams.Max() != limits.DefaultMaxStreams {
+		t.Errorf("stream cap = %d, want %d", s.streams.Max(), limits.DefaultMaxStreams)
 	}
-	if s.sidecars.max != defaultMaxForwardSidecars {
-		t.Errorf("sidecar cap = %d, want %d", s.sidecars.max, defaultMaxForwardSidecars)
+	if s.sidecars.Max() != limits.DefaultMaxForwardSidecars {
+		t.Errorf("sidecar cap = %d, want %d", s.sidecars.Max(), limits.DefaultMaxForwardSidecars)
 	}
 	// The sidecar budget must be the tighter of the two: reaching it first is
 	// what keeps the refusal ahead of the containers being created.
-	if s.sidecars.max >= s.streams.max {
-		t.Errorf("sidecar cap (%d) should be below the stream cap (%d)", s.sidecars.max, s.streams.max)
+	if s.sidecars.Max() >= s.streams.Max() {
+		t.Errorf("sidecar cap (%d) should be below the stream cap (%d)", s.sidecars.Max(), s.streams.Max())
 	}
 
 	off, _ := newTestServer(newFakeDocker(), auth.AllowAll{}, Options{MaxStreams: -1})
-	if _, err := off.streams.acquire(); err != nil {
+	if _, err := off.streams.Acquire(); err != nil {
 		t.Errorf("negative must disable the cap: %v", err)
 	}
 }
@@ -116,7 +46,7 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 	srv, m := newTestServer(d, auth.AllowAll{}, Options{MaxStreams: 1})
 
 	// Hold the single slot.
-	release, err := srv.streams.acquire()
+	release, err := srv.streams.Acquire()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +70,7 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 	if err := gatedLogs(srv, &pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()}); err != nil {
 		t.Fatalf("after release: %v", err)
 	}
-	if got := srv.streams.inUse(); got != 0 {
+	if got := srv.streams.InUse(); got != 0 {
 		t.Errorf("slot not returned after the stream ended: in use = %d", got)
 	}
 }
@@ -155,7 +85,7 @@ func TestForward_SidecarCapRefusesBeforeCreatingContainers(t *testing.T) {
 	}
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{ForwardImage: "test-agent:latest", MaxForwardSidecars: 1})
 
-	held, err := srv.sidecars.acquire()
+	held, err := srv.sidecars.Acquire()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +112,7 @@ func TestForward_FailedSidecarReleasesItsSlot(t *testing.T) {
 			t.Fatal("expected the create to fail")
 		}
 	}
-	if got := srv.sidecars.inUse(); got != 0 {
+	if got := srv.sidecars.InUse(); got != 0 {
 		t.Errorf("slots leaked by failed sidecars: in use = %d", got)
 	}
 }

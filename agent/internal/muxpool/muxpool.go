@@ -1,7 +1,14 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package server
+// Package muxpool keeps one port-forward sidecar per (container, port) and
+// multiplexes every connection of that forward over the sidecar's stdio with
+// the internal/forwardmux framing.
+//
+// Starting a sidecar is the server's business (container create, attach, the
+// node's sidecar budget); the pool only needs an OpenFunc that returns the
+// running sidecar's stdio as a Channel.
+package muxpool
 
 import (
 	"context"
@@ -30,6 +37,19 @@ import (
 // frames (internal/forwardmux), and half-closing one connection needs its own
 // frame because closing the stdio would end every connection on the sidecar.
 
+// Channel is a running sidecar's stdio: frames are read from it and written to
+// it, and Close tears the sidecar down. Close must be safe to call more than
+// once.
+type Channel interface {
+	io.Reader
+	io.Writer
+	Close()
+}
+
+// OpenFunc starts a sidecar in the target container's network namespace,
+// dialling port, and returns its stdio once the sidecar reports it is ready.
+type OpenFunc func(ctx context.Context, containerID string, port uint32) (Channel, error)
+
 const (
 	// muxIdleLinger is how long a sidecar with no connections is kept before it
 	// is removed. A forward is a sequence of connections with gaps — a browser
@@ -52,8 +72,8 @@ type muxKey struct {
 // muxSidecar is one running sidecar container and the connections on it.
 type muxSidecar struct {
 	key  muxKey
-	ch   *sidecarChannel // the container, its attach stream and its cleanup
-	srv  *Server
+	ch   Channel // the container's stdio; Close removes the container
+	pool *Pool
 	done chan struct{} // closed when the demux loop ends
 
 	// outCh serialises writes to the sidecar's stdin through one goroutine.
@@ -67,16 +87,16 @@ type muxSidecar struct {
 	outCh chan forwardmux.Frame
 
 	mu      sync.Mutex
-	conns   map[uint32]*muxConn
+	conns   map[uint32]*Conn
 	nextID  uint32
 	idle    *time.Timer
 	closed  bool
 	lastErr error
 }
 
-// muxConn is one multiplexed connection, presented to runForward as the same
-// forwardChannel the per-connection sidecar used to be.
-type muxConn struct {
+// Conn is one multiplexed connection, presented to the server's runForward as
+// the same byte channel the per-connection sidecar used to be.
+type Conn struct {
 	id  uint32
 	sc  *muxSidecar
 	in  *io.PipeReader // target -> agent
@@ -88,24 +108,28 @@ type muxConn struct {
 	closeOnce sync.Once
 }
 
-var _ forwardChannel = (*muxConn)(nil)
-
-// muxPool holds the live sidecars, keyed by target. It is the whole difference
+// Pool holds the live sidecars, keyed by target. It is the whole difference
 // between "one container per connection" and "one per forward".
-type muxPool struct {
+type Pool struct {
+	open       OpenFunc
+	idleLinger time.Duration
+
 	mu   sync.Mutex
 	subs map[muxKey]*muxSidecar
 }
 
-func newMuxPool() *muxPool { return &muxPool{subs: map[muxKey]*muxSidecar{}} }
+// New returns an empty pool that starts sidecars with open.
+func New(open OpenFunc) *Pool {
+	return &Pool{open: open, idleLinger: muxIdleLinger, subs: map[muxKey]*muxSidecar{}}
+}
 
-// openConn returns a channel to the target port, starting a sidecar only if
+// OpenConn returns a connection to the target port, starting a sidecar only if
 // there is not already one for that container and port.
-func (p *muxPool) openConn(ctx context.Context, s *Server, containerID string, port uint32) (*muxConn, error) {
+func (p *Pool) OpenConn(ctx context.Context, containerID string, port uint32) (*Conn, error) {
 	key := muxKey{container: containerID, port: port}
 
 	for attempt := 0; attempt < 2; attempt++ {
-		sc, fresh, err := p.acquire(ctx, s, key)
+		sc, fresh, err := p.acquire(ctx, key)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +150,7 @@ func (p *muxPool) openConn(ctx context.Context, s *Server, containerID string, p
 
 // acquire returns the sidecar for key, creating one if needed. fresh reports
 // whether this call created it.
-func (p *muxPool) acquire(ctx context.Context, s *Server, key muxKey) (*muxSidecar, bool, error) {
+func (p *Pool) acquire(ctx context.Context, key muxKey) (*muxSidecar, bool, error) {
 	p.mu.Lock()
 	if sc, ok := p.subs[key]; ok && !sc.isClosed() {
 		sc.holdLocked()
@@ -137,7 +161,7 @@ func (p *muxPool) acquire(ctx context.Context, s *Server, key muxKey) (*muxSidec
 
 	// Started outside the pool lock: creating a container takes ~300 ms and
 	// holding the lock across it would serialise every forward on the node.
-	ch, err := s.openSidecarChannel(ctx, key.container, key.port)
+	ch, err := p.open(ctx, key.container, key.port)
 	if err != nil {
 		return nil, false, err
 	}
@@ -151,10 +175,10 @@ func (p *muxPool) acquire(ctx context.Context, s *Server, key muxKey) (*muxSidec
 		return existing, false, nil
 	}
 	sc := &muxSidecar{
-		key: key, ch: ch, srv: s,
+		key: key, ch: ch, pool: p,
 		done:  make(chan struct{}),
 		outCh: make(chan forwardmux.Frame, muxWriteQueue),
-		conns: map[uint32]*muxConn{},
+		conns: map[uint32]*Conn{},
 	}
 	p.subs[key] = sc
 	p.mu.Unlock()
@@ -165,7 +189,7 @@ func (p *muxPool) acquire(ctx context.Context, s *Server, key muxKey) (*muxSidec
 	return sc, true, nil
 }
 
-func (p *muxPool) evict(sc *muxSidecar) {
+func (p *Pool) evict(sc *muxSidecar) {
 	p.mu.Lock()
 	if p.subs[sc.key] == sc {
 		delete(p.subs, sc.key)
@@ -174,8 +198,8 @@ func (p *muxPool) evict(sc *muxSidecar) {
 	sc.close()
 }
 
-// closeAll tears every sidecar down, for agent shutdown.
-func (p *muxPool) closeAll() {
+// CloseAll tears every sidecar down, for agent shutdown.
+func (p *Pool) CloseAll() {
 	p.mu.Lock()
 	all := p.subs
 	p.subs = map[muxKey]*muxSidecar{}
@@ -208,8 +232,8 @@ func (sc *muxSidecar) armIdle() {
 	if sc.closed || len(sc.conns) > 0 || sc.idle != nil {
 		return
 	}
-	sc.idle = time.AfterFunc(muxIdleLinger, func() {
-		sc.srv.muxes.evict(sc)
+	sc.idle = time.AfterFunc(sc.pool.idleLinger, func() {
+		sc.pool.evict(sc)
 	})
 }
 
@@ -263,9 +287,9 @@ func (sc *muxSidecar) sendBestEffort(f forwardmux.Frame) {
 var muxBeforeOpenWait atomic.Pointer[func(*muxSidecar)]
 
 // dial opens one connection through this sidecar.
-func (sc *muxSidecar) dial(ctx context.Context) (*muxConn, error) {
+func (sc *muxSidecar) dial(ctx context.Context) (*Conn, error) {
 	pr, pw := io.Pipe()
-	c := &muxConn{sc: sc, in: pr, inW: pw, open: make(chan error, 1)}
+	c := &Conn{sc: sc, in: pr, inW: pw, open: make(chan error, 1)}
 
 	sc.mu.Lock()
 	if sc.closed {
@@ -328,7 +352,7 @@ func (sc *muxSidecar) errOrDefault() error {
 	return errors.New("forward sidecar is gone")
 }
 
-func (sc *muxSidecar) conn(id uint32) *muxConn {
+func (sc *muxSidecar) conn(id uint32) *Conn {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	return sc.conns[id]
@@ -395,14 +419,14 @@ func (sc *muxSidecar) fail(err error) {
 		sc.lastErr = err
 	}
 	conns := sc.conns
-	sc.conns = map[uint32]*muxConn{}
+	sc.conns = map[uint32]*Conn{}
 	sc.mu.Unlock()
 
 	for _, c := range conns {
 		c.openOnce.Do(func() { c.open <- err })
 		_ = c.inW.CloseWithError(err)
 	}
-	sc.srv.muxes.evict(sc)
+	sc.pool.evict(sc)
 }
 
 func (sc *muxSidecar) close() {
@@ -417,7 +441,7 @@ func (sc *muxSidecar) close() {
 		sc.idle = nil
 	}
 	conns := sc.conns
-	sc.conns = map[uint32]*muxConn{}
+	sc.conns = map[uint32]*Conn{}
 	sc.mu.Unlock()
 
 	for _, c := range conns {
@@ -426,9 +450,9 @@ func (sc *muxSidecar) close() {
 	sc.ch.Close()
 }
 
-// --- forwardChannel, one connection's view of the sidecar ---
+// --- Conn, one connection's view of the sidecar ---
 
-func (c *muxConn) Write(p []byte) (int, error) {
+func (c *Conn) Write(p []byte) (int, error) {
 	// Copied into the frame by the codec's single Write; the caller's buffer is
 	// not retained.
 	if err := c.sc.send(forwardmux.Frame{Conn: c.id, Kind: forwardmux.KindData, Payload: p}); err != nil {
@@ -439,21 +463,21 @@ func (c *muxConn) Write(p []byte) (int, error) {
 
 // CloseWrite half-closes THIS connection. It needs a frame of its own: closing
 // the sidecar's stdin would half-close every connection multiplexed on it.
-func (c *muxConn) CloseWrite() {
+func (c *Conn) CloseWrite() {
 	// Half-close is a normal part of a request/response exchange, so it queues
 	// like data rather than being dropped — but it still must not outlive the
 	// sidecar, which send handles.
 	_ = c.sc.send(forwardmux.Frame{Conn: c.id, Kind: forwardmux.KindCloseWrite})
 }
 
-func (c *muxConn) CopyTo(w io.Writer) error {
+func (c *Conn) CopyTo(w io.Writer) error {
 	_, err := io.Copy(w, c.in)
 	return err
 }
 
 // Close ends this connection without touching the sidecar, which keeps serving
 // the others — and stays available for the next one.
-func (c *muxConn) Close() {
+func (c *Conn) Close() {
 	c.closeOnce.Do(func() {
 		// Best effort: this runs on teardown, when the sidecar may already be
 		// gone, and a close that waits for a dead peer would hold the forward
@@ -462,11 +486,4 @@ func (c *muxConn) Close() {
 		_ = c.in.Close()
 		c.sc.drop(c.id)
 	})
-}
-
-// liveSidecars reports how many sidecars the pool holds.
-func (p *muxPool) liveSidecars() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return len(p.subs)
 }

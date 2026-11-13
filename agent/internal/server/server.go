@@ -4,6 +4,14 @@
 // Package server implements the Agent gRPC service defined in CONTRACT.md:
 // container discovery, the interactive exec bridge, logs and container events,
 // port forwarding, volumes, images, resource stats, prune and version.
+//
+// It holds the handlers and their wiring. The subsystems behind them live in
+// sibling packages that know nothing of the Server — each takes the narrow
+// Docker subset or callback it needs, and New wires them: the node caps
+// (limits), the forward sidecar pool (muxpool), the volume-size cache
+// (volsize), the stats sampler (statsampler), the reclaim measurement
+// (reclaim), the prune schedule (scheduler) and the prune category table
+// (prunecat).
 package server
 
 import (
@@ -26,6 +34,12 @@ import (
 
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/limits"
+	"swarmexec/agent/internal/muxpool"
+	"swarmexec/agent/internal/reclaim"
+	"swarmexec/agent/internal/scheduler"
+	"swarmexec/agent/internal/statsampler"
+	"swarmexec/agent/internal/volsize"
 	"swarmexec/internal/pb"
 )
 
@@ -47,17 +61,17 @@ type Options struct {
 	// forward never blocks on a registry pull.
 	ForwardImage string
 	// VolumeSizeInterval sets the volume-size cache's periodic rescan interval.
-	// Zero uses the default (volumeSizeInterval).
+	// Zero uses the default (volsize.DefaultInterval).
 	VolumeSizeInterval time.Duration
 	// StatsInterval sets how often the container-stats sampler takes a reading —
 	// also the resolution of every CPU percentage, which is a delta between two
-	// of them. Zero uses the default (statsInterval).
+	// of them. Zero uses the default (statsampler.DefaultInterval).
 	StatsInterval time.Duration
 	// MaxStreams caps concurrent Exec + Logs + PortForward streams on this node.
-	// Zero uses the default (defaultMaxStreams); negative disables the cap.
+	// Zero uses the default (limits.DefaultMaxStreams); negative disables the cap.
 	MaxStreams int
 	// MaxForwardSidecars caps live port-forward sidecar containers on this node.
-	// Zero uses the default (defaultMaxForwardSidecars); negative disables it.
+	// Zero uses the default (limits.DefaultMaxForwardSidecars); negative disables it.
 	MaxForwardSidecars int
 }
 
@@ -71,10 +85,10 @@ type Server struct {
 	log        *slog.Logger
 	metrics    Metrics
 	opts       Options
-	sizeCache  *volumeSizeCache     // serves ListVolumes(with_size) from memory
-	statsCache *containerStatsCache // serves Stats from memory (see statscache.go)
-	reclaim    *reclaimCache        // serves ReclaimStats from memory (see reclaim.go)
-	scheduler  *pruneScheduler      // the node's prune schedule (see schedule.go)
+	sizeCache  *volsize.Cache       // serves ListVolumes(with_size) from memory
+	statsCache *statsampler.Sampler // serves Stats from memory (see internal/statsampler)
+	reclaim    *reclaim.Cache       // serves ReclaimStats from memory (see internal/reclaim)
+	scheduler  *scheduler.Scheduler // the node's prune schedule (see internal/scheduler)
 
 	// pruneMu serializes prunes, manual and scheduled (see runPrune).
 	pruneMu sync.Mutex
@@ -97,12 +111,12 @@ type Server struct {
 	// streams caps concurrent streaming RPCs; sidecars caps the containers a
 	// port-forward creates. Two limits because they bound different things: a
 	// stream costs a goroutine, a sidecar costs a container on the node.
-	streams  *limiter
-	sidecars *limiter
+	streams  *limits.Limiter
+	sidecars *limits.Limiter
 
 	// muxes holds one port-forward sidecar per (container, port), shared by
 	// every connection of that forward.
-	muxes *muxPool
+	muxes *muxpool.Pool
 
 	// The agent's own image, resolved once by self-inspection and reused by
 	// every port-forward sidecar. See forwardImage.
@@ -124,16 +138,20 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 		metrics: metrics,
 		opts:    opts,
 	}
-	s.sizeCache = newVolumeSizeCache(docker, log, opts.VolumeSizeInterval)
-	s.statsCache = newContainerStatsCache(docker, log, opts.StatsInterval)
-	s.reclaim = newReclaimCache(s, log)
-	s.scheduler = newPruneScheduler(s, log)
-	s.muxes = newMuxPool()
-	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
-	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
-		"port-forward sidecars", "-max-forward-sidecars")
-	s.streams.refused = func() { s.metrics.LimitRefused("streams") }
-	s.sidecars.refused = func() { s.metrics.LimitRefused("forward_sidecars") }
+	s.sizeCache = volsize.New(docker, log, opts.VolumeSizeInterval)
+	s.statsCache = statsampler.New(docker, log, opts.StatsInterval)
+	// The scheduler and the reclaim cache need each other: a scheduled run
+	// makes the reclaim figures stale, and the figures use the schedule's age
+	// filter. The scheduler is built first and reaches the cache through a
+	// closure, which runs only once the background work has started.
+	s.scheduler = scheduler.New(docker, s.runScheduledPrune, func() { s.reclaim.Kick() }, log)
+	s.reclaim = reclaim.New(s.measureReclaim, s.sizeCache, s.scheduler, log)
+	s.muxes = muxpool.New(s.openSidecar)
+	s.streams = limits.New(limits.OrDefault(opts.MaxStreams, limits.DefaultMaxStreams), "streams", "-max-streams",
+		func() { s.metrics.LimitRefused("streams") })
+	s.sidecars = limits.New(limits.OrDefault(opts.MaxForwardSidecars, limits.DefaultMaxForwardSidecars),
+		"port-forward sidecars", "-max-forward-sidecars",
+		func() { s.metrics.LimitRefused("forward_sidecars") })
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {
@@ -146,21 +164,28 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 // scan, then reactive (volume create/destroy) and periodic refreshes, until ctx
 // is cancelled. Call it once after New.
 func (s *Server) StartVolumeSizeCache(ctx context.Context) {
-	go s.sizeCache.run(ctx)
+	go s.sizeCache.Run(ctx)
 }
 
 // StartStatsCache launches the background container-stats sampler. Unlike the
 // volume cache it only does work while a client is actually asking for stats
-// (see statsIdleAfter), so an agent nobody is watching stays idle. Call it once
+// (see statsampler), so an agent nobody is watching stays idle. Call it once
 // after New.
 func (s *Server) StartStatsCache(ctx context.Context) {
-	go s.statsCache.run(ctx)
+	go s.statsCache.Run(ctx)
 }
 
 // StartReclaimCache launches the background reclaim measurement: once shortly
 // after start, then hourly, and after every prune. Call it once after New.
 func (s *Server) StartReclaimCache(ctx context.Context) {
-	go s.reclaim.run(ctx)
+	go s.reclaim.Run(ctx)
+}
+
+// StartPruneScheduler reads the schedule from the agent's own container labels
+// and runs it until ctx ends. Invalid labels are logged and disable the
+// schedule; they never stop the agent. Call it once after New.
+func (s *Server) StartPruneScheduler(ctx context.Context) {
+	s.scheduler.Start(ctx)
 }
 
 // ListContainers lists running containers on the local node, optionally
@@ -361,10 +386,10 @@ func (s *Server) StartDrain() {
 //
 // Forward sidecars are torn down either way: they are containers on the node,
 // and a shutdown that left them running would leak one per forward the agent
-// ever served. They linger for muxIdleLinger by design, so "no connections" is
+// ever served. They linger after their last connection by design (see internal/muxpool), so "no connections" is
 // not the same as "nothing to clean up".
 func (s *Server) WaitForSessions(ctx context.Context) bool {
-	defer s.muxes.closeAll()
+	defer s.muxes.CloseAll()
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()

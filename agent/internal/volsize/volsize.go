@@ -1,7 +1,11 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package server
+// Package volsize is the agent's background volume-size cache: each volume's
+// on-disk size and reference count, so ListVolumes(with_size) and the reclaim
+// measurement answer from memory instead of running a du-style DiskUsage scan
+// per request.
+package volsize
 
 import (
 	"context"
@@ -13,17 +17,24 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// volumeSizeInterval is the periodic full-rescan interval. Volume sizes grow as
+// Docker is the part of the Docker client the cache uses: the disk-usage scan
+// and the volume event stream. *client.Client satisfies it.
+type Docker interface {
+	DiskUsage(ctx context.Context, options client.DiskUsageOptions) (client.DiskUsageResult, error)
+	Events(ctx context.Context, options client.EventsListOptions) client.EventsResult
+}
+
+// DefaultInterval is the periodic full-rescan interval. Volume sizes grow as
 // data is written without emitting any docker event, so a timer catches drift
 // between the reactive (create/destroy) refreshes.
-const volumeSizeInterval = 10 * time.Minute
+const DefaultInterval = 10 * time.Minute
 
-// volumeSizeCache holds each volume's on-disk size so ListVolumes(with_size)
+// Cache holds each volume's on-disk size so ListVolumes(with_size)
 // answers from memory instead of running a du-style DiskUsage scan per request
 // (that scan is what made the SIZE column slow). It is refreshed once at
 // startup, reactively on docker volume create/destroy events, and periodically.
-type volumeSizeCache struct {
-	docker   DockerClient
+type Cache struct {
+	docker   Docker
 	log      *slog.Logger
 	interval time.Duration
 
@@ -34,36 +45,38 @@ type volumeSizeCache struct {
 	ready      bool
 }
 
-func newVolumeSizeCache(docker DockerClient, log *slog.Logger, interval time.Duration) *volumeSizeCache {
+// New returns an empty cache. interval is the periodic rescan; zero or
+// negative uses DefaultInterval. Run starts it.
+func New(docker Docker, log *slog.Logger, interval time.Duration) *Cache {
 	if interval <= 0 {
-		interval = volumeSizeInterval
+		interval = DefaultInterval
 	}
-	return &volumeSizeCache{docker: docker, log: log, interval: interval, sizes: map[string]int64{}, refs: map[string]int64{}}
+	return &Cache{docker: docker, log: log, interval: interval, sizes: map[string]int64{}, refs: map[string]int64{}}
 }
 
-// get returns the cached sizes (treat as read-only; refresh swaps the whole
+// Get returns the cached sizes (treat as read-only; Refresh swaps the whole
 // map), when they were computed, and whether the cache has ever been populated.
-func (c *volumeSizeCache) get() (sizes map[string]int64, computedAt time.Time, ready bool) {
+func (c *Cache) Get() (sizes map[string]int64, computedAt time.Time, ready bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sizes, c.computedAt, c.ready
 }
 
-// usage returns sizes and reference counts together, for the reclaim
+// Usage returns sizes and reference counts together, for the reclaim
 // measurement: a volume with no references is what a volume prune removes. The
 // refcounts are as old as the last scan (container churn emits no volume
 // event), which is why a forced measurement refreshes the cache first.
-func (c *volumeSizeCache) usage() (sizes, refs map[string]int64, computedAt time.Time, ready bool) {
+func (c *Cache) Usage() (sizes, refs map[string]int64, computedAt time.Time, ready bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sizes, c.refs, c.computedAt, c.ready
 }
 
-// run scans once immediately, then refreshes on volume create/destroy events
+// Run scans once immediately, then refreshes on volume create/destroy events
 // (debounced so a burst like a prune triggers a single rescan) and on the
 // periodic ticker, until ctx is cancelled.
-func (c *volumeSizeCache) run(ctx context.Context) {
-	c.refresh(ctx)
+func (c *Cache) Run(ctx context.Context) {
+	c.Refresh(ctx)
 
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
@@ -95,9 +108,9 @@ func (c *volumeSizeCache) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.refresh(ctx)
+			c.Refresh(ctx)
 		case <-fire:
-			c.refresh(ctx)
+			c.Refresh(ctx)
 		case ev, ok := <-evCh:
 			if !ok {
 				evCh, errCh = c.subscribe(ctx)
@@ -122,17 +135,17 @@ func (c *volumeSizeCache) run(ctx context.Context) {
 	}
 }
 
-func (c *volumeSizeCache) subscribe(ctx context.Context) (<-chan events.Message, <-chan error) {
+func (c *Cache) subscribe(ctx context.Context) (<-chan events.Message, <-chan error) {
 	res := c.docker.Events(ctx, client.EventsListOptions{
 		Filters: make(client.Filters).Add("type", "volume"),
 	})
 	return res.Messages, res.Err
 }
 
-// refresh runs one DiskUsage scan and swaps in the new sizes. A failure is
+// Refresh runs one DiskUsage scan and swaps in the new sizes. A failure is
 // non-fatal: the previous cache is kept so a transient error does not blank the
 // SIZE column.
-func (c *volumeSizeCache) refresh(ctx context.Context) {
+func (c *Cache) Refresh(ctx context.Context) {
 	// Verbose is required: on API >= 1.52 the client only fills Volumes.Items
 	// (the per-volume UsageData) when it is set, and returns totals otherwise.
 	du, err := c.docker.DiskUsage(ctx, client.DiskUsageOptions{Volumes: true, Verbose: true})

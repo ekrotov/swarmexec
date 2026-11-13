@@ -71,9 +71,9 @@ func (s *Server) StreamInterceptor() grpc.StreamServerInterceptor {
 		if s.draining.Load() {
 			return status.Error(codes.Unavailable, "agent is shutting down; not accepting new "+g.noun)
 		}
-		release, err := s.streams.acquire()
+		release, err := s.streams.Acquire()
 		if err != nil {
-			s.log.Warn("stream refused: stream limit reached", "method", g.method, "in_use", s.streams.inUse())
+			s.log.Warn("stream refused: stream limit reached", "method", g.method, "in_use", s.streams.InUse())
 			return err
 		}
 		defer release()

@@ -82,7 +82,7 @@ with a connection pool pays it per pooled connection.
 **Started with one sidecar per connection.** It reused the existing streaming
 machinery almost entirely and was the smallest correct thing.
 
-**Now one sidecar per forward** (`agent/internal/server/forwardmux.go`,
+**Now one sidecar per forward** (`agent/internal/muxpool`,
 `internal/forwardmux`). The container start is paid once per (container, port)
 rather than once per TCP connection, and the sidecar lingers for a couple of
 minutes after its last connection so a browser reload or a reconnecting pool
