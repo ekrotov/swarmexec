@@ -74,14 +74,18 @@ func ResolveProxyJump(override string) string {
 // contextMetaValue reads a single Metadata key from a context's meta.json.
 func contextMetaValue(name, key string) string {
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(name)))
-	b, err := os.ReadFile(filepath.Join(configDir(), "contexts", "meta", digest, "meta.json"))
+	path := filepath.Join(configDir(), "contexts", "meta", digest, "meta.json")
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
 	var meta struct {
 		Metadata map[string]string `json:"Metadata"`
 	}
-	if json.Unmarshal(b, &meta) != nil {
+	if err := json.Unmarshal(b, &meta); err != nil {
+		// Still best-effort, but a broken file must not look like "no value".
+		clientlog.L().Warn("docker context metadata unreadable",
+			"context", name, "path", path, "err", err)
 		return ""
 	}
 	return meta.Metadata[key]
@@ -127,7 +131,8 @@ func List() ([]Context, error) {
 		if !e.IsDir() {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(configDir(), "contexts", "meta", e.Name(), "meta.json"))
+		path := filepath.Join(configDir(), "contexts", "meta", e.Name(), "meta.json")
+		b, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
@@ -137,7 +142,16 @@ func List() ([]Context, error) {
 				Host string `json:"Host"`
 			} `json:"Endpoints"`
 		}
-		if json.Unmarshal(b, &meta) != nil || meta.Name == "" {
+		// A context that cannot be read is left out of the list, like docker
+		// does — but said in the log, or it simply vanishes without a trace.
+		if err := json.Unmarshal(b, &meta); err != nil {
+			clientlog.L().Warn("docker context metadata unreadable; context skipped",
+				"path", path, "err", err)
+			continue
+		}
+		if meta.Name == "" {
+			clientlog.L().Warn("docker context metadata has no name; context skipped",
+				"path", path)
 			continue
 		}
 		out = append(out, Context{

@@ -103,26 +103,6 @@ func levelOf(ratio float64) usageLevel {
 	}
 }
 
-// worst returns the more severe of two levels — a container is as alarming as
-// its worst resource, so cpu and memory fold together this way, and so does a
-// service over its containers.
-func worst(a, b usageLevel) usageLevel {
-	if b > a {
-		return b
-	}
-	return a
-}
-
-// level is the container's overall level: the worse of cpu and memory, ignoring
-// a CPU reading that is not ready yet.
-func (u containerUsage) level() usageLevel {
-	lvl := levelOf(u.MemRatio)
-	if u.CPUReady {
-		lvl = worst(lvl, levelOf(u.CPURatio))
-	}
-	return lvl
-}
-
 // statsTimeout bounds one node's Stats call. The agent answers from memory, so
 // this only has to cover the dial and the round trip — and usage is decoration
 // on the view, never something worth making the operator wait for.
