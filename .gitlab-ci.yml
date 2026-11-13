@@ -31,13 +31,23 @@ variables:
   ALPINE_IMAGE: "alpine:3.24"
   GOPATH: "$CI_PROJECT_DIR/.gocache"
 
+# Which pipelines exist (GitLab's "merge request pipelines + default branch"
+# pattern):
+#   * a merge request       -> one MR pipeline per push to its source branch
+#   * the default branch    -> a branch pipeline (dev image, code navigation)
+#   * a tag                 -> a tag pipeline (semver tags release, see below)
+#   * Run pipeline (web UI) -> any branch, e.g. one that has no MR yet
+# A push to any other branch creates NO pipeline by itself. The old rule
+# ("branch pipeline unless $CI_OPEN_MERGE_REQUESTS") could not prevent the
+# duplicate: the push always lands before the MR is created, so every MR ran
+# twice on the same SHA (once as a branch pipeline, once as an MR pipeline).
+# Open the MR (a draft is fine) to get CI on a branch, or use Run pipeline.
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
-      when: never
-    - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "schedule"
 
 # A semantic-version tag: vMAJOR.MINOR.PATCH with an optional -prerelease
 # (the leading "v" is optional). Anchored so it can be reused in several jobs.
