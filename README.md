@@ -2,7 +2,7 @@
 
 **`docker exec`, logs and port-forward for any container in a Docker Swarm — from one terminal, without SSH to the node that runs it.**
 
-🌐 **Website and full documentation: [swarm-exec.cloud-surfers.net](https://swarm-exec.cloud-surfers.net)** — [docs](https://swarm-exec.cloud-surfers.net/docs) · [recipes](https://swarm-exec.cloud-surfers.net/examples) · [how it compares](https://swarm-exec.cloud-surfers.net/#compare) · [release notes](https://swarm-exec.cloud-surfers.net/releases)
+🌐 **Website and full documentation: [swarm-exec.cloud-surfers.net](https://swarm-exec.cloud-surfers.net)** — [docs](https://swarm-exec.cloud-surfers.net/docs) · [recipes](https://swarm-exec.cloud-surfers.net/examples) · [how it compares](https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives) · [release notes](https://swarm-exec.cloud-surfers.net/releases)
 
 ![swarmexec vs docker exec: instead of docker node ls → find the node → ssh node-3 → docker exec, just run `swarmexec exec web -- sh`](site/demo.gif)
 
@@ -81,7 +81,7 @@ The full documentation lives at **[swarm-exec.cloud-surfers.net/docs](https://sw
 In this repository:
 
 - [`docs/manual-setup.md`](docs/manual-setup.md) — deploying the agent by hand with your own CA, the agent and client flags, troubleshooting, production notes.
-- [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts; the short version is the [comparison table on the website](https://swarm-exec.cloud-surfers.net/#compare).
+- [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts; the short version is the [comparison on the website](https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives) (SSH, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels, kubectl).
 - [`DEVELOPMENT.md`](DEVELOPMENT.md) — building, tests, the documentation site, the release pipeline.
 - [`CONTRACT.md`](CONTRACT.md) and [`proto/swarmexec.proto`](proto/swarmexec.proto) — the wire protocol; [`agent/README.md`](agent/README.md), [`client/README.md`](client/README.md) — the two components' internals.
 

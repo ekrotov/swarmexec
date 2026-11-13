@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Swarm exec and port-forward: swarmexec vs. alternatives</title>
+  <meta name="description" content="Exec into a container on another Docker Swarm node, port-forward unpublished ports: SSH, docker contexts, Portainer, Swarmpit, lazydocker and kubectl compared.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="Docker Swarm exec and port-forward: swarmexec vs. SSH, Portainer, Swarmpit, lazydocker and kubectl">
+  <meta property="og:description" content="Exec into a container on another Swarm node, forward a port nobody published, follow every replica's logs — every way to do it, side by side, including where swarmexec is the wrong pick.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Docker Swarm exec and port-forward: swarmexec vs. the alternatives">
+  <meta name="twitter:description" content="Exec into a container on another Swarm node, forward a port nobody published, follow every replica's logs — every way to do it, side by side.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Docker Swarm exec and port-forward: swarmexec vs. the alternatives",
+        "description": "How to exec into a container on another Docker Swarm node and port-forward to an unpublished port, compared across SSH + docker exec, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels, kubectl/k9s and swarmexec.",
+        "url": "https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives",
+        "inLanguage": "en",
+        "dateModified": "2026-11-13",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": { "@type": "Organization", "name": "Cloud Surfers GmbH", "url": "https://www.cloud-surfers.com/" },
+        "about": { "@type": "SoftwareApplication", "name": "swarmexec", "url": "https://swarm-exec.cloud-surfers.net/" }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "swarmexec", "item": "https://swarm-exec.cloud-surfers.net/" },
+          { "@type": "ListItem", "position": 2, "name": "Compared", "item": "https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is there a docker service exec command?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. Docker has no docker service exec; the request (moby/moby#27552) has been open since October 2016. docker exec only reaches containers on the daemon you are talking to, so for a task on another node you have to reach that node's daemon — over SSH, with a docker context per node, or through an agent such as Portainer's or swarmexec's." }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I exec into a container on another node in Docker Swarm?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Without extra tools: find the node with docker service ps, SSH to it, find the container with docker ps and run docker exec there. With swarmexec, which runs a small agent on every node: swarmexec exec web -- sh, or swarmexec exec web.2 -- sh for a specific replica." }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I port-forward to a Docker Swarm service without publishing the port?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Docker has no port-forward command. The usual workarounds are publishing the port temporarily with docker service update --publish-add, or a socat helper on the service's overlay network reached through an SSH tunnel. swarmexec port-forward db 5432 listens on 127.0.0.1:5432 and forwards to port 5432 in one task of db, without changing the service or publishing anything." }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the kubectl exec equivalent for Docker Swarm?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Docker Swarm has none built in. swarmexec follows the kubectl model: swarmexec exec for kubectl exec, swarmexec port-forward for kubectl port-forward, swarmexec logs -f for kubectl logs -f, and swarmexec ui as a k9s-style terminal UI." }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need SSH access to every Swarm node to use swarmexec?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. swarmexec asks the manager which node runs a task and connects to the agent on that node, authenticated with mutual TLS or a connection-bound shared secret. If your Docker context is an ssh:// one, both the manager and the agent traffic go through that one SSH host." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does swarmexec need anything installed on the cluster?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes: one agent per node, deployed as a global Swarm service by swarmexec init and removed again by swarmexec down. The agent mounts the node's Docker socket. If you want nothing on the cluster and already have SSH to every node, an agentless tool such as d4s or plain SSH is the better fit." }
+          },
+          {
+            "@type": "Question",
+            "name": "Is swarmexec a Portainer alternative?",
+            "acceptedAnswer": { "@type": "Answer", "text": "For operators who live in a terminal, for exec, logs and port-forward: yes. It is not a web UI, so for colleagues who need a browser Portainer remains the better choice. The two can run side by side." }
+          },
+          {
+            "@type": "Question",
+            "name": "Is swarmexec free?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is open source under the Apache License 2.0, with no node limit and no paid edition." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="docs.html">Docs</a>
+      <a href="examples.html">Examples</a>
+      <a class="rail-link" href="releases.html">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="more"><a href="/">swarmexec</a> › Compared</p>
+      <h1>Swarm exec, compared<span class="cursor">_</span></h1>
+      <p class="tagline">docker exec, logs and port-forward on another Swarm node — every way to do it.</p>
+
+      <p class="lead">
+        Docker has no <code>docker service exec</code>. The request has been open since
+        October 2016 (<a href="https://github.com/moby/moby/issues/27552">moby#27552</a>), and
+        the reason is architectural: the manager knows <em>where</em> every task runs, but a
+        container's shell, its logs, its unpublished ports and its volumes live on one node,
+        and only that node's daemon can reach them. Every tool on this page is a different
+        answer to "how do I get to that daemon". This page compares them honestly — including
+        where swarmexec, the project this site belongs to, is the wrong pick.
+      </p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#exec-other-node">Exec into a container on another node</a></li>
+          <li><a href="#port-forward">Port-forward without publishing</a></li>
+          <li><a href="#kubectl-equivalent">The kubectl exec equivalent</a></li>
+          <li><a href="#logs">Logs of every replica</a></li>
+          <li><a href="#matrix">Side by side</a></li>
+          <li><a href="#tools">Tool by tool</a></li>
+          <li><a href="#wrong-pick">When swarmexec is the wrong pick</a></li>
+          <li><a href="#faq">FAQ</a></li>
+        </ol>
+      </div>
+
+      <h2 id="exec-other-node">How do I exec into a container on another node in Docker Swarm?</h2>
+      <p>
+        <code>docker exec</code> talks to one daemon. Pointed at a manager, it sees the
+        manager's own containers and nothing else, so a task scheduled on <code>node-3</code>
+        is out of reach. The built-in way is a lookup, an SSH session and a second lookup:
+      </p>
+      <div class="prompt"><span class="c">$</span> docker service ps web -f desired-state=running   <span class="o"># which node runs it?</span>
+<span class="c">$</span> ssh node-3
+<span class="c">node-3$</span> docker ps -f name=web.2                      <span class="o"># which container is it?</span>
+<span class="c">node-3$</span> docker exec -it 3f9a2b1c9e04 sh</div>
+      <p>
+        A <a href="https://docs.docker.com/engine/manage-resources/contexts/">docker context</a>
+        per node (<code>docker context create node-3 --docker host=ssh://ops@node-3</code>)
+        saves the interactive SSH step, but not the lookups — and you still need an SSH account
+        on every node whose user may use the Docker socket, which on that node is as good as root.
+        With swarmexec the client does the lookup against the manager and connects to a small
+        agent on the node that runs the task:
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec exec web -- sh                 <span class="o"># a task of the service "web"</span>
+<span class="c">$</span> swarmexec exec web.2 -- sh               <span class="o"># exactly replica 2</span>
+<span class="c">$</span> swarmexec exec -u root -w /app web -- ls -la</div>
+      <p>
+        With no command it opens <code>/bin/sh</code>; the remote command's exit code is passed
+        through unchanged, so it works in scripts. A target can be a service, a
+        <code>service.slot</code>, a task id or a container id — see
+        <a href="docs.html#targets">target selectors</a> and the
+        <a href="examples.html#exec-replica">replica recipe</a>.
+      </p>
+
+      <h2 id="port-forward">How do I port-forward to a Docker Swarm service without publishing the port?</h2>
+      <p>
+        Docker has no port-forward command, so a database that is only on an overlay network
+        is reachable from your laptop in one of three ways:
+      </p>
+      <ul>
+        <li><strong>Publish it</strong> —
+          <code>docker service update --publish-add 5432:5432 db</code>. It changes the
+          service's spec, and the routing mesh opens the port on every node until
+          you remove it again.</li>
+        <li><strong>A socat helper and an SSH tunnel</strong> — run a
+          <code>socat</code> container or service on the service's network that relays to
+          <code>db:5432</code>, then <code>ssh -L</code> to the node where the helper listens.
+          Nothing in the stack changes, but it is several steps, a container to clean up
+          afterwards, and an SSH account on that node. A container joins a stack's overlay network only
+          if the network was declared <code>attachable</code>; a helper <em>service</em> does not
+          need that.</li>
+        <li><strong>A forward through an agent</strong> — what <code>kubectl port-forward</code>
+          does on Kubernetes, and what swarmexec does on Swarm:</li>
+      </ul>
+      <div class="prompt"><span class="c">$</span> swarmexec port-forward db 5432          <span class="o"># 127.0.0.1:5432 → port 5432 in one task of db</span>
+<span class="c">$</span> swarmexec pf web.2 9090:8080            <span class="o"># local 9090 → 8080 in replica 2</span></div>
+      <p>
+        The forward is TCP, bound to <code>127.0.0.1</code> unless you pass
+        <code>--address</code> (anything else prints a warning that the port is reachable from
+        your network), and it goes to exactly <strong>one</strong> task — a forward that
+        load-balanced across replicas would make debugging misleading. Nothing is published
+        and the service spec is not touched. Details:
+        <a href="docs.html#port-forward"><code>port-forward</code></a>,
+        <a href="examples.html#forward-db">forward a database port</a>.
+      </p>
+
+      <h2 id="kubectl-equivalent">What is the kubectl exec equivalent for Docker Swarm?</h2>
+      <p>
+        Kubernetes has the model Swarm is missing: the API server knows where a pod runs, and
+        the kubelet on that node carries the stream, so <code>kubectl exec</code>,
+        <code>kubectl logs</code> and <code>kubectl port-forward</code> work against any pod
+        without SSH. swarmexec copies that model onto Swarm, with the manager in the API
+        server's role and a per-node agent in the kubelet's:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Kubernetes</th><th>Docker Swarm, built in</th><th>swarmexec</th></tr></thead>
+        <tbody>
+          <tr><td><code>kubectl exec -it web-7d9f -- sh</code></td><td>SSH to the node, then <code>docker exec</code></td><td><code>swarmexec exec web.2 -- sh</code></td></tr>
+          <tr><td><code>kubectl port-forward svc/db 5432</code></td><td>— (publish, or socat + SSH tunnel)</td><td><code>swarmexec port-forward db 5432</code></td></tr>
+          <tr><td><code>kubectl logs -f -l app=web</code></td><td><code>docker service logs -f web</code></td><td><code>swarmexec logs -f web</code></td></tr>
+          <tr><td><code>kubectl get pods -o wide</code></td><td><code>docker service ps web</code></td><td><code>swarmexec ps web</code></td></tr>
+          <tr><td><code>kubectl config use-context prod</code></td><td><code>docker context use prod</code></td><td><code>swarmexec context use prod</code>, or <code>--context prod</code></td></tr>
+          <tr><td><code>k9s</code></td><td>—</td><td><code>swarmexec ui</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The port spelling is the same as <code>kubectl port-forward</code>'s: <code>8080</code>
+        for the same port on both sides, <code>9090:8080</code> for local:remote. As with
+        <code>kubectl port-forward svc/…</code>, a service target picks one task.
+      </p>
+
+      <h2 id="logs">Logs of every replica, and of a whole stack</h2>
+      <p>
+        This is the one job Swarm does well out of the box: <code>docker service logs -f web</code>
+        on a manager streams every replica, from every node, with nothing deployed. If that is all
+        you need, it is enough. swarmexec adds what it lacks for day-to-day debugging:
+      </p>
+      <ul>
+        <li>several services or a whole stack in one stream — <code>swarmexec logs -f api worker db</code>, <code>swarmexec logs -f --stack shop</code>;</li>
+        <li>format-aware filtering — <code>--log-format auto|classic|json|logfmt|gelf|raw</code>, <code>--min-level warn</code>, <code>--grep</code>;</li>
+        <li>for a service that crash-loops and has nothing running, the last exited container of each slot, with how it ended.</li>
+      </ul>
+      <p>See <a href="docs.html#logs"><code>logs</code></a> and <a href="examples.html#follow-logs">follow logs across a whole stack</a>.</p>
+
+      <h2 id="matrix">Side by side</h2>
+      <p>
+        <span class="tc-green tc-b">yes</span> · <span class="tc-amber tc-b">partly</span> ·
+        <span class="tc-red tc-b">no</span>. "On the cluster" is what has to run there;
+        "operator access" is what a person needs before they can use it.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Tool</th><th>Exec into a task on another node</th><th>Port-forward, nothing published</th><th>Logs of all replicas</th><th>On the cluster</th><th>Operator access</th><th>Interface · licence</th></tr></thead>
+        <tbody>
+          <tr><td><strong>swarmexec</strong></td><td><span class="tc-green tc-b">yes</span> by service, slot, task or container</td><td><span class="tc-green tc-b">yes</span> to one task, loopback</td><td><span class="tc-green tc-b">yes</span> also several services, a stack</td><td>one agent per node (global service, Docker socket)</td><td>client certificate or shared secret; no node account</td><td>CLI + TUI · Apache-2.0</td></tr>
+          <tr><td>SSH + <code>docker exec</code></td><td><span class="tc-amber tc-b">partly</span> after finding the node</td><td><span class="tc-red tc-b">no</span> publish, or a helper</td><td><span class="tc-green tc-b">yes</span> <code>docker service logs</code></td><td>nothing</td><td>SSH + Docker socket on every node</td><td>CLI · part of Docker</td></tr>
+          <tr><td><code>docker -H ssh://</code>, contexts</td><td><span class="tc-amber tc-b">partly</span> one context per node</td><td><span class="tc-red tc-b">no</span></td><td><span class="tc-green tc-b">yes</span> via the manager</td><td>nothing</td><td>SSH + Docker socket on every node</td><td>CLI · part of Docker</td></tr>
+          <tr><td>socat + SSH tunnel</td><td>—</td><td><span class="tc-amber tc-b">partly</span> helper container, tunnel, cleanup</td><td>—</td><td>a helper while it runs</td><td>SSH to a node</td><td>CLI · —</td></tr>
+          <tr><td>Portainer</td><td><span class="tc-green tc-b">yes</span> console in the browser</td><td><span class="tc-red tc-b">no</span> not documented for Swarm</td><td><span class="tc-green tc-b">yes</span> in the browser</td><td>server + agent per node</td><td>Portainer users; fine-grained RBAC in Business Edition</td><td>web · CE zlib, BE commercial</td></tr>
+          <tr><td>Swarmpit</td><td><span class="tc-red tc-b">no</span> requests closed in 2019</td><td><span class="tc-red tc-b">no</span></td><td><span class="tc-green tc-b">yes</span> in the browser</td><td>app stack + agent per node</td><td>Swarmpit users</td><td>web · EPL-1.0</td></tr>
+          <tr><td>lazydocker</td><td><span class="tc-amber tc-b">partly</span> containers of the one host it talks to</td><td><span class="tc-red tc-b">no</span></td><td><span class="tc-amber tc-b">partly</span> that host's containers</td><td>nothing</td><td>access to that host's Docker API</td><td>TUI · MIT</td></tr>
+          <tr><td>d4s</td><td><span class="tc-amber tc-b">partly</span> over SSH</td><td><span class="tc-green tc-b">yes</span> over SSH</td><td><span class="tc-green tc-b">yes</span></td><td>nothing</td><td>SSH to the nodes</td><td>TUI · Apache-2.0</td></tr>
+          <tr><td><code>kubectl</code> / k9s</td><td colspan="3"><span class="tc-grey">Kubernetes only — the reference model: exec, port-forward and logs against any pod via the API server</span></td><td>built into Kubernetes</td><td>kubeconfig + Kubernetes RBAC</td><td>CLI / TUI · Apache-2.0</td></tr>
+        </tbody>
+      </table></div>
+      <p class="more">
+        Third-party entries are checked against each project's own repository and documentation
+        on 2026-11-13 (and the <a href="/#compare">landing page's table</a> on 2026-10-27). Something
+        out of date? <a href="https://github.com/ekrotov/swarmexec/issues">Open an issue</a>.
+      </p>
+
+      <h2 id="tools">Tool by tool</h2>
+
+      <h3 id="vs-ssh">swarmexec vs. SSH and <code>docker exec</code></h3>
+      <p>
+        Plain SSH needs nothing deployed and nothing new to trust, and for a two-node cluster
+        with one operator it may be all you need. It scales badly in two directions: every
+        exec is two lookups and a login, and every person who needs a shell needs an account on
+        every node — with access to the Docker socket, which is root on that node. swarmexec
+        replaces that with one door per node, the agent, which knows who came in (the
+        certificate's CN, or the operator name with the shared secret), writes an audit line per
+        request, and can refuse per action with a <a href="docs.html#policy">policy file</a>
+        (no <code>exec</code> as root, no forwards to the database ports, …).
+      </p>
+
+      <h3 id="vs-docker-context">swarmexec vs. <code>docker -H ssh://</code> and docker contexts</h3>
+      <p>
+        A context makes a remote daemon feel local, and it is the right tool for one host. On a
+        Swarm it is one context per node, chosen by hand after <code>docker service ps</code>
+        told you the node; a context on the manager gives you <code>docker service</code> and
+        <code>docker service logs</code>, but its <code>docker exec</code> still only reaches the
+        manager's own containers. swarmexec takes the context you already have — including an
+        <code>ssh://</code> one — for the manager, and tunnels the agent traffic over the same
+        SSH host when the nodes are not reachable directly. One context per cluster, not per node:
+        see <a href="docs.html#context">Docker context &amp; SSH</a>.
+      </p>
+
+      <h3 id="vs-portainer">swarmexec vs. Portainer</h3>
+      <p>
+        <a href="https://www.portainer.io/">Portainer</a> solves the same node-local problem the
+        same way — an agent on every node — and puts a web UI on top: a console into containers
+        on any node, logs, stacks, users and teams, for people who do not live in a terminal. It
+        is the better choice when colleagues need a browser. It has no port-forward to your
+        workstation for Swarm containers that we could find documented, and fine-grained RBAC and
+        activity logs are in the commercial Business Edition. swarmexec is terminal-first
+        (scriptable CLI, exit codes for CI, a TUI), Apache-2.0 at any size, and adds a
+        <a href="docs.html#stackfile">content diff of a stack file against what is deployed</a>
+        and a <a href="docs.html#stackdeploy">security check before <code>stack deploy</code></a>.
+        The two coexist fine.
+      </p>
+
+      <h3 id="vs-swarmpit">swarmexec vs. Swarmpit</h3>
+      <p>
+        <a href="https://swarmpit.io">Swarmpit</a> is a web UI made for Swarm: services, stacks,
+        nodes, logs and resource stats in the browser, with its own agent per node. It does not
+        open a shell in a container — the feature requests for a console
+        (<a href="https://github.com/swarmpit/swarmpit/issues/259">#259</a>,
+        <a href="https://github.com/swarmpit/swarmpit/issues/438">#438</a>) were closed in 2019
+        without one — and it has no port-forward. If you want a Swarm dashboard, it fits; if you
+        need to get <em>into</em> a task, it does not, and swarmexec is complementary.
+      </p>
+
+      <h3 id="vs-lazydocker">swarmexec vs. lazydocker</h3>
+      <p>
+        <a href="https://github.com/jesseduffield/lazydocker">lazydocker</a> is a well-loved
+        terminal UI "for both docker and docker-compose": containers, images, volumes and logs of
+        the Docker host it talks to. That is its scope — Swarm services, their tasks on other
+        nodes and several clusters at once are not what it is built around. On a single host or a
+        Compose project it is excellent; on a Swarm, <code>swarmexec ui</code> is the
+        cluster-wide equivalent: stacks and services, volumes, networks, secrets, configs and
+        nodes across the whole Swarm, and several clusters in one session
+        (<a href="docs.html#tui">the TUI</a>).
+      </p>
+
+      <h3 id="vs-kubectl">swarmexec and kubectl / k9s</h3>
+      <p>
+        Not alternatives — <code>kubectl</code> and
+        <a href="https://github.com/derailed/k9s">k9s</a> are Kubernetes tools — but the reference
+        swarmexec was built against. If you come from Kubernetes, the
+        <a href="#kubectl-equivalent">table above</a> is the whole translation; the TUI's
+        navigation is k9s-style (tabs, <kbd>/</kbd> to filter, one key per action). What
+        Kubernetes gets from the kubelet for free, Swarm needs an agent for, and that is the one
+        thing swarmexec deploys.
+      </p>
+
+      <h3 id="vs-socat">swarmexec vs. socat and SSH tunnels</h3>
+      <p>
+        A socat relay on the overlay network plus <code>ssh -L</code> works with nothing
+        but Docker and SSH, and for a one-off it is fine. Each time it is a helper to start on the
+        right network, a tunnel to the right node, and a helper to remove afterwards — and the
+        service name in the relay load-balances across replicas, so you cannot pick which replica
+        you are talking to. <code>swarmexec port-forward</code> is one command, to one chosen task,
+        bound to loopback, stopped with <kbd>Ctrl-C</kbd>. Under the hood it uses a helper too — the
+        agent runs a short-lived sidecar in the task's network namespace — but the agent starts it
+        and removes it on its own, about two minutes after the last connection closes
+        (<a href="docs.html#port-forward">how it works</a>). The TUI's Forwards tab keeps several
+        forwards open at once (<a href="docs.html#tui-forwards">Forwards tab</a>).
+      </p>
+
+      <h3 id="vs-d4s-swarmcli">The close relatives: d4s and swarmcli</h3>
+      <p>
+        Two Go TUIs for Swarm are close in spirit. <a href="https://github.com/jr-k/d4s">d4s</a>
+        (Apache-2.0) is deliberately agentless and reaches the daemons over SSH — shell, logs and
+        port-forward with nothing deployed; if you have SSH to every node and want nothing on the
+        cluster, it is the better fit. <a href="https://swarmcli.io">swarmcli</a> is open core:
+        its Business Edition adds a per-node agent with shell, port-forward and per-user access
+        by client certificate. swarmexec offers those capabilities wholly under Apache-2.0 with
+        no node limit; the full write-up is in
+        <a href="https://github.com/ekrotov/swarmexec/blob/main/docs/related-work.md">docs/related-work.md</a>.
+      </p>
+
+      <h2 id="wrong-pick">When swarmexec is the wrong pick</h2>
+      <ul>
+        <li><strong>You want nothing deployed on the cluster.</strong> swarmexec needs one agent per
+          node, and that agent mounts the Docker socket — the same thing its own security scan
+          flags in your services. It is fenced (authenticated requests only, an audit log, an
+          optional policy) and <code>swarmexec down</code> removes it, but it is there. SSH or d4s
+          deploy nothing.</li>
+        <li><strong>Your colleagues need a web UI.</strong> swarmexec is a CLI and a TUI. Use
+          Portainer or Swarmpit for the browser.</li>
+        <li><strong>You run Kubernetes.</strong> Use <code>kubectl</code> and k9s.</li>
+        <li><strong>You only ever read logs.</strong> <code>docker service logs</code> already
+          covers every replica on every node.</li>
+      </ul>
+
+      <h2 id="faq">FAQ</h2>
+
+      <h3>Is there a <code>docker service exec</code> command?</h3>
+      <p>
+        No. Docker has no <code>docker service exec</code>; the request
+        (<a href="https://github.com/moby/moby/issues/27552">moby/moby#27552</a>) has been open
+        since October 2016. <code>docker exec</code> only reaches containers on the daemon you
+        are talking to, so for a task on another node you have to reach that node's daemon — over
+        SSH, with a docker context per node, or through an agent such as Portainer's or
+        swarmexec's.
+      </p>
+
+      <h3>How do I exec into a container on another node in Docker Swarm?</h3>
+      <p>
+        Without extra tools: find the node with <code>docker service ps</code>, SSH to it, find
+        the container with <code>docker ps</code> and run <code>docker exec</code> there. With
+        swarmexec, which runs a small agent on every node: <code>swarmexec exec web -- sh</code>,
+        or <code>swarmexec exec web.2 -- sh</code> for a specific replica.
+      </p>
+
+      <h3>How do I port-forward to a Docker Swarm service without publishing the port?</h3>
+      <p>
+        Docker has no port-forward command. The usual workarounds are publishing the port
+        temporarily with <code>docker service update --publish-add</code>, or a socat helper on the
+        service's overlay network reached through an SSH tunnel. <code>swarmexec port-forward db 5432</code>
+        listens on <code>127.0.0.1:5432</code> and forwards to port 5432 in one task of
+        <code>db</code>, without changing the service or publishing anything.
+      </p>
+
+      <h3>What is the kubectl exec equivalent for Docker Swarm?</h3>
+      <p>
+        Docker Swarm has none built in. swarmexec follows the kubectl model:
+        <code>swarmexec exec</code> for <code>kubectl exec</code>, <code>swarmexec port-forward</code>
+        for <code>kubectl port-forward</code>, <code>swarmexec logs -f</code> for
+        <code>kubectl logs -f</code>, and <code>swarmexec ui</code> as a k9s-style terminal UI.
+      </p>
+
+      <h3>Do I need SSH access to every Swarm node to use swarmexec?</h3>
+      <p>
+        No. swarmexec asks the manager which node runs a task and connects to the agent on that
+        node, authenticated with mutual TLS or a connection-bound shared secret. If your Docker
+        context is an <code>ssh://</code> one, both the manager and the agent traffic go through
+        that one SSH host.
+      </p>
+
+      <h3>Does swarmexec need anything installed on the cluster?</h3>
+      <p>
+        Yes: one agent per node, deployed as a global Swarm service by
+        <code>swarmexec init</code> and removed again by <code>swarmexec down</code>. The agent
+        mounts the node's Docker socket. If you want nothing on the cluster and already have SSH
+        to every node, an agentless tool such as d4s or plain SSH is the better fit.
+      </p>
+
+      <h3>Is swarmexec a Portainer alternative?</h3>
+      <p>
+        For operators who live in a terminal, for exec, logs and port-forward: yes. It is not a
+        web UI, so for colleagues who need a browser Portainer remains the better choice. The two
+        can run side by side.
+      </p>
+
+      <h3>Is swarmexec free?</h3>
+      <p>
+        Yes. It is open source under the Apache License 2.0, with no node limit and no paid
+        edition.
+      </p>
+
+      <div class="note">
+        <strong>Try it:</strong> <code>curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh</code>,
+        then <code>swarmexec --context prod init</code> — see
+        <a href="docs.html#quickstart">Quick start</a>, the <a href="examples.html">recipes</a>,
+        or the source on <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>.
+      </div>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="docs.html">documentation</a> · <a href="examples.html">recipes</a> ·
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">source on GitHub</a> · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>
