@@ -37,9 +37,11 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
 - The agent authenticates the client via its client certificate. The client
   certificate's Common Name (CN) is the operator identity used for
   authorization and audit.
-- The agent authorizes each exec request before starting it (authorization
-  policy is defined in the agent requirements; default policy = allow any cert
-  signed by the trusted CA).
+- The agent authorizes each request (exec, logs, port-forward, volume, image,
+  stats and prune actions) before starting it. Without a policy file the
+  default is to allow any authenticated client; with `-policy-file` (§8) the
+  rule file defined in `internal/policy` decides per action, identity,
+  service, port and exec user.
 - Default agent port: **9443** (gRPC, TLS).
 
 ### 2.1 Shared-secret authentication (self-signed agents)
@@ -315,6 +317,10 @@ that send the live read buffer are non-conformant.
   from that one package, so they cannot report different values, and it is not
   a build flag — only the binary's release version is injected at build time.
   `doctor` compares the agents' value to the client's by exact equality.
+- The `Version` RPC deliberately bypasses the Authorizer: it is not a policy
+  action and is answered to every caller that passed transport authentication
+  (mTLS or the shared secret), so `doctor` and skew detection work even for an
+  identity a policy denies everything else, including a `deny: ["*"]` rule.
 - Both binaries SHOULD expose `--version` and log the protocol/proto version on
   startup.
 

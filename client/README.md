@@ -20,15 +20,14 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
 
 ## Install
 
-Pre-built static binaries are produced for `linux/amd64`, `linux/arm64`, and
-`darwin/arm64`.
+Pre-built static binaries are produced for `linux/amd64`, `linux/arm64`,
+`darwin/amd64`, `darwin/arm64` and `windows/amd64`.
 
 ```sh
-# from a release archive
-tar xzf swarmexec_<version>_linux_amd64.tar.gz
-install -m 0755 swarmexec /usr/local/bin/
+# from a release (bare binaries, no archive)
+install -m 0755 swarmexec-linux-amd64 /usr/local/bin/swarmexec
 
-# or build from source (Go 1.22+)
+# or build from source (the Go version go.mod pins, see DEVELOPMENT.md)
 make build           # -> ./bin/swarmexec
 ```
 

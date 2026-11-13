@@ -147,3 +147,12 @@ func TestServiceParentAndNode(t *testing.T) {
 		t.Error("container leaf should not be a service node")
 	}
 }
+
+// serviceParent returns the service node that owns leaf, or nil. tview.TreeNode
+// exposes no parent pointer, so we scan the (shallow, two-level) tree.
+func serviceParent(root, leaf *tview.TreeNode) *tview.TreeNode {
+	if p := parentOf(root, leaf); p != nil && isServiceNode(p) {
+		return p
+	}
+	return nil
+}

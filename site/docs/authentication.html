@@ -163,6 +163,8 @@
         exec <strong>users</strong> and — with client certificates only — operator
         <strong>identities</strong>. Within a rule every condition must hold; the first rule
         that matches decides, and <code>default</code> (required) covers the rest.
+        The agent's version probe is not an action and is never refused by a policy,
+        so <code>doctor</code> can still report an agent's version to a denied identity.
       </p>
       <div class="prompt"><span class="o"># policy.yaml — the first rule that matches decides; "default" when none does</span>
 default: allow

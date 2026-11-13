@@ -44,6 +44,7 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	if err != nil {
 		return err
 	}
+	defer s.trackStream()()
 
 	// A TTY container's log stream is raw; a non-TTY one is stdcopy-multiplexed.
 	tty := false

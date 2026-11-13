@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/auth"
 	"swarmexec/internal/pb"
@@ -244,15 +242,8 @@ func (s *Server) measureReclaim(ctx context.Context, until time.Duration) ([]*pb
 // ReclaimStats reports what a prune would free on this node, plus its prune
 // schedule and the last scheduled run.
 func (s *Server) ReclaimStats(ctx context.Context, req *pb.ReclaimStatsRequest) (*pb.ReclaimStatsResponse, error) {
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: "reclaim.read", Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if _, err := s.authorizeUnary(ctx, auth.Request{Action: "reclaim.read"}); err != nil {
+		return nil, err
 	}
 
 	out := &pb.ReclaimStatsResponse{}

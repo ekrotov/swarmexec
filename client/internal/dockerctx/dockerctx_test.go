@@ -9,9 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/client"
+
+	"swarmexec/client/internal/clientlog"
 )
 
 func TestList(t *testing.T) {
@@ -178,5 +181,35 @@ func TestResolveName_MatchesResolveHost(t *testing.T) {
 				t.Errorf("Current() = %q, want the stored pk", Current())
 			}
 		})
+	}
+}
+
+// A corrupt meta.json still drops that context from the list (as docker does),
+// but leaves a warning in the client log instead of vanishing silently.
+func TestList_CorruptMetaIsWarned(t *testing.T) {
+	ring, err := clientlog.Init("warn", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	isolate(t, dir)
+	writeContext(t, dir, "pk", "ssh://root@docker1")
+	bad := filepath.Join(dir, "contexts", "meta", "broken")
+	if err := os.MkdirAll(bad, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, "meta.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 2 {
+		t.Fatalf("contexts = %+v, want default + pk", cs)
+	}
+	logged := strings.Join(ring.Lines(), "\n")
+	if !strings.Contains(logged, "docker context metadata unreadable") || !strings.Contains(logged, bad) {
+		t.Errorf("no warning for the corrupt context; log = %q", logged)
 	}
 }

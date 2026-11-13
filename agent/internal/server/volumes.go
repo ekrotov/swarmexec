@@ -20,15 +20,8 @@ import (
 // each volume's on-disk size via the docker disk-usage endpoint (du-style; can
 // be slow), which is why it's opt-in.
 func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*pb.ListVolumesResponse, error) {
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{Action: "volume.list", Identity: identity})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if _, err := s.authorizeUnary(ctx, auth.Request{Action: "volume.list"}); err != nil {
+		return nil, err
 	}
 
 	resp, err := s.docker.VolumeList(ctx, client.VolumeListOptions{})
@@ -76,19 +69,12 @@ func (s *Server) RemoveVolume(ctx context.Context, req *pb.RemoveVolumeRequest) 
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "RemoveVolumeRequest requires name")
 	}
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{
-		Action:   "volume.remove",
-		Identity: identity,
-		Volume:   req.GetName(),
+	identity, err := s.authorizeUnary(ctx, auth.Request{
+		Action: "volume.remove",
+		Volume: req.GetName(),
 	})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if err != nil {
+		return nil, err
 	}
 
 	_, err = s.docker.VolumeRemove(ctx, req.GetName(), client.VolumeRemoveOptions{Force: req.GetForce()})
@@ -109,19 +95,12 @@ func (s *Server) CreateVolume(ctx context.Context, req *pb.CreateVolumeRequest) 
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolumeRequest requires name")
 	}
-	identity, err := s.identityFn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "client identity unavailable: %v", err)
-	}
-	decision := s.authz.Authorize(ctx, auth.Request{
-		Action:   "volume.create",
-		Identity: identity,
-		Volume:   req.GetName(),
+	identity, err := s.authorizeUnary(ctx, auth.Request{
+		Action: "volume.create",
+		Volume: req.GetName(),
 	})
-	s.audit.AuthDecision(identity, "", "", decision.Allow, decision.Reason)
-	if !decision.Allow {
-		s.metrics.AuthDenied()
-		return nil, status.Errorf(codes.PermissionDenied, "authorization denied: %s", decision.Reason)
+	if err != nil {
+		return nil, err
 	}
 
 	created, err := s.docker.VolumeCreate(ctx, client.VolumeCreateOptions{

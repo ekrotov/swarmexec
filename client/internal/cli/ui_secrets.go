@@ -76,6 +76,10 @@ func (u *ui) selectedSecret() (swarmSecret, bool) {
 	return selectedRow(sectable, u.secs)
 }
 
+// showSecretDetail shows a secret's metadata and the services/containers that
+// use it. The value is deliberately absent: the Docker API never returns it,
+// and the overlay says so. Usage (services with their running containers)
+// needs a task lookup, so it fills in lazily after the overlay is up.
 func (u *ui) showSecretDetail(s swarmSecret) {
 	app, pages, dcli, ctx, sectable := u.app, u.pages, u.dcli, u.ctx, u.sectable
 	ts := func(t time.Time) string {

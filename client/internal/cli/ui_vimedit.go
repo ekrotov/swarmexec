@@ -844,13 +844,6 @@ func (e *vimEditor) insertAt(s string) {
 	e.render()
 }
 
-// markSaved makes the current text the clean state (after a successful :w
-// that keeps the editor open).
-func (e *vimEditor) markSaved() {
-	e.initial = e.ta.GetText()
-	e.render()
-}
-
 // --- text helpers (byte offsets into the whole text) ---
 
 // lineBounds returns the start and end (the newline, or len) of pos's line.

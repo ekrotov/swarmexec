@@ -133,7 +133,10 @@ type clusterState struct {
 
 	// where the operator was standing in this cluster. Restored on a switch
 	// back, which is the whole point of keeping the state at all.
-	filter    string // container-tree "/" query
+	// filter is the container-tree "/" query; empty shows everything. A
+	// candidate matches when it is a substring of its service, container id or
+	// node (case-insensitive).
+	filter    string
 	volFilter string // volumes "/" query
 	pos       treePos
 	// restorePos makes the next tree render take its cursor and folds from pos
@@ -145,6 +148,8 @@ type clusterState struct {
 	clusterText string // last cluster-probe summary for the footer
 
 	// volumes tab
+	// selectedVols holds the volumes marked with space for a bulk delete, keyed
+	// by name so the selection survives sorting and re-render.
 	selectedVols map[string]bool
 	// shownVols is the filtered + sorted subset currently displayed; it is what
 	// selectedVolume() and "select all" index.

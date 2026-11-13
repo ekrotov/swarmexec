@@ -13,10 +13,22 @@ LDFLAGS    := -s -w -X main.version=$(VERSION)
 AGENT_LDFLAGS := -s -w -X swarmexec/agent/internal/version.Version=$(VERSION)
 AGENT_IMAGE   ?= swarmexec-agent:$(VERSION)
 
-# Operator platforms (REQUIREMENTS §2).
-PLATFORMS  := linux/amd64 linux/arm64 darwin/arm64
+# Release platforms of the cli — the one list (REQUIREMENTS-client §2 asks
+# for at least linux/amd64, linux/arm64, darwin/arm64). CI's build-cli runs
+# `make release`, and ci/verify-release.sh checks for exactly these binaries.
+PLATFORMS  := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-.PHONY: all tools generate check-generate build agent agent-image build-all test vet lint release clean
+# staticcheck 2026.2.2, pinned like GO_IMAGE: bump deliberately.
+STATICCHECK_VERSION := v0.8.2
+
+# Minimum total test coverage in percent (generated internal/pb excluded).
+# Set just below the measured value; raise it as coverage grows, never lower it.
+COVER_MIN  ?= 50.0
+
+# Git ref whose .proto `proto-check` compares against for breaking changes.
+BUF_AGAINST ?= origin/main
+
+.PHONY: all tools generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
 
 all: generate build-all
 
@@ -38,6 +50,15 @@ check-generate: generate
 	@git diff --exit-code -- internal/pb || { echo "internal/pb is stale: run 'make generate' and commit"; exit 1; }
 	@test -z "$$(git status --porcelain -- internal/pb)" || { git status --porcelain -- internal/pb; echo "untracked generated files in internal/pb"; exit 1; }
 
+## proto-check: buf lint, plus buf breaking against the .proto at BUF_AGAINST (CI: generate-check)
+proto-check:
+	PATH="$(GOBIN):$$PATH" buf lint
+	@tmp="$$(mktemp -d)"; \
+	git archive -o "$$tmp/against.tar" "$(BUF_AGAINST)" proto buf.yaml || { rm -rf "$$tmp"; exit 1; }; \
+	tar -xf "$$tmp/against.tar" -C "$$tmp" && rm "$$tmp/against.tar" || { rm -rf "$$tmp"; exit 1; }; \
+	echo "buf breaking --against $(BUF_AGAINST)"; \
+	PATH="$(GOBIN):$$PATH" buf breaking --against "$$tmp"; rc=$$?; rm -rf "$$tmp"; exit $$rc
+
 ## build: build the cli for the host platform into ./bin
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/swarmexec ./client/cmd/swarmexec
@@ -50,16 +71,18 @@ agent:
 agent-image:
 	docker build -f agent/Dockerfile --build-arg VERSION=$(VERSION) -t $(AGENT_IMAGE) .
 
-## release: static cross-compiled binaries for all operator platforms
+## release: static cli binaries for all PLATFORMS + dist/SHA256SUMS (CI: build-cli)
 release:
 	@mkdir -p dist
 	@for p in $(PLATFORMS); do \
-		os=$${p%/*}; arch=$${p#*/}; \
-		echo "building $$os/$$arch"; \
+		os=$${p%/*}; arch=$${p#*/}; ext=""; \
+		[ "$$os" = "windows" ] && ext=".exe"; \
+		echo "  -> dist/swarmexec-$$os-$$arch$$ext"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
 			go build -trimpath -ldflags '$(LDFLAGS)' \
-			-o dist/swarmexec-$$os-$$arch ./client/cmd/swarmexec || exit 1; \
+			-o dist/swarmexec-$$os-$$arch$$ext ./client/cmd/swarmexec || exit 1; \
 	done
+	cd dist && sha256sum swarmexec-* > SHA256SUMS
 	@ls -la dist
 
 ## test / vet
@@ -69,5 +92,17 @@ test:
 vet:
 	go vet ./...
 
+## cover: race tests with a coverage profile; fails below COVER_MIN percent (CI: test)
+cover:
+	go test -race -covermode=atomic -coverprofile=coverage.raw ./...
+	grep -v '^swarmexec/internal/pb/' coverage.raw > coverage.out
+	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
+		sub("%", "", $$3); printf "total coverage %s%% (minimum %s%%)\n", $$3, min; \
+		if ($$3 + 0 < min + 0) { print "coverage is below the minimum"; exit 1 } }'
+
+## lint: staticcheck at the pinned version (CI: lint)
+lint:
+	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
+
 clean:
-	rm -rf bin dist
+	rm -rf bin dist coverage.raw coverage.out
