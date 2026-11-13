@@ -34,8 +34,8 @@ type plannedClient struct {
 // never reaches the cluster, only the plan and the diff.
 const plannedPendingID = "(created by this deploy)"
 
-func newPlannedClient(cli client.APIClient, ns convert.Namespace, cfg *composetypes.Config) (*plannedClient, error) {
-	p := &plannedClient{APIClient: cli, secrets: map[string]bool{}, configs: map[string]bool{}}
+func newPlannedClient(cli SwarmReader, ns convert.Namespace, cfg *composetypes.Config) (*plannedClient, error) {
+	p := &plannedClient{APIClient: converterClient(cli), secrets: map[string]bool{}, configs: map[string]bool{}}
 	secrets, err := convert.Secrets(ns, cfg.Secrets)
 	if err != nil {
 		return nil, err
@@ -89,4 +89,32 @@ func (p *plannedClient) ConfigList(ctx context.Context, opts client.ConfigListOp
 		}
 	}
 	return res, nil
+}
+
+// converterClient hands docker's compose converter the client.APIClient its
+// signature asks for. The converter only ever looks secrets and configs up
+// (servicecli.ParseSecrets / ParseConfigs: SecretList and ConfigList), so the
+// SwarmReader this package is given is enough. A real client is passed through
+// unchanged; anything narrower — a test fake, the TUI's swarmapi.Client — is
+// wrapped so those two calls reach it. Should a future docker/cli call more
+// than that, the wrapped form fails loudly on the nil embed, in the tests that
+// run the converter against fakes, not silently.
+func converterClient(r SwarmReader) client.APIClient {
+	if full, ok := r.(client.APIClient); ok {
+		return full
+	}
+	return readerAPI{r: r}
+}
+
+type readerAPI struct {
+	client.APIClient // nil: only the methods below may be called
+	r                SwarmReader
+}
+
+func (a readerAPI) SecretList(ctx context.Context, opts client.SecretListOptions) (client.SecretListResult, error) {
+	return a.r.SecretList(ctx, opts)
+}
+
+func (a readerAPI) ConfigList(ctx context.Context, opts client.ConfigListOptions) (client.ConfigListResult, error) {
+	return a.r.ConfigList(ctx, opts)
 }

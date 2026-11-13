@@ -10,6 +10,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"swarmexec/client/internal/secscan"
+	"swarmexec/client/internal/swarmapi"
 )
 
 // This is the mapping layer between what the manager returns and what the
@@ -22,7 +23,7 @@ import (
 
 // listServicesForScan runs the per-service analyzers over every service in the
 // cluster.
-func listServicesForScan(ctx context.Context, dcli *client.Client) ([]secscan.ServiceScan, error) {
+func listServicesForScan(ctx context.Context, dcli swarmapi.Client) ([]secscan.ServiceScan, error) {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -46,7 +47,7 @@ func listServicesForScan(ctx context.Context, dcli *client.Client) ([]secscan.Se
 // left nil on failure and the analyzer reports it as unknown, because "could
 // not read" and "autolock is off" are different statements and only one of them
 // is true.
-func gatherCluster(ctx context.Context, dcli *client.Client) (secscan.Cluster, error) {
+func gatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, error) {
 	nets, err := listNetworks(ctx, dcli)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list networks: %w", err)
@@ -123,7 +124,7 @@ func nodeDisplayName(hostname, id string) string {
 // reason the agent tunnel now is: in the ui the flag and the cluster actually in
 // use come apart the moment someone switches context, and a report headed with
 // the wrong cluster is worse than one with no header at all.
-func contextLabel(ctx context.Context, dcli *client.Client, contextName string) string {
+func contextLabel(ctx context.Context, dcli swarmapi.Client, contextName string) string {
 	if contextName != "" {
 		return contextName
 	}

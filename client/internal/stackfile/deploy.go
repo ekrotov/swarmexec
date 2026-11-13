@@ -50,9 +50,9 @@ type ApplyOptions struct {
 	Prune bool
 }
 
-// deployClient is the slice of the docker client a deploy needs.
-type deployClient interface {
-	swarmReader
+// DeployClient is the slice of the docker client a deploy needs.
+type DeployClient interface {
+	SwarmReader
 	NetworkCreate(ctx context.Context, name string, options client.NetworkCreateOptions) (client.NetworkCreateResult, error)
 	NetworkInspect(ctx context.Context, id string, options client.NetworkInspectOptions) (client.NetworkInspectResult, error)
 	SecretCreate(ctx context.Context, options client.SecretCreateOptions) (client.SecretCreateResult, error)
@@ -62,8 +62,9 @@ type deployClient interface {
 	ServiceRemove(ctx context.Context, serviceID string, options client.ServiceRemoveOptions) (client.ServiceRemoveResult, error)
 }
 
-// Apply applies a loaded stack file to the cluster.
-func Apply(ctx context.Context, cli *client.Client, stackName string, cfg *composetypes.Config, opts ApplyOptions) (*ApplyResult, error) {
+// Apply applies a loaded stack file to the cluster. It takes the DeployClient
+// slice rather than *client.Client, so a deploy can run against a fake.
+func Apply(ctx context.Context, cli DeployClient, stackName string, cfg *composetypes.Config, opts ApplyOptions) (*ApplyResult, error) {
 	ns := convert.NewNamespace(stackName)
 	res := &ApplyResult{}
 
@@ -80,7 +81,7 @@ func Apply(ctx context.Context, cli *client.Client, stackName string, cfg *compo
 	// Conversion happens AFTER the secrets and configs exist: it resolves each
 	// reference to an id against the cluster, so doing it first would fail on
 	// exactly the objects this deploy is about to create.
-	specs, err := convert.Services(ctx, ns, cfg, cli)
+	specs, err := convert.Services(ctx, ns, cfg, converterClient(cli))
 	if err != nil {
 		return res, fmt.Errorf("convert services: %w", err)
 	}
@@ -115,7 +116,7 @@ func Apply(ctx context.Context, cli *client.Client, stackName string, cfg *compo
 }
 
 // deployedServices maps a stack's current services by their full name.
-func deployedServices(ctx context.Context, cli deployClient, stackName string) (map[string]swarm.Service, error) {
+func deployedServices(ctx context.Context, cli DeployClient, stackName string) (map[string]swarm.Service, error) {
 	f := make(client.Filters).Add("label", stackLabel+"="+stackName)
 	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
 	svcs := svcsRes.Items
@@ -129,7 +130,7 @@ func deployedServices(ctx context.Context, cli deployClient, stackName string) (
 	return out, nil
 }
 
-func deployNetworks(ctx context.Context, cli deployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
+func deployNetworks(ctx context.Context, cli DeployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
 	used := map[string]struct{}{}
 	for _, s := range cfg.Services {
 		for n := range s.Networks {
@@ -179,7 +180,7 @@ func deployNetworks(ctx context.Context, cli deployClient, ns convert.Namespace,
 	return nil
 }
 
-func deploySecrets(ctx context.Context, cli deployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
+func deploySecrets(ctx context.Context, cli DeployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
 	specs, err := convert.Secrets(ns, cfg.Secrets)
 	if err != nil {
 		return err
@@ -201,7 +202,7 @@ func deploySecrets(ctx context.Context, cli deployClient, ns convert.Namespace, 
 	return nil
 }
 
-func deployConfigs(ctx context.Context, cli deployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
+func deployConfigs(ctx context.Context, cli DeployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
 	specs, err := convert.Configs(ns, cfg.Configs)
 	if err != nil {
 		return err
@@ -220,7 +221,7 @@ func deployConfigs(ctx context.Context, cli deployClient, ns convert.Namespace, 
 }
 
 // pruneServices removes the stack's services that the file no longer declares.
-func pruneServices(ctx context.Context, cli deployClient, specs map[string]swarm.ServiceSpec, existing map[string]swarm.Service, res *ApplyResult) error {
+func pruneServices(ctx context.Context, cli DeployClient, specs map[string]swarm.ServiceSpec, existing map[string]swarm.Service, res *ApplyResult) error {
 	wanted := map[string]bool{}
 	for _, spec := range specs {
 		wanted[spec.Name] = true

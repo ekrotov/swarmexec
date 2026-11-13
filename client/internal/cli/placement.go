@@ -9,6 +9,8 @@ import (
 	"sort"
 	"time"
 
+	"swarmexec/client/internal/swarmapi"
+
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
@@ -54,7 +56,7 @@ type taskPS struct {
 
 // diagnoseServicePlacement fetches the service, nodes and tasks and builds the
 // report.
-func diagnoseServicePlacement(ctx context.Context, dcli *client.Client, name string) (placeReport, error) {
+func diagnoseServicePlacement(ctx context.Context, dcli swarmapi.Client, name string) (placeReport, error) {
 	svc, err := serviceByName(ctx, dcli, name)
 	if err != nil {
 		return placeReport{}, err

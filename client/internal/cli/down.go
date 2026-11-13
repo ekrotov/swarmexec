@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmapi"
 )
 
 type downFlags struct {
@@ -144,7 +145,7 @@ func findRemovableAgent(ctx context.Context, dcli *client.Client, name string) (
 	return nil, nil
 }
 
-func removeSecret(ctx context.Context, dcli *client.Client, name string) error {
+func removeSecret(ctx context.Context, dcli swarmapi.Client, name string) error {
 	listRes, err := dcli.SecretList(ctx, client.SecretListOptions{
 		Filters: make(client.Filters).Add("name", name),
 	})

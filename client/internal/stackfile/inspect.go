@@ -11,7 +11,6 @@ import (
 	"github.com/docker/cli/cli/compose/convert"
 	composetypes "github.com/docker/cli/cli/compose/types"
 	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
 
 	"swarmexec/client/internal/secscan"
 )
@@ -96,7 +95,7 @@ func (p *Plan) Flagged() []PlannedService {
 // creates itself count as present (see plannedClient); a file naming an
 // external secret that does not exist fails HERE, before anything has been
 // created — which is the cheap place for it to fail.
-func PlanFile(ctx context.Context, cli client.APIClient, path, stackName string) (*Plan, error) {
+func PlanFile(ctx context.Context, cli SwarmReader, path, stackName string) (*Plan, error) {
 	cfg, err := loadComposeFile(path)
 	if err != nil {
 		return nil, err

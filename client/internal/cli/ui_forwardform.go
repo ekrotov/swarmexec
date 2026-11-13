@@ -20,6 +20,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmapi"
 	pb "swarmexec/internal/pb"
 )
 
@@ -208,7 +209,7 @@ func parseForwardForm(container, address, local string) (forwardSpec, error) {
 // which works against any agent) and the container's own agent (its EXPOSE
 // ports, which only agents that fill ContainerInfo.ports report). The two are
 // asked concurrently and either may fail — what one returns is still used.
-func forwardPortSuggestions(ctx context.Context, dcli *client.Client, cfg config.Config, c resolve.Candidate) []uint32 {
+func forwardPortSuggestions(ctx context.Context, dcli swarmapi.Client, cfg config.Config, c resolve.Candidate) []uint32 {
 	var (
 		wg              sync.WaitGroup
 		svcPorts, agent []uint32
