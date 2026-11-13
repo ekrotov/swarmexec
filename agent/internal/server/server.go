@@ -4,6 +4,14 @@
 // Package server implements the Agent gRPC service defined in CONTRACT.md:
 // container discovery, the interactive exec bridge, logs and container events,
 // port forwarding, volumes, images, resource stats, prune and version.
+//
+// It holds the handlers and their wiring. The subsystems behind them live in
+// sibling packages that know nothing of the Server — each takes the narrow
+// Docker subset or callback it needs, and New wires them: the node caps
+// (limits), the forward sidecar pool (muxpool), the volume-size cache
+// (volsize), the stats sampler (statsampler), the reclaim measurement
+// (reclaim), the prune schedule (scheduler) and the prune category table
+// (prunecat).
 package server
 
 import (

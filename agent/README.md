@@ -51,7 +51,14 @@ own code lives under `agent/`:
 ```
 proto/swarmexec.proto         contract proto (shared codegen source, repo root)
 internal/pb/                  generated gRPC code (shared by cli + agent)
-agent/internal/server/        Agent service: ListContainers + Exec bridge
+agent/internal/server/        Agent service: the gRPC handlers and their wiring
+agent/internal/limits/        node caps (concurrent streams, forward sidecars)
+agent/internal/muxpool/       one port-forward sidecar per target, connections multiplexed
+agent/internal/volsize/       background volume-size cache
+agent/internal/statsampler/   background container-stats sampler
+agent/internal/reclaim/       background reclaim measurement (what a prune would free)
+agent/internal/scheduler/     prune schedule runner (labels in internal/prunesched)
+agent/internal/prunecat/      prune category table (name, authz action, order)
 agent/internal/auth/          Authorizer interface + AllowAll default policy
 agent/internal/audit/         structured audit logger
 agent/internal/tlsconf/       mTLS config loader
