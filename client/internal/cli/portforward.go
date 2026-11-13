@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
+	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
 	"swarmexec/client/internal/resolve"
@@ -101,7 +102,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 		connectTimeout: f.connectTimeout,
 	}, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: enrichAgentError(ctx, dcli, err)}
+		return &cliError{code: session.TransportFailure, err: explainSession(ctx, cfg, dcli, err)}
 	}
 	return nil
 }
@@ -150,6 +151,7 @@ type forwarder struct {
 	ln          net.Listener
 	containerID string
 	remotePort  uint32
+	auth        agenterr.Auth // which credential an Unauthenticated is about
 }
 
 // startForwarder binds the local port and dials the agent. On success the
@@ -180,7 +182,7 @@ func startForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint,
 		ln.Close()
 		return nil, err
 	}
-	return &forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.remotePort}, nil
+	return &forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.remotePort, auth: agenterr.AuthOf(cfg)}, nil
 }
 
 // LocalAddr is the address actually bound, which is what to show the operator:
@@ -221,7 +223,11 @@ func (f *forwarder) Serve(ctx context.Context, onConnErr func(error)) error {
 			defer wg.Done()
 			defer local.Close()
 			if ferr := forwardConn(ctx, client, local, f.containerID, f.remotePort); ferr != nil && onConnErr != nil {
-				onConnErr(ferr)
+				// Against an agent that predates PortForward every single
+				// connection fails, so leaving the raw "unknown method
+				// PortForward" to repeat in the operator's face would bury
+				// the one thing they need to do about it; Explain says it.
+				onConnErr(agenterr.Explain(ctx, ferr, agenterr.Options{Auth: f.auth}))
 			}
 		}()
 	}
@@ -243,17 +249,6 @@ func runForwarder(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p
 	})
 }
 
-// forwardSetupError makes a stream-setup failure actionable. Against an agent
-// that predates PortForward every single connection fails, so leaving the raw
-// "unknown method PortForward" to repeat in the operator's face would bury the
-// one thing they need to do about it.
-func forwardSetupError(err error) error {
-	if agentTooOld(err) {
-		return errAgentTooOld
-	}
-	return err
-}
-
 // forwardConn bridges one accepted local connection to the container port over
 // a single PortForward stream.
 func forwardConn(ctx context.Context, client pb.AgentClient, local net.Conn, containerID string, port uint32) error {
@@ -262,21 +257,21 @@ func forwardConn(ctx context.Context, client pb.AgentClient, local net.Conn, con
 
 	stream, err := client.PortForward(ctx)
 	if err != nil {
-		return forwardSetupError(err)
+		return err
 	}
 	if err := stream.Send(&pb.ForwardClientMessage{
 		Payload: &pb.ForwardClientMessage_Start{
 			Start: &pb.StartForward{ContainerId: containerID, Port: port},
 		},
 	}); err != nil {
-		return forwardSetupError(err)
+		return err
 	}
 
 	// Wait for readiness before piping, so a closed target port surfaces as an
 	// error here instead of as a mysteriously silent connection.
 	first, err := stream.Recv()
 	if err != nil {
-		return forwardSetupError(err)
+		return err
 	}
 	switch pl := first.Payload.(type) {
 	case *pb.ForwardServerMessage_Ready:

@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
 	"swarmexec/client/internal/resolve"
@@ -195,7 +196,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		w.Flush()
 	}
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: enrichAgentError(ctx, dcli, err)}
+		return &cliError{code: session.TransportFailure, err: explainSession(ctx, cfg, dcli, err)}
 	}
 	return nil
 }
@@ -309,7 +310,7 @@ func streamLogs(ctx context.Context, cfg config.Config, ep resolve.Endpoint, p l
 			if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
 				return nil
 			}
-			return session.WrapStatus(err)
+			return agenterr.Readable(err)
 		}
 		switch pl := chunk.Payload.(type) {
 		case *pb.LogChunk_Stdout:

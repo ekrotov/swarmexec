@@ -187,7 +187,7 @@ func (s *Server) ListContainers(ctx context.Context, req *pb.ListRequest) (*pb.L
 	list, err := s.docker.ContainerList(ctx, client.ContainerListOptions{All: false})
 	if err != nil {
 		s.log.Error("ContainerList failed", "err", err)
-		return nil, status.Errorf(codes.Internal, "list containers: %v", err)
+		return nil, dockerStatus(err, "list containers")
 	}
 
 	filter := strings.TrimSpace(req.GetServiceFilter())

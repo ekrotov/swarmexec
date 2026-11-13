@@ -58,7 +58,7 @@ func listNodeImages(ctx context.Context, cfg config.Config, n resolve.Node, conn
 	defer conn.Close()
 	resp, err := pb.NewAgentClient(conn).ListImages(cctx, &pb.ListImagesRequest{})
 	if err != nil {
-		return nodeImages{}, wrapGRPC(err)
+		return nodeImages{}, wrapGRPC(ctx, cfg, err)
 	}
 	return nodeImages{
 		Total:    resp.GetTotalBytes(),
@@ -84,7 +84,7 @@ func pruneNodeImages(ctx context.Context, cfg config.Config, n resolve.Node, all
 	defer conn.Close()
 	resp, err := pb.NewAgentClient(conn).PruneImages(cctx, &pb.PruneImagesRequest{All: all})
 	if err != nil {
-		return 0, 0, wrapGRPC(err)
+		return 0, 0, wrapGRPC(ctx, cfg, err)
 	}
 	return resp.GetReclaimedBytes(), len(resp.GetDeleted()), nil
 }

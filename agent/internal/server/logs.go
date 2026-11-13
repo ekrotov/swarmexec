@@ -61,7 +61,7 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	if err != nil {
 		_ = stream.Send(&pb.LogChunk{Payload: &pb.LogChunk_Error{Error: "container logs: " + err.Error()}})
 		s.log.Error("ContainerLogs failed", "container_id", req.GetContainerId(), "err", err)
-		return status.Errorf(codes.Internal, "container logs: %v", err)
+		return dockerStatus(err, "container logs")
 	}
 	defer rc.Close()
 

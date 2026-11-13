@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -108,7 +109,11 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 		s.audit.ForwardEnd(identity, sf.GetContainerId(), sf.GetPort(), time.Since(begin), 0, 0)
 		s.log.Error("port-forward setup failed",
 			"container_id", sf.GetContainerId(), "port", sf.GetPort(), "err", err)
-		return forwardStatus(err)
+		// dockerStatus keeps a code the setup already chose — the sidecar
+		// cap's ResourceExhausted says the node is busy and the call is worth
+		// retrying, where Internal would say the agent is broken — and
+		// classifies an Engine failure (target container gone → NotFound).
+		return dockerStatus(err, "")
 	}
 	defer ch.Close()
 
@@ -204,17 +209,6 @@ type forwardChannel interface {
 	Close()
 }
 
-// forwardStatus keeps a gRPC code the setup already chose, and supplies
-// Internal only for a plain error. Without it the sidecar cap would reach the
-// client as Internal — "the agent is broken" — instead of ResourceExhausted,
-// which says the node is busy and the call is worth retrying.
-func forwardStatus(err error) error {
-	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
-		return err
-	}
-	return status.Error(codes.Internal, err.Error())
-}
-
 // openForwardChannel reaches the target port. It reports whether a sidecar was
 // used so the audit record can distinguish the two paths.
 func (s *Server) openForwardChannel(ctx context.Context, containerID string, port uint32) (forwardChannel, bool, error) {
@@ -306,7 +300,7 @@ func (c *sidecarChannel) Close() {
 		rctx, cancel := context.WithTimeout(context.Background(), forwardRemoveTimeout)
 		defer cancel()
 		if _, err := c.docker.ContainerRemove(rctx, c.id, client.ContainerRemoveOptions{Force: true}); err != nil {
-			if !isNotFoundErr(err) {
+			if !cerrdefs.IsNotFound(err) {
 				c.log.Warn("sidecar removal failed; it may linger", "sidecar", c.id, "err", err)
 			}
 		}
@@ -530,8 +524,4 @@ func (w *forwardWriter) Write(p []byte) (int, error) {
 
 func forwardErrorMsg(text string) *pb.ForwardServerMessage {
 	return &pb.ForwardServerMessage{Payload: &pb.ForwardServerMessage_Error{Error: text}}
-}
-
-func isNotFoundErr(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no such container")
 }

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/config"
 	"swarmexec/internal/deploy"
 )
 
@@ -89,8 +90,8 @@ func TestAgentServiceSpec(t *testing.T) {
 // authentication gets Unauthenticated with "invalid or missing agent secret" —
 // true from the agent's side, and misleading from the operator's, because their
 // secret is correct. The hint has to name the upgrade first.
-func TestEnrichAgentError_ExplainsARejectedSecret(t *testing.T) {
-	err := enrichAgentError(context.Background(), nil,
+func TestExplainSession_ExplainsARejectedSecret(t *testing.T) {
+	err := explainSession(context.Background(), config.Config{AgentSecret: "s"}, nil,
 		status.Error(codes.Unauthenticated, "invalid or missing agent secret"))
 	if err == nil {
 		t.Fatal("expected an error")
@@ -99,6 +100,28 @@ func TestEnrichAgentError_ExplainsARejectedSecret(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("hint does not mention %q: %v", want, err)
 		}
+	}
+}
+
+// The same Unauthenticated, seen by a client that authenticates with a client
+// certificate and has no secret at all: telling that operator to check "the
+// shared secret" sent them hunting for a credential they do not use (review
+// A-05). The CLI paths (exec, logs, port-forward) must name the certificate.
+func TestExplainSession_CAModeDoesNotBlameTheSecret(t *testing.T) {
+	ca := config.Config{CA: "/ca.pem", Cert: "/c.pem", Key: "/k.pem"}
+	err := explainSession(context.Background(), ca, nil,
+		status.Error(codes.Unauthenticated, "client identity unavailable: client certificate has empty common name"))
+	msg := err.Error()
+	if strings.Contains(msg, "secret") {
+		t.Errorf("an mTLS client was told about a secret: %v", msg)
+	}
+	for _, want := range []string{"certificate", "empty common name"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message does not mention %q: %v", want, msg)
+		}
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("the code must survive: %v", status.Code(err))
 	}
 }
 

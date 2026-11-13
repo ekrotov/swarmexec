@@ -5,8 +5,8 @@ package server
 
 import (
 	"context"
-	"strings"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,7 +27,7 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 	resp, err := s.docker.VolumeList(ctx, client.VolumeListOptions{})
 	if err != nil {
 		s.log.Error("VolumeList failed", "err", err)
-		return nil, status.Errorf(codes.Internal, "list volumes: %v", err)
+		return nil, dockerStatus(err, "list volumes")
 	}
 
 	// Sizes come from the background cache (no per-request du scan). ready is
@@ -64,7 +64,7 @@ func (s *Server) ListVolumes(ctx context.Context, req *pb.ListVolumesRequest) (*
 }
 
 // RemoveVolume removes a volume on this node. It is authorized and audited; an
-// in-use volume yields FailedPrecondition.
+// in-use volume yields FailedPrecondition (CONTRACT.md §3.8).
 func (s *Server) RemoveVolume(ctx context.Context, req *pb.RemoveVolumeRequest) (*pb.RemoveVolumeResponse, error) {
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "RemoveVolumeRequest requires name")
@@ -80,10 +80,13 @@ func (s *Server) RemoveVolume(ctx context.Context, req *pb.RemoveVolumeRequest) 
 	_, err = s.docker.VolumeRemove(ctx, req.GetName(), client.VolumeRemoveOptions{Force: req.GetForce()})
 	if err != nil {
 		s.audit.VolumeRemove(identity, req.GetName(), false, err.Error())
-		if isVolumeInUse(err) {
+		// The Engine answers an in-use volume with 409 Conflict, which
+		// dockerStatus maps to FailedPrecondition too; the short message is
+		// kept because it is what clients have always shown for this case.
+		if cerrdefs.IsConflict(err) {
 			return nil, status.Errorf(codes.FailedPrecondition, "volume %s is in use", req.GetName())
 		}
-		return nil, status.Errorf(codes.Internal, "remove volume %s: %v", req.GetName(), err)
+		return nil, dockerStatus(err, "remove volume "+req.GetName())
 	}
 	s.audit.VolumeRemove(identity, req.GetName(), true, "")
 	return &pb.RemoveVolumeResponse{}, nil
@@ -111,7 +114,7 @@ func (s *Server) CreateVolume(ctx context.Context, req *pb.CreateVolumeRequest) 
 	})
 	if err != nil {
 		s.audit.VolumeCreate(identity, req.GetName(), false, err.Error())
-		return nil, status.Errorf(codes.Internal, "create volume %s: %v", req.GetName(), err)
+		return nil, dockerStatus(err, "create volume "+req.GetName())
 	}
 	s.audit.VolumeCreate(identity, req.GetName(), true, "")
 	v := created.Volume
@@ -123,9 +126,4 @@ func (s *Server) CreateVolume(ctx context.Context, req *pb.CreateVolumeRequest) 
 		Scope:      v.Scope,
 		Labels:     v.Labels,
 	}}, nil
-}
-
-// isVolumeInUse reports whether the error indicates the volume is still in use.
-func isVolumeInUse(err error) bool {
-	return strings.Contains(err.Error(), "in use")
 }

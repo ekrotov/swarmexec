@@ -5,9 +5,9 @@ package server
 
 import (
 	"context"
-	"errors"
 	"testing"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/volume"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -105,7 +105,7 @@ func TestRemoveVolume_RequiresName(t *testing.T) {
 
 func TestRemoveVolume_InUse(t *testing.T) {
 	d := newFakeDocker()
-	d.volumeRemErr = errors.New("Error response from daemon: remove v1: volume is in use - [abc]")
+	d.volumeRemErr = cerrdefs.ErrConflict.WithMessage("Error response from daemon: remove v1: volume is in use - [abc]")
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
 	_, err := srv.RemoveVolume(context.Background(), &pb.RemoveVolumeRequest{Name: "v1"})
 	if status.Code(err) != codes.FailedPrecondition {

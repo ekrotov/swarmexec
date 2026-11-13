@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
@@ -195,7 +196,7 @@ func TestAuditTrail_EventWatch(t *testing.T) {
 
 func TestAuditTrail_Volumes(t *testing.T) {
 	d := newFakeDocker()
-	d.volumeRemErr = errors.New("volume is in use - [abc]")
+	d.volumeRemErr = cerrdefs.ErrConflict.WithMessage("volume is in use - [abc]")
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{})
 	log := captureAudit(srv)
 	ctx := context.Background()

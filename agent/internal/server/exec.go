@@ -87,7 +87,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 
 	idResp, err := s.docker.ExecCreate(stream.Context(), se.GetContainerId(), execCfg)
 	if err != nil {
-		return s.failSession(stream, identity, se.GetContainerId(), start, "exec create failed: "+err.Error())
+		return s.failSession(stream, identity, se.GetContainerId(), start, "exec create failed", err)
 	}
 	execID := idResp.ID
 
@@ -96,7 +96,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 		ConsoleSize: execCfg.ConsoleSize,
 	})
 	if err != nil {
-		return s.failSession(stream, identity, se.GetContainerId(), start, "exec attach failed: "+err.Error())
+		return s.failSession(stream, identity, se.GetContainerId(), start, "exec attach failed", err)
 	}
 
 	// Single place that closes the hijacked connection; safe to call repeatedly.
@@ -277,13 +277,17 @@ func (s *Server) inspectExit(execID string) int {
 }
 
 // failSession records and returns a session-creation failure, emitting a
-// terminal error message to the client and a session-end audit record.
-func (s *Server) failSession(stream pb.Agent_ExecServer, identity, containerID string, start time.Time, msg string) error {
+// terminal error message to the client and a session-end audit record. The
+// in-band message and the status carry the same text; the status code is
+// dockerStatus's classification of err (a stopped container is
+// FailedPrecondition, a vanished one NotFound), not a blanket Internal.
+func (s *Server) failSession(stream pb.Agent_ExecServer, identity, containerID string, start time.Time, verb string, err error) error {
+	msg := verb + ": " + err.Error()
 	_ = stream.Send(errorMsg(msg))
 	s.audit.SessionEnd(identity, containerID, -1, time.Since(start), 0, 0)
 	s.metrics.SessionEnded()
 	s.log.Error("session setup failed", "container_id", containerID, "reason", msg)
-	return status.Error(codes.Internal, msg)
+	return dockerStatus(err, verb)
 }
 
 // errorMsg builds a terminal error ServerMessage.
