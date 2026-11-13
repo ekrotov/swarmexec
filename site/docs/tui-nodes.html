@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec TUI — the Nodes tab, node prune and prune schedule</title>
+  <meta name="description" content="The Nodes tab of the swarmexec TUI: node state and resources, what each node could reclaim, pruning a node per category, and the cluster-wide prune schedule.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/tui-nodes">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec TUI — the Nodes tab, node prune and prune schedule">
+  <meta property="og:description" content="The Nodes tab of the swarmexec TUI: node state and resources, what each node could reclaim, pruning a node per category, and the cluster-wide prune schedule.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/tui-nodes">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec TUI — the Nodes tab, node prune and prune schedule">
+  <meta name="twitter:description" content="The Nodes tab of the swarmexec TUI: node state and resources, what each node could reclaim, pruning a node per category, and the cluster-wide prune schedule.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec TUI — the Nodes tab, node prune and prune schedule",
+        "description": "The Nodes tab of the swarmexec TUI: node state and resources, what each node could reclaim, pruning a node per category, and the cluster-wide prune schedule.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/tui-nodes",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "TUI: the Nodes tab",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/tui-nodes"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › TUI: the Nodes tab</p>
+      <h1>TUI: the Nodes tab<span class="cursor">_</span></h1>
+      <p class="tagline">Every node, what it holds, and what it could give back.</p>
+
+      <h2 id="tui-nodes">Nodes tab</h2>
+      <p>
+        Lists the swarm's nodes with general info and a few aggregations — <code>NODE</code>
+        (hostname; managers in aqua, the leader marked <code>★</code>), <code>ROLE</code>
+        (manager / worker), <code>AVAIL</code> (active / pause / drain, colour-coded),
+        <code>STATE</code> (ready / down), <code>ENGINE</code> version, <code>TASKS</code>
+        (running tasks scheduled on the node), <code>VOLS</code> (volumes the node holds —
+        node-local, so it fills in a moment after the rest) and <code>LABELS</code> (count).
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>node details — a read-only overlay with hostname, id, role/leader, availability, state, address, engine, platform, CPUs, memory, running-task count, the <strong>reserved resources</strong>, <strong>in-use</strong> and <strong>images on this node</strong> blocks (see below), volume count, the full label list, and the <strong>reclaimable</strong> and <strong>prune schedule</strong> blocks. Inside it <kbd>m</kbd> measures the reclaimable space now, <kbd class="tc-red">P</kbd> opens the prune dialog and <kbd>S</kbd> the schedule editor</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edit the selected node's <strong>labels</strong> — a staged list editor (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel) over <code>key=value</code> entries. Applying does one <code>NodeUpdate</code> — unlike a service, a node update <strong>applies immediately</strong> (no rolling update). Node labels are commonly used as placement-constraint targets (<code>node.labels.&lt;k&gt;</code>)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>set the node's <strong>availability</strong> — a menu of <strong>active</strong> / <strong>pause</strong> / <strong>drain</strong> that marks the state the node is currently in. <em>active</em> schedules tasks here normally; <em>pause</em> keeps the running tasks and only stops <strong>new</strong> placements; <em>drain</em> moves <strong>every</strong> task off the node. Active and Pause apply straight away; Drain goes through a confirm naming how many running tasks swarm will stop and reschedule elsewhere (services whose tasks can't be placed anywhere else go unschedulable). Like a label change it is one <code>NodeUpdate</code> (read-modify-write on the node spec) and <strong>applies immediately</strong> — nodes have no rolling update. Remappable as <code>node_availability</code></td></tr>
+          <tr><td><kbd class="tc-red">P</kbd></td><td>prune the node (capital <kbd>P</kbd>, drawn red). Opens a dialog with one checkbox per category, the expected savings, then a confirm and the result per category — see <a href="#nodeprune">pruning a node</a>. Against an agent older than this release it opens the old two-entry image menu instead. Remappable as <code>node_prune</code> (the old name <code>node_prune_images</code> still works)</td></tr>
+          <tr><td><kbd>S</kbd></td><td>the <strong>prune schedule for all nodes</strong> — see <a href="#pruneschedule">prune schedule</a>. Remappable as <code>node_prune_schedule</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Reserved resources.</strong> The node detail carries a
+        <em>reserved by tasks (scheduler's view)</em> block: for <strong>CPU</strong> and
+        <strong>memory</strong>, a bar plus <code>reserved / capacity</code> and how much is
+        free. The bar is green, turns yellow from 75% and red at 100% or above;
+        over-commitment is called out in words, and “free” never goes negative. A node that
+        reports no capacity says so instead of drawing a bar. The block costs no extra API
+        call — the nodes list already fetches the task list.
+      </p>
+      <div class="note">
+        <strong>These are reservations, not usage.</strong> The figures are the sum of the
+        tasks' declared <code>Reservations</code> — exactly the arithmetic the swarm
+        scheduler itself does when deciding whether a task fits on a node, and the usual
+        reason a service sits unschedulable. Live CPU/RAM consumption is node-local and is
+        <em>not</em> what this shows — it has a block of its own, right below. Tasks that
+        declare no reservation are
+        <strong>counted and reported separately</strong>: they book nothing here yet can
+        still consume the whole node, so a low percentage does not mean the node is idle —
+        and in most clusters few services set reservations at all. A task holds its
+        reservation from the moment it is assigned until it reaches a terminal state, so
+        tasks that are preparing or starting count, while shutdown / failed / complete /
+        rejected ones do not (swarm keeps those in the task list as history).
+      </div>
+      <p>
+        <strong>In use by containers.</strong> Beneath that sits a second block —
+        <em>in use by containers (measured on the node)</em> — drawn with the same
+        proportional bars: what the node's containers are <strong>actually</strong> using
+        right now, CPU in cores and memory, each against the node's own capacity. The two
+        blocks are kept deliberately apart because they answer different questions and are
+        routinely far apart: a node can be fully booked and idle, or barely booked and on
+        fire. The figures come from that node's agent, the same source as the
+        <a href="/docs/tui#tui">usage markers in the service tree</a> — while the CPU delta isn't
+        ready yet the line reads <em>measuring…</em>, and a node whose agent is unreachable
+        or too old gets no block at all rather than a row of zeros that would read as
+        “idle”.
+      </p>
+      <div class="note">
+        <strong>Containers only.</strong> This counts the node's <strong>containers</strong>
+        — the kernel, the docker daemon and anything running outside docker are
+        <em>not</em> in the figure. It is not the node's load average, and the block says so
+        itself.
+      </div>
+      <p>
+        <strong>Images on this node.</strong> Last in the detail comes an <em>images on this
+        node</em> block: how much the node's layer store holds and in how many images, and
+        how much of that is reclaimable in <strong>untagged leftovers</strong> (a node with
+        nothing untagged says so rather than offering a zero). When there is any, one
+        further line notes how much more is <strong>tagged but unused</strong> — phrased as
+        a cost, <em>removing it means pulling those images again</em>, not as an offer. The
+        block exists because images are the one node-local resource the cluster side cannot
+        see <em>at all</em>: the manager API has no view of images whatsoever, unlike
+        volumes, which it at least knows are mounted. Volumes could already be managed
+        cluster-wide from swarmexec; a node quietly filling up with old layers could not
+        even be seen. It loads on its own, in parallel with the node list, so it appears a
+        moment after the rest of the overlay.
+      </p>
+      <p id="nodeprune">
+        <strong>Reclaimable space and pruning a node.</strong> The node detail ends with a
+        <em>reclaimable (measured on the node)</em> block: per category, how many objects a
+        prune would remove and how much it would free, and when that was measured
+        (<em>measured 23 min ago</em>). The agent measures in the background, shortly after
+        it starts and then <strong>hourly</strong>, and after every prune; <kbd>m</kbd> in
+        the detail asks for a fresh measurement (the agent allows one every 30 seconds).
+        <kbd class="tc-red">P</kbd> opens the prune dialog: one checkbox per category with
+        its figure, the expected total underneath, then a confirm that lists every ticked
+        category, and finally the result — freed bytes and count per category.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Category</th><th>What a prune removes</th><th>Policy action</th></tr></thead>
+        <tbody>
+          <tr><td><strong>stopped containers</strong></td><td>containers that <strong>stopped</strong> more than 24 h ago (<kbd>t</kbd> in the dialog changes the age). Counted from when they stopped, not when they were created, so the logs of a task that just crashed stay readable. The detail shows how many are kept for now</td><td><code>container.prune</code></td></tr>
+          <tr><td><strong>untagged images</strong></td><td>the layers left behind by rebuilds, which nothing can start from. <strong>Safe</strong>: it cannot stop a service and it cannot force a pull</td><td><code>image.prune</code></td></tr>
+          <tr><td><strong class="tc-red">every unused image</strong></td><td>also removes <strong>tagged</strong> images that no container is running <em>right now</em> — every service <strong>scaled to zero</strong> and every task <strong>between restarts</strong> will have to <strong>pull its image again</strong></td><td><code>image.prune.all</code></td></tr>
+          <tr><td><strong>build cache</strong></td><td>all build cache no build is using</td><td><code>buildcache.prune</code></td></tr>
+          <tr><td><strong>unused local networks</strong></td><td>networks of scope <code>local</code> that no container references, stopped ones included. Never <code>bridge</code>, <code>host</code>, <code>none</code>, <code>docker_gwbridge</code>, <code>ingress</code> or any overlay</td><td><code>network.prune</code></td></tr>
+          <tr><td><strong class="tc-red">volumes</strong></td><td>every volume no container uses, <strong>named volumes included</strong> — their data is deleted</td><td><code>volume.prune</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The dialog starts with containers, untagged images, build cache and networks ticked.
+        <kbd>a</kbd> ticks <strong>everything except volumes</strong>; volumes are a
+        separate, red checkbox that is never ticked for you. The two image entries exclude
+        each other, because every unused image already includes the untagged ones.
+      </p>
+      <div class="warn">
+        <strong>Do not read “every unused image” as “the same, but more”.</strong> It
+        removes images that belong to something which is merely <em>not running at this
+        instant</em>. A service scaled to zero, a task restarting, a stack you stopped
+        yesterday — all of them lose their image and must pull it again to come back, and
+        <strong>if the registry is unreachable they will not come back up</strong>. The
+        confirm says so whenever it is ticked, and it says in red that volumes take their
+        data with them whenever those are ticked.
+      </div>
+      <div class="note">
+        <strong>Why networks are not pruned the docker way.</strong> On a manager,
+        Docker's own network prune also removes every unused <strong>swarm overlay</strong>
+        network, cluster-wide, and cannot be limited by scope. The agent therefore never
+        calls it: it lists the node's networks and removes the unused local ones one by
+        one.
+      </div>
+      <p>
+        <strong>One permission per category.</strong> The agent authorizes each category as
+        its own action (table above; reading the figures is <code>reclaim.read</code>), so
+        a policy can allow the cheap sweeps <em>without</em> the destructive ones. Every
+        category of every prune is written to the agent's <strong>audit log</strong>
+        (<code>event=prune</code>) with how much it freed and how many objects went.
+      </p>
+      <div class="note">
+        <strong>Where the numbers come from.</strong> They are read from the same source
+        <code>docker system df</code> reports from, and match it exactly — verified on a
+        real node at 56 images, 32.70&nbsp;GB on disk, 22.99&nbsp;GB reclaimable. In
+        particular swarmexec does <strong>not</strong> add up the individual image sizes: an
+        image's size includes every layer it is built from, and layers are shared, so that
+        sum over-reports badly — during development it claimed 32.7&nbsp;GB where the daemon
+        said 22.2&nbsp;GB. One caveat worth stating: the <em>untagged-only</em> figure is a
+        <strong>lower bound</strong> — a layer shared by two untagged images belongs to
+        neither one's unique size — so an untagged prune may free a little <em>more</em>
+        than advertised, never less.
+      </div>
+      <p>
+        Same precondition as the usage and health numbers above: it needs
+        <strong>agents from this release or newer</strong>. A node whose agent is older
+        shows <em>agent too old for prune stats</em> in the reclaimable block, and
+        <kbd>P</kbd> falls back to the two-entry image menu (untagged leftovers / every
+        unused image) such an agent still understands. Update the agent image — the
+        agent service spec did not change, so <code>init --force</code> is not needed.
+      </p>
+      <p id="pruneschedule">
+        <strong>Prune schedule (all nodes).</strong> <kbd>S</kbd> on the Nodes tab opens
+        an editor for a schedule every agent runs on its own node: weekday toggles, the
+        start time, runs per day (the day is split evenly from the start: 2 runs from
+        00:00 are 00:00 and 12:00, 3 are 00:00, 08:00 and 16:00), the time zone, the
+        categories — images as <em>every unused</em>, <em>untagged only</em> or off, and
+        <span class="tc-red">volumes as an option that is off by default</span> — how long
+        stopped containers are kept, and an optional label filter. A live preview shows the
+        resulting run times and the next runs. <kbd>w</kbd> saves after a warning.
+      </p>
+      <div class="warn">
+        <strong>Saving restarts the agents.</strong> The schedule is stored as
+        <strong>container labels on the agent service</strong> — the one place an agent on
+        a worker node can read, by inspecting its own container. Saving is therefore a
+        service update: the agents restart one by one, and open shells, log streams and
+        port-forwards on a restarting node drop.
+      </div>
+      <p>
+        Each agent reads the labels when it starts; labels that do not parse are logged
+        and switch the schedule off, they never stop the agent. A scheduled run is
+        authorized like a request from the identity <code>scheduler</code> (so a policy
+        rule such as <code>deny: [volume.prune]</code> also covers the schedule) and
+        audited with <code>trigger=schedule</code>. The node detail shows the schedule as
+        that node's agent sees it, the next run, and the last run with what it freed per
+        category and any error. <code>swarmexec init --force</code> keeps the labels; the
+        CLI equivalent is <a href="/docs/volumes#pruneschedulecmd"><code>prune-schedule</code></a>.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Container label</th><th>Default</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec.prune.enabled</code></td><td>no labels: off</td><td><code>true</code> runs the schedule</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.days</code></td><td>every day</td><td><code>mon,tue,…,sun</code>, ranges like <code>mon-fri</code></td></tr>
+          <tr><td><code>swarmexec.prune.schedule.start</code></td><td><code>00:00</code></td><td>first run of the day</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.times</code></td><td><code>1</code></td><td>runs per day (1–24)</td></tr>
+          <tr><td><code>swarmexec.prune.schedule.tz</code></td><td><code>UTC</code></td><td>IANA time zone</td></tr>
+          <tr><td><code>swarmexec.prune.categories</code></td><td><code>containers,images,buildcache,networks</code></td><td>also <code>dangling-images</code> and <code>volumes</code></td></tr>
+          <tr><td><code>swarmexec.prune.containers.until</code></td><td><code>24h</code></td><td>keep stopped containers this long after they stop</td></tr>
+          <tr><td><code>swarmexec.prune.filter.label</code></td><td>—</td><td>only objects with these labels (<code>key</code> or <code>key=value</code>, comma-separated); build cache is then skipped</td></tr>
+        </tbody>
+      </table></div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/tui-tabs" rel="prev"><span class="lbl">← Previous</span>TUI: Volumes, Forwards, Networks, Secrets, Configs</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes" aria-current="page">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

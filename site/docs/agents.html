@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec agents — init, down, doctor, monitoring and re-rolling</title>
+  <meta name="description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/agents">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec agents — init, down, doctor, monitoring and re-rolling">
+  <meta property="og:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/agents">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec agents — init, down, doctor, monitoring and re-rolling">
+  <meta name="twitter:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec agents — init, down, doctor, monitoring and re-rolling",
+        "description": "Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/agents",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "The agents: init, down, doctor",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/agents"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › The agents: init, down, doctor</p>
+      <h1>The agents: init, down, doctor<span class="cursor">_</span></h1>
+      <p class="tagline">Provisioning, removing, diagnosing and monitoring the per-node agents.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#init">init — provision the agents</a></li>
+          <li><a href="#down">down — remove the agents</a></li>
+          <li><a href="#doctor">doctor — diagnose the swarm</a></li>
+          <li><a href="#monitoring">Monitoring the agents</a></li>
+          <li><a href="#reroll">Re-rolling the agents without changing the secret</a></li>
+        </ol>
+      </div>
+
+      <h2 id="init"><code>init</code> — provision the agents</h2>
+      <p>
+        Deploys the agent as a global Swarm service via the manager API: creates a
+        shared-secret Docker secret, runs the agent in self-signed mode on every node
+        (host port 9443), and writes the matching client config. Run it once per swarm.
+      </p>
+      <div class="cmd">swarmexec init</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--image</code></td><td><code>docker.io/logleio/swarmexec-agent:latest</code></td><td>agent image to deploy</td></tr>
+          <tr><td><code>--secret</code></td><td>random</td><td>shared secret to use (default: generate a random one). Note: if the agent secret <strong>already exists</strong> it is kept as-is (Docker secrets are immutable), so <code>--secret</code> is <strong>not applied to the cluster</strong> — it is only written to your client config, and <code>init</code> warns about the mismatch risk. To change the cluster secret, remove it first (no service may reference it), then re-run <code>init</code></td></tr>
+          <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>name for the agent service</td></tr>
+          <tr><td><code>--port</code></td><td><code>9443</code></td><td>host port the agent publishes</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>update the service if it already exists. A <a href="/docs/tui-nodes#pruneschedule">prune schedule</a> set on the agents is kept</td></tr>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accept the raw shared secret from clients predating connection-bound auth; pass <code>=false</code> once every client is upgraded</td></tr>
+          <tr><td><code>--metrics-port</code></td><td><code>0</code></td><td>publish the agent's Prometheus metrics on this host port (<code>0</code> = off) — see <a href="#monitoring">monitoring the agents</a></td></tr>
+          <tr><td><code>--policy-file</code></td><td>—</td><td>authorization rule file for the agents, checked before anything is deployed — see <a href="/docs/authentication#policy">authorization policy</a></td></tr>
+          <tr><td><code>--save-config</code></td><td><code>true</code></td><td>write the client config</td></tr>
+          <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>pass local registry credentials so nodes can pull a private image</td></tr>
+          <tr><td><code>--wait</code></td><td><code>true</code></td><td>wait for the agents to come up and report progress</td></tr>
+          <tr><td><code>--rollout-timeout</code></td><td><code>90s</code></td><td>how long to wait for agents to start</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        The default agent image is public on Docker Hub, so no registry login is needed.
+        Re-run with <code>--force</code> to roll out a new agent version — see
+        <a href="#reroll">re-rolling the agents without changing the secret</a>.
+      </div>
+
+      <h2 id="down"><code>down</code> — remove the agents</h2>
+      <p>
+        The inverse of <code>init</code>: removes the global agent service and, by
+        default, the shared-secret Docker secret. It does <strong>not</strong> touch your
+        client config.
+      </p>
+      <div class="cmd">swarmexec down</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--service-name</code></td><td><code>swarmexec_agent</code></td><td>name of the agent service to remove</td></tr>
+          <tr><td><code>--keep-secret</code></td><td><code>false</code></td><td>do not remove the shared-secret Docker secret</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>do not prompt for confirmation</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="doctor"><code>doctor</code> — diagnose the swarm</h2>
+      <p>
+        Checks the manager connection, whether the agent service is deployed, and probes
+        every ready node's agent for reachability and version skew. Prints a per-node
+        table (<code>NODE&nbsp;&nbsp;AGENT&nbsp;&nbsp;VERSION&nbsp;&nbsp;PROTO</code>); exits
+        non-zero if the manager is unreachable or any agent is unhealthy. A node reported
+        as <code>too old (init --force)</code> runs an agent older than your client —
+        see <a href="#reroll">re-rolling the agents without changing the secret</a>.
+      </p>
+      <div class="cmd">swarmexec doctor</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="monitoring">Monitoring the agents</h2>
+      <p>
+        Every agent can serve Prometheus metrics. They are <strong>off</strong> by default;
+        <code>swarmexec init --force --metrics-port 9464</code> turns them on: the agent
+        listens on that port and publishes it in host mode on every node, like the agent
+        port, so Prometheus reaches each node's agent at <code>&lt;node&gt;:9464</code>. The
+        endpoint is plain HTTP and carries <strong>counts only</strong> — no names, ids or
+        payload — but publish it only where your scraper can reach it.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Metric</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec_agent_info{version,protocol}</code></td><td>constant <code>1</code>; compare it across nodes to see version skew</td></tr>
+          <tr><td><code>swarmexec_active_sessions</code></td><td>exec sessions open right now</td></tr>
+          <tr><td><code>swarmexec_sessions_total</code></td><td>exec sessions started</td></tr>
+          <tr><td><code>swarmexec_auth_denials_total</code></td><td>requests the authorizer refused — the one signal that makes an attempt visible</td></tr>
+          <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>requests refused at a node cap (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
+          <tr><td><code>swarmexec_bytes_in_total</code> / <code>_out_total</code></td><td>bytes forwarded to containers / to clients</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The repository ships what goes around it, in <code>agent/deploy/monitoring/</code>:
+        a scrape config (Prometheus' own Docker Swarm discovery, or static targets), four
+        alert rules — authorization denials rising, agents on different versions for more
+        than 30 minutes, cap refusals, an agent not answering — and a Grafana dashboard
+        (<code>grafana-dashboard.json</code>, import and pick your Prometheus).
+      </p>
+
+      <h2 id="reroll">Re-rolling the agents without changing the secret</h2>
+      <p>
+        Sooner or later you have to redeploy the agents on a swarm that is already
+        provisioned: an agent hangs, <code>doctor</code> shows a node as
+        <code>too old (init --force)</code>, a command fails with <em>“agent is older
+        than this client (missing RPC) — update it with <code>swarmexec init
+        --force</code>”</em>, or a node was rebuilt and its agent never came back. The
+        fix is to re-run <code>init</code> with <code>--force</code>, which tells it to
+        <em>update the service if it already exists</em>. Without the flag, running
+        <code>init</code> against an existing service is a usage error telling you to add
+        <code>--force</code> — nothing is changed.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
+      <p>
+        This redeploys the agent on every node and <strong>leaves the shared secret
+        alone</strong>. Docker secrets are immutable, so <code>init</code> finds the
+        existing <code>swarmexec_agent_secret</code>, reports it as
+        <code>reusing existing</code>, and keeps the value that is already in the
+        cluster. Every client that worked before the re-roll keeps working — there is
+        nothing to redistribute.
+      </p>
+      <div class="warn">
+        <strong>Do not pass <code>--secret</code> on a re-roll.</strong> If the secret
+        already exists it cannot be overwritten, so your value is <strong>not applied to
+        the cluster</strong> — but it <strong>is</strong> still written into your client
+        config. Unless it happens to be the existing secret's real value, the agents will
+        reject you from that moment on, and the failure surfaces later as what looks like
+        a broken agent rather than a wrong local config. <code>init</code> warns about
+        exactly this when it happens; take the warning seriously. To genuinely change the
+        cluster secret you must remove the secret first (no service may reference it) and
+        re-run <code>init</code>.
+      </div>
+      <p>
+        <code>--save-config</code> defaults to <code>true</code>, so a re-roll also
+        rewrites <code>~/.config/swarmexec/config.yaml</code>. Pass
+        <code>--save-config=false</code> whenever the local client config must stay
+        untouched — for example when you re-roll the agents from a machine whose config
+        is already correct, or from CI.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec init --force --save-config=false</div>
+      <p>
+        Then verify. <code>doctor</code> reports a status per node; <code>ok</code> on
+        every node means client, agent and secret line up again.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/mcp" rel="prev"><span class="lbl">← Previous</span>MCP server for AI assistants</a>
+        <a class="next" href="/docs/authentication" rel="next"><span class="lbl">Next →</span>Authentication &amp; policy</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents" aria-current="page">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

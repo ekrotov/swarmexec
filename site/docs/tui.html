@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec ui — a k9s-style terminal UI for Docker Swarm</title>
+  <meta name="description" content="swarmexec ui: the tabs and global keys, the context sidebar for several clusters, the embedded shell and logs, the log viewer and remapping keys.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/tui">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec ui — a k9s-style terminal UI for Docker Swarm">
+  <meta property="og:description" content="swarmexec ui: the tabs and global keys, the context sidebar for several clusters, the embedded shell and logs, the log viewer and remapping keys.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/tui">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec ui — a k9s-style terminal UI for Docker Swarm">
+  <meta name="twitter:description" content="swarmexec ui: the tabs and global keys, the context sidebar for several clusters, the embedded shell and logs, the log viewer and remapping keys.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec ui — a k9s-style terminal UI for Docker Swarm",
+        "description": "swarmexec ui: the tabs and global keys, the context sidebar for several clusters, the embedded shell and logs, the log viewer and remapping keys.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/tui",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "The TUI",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/tui"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › The TUI</p>
+      <h1>The TUI<span class="cursor">_</span></h1>
+      <p class="tagline">The whole cluster — or several — as one screen.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#ui">ui — interactive TUI</a></li>
+          <li><a href="#tui">The TUI</a></li>
+          <li><a href="#tui-contexts">Context sidebar</a></li>
+          <li><a href="#tui-shell-logs">Embedded shell &amp; logs</a></li>
+          <li><a href="#tui-logviewer">Log viewer</a></li>
+          <li><a href="#tui-keys">Custom keys</a></li>
+        </ol>
+      </div>
+
+      <h2 id="ui"><code>ui</code> — interactive TUI</h2>
+      <p>
+        An interactive view of containers and volumes, with exec, logs and
+        port-forwarding built in. Needs an interactive terminal. See
+        <a href="#tui">The TUI</a> for keys.
+      </p>
+      <div class="cmd">swarmexec ui [service]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="tui">The TUI</h2>
+      <p>
+        <code>swarmexec ui</code> has seven tabs — <strong>Stacks/Services&nbsp;(1)</strong>,
+        <strong>Volumes&nbsp;(2)</strong>, <strong>Forwards&nbsp;(3)</strong>,
+        <strong>Networks&nbsp;(4)</strong>, <strong>Secrets&nbsp;(5)</strong>,
+        <strong>Nodes&nbsp;(6)</strong>, <strong>Configs&nbsp;(7)</strong> — a
+        <strong>context sidebar</strong> down the right-hand side, and a two-line
+        footer: the per-tab key hints on top, then a status line with the active docker
+        context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
+        you're on), a live cluster summary, the forward count and — on the Volumes tab —
+        how many volumes you have selected; at its far right it shows the client's own version. These keys work on every tab:
+      </p>
+      <div class="note">
+        <strong>Changed:</strong> the contexts used to be tab&nbsp;6, and are now the
+        sidebar (<kbd>c</kbd>). Nodes and Configs moved up to <strong>6</strong> and
+        <strong>7</strong>.
+      </div>
+      <p>
+        The tab bar is <strong>responsive</strong>: on a narrow terminal it switches to
+        short labels — <strong>St/Sv</strong>, <strong>Vol</strong>,
+        <strong>Fwd</strong>, <strong>Net</strong>, <strong>Sec</strong>,
+        <strong>Node</strong>, <strong>Cfg</strong> — so all seven tabs stay visible
+        instead of the last ones being clipped. (<strong>Cfg</strong> is Configs.) The
+        shortcut digits and the mouse hit-boxes are unaffected.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the key-hint line of the footer only has room for the most used keys</td></tr>
+          <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
+          <tr><td><kbd>r</kbd></td><td>refresh the active tab and the cluster summary</td></tr>
+          <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>
+          <tr><td><kbd>`</kbd></td><td>open / close the live log viewer (see below)</td></tr>
+          <tr><td><kbd>q</kbd></td><td>quit</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="tui-contexts">Context sidebar</h2>
+      <p>
+        The clusters live in a column down the right-hand side, not in a tab. Switching
+        cluster is something you do <em>from</em> wherever you are — and the list of
+        clusters is what tells you where that is, so it belongs on screen rather than on
+        a page you have to travel to.
+      </p>
+      <p>
+        <kbd>c</kbd> gives it the keyboard from any tab; <kbd>c</kbd> again or
+        <kbd>Esc</kbd> hands it back to the tab you were on. The active cluster is
+        marked <code>▶</code> — the same name the footer shows. A cluster you have
+        already visited this session is marked <code>·</code> in green: it is still
+        connected, so switching to it is instant. One that refused a connection is
+        marked <code>✗</code> in red. The built-in <code>default</code> context is
+        protected.
+      </p>
+      <p>
+        The sidebar sizes itself to the longest context name and <strong>steps aside on a
+        narrow terminal</strong>: below roughly 92 columns it hides rather than clip the
+        tree, and reappears for as long as <kbd>c</kbd> holds it. While it is hidden, the right end of the status line says so: <kbd>c</kbd>&nbsp;contexts. Endpoints are not shown
+        in the column — there is no room for them there, and <kbd>i</kbd> shows the full
+        detail.
+      </p>
+      <p>
+        <strong>Switching cluster keeps your session.</strong> The UI does not rebuild
+        itself: where the cursor stood, which stacks and services were unfolded and the
+        <code>/</code> filter are remembered <em>per cluster</em>, so going back puts you
+        exactly where you left off. <strong>Port forwards keep running</strong> across a
+        switch — the Forwards tab gains a <code>CLUSTER</code> column so you can see at a
+        glance which ones belong to the cluster you are looking at and which do not.
+      </p>
+      <p>
+        Only the cluster you are looking at is polled: switching away stops the other
+        one's refresh, and its ssh connection expires on its own shortly after. The
+        first switch to a cluster takes as long as connecting to it does, because the
+        connection is made <em>before</em> anything on screen changes — if it fails, you
+        are told which cluster and stay on the one that works. Every later switch back
+        is immediate.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>c</kbd></td><td>focus the sidebar from any tab; <kbd>c</kbd> again or <kbd>Esc</kbd> gives the keyboard back</td></tr>
+          <tr><td><kbd>i</kbd></td><td>context details — endpoint and jump hosts, which the column itself has no room for</td></tr>
+          <tr><td><kbd>u</kbd> / <kbd>Enter</kbd></td><td>activate the selected context — makes it the current one (docker's stored current context too) and switches the UI to that cluster, keeping your position, your filters and your port-forwards</td></tr>
+          <tr><td><kbd>n</kbd></td><td>create a context — a <strong>guided</strong> form. A checkbox <strong>“Connect to Docker over SSH”</strong> decides the endpoint: when on, you fill in SSH <strong>user / host / port</strong> and a second checkbox <strong>“Use a jump host”</strong> reveals a <strong>jump host(s)</strong> field (comma-separated, multi-hop <code>ProxyJump</code>) — swarmexec stores them on the context and injects <code>-J</code> into <em>both</em> the Docker-API and the agent-tunnel ssh connections, so bastions work without editing <code>~/.ssh/config</code>. When off, you enter a plain <code>tcp://</code> / <code>unix://</code> host. The form assembles the docker host for you, and <strong>Test</strong> pings the assembled endpoint before you save. Also on the CLI: <code>swarmexec context create &lt;name&gt; --docker-host ssh://ops@mgr --ssh-jump bastion1,bastion2</code></td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove the selected context (behind a confirm); removing the current one resets the selection to <code>default</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="tui-shell-logs">Embedded shell &amp; logs</h2>
+      <p>
+        In an embedded shell, <kbd>Ctrl-]</kbd> detaches (without ending the process). The
+        logs view — a single container or a service's aggregated logs — supports the same
+        format-aware parsing and filtering as the <code>logs</code> command:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>f</kbd></td><td>toggle follow</td></tr>
+          <tr><td><kbd>F</kbd></td><td>cycle log format (classic → json → logfmt → gelf → raw)</td></tr>
+          <tr><td><kbd>a</kbd></td><td>auto-detect the log format from the lines on screen — it says so when it cannot tell, and keeps watching</td></tr>
+          <tr><td><kbd>l</kbd></td><td>cycle minimum level filter (off → trace → … → fatal → off)</td></tr>
+          <tr><td><kbd>/</kbd></td><td>enter a grep regexp on the message (empty clears it)</td></tr>
+          <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>scroll</td></tr>
+          <tr><td><kbd>Esc</kbd> / <kbd>q</kbd></td><td>close</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        The view re-renders the buffered lines live when you change format, level or
+        grep, and the title bar shows the active <code>fmt:… lvl:… grep:…</code> status.
+      </p>
+      <p>
+        When following, the log view reconnects across container replacement the same way
+        the <a href="/docs#commands"><code>logs</code></a> command does — for both a single
+        container's logs and a service's aggregated logs (each replica followed by slot).
+        Reconnect notices appear inline in the log view.
+      </p>
+      <p>
+        <kbd>L</kbd> on a service with no running container opens its last logs: the
+        newest exited container of each slot, headed by a line that says how it ended,
+        and still following, so a crash loop's next attempt appears as a reconnect. When
+        no task ever got a container, a dialog shows the newest task's error instead.
+      </p>
+
+      <h2 id="tui-logviewer">Log viewer</h2>
+      <p>
+        Press <kbd>`</kbd> (backtick) from any tab to toggle a live log overlay. It
+        shows the most recent records from the in-memory ring buffer — newest at the
+        bottom — refreshing while open and colour-coded by level (red = error, yellow =
+        warn, gray = debug). <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
+        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. This is the TUI's window
+        onto the same logs that go to the log file, since the terminal itself can't show
+        them while the UI is drawing.
+      </p>
+      <div class="note">
+        <strong>Responsiveness.</strong> The container list refreshes off the UI thread
+        (its two manager API calls used to run inline and could briefly freeze the TUI),
+        and a background watchdog logs a warning when the event loop stalls — handy for
+        diagnosing sluggishness from the log viewer.
+      </div>
+
+      <h2 id="tui-keys">Custom keys</h2>
+      <p>
+        The shortcut keys are remappable in <code>~/.config/swarmexec/keys.yaml</code>
+        (next to <code>config.yaml</code>; override the path with
+        <code>$SWARMEXEC_KEYS</code>). Each value is a single key, or the word
+        <code>space</code>. The structural keys — <kbd>Enter</kbd>, <kbd>Esc</kbd>,
+        <kbd>Tab</kbd>, the arrows, the tab-number keys <kbd>1</kbd>–<kbd>9</kbd> and the
+        vim aliases <kbd>j</kbd>/<kbd>k</kbd>/<kbd>g</kbd>/<kbd>G</kbd> — are fixed. The
+        footer always shows your actual keys, and the <kbd>?</kbd> overlay lists all of
+        them.
+      </p>
+      <div class="prompt"><span class="o"># ~/.config/swarmexec/keys.yaml — omit any line to keep its default</span>
+quit: q          refresh: r        copy: y            toggle_mouse: m
+search: /        fold: h           unfold: l          forward: p
+container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
+stack_group: s
+volume_select: space               volume_select_all: a
+volume_delete: X volume_prune: P   volume_used_by: i
+volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
+network_attached: i    network_new: n
+context_use: u   context_new: n    context_delete: X
+node_edit_labels: l    node_availability: a    node_prune: P    node_prune_schedule: S
+secret_delete: X secret_new: n
+forward_stop: X  forward_copy_url: o</div>
+      <p>
+        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. They used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
+      </p>
+      <p>
+        Loading never fails: an invalid or reserved key, an unknown action, or two
+        actions bound to the same key on one tab each fall back to the default, and the
+        UI shows the warnings once on startup.
+      </p>
+      <p>
+        <code>quit</code> and <code>copy</code> also apply inside every dialog — the
+        inspect overlay, the detail views, the log viewer — so a remapped key closes and
+        copies there too. For the same reason they cannot take a key a dialog uses for
+        itself, such as <kbd>t</kbd>, <kbd>d</kbd> or <kbd>i</kbd>: that remap keeps the
+        default, with a warning. The env editor is the exception: there every letter is a
+        vim command or text, so it leaves with <kbd>Esc</kbd> / <kbd>:q</kbd> and copies
+        with <kbd>yy</kbd> whatever <code>quit</code> and <code>copy</code> are bound to.
+      </p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/configuration" rel="prev"><span class="lbl">← Previous</span>Configuration, flags &amp; exit codes</a>
+        <a class="next" href="/docs/tui-services" rel="next"><span class="lbl">Next →</span>TUI: the Stacks/Services tab</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui" aria-current="page">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

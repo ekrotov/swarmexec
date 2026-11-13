@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install swarmexec and get started — swarmexec docs</title>
+  <meta name="description" content="Install the swarmexec client with the script, Homebrew, Scoop or a binary, check the Docker Engine requirements, add shell completion, and run your first exec in a Docker Swarm.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/install">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="Install swarmexec and get started — swarmexec docs">
+  <meta property="og:description" content="Install the swarmexec client with the script, Homebrew, Scoop or a binary, check the Docker Engine requirements, add shell completion, and run your first exec in a Docker Swarm.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/install">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Install swarmexec and get started — swarmexec docs">
+  <meta name="twitter:description" content="Install the swarmexec client with the script, Homebrew, Scoop or a binary, check the Docker Engine requirements, add shell completion, and run your first exec in a Docker Swarm.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Install swarmexec and get started — swarmexec docs",
+        "description": "Install the swarmexec client with the script, Homebrew, Scoop or a binary, check the Docker Engine requirements, add shell completion, and run your first exec in a Docker Swarm.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/install",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Install & quick start",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/install"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Install &amp; quick start</p>
+      <h1>Install &amp; quick start<span class="cursor">_</span></h1>
+      <p class="tagline">One static binary, then one command to provision the agents.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#install">Install</a></li>
+          <li><a href="#quickstart">Quick start</a></li>
+        </ol>
+      </div>
+
+      <h2 id="install">Install</h2>
+      <p id="requirements">
+        <strong>Requires Docker Engine 19.03 or newer</strong> (API <strong>1.40</strong>)
+        on the manager and on every node. swarmexec refuses an older daemon at connect
+        with a message naming both versions, rather than connecting and then failing one
+        view at a time. Two features want a little more from the <em>node's</em> daemon —
+        live resource usage and the per-node image view need <strong>Docker 23.0</strong>
+        (API 1.41/1.42); below that they stay empty and say so instead of failing.
+      </p>
+      <p>
+        <strong>Quickest:</strong> the install script picks the build for your machine,
+        checks it against the release's <code>SHA256SUMS</code> and refuses to install
+        anything it could not verify. It never uses <code>sudo</code> and never edits your
+        shell profile — <a href="/install.sh">read it first</a>, it is short.
+      </p>
+      <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+<span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># a specific release</span></div>
+      <p>
+        <strong>With a package manager</strong> — then <code>brew upgrade</code> or
+        <code>scoop update</code> brings each new release, which keeps the client in step
+        with the agents:
+      </p>
+      <div class="prompt"><span class="c">$</span> brew install ekrotov/swarmexec/swarmexec             <span class="o"># macOS, Linux</span>
+<span class="c">$</span> scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
+<span class="c">$</span> scoop install swarmexec                               <span class="o"># Windows</span></div>
+      <p>Or by hand:</p>
+      <p>The client is a single static binary. Grab the latest release build for your platform:</p>
+      <div class="prompt"><span class="c">$</span> curl -fsSLo swarmexec \
+    https://github.com/ekrotov/swarmexec/releases/latest/download/swarmexec-linux-amd64
+<span class="c">$</span> chmod +x swarmexec &amp;&amp; sudo mv swarmexec /usr/local/bin/
+<span class="c">$</span> swarmexec --version</div>
+      <p class="lead">
+        Builds: <a href="https://github.com/ekrotov/swarmexec/releases/latest/download/swarmexec-linux-amd64">linux-amd64</a>,
+        <a href="https://github.com/ekrotov/swarmexec/releases/latest/download/swarmexec-linux-arm64">linux-arm64</a>,
+        <a href="https://github.com/ekrotov/swarmexec/releases/latest/download/swarmexec-darwin-arm64">darwin-arm64</a>,
+        <a href="https://github.com/ekrotov/swarmexec/releases/latest/download/swarmexec-darwin-amd64">darwin-amd64</a>,
+        <a href="https://github.com/ekrotov/swarmexec/releases/latest/download/swarmexec-windows-amd64.exe">windows-amd64</a>.
+        The agent image is public on Docker Hub as
+        <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><code>logleio/swarmexec-agent</code></a>.
+      </p>
+
+      <h3 id="completion">Shell completion</h3>
+      <p>
+        <code>swarmexec completion bash|zsh|fish|powershell</code> prints a completion
+        script. It completes more than flags: <code>exec &lt;TAB&gt;</code> offers the services
+        that exist, <code>logs web.&lt;TAB&gt;</code> their running slots, <code>--stack
+        &lt;TAB&gt;</code> the deployed stacks and <code>--context &lt;TAB&gt;</code> your Docker
+        contexts. Only the manager API is asked, never an agent; a completion gives up after
+        two seconds and over <code>ssh://</code> it is never allowed to prompt, so a context
+        that would ask for a password offers nothing instead of freezing the shell.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec completion bash &gt; /etc/bash_completion.d/swarmexec      <span class="o"># or ~/.local/share/bash-completion/completions/</span>
+<span class="c">$</span> swarmexec completion zsh &gt; "${fpath[1]}/_swarmexec"
+<span class="c">$</span> swarmexec completion fish &gt; ~/.config/fish/completions/swarmexec.fish</div>
+
+      <h2 id="quickstart">Quick start</h2>
+      <p>
+        Point your Docker context at a Swarm manager, then provision the agents once.
+        <code>init</code> creates a shared secret, deploys the agent on every node in
+        self-signed mode, and writes a matching client config — so the other commands
+        work immediately.
+      </p>
+      <div class="prompt"><span class="c">$</span> swarmexec --context my-swarm init      <span class="o"># deploy agents on every node (once)</span>
+<span class="c">$</span> swarmexec ps                            <span class="o"># list tasks and the node each runs on</span>
+<span class="c">$</span> swarmexec exec web -- sh                <span class="o"># shell into service "web", any node</span>
+<span class="c">$</span> swarmexec logs -f web                   <span class="o"># follow a service's logs</span>
+<span class="c">$</span> swarmexec port-forward db 5432          <span class="o"># localhost:5432 → container:5432</span>
+<span class="c">$</span> swarmexec ui                            <span class="o"># interactive TUI</span></div>
+      <p>
+        Tear the agents down again with <code>swarmexec down</code> (it leaves your
+        client config untouched).
+      </p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs" rel="prev"><span class="lbl">← Previous</span>Overview</a>
+        <a class="next" href="/docs/exec" rel="next"><span class="lbl">Next →</span>exec into any Swarm container</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install" aria-current="page">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

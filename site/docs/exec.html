@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec exec — docker exec into a container on any Docker Swarm node</title>
+  <meta name="description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/exec">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec exec — docker exec into a container on any Docker Swarm node">
+  <meta property="og:description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/exec">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec exec — docker exec into a container on any Docker Swarm node">
+  <meta name="twitter:description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec exec — docker exec into a container on any Docker Swarm node",
+        "description": "Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/exec",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "exec into any Swarm container",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/exec"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › exec into any Swarm container</p>
+      <h1>exec into any Swarm container<span class="cursor">_</span></h1>
+      <p class="tagline">A shell in any task, on any node, without SSH to it.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#targets">Target selectors</a></li>
+          <li><a href="#ps">ps — list tasks</a></li>
+          <li><a href="#exec">exec — run a command / open a shell</a></li>
+        </ol>
+      </div>
+
+      <h2 id="targets">Target selectors</h2>
+      <p>
+        <code>exec</code>, <code>logs</code> and <code>port-forward</code> take a
+        <strong>target</strong> as their first argument. It is resolved in this order:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Form</th><th>Example</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>service</code></td><td><code>web</code></td><td>The service's running task. If it has more than one replica, this is ambiguous — see below.</td></tr>
+          <tr><td><code>service.slot</code></td><td><code>web.2</code></td><td>A specific replica slot. During a rolling update the newest task in the slot wins.</td></tr>
+          <tr><td><code>task-id</code></td><td><code>xxh8k1…</code></td><td>A Swarm task ID.</td></tr>
+          <tr><td><code>container-id</code></td><td><code>3f9a2b…</code></td><td>A container ID prefix. Needs a node: pass <code>--node</code>, or it is found by scanning running tasks.</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Ambiguity.</strong> A bare service name with several replicas cannot be
+        resolved to one task. <code>exec</code> prompts you to pick from a numbered list
+        when run interactively; <code>port-forward</code> never prompts — it prints the
+        candidate list and exits. Disambiguate with a slot (<code>web.0</code>,
+        <code>web.1</code>, …). <code>logs</code> is the exception: it follows
+        <a href="/docs/logs#logs">every replica at once</a>, like <code>docker service logs</code>.
+      </p>
+      <div class="note">
+        <strong>--node</strong> is only consulted for <em>container-id</em> targets and
+        may be a hostname, IP, or node ID. Service / slot / task targets are located via
+        the manager API, so they never need it.
+      </div>
+
+      <h2 id="ps"><code>ps</code> — list tasks</h2>
+      <p>
+        Lists candidate tasks/containers and the node each runs on. Takes an optional
+        service filter. Columns: <code>SERVICE&nbsp;&nbsp;SLOT&nbsp;&nbsp;CONTAINER&nbsp;&nbsp;NODE&nbsp;&nbsp;IP&nbsp;&nbsp;UPTIME</code>.
+        This talks only to the manager API — it works even before agents are reachable.
+      </p>
+      <div class="cmd">swarmexec ps [service]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="exec"><code>exec</code> — run a command / open a shell</h2>
+      <p>
+        Exec into a container running anywhere in the swarm. With no command it opens
+        <code>/bin/sh</code>. A TTY is allocated automatically when stdin is a terminal
+        and you gave no command; force it with <code>-t</code>. The remote command's own
+        exit code is propagated verbatim.
+      </p>
+      <div class="cmd">swarmexec exec [flags] <span class="k">&lt;target&gt;</span> [-- &lt;cmd&gt; [args...]]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-i</code>, <code>--stdin</code></td><td><code>true</code></td><td>keep stdin open</td></tr>
+          <tr><td><code>-t</code>, <code>--tty</code></td><td>auto</td><td>allocate a TTY (auto: true iff stdin is a terminal and no command)</td></tr>
+          <tr><td><code>-u</code>, <code>--user</code></td><td>—</td><td>username or UID (e.g. <code>1000:1000</code>)</td></tr>
+          <tr><td><code>-w</code>, <code>--workdir</code></td><td>—</td><td>working directory inside the container</td></tr>
+          <tr><td><code>-e</code>, <code>--env</code></td><td>—</td><td>set environment variables (<code>KEY=VALUE</code>, repeatable)</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+        </tbody>
+      </table></div>
+      <div class="prompt"><span class="c">$</span> swarmexec exec web -- sh
+<span class="c">$</span> swarmexec exec web.2 -- cat /etc/hostname       <span class="o"># a specific replica</span>
+<span class="c">$</span> swarmexec exec -u root -w /app web -- ls -la
+<span class="c">$</span> swarmexec exec -e FOO=bar web -- env</div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/install" rel="prev"><span class="lbl">← Previous</span>Install &amp; quick start</a>
+        <a class="next" href="/docs/logs" rel="next"><span class="lbl">Next →</span>Logs of services and stacks</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec" aria-current="page">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

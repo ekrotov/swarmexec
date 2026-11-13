@@ -118,7 +118,7 @@
   </header>
   <main id="main">
     <div class="card">
-      <p class="more"><a href="/">swarmexec</a> › Compared</p>
+      <p class="crumbs"><a href="/">swarmexec</a> › Compared</p>
       <h1>Swarm exec, compared<span class="cursor">_</span></h1>
       <p class="tagline">docker exec, logs and port-forward on another Swarm node — every way to do it.</p>
 
@@ -171,7 +171,7 @@
         With no command it opens <code>/bin/sh</code>; the remote command's exit code is passed
         through unchanged, so it works in scripts. A target can be a service, a
         <code>service.slot</code>, a task id or a container id — see
-        <a href="docs.html#targets">target selectors</a> and the
+        <a href="/docs/exec">target selectors</a> and the
         <a href="examples.html#exec-replica">replica recipe</a>.
       </p>
 
@@ -203,7 +203,7 @@
         your network), and it goes to exactly <strong>one</strong> task — a forward that
         load-balanced across replicas would make debugging misleading. Nothing is published
         and the service spec is not touched. Details:
-        <a href="docs.html#port-forward"><code>port-forward</code></a>,
+        <a href="/docs/port-forward"><code>port-forward</code></a>,
         <a href="examples.html#forward-db">forward a database port</a>.
       </p>
 
@@ -243,7 +243,7 @@
         <li>format-aware filtering — <code>--log-format auto|classic|json|logfmt|gelf|raw</code>, <code>--min-level warn</code>, <code>--grep</code>;</li>
         <li>for a service that crash-loops and has nothing running, the last exited container of each slot, with how it ended.</li>
       </ul>
-      <p>See <a href="docs.html#logs"><code>logs</code></a> and <a href="examples.html#follow-logs">follow logs across a whole stack</a>.</p>
+      <p>See <a href="/docs/logs"><code>logs</code></a> and <a href="examples.html#follow-logs">follow logs across a whole stack</a>.</p>
 
       <h2 id="matrix">Side by side</h2>
       <p>
@@ -281,7 +281,7 @@
         every node — with access to the Docker socket, which is root on that node. swarmexec
         replaces that with one door per node, the agent, which knows who came in (the
         certificate's CN, or the operator name with the shared secret), writes an audit line per
-        request, and can refuse per action with a <a href="docs.html#policy">policy file</a>
+        request, and can refuse per action with a <a href="/docs/authentication#policy">policy file</a>
         (no <code>exec</code> as root, no forwards to the database ports, …).
       </p>
 
@@ -294,7 +294,7 @@
         manager's own containers. swarmexec takes the context you already have — including an
         <code>ssh://</code> one — for the manager, and tunnels the agent traffic over the same
         SSH host when the nodes are not reachable directly. One context per cluster, not per node:
-        see <a href="docs.html#context">Docker context &amp; SSH</a>.
+        see <a href="/docs/contexts">Docker context &amp; SSH</a>.
       </p>
 
       <h3 id="vs-portainer">swarmexec vs. Portainer</h3>
@@ -306,8 +306,8 @@
         workstation for Swarm containers that we could find documented, and fine-grained RBAC and
         activity logs are in the commercial Business Edition. swarmexec is terminal-first
         (scriptable CLI, exit codes for CI, a TUI), Apache-2.0 at any size, and adds a
-        <a href="docs.html#stackfile">content diff of a stack file against what is deployed</a>
-        and a <a href="docs.html#stackdeploy">security check before <code>stack deploy</code></a>.
+        <a href="/docs/stack">content diff of a stack file against what is deployed</a>
+        and a <a href="/docs/security-scan">security check before <code>stack deploy</code></a>.
         The two coexist fine.
       </p>
 
@@ -331,7 +331,7 @@
         Compose project it is excellent; on a Swarm, <code>swarmexec ui</code> is the
         cluster-wide equivalent: stacks and services, volumes, networks, secrets, configs and
         nodes across the whole Swarm, and several clusters in one session
-        (<a href="docs.html#tui">the TUI</a>).
+        (<a href="/docs/tui#tui">the TUI</a>).
       </p>
 
       <h3 id="vs-kubectl">swarmexec and kubectl / k9s</h3>
@@ -355,8 +355,8 @@
         bound to loopback, stopped with <kbd>Ctrl-C</kbd>. Under the hood it uses a helper too — the
         agent runs a short-lived sidecar in the task's network namespace — but the agent starts it
         and removes it on its own, about two minutes after the last connection closes
-        (<a href="docs.html#port-forward">how it works</a>). The TUI's Forwards tab keeps several
-        forwards open at once (<a href="docs.html#tui-forwards">Forwards tab</a>).
+        (<a href="/docs/port-forward">how it works</a>). The TUI's Forwards tab keeps several
+        forwards open at once (<a href="/docs/tui-tabs#tui-forwards">Forwards tab</a>).
       </p>
 
       <h3 id="vs-d4s-swarmcli">The close relatives: d4s and swarmcli</h3>
@@ -454,7 +454,7 @@
       <div class="note">
         <strong>Try it:</strong> <code>curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh</code>,
         then <code>swarmexec --context prod init</code> — see
-        <a href="docs.html#quickstart">Quick start</a>, the <a href="examples.html">recipes</a>,
+        <a href="/docs/install#quickstart">Quick start</a>, the <a href="examples.html">recipes</a>,
         or the source on <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>.
       </div>
 

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec stack export, stack diff and wait — Docker Swarm stacks as files</title>
+  <meta name="description" content="Export a deployed Docker Swarm stack as a file, diff a stack file against what is deployed by content rather than text, with exit codes for CI, and wait until a deploy has really converged.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/stack">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec stack export, stack diff and wait — Docker Swarm stacks as files">
+  <meta property="og:description" content="Export a deployed Docker Swarm stack as a file, diff a stack file against what is deployed by content rather than text, with exit codes for CI, and wait until a deploy has really converged.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/stack">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec stack export, stack diff and wait — Docker Swarm stacks as files">
+  <meta name="twitter:description" content="Export a deployed Docker Swarm stack as a file, diff a stack file against what is deployed by content rather than text, with exit codes for CI, and wait until a deploy has really converged.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec stack export, stack diff and wait — Docker Swarm stacks as files",
+        "description": "Export a deployed Docker Swarm stack as a file, diff a stack file against what is deployed by content rather than text, with exit codes for CI, and wait until a deploy has really converged.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/stack",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Stack export, diff & wait",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/stack"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Stack export, diff &amp; wait</p>
+      <h1>Stack export, diff &amp; wait<span class="cursor">_</span></h1>
+      <p class="tagline">What is deployed, as a file — and when a deploy is really done.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#stackfile">stack export / stack diff — a deployed stack as a file</a></li>
+          <li><a href="#wait">wait — until a deploy has actually converged</a></li>
+        </ol>
+      </div>
+
+      <h2 id="stackfile"><code>stack export</code> / <code>stack diff</code> — a deployed stack as a file</h2>
+      <p>
+        <code>stack export</code> reads a deployed stack back out of the cluster and
+        writes it as compose-shaped YAML. <code>stack diff</code> compares a stack file
+        against what is actually deployed and prints a <strong>unified diff</strong>: a
+        <code>+</code> line is something deploying the file would <strong>add</strong>, a
+        <code>-</code> is something it would <strong>remove</strong>. Like
+        <code>git diff --exit-code</code> it exits <strong>1</strong> when anything
+        differs, so it works in CI.
+      </p>
+      <div class="cmd">swarmexec stack ls
+swarmexec stack export postgres -o postgres.yml
+swarmexec stack diff postgres.yml postgres</div>
+      <p>
+        In the TUI, <kbd>E</kbd> on the Stacks/Services tab offers both for the stack
+        under the cursor — the stack row, a service in it, or a container of one.
+      </p>
+      <p>
+        <strong>Why it does not diff text.</strong> A deployed stack carries things the
+        file never had: the image digest the daemon resolved at deploy time, its own
+        defaults for restart and update policy, and the stack namespace prefixed onto
+        every network, secret and volume. Comparing the two as text reports dozens of
+        differences for a stack that is exactly in sync — which is worse than no tool at
+        all, because it teaches you to ignore the output. Instead the file is run through
+        <strong>docker's own compose loader and converter</strong>, the same code
+        <code>docker stack deploy</code> uses, and both sides are then reduced by the
+        <strong>same</strong> function. The question answered is <em>“would deploying
+        this file change anything?”</em>, not <em>“are these two files spelled the
+        same?”</em>. Daemon defaults are dropped from both sides; a value that is
+        <strong>not</strong> the default still shows, so nothing real is hidden.
+      </p>
+      <p>
+        <strong>An export is a description, not a backup.</strong> A secret's value is
+        <strong>write-only</strong> in the engine API — it can never be read back — and a
+        volume's contents live on the nodes. Both are therefore declared
+        <code>external</code>, and the exported file says so in its own header:
+        recreating the stack elsewhere means creating the secrets first. Spec fields the
+        rendering does not carry (<code>tty</code>, <code>ulimits</code>, seccomp and
+        AppArmor settings and a few others) are named in the same place, because the
+        dangerous failure of a comparison tool is not a wrong answer but a confident
+        silence — so <em>“no differences”</em> always arrives with its caveats attached.
+      </p>
+      <p>
+        Variables are interpolated from your environment, exactly as
+        <code>docker stack deploy</code> does. A file containing <code>${TAG}</code>
+        therefore describes a different stack for a different <code>TAG</code>, and the
+        diff depends on the environment it runs in — which is correct: pretending
+        otherwise would report no change for a deploy that would change the image.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>stack ls</code></td><td>the stacks deployed on the cluster</td></tr>
+          <tr><td><code>stack export &lt;stack&gt;</code></td><td>write the stack as compose YAML; <code>-o</code> to a file, otherwise stdout</td></tr>
+          <tr><td><code>stack diff &lt;file&gt; [stack]</code></td><td>compare a file against the deployed stack. The stack name defaults to the file's base name; <code>--stack</code> or a second argument overrides it. Exits <strong>1</strong> on any difference</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>As a pipeline gate.</strong> Run nightly, <code>stack diff</code> answers
+        “does the cluster still match Git?”: exit <strong>0</strong> means no difference,
+        <strong>1</strong> a difference, <strong>2</strong> a usage error, <strong>125</strong>
+        an unreachable manager. A gate that goes red on every harmless change gets
+        switched off, so <code>--ignore</code> leaves a field out of <em>both</em> sides —
+        <code>services.*.deploy.replicas</code> for a count an autoscaler moves, with
+        <code>*</code> for any service name; repeat it for several paths. Every ignored path
+        is listed under <em>Not compared</em>, so a green result still says what it did not
+        look at, and a path that matched nothing on either side is called out, because a
+        typo in an ignore list otherwise ignores nothing, silently.
+        <code>--format json</code> prints the machine form: <code>differs</code>, the hunks,
+        <code>ignored</code> and <code>not_compared</code>.
+      </p>
+      <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
+swarmexec stack diff shop.yml --format json | jq .differs</div>
+      <p class="recipe-link">See the recipe: <a href="/examples#drift-ci">catch drift in CI</a>.</p>
+
+      <h2 id="wait"><code>wait</code> — until a deploy has actually converged</h2>
+      <p>
+        <code>stack deploy</code> returns when swarm has <em>accepted</em> the change, not
+        when it works. <code>wait</code> closes that gap for a pipeline: it blocks until
+        every named service — or every service of <code>--stack</code> — has converged,
+        then exits <strong>0</strong>; it exits <strong>1</strong> with the reason when one
+        does not.
+      </p>
+      <div class="cmd">swarmexec stack deploy shop.yml --yes &amp;&amp; swarmexec wait --stack shop --timeout 3m
+swarmexec wait api worker --healthy</div>
+      <p>
+        <strong>Converged</strong> means no update in flight and as many running tasks as
+        desired (for a job: its completions reached), held for two polls a few seconds
+        apart — so even a stable service takes a few seconds, and the moment right after a
+        deploy, before the manager has started the update, cannot pass for done. Two states
+        that look settled are <strong>failures</strong>: an update that <em>paused</em>
+        (the service runs a mix of old and new tasks) and a rollback that completed during
+        the wait (it runs the previous spec — the deploy did not take). On timeout the
+        reason a task is not running is printed, typically the scheduler's own message.
+        With <code>--healthy</code> every container that has a healthcheck must also report
+        healthy; a node whose agent cannot report health counts as <em>not yet</em>, never
+        as healthy. swarmexec only observes and reports — it never rolls back or retries.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--stack</code></td><td>—</td><td>wait for every service of this stack (in addition to any named)</td></tr>
+          <tr><td><code>--timeout</code></td><td><code>5m</code></td><td>give up after this long (exit 1)</td></tr>
+          <tr><td><code>--healthy</code></td><td><code>false</code></td><td>also require healthy containers (asks the agents)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="recipe-link">See the recipe: <a href="/examples#deploy-done">a deploy that is really done</a>.</p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/port-forward" rel="prev"><span class="lbl">← Previous</span>port-forward into the Swarm</a>
+        <a class="next" href="/docs/security-scan" rel="next"><span class="lbl">Next →</span>Security scan &amp; report</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack" aria-current="page">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

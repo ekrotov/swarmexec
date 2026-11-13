@@ -43,9 +43,12 @@ COPY site/index.html site/docs.html site/examples.html site/compare.html site/da
 # Fonts are served from here, not from Google (no third-party request, nothing
 # for the privacy page to declare); the OFL texts travel with them.
 COPY site/fonts /usr/share/nginx/html/fonts
+# The docs, one page per topic (served as /docs/<topic>; docs.html is the index).
+COPY site/docs /usr/share/nginx/html/docs
 # Build-time-generated release data (same-origin fetch target for releases.html).
 COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
-# index.html, docs.html, examples.html and compare.html carry the __VERSION__ placeholder;
+# index.html, docs.html, docs/*.html, examples.html and compare.html carry the
+# __VERSION__ placeholder;
 # datenschutz*.html and releases.html do not. The sitemap's <lastmod> is the
 # build date (UTC): CI builds this image when site/ changes on main and on a
 # release, which is when the pages change. BUILD_DATE (YYYY-MM-DD) overrides it
@@ -53,6 +56,7 @@ COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
 ARG BUILD_DATE=
 RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html \
       /usr/share/nginx/html/examples.html /usr/share/nginx/html/compare.html \
+      /usr/share/nginx/html/docs/*.html \
  && LASTMOD="${BUILD_DATE:-$(date -u +%Y-%m-%d)}" \
  && sed -i "s/__LASTMOD__/${LASTMOD}/g" /usr/share/nginx/html/sitemap.xml \
  && chown -R nginx:nginx /usr/share/nginx/html \

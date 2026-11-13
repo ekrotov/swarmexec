@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm</title>
+  <meta name="description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/volumes">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm">
+  <meta property="og:description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/volumes">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm">
+  <meta name="twitter:description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm",
+        "description": "List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/volumes",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Volumes & prune schedule",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/volumes"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="rail">
+    <a class="mark" href="/" aria-label="swarmexec home">
+      <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+      <span>swarmexec</span>
+    </a>
+    <div class="rail-nav">
+      <a href="/docs">Docs</a>
+      <a href="/examples">Examples</a>
+      <a class="rail-link" href="/releases">Releases</a>
+      <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">GitHub</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Volumes &amp; prune schedule</p>
+      <h1>Volumes &amp; prune schedule<span class="cursor">_</span></h1>
+      <p class="tagline">Node-local volumes, seen and cleaned up cluster-wide.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#volume-ls">volume ls — list volumes</a></li>
+          <li><a href="#volume-rm">volume rm — remove a volume</a></li>
+          <li><a href="#pruneschedulecmd">prune-schedule — the agents' prune schedule</a></li>
+        </ol>
+      </div>
+
+      <h2 id="volume-ls"><code>volume ls</code> — list volumes</h2>
+      <p>
+        Lists volumes across all nodes and which nodes hold each. Swarm volumes are
+        node-local, so the client queries every node and aggregates. Optional substring
+        name filter. Columns: <code>VOLUME&nbsp;&nbsp;DRIVER&nbsp;&nbsp;NODES&nbsp;&nbsp;USED&nbsp;BY&nbsp;&nbsp;AGE</code>
+        (plus <code>SIZE</code> with <code>--size</code>).
+      </p>
+      <div class="cmd">swarmexec volume ls [name-filter]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--size</code></td><td><code>false</code></td><td>also compute each volume's on-disk size (slower: du per volume)</td></tr>
+          <tr><td><code>--sort</code></td><td><code>name</code></td><td>sort by: <code>name</code> | <code>nodes</code> | <code>used</code> | <code>age</code> | <code>size</code> (<code>size</code> implies <code>--size</code>)</td></tr>
+          <tr><td><code>--reverse</code></td><td><code>false</code></td><td>reverse the sort direction</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="volume-rm"><code>volume rm</code> — remove a volume</h2>
+      <p>
+        Remove a volume on every node that holds it (<code>--all</code>) or on specific
+        nodes (<code>--node</code>, repeatable). One of the two is required.
+      </p>
+      <div class="cmd">swarmexec volume rm <span class="k">&lt;name&gt;</span>  (--all | --node N …)</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--all</code></td><td><code>false</code></td><td>remove on every node that holds the volume</td></tr>
+          <tr><td><code>--node</code></td><td>—</td><td>remove only on these nodes (repeatable)</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>pass docker's force flag</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>do not prompt for confirmation</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="pruneschedulecmd"><code>prune-schedule</code> — the agents' prune schedule</h2>
+      <p>
+        Shows or sets the cluster-wide <a href="/docs/tui-nodes#pruneschedule">prune schedule</a>.
+        <code>show</code> prints it with the next five runs; <code>set</code> changes only
+        the flags you give and enables the schedule. Saving updates the agent service, so
+        the agents <strong>restart one by one</strong>; the command asks first.
+      </p>
+      <div class="cmd">swarmexec prune-schedule show
+swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag (set)</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--days</code></td><td>every day</td><td><code>mon,tue,…</code> or ranges like <code>mon-fri</code></td></tr>
+          <tr><td><code>--start</code></td><td><code>00:00</code></td><td>first run of the day, <code>HH:MM</code></td></tr>
+          <tr><td><code>--times</code></td><td><code>1</code></td><td>runs per day (1–24), the day split evenly from <code>--start</code></td></tr>
+          <tr><td><code>--tz</code></td><td><code>UTC</code></td><td>IANA time zone of <code>--days</code> and <code>--start</code></td></tr>
+          <tr><td><code>--categories</code></td><td><code>containers,images,buildcache,networks</code></td><td>also <code>dangling-images</code> and <code>volumes</code></td></tr>
+          <tr><td><code>--containers-until</code></td><td><code>24h</code></td><td>keep stopped containers this long after they stop; <code>0</code> keeps none</td></tr>
+          <tr><td><code>--label-filter</code></td><td>—</td><td>only prune objects with these labels; <code>-</code> clears</td></tr>
+          <tr><td><code>--disable</code></td><td><code>false</code></td><td>turn the schedule off and keep its settings</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td><code>false</code></td><td>do not prompt before the agents restart</td></tr>
+        </tbody>
+      </table></div>
+      <p class="recipe-link">See the recipe: <a href="/examples#prune-schedule">free disk space on a schedule</a>.</p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/secrets" rel="prev"><span class="lbl">← Previous</span>Rotate a secret, keep its name</a>
+        <a class="next" href="/docs/mcp" rel="next"><span class="lbl">Next →</span>MCP server for AI assistants</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes" aria-current="page">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>
