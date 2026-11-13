@@ -27,6 +27,7 @@ import (
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/limits"
+	"swarmexec/agent/internal/reclaim"
 	"swarmexec/agent/internal/statsampler"
 	"swarmexec/agent/internal/volsize"
 	"swarmexec/internal/pb"
@@ -76,7 +77,7 @@ type Server struct {
 	opts       Options
 	sizeCache  *volsize.Cache       // serves ListVolumes(with_size) from memory
 	statsCache *statsampler.Sampler // serves Stats from memory (see internal/statsampler)
-	reclaim    *reclaimCache        // serves ReclaimStats from memory (see reclaim.go)
+	reclaim    *reclaim.Cache       // serves ReclaimStats from memory (see internal/reclaim)
 	scheduler  *pruneScheduler      // the node's prune schedule (see schedule.go)
 
 	// pruneMu serializes prunes, manual and scheduled (see runPrune).
@@ -129,8 +130,9 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	}
 	s.sizeCache = volsize.New(docker, log, opts.VolumeSizeInterval)
 	s.statsCache = statsampler.New(docker, log, opts.StatsInterval)
-	s.reclaim = newReclaimCache(s, log)
 	s.scheduler = newPruneScheduler(s, log)
+	// The scheduler is built first: the reclaim figures use its age filter.
+	s.reclaim = reclaim.New(s.measureReclaim, s.sizeCache, s.scheduler, log)
 	s.muxes = newMuxPool()
 	s.streams = limits.New(limits.OrDefault(opts.MaxStreams, limits.DefaultMaxStreams), "streams", "-max-streams",
 		func() { s.metrics.LimitRefused("streams") })
@@ -163,7 +165,7 @@ func (s *Server) StartStatsCache(ctx context.Context) {
 // StartReclaimCache launches the background reclaim measurement: once shortly
 // after start, then hourly, and after every prune. Call it once after New.
 func (s *Server) StartReclaimCache(ctx context.Context) {
-	go s.reclaim.run(ctx)
+	go s.reclaim.Run(ctx)
 }
 
 // ListContainers lists running containers on the local node, optionally

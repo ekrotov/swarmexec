@@ -431,10 +431,10 @@ func TestReclaimKeepsPreviousFigureOnError(t *testing.T) {
 	d := newFakeDocker()
 	d.imageDiskUsage = du(100, img("sha256:a", 100, 0, 0, "x:1"))
 	s := imageTestServer(d)
-	s.reclaim.measure(context.Background(), false)
+	s.reclaim.Measure(context.Background(), false)
 	d.diskUsageErr = errors.New("daemon busy")
-	s.reclaim.measure(context.Background(), false)
-	cats, _, errMsg, _ := s.reclaim.snapshot()
+	s.reclaim.Measure(context.Background(), false)
+	cats, _, errMsg, _ := s.reclaim.Snapshot()
 	if !strings.Contains(errMsg, "daemon busy") {
 		t.Errorf("error = %q", errMsg)
 	}

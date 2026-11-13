@@ -87,7 +87,7 @@ func (s *Server) Prune(ctx context.Context, req *pb.PruneRequest) (*pb.PruneResp
 	results := s.runPrune(ctx, identity, "manual", req.GetCategories(), opts)
 	// What was just freed is no longer reclaimable; the cached figures would
 	// say otherwise for up to an hour.
-	s.reclaim.kick()
+	s.reclaim.Kick()
 	return &pb.PruneResponse{Results: results}, nil
 }
 

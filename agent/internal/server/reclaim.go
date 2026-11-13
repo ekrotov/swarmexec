@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -17,140 +15,6 @@ import (
 	"swarmexec/agent/internal/prunecat"
 	"swarmexec/internal/pb"
 )
-
-const (
-	// reclaimInterval is how often the agent measures what a prune would free.
-	// Hourly, not on demand: the measurement lists every stopped container with
-	// its size and inspects each, and runs a disk-usage scan — affordable once
-	// an hour, not on every refresh of a view.
-	reclaimInterval = time.Hour
-
-	// reclaimFirstDelay leaves the agent's startup (and a rolling update of the
-	// whole fleet) alone before the first measurement.
-	reclaimFirstDelay = 30 * time.Second
-
-	// reclaimMeasureNowEvery rate-limits measure_now. A client that asks more
-	// often gets the figures it already has, marked throttled.
-	reclaimMeasureNowEvery = 30 * time.Second
-
-	// reclaimMeasureTimeout bounds one background measurement.
-	reclaimMeasureTimeout = 3 * time.Minute
-)
-
-// reclaimCache holds the last measurement of what each prune category would
-// free, so ReclaimStats answers from memory.
-type reclaimCache struct {
-	s          *Server
-	log        *slog.Logger
-	interval   time.Duration
-	firstDelay time.Duration
-
-	measureMu sync.Mutex // one measurement at a time
-
-	mu         sync.RWMutex
-	cats       []*pb.ReclaimCategory
-	measuredAt time.Time
-	lastErr    string
-	until      time.Duration // the containers age filter the figures used
-	lastForced time.Time
-
-	kickCh chan struct{}
-}
-
-func newReclaimCache(s *Server, log *slog.Logger) *reclaimCache {
-	return &reclaimCache{s: s, log: log, interval: reclaimInterval, firstDelay: reclaimFirstDelay, kickCh: make(chan struct{}, 1)}
-}
-
-// kick asks for a measurement soon, outside the rate limit: after a prune the
-// cached figures are known to be wrong.
-func (r *reclaimCache) kick() {
-	select {
-	case r.kickCh <- struct{}{}:
-	default:
-	}
-}
-
-// run measures shortly after start, then hourly and whenever kicked.
-func (r *reclaimCache) run(ctx context.Context) {
-	timer := time.NewTimer(r.firstDelay)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			r.measureBounded(ctx, false)
-			timer.Reset(r.interval)
-		case <-r.kickCh:
-			r.measureBounded(ctx, true)
-		}
-	}
-}
-
-func (r *reclaimCache) measureBounded(ctx context.Context, refreshVolumes bool) {
-	mctx, cancel := context.WithTimeout(ctx, reclaimMeasureTimeout)
-	defer cancel()
-	r.measure(mctx, refreshVolumes)
-}
-
-// measureNow is measure_now: a fresh measurement unless one was forced within
-// reclaimMeasureNowEvery, in which case it reports false and changes nothing.
-func (r *reclaimCache) measureNow(ctx context.Context) bool {
-	r.mu.Lock()
-	if !r.lastForced.IsZero() && time.Since(r.lastForced) < reclaimMeasureNowEvery {
-		r.mu.Unlock()
-		return false
-	}
-	r.lastForced = time.Now()
-	r.mu.Unlock()
-	r.measure(ctx, true)
-	return true
-}
-
-// measure takes one measurement and swaps it in. A category that fails keeps
-// its previous figure — an old number with an error beside it beats a blank —
-// and the error is reported with the response.
-func (r *reclaimCache) measure(ctx context.Context, refreshVolumes bool) {
-	r.measureMu.Lock()
-	defer r.measureMu.Unlock()
-	if refreshVolumes {
-		// The volume refcounts are only as fresh as the size cache's last scan,
-		// and removing a container emits no volume event.
-		r.s.sizeCache.Refresh(ctx)
-	}
-	until := r.s.scheduler.containersUntil()
-	cats, err := r.s.measureReclaim(ctx, until)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	prev := map[pb.PruneCategory]*pb.ReclaimCategory{}
-	for _, c := range r.cats {
-		prev[c.GetCategory()] = c
-	}
-	got := map[pb.PruneCategory]bool{}
-	for _, c := range cats {
-		got[c.GetCategory()] = true
-	}
-	for _, pc := range prunecat.Order {
-		if !got[pc.Cat] && prev[pc.Cat] != nil {
-			cats = append(cats, prev[pc.Cat])
-		}
-	}
-	r.cats = prunecat.SortReclaim(cats)
-	r.measuredAt = time.Now()
-	r.until = until
-	r.lastErr = ""
-	if err != nil {
-		r.lastErr = err.Error()
-		r.log.Warn("reclaim measurement incomplete", "err", err)
-	}
-}
-
-func (r *reclaimCache) snapshot() (cats []*pb.ReclaimCategory, at time.Time, errMsg string, until time.Duration) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.cats, r.measuredAt, r.lastErr, r.until
-}
 
 // measureReclaim measures what each category would free, node-wide. Every
 // category is attempted; the error joins whatever failed.
@@ -236,9 +100,9 @@ func (s *Server) ReclaimStats(ctx context.Context, req *pb.ReclaimStatsRequest) 
 
 	out := &pb.ReclaimStatsResponse{}
 	if req.GetMeasureNow() {
-		out.MeasureThrottled = !s.reclaim.measureNow(ctx)
+		out.MeasureThrottled = !s.reclaim.MeasureNow(ctx)
 	}
-	cats, at, errMsg, until := s.reclaim.snapshot()
+	cats, at, errMsg, until := s.reclaim.Snapshot()
 	out.Categories = cats
 	out.MeasureError = errMsg
 	if !at.IsZero() {

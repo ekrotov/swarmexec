@@ -117,9 +117,9 @@ func (p *pruneScheduler) schedule() (prunesched.Schedule, error, bool) {
 	return p.sched, p.err, p.loaded
 }
 
-// containersUntil is the age filter the reclaim measurement uses: the
+// ContainersUntil is the age filter the reclaim measurement uses: the
 // schedule's, so the figure an operator reads is what the schedule will take.
-func (p *pruneScheduler) containersUntil() time.Duration {
+func (p *pruneScheduler) ContainersUntil() time.Duration {
 	s, err, _ := p.schedule()
 	if err != nil {
 		return prunesched.DefaultContainersUntil
@@ -189,7 +189,7 @@ func (p *pruneScheduler) runOnce(ctx context.Context, sched prunesched.Schedule)
 	p.mu.Lock()
 	p.last = run
 	p.mu.Unlock()
-	p.s.reclaim.kick()
+	p.s.reclaim.Kick()
 	return run
 }
 
