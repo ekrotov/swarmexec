@@ -361,9 +361,11 @@ func (u *ui) sortCands(cands []resolve.Candidate) {
 
 // fetchContainers does the two manager round-trips (off the UI goroutine) and
 // returns sorted results. It is instrumented so a slow manager shows up in the
-// log viewer.
-func (u *ui) fetchContainers() ([]resolve.Service, []resolve.Candidate, error) {
-	svcs, cands, err := fetchServicesAndContainers(u.ctx, u.r, "ui.containers")
+// log viewer. ctx and r are the caller's, captured on the UI goroutine: read
+// from u here, off the loop, they would be whichever cluster is visible by the
+// time the goroutine runs.
+func (u *ui) fetchContainers(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []resolve.Candidate, error) {
+	svcs, cands, err := fetchServicesAndContainers(ctx, r, "ui.containers")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -418,7 +420,7 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 // startup, before app.Run, where QueueUpdateDraw would deadlock.
 func (u *ui) loadContainersSync() {
 	u.resetCols = true
-	svcs, cands, err := u.fetchContainers()
+	svcs, cands, err := u.fetchContainers(u.ctx, u.r)
 	u.applyContainers(svcs, cands, err)
 }
 
@@ -432,9 +434,9 @@ func (u *ui) loadContainersSync() {
 func (u *ui) loadContainers() {
 	u.resetCols = true
 	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
-	gen := u.generation()
+	gen, ctx, r := u.generation(), u.ctx, u.r
 	go func() {
-		svcs, cands, err := u.fetchContainers()
+		svcs, cands, err := u.fetchContainers(ctx, r)
 		u.onCluster(gen, func() { u.applyContainers(svcs, cands, err) })
 	}()
 }
@@ -450,7 +452,7 @@ func (u *ui) loadContainers() {
 // overlay (laggy input) — and never overlaps itself (a slow probe over ssh can
 // outlast the tick).
 func (u *ui) autoRefreshContainers() {
-	ctx := u.ctx
+	ctx, r := u.ctx, u.r
 	// Cheap gate: skip the fetch when an overlay is known to be open. Best
 	// effort by design — the invariant is enforced below, on the UI goroutine.
 	if u.anyOverlayOpen() || !u.autoRefreshBusy.CompareAndSwap(false, true) {
@@ -459,7 +461,7 @@ func (u *ui) autoRefreshContainers() {
 	gen := u.generation()
 	go func() {
 		defer u.autoRefreshBusy.Store(false)
-		svcs, cands, err := u.fetchContainers()
+		svcs, cands, err := u.fetchContainers(ctx, r)
 		if err != nil || ctx.Err() != nil {
 			return // transient error, or the run is ending
 		}
@@ -648,7 +650,7 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // and an agent too old to know the RPC would then break the view instead of
 // just leaving the badges off.
 func (u *ui) loadUsage() {
-	ctx, cfg := u.ctx, u.cfg
+	ctx, cfg, r, timeout, gate := u.ctx, u.cfg, u.r, u.f.connectTimeout, u.statsGate
 	// Fetched even while an overlay is open: the inspect STATS view shows these
 	// readings and promises to refresh, and the history must not have a hole
 	// for every minute someone spends in a dialog. The fan-out runs off the
@@ -661,12 +663,12 @@ func (u *ui) loadUsage() {
 	go func() {
 		defer u.usageBusy.Store(false)
 		start := time.Now()
-		nodes, err := u.r.Nodes(ctx)
+		nodes, err := r.Nodes(ctx)
 		if err != nil {
 			clientlog.Timed("ui.loadUsage", start, err)
 			return
 		}
-		byContainer, byNode := collectUsage(ctx, cfg, nodes, u.f.connectTimeout, u.statsGate)
+		byContainer, byNode := collectUsage(ctx, cfg, nodes, timeout, gate)
 		clientlog.Timed("ui.loadUsage", start, nil)
 		if ctx.Err() != nil {
 			return
