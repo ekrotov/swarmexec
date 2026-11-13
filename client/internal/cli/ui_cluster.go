@@ -102,7 +102,7 @@ type clusterState struct {
 	// and "this is the last thing we managed to read".
 	fetchErr error
 
-	regCache  *registryCache       // :latest version / newer-tag resolver
+	regCache *registryCache // :latest version / newer-tag resolver
 
 	// containers tab
 	//
