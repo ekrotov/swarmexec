@@ -141,7 +141,7 @@ func run(args []string) error {
 		sink = prom
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", prom.Handler())
-		metricsSrv = &http.Server{Addr: cfg.MetricsAddr, Handler: mux}
+		metricsSrv = newMetricsServer(cfg.MetricsAddr, mux)
 		go func() {
 			log.Info("metrics endpoint listening", "addr", cfg.MetricsAddr)
 			if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -207,6 +207,10 @@ func run(args []string) error {
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,
 		}),
+		// First in the chain, so a panic anywhere below — authentication
+		// included — costs one RPC, not every session on the node.
+		grpc.ChainUnaryInterceptor(server.RecoveryUnaryInterceptor(log)),
+		grpc.ChainStreamInterceptor(server.RecoveryStreamInterceptor(log)),
 	}
 	if secret != "" {
 		// The certificate a client's proof is computed over. Taken from the TLS
@@ -258,10 +262,20 @@ func run(args []string) error {
 		defer cancel()
 		if srv.WaitForSessions(drainCtx) {
 			log.Info("all sessions drained; stopping gracefully")
-			grpcSrv.GracefulStop()
+			if !stopGracefully(grpcSrv, gracefulStopTimeout) {
+				log.Warn("graceful stop timed out; forced stop", "timeout", gracefulStopTimeout)
+			}
 		} else {
 			log.Warn("drain window elapsed; forcing stop", "active_sessions", srv.ActiveSessions())
 			grpcSrv.Stop()
+			// Stop cancelled every stream but does not wait for its handler.
+			// Give them a moment to return, so each writes its end-of-stream
+			// audit record before the audit writer closes.
+			exitCtx, c := context.WithTimeout(context.Background(), handlerExitTimeout)
+			if !srv.WaitForSessions(exitCtx) {
+				log.Warn("streams still running after forced stop", "active_sessions", srv.ActiveSessions())
+			}
+			c()
 		}
 
 		if metricsSrv != nil {
@@ -271,6 +285,62 @@ func run(args []string) error {
 		}
 		log.Info("agent stopped")
 		return nil
+	}
+}
+
+// Shutdown bounds after the drain window. Swarm sends SIGKILL after the
+// service's stop_grace_period (10s by default; the shipped specs set none), so the
+// drain window (5s) plus either bound has to finish well inside it.
+const (
+	// gracefulStopTimeout bounds GracefulStop once the streams have drained.
+	// It still waits for in-flight unary RPCs, and a client that never hangs
+	// up must not turn the graceful path into a SIGKILL.
+	gracefulStopTimeout = 2 * time.Second
+	// handlerExitTimeout bounds the wait, after a forced Stop, for cancelled
+	// streams to return and write their end-of-stream audit records.
+	handlerExitTimeout = 2 * time.Second
+)
+
+// grpcStopper is the part of *grpc.Server that shutdown uses.
+type grpcStopper interface {
+	GracefulStop()
+	Stop()
+}
+
+// stopGracefully runs GracefulStop for at most timeout, then falls back to
+// Stop. It reports whether the graceful stop finished in time.
+func stopGracefully(s grpcStopper, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		s.GracefulStop()
+		close(done)
+	}()
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	select {
+	case <-done:
+		return true
+	case <-t.C:
+		// Stop closes every connection and cancels every RPC, but does not
+		// wait for handlers; the goroutine above may linger on one that
+		// ignores its context, which is harmless in a process about to exit.
+		s.Stop()
+		return false
+	}
+}
+
+// newMetricsServer builds the /metrics HTTP server. Without timeouts a client
+// that opens a connection and never finishes its headers holds it forever; a
+// scrape is one small GET, so tight bounds cost a real Prometheus nothing.
+// IdleTimeout stays above common scrape intervals so keep-alive still works.
+func newMetricsServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 }
 

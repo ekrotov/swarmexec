@@ -317,6 +317,10 @@ that send the live read buffer are non-conformant.
   from that one package, so they cannot report different values, and it is not
   a build flag — only the binary's release version is injected at build time.
   `doctor` compares the agents' value to the client's by exact equality.
+- The `Version` RPC deliberately bypasses the Authorizer: it is not a policy
+  action and is answered to every caller that passed transport authentication
+  (mTLS or the shared secret), so `doctor` and skew detection work even for an
+  identity a policy denies everything else, including a `deny: ["*"]` rule.
 - Both binaries SHOULD expose `--version` and log the protocol/proto version on
   startup.
 

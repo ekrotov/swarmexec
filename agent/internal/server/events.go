@@ -57,6 +57,7 @@ func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, strea
 	if err != nil {
 		return err
 	}
+	defer s.trackStream()()
 
 	start := time.Now()
 	s.audit.EventWatchStart(identity, req.GetContainerId(), service, peerAddr(ctx))
