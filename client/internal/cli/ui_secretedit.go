@@ -164,12 +164,14 @@ type secretDialog struct {
 
 // showCreateSecret opens the create-secret dialog for the Secrets tab.
 func (u *ui) showCreateSecret() {
-	dcli, ctx := u.dcli, u.ctx
+	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
 	u.openSecretEditor(u.sectable,
 		func(name string, data []byte, labels map[string]string) error {
 			return createSecret(ctx, dcli, name, data, labels)
 		},
-		func(fn func()) { u.app.QueueUpdateDraw(fn) },
+		// The dialog belongs to the cluster it was opened on; a result that
+		// arrives after a switch away is dropped (see async).
+		func(fn func()) { u.onCluster(gen, fn) },
 		func(name string) {
 			u.loadSecrets()
 			u.flash(" [green]created[white] secret " + name)

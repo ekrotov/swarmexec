@@ -4,10 +4,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"swarmexec/client/internal/clientlog"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -54,22 +53,18 @@ func (u *ui) renderNetworks() {
 }
 
 func (u *ui) loadNetworks() {
-	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
+	dcli, nettable := u.dcli, u.nettable
 	tableState(nettable, nHeaders, loadingCell())
-	gen := u.generation()
-	go func() {
-		start := time.Now()
-		list, err := listNetworks(ctx, dcli)
-		clientlog.Timed("ui.loadNetworks", start, err)
-		u.onCluster(gen, func() {
-			if err != nil {
-				tableState(nettable, nHeaders, errorCell(err))
-				return
-			}
-			u.nets = list
-			u.renderNetworks()
-		})
-	}()
+	async(u, "ui.loadNetworks", func(ctx context.Context) ([]swarmNetwork, error) {
+		return listNetworks(ctx, dcli)
+	}, func(list []swarmNetwork, err error) {
+		if err != nil {
+			tableState(nettable, nHeaders, errorCell(err))
+			return
+		}
+		u.nets = list
+		u.renderNetworks()
+	})
 }
 
 func (u *ui) selectedNetwork() (swarmNetwork, bool) {
@@ -95,8 +90,7 @@ func (u *ui) serviceNamesFromCache() []string {
 // both attach and detach: actionLabel is the confirm button ("Attach" /
 // "Detach"), confirmVerb the sentence lead-in, suggestions feed the
 // autocomplete only, and back gets focus when the operator cancels.
-func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions []string, back tview.Primitive, do func(string) error, onDone func()) {
-	app := u.app
+func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions []string, back tview.Primitive, do func(ctx context.Context, svc string) error, onDone func()) {
 	in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(46)
 	in.SetPlaceholder("type or ↓ to pick; Enter confirms, Esc cancels")
 	in.SetAutocompleteFunc(func(text string) []string {
@@ -120,17 +114,16 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 		// bouncing focus off `back` on the way would flicker the selection.
 		ov.Close()
 		u.confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
-			go func() {
-				err := do(name)
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						u.info(strings.ToLower(actionLabel) + " failed: " + err.Error())
-						return
-					}
-					onDone()
-					u.info(fmt.Sprintf("%q updated — rolling update started", name))
-				})
-			}()
+			asyncDo(u, "ui.servicePrompt."+strings.ToLower(actionLabel), func(ctx context.Context) error {
+				return do(ctx, name)
+			}, func(err error) {
+				if err != nil {
+					u.info(strings.ToLower(actionLabel) + " failed: " + err.Error())
+					return
+				}
+				onDone()
+				u.info(fmt.Sprintf("%q updated — rolling update started", name))
+			})
 		})
 	})
 	in.SetBorder(true).SetTitle(" " + title + " ")
@@ -253,17 +246,16 @@ func (v *netMembersView) render() {
 func (v *netMembersView) close() { v.ov.Close() }
 
 func (v *netMembersView) reload() {
-	u := v.u
-	go func() {
-		m := networkMembers(u.ctx, u.dcli, v.n)
-		u.app.QueueUpdateDraw(func() {
-			// Only repaint if this overlay is still the one on screen.
-			if u.pages.HasPage(pageNetMembers) {
-				v.members, v.loaded = m, true
-				v.render()
-			}
-		})
-	}()
+	u, dcli, n := v.u, v.u.dcli, v.n
+	async(u, "ui.networks.members", func(ctx context.Context) ([]netService, error) {
+		return networkMembers(ctx, dcli, n), nil
+	}, func(m []netService, _ error) {
+		// Only repaint if this overlay is still the one on screen.
+		if u.pages.HasPage(pageNetMembers) {
+			v.members, v.loaded = m, true
+			v.render()
+		}
+	})
 }
 
 func (v *netMembersView) curSvc() string {
@@ -276,7 +268,7 @@ func (v *netMembersView) curSvc() string {
 
 // handleKey is the list's input capture — the input half of the overlay.
 func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
-	u, n, list := v.u, v.n, v.list
+	u, n, list, dcli := v.u, v.n, v.list, v.u.dcli
 	switch {
 	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
 		v.close()
@@ -308,7 +300,9 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			fmt.Sprintf("attach a service to network %q", n.Name),
 			fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
 			suggestions, list,
-			func(svc string) error { return attachServiceToNetwork(u.ctx, u.dcli, svc, n.ID, n.Name) },
+			func(ctx context.Context, svc string) error {
+				return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
+			},
 			func() { v.close(); u.loadNetworks() },
 		)
 		return nil
@@ -321,7 +315,9 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			fmt.Sprintf("detach a service from network %q", n.Name),
 			fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
 			n.Services, list,
-			func(svc string) error { return detachServiceFromNetwork(u.ctx, u.dcli, svc, n.ID, n.Name) },
+			func(ctx context.Context, svc string) error {
+				return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
+			},
 			func() { v.close(); u.loadNetworks() },
 		)
 		return nil

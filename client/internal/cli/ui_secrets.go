@@ -4,10 +4,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
-	"swarmexec/client/internal/clientlog"
 	"sync"
 	"time"
 
@@ -53,22 +53,18 @@ func (u *ui) renderSecrets() {
 }
 
 func (u *ui) loadSecrets() {
-	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
+	dcli, sectable := u.dcli, u.sectable
 	tableState(sectable, sHeaders, loadingCell())
-	gen := u.generation()
-	go func() {
-		start := time.Now()
-		list, err := listSecrets(ctx, dcli)
-		clientlog.Timed("ui.loadSecrets", start, err)
-		u.onCluster(gen, func() {
-			if err != nil {
-				tableState(sectable, sHeaders, errorCell(err))
-				return
-			}
-			u.secs = list
-			u.renderSecrets()
-		})
-	}()
+	async(u, "ui.loadSecrets", func(ctx context.Context) ([]swarmSecret, error) {
+		return listSecrets(ctx, dcli)
+	}, func(list []swarmSecret, err error) {
+		if err != nil {
+			tableState(sectable, sHeaders, errorCell(err))
+			return
+		}
+		u.secs = list
+		u.renderSecrets()
+	})
 }
 
 func (u *ui) selectedSecret() (swarmSecret, bool) {
@@ -81,7 +77,7 @@ func (u *ui) selectedSecret() (swarmSecret, bool) {
 // and the overlay says so. Usage (services with their running containers)
 // needs a task lookup, so it fills in lazily after the overlay is up.
 func (u *ui) showSecretDetail(s swarmSecret) {
-	app, pages, dcli, ctx, sectable := u.app, u.pages, u.dcli, u.ctx, u.sectable
+	pages, dcli, sectable := u.pages, u.dcli, u.sectable
 	ts := func(t time.Time) string {
 		if t.IsZero() {
 			return "-"
@@ -149,7 +145,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				fmt.Sprintf("attach secret %q to a service", s.Name),
 				fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
 				suggestions, tv,
-				func(svc string) error { return attachSecretToService(ctx, dcli, svc, s.ID, s.Name) },
+				func(ctx context.Context, svc string) error {
+					return attachSecretToService(ctx, dcli, svc, s.ID, s.Name)
+				},
 				func() { closeSecret(); u.loadSecrets() },
 			)
 			return nil
@@ -162,7 +160,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				fmt.Sprintf("detach secret %q from a service", s.Name),
 				fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
 				s.Services, tv,
-				func(svc string) error { return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name) },
+				func(ctx context.Context, svc string) error {
+					return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
+				},
 				func() { closeSecret(); u.loadSecrets() },
 			)
 			return nil
@@ -181,14 +181,13 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 		height = 24
 	}
 	ov.show(centered(tv, 72, height), tv)
-	go func() {
-		members := secretMembers(ctx, dcli, s)
-		app.QueueUpdateDraw(func() {
-			if pages.HasPage(pageSecDetail) {
-				render(members, false)
-			}
-		})
-	}()
+	async(u, "ui.secrets.members", func(ctx context.Context) ([]netService, error) {
+		return secretMembers(ctx, dcli, s), nil
+	}, func(members []netService, _ error) {
+		if pages.HasPage(pageSecDetail) {
+			render(members, false)
+		}
+	})
 }
 
 // openRotateSecret opens the rotate editor for s from its detail view. The
@@ -209,10 +208,12 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 		u.info("secret " + name + " is already being rotated — wait for it to finish")
 		return
 	}
-	dcli, ctx := u.dcli, u.ctx
+	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
 	u.openRotateEditor(back, name, labels, rotateHooks{
-		plan:  func() (rotatePlan, error) { return planRotation(ctx, dcli, name) },
-		queue: func(fn func()) { u.app.QueueUpdateDraw(fn) },
+		plan: func() (rotatePlan, error) { return planRotation(ctx, dcli, name) },
+		// The editor belongs to the cluster it was opened on: a plan read
+		// after a switch away is dropped like any other stale result.
+		queue: func(fn func()) { u.onCluster(gen, fn) },
 		confirm: func(msg string, back tview.Primitive, ok func()) {
 			u.confirm(msg, "Rotate", back, ok)
 		},
@@ -302,24 +303,23 @@ func (u *ui) runRotation(name string, data []byte) {
 // openDeleteSecret permanently removes a secret after a confirm. Docker refuses
 // to remove a secret a service still references, so warn up front when in use.
 func (u *ui) openDeleteSecret(s swarmSecret) {
-	app, dcli, ctx, sectable := u.app, u.dcli, u.ctx, u.sectable
+	app, dcli, sectable := u.app, u.dcli, u.sectable
 	msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
 	if len(s.Services) > 0 {
 		msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
 	}
 	u.confirm(msg, "Delete", sectable, func() {
-		go func() {
-			err := removeSecret(ctx, dcli, s.Name)
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					u.info("remove failed: " + err.Error())
-					app.SetFocus(sectable)
-					return
-				}
-				u.loadSecrets()
-				u.flash(" [green]removed[white] secret " + s.Name)
-			})
-		}()
+		asyncDo(u, "ui.secrets.remove", func(ctx context.Context) error {
+			return removeSecret(ctx, dcli, s.Name)
+		}, func(err error) {
+			if err != nil {
+				u.info("remove failed: " + err.Error())
+				app.SetFocus(sectable)
+				return
+			}
+			u.loadSecrets()
+			u.flash(" [green]removed[white] secret " + s.Name)
+		})
 	})
 }
 
