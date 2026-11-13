@@ -20,6 +20,7 @@ func TestRecoveryUnaryInterceptor(t *testing.T) {
 
 	resp, err := ic(context.Background(), nil, info, func(context.Context, any) (any, error) {
 		var m map[string]int
+		//lint:ignore SA5000 the nil-map write is the point: a real runtime panic
 		m["boom"] = 1 // nil-map write: a runtime panic like the ones this guards against
 		return "unreachable", nil
 	})

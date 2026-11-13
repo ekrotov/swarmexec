@@ -61,9 +61,11 @@ header from `proto/swarmexec.proto`.
 ## Before you open a merge request
 
 - `go build ./...` and `go test ./...` pass.
-- `gofmt -l .` reports nothing.
-- Protocol changes are reflected in [`CONTRACT.md`](CONTRACT.md) — it is the
-  authoritative wire spec, and the agent and cli are versioned together.
+- `gofmt -l .` reports nothing, and `make lint` (staticcheck) is clean.
+- `make cover` stays above the coverage minimum.
+- Protocol changes pass `make proto-check` (buf lint + breaking) and are
+  reflected in [`CONTRACT.md`](CONTRACT.md) — it is the authoritative wire
+  spec, and the agent and cli are versioned together.
 
 ## Maintainer notes
 
