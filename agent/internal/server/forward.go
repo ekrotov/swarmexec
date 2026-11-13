@@ -367,6 +367,10 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 		OpenStdin:    true,
 		StdinOnce:    true,
 		Tty:          false, // never: a pty would mangle binary payloads
+		// The agent image's HEALTHCHECK probes an agent; a sidecar is not one,
+		// and its netns is the target's, so the probe would knock on the
+		// operator's own service. Off.
+		Healthcheck: &container.HealthConfig{Test: []string{"NONE"}},
 		Labels: map[string]string{
 			forwardLabel: forwardValue,
 			// Recorded for operators reading `docker ps` on the node.

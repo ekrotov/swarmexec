@@ -341,6 +341,11 @@ func TestPortForward_SidecarJoinsTargetNetnsWithoutPrivileges(t *testing.T) {
 	if d.createdConfig.Labels[forwardLabel] != forwardValue {
 		t.Errorf("missing %s=%s label: %v", forwardLabel, forwardValue, d.createdConfig.Labels)
 	}
+	// The sidecar runs from the agent image, whose HEALTHCHECK probes an agent
+	// on 127.0.0.1 — in the target's netns. It must be switched off.
+	if hc := d.createdConfig.Healthcheck; hc == nil || len(hc.Test) != 1 || hc.Test[0] != "NONE" {
+		t.Errorf("sidecar healthcheck = %+v, want NONE", hc)
+	}
 }
 
 // Readiness is what makes a forward trustworthy: the client must not be told

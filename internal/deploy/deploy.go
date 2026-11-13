@@ -129,3 +129,27 @@ func AgentArgs(o AgentOptions) []string {
 	}
 	return args
 }
+
+// The agent's container health check timings. The probe itself is the image's
+// (agent/Dockerfile: HEALTHCHECK CMD ["/agent", "-healthcheck"]), which ships
+// these same values, so an image-only update activates it. `swarmexec init`
+// and the stack files write the timings only and leave the command to the
+// image on purpose: a spec that named `-healthcheck` would put an agent
+// rolled back to an image without the probe into a restart loop — the moment
+// an operator can least afford one.
+//
+// Chosen so that a dead or wedged agent is replaced after a minute or two, and
+// nothing short of that is: six consecutive failures, 10s apart plus up to 10s
+// each. A probe takes milliseconds; 10s of timeout leaves a daemon under load
+// room to answer its ping. The interval is also the time a rolling update waits
+// per node, since Swarm holds a new task in "starting" until its first passing
+// probe — which is why it is not longer. (A --start-interval would shorten
+// that, but the release image is built with Kaniko, which drops the field.)
+// The start period covers the self-signed startup, whose Docker info lookup
+// for the certificate SANs is bounded at 5s.
+const (
+	HealthInterval    = 10 * time.Second
+	HealthTimeout     = 10 * time.Second
+	HealthStartPeriod = 30 * time.Second
+	HealthRetries     = 6
+)

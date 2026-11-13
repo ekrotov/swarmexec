@@ -42,6 +42,11 @@ func main() {
 }
 
 func run(args []string) error {
+	// The container health probe (agent/Dockerfile HEALTHCHECK): a short-lived
+	// client of the agent next to it, not a second agent.
+	if rest, ok := healthcheckMode(args); ok {
+		os.Exit(runHealthcheck(rest))
+	}
 	// Sidecar mode short-circuits everything below: a forward sidecar has no
 	// docker socket, no secrets and no listener — it only moves bytes.
 	//

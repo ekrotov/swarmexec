@@ -19,6 +19,7 @@ import (
 	"time"
 
 	cliconfig "github.com/docker/cli/cli/config"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/registry"
@@ -548,6 +549,14 @@ func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
 			ContainerSpec: &swarm.ContainerSpec{
 				Image: f.image,
 				Args:  args,
+				// Timings only: the probe command is the image's own HEALTHCHECK
+				// (see deploy.HealthInterval for why the spec must not name it).
+				Healthcheck: &container.HealthConfig{
+					Interval:    deploy.HealthInterval,
+					Timeout:     deploy.HealthTimeout,
+					StartPeriod: deploy.HealthStartPeriod,
+					Retries:     deploy.HealthRetries,
+				},
 				Mounts: []mount.Mount{{
 					Type:   mount.TypeBind,
 					Source: deploy.SocketPath,

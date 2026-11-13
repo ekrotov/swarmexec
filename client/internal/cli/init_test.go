@@ -14,6 +14,8 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"swarmexec/internal/deploy"
 )
 
 func TestRegistryHost(t *testing.T) {
@@ -66,6 +68,13 @@ func TestAgentServiceSpec(t *testing.T) {
 	}
 	if len(cs.Mounts) != 1 || cs.Mounts[0].Source != "/var/run/docker.sock" {
 		t.Errorf("socket mount wrong: %+v", cs.Mounts)
+	}
+	// Health timings, but the command left to the image: a spec naming
+	// `-healthcheck` would restart-loop an agent rolled back to an image
+	// without the probe.
+	if hc := cs.Healthcheck; hc == nil || len(hc.Test) != 0 || hc.Interval != deploy.HealthInterval ||
+		hc.Timeout != deploy.HealthTimeout || hc.StartPeriod != deploy.HealthStartPeriod || hc.Retries != deploy.HealthRetries {
+		t.Errorf("healthcheck = %+v, want the deploy timings and no Test", hc)
 	}
 	if spec.UpdateConfig.Order != swarm.UpdateOrderStopFirst {
 		t.Errorf("update order = %q, want stop-first", spec.UpdateConfig.Order)
