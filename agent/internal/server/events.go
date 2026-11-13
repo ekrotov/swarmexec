@@ -31,23 +31,14 @@ const healthPrefix = "health_status: "
 // no fan-out across nodes, and nothing about the node's other containers
 // crosses the wire. A node-wide stream would also expose non-swarm containers
 // running on that host, which no part of this tool has any business reporting.
+//
+// A long-lived stream held open for as long as a view is open, so it sits
+// behind the same stream gate (drain, cap, accounting; streamgate.go) as exec,
+// logs and port-forward rather than being a quiet way around it.
 func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, stream pb.Agent_WatchContainerEventsServer) error {
-	if s.draining.Load() {
-		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new watches")
-	}
 	if req.GetContainerId() == "" {
 		return status.Error(codes.InvalidArgument, "WatchContainerEventsRequest requires container_id")
 	}
-
-	// A slot before anything else. This is a long-lived stream held open for as
-	// long as a view is open, so it belongs under the same cap as exec, logs and
-	// port-forward rather than being a quiet way around it.
-	release, err := s.streams.acquire()
-	if err != nil {
-		s.log.Warn("container event watch refused: stream limit reached", "in_use", s.streams.inUse())
-		return err
-	}
-	defer release()
 
 	ctx := stream.Context()
 	identity, service, err := s.authorize(ctx, auth.Request{
@@ -57,7 +48,6 @@ func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, strea
 	if err != nil {
 		return err
 	}
-	defer s.trackStream()()
 
 	start := time.Now()
 	s.audit.EventWatchStart(identity, req.GetContainerId(), service, peerAddr(ctx))

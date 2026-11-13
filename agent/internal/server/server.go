@@ -83,8 +83,8 @@ type Server struct {
 	// context. Overridable in tests; defaults to the mTLS peer CN.
 	identityFn func(context.Context) (string, error)
 
-	// draining is set during graceful shutdown; new streams (Exec, Logs,
-	// PortForward, WatchContainerEvents) are rejected.
+	// draining is set during graceful shutdown; the stream gate rejects new
+	// streams (Exec, Logs, PortForward, WatchContainerEvents).
 	draining atomic.Bool
 	// wg tracks every in-flight stream — exec sessions, port-forwards, log
 	// streams and event watches — so shutdown can wait for them to drain and,
@@ -272,7 +272,7 @@ func (s *Server) resolveService(ctx context.Context, containerID string) string 
 // Cmd/User/TTY/Port) the caller has already set — audit the decision, and count a
 // denial. It fills req.Identity and req.Service. On failure it returns a ready
 // gRPC status error (with empty identity/service) so callers just `return err`.
-// Keeping the sequence in one place stops the drain/authorize/audit/deny order —
+// Keeping the sequence in one place stops the authorize/audit/deny order —
 // and the audit of denied requests — from drifting between handlers.
 func (s *Server) authorize(ctx context.Context, req auth.Request) (identity, service string, err error) {
 	identity, err = s.identity(ctx)
@@ -333,7 +333,8 @@ func (s *Server) decide(ctx context.Context, req auth.Request) (reason string, a
 }
 
 // trackStream counts a stream into the drain (wg and active) for its lifetime;
-// call the returned func when it ends. Exec and PortForward do this inline.
+// call the returned func when it ends. The stream gate (streamgate.go) does
+// this for every streaming RPC.
 //
 // Logs and WatchContainerEvents need it most: a follow or an open view never
 // ends on its own, so a drain that did not count them reported "drained" at

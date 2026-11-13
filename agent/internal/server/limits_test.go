@@ -121,7 +121,7 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = srv.Logs(&pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()})
+	err = gatedLogs(srv, &pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()})
 	if statusCode(err) != codes.ResourceExhausted {
 		t.Fatalf("want ResourceExhausted, got %v", err)
 	}
@@ -137,7 +137,7 @@ func TestLogs_RefusedBeyondTheStreamCap(t *testing.T) {
 	var buf bytes.Buffer
 	_, _ = newStdWriter(&buf, stdcopy.Stdout).Write([]byte("hello\n"))
 	d.logsReader = io.NopCloser(&buf)
-	if err := srv.Logs(&pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()}); err != nil {
+	if err := gatedLogs(srv, &pb.LogsRequest{ContainerId: "abc"}, &fakeLogsStream{ctx: context.Background()}); err != nil {
 		t.Fatalf("after release: %v", err)
 	}
 	if got := srv.streams.inUse(); got != 0 {

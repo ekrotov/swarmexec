@@ -50,22 +50,12 @@ const (
 
 // PortForward bridges one client TCP connection to a port inside a container on
 // this node. One gRPC stream carries exactly one connection (CONTRACT.md §3.2).
+//
+// The stream slot was taken by the stream gate (streamgate.go) before the first
+// Recv, which blocks on the client. The sidecar slot is taken later, in
+// openSidecarChannel: only the sidecar path creates a container, and a forward
+// that reaches the port directly must not consume from the container budget.
 func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
-	if s.draining.Load() {
-		return status.Error(codes.Unavailable, "agent is shutting down; not accepting new forwards")
-	}
-
-	// Stream slot before the first Recv, which blocks on the client. The sidecar
-	// slot is taken later, in openSidecarChannel: only the sidecar path creates a
-	// container, and a forward that reaches the port directly must not consume
-	// from the container budget.
-	release, err := s.streams.acquire()
-	if err != nil {
-		s.log.Warn("port-forward refused: stream limit reached", "in_use", s.streams.inUse())
-		return err
-	}
-	defer release()
-
 	// (1) The first message MUST be StartForward.
 	first, err := stream.Recv()
 	if err != nil {
@@ -104,10 +94,6 @@ func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
 // runForward establishes the byte channel to the target port and bridges it to
 // the gRPC stream until either side closes.
 func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForward, identity, service string) error {
-	s.wg.Add(1)
-	defer s.wg.Done()
-	s.active.Add(1)
-	defer s.active.Add(-1)
 	begin := time.Now()
 
 	ctx, cancel := context.WithCancel(stream.Context())
@@ -136,7 +122,8 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 		return err
 	}
 
-	var bytesIn, bytesOut atomic.Int64
+	tally := tallyFrom(stream.Context())
+	bytesIn, bytesOut := &tally.in, &tally.out
 
 	// Closing the channel unblocks the reader when the client disconnects.
 	go func() {
@@ -186,7 +173,7 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 	}()
 
 	// Target -> client. Blocks until the target closes or the channel is torn down.
-	copyErr := ch.CopyTo(&forwardWriter{stream: stream, count: &bytesOut})
+	copyErr := ch.CopyTo(&forwardWriter{stream: stream, count: bytesOut})
 	cancel()
 
 	dur := time.Since(begin)
@@ -198,7 +185,6 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 	}
 
 	s.audit.ForwardEnd(identity, sf.GetContainerId(), sf.GetPort(), dur, bIn, bOut)
-	s.metrics.BytesTransferred(bIn, bOut)
 
 	if clientGone {
 		return status.FromContextError(stream.Context().Err()).Err()

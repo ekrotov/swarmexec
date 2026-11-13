@@ -207,11 +207,8 @@ func run(args []string) error {
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,
 		}),
-		// First in the chain, so a panic anywhere below — authentication
-		// included — costs one RPC, not every session on the node.
-		grpc.ChainUnaryInterceptor(server.RecoveryUnaryInterceptor(log)),
-		grpc.ChainStreamInterceptor(server.RecoveryStreamInterceptor(log)),
 	}
+	var secretAuth *server.SecretAuth
 	if secret != "" {
 		// The certificate a client's proof is computed over. Taken from the TLS
 		// config actually in use, so it is right for both the self-signed and
@@ -220,19 +217,16 @@ func run(args []string) error {
 		if len(tlsCfg.Certificates) > 0 && len(tlsCfg.Certificates[0].Certificate) > 0 {
 			certDER = tlsCfg.Certificates[0].Certificate[0]
 		}
-		secretAuth := &server.SecretAuth{
+		secretAuth = &server.SecretAuth{
 			Secret:      secret,
 			CertDER:     certDER,
 			AllowLegacy: cfg.AllowLegacySecret,
 			Log:         log,
 		}
-		serverOpts = append(serverOpts,
-			grpc.ChainUnaryInterceptor(secretAuth.UnaryInterceptor()),
-			grpc.ChainStreamInterceptor(secretAuth.StreamInterceptor()),
-		)
 		log.Info("shared-secret authentication enabled",
 			"connection_bound", len(certDER) > 0, "legacy_raw_secret_accepted", cfg.AllowLegacySecret)
 	}
+	serverOpts = append(serverOpts, interceptors(log, secretAuth, srv)...)
 	grpcSrv := grpc.NewServer(serverOpts...)
 	pb.RegisterAgentServer(grpcSrv, srv)
 
@@ -285,6 +279,35 @@ func run(args []string) error {
 		}
 		log.Info("agent stopped")
 		return nil
+	}
+}
+
+// interceptors builds the server's interceptor chains. Order, outermost first
+// — each ChainXInterceptor option appends to its chain, so the order of the
+// options is the order of execution:
+//
+//  1. recovery — first, so a panic anywhere below, authentication included,
+//     costs one RPC, not every session on the node;
+//  2. the shared-secret check, when a secret is configured (secretAuth != nil)
+//     — before the stream gate, so a caller without the secret can neither
+//     take a stream slot nor hold up a drain, and is told Unauthenticated even
+//     while the agent drains or sits at its cap, as it always was;
+//  3. the stream gate (streams only) — drain check, stream slot, drain
+//     accounting and per-stream metrics, before the handler's first Recv.
+//
+// Authorization is not an interceptor: it needs the container's service, which
+// only the handler resolves.
+func interceptors(log *slog.Logger, secretAuth *server.SecretAuth, srv *server.Server) []grpc.ServerOption {
+	unary := []grpc.UnaryServerInterceptor{server.RecoveryUnaryInterceptor(log)}
+	stream := []grpc.StreamServerInterceptor{server.RecoveryStreamInterceptor(log)}
+	if secretAuth != nil {
+		unary = append(unary, secretAuth.UnaryInterceptor())
+		stream = append(stream, secretAuth.StreamInterceptor())
+	}
+	stream = append(stream, srv.StreamInterceptor())
+	return []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(unary...),
+		grpc.ChainStreamInterceptor(stream...),
 	}
 }
 
