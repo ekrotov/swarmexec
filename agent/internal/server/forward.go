@@ -319,10 +319,10 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 	// forward is one container, so "open many connections" is literally "start
 	// many containers", and the node runs out of PIDs and memory long before it
 	// runs out of gRPC streams.
-	releaseSlot, err := s.sidecars.acquire()
+	releaseSlot, err := s.sidecars.Acquire()
 	if err != nil {
 		s.log.Warn("port-forward refused: sidecar limit reached",
-			"in_use", s.sidecars.inUse(), "container_id", containerID, "port", port)
+			"in_use", s.sidecars.InUse(), "container_id", containerID, "port", port)
 		return nil, err
 	}
 
@@ -376,7 +376,7 @@ func (s *Server) openSidecarChannel(ctx context.Context, containerID string, por
 
 	// From here the slot is owned by the channel: every failure path below goes
 	// through ch.Close, which releases it. Releasing here as well would return
-	// the slot twice — hence the idempotent release from limiter.acquire.
+	// the slot twice — hence the idempotent release from limits.Limiter.Acquire.
 	ch := &sidecarChannel{docker: s.docker, id: created.ID, log: s.log, release: releaseSlot}
 
 	// Attach before start so no output is missed.

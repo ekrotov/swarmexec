@@ -200,7 +200,7 @@ func TestForwardMux_SidecarCapCountsForwardsNotConnections(t *testing.T) {
 	go func() { done2 <- srv.PortForward(s2) }()
 	mux.acceptOpen()
 
-	if got := srv.sidecars.inUse(); got != 1 {
+	if got := srv.sidecars.InUse(); got != 1 {
 		t.Errorf("two connections used %d sidecar slots, want 1", got)
 	}
 	cancel2()

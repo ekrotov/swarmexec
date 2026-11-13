@@ -119,8 +119,8 @@ func TestStreamGate_RefusesEveryStreamWhileDraining(t *testing.T) {
 			t.Errorf("%s: the handler ran during a drain", full)
 		}
 	}
-	if srv.streams.inUse() != 0 || srv.ActiveSessions() != 0 {
-		t.Errorf("a refused stream holds a slot (%d) or counts in the drain (%d)", srv.streams.inUse(), srv.ActiveSessions())
+	if srv.streams.InUse() != 0 || srv.ActiveSessions() != 0 {
+		t.Errorf("a refused stream holds a slot (%d) or counts in the drain (%d)", srv.streams.InUse(), srv.ActiveSessions())
 	}
 	for _, method := range metrics.StreamMethods {
 		if started, _ := m.streams(method); started != 0 {
@@ -148,7 +148,7 @@ func TestStreamGate_LeavesOtherMethodsAlone(t *testing.T) {
 // and the refusal is counted; the slot comes back when the stream ends.
 func TestStreamGate_SlotExhaustion(t *testing.T) {
 	srv, m := newTestServer(newFakeDocker(), auth.AllowAll{}, Options{MaxStreams: 1})
-	release, err := srv.streams.acquire()
+	release, err := srv.streams.Acquire()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,16 +169,16 @@ func TestStreamGate_SlotExhaustion(t *testing.T) {
 
 	// While a stream runs it holds the slot and counts in the drain.
 	err = viaGate(srv, pb.Agent_Logs_FullMethodName, context.Background(), func(context.Context) error {
-		if srv.streams.inUse() != 1 || srv.ActiveSessions() != 1 {
-			t.Errorf("inside the handler: in use %d, active %d; want 1 and 1", srv.streams.inUse(), srv.ActiveSessions())
+		if srv.streams.InUse() != 1 || srv.ActiveSessions() != 1 {
+			t.Errorf("inside the handler: in use %d, active %d; want 1 and 1", srv.streams.InUse(), srv.ActiveSessions())
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if srv.streams.inUse() != 0 || srv.ActiveSessions() != 0 {
-		t.Errorf("after the stream: in use %d, active %d; want 0 and 0", srv.streams.inUse(), srv.ActiveSessions())
+	if srv.streams.InUse() != 0 || srv.ActiveSessions() != 0 {
+		t.Errorf("after the stream: in use %d, active %d; want 0 and 0", srv.streams.InUse(), srv.ActiveSessions())
 	}
 }
 
@@ -252,7 +252,7 @@ func TestStreamGate_DeniedStreamStillAuditedByHandler(t *testing.T) {
 	if m.denied.Load() != 1 {
 		t.Errorf("auth denials = %d, want 1", m.denied.Load())
 	}
-	if srv.ActiveSessions() != 0 || srv.streams.inUse() != 0 {
+	if srv.ActiveSessions() != 0 || srv.streams.InUse() != 0 {
 		t.Error("a denied stream left a slot or drain count behind")
 	}
 }

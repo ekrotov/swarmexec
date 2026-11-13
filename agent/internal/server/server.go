@@ -26,6 +26,7 @@ import (
 
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/limits"
 	"swarmexec/internal/pb"
 )
 
@@ -54,10 +55,10 @@ type Options struct {
 	// of them. Zero uses the default (statsInterval).
 	StatsInterval time.Duration
 	// MaxStreams caps concurrent Exec + Logs + PortForward streams on this node.
-	// Zero uses the default (defaultMaxStreams); negative disables the cap.
+	// Zero uses the default (limits.DefaultMaxStreams); negative disables the cap.
 	MaxStreams int
 	// MaxForwardSidecars caps live port-forward sidecar containers on this node.
-	// Zero uses the default (defaultMaxForwardSidecars); negative disables it.
+	// Zero uses the default (limits.DefaultMaxForwardSidecars); negative disables it.
 	MaxForwardSidecars int
 }
 
@@ -97,8 +98,8 @@ type Server struct {
 	// streams caps concurrent streaming RPCs; sidecars caps the containers a
 	// port-forward creates. Two limits because they bound different things: a
 	// stream costs a goroutine, a sidecar costs a container on the node.
-	streams  *limiter
-	sidecars *limiter
+	streams  *limits.Limiter
+	sidecars *limits.Limiter
 
 	// muxes holds one port-forward sidecar per (container, port), shared by
 	// every connection of that forward.
@@ -129,11 +130,11 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 	s.reclaim = newReclaimCache(s, log)
 	s.scheduler = newPruneScheduler(s, log)
 	s.muxes = newMuxPool()
-	s.streams = newLimiter(orDefault(opts.MaxStreams, defaultMaxStreams), "streams", "-max-streams")
-	s.sidecars = newLimiter(orDefault(opts.MaxForwardSidecars, defaultMaxForwardSidecars),
-		"port-forward sidecars", "-max-forward-sidecars")
-	s.streams.refused = func() { s.metrics.LimitRefused("streams") }
-	s.sidecars.refused = func() { s.metrics.LimitRefused("forward_sidecars") }
+	s.streams = limits.New(limits.OrDefault(opts.MaxStreams, limits.DefaultMaxStreams), "streams", "-max-streams",
+		func() { s.metrics.LimitRefused("streams") })
+	s.sidecars = limits.New(limits.OrDefault(opts.MaxForwardSidecars, limits.DefaultMaxForwardSidecars),
+		"port-forward sidecars", "-max-forward-sidecars",
+		func() { s.metrics.LimitRefused("forward_sidecars") })
 	if opts.SecretAuth {
 		s.identityFn = identityFromContextLenient
 	} else {

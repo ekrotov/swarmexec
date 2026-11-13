@@ -179,7 +179,7 @@ func TestWatchContainerEvents_CountsAgainstTheStreamCap(t *testing.T) {
 	d.eventErrCh = make(chan error, 1)
 	srv, _ := newTestServer(d, auth.AllowAll{}, Options{MaxStreams: 1})
 
-	release, err := srv.streams.acquire()
+	release, err := srv.streams.Acquire()
 	if err != nil {
 		t.Fatal(err)
 	}
