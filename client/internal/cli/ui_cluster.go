@@ -424,15 +424,9 @@ func (u *ui) closeClusters() {
 func (u *ui) generation() uint64 { return u.gen.Load() }
 
 // onCluster runs fn on the UI goroutine, unless the cluster it was started for
-// is no longer the visible one. Every background load's apply goes through here.
-func (u *ui) onCluster(gen uint64, fn func()) {
-	u.app.QueueUpdateDraw(func() {
-		if u.gen.Load() != gen {
-			return
-		}
-		fn()
-	})
-}
+// is no longer the visible one. Every background load's apply goes through here
+// — through async (ui_async.go) for new code, which captures gen itself.
+func (u *ui) onCluster(gen uint64, fn func()) { u.deliver(gen, "", fn) }
 
 // switchedFlash is the message a completed switch leaves in the footer. A
 // failed `docker context use` is reported here rather than in a flash of its
