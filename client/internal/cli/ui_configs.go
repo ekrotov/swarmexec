@@ -4,14 +4,12 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-
-	"swarmexec/client/internal/clientlog"
 )
 
 func (u *ui) renderConfigs() {
@@ -56,22 +54,18 @@ func (u *ui) renderConfigs() {
 }
 
 func (u *ui) loadConfigs() {
-	dcli, ctx, cfgtable := u.dcli, u.ctx, u.cfgtable
+	dcli, cfgtable := u.dcli, u.cfgtable
 	tableState(cfgtable, cfHeaders, loadingCell())
-	gen := u.generation()
-	go func() {
-		start := time.Now()
-		list, err := listConfigs(ctx, dcli)
-		clientlog.Timed("ui.loadConfigs", start, err)
-		u.onCluster(gen, func() {
-			if err != nil {
-				tableState(cfgtable, cfHeaders, errorCell(err))
-				return
-			}
-			u.cfgs = list
-			u.renderConfigs()
-		})
-	}()
+	async(u, "ui.loadConfigs", func(ctx context.Context) ([]swarmConfig, error) {
+		return listConfigs(ctx, dcli)
+	}, func(list []swarmConfig, err error) {
+		if err != nil {
+			tableState(cfgtable, cfHeaders, errorCell(err))
+			return
+		}
+		u.cfgs = list
+		u.renderConfigs()
+	})
 }
 
 func (u *ui) selectedConfig() (swarmConfig, bool) {
@@ -84,7 +78,7 @@ func (u *ui) selectedConfig() (swarmConfig, bool) {
 // receives without dropping to `docker config inspect`. The content is fetched
 // on demand, since a config can be a whole nginx.conf.
 func (u *ui) showConfigDetail(c swarmConfig) {
-	app, pages, dcli, ctx := u.app, u.pages, u.dcli, u.ctx
+	pages, dcli := u.pages, u.dcli
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" config %s ", c.Name))
 
@@ -114,7 +108,7 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 	head := b.String()
 	tv.SetText(head)
 
-	prev := app.GetFocus()
+	prev := u.app.GetFocus()
 	ov := u.overlayFor(pageConfigDetail, prev, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
 	closeIt := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -131,24 +125,23 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 	})
 	ov.show(centered(tv, 96, 28), tv)
 
-	go func() {
-		data, err := configContent(ctx, dcli, c.ID)
-		app.QueueUpdateDraw(func() {
-			if !pages.HasPage(pageConfigDetail) {
-				return
-			}
-			body := head[:strings.LastIndex(head, "    [gray]"+loadingText+"[-]\n")]
-			switch {
-			case err != nil:
-				tv.SetText(body + "    [red]could not read: " + tview.Escape(err.Error()) + "[-]\n")
-			case len(data) == 0:
-				tv.SetText(body + "    [gray](empty)[-]\n")
-			default:
-				tv.SetText(body + indentConfigContent(data))
-			}
-			tv.ScrollToBeginning()
-		})
-	}()
+	async(u, "ui.configs.content", func(ctx context.Context) ([]byte, error) {
+		return configContent(ctx, dcli, c.ID)
+	}, func(data []byte, err error) {
+		if !pages.HasPage(pageConfigDetail) {
+			return
+		}
+		body := head[:strings.LastIndex(head, "    [gray]"+loadingText+"[-]\n")]
+		switch {
+		case err != nil:
+			tv.SetText(body + "    [red]could not read: " + tview.Escape(err.Error()) + "[-]\n")
+		case len(data) == 0:
+			tv.SetText(body + "    [gray](empty)[-]\n")
+		default:
+			tv.SetText(body + indentConfigContent(data))
+		}
+		tv.ScrollToBeginning()
+	})
 }
 
 // Caps on what the detail view renders. Both are needed: bounding only the

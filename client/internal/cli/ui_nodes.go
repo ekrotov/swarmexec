@@ -4,15 +4,16 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
-	"swarmexec/client/internal/clientlog"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
@@ -63,30 +64,26 @@ func (u *ui) renderNodes() {
 }
 
 func (u *ui) loadNodes() {
-	r, cfg, dcli, f, ctx, notable := u.r, u.cfg, u.dcli, u.f, u.ctx, u.notable
+	r, cfg, dcli, f, notable := u.r, u.cfg, u.dcli, u.f, u.notable
 	tableState(notable, noHeaders, loadingCell())
-	gen := u.generation()
-	go func() {
-		start := time.Now()
-		list, err := listNodeInfos(ctx, dcli)
-		clientlog.Timed("ui.loadNodes", start, err)
-		u.onCluster(gen, func() {
-			if err != nil {
-				tableState(notable, noHeaders, errorCell(err))
-				return
-			}
-			u.nodeInfos, u.nodeVolsLoaded = list, false
-			u.renderNodes()
-		})
-	}()
+	async(u, "ui.loadNodes", func(ctx context.Context) ([]swarmNodeInfo, error) {
+		return listNodeInfos(ctx, dcli)
+	}, func(list []swarmNodeInfo, err error) {
+		if err != nil {
+			tableState(notable, noHeaders, errorCell(err))
+			return
+		}
+		u.nodeInfos, u.nodeVolsLoaded = list, false
+		u.renderNodes()
+	})
 	// Image footprints are node-local too and only shown in the detail, so they
 	// load on their own and simply stay absent for an agent that cannot answer.
-	go func() {
+	async(u, "ui.loadNodes.images", func(ctx context.Context) (map[string]nodeImages, error) {
 		imgs := map[string]nodeImages{}
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
 			per := make([]nodeImages, len(ns))
 			ok := make([]bool, len(ns))
-			forEachNode(ns, func(i int, n resolve.Node) {
+			_ = fanout.Nodes(ctx, ns, func(ctx context.Context, i int, n resolve.Node) {
 				ni, ierr := listNodeImages(ctx, cfg, n, f.connectTimeout)
 				per[i], ok[i] = ni, ierr == nil
 			})
@@ -96,22 +93,22 @@ func (u *ui) loadNodes() {
 				}
 			}
 		}
-		u.onCluster(gen, func() { u.nodeImgs = imgs })
-	}()
+		return imgs, nil
+	}, func(imgs map[string]nodeImages, _ error) { u.nodeImgs = imgs })
 	// Per-node volume counts are node-local (agent fan-out), so fill them in
 	// asynchronously — the VOLS column shows "…" until they arrive.
-	go func() {
+	async(u, "ui.loadNodes.volumes", func(ctx context.Context) (map[string]int, error) {
 		counts := map[string]int{}
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
 			vs, _ := indexVolumes(ctx, cfg, ns, f.connectTimeout)
 			counts = volumeCountsByNode(vs)
 		}
-		u.onCluster(gen, func() {
-			// Mark loaded even on failure so VOLS shows a number, not "…" forever.
-			u.nodeVolCounts, u.nodeVolsLoaded = counts, true
-			u.renderNodes()
-		})
-	}()
+		return counts, nil
+	}, func(counts map[string]int, _ error) {
+		// Mark loaded even on failure so VOLS shows a number, not "…" forever.
+		u.nodeVolCounts, u.nodeVolsLoaded = counts, true
+		u.renderNodes()
+	})
 }
 
 func (u *ui) selectedNode() (swarmNodeInfo, bool) {
@@ -123,7 +120,7 @@ func (u *ui) selectedNode() (swarmNodeInfo, bool) {
 // node's labels, applied via NodeUpdate. Dedicated (not the service editList)
 // because a node update is immediate — there is no rolling update.
 func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
-	app, dcli, ctx, notable := u.app, u.dcli, u.ctx, u.notable
+	app, dcli, notable := u.app, u.dcli, u.notable
 	cur := kvPairs(n.Labels)
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
@@ -174,21 +171,20 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 			return
 		}
 		u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
-			go func() {
-				err := setNodeLabels(ctx, dcli, n.ID, lbls)
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						u.info("update failed: " + err.Error())
-						app.SetFocus(list)
-						return
-					}
-					closeEd()
-					u.info(fmt.Sprintf("node %s labels updated", n.Hostname))
-					if after != nil {
-						after()
-					}
-				})
-			}()
+			asyncDo(u, "ui.nodes.labels", func(ctx context.Context) error {
+				return setNodeLabels(ctx, dcli, n.ID, lbls)
+			}, func(err error) {
+				if err != nil {
+					u.info("update failed: " + err.Error())
+					app.SetFocus(list)
+					return
+				}
+				closeEd()
+				u.info(fmt.Sprintf("node %s labels updated", n.Hostname))
+				if after != nil {
+					after()
+				}
+			})
 		})
 	}
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -226,26 +222,25 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
 // Draining is confirmed because it evicts the node's tasks; active and pause are
 // applied directly (pause only stops NEW placements, it does not move anything).
 func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after func()) {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	dcli := u.dcli
 	list := tview.NewList().ShowSecondaryText(true)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" availability — %s ", n.Hostname))
 	ov := u.overlayFor(pageNodeAvail, back, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
 	closeMenu := ov.Close
 
 	apply := func(to swarm.NodeAvailability) {
-		go func() {
-			err := setNodeAvailability(ctx, dcli, n.ID, to)
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					u.info(fmt.Sprintf("could not set %s to %s: %v", n.Hostname, to, err))
-					return
-				}
-				u.flash(fmt.Sprintf(" [green]✓ %s is now %s[white]", n.Hostname, to))
-				if after != nil {
-					after()
-				}
-			})
-		}()
+		asyncDo(u, "ui.nodes.availability", func(ctx context.Context) error {
+			return setNodeAvailability(ctx, dcli, n.ID, to)
+		}, func(err error) {
+			if err != nil {
+				u.info(fmt.Sprintf("could not set %s to %s: %v", n.Hostname, to, err))
+				return
+			}
+			u.flash(fmt.Sprintf(" [green]✓ %s is now %s[white]", n.Hostname, to))
+			if after != nil {
+				after()
+			}
+		})
 	}
 	add := func(label, desc string, to swarm.NodeAvailability, confirmMsg string) {
 		if string(to) == n.Availability {
@@ -516,7 +511,7 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 // operator name which one they mean, and each still goes through its own
 // confirm spelling out the consequence.
 func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
-	app := u.app
+	r, cfg, f := u.r, u.cfg, u.f
 	ni, known := u.nodeImgs[n.Hostname]
 	if !known {
 		u.info(fmt.Sprintf("No image information for %q.\n\n"+
@@ -533,28 +528,31 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 	run := func(all bool) {
 		closeIt()
 		u.confirm(pruneConfirmText(n.Hostname, ni, all), "Remove", back, func() {
-			go func() {
+			type pruned struct {
+				reclaimed int64
+				deleted   int
+			}
+			async(u, "ui.nodes.imageprune", func(ctx context.Context) (pruned, error) {
 				// Resolve the dial address rather than deriving one from the node
 				// row: which address reaches an agent depends on the configured
 				// address mode, and only the resolver knows it.
-				target, terr := nodeByHostname(u.ctx, u.r, n.Hostname)
+				target, terr := nodeByHostname(ctx, r, n.Hostname)
 				if terr != nil {
-					app.QueueUpdateDraw(func() { u.info("prune images: " + terr.Error()) })
+					return pruned{}, terr
+				}
+				reclaimed, deleted, err := pruneNodeImages(ctx, cfg, target, all, f.connectTimeout)
+				return pruned{reclaimed, deleted}, err
+			}, func(p pruned, err error) {
+				if err != nil {
+					u.info("prune images: " + err.Error())
 					return
 				}
-				reclaimed, deleted, err := pruneNodeImages(u.ctx, u.cfg, target, all, u.f.connectTimeout)
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						u.info("prune images: " + err.Error())
-						return
-					}
-					u.flash(fmt.Sprintf(" [green]✓ %s freed on %s (%d image(s))[white]",
-						formatMemBytes(reclaimed), n.Hostname, deleted))
-					if after != nil {
-						after()
-					}
-				})
-			}()
+				u.flash(fmt.Sprintf(" [green]✓ %s freed on %s (%d image(s))[white]",
+					formatMemBytes(p.reclaimed), n.Hostname, p.deleted))
+				if after != nil {
+					after()
+				}
+			})
 		})
 	}
 

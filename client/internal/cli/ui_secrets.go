@@ -4,10 +4,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
-	"swarmexec/client/internal/clientlog"
 	"sync"
 	"time"
 
@@ -53,22 +53,18 @@ func (u *ui) renderSecrets() {
 }
 
 func (u *ui) loadSecrets() {
-	dcli, ctx, sectable := u.dcli, u.ctx, u.sectable
+	dcli, sectable := u.dcli, u.sectable
 	tableState(sectable, sHeaders, loadingCell())
-	gen := u.generation()
-	go func() {
-		start := time.Now()
-		list, err := listSecrets(ctx, dcli)
-		clientlog.Timed("ui.loadSecrets", start, err)
-		u.onCluster(gen, func() {
-			if err != nil {
-				tableState(sectable, sHeaders, errorCell(err))
-				return
-			}
-			u.secs = list
-			u.renderSecrets()
-		})
-	}()
+	async(u, "ui.loadSecrets", func(ctx context.Context) ([]swarmSecret, error) {
+		return listSecrets(ctx, dcli)
+	}, func(list []swarmSecret, err error) {
+		if err != nil {
+			tableState(sectable, sHeaders, errorCell(err))
+			return
+		}
+		u.secs = list
+		u.renderSecrets()
+	})
 }
 
 func (u *ui) selectedSecret() (swarmSecret, bool) {
@@ -81,7 +77,7 @@ func (u *ui) selectedSecret() (swarmSecret, bool) {
 // and the overlay says so. Usage (services with their running containers)
 // needs a task lookup, so it fills in lazily after the overlay is up.
 func (u *ui) showSecretDetail(s swarmSecret) {
-	app, pages, dcli, ctx, sectable := u.app, u.pages, u.dcli, u.ctx, u.sectable
+	pages, dcli, sectable := u.pages, u.dcli, u.sectable
 	ts := func(t time.Time) string {
 		if t.IsZero() {
 			return "-"
@@ -149,7 +145,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				fmt.Sprintf("attach secret %q to a service", s.Name),
 				fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
 				suggestions, tv,
-				func(svc string) error { return attachSecretToService(ctx, dcli, svc, s.ID, s.Name) },
+				func(ctx context.Context, svc string) error {
+					return attachSecretToService(ctx, dcli, svc, s.ID, s.Name)
+				},
 				func() { closeSecret(); u.loadSecrets() },
 			)
 			return nil
@@ -162,7 +160,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				fmt.Sprintf("detach secret %q from a service", s.Name),
 				fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
 				s.Services, tv,
-				func(svc string) error { return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name) },
+				func(ctx context.Context, svc string) error {
+					return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
+				},
 				func() { closeSecret(); u.loadSecrets() },
 			)
 			return nil
@@ -181,14 +181,13 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 		height = 24
 	}
 	ov.show(centered(tv, 72, height), tv)
-	go func() {
-		members := secretMembers(ctx, dcli, s)
-		app.QueueUpdateDraw(func() {
-			if pages.HasPage(pageSecDetail) {
-				render(members, false)
-			}
-		})
-	}()
+	async(u, "ui.secrets.members", func(ctx context.Context) ([]netService, error) {
+		return secretMembers(ctx, dcli, s), nil
+	}, func(members []netService, _ error) {
+		if pages.HasPage(pageSecDetail) {
+			render(members, false)
+		}
+	})
 }
 
 // openRotateSecret opens the rotate editor for s from its detail view. The
@@ -209,10 +208,12 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 		u.info("secret " + name + " is already being rotated — wait for it to finish")
 		return
 	}
-	dcli, ctx := u.dcli, u.ctx
+	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
 	u.openRotateEditor(back, name, labels, rotateHooks{
-		plan:  func() (rotatePlan, error) { return planRotation(ctx, dcli, name) },
-		queue: func(fn func()) { u.app.QueueUpdateDraw(fn) },
+		plan: func() (rotatePlan, error) { return planRotation(ctx, dcli, name) },
+		// The editor belongs to the cluster it was opened on: a plan read
+		// after a switch away is dropped like any other stale result.
+		queue: func(fn func()) { u.onCluster(gen, fn) },
 		confirm: func(msg string, back tview.Primitive, ok func()) {
 			u.confirm(msg, "Rotate", back, ok)
 		},
@@ -223,8 +224,24 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 	})
 }
 
-// runRotation rotates name in the background behind a progress overlay. Esc
-// hides the overlay; the rotation carries on and still reports how it ended.
+// rotateSecretFn is the rotation runRotation starts; a variable only so a test
+// can stand in for the cluster.
+var rotateSecretFn = rotateSecret
+
+// runRotation rotates name in the background behind a progress overlay.
+//
+// A rotation must finish once it has started, wherever the operator goes: it
+// deletes the old secret object before it recreates it under the old name, so
+// one stopped halfway leaves the services parked on the temporary secret. So
+// it runs on the SESSION context (runCtx), not the cluster's — a switch to
+// another cluster cancels the cluster's context, and must not cancel this. It
+// keeps the manager client of the cluster it started on (a switch away keeps
+// that connection open; only quitting the UI closes it).
+//
+// Esc only hides the progress overlay, and so does a switch (which closes the
+// old cluster's overlays). Either way the rotation still reports how it
+// ended; when another cluster is on screen by then, the report names the
+// cluster the rotation ran on. Quitting the UI does stop it — runCtx ends.
 //
 // Progress arrives on the rotating goroutine. It is collected under a lock
 // and drawn by at most one queued update at a time, so a burst of lines costs
@@ -235,7 +252,12 @@ func (u *ui) runRotation(name string, data []byte) {
 	}
 	rotating := u.rotating // this cluster's, even if the operator switches away
 	rotating[name] = true
-	app, dcli, ctx := u.app, u.dcli, u.ctx
+	cs := u.clusterState // the cluster the rotation runs on, whatever is visible later
+	app, ctx := u.app, u.runCtx
+	var dcli secretRotateAPI // a nil interface, not a nil *client.Client
+	if cs.dcli != nil {
+		dcli = cs.dcli
+	}
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" rotating secret " + tview.Escape(name) + " ")
@@ -275,18 +297,27 @@ func (u *ui) runRotation(name string, data []byte) {
 	draw()
 	ov.show(centered(tv, 90, 18), tv)
 
+	// Deliberately not async: that would drop the report after a switch.
 	go func() {
-		err := rotateSecret(ctx, dcli, name, data, rotateOptions{
+		start := time.Now()
+		err := rotateSecretFn(ctx, dcli, name, data, rotateOptions{
 			Progress: func(e rotateEvent) {
 				add(fmt.Sprintf("[yellow]%d/%d[-] %s", e.Step, rotateSteps, tview.Escape(e.Msg)))
 			},
 		})
+		logOp(ctx, "ui.secrets.rotate", start, err, "cluster", cs.name, "secret", name)
 		app.QueueUpdateDraw(func() {
 			delete(rotating, name)
 			ov.Close()
-			u.loadSecrets()
+			here := u.clusterState == cs
+			where := "" // nothing to say when the cluster on screen is the one it ran on
+			if here {
+				u.loadSecrets()
+			} else {
+				where = " on cluster " + cs.name
+			}
 			if err != nil {
-				msg := "rotation of " + name + " failed:\n\n" + err.Error()
+				msg := "rotation of " + name + where + " failed:\n\n" + err.Error()
 				if rotateResumeHint(err, "") != "" {
 					msg += "\n\nThe services keep running on " + rotateTempName(name) +
 						", which holds the new content.\nRe-run r on " + name + " to resume."
@@ -294,7 +325,7 @@ func (u *ui) runRotation(name string, data []byte) {
 				u.info(msg)
 				return
 			}
-			u.flash(" [green]rotated[white] secret " + name)
+			u.flash(" [green]rotated[white] secret " + name + where)
 		})
 	}()
 }
@@ -302,24 +333,23 @@ func (u *ui) runRotation(name string, data []byte) {
 // openDeleteSecret permanently removes a secret after a confirm. Docker refuses
 // to remove a secret a service still references, so warn up front when in use.
 func (u *ui) openDeleteSecret(s swarmSecret) {
-	app, dcli, ctx, sectable := u.app, u.dcli, u.ctx, u.sectable
+	app, dcli, sectable := u.app, u.dcli, u.sectable
 	msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
 	if len(s.Services) > 0 {
 		msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
 	}
 	u.confirm(msg, "Delete", sectable, func() {
-		go func() {
-			err := removeSecret(ctx, dcli, s.Name)
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					u.info("remove failed: " + err.Error())
-					app.SetFocus(sectable)
-					return
-				}
-				u.loadSecrets()
-				u.flash(" [green]removed[white] secret " + s.Name)
-			})
-		}()
+		asyncDo(u, "ui.secrets.remove", func(ctx context.Context) error {
+			return removeSecret(ctx, dcli, s.Name)
+		}, func(err error) {
+			if err != nil {
+				u.info("remove failed: " + err.Error())
+				app.SetFocus(sectable)
+				return
+			}
+			u.loadSecrets()
+			u.flash(" [green]removed[white] secret " + s.Name)
+		})
 	})
 }
 

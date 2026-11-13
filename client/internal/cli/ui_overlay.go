@@ -30,9 +30,27 @@ type overlay struct {
 	u       *ui
 	name    string
 	back    tview.Primitive
-	release func() // the refresh entry
-	restore func() // the footer, if this overlay took it
+	focus   tview.Primitive // what show focused, to give it back after a switch
+	release func()          // the refresh entry
+	restore func()          // the footer, if this overlay took it
 	once    sync.Once
+}
+
+// sessionPages are the overlays that belong to the operator's session rather
+// than to the cluster on screen, and so stay open across a cluster switch:
+// ssh's questions (one may be for the very connection being switched to), the
+// client's own log, the key help, the docker-context dialogs and a forward's
+// detail (forwards outlive a switch by design). Everything else shows or edits
+// ONE cluster and is closed when the operator leaves it — see
+// closeClusterOverlays.
+var sessionPages = map[string]bool{
+	pageAskpass:   true,
+	pageSSHAdd:    true,
+	pageLogView:   true,
+	pageHelp:      true,
+	pageCtxForm:   true,
+	pageCtxDetail: true,
+	pageFwdDetail: true,
 }
 
 // overlayFor declares an overlay: its page name, what gets focus when it
@@ -53,10 +71,72 @@ func (u *ui) overlayFor(name string, back tview.Primitive, help string) *overlay
 // show puts p on screen and focuses focus (nil: leave focus where it is).
 func (o *overlay) show(p tview.Primitive, focus tview.Primitive) *overlay {
 	o.u.pages.AddPage(o.name, p, true, true)
+	o.focus = focus
+	o.u.trackOverlay(o)
 	if focus != nil {
 		o.u.app.SetFocus(focus)
 	}
 	return o
+}
+
+// trackOverlay records o as on screen, newest last. A page of the same name
+// that was already up has just been replaced by AddPage, so its entry goes.
+// UI goroutine only, like the pages themselves.
+func (u *ui) trackOverlay(o *overlay) {
+	kept := u.shown[:0]
+	for _, s := range u.shown {
+		if s.name != o.name && s != o {
+			kept = append(kept, s)
+		}
+	}
+	u.shown = append(kept, o)
+}
+
+func (u *ui) untrackOverlay(o *overlay) {
+	for i, s := range u.shown {
+		if s == o {
+			u.shown = append(u.shown[:i], u.shown[i+1:]...)
+			return
+		}
+	}
+}
+
+// closeClusterOverlays closes every open overlay that belongs to the cluster
+// being left, newest first so each footer unwinds to its owner, and reports
+// how many it closed. UI goroutine only.
+//
+// This is the other half of async's staleness rule. A background result for
+// the old cluster is dropped after a switch; if the dialog or progress overlay
+// it would have closed were still up, it would sit over the new cluster with
+// nothing left to take it down — and while up it would go on editing the old
+// cluster from the new one's screen. Closing them at the switch removes both.
+// Close does not hand focus back here: the switch focuses the new tab itself.
+func (u *ui) closeClusterOverlays() int {
+	n := 0
+	for i := len(u.shown) - 1; i >= 0; i-- {
+		if i >= len(u.shown) {
+			continue // a Close above closed more than itself
+		}
+		o := u.shown[i]
+		if sessionPages[o.name] {
+			continue
+		}
+		o.back = nil
+		o.Close()
+		n++
+	}
+	return n
+}
+
+// refocusTopOverlay gives focus back to the newest overlay still open (a
+// session overlay a switch kept), after the switch focused the tab beneath it.
+func (u *ui) refocusTopOverlay() {
+	if len(u.shown) == 0 {
+		return
+	}
+	if top := u.shown[len(u.shown)-1]; top.focus != nil {
+		u.app.SetFocus(top.focus)
+	}
 }
 
 // setHelp updates the footer keys while the overlay is open — for the few whose
@@ -76,6 +156,7 @@ func (o *overlay) Close() {
 			o.restore()
 		}
 		o.u.pages.RemovePage(o.name)
+		o.u.untrackOverlay(o)
 		o.release()
 		if o.back != nil {
 			o.u.app.SetFocus(o.back)

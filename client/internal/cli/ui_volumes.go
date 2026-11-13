@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -239,7 +240,7 @@ func (u *ui) selectedVolume() (swarmVolume, bool) {
 }
 
 func (u *ui) showVolumeNodes(v swarmVolume) {
-	app, cfg, f, ctx, vtable := u.app, u.cfg, u.f, u.ctx, u.vtable
+	cfg, f, vtable := u.cfg, u.f, u.vtable
 	list := tview.NewList().ShowSecondaryText(false)
 	title := fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
 	if !v.Created.IsZero() {
@@ -266,22 +267,21 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 	closeNodes := ov.Close
 
 	runDelete := func(targets []resolve.Node) {
-		go func() {
-			results := removeOnNodes(ctx, cfg, targets, v.Name, false, f.connectTimeout)
-			app.QueueUpdateDraw(func() {
-				closeNodes()
-				u.loadVolumes()
-				var b []string
-				for _, res := range results {
-					if res.err != nil {
-						b = append(b, fmt.Sprintf("%s: error: %v", res.node.Name, res.err))
-					} else {
-						b = append(b, fmt.Sprintf("%s: removed", res.node.Name))
-					}
+		async(u, "ui.volumes.remove", func(ctx context.Context) ([]rmResult, error) {
+			return removeOnNodes(ctx, cfg, targets, v.Name, false, f.connectTimeout), nil
+		}, func(results []rmResult, _ error) {
+			closeNodes()
+			u.loadVolumes()
+			var b []string
+			for _, res := range results {
+				if res.err != nil {
+					b = append(b, fmt.Sprintf("%s: error: %v", res.node.Name, res.err))
+				} else {
+					b = append(b, fmt.Sprintf("%s: removed", res.node.Name))
 				}
-				u.info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(b)))
-			})
-		}()
+			}
+			u.info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(b)))
+		})
 	}
 	confirmDelete := func(targets []resolve.Node) {
 		u.confirm(fmt.Sprintf("Remove volume %q on %d node(s)?\n%s", v.Name, len(targets), joinNodes(targets)),
@@ -344,7 +344,7 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 // labels, targeting one node or (blank) all nodes — volumes are node-local, so
 // creation goes to each target node's agent.
 func (u *ui) showCreateVolume() {
-	app, r, cfg, f, ctx, vtable := u.app, u.r, u.cfg, u.f, u.ctx, u.vtable
+	r, cfg, f, vtable := u.r, u.cfg, u.f, u.vtable
 	o := newVolumeOpts{Driver: "local"}
 	var labels, nodeSel string
 	var allNodes []resolve.Node // fetched on open, for autocomplete + targeting
@@ -366,14 +366,11 @@ func (u *ui) showCreateVolume() {
 			return out
 		})
 	}
-	go func() {
-		ns, err := r.Nodes(ctx)
-		app.QueueUpdateDraw(func() {
-			if err == nil {
-				allNodes = ns
-			}
-		})
-	}()
+	async(u, "ui.volumes.create.nodes", r.Nodes, func(ns []resolve.Node, err error) {
+		if err == nil {
+			allNodes = ns
+		}
+	})
 	ov := u.overlayFor(pageVolForm, vtable, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 	closeForm := ov.Close
 	form.AddButton("Create", func() {
@@ -400,27 +397,26 @@ func (u *ui) showCreateVolume() {
 			u.info("no nodes available")
 			return
 		}
-		go func() {
-			results := createVolumeOnNodes(ctx, cfg, targets, req, f.connectTimeout)
-			app.QueueUpdateDraw(func() {
-				closeForm()
-				u.loadVolumes()
-				ok := 0
-				var failed []string
-				for _, res := range results {
-					if res.err != nil {
-						failed = append(failed, res.node.Name+": "+res.err.Error())
-					} else {
-						ok++
-					}
+		async(u, "ui.volumes.create", func(ctx context.Context) ([]rmResult, error) {
+			return createVolumeOnNodes(ctx, cfg, targets, req, f.connectTimeout), nil
+		}, func(results []rmResult, _ error) {
+			closeForm()
+			u.loadVolumes()
+			ok := 0
+			var failed []string
+			for _, res := range results {
+				if res.err != nil {
+					failed = append(failed, res.node.Name+": "+res.err.Error())
+				} else {
+					ok++
 				}
-				if len(failed) == 0 {
-					u.flash(fmt.Sprintf(" [green]created[white] volume %s on %d node(s)", req.Name, ok))
-					return
-				}
-				u.info(fmt.Sprintf("volume %q: %d ok, %d failed\n%s", req.Name, ok, len(failed), joinLines(failed)))
-			})
-		}()
+			}
+			if len(failed) == 0 {
+				u.flash(fmt.Sprintf(" [green]created[white] volume %s on %d node(s)", req.Name, ok))
+				return
+			}
+			u.info(fmt.Sprintf("volume %q: %d ok, %d failed\n%s", req.Name, ok, len(failed), joinLines(failed)))
+		})
 	})
 	form.AddButton("Cancel", closeForm)
 	form.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -475,7 +471,7 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 // a single confirm. Volumes are node-local, so a volume is removed across all
 // its v.Nodes. Shared by the multi-select delete and prune.
 func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
-	app, cfg, f, ctx, vtable := u.app, u.cfg, u.f, u.ctx, u.vtable
+	cfg, f, vtable := u.cfg, u.f, u.vtable
 	if len(targets) == 0 {
 		return
 	}
@@ -500,7 +496,17 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 		// No focus to give back: the summary notice that replaces it takes it.
 		pov := u.overlayFor(pageVolProgress, nil, "")
 		pov.show(centered(prog, 60, 5), prog)
-		go func() {
+		// The progress line is a second, streaming handoff: one update per
+		// finished volume, through the same generation check as the result.
+		gen := u.generation()
+		progress := func(d int) {
+			u.onCluster(gen, func() { prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets))) })
+		}
+		type outcome struct {
+			removed int
+			fails   []string
+		}
+		async(u, "ui.volumes.delete", func(ctx context.Context) (outcome, error) {
 			// Delete volumes with bounded parallelism: each volume already
 			// fans out across its nodes, so a small volume-level pool keeps
 			// the total load on the agents in check. A mutex guards the
@@ -535,24 +541,23 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 					fails = append(fails, vf...)
 					d := done
 					mu.Unlock()
-					app.QueueUpdateDraw(func() {
-						prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets)))
-					})
+					progress(d)
 				}(v)
 			}
 			wg.Wait()
-			app.QueueUpdateDraw(func() {
-				pov.Close()
-				u.selectedVols = map[string]bool{}
-				u.loadVolumes()
-				u.updateStatus()
-				summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
-				if len(fails) > 0 {
-					summary += ":\n" + joinLines(fails)
-				}
-				u.info(summary)
-			})
-		}()
+			return outcome{removed, fails}, nil
+		}, func(o outcome, _ error) {
+			removed, fails := o.removed, o.fails
+			pov.Close()
+			u.selectedVols = map[string]bool{}
+			u.loadVolumes()
+			u.updateStatus()
+			summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
+			if len(fails) > 0 {
+				summary += ":\n" + joinLines(fails)
+			}
+			u.info(summary)
+		})
 	})
 }
 
@@ -560,27 +565,26 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 // service declares (service-declared volumes are spared even with no running
 // task). The service check needs a ServiceList, so it runs off the UI goroutine.
 func (u *ui) pruneVolumes() {
-	app, dcli, ctx := u.app, u.dcli, u.ctx
-	go func() {
-		declared := serviceVolumeNames(ctx, dcli)
-		app.QueueUpdateDraw(func() {
-			var targets []swarmVolume
-			for _, v := range u.vols {
-				if len(u.volUsage[v.Name]) == 0 && !declared[v.Name] {
-					targets = append(targets, v)
-				}
+	dcli := u.dcli
+	async(u, "ui.volumes.prune.scan", func(ctx context.Context) (map[string]bool, error) {
+		return serviceVolumeNames(ctx, dcli), nil
+	}, func(declared map[string]bool, _ error) {
+		var targets []swarmVolume
+		for _, v := range u.vols {
+			if len(u.volUsage[v.Name]) == 0 && !declared[v.Name] {
+				targets = append(targets, v)
 			}
-			if len(targets) == 0 {
-				u.info("no unused volumes to prune (all are in use or declared by a service)")
-				return
-			}
-			u.deleteVolumes(targets, fmt.Sprintf("Prune %d unused volume(s)? This cannot be undone.", len(targets)))
-		})
-	}()
+		}
+		if len(targets) == 0 {
+			u.info("no unused volumes to prune (all are in use or declared by a service)")
+			return
+		}
+		u.deleteVolumes(targets, fmt.Sprintf("Prune %d unused volume(s)? This cannot be undone.", len(targets)))
+	})
 }
 
 func (u *ui) attachVolumeToService(volName string) {
-	app, dcli, ctx, vtable := u.app, u.dcli, u.ctx, u.vtable
+	app, dcli, vtable := u.app, u.dcli, u.vtable
 	in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(42).
 		SetPlaceholder("type or ↓ to pick; Enter next, Esc cancel")
 	names := u.serviceNamesFromCache()
@@ -626,18 +630,17 @@ func (u *ui) attachVolumeToService(volName string) {
 						return
 					}
 					mnt := mount.Mount{Type: mount.TypeVolume, Source: volName, Target: target, ReadOnly: lbl == "Attach read-only"}
-					go func() {
-						err := addServiceMount(ctx, dcli, svc, mnt)
-						app.QueueUpdateDraw(func() {
-							app.SetFocus(vtable)
-							if err != nil {
-								u.info("attach failed: " + err.Error())
-								return
-							}
-							u.loadVolumes()
-							u.info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
-						})
-					}()
+					asyncDo(u, "ui.volumes.attach", func(ctx context.Context) error {
+						return addServiceMount(ctx, dcli, svc, mnt)
+					}, func(err error) {
+						app.SetFocus(vtable)
+						if err != nil {
+							u.info("attach failed: " + err.Error())
+							return
+						}
+						u.loadVolumes()
+						u.info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
+					})
 				})
 			cov.show(newScrim(m), m)
 		})

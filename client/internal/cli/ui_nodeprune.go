@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,32 +26,24 @@ import (
 // a round trip, not a scan. An agent that predates the RPC gets the old
 // two-choice image menu instead — it can still do that much.
 func (u *ui) openNodePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
-	app := u.app
 	u.flash(fmt.Sprintf(" [gray]asking %s's agent…[white]", n.Hostname))
-	go func() {
-		target, err := nodeByHostname(u.ctx, u.r, n.Hostname)
-		var resp *pb.ReclaimStatsResponse
-		if err == nil {
-			resp, err = fetchReclaim(u.ctx, u.cfg, target, false, u.f.connectTimeout)
+	u.loadNodeReclaim(n.Hostname, false, func(resp *pb.ReclaimStatsResponse, err error) {
+		switch {
+		case errors.Is(err, errAgentTooOld):
+			u.openNodeImagePrune(n, back, after)
+		case err != nil:
+			u.info("prune: " + err.Error())
+		default:
+			u.showPruneDialog(n, resp, back, after)
 		}
-		app.QueueUpdateDraw(func() {
-			switch {
-			case errors.Is(err, errAgentTooOld):
-				u.openNodeImagePrune(n, back, after)
-			case err != nil:
-				u.info("prune: " + err.Error())
-			default:
-				u.showPruneDialog(n, resp, back, after)
-			}
-		})
-	}()
+	})
 }
 
 // showPruneDialog is the category checklist. Volumes sit last, unticked and
 // red, and "all" (a) leaves them alone: they are data, and the only way to
 // prune them is to tick them on purpose.
 func (u *ui) showPruneDialog(n swarmNodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
-	app := u.app
+	r, cfg, f := u.r, u.cfg, u.f
 	choice := defaultPruneChoice()
 
 	table := tview.NewTable().SetSelectable(true, false)
@@ -135,23 +128,22 @@ func (u *ui) showPruneDialog(n swarmNodeInfo, stats *pb.ReclaimStatsResponse, ba
 			ov.Close()
 			req := choice.request()
 			u.flash(fmt.Sprintf(" [gray]pruning on %s…[white]", n.Hostname))
-			go func() {
-				target, err := nodeByHostname(u.ctx, u.r, n.Hostname)
-				var resp *pb.PruneResponse
-				if err == nil {
-					resp, err = pruneNode(u.ctx, u.cfg, target, req, u.f.connectTimeout)
+			async(u, "ui.nodes.prune", func(ctx context.Context) (*pb.PruneResponse, error) {
+				target, err := nodeByHostname(ctx, r, n.Hostname)
+				if err != nil {
+					return nil, err
 				}
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						u.info("prune: " + err.Error())
-						return
-					}
-					u.info(pruneResultText(n.Hostname, resp))
-					if after != nil {
-						after()
-					}
-				})
-			}()
+				return pruneNode(ctx, cfg, target, req, f.connectTimeout)
+			}, func(resp *pb.PruneResponse, err error) {
+				if err != nil {
+					u.info("prune: " + err.Error())
+					return
+				}
+				u.info(pruneResultText(n.Hostname, resp))
+				if after != nil {
+					after()
+				}
+			})
 		})
 	}
 
@@ -201,14 +193,14 @@ func (v *nodeReclaimView) text(now time.Time) string {
 // loadNodeReclaim fetches the node's reclaim stats in the background and hands
 // them to apply on the UI goroutine. measureNow forces a fresh measurement.
 func (u *ui) loadNodeReclaim(hostname string, measureNow bool, apply func(*pb.ReclaimStatsResponse, error)) {
-	go func() {
-		target, err := nodeByHostname(u.ctx, u.r, hostname)
-		var resp *pb.ReclaimStatsResponse
-		if err == nil {
-			resp, err = fetchReclaim(u.ctx, u.cfg, target, measureNow, u.f.connectTimeout)
+	r, cfg, f := u.r, u.cfg, u.f
+	async(u, "ui.nodes.reclaim", func(ctx context.Context) (*pb.ReclaimStatsResponse, error) {
+		target, err := nodeByHostname(ctx, r, hostname)
+		if err != nil {
+			return nil, err
 		}
-		u.app.QueueUpdateDraw(func() { apply(resp, err) })
-	}()
+		return fetchReclaim(ctx, cfg, target, measureNow, f.connectTimeout)
+	}, apply)
 }
 
 // --- cluster-wide schedule editor --------------------------------------------
@@ -368,21 +360,19 @@ func schedPreview(s prunesched.Schedule, now time.Time) string {
 // openPruneSchedule loads the agent service and opens the editor. The
 // schedule is the cluster's, so this works from any node row.
 func (u *ui) openPruneSchedule(back tview.Primitive) {
-	app := u.app
-	go func() {
-		svc, err := findAgentService(u.ctx, u.dcli)
-		app.QueueUpdateDraw(func() {
-			if err != nil {
-				u.info("prune schedule: " + err.Error())
-				return
-			}
-			u.showScheduleEditor(svc, back)
-		})
-	}()
+	dcli := u.dcli
+	async(u, "ui.nodes.schedule.load", func(ctx context.Context) (*swarm.Service, error) {
+		return findAgentService(ctx, dcli)
+	}, func(svc *swarm.Service, err error) {
+		if err != nil {
+			u.info("prune schedule: " + err.Error())
+			return
+		}
+		u.showScheduleEditor(svc, back)
+	})
 }
 
 func (u *ui) showScheduleEditor(svc *swarm.Service, back tview.Primitive) {
-	app := u.app
 	s, parseErr := agentSchedule(svc)
 	if parseErr != nil {
 		s = prunesched.Default()
@@ -504,16 +494,16 @@ func (u *ui) showScheduleEditor(svc *swarm.Service, back tview.Primitive) {
 			ov.Close()
 			saved := s
 			u.flash(" [gray]saving the prune schedule…[white]")
-			go func() {
-				err := saveAgentSchedule(u.ctx, u.dcli, svc, saved)
-				app.QueueUpdateDraw(func() {
-					if err != nil {
-						u.info("prune schedule: " + err.Error())
-						return
-					}
-					u.flash(" [green]✓ prune schedule saved — the agents restart one by one[white]")
-				})
-			}()
+			dcli := u.dcli
+			asyncDo(u, "ui.nodes.schedule.save", func(ctx context.Context) error {
+				return saveAgentSchedule(ctx, dcli, svc, saved)
+			}, func(err error) {
+				if err != nil {
+					u.info("prune schedule: " + err.Error())
+					return
+				}
+				u.flash(" [green]✓ prune schedule saved — the agents restart one by one[white]")
+			})
 		})
 	}
 

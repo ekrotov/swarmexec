@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -51,25 +52,25 @@ func (u *ui) writeSecurityReportPrompt(back tview.Primitive, setHelp func(string
 // which must never be called from the ui goroutine itself.
 func (u *ui) writeSecurityReport(path string, setHelp func(string), keys string) {
 	setHelp(" [yellow]writing security report…[white] " + tview.Escape(path))
-	ctx, app := u.ctx, u.app
-	go func() {
-		report, err := gatherSecurityReport(ctx, u.dcli, u.cfg, u.g,
-			&securityFlags{output: path, connectTimeout: u.f.connectTimeout}, u.contextName())
+	dcli, cfg, g, timeout, name := u.dcli, u.cfg, u.g, u.f.connectTimeout, u.contextName()
+	async(u, "ui.securityreport", func(ctx context.Context) (secscan.Report, error) {
+		report, err := gatherSecurityReport(ctx, dcli, cfg, g,
+			&securityFlags{output: path, connectTimeout: timeout}, name)
 		if err == nil {
 			err = writeReportFile(path, report.Markdown())
 		}
-		app.QueueUpdateDraw(func() {
-			setHelp(keys) // the progress message was a borrower, not the owner
-			if err != nil {
-				u.info("security report failed: " + err.Error())
-				return
-			}
-			// The count is the point of the message: a report that found
-			// nothing and a report that found forty things are both "written",
-			// and only one of them wants opening now.
-			u.info("wrote " + path + " — " + reportSummaryLine(report))
-		})
-	}()
+		return report, err
+	}, func(report secscan.Report, err error) {
+		setHelp(keys) // the progress message was a borrower, not the owner
+		if err != nil {
+			u.info("security report failed: " + err.Error())
+			return
+		}
+		// The count is the point of the message: a report that found
+		// nothing and a report that found forty things are both "written",
+		// and only one of them wants opening now.
+		u.info("wrote " + path + " — " + reportSummaryLine(report))
+	})
 }
 
 // defaultReportPath is a name that will not collide with the last one and that

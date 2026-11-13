@@ -93,7 +93,7 @@ type editListConfig struct {
 	applyVerb   string
 	items       []string
 	validate    func(string) (string, error)
-	onApply     func([]string) error
+	onApply     func(context.Context, []string) error // runs off the UI goroutine (async), with the cluster context
 	suggest     func(string) []string
 	allowEdit   bool
 	multiline   bool
@@ -1721,17 +1721,12 @@ func (u *ui) startSearch(mode string) {
 // summary. The agent probe (a Version RPC per node) can be slow, so it runs
 // off the UI goroutine and pushes the result back via QueueUpdateDraw.
 func (u *ui) refreshCluster() {
-	r, ctx := u.r, u.ctx
-	cfg, f := u.cfg, u.f
-	gen := u.generation()
-	go func() {
+	r, cfg, f := u.r, u.cfg, u.f
+	type census struct{ nodes, agents int }
+	async(u, "ui.refreshCluster", func(ctx context.Context) (census, error) {
 		nodes, err := r.Nodes(ctx)
 		if err != nil {
-			u.onCluster(gen, func() {
-				u.clusterText = "[red]cluster: unreachable[white]"
-				u.updateStatus()
-			})
-			return
+			return census{}, err
 		}
 		agents := 0
 		for _, h := range checkNodes(ctx, cfg, nodes, f.connectTimeout) {
@@ -1739,11 +1734,15 @@ func (u *ui) refreshCluster() {
 				agents++
 			}
 		}
-		u.onCluster(gen, func() {
-			u.clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", len(nodes), agents, len(nodes))
-			u.updateStatus()
-		})
-	}()
+		return census{len(nodes), agents}, nil
+	}, func(c census, err error) {
+		if err != nil {
+			u.clusterText = "[red]cluster: unreachable[white]"
+		} else {
+			u.clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", c.nodes, c.agents, c.nodes)
+		}
+		u.updateStatus()
+	})
 }
 
 // refreshForwardViews repaints everything a forward's state feeds: the

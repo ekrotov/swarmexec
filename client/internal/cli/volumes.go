@@ -19,6 +19,7 @@ import (
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -289,7 +290,10 @@ func indexVolumes(ctx context.Context, cfg config.Config, nodes []resolve.Node, 
 		err  error
 	}
 	out := make([]res, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	for i, n := range nodes {
+		out[i] = res{node: n, err: fanout.ErrSkipped}
+	}
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		vs, err := listNodeVolumes(ctx, cfg, n, false, connectTimeout)
 		out[i] = res{node: n, vols: vs, err: err}
 	})
@@ -358,7 +362,7 @@ func listNodeVolumes(ctx context.Context, cfg config.Config, n resolve.Node, wit
 // the map (callers render them as "-"). Unreachable nodes are skipped.
 func indexVolumeSizes(ctx context.Context, cfg config.Config, nodes []resolve.Node, connectTimeout time.Duration) map[string]int64 {
 	per := make([][]*pb.VolumeInfo, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) { // best effort: unreached nodes are skipped
 		vs, err := listNodeVolumes(ctx, cfg, n, true, connectTimeout)
 		if err != nil {
 			return
@@ -489,7 +493,7 @@ func indexVolumeUsage(ctx context.Context, cfg config.Config, nodes []resolve.No
 		containers []*pb.ContainerInfo
 	}
 	out := make([]res, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) { // best effort, like unreachable nodes
 		cs, err := listNodeContainers(ctx, cfg, n, connectTimeout)
 		if err != nil {
 			return // leave out[i].containers nil
@@ -540,10 +544,21 @@ type rmResult struct {
 	err  error
 }
 
+// skippedResults pre-fills a per-node result slice with fanout.ErrSkipped, so
+// a node the fan-out never reached (its context ended first) reports a failure
+// rather than reading as done.
+func skippedResults(nodes []resolve.Node) []rmResult {
+	out := make([]rmResult, len(nodes))
+	for i, n := range nodes {
+		out[i] = rmResult{node: n, err: fanout.ErrSkipped}
+	}
+	return out
+}
+
 // removeOnNodes removes the volume on each node concurrently.
 func removeOnNodes(ctx context.Context, cfg config.Config, nodes []resolve.Node, name string, force bool, connectTimeout time.Duration) []rmResult {
-	out := make([]rmResult, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	out := skippedResults(nodes)
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		out[i] = rmResult{node: n, err: removeNodeVolume(ctx, cfg, n, name, force, connectTimeout)}
 	})
 	return out
@@ -586,8 +601,8 @@ func buildVolumeCreateReq(o newVolumeOpts) (*pb.CreateVolumeRequest, error) {
 // createVolumeOnNodes creates the volume on each target node concurrently
 // (volumes are node-local). Reuses the {node,err} result shape.
 func createVolumeOnNodes(ctx context.Context, cfg config.Config, nodes []resolve.Node, req *pb.CreateVolumeRequest, connectTimeout time.Duration) []rmResult {
-	out := make([]rmResult, len(nodes))
-	forEachNode(nodes, func(i int, n resolve.Node) {
+	out := skippedResults(nodes)
+	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		out[i] = rmResult{node: n, err: createNodeVolume(ctx, cfg, n, req, connectTimeout)}
 	})
 	return out
