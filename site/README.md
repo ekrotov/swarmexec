@@ -47,8 +47,11 @@ From [`.gitlab-ci.yml`](../.gitlab-ci.yml):
 - **Release tag** (`vX.Y.Z`) — `site-image` pushes `:vX.Y.Z`, `:X.Y.Z` and, for a
   stable release, `:latest`; then `deploy-site` triggers the pipeline of
   `infrastruktur/swar-exec-site`, which renders the stack with that version and
-  deploys it. `ci/verify-release.sh` then checks that every replica serves the
-  release and that its notes list it.
+  deploys it. The `verify-site` job (`ci/verify-release.sh` with
+  `VERIFY_ONLY=site`) then checks that every replica serves the release and
+  that its notes list it. It is non-blocking: a stalled rollout (a task stuck
+  in "Preparing" after one failed image pull) shows as a warning, and its log
+  names the fix, `docker service update --force swarm-exec-site_site`.
 
 So a site-only change merged to `main` is built at once, but the running site is
 the one the last release deployed — unless the deployment outside this repository
