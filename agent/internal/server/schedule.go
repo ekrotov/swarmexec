@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/client"
 	"google.golang.org/protobuf/proto"
 
+	"swarmexec/agent/internal/prunecat"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -166,20 +167,20 @@ func (p *pruneScheduler) waitUntil(ctx context.Context, t time.Time) bool {
 
 // runOnce performs one scheduled prune and records it as the last run.
 func (p *pruneScheduler) runOnce(ctx context.Context, sched prunesched.Schedule) *pb.PruneRun {
-	cats, err := categoriesFromNames(sched.Categories)
+	cats, err := prunecat.FromNames(sched.Categories)
 	run := &pb.PruneRun{StartedAt: p.now().UTC().Format(time.RFC3339)}
 	if err != nil {
 		run.Error = err.Error() // Parse rejects these; belt and braces
 	} else {
-		p.log.Info("scheduled prune starting", "categories", categoryNames(cats))
+		p.log.Info("scheduled prune starting", "categories", prunecat.Names(cats))
 		run.Results = p.s.runPrune(ctx, schedulerIdentity, "schedule", cats,
 			pruneOptions{containersUntil: sched.ContainersUntil, labelFilters: sched.LabelFilters})
 		var freed int64
 		for _, r := range run.Results {
 			freed += r.GetFreedBytes()
 			if r.GetError() != "" && run.Error == "" {
-				pc, _ := categoryInfo(r.GetCategory())
-				run.Error = pc.name + ": " + r.GetError()
+				pc, _ := prunecat.Info(r.GetCategory())
+				run.Error = pc.Name + ": " + r.GetError()
 			}
 		}
 		p.log.Info("scheduled prune finished", "freed_bytes", freed, "error", run.Error)
@@ -220,7 +221,7 @@ func (p *pruneScheduler) status(now time.Time) (*pb.PruneSchedule, *pb.PruneRun)
 			out.Days = append(out.Days, prunesched.DayName(wd))
 		}
 	}
-	out.Categories, _ = categoriesFromNames(sched.Categories)
+	out.Categories, _ = prunecat.FromNames(sched.Categories)
 	if out.Enabled {
 		if next, ok := sched.Next(now); ok {
 			out.NextRun = next.Format(time.RFC3339)

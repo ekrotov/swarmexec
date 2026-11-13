@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/prunecat"
 	"swarmexec/internal/pb"
 )
 
@@ -130,12 +131,12 @@ func (r *reclaimCache) measure(ctx context.Context, refreshVolumes bool) {
 	for _, c := range cats {
 		got[c.GetCategory()] = true
 	}
-	for _, pc := range pruneOrder {
-		if !got[pc.cat] && prev[pc.cat] != nil {
-			cats = append(cats, prev[pc.cat])
+	for _, pc := range prunecat.Order {
+		if !got[pc.Cat] && prev[pc.Cat] != nil {
+			cats = append(cats, prev[pc.Cat])
 		}
 	}
-	r.cats = sortCategories(cats)
+	r.cats = prunecat.SortReclaim(cats)
 	r.measuredAt = time.Now()
 	r.until = until
 	r.lastErr = ""
@@ -143,19 +144,6 @@ func (r *reclaimCache) measure(ctx context.Context, refreshVolumes bool) {
 		r.lastErr = err.Error()
 		r.log.Warn("reclaim measurement incomplete", "err", err)
 	}
-}
-
-func sortCategories(in []*pb.ReclaimCategory) []*pb.ReclaimCategory {
-	var out []*pb.ReclaimCategory
-	for _, pc := range pruneOrder {
-		for _, c := range in {
-			if c.GetCategory() == pc.cat {
-				out = append(out, c)
-				break
-			}
-		}
-	}
-	return out
 }
 
 func (r *reclaimCache) snapshot() (cats []*pb.ReclaimCategory, at time.Time, errMsg string, until time.Duration) {
@@ -236,7 +224,7 @@ func (s *Server) measureReclaim(ctx context.Context, until time.Duration) ([]*pb
 	}
 	out = append(out, vol)
 
-	return sortCategories(out), errors.Join(errs...)
+	return prunecat.SortReclaim(out), errors.Join(errs...)
 }
 
 // ReclaimStats reports what a prune would free on this node, plus its prune

@@ -5,9 +5,7 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/prunecat"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -42,44 +41,6 @@ import (
 // Volumes are data. They are pruned only when asked for by name, never as part
 // of a default — the schedule labels and the cli both enforce that.
 
-// pruneCategory ties a wire category to its label name and authz action.
-type pruneCategory struct {
-	cat    pb.PruneCategory
-	name   string
-	action string
-}
-
-// pruneOrder is every category in the order a prune runs them, whatever order
-// a request lists them in: containers first, because removing them is what
-// leaves images, networks and volumes unused.
-var pruneOrder = []pruneCategory{
-	{pb.PruneCategory_PRUNE_CATEGORY_CONTAINERS, prunesched.Containers, "container.prune"},
-	{pb.PruneCategory_PRUNE_CATEGORY_IMAGES, prunesched.Images, "image.prune.all"},
-	{pb.PruneCategory_PRUNE_CATEGORY_DANGLING_IMAGES, prunesched.DanglingImages, "image.prune"},
-	{pb.PruneCategory_PRUNE_CATEGORY_BUILD_CACHE, prunesched.BuildCache, "buildcache.prune"},
-	{pb.PruneCategory_PRUNE_CATEGORY_NETWORKS, prunesched.Networks, "network.prune"},
-	{pb.PruneCategory_PRUNE_CATEGORY_VOLUMES, prunesched.Volumes, "volume.prune"},
-}
-
-func categoryInfo(c pb.PruneCategory) (pruneCategory, bool) {
-	for _, pc := range pruneOrder {
-		if pc.cat == c {
-			return pc, true
-		}
-	}
-	return pruneCategory{}, false
-}
-
-// categoryByName maps a label name ("buildcache") to its wire category.
-func categoryByName(name string) (pb.PruneCategory, bool) {
-	for _, pc := range pruneOrder {
-		if pc.name == name {
-			return pc.cat, true
-		}
-	}
-	return 0, false
-}
-
 // predefinedNetworks are never removed, whatever else they look like. bridge,
 // host and none are the daemon's own; docker_gwbridge and ingress belong to
 // swarm mode and break it when removed.
@@ -103,7 +64,7 @@ func (s *Server) Prune(ctx context.Context, req *pb.PruneRequest) (*pb.PruneResp
 		return nil, status.Error(codes.InvalidArgument, "PruneRequest names no categories; there is no implicit \"everything\"")
 	}
 	for _, c := range req.GetCategories() {
-		if _, ok := categoryInfo(c); !ok {
+		if _, ok := prunecat.Info(c); !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "unknown prune category %v", c)
 		}
 	}
@@ -130,7 +91,7 @@ func (s *Server) Prune(ctx context.Context, req *pb.PruneRequest) (*pb.PruneResp
 	return &pb.PruneResponse{Results: results}, nil
 }
 
-// runPrune runs the categories in pruneOrder, each authorized and audited on
+// runPrune runs the categories in prunecat.Order, each authorized and audited on
 // its own. A refused or failed category does not stop the others: they are
 // independent acts, and a run that removed the containers and then gave up on
 // everything else would leave the most to clean up for the least gain.
@@ -150,28 +111,28 @@ func (s *Server) runPrune(ctx context.Context, identity, trigger string, cats []
 	}
 
 	var out []*pb.PruneCategoryResult
-	for _, pc := range pruneOrder {
-		if !want[pc.cat] {
+	for _, pc := range prunecat.Order {
+		if !want[pc.Cat] {
 			continue
 		}
-		res := &pb.PruneCategoryResult{Category: pc.cat}
+		res := &pb.PruneCategoryResult{Category: pc.Cat}
 		out = append(out, res)
 
-		if reason, ok := s.decide(ctx, auth.Request{Action: pc.action, Identity: identity}); !ok {
+		if reason, ok := s.decide(ctx, auth.Request{Action: pc.Action, Identity: identity}); !ok {
 			res.Error = "authorization denied: " + reason
-			s.audit.Prune(identity, trigger, pc.name, 0, 0, false, false, res.Error)
+			s.audit.Prune(identity, trigger, pc.Name, 0, 0, false, false, res.Error)
 			continue
 		}
 
-		freed, count, skipped, err := s.pruneOne(ctx, pc.cat, opts)
+		freed, count, skipped, err := s.pruneOne(ctx, pc.Cat, opts)
 		res.FreedBytes, res.Count, res.Skipped = freed, count, skipped
 		errMsg := ""
 		if err != nil {
 			errMsg = err.Error()
 			res.Error = errMsg
-			s.log.Error("prune failed", "category", pc.name, "trigger", trigger, "err", err)
+			s.log.Error("prune failed", "category", pc.Name, "trigger", trigger, "err", err)
 		}
-		s.audit.Prune(identity, trigger, pc.name, freed, count, skipped, err == nil, errMsg)
+		s.audit.Prune(identity, trigger, pc.Name, freed, count, skipped, err == nil, errMsg)
 	}
 	return out
 }
@@ -418,30 +379,4 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
-}
-
-// categoryNames renders categories for logs.
-func categoryNames(cats []pb.PruneCategory) string {
-	var names []string
-	for _, c := range cats {
-		if pc, ok := categoryInfo(c); ok {
-			names = append(names, pc.name)
-		}
-	}
-	return strings.Join(names, ",")
-}
-
-// categoriesFromNames maps schedule label names to wire categories.
-func categoriesFromNames(names []string) ([]pb.PruneCategory, error) {
-	var out []pb.PruneCategory
-	for _, n := range names {
-		c, ok := categoryByName(n)
-		if !ok {
-			return nil, errors.New("unknown category " + n)
-		}
-		if !slices.Contains(out, c) {
-			out = append(out, c)
-		}
-	}
-	return out, nil
 }
