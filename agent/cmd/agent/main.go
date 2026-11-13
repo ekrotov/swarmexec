@@ -141,7 +141,7 @@ func run(args []string) error {
 		sink = prom
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", prom.Handler())
-		metricsSrv = &http.Server{Addr: cfg.MetricsAddr, Handler: mux}
+		metricsSrv = newMetricsServer(cfg.MetricsAddr, mux)
 		go func() {
 			log.Info("metrics endpoint listening", "addr", cfg.MetricsAddr)
 			if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -326,6 +326,21 @@ func stopGracefully(s grpcStopper, timeout time.Duration) bool {
 		// ignores its context, which is harmless in a process about to exit.
 		s.Stop()
 		return false
+	}
+}
+
+// newMetricsServer builds the /metrics HTTP server. Without timeouts a client
+// that opens a connection and never finishes its headers holds it forever; a
+// scrape is one small GET, so tight bounds cost a real Prometheus nothing.
+// IdleTimeout stays above common scrape intervals so keep-alive still works.
+func newMetricsServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 }
 
