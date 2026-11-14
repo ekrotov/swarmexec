@@ -23,8 +23,7 @@ func tabsUI() *ui {
 	u.clusters = map[string]*clusterState{"a": u.clusterState}
 	u.ctree, u.croot = tview.NewTreeView(), tview.NewTreeNode("")
 	u.ctree.SetRoot(u.croot)
-	u.ftable, u.nettable, u.sectable = newStateTable(), newStateTable(), newStateTable()
-	u.cxtable, u.notable, u.cfgtable = newStateTable(), newStateTable(), newStateTable()
+	u.ftable, u.cxtable, u.notable = newStateTable(), newStateTable(), newStateTable()
 	u.status = tview.NewTextView()
 	u.forwards = newForwardRegistry()
 	return u
@@ -279,10 +278,10 @@ func TestVolumesTabCursorIsPerCluster(t *testing.T) {
 // copy key copied the volume list, Nodes' too. Each copies its own list now.
 func TestEveryTabYanksItsOwnList(t *testing.T) {
 	u := tabsUI()
-	u.cfgs = []swarmConfig{{Name: "nginx.conf", Size: 2048}}
+	u.cfgTab().st().rows = []swarmConfig{{Name: "nginx.conf", Size: 2048}}
 	u.nodeInfos = []swarmNodeInfo{{Hostname: "mgr-1", Role: "manager", Leader: true}}
-	u.nets = []swarmNetwork{{Name: "edge"}}
-	u.secs = []swarmSecret{{Name: "db_pw"}}
+	u.netTab().st().rows = []swarmNetwork{{Name: "edge"}}
+	u.secTab().st().rows = []swarmSecret{{Name: "db_pw"}}
 	u.volTab().st().vols = []swarmVolume{vol("shop_data", "node-a")}
 	u.volTab().render()
 	u.croot.AddChild(tview.NewTreeNode("web"))

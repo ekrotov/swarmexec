@@ -356,24 +356,8 @@ func (u *ui) run(keyWarnings []string) error {
 	ftable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	ftable.SetSelectedStyle(selStyle)
 
-	// ------------------------------------------------------------------ networks
-	nettable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	nettable.SetSelectedStyle(selStyle)
-
-	nettable.SetSelectedFunc(func(int, int) {
-		if n, ok := u.selectedNetwork(); ok {
-			u.showNetworkMembers(n)
-		}
-	})
-
-	// ------------------------------------------------------------------- secrets
-	sectable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	sectable.SetSelectedStyle(selStyle)
-	sectable.SetSelectedFunc(func(int, int) {
-		if s, ok := u.selectedSecret(); ok {
-			u.showSecretDetail(s)
-		}
-	})
+	// Networks, Secrets and Configs build their own tables (ui_networks.go,
+	// ui_secrets.go, ui_configs.go).
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx (the name in the footer, and the row marked here) is set with the
@@ -394,25 +378,11 @@ func (u *ui) run(keyWarnings []string) error {
 		}
 	})
 
-	// ------------------------------------------------------------------- configs
-	// The Secrets tab's twin, for the other object swarm distributes to
-	// containers — with the difference that a config's content is readable, so
-	// the detail overlay can show what a service actually receives.
-	cfgtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	cfgtable.SetSelectedStyle(selStyle)
-	cfgtable.SetSelectedFunc(func(int, int) {
-		if c, ok := u.selectedConfig(); ok {
-			u.showConfigDetail(c)
-		}
-	})
-
 	// ---------------------------------------------------------------- tabs/chrome
 	// Promote the tab widgets that still live on u before the registry is asked
 	// for its pages: the adapters of the not-yet-converted tabs read them.
 	u.ctree, u.croot = ctree, croot
-	u.ftable, u.nettable = ftable, nettable
-	u.sectable, u.cxtable, u.notable = sectable, cxtable, notable
-	u.cfgtable = cfgtable
+	u.ftable, u.cxtable, u.notable = ftable, cxtable, notable
 	for i, t := range uiTabList {
 		content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
 	}
@@ -507,15 +477,12 @@ func (u *ui) run(keyWarnings []string) error {
 	// column, so this is where a failure reason is actually readable.
 	ftable.SetSelectedFunc(func(int, int) { u.showForwardDetail() })
 	ftable.SetInputCapture(u.forwardKeys)
-	nettable.SetInputCapture(u.networkKeys)
-	sectable.SetInputCapture(u.secretKeys)
 	cxtable.SetInputCapture(u.contextKeys)
 	cxtable.SetSelectedFunc(func(int, int) {
 		if c, ok := u.selectedContext(); ok {
 			u.activateContext(c)
 		}
 	})
-	cfgtable.SetInputCapture(u.configKeys)
 
 	notable.SetInputCapture(u.nodeKeys)
 

@@ -55,11 +55,6 @@ type clusterState struct {
 	name        string
 	ctxOverride string
 
-	// rotating holds the secrets of this cluster with a rotation running in
-	// the background, so a second one cannot be started on top of it. Only
-	// touched on the UI goroutine.
-	rotating map[string]bool
-
 	// The two channels to this cluster, from one resolution (see dockerEndpoint).
 	dcli swarmapi.Client
 	r    *resolve.Resolver
@@ -150,15 +145,11 @@ type clusterState struct {
 
 	clusterText string // last cluster-probe summary for the footer
 
-	// The volumes tab keeps its per-cluster state itself (volumesState, see
-	// perCluster): a tab with a type of its own owns what it shows, and this
-	// struct does not know it exists. The tabs below still keep theirs here
-	// until they are converted (review A-02).
-
-	// networks / secrets / configs tabs
-	nets []swarmNetwork
-	secs []swarmSecret
-	cfgs []swarmConfig
+	// The tabs with a type of their own — Volumes, Networks, Secrets,
+	// Configs — keep their per-cluster state themselves (see perCluster): a
+	// tab owns what it shows, and this struct does not know it exists. The
+	// tabs below still keep theirs here until they are converted (review
+	// A-02).
 
 	// nodes tab
 	nodeInfos      []swarmNodeInfo

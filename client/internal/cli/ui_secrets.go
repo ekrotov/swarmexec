@@ -15,74 +15,96 @@ import (
 	"github.com/rivo/tview"
 )
 
-func (u *ui) renderSecrets() {
-	sectable := u.sectable
-	selName := ""
-	if row, _ := sectable.GetSelection(); row >= 1 {
-		if c := sectable.GetCell(row, 0); c != nil {
-			selName = c.Text
-		}
-	}
-	tableHeaders(sectable, sHeaders)
-	if len(u.secs) == 0 {
-		sectable.SetCell(1, 0, emptyCell(emptyText("secrets", keyHint(u.km.SecNew, "to create one"))))
-		return
-	}
-	selRow := 1
-	for i, s := range u.secs {
-		usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if len(s.Services) > 0 {
-			usedCell = tview.NewTableCell(fmt.Sprintf("%d", len(s.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
-		}
-		labels := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if len(s.Labels) > 0 {
-			labels = tview.NewTableCell(fmt.Sprintf("%d", len(s.Labels))).SetExpansion(1)
-		}
-		sectable.SetCell(i+1, 0, tview.NewTableCell(s.Name).SetExpansion(1))
-		sectable.SetCell(i+1, 1, usedCell)
-		sectable.SetCell(i+1, 2, tview.NewTableCell(volumeAge(s.Created)).SetExpansion(1))
-		sectable.SetCell(i+1, 3, tview.NewTableCell(volumeAge(s.Updated)).SetExpansion(1))
-		sectable.SetCell(i+1, 4, labels)
-		if s.Name == selName {
-			selRow = i + 1
-		}
-	}
-	if len(u.secs) > 0 {
-		sectable.Select(selRow, 0)
-	}
+// secretsTab is the Secrets tab: the swarm's secrets with the services using
+// each, and create / delete / attach / detach / rotate.
+type secretsTab struct {
+	*listTab[swarmSecret]
+
+	// rotating holds, per cluster, the secrets with a rotation running in
+	// the background, so a second one cannot be started on top of it. Only
+	// touched on the UI goroutine.
+	rotating perCluster[map[string]bool]
 }
 
-func (u *ui) loadSecrets() {
-	dcli, sectable := u.dcli, u.sectable
-	tableState(sectable, sHeaders, loadingCell())
-	async(u, "ui.loadSecrets", func(ctx context.Context) ([]swarmSecret, error) {
-		return listSecrets(ctx, dcli)
-	}, func(list []swarmSecret, err error) {
-		if err != nil {
-			tableState(sectable, sHeaders, errorCell(err))
-			return
+func newSecretsTab(u *ui) *secretsTab {
+	t := &secretsTab{listTab: newListTab(u, sHeaders, func(s swarmSecret) string { return s.Name })}
+	t.rotating.init = func() *map[string]bool { m := map[string]bool{}; return &m }
+	t.row = t.renderRow
+	t.empty = func() string { return emptyText("secrets", keyHint(u.km.SecNew, "to create one")) }
+	t.table.SetSelectedFunc(func(int, int) {
+		if s, ok := t.selected(); ok {
+			t.showDetail(s)
 		}
-		u.secs = list
-		u.renderSecrets()
 	})
+	t.table.SetInputCapture(t.keys)
+	return t
 }
 
-func (u *ui) selectedSecret() (swarmSecret, bool) {
-	sectable := u.sectable
-	return selectedRow(sectable, u.secs)
+// secTab is the session's Secrets tab.
+func (u *ui) secTab() *secretsTab { return u.tab("secrets").(*secretsTab) }
+
+func (t *secretsTab) enter()   { t.reload() }
+func (t *secretsTab) refresh() { t.reload() }
+
+// reload fetches the secret list.
+func (t *secretsTab) reload() {
+	dcli := t.u.dcli
+	t.load("ui.loadSecrets", func(ctx context.Context) ([]swarmSecret, error) { return listSecrets(ctx, dcli) })
 }
 
-// showSecretDetail shows a secret's metadata and the services/containers that
-// use it. The value is deliberately absent: the Docker API never returns it,
-// and the overlay says so. Usage (services with their running containers)
-// needs a task lookup, so it fills in lazily after the overlay is up.
-func (u *ui) showSecretDetail(s swarmSecret) {
-	pages, dcli, sectable := u.pages, u.dcli, u.sectable
-	ts := func(t time.Time) string {
-		if t.IsZero() {
+// rotatingOn is the set of secrets being rotated on cluster c.
+func (t *secretsTab) rotatingOn(c *clusterState) map[string]bool { return *t.rotating.of(c) }
+
+func (t *secretsTab) footer() string {
+	km := t.u.km
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  %s delete", keyLabel(km.SecNew), keyTag(dangerKey(keyLabel(km.SecDelete))))
+}
+
+func (t *secretsTab) helpSection(h *helpWriter) {
+	km := t.u.km
+	h.sec("Secrets")
+	h.line("Enter / i", "details")
+	h.line("  a · d", "in details: attach to · detach from a service")
+	h.line("  r", "in details: rotate — new content, same name (services restart twice)")
+	h.line(keyLabel(km.SecNew), "new (vim editor, :r file)")
+	h.danger(keyLabel(km.SecDelete), "delete")
+}
+
+func (t *secretsTab) yank(b *strings.Builder) {
+	fmt.Fprintln(b, "SECRET\tUSED BY\tAGE\tUPDATED\tLABELS")
+	for _, s := range t.rows() {
+		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
+	}
+}
+
+func (t *secretsTab) renderRow(r int, s swarmSecret) {
+	usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if len(s.Services) > 0 {
+		usedCell = tview.NewTableCell(fmt.Sprintf("%d", len(s.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+	}
+	labels := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if len(s.Labels) > 0 {
+		labels = tview.NewTableCell(fmt.Sprintf("%d", len(s.Labels))).SetExpansion(1)
+	}
+	t.table.SetCell(r, 0, tview.NewTableCell(s.Name).SetExpansion(1))
+	t.table.SetCell(r, 1, usedCell)
+	t.table.SetCell(r, 2, tview.NewTableCell(volumeAge(s.Created)).SetExpansion(1))
+	t.table.SetCell(r, 3, tview.NewTableCell(volumeAge(s.Updated)).SetExpansion(1))
+	t.table.SetCell(r, 4, labels)
+}
+
+// showDetail shows a secret's metadata and the services/containers that use
+// it. The value is deliberately absent: the Docker API never returns it, and
+// the overlay says so. Usage (services with their running containers) needs a
+// task lookup, so it fills in lazily after the overlay is up.
+func (t *secretsTab) showDetail(s swarmSecret) {
+	u := t.u
+	pages, dcli, sectable := u.pages, u.dcli, t.table
+	ts := func(tm time.Time) string {
+		if tm.IsZero() {
 			return "-"
 		}
-		return t.Local().Format("2006-01-02 15:04:05")
+		return tm.Local().Format("2006-01-02 15:04:05")
 	}
 	tv := tview.NewTextView().SetDynamicColors(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s ", s.Name))
@@ -148,7 +170,7 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				func(ctx context.Context, svc string) error {
 					return attachSecretToService(ctx, dcli, svc, s.ID, s.Name)
 				},
-				func() { closeSecret(); u.loadSecrets() },
+				func() { closeSecret(); t.reload() },
 			)
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
@@ -163,11 +185,11 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				func(ctx context.Context, svc string) error {
 					return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
 				},
-				func() { closeSecret(); u.loadSecrets() },
+				func() { closeSecret(); t.reload() },
 			)
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'r':
-			u.openRotateSecret(s, tv, closeSecret)
+			t.openRotate(s, tv, closeSecret)
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -190,11 +212,12 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 	})
 }
 
-// openRotateSecret opens the rotate editor for s from its detail view. The
-// stand-in of an interrupted rotation (NAME_rotating, carrying the marker
-// label) rotates — that is, resumes — the secret it stands in for: after a
-// failure in step 4 that is the only row left to press r on.
-func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail func()) {
+// openRotate opens the rotate editor for s from its detail view. The stand-in
+// of an interrupted rotation (NAME_rotating, carrying the marker label)
+// rotates — that is, resumes — the secret it stands in for: after a failure in
+// step 4 that is the only row left to press r on.
+func (t *secretsTab) openRotate(s swarmSecret, back tview.Primitive, closeDetail func()) {
+	u := t.u
 	name, labels := s.Name, s.Labels
 	if of := s.Labels[rotateMarkerLabel]; of != "" {
 		name, labels = of, map[string]string{}
@@ -204,7 +227,7 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 			}
 		}
 	}
-	if u.rotating[name] {
+	if t.rotatingOn(u.clusterState)[name] {
 		u.info("secret " + name + " is already being rotated — wait for it to finish")
 		return
 	}
@@ -219,7 +242,7 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 		},
 		start: func(data []byte) {
 			closeDetail()
-			u.runRotation(name, data)
+			t.runRotation(name, data)
 		},
 	})
 }
@@ -246,13 +269,11 @@ var rotateSecretFn = rotateSecret
 // Progress arrives on the rotating goroutine. It is collected under a lock
 // and drawn by at most one queued update at a time, so a burst of lines costs
 // one redraw, not one each.
-func (u *ui) runRotation(name string, data []byte) {
-	if u.rotating == nil {
-		u.rotating = map[string]bool{}
-	}
-	rotating := u.rotating // this cluster's, even if the operator switches away
+func (t *secretsTab) runRotation(name string, data []byte) {
+	u := t.u
+	cs := u.clusterState         // the cluster the rotation runs on, whatever is visible later
+	rotating := t.rotatingOn(cs) // this cluster's, even if the operator switches away
 	rotating[name] = true
-	cs := u.clusterState // the cluster the rotation runs on, whatever is visible later
 	app, ctx := u.app, u.runCtx
 	var dcli secretRotateAPI // a nil interface, not a nil *client.Client
 	if cs.dcli != nil {
@@ -261,7 +282,7 @@ func (u *ui) runRotation(name string, data []byte) {
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" rotating secret " + tview.Escape(name) + " ")
-	ov := u.overlayFor(pageSecRotateRun, u.sectable, footerKeys("Esc", "hide (the rotation continues)"))
+	ov := u.overlayFor(pageSecRotateRun, t.table, footerKeys("Esc", "hide (the rotation continues)"))
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {
 			ov.Close()
@@ -312,7 +333,7 @@ func (u *ui) runRotation(name string, data []byte) {
 			here := u.clusterState == cs
 			where := "" // nothing to say when the cluster on screen is the one it ran on
 			if here {
-				u.loadSecrets()
+				t.reload()
 			} else {
 				where = " on cluster " + cs.name
 			}
@@ -330,10 +351,11 @@ func (u *ui) runRotation(name string, data []byte) {
 	}()
 }
 
-// openDeleteSecret permanently removes a secret after a confirm. Docker refuses
-// to remove a secret a service still references, so warn up front when in use.
-func (u *ui) openDeleteSecret(s swarmSecret) {
-	app, dcli, sectable := u.app, u.dcli, u.sectable
+// openDelete permanently removes a secret after a confirm. Docker refuses to
+// remove a secret a service still references, so warn up front when in use.
+func (t *secretsTab) openDelete(s swarmSecret) {
+	u := t.u
+	app, dcli, sectable := u.app, u.dcli, t.table
 	msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
 	if len(s.Services) > 0 {
 		msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
@@ -347,29 +369,29 @@ func (u *ui) openDeleteSecret(s swarmSecret) {
 				app.SetFocus(sectable)
 				return
 			}
-			u.loadSecrets()
+			t.reload()
 			u.flash(" [green]removed[white] secret " + s.Name)
 		})
 	})
 }
 
-// secretKeys is the key handler of the Secrets table.
-func (u *ui) secretKeys(ev *tcell.EventKey) *tcell.EventKey {
-	km := u.km
+// keys is the key handler of the Secrets table.
+func (t *secretsTab) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u, km := t.u, t.u.km
 	if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecNew {
 		u.showCreateSecret()
 		return nil
 	}
 	if ev.Key() == tcell.KeyRune && ev.Rune() == km.SecDelete {
-		if s, ok := u.selectedSecret(); ok {
-			u.openDeleteSecret(s)
+		if s, ok := t.selected(); ok {
+			t.openDelete(s)
 		}
 		return nil
 	}
 	// "i" opens the same detail as Enter — inspect means the same on every tab.
 	if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-		if s, ok := u.selectedSecret(); ok {
-			u.showSecretDetail(s)
+		if s, ok := t.selected(); ok {
+			t.showDetail(s)
 		}
 		return nil
 	}

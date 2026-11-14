@@ -12,72 +12,87 @@ import (
 	"github.com/rivo/tview"
 )
 
-func (u *ui) renderConfigs() {
-	cfgtable := u.cfgtable
-	selName := ""
-	if row, _ := cfgtable.GetSelection(); row >= 1 {
-		if c := cfgtable.GetCell(row, 0); c != nil {
-			selName = c.Text
-		}
-	}
-	tableHeaders(cfgtable, cfHeaders)
-	if len(u.cfgs) == 0 {
-		// Nothing in this tab creates a config: swarmexec reads them, docker
-		// writes them. Saying so beats an empty box that looks broken.
-		cfgtable.SetCell(1, 0, emptyCell(emptyText("configs", "docker config create adds one")))
-		return
-	}
-	selRow := 1
-	for i, c := range u.cfgs {
-		r := i + 1
-		used := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if n := len(c.Services); n > 0 {
-			used = tview.NewTableCell(fmt.Sprintf("%d", n)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
-		}
-		labels := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if n := len(c.Labels); n > 0 {
-			labels = tview.NewTableCell(fmt.Sprintf("%d", n)).SetExpansion(1)
-		}
-		cfgtable.SetCell(r, 0, tview.NewTableCell(c.Name).SetExpansion(1))
-		cfgtable.SetCell(r, 1, used)
-		cfgtable.SetCell(r, 2, tview.NewTableCell(humanBytes(int64(c.Size))).SetExpansion(1))
-		cfgtable.SetCell(r, 3, tview.NewTableCell(volumeAge(c.Created)).SetExpansion(1))
-		cfgtable.SetCell(r, 4, tview.NewTableCell(volumeAge(c.Updated)).SetExpansion(1))
-		cfgtable.SetCell(r, 5, labels)
-		if c.Name == selName {
-			selRow = r
-		}
-	}
-	if len(u.cfgs) > 0 {
-		cfgtable.Select(selRow, 0)
-	}
+// configsTab is the Configs tab: the Secrets tab's twin for the other object
+// swarm distributes to containers — with the difference that a config's
+// content is readable, so the detail overlay can show what a service actually
+// receives.
+type configsTab struct {
+	*listTab[swarmConfig]
 }
 
-func (u *ui) loadConfigs() {
-	dcli, cfgtable := u.dcli, u.cfgtable
-	tableState(cfgtable, cfHeaders, loadingCell())
-	async(u, "ui.loadConfigs", func(ctx context.Context) ([]swarmConfig, error) {
-		return listConfigs(ctx, dcli)
-	}, func(list []swarmConfig, err error) {
-		if err != nil {
-			tableState(cfgtable, cfHeaders, errorCell(err))
-			return
+func newConfigsTab(u *ui) *configsTab {
+	t := &configsTab{newListTab(u, cfHeaders, func(c swarmConfig) string { return c.Name })}
+	t.row = t.renderRow
+	// Nothing in this tab creates a config: swarmexec reads them, docker
+	// writes them. Saying so beats an empty box that looks broken.
+	t.empty = func() string { return emptyText("configs", "docker config create adds one") }
+	t.table.SetSelectedFunc(func(int, int) {
+		if c, ok := t.selected(); ok {
+			t.showDetail(c)
 		}
-		u.cfgs = list
-		u.renderConfigs()
 	})
+	t.table.SetInputCapture(t.keys)
+	return t
 }
 
-func (u *ui) selectedConfig() (swarmConfig, bool) {
-	return selectedRow(u.cfgtable, u.cfgs)
+// cfgTab is the session's Configs tab.
+func (u *ui) cfgTab() *configsTab { return u.tab("configs").(*configsTab) }
+
+func (t *configsTab) enter() { t.reload() }
+
+// refresh reloads the configs. Before the tab registry the refresh key's
+// switch had no configs case, and on this tab it repainted the forwards table.
+func (t *configsTab) refresh() { t.reload() }
+
+// reload fetches the config list.
+func (t *configsTab) reload() {
+	dcli := t.u.dcli
+	t.load("ui.loadConfigs", func(ctx context.Context) ([]swarmConfig, error) { return listConfigs(ctx, dcli) })
 }
 
-// showConfigDetail shows a config's metadata, the services that mount it, and —
+func (t *configsTab) footer() string {
+	return "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
+}
+
+func (t *configsTab) helpSection(h *helpWriter) {
+	h.sec("Configs")
+	h.line("Enter / i", "details, including the config's content")
+}
+
+// yank copies the config list. Before the registry the Configs tab fell into
+// yankCurrent's default branch and copied the VOLUME list.
+func (t *configsTab) yank(b *strings.Builder) {
+	fmt.Fprintln(b, "CONFIG\tUSED BY\tSIZE\tAGE\tUPDATED\tLABELS")
+	for _, c := range t.rows() {
+		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%d\n", c.Name, len(c.Services), humanBytes(int64(c.Size)),
+			volumeAge(c.Created), volumeAge(c.Updated), len(c.Labels))
+	}
+}
+
+func (t *configsTab) renderRow(r int, c swarmConfig) {
+	used := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if n := len(c.Services); n > 0 {
+		used = tview.NewTableCell(fmt.Sprintf("%d", n)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+	}
+	labels := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if n := len(c.Labels); n > 0 {
+		labels = tview.NewTableCell(fmt.Sprintf("%d", n)).SetExpansion(1)
+	}
+	t.table.SetCell(r, 0, tview.NewTableCell(c.Name).SetExpansion(1))
+	t.table.SetCell(r, 1, used)
+	t.table.SetCell(r, 2, tview.NewTableCell(humanBytes(int64(c.Size))).SetExpansion(1))
+	t.table.SetCell(r, 3, tview.NewTableCell(volumeAge(c.Created)).SetExpansion(1))
+	t.table.SetCell(r, 4, tview.NewTableCell(volumeAge(c.Updated)).SetExpansion(1))
+	t.table.SetCell(r, 5, labels)
+}
+
+// showDetail shows a config's metadata, the services that mount it, and —
 // unlike a secret — its actual content. That is the point of this tab: the API
 // returns a config's payload, so the operator can see what a service really
 // receives without dropping to `docker config inspect`. The content is fetched
 // on demand, since a config can be a whole nginx.conf.
-func (u *ui) showConfigDetail(c swarmConfig) {
+func (t *configsTab) showDetail(c swarmConfig) {
+	u := t.u
 	pages, dcli := u.pages, u.dcli
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" config %s ", c.Name))
@@ -197,13 +212,13 @@ func isProbablyText(data []byte) bool {
 	return true
 }
 
-// configKeys is the key handler of the Configs table.
-func (u *ui) configKeys(ev *tcell.EventKey) *tcell.EventKey {
+// keys is the key handler of the Configs table.
+func (t *configsTab) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-		if c, ok := u.selectedConfig(); ok {
-			u.showConfigDetail(c)
+		if c, ok := t.selected(); ok {
+			t.showDetail(c)
 		}
 		return nil
 	}
-	return u.tabKeys(ev)
+	return t.u.tabKeys(ev)
 }
