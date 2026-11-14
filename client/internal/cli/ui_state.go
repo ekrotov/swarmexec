@@ -15,9 +15,10 @@ import (
 	"swarmexec/client/internal/dockerctx"
 )
 
-// uiTabList drives the tab bar: one list entry per tab instead of five
-// hand-aligned strings, so adding a tab is a single edit. The 1-based shortcut
-// digit is derived from position by the tab bar, not baked into the label.
+// uiTabList drives the tab bar, the digit keys and Tab cycling: one list entry
+// per tab, in display order. The 1-based shortcut digit is derived from
+// position, not baked into the label. What a tab DOES is its tabView in the
+// registry (newTabViews, ui_tabs.go).
 // uiTab is one tab: the internal key, the full label, and a short label the tab
 // bar falls back to when the terminal is too narrow for the full set. The short
 // forms are written out rather than derived, because initials collide
@@ -40,9 +41,6 @@ var uiTabList = []uiTab{
 	{"nodes", "Nodes", "Node"},
 	{"configs", "Configs", "Cfg"},
 }
-
-// uiTabOrder drives Tab cycling; every tab joins it.
-var uiTabOrder = []string{"containers", "volumes", "forwards", "networks", "secrets", "nodes", "configs"}
 
 // Column headers for the per-tab tables — constant data shared by each tab's
 // render/load methods, so they live at package scope rather than as run() locals.
@@ -75,7 +73,7 @@ var volSortCol = map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, vo
 // capture. runUI builds it and hands off to (*ui).run; the closures still living
 // in run() reference these fields, and the infra methods are methods on *ui.
 type ui struct {
-	// The visible cluster. Embedded by pointer so `u.dcli`, `u.vols`, `u.filter`
+	// The visible cluster. Embedded by pointer so `u.dcli`, `u.filter`
 	// and friends keep resolving; switching cluster assigns this one field.
 	*clusterState
 
@@ -116,13 +114,13 @@ type ui struct {
 	forwards *forwardRegistry
 
 	// shared widgets (built in run(), once the tree/tables exist)
-	ctree                                                *tview.TreeView
-	croot                                                *tview.TreeNode
-	vtable, ftable, nettable, sectable, cxtable, notable *tview.Table
-	cfgtable                                             *tview.Table
-	tabBar                                               *tabStrip
-	help, status                                         *tview.TextView
-	footer, root                                         *tview.Flex
+	ctree                                        *tview.TreeView
+	croot                                        *tview.TreeNode
+	ftable, nettable, sectable, cxtable, notable *tview.Table
+	cfgtable                                     *tview.Table
+	tabBar                                       *tabStrip
+	help, status                                 *tview.TextView
+	footer, root                                 *tview.Flex
 	// statusRow holds the status line (left) and statusRight: the context-list
 	// hint while that list is hidden, and the client version at the far right.
 	statusRow   *tview.Flex
@@ -144,8 +142,11 @@ type ui struct {
 	// Preferences that belong to the operator's session, not to a cluster —
 	// they must survive a switch rather than reset with it.
 	groupByStack bool // nest services under their stack (toggled by the stack_group key)
-	sortField    int  // volumes sort column
-	sortDesc     bool
+
+	// tabs is the tab registry, by uiTabList key (see newTabViews). A tab
+	// with a type of its own keeps its widget, its preferences and its
+	// per-cluster state there, not on *ui.
+	tabs map[string]tabView
 
 	// shared tab state
 	active       string       // the selected tab
@@ -153,7 +154,7 @@ type ui struct {
 	curHelp      string       // current tab's footer help
 	footerBase   string       // what the footer's owner wants shown; a flash returns to THIS
 	savedHelp    string       // footer help saved while search is open
-	searchMode   string       // what the "/" bar filters ("containers"/"volumes")
+	searchMode   string       // the tab the "/" bar filters (a tabSearcher)
 	mouseEnabled bool         // mirrors app.EnableMouse; toggled by 'm'
 	screen       tcell.Screen // owned screen, for OSC52 clipboard on yank
 

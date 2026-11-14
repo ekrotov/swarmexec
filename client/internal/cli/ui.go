@@ -351,14 +351,7 @@ func (u *ui) run(keyWarnings []string) error {
 		}
 	})
 
-	// ------------------------------------------------------------------- volumes
-	vtable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	vtable.SetSelectedStyle(selStyle)
-	vtable.SetSelectedFunc(func(int, int) {
-		if v, ok := u.selectedVolume(); ok && len(v.Nodes) > 0 {
-			u.showVolumeNodes(v)
-		}
-	})
+	// The volumes tab builds its own table (newVolumesTab, ui_volumes.go).
 
 	// ------------------------------------------------------------------ forwards
 	ftable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
@@ -415,13 +408,15 @@ func (u *ui) run(keyWarnings []string) error {
 	})
 
 	// ---------------------------------------------------------------- tabs/chrome
-	content.AddPage("containers", ctree, true, true)
-	content.AddPage("volumes", vtable, true, false)
-	content.AddPage("forwards", ftable, true, false)
-	content.AddPage("networks", nettable, true, false)
-	content.AddPage("secrets", sectable, true, false)
-	content.AddPage("nodes", notable, true, false)
-	content.AddPage("configs", cfgtable, true, false)
+	// Promote the tab widgets that still live on u before the registry is asked
+	// for its pages: the adapters of the not-yet-converted tabs read them.
+	u.ctree, u.croot = ctree, croot
+	u.ftable, u.nettable = ftable, nettable
+	u.sectable, u.cxtable, u.notable = sectable, cxtable, notable
+	u.cfgtable = cfgtable
+	for i, t := range uiTabList {
+		content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
+	}
 
 	tabBar := newTabStrip(uiTabList, func(key string) { u.setTab(key) })
 	// Two-line footer: the per-tab key hints on top, then one consolidated status
@@ -478,46 +473,30 @@ func (u *ui) run(keyWarnings []string) error {
 
 	// Promote the shared widgets onto u so the infra methods (updateStatus,
 	// setTab, refreshForwardViews, …) can reach them. All exist by now.
-	u.ctree, u.croot = ctree, croot
-	u.vtable, u.ftable, u.nettable = vtable, ftable, nettable
-	u.sectable, u.cxtable, u.notable = sectable, cxtable, notable
-	u.cfgtable = cfgtable
 	u.tabBar, u.help, u.status = tabBar, help, status
 	u.footer, u.root, u.search = footer, root, search
 	u.statusRow, u.statusRight = statusRow, statusRight
 	u.updateStatusRight()
 
 	// u.savedHelp holds the footer help to restore when search closes; u.searchMode
-	// selects what the shared "/" bar filters (container tree vs. volumes table).
+	// names the tab the shared "/" bar filters (see startSearch).
 	search.SetChangedFunc(func(text string) {
 		// Filter locally against the cached data — no docker call per keystroke.
-		t := strings.TrimSpace(text)
-		if u.searchMode == "volumes" {
-			u.volFilter = t
-			u.renderVolumeTable()
-		} else {
-			u.filter = t
-			u.renderContainers()
+		if s := u.searchTab(); s != nil {
+			s.setSearch(strings.TrimSpace(text))
 		}
 	})
 	search.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape {
 			search.SetText("") // clears the active filter via SetChangedFunc
 		}
-		isVol := u.searchMode == "volumes"
-		empty := u.filter == ""
-		if isVol {
-			empty = u.volFilter == ""
-		}
-		if empty {
+		s := u.searchTab()
+		if s == nil || s.searchText() == "" {
 			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
 		}
 		u.setFooter(u.savedHelp) // restore the tab help
-		if isVol {
-			app.SetFocus(vtable) // Enter keeps the filter; the bar stays as an indicator
-		} else {
-			app.SetFocus(ctree)
-		}
+		// Enter keeps the filter; the bar stays as an indicator.
+		app.SetFocus(u.tab(u.searchMode).widget())
 	})
 
 	u.active = "containers"
@@ -529,7 +508,6 @@ func (u *ui) run(keyWarnings []string) error {
 	// column, so this is where a failure reason is actually readable.
 	ftable.SetSelectedFunc(func(int, int) { u.showForwardDetail() })
 	ftable.SetInputCapture(u.forwardKeys)
-	vtable.SetInputCapture(u.volumeKeys)
 	nettable.SetInputCapture(u.networkKeys)
 	sectable.SetInputCapture(u.secretKeys)
 	cxtable.SetInputCapture(u.contextKeys)
@@ -1355,9 +1333,8 @@ func (u *ui) setFooter(markup string) {
 // of selected volumes. Assigned here — after `active` exists — and called by
 // the refreshers, setTab and the volume-selection toggle.
 func (u *ui) updateStatus() {
-	activeCtx, clusterText, active := u.activeCtx, u.clusterText, u.active
+	activeCtx, clusterText := u.activeCtx, u.clusterText
 	forwards := u.forwards
-	selectedVols := u.selectedVols
 	status := u.status
 	parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", ctxStatusLabel(activeCtx))}
 	if clusterText != "" {
@@ -1370,8 +1347,10 @@ func (u *ui) updateStatus() {
 			parts = append(parts, fmt.Sprintf("[aqua]%d[white]/%d fwd", act, total))
 		}
 	}
-	if active == "volumes" && len(selectedVols) > 0 {
-		parts = append(parts, fmt.Sprintf("[yellow]▣ %d selected[white]", len(selectedVols)))
+	if n, ok := u.activeTab().(tabStatusNoter); ok {
+		if note := n.statusNote(); note != "" {
+			parts = append(parts, note)
+		}
 	}
 	status.SetText(" " + strings.Join(parts, "  ·  "))
 }
@@ -1478,38 +1457,18 @@ func (u *ui) helpFor(name string) string {
 	km := u.km
 	kl := keyLabel
 	head := fmt.Sprintf(" [yellow]?[white] help  [yellow]%s[white] quit   ", kl(km.Quit))
-	switch name {
-	case "containers":
-		// This line is the widest footer and already fills a ~117-column
-		// terminal; anything past the edge wraps onto a hidden second row. So
-		// labels here are kept terse to make room for X (destructive, and it
-		// must not be the thing that silently falls off the end).
-		return head + fmt.Sprintf("[yellow]j/k[white] move  [yellow]Enter[white] open  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks  %s remove",
-			kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup), keyTag(dangerKey("X")))
-	case "volumes":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  %s delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
-			kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), keyTag(dangerKey(kl(km.VolDelete))), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
-	case "networks":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", kl(km.NetAttached), kl(km.NetNew))
-	case "secrets":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  %s delete", kl(km.SecNew), keyTag(dangerKey(kl(km.SecDelete))))
-	case "contexts":
+	if name == "contexts" {
 		// The sidebar's footer, shown while it holds the keyboard. Esc is first
 		// after the movement keys because it is the way back out — the sidebar
 		// is the one focusable thing here that is not a tab, so "how do I get
 		// back" is the question it has to answer.
 		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Esc[white] back  [yellow]Enter/%s[white] switch  [yellow]i[white] details  [yellow]%s[white] new  %s delete",
 			kl(km.CtxUse), kl(km.CtxNew), keyTag(dangerKey(kl(km.CtxDelete))))
-	case "nodes":
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  %s prune  [yellow]%s[white] prune schedule (all nodes)",
-			kl(km.NodeLabels), kl(km.NodeAvail), keyTag(dangerKey(kl(km.NodePrune))), kl(km.NodePruneSched))
-	case "configs":
-		return head + "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
-
-	default:
-		return head + fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  %s stop  [yellow]%s[white] copy url",
-			keyTag(dangerKey(kl(km.FwdStop))), kl(km.FwdCopyURL))
 	}
+	if t := u.tab(name); t != nil {
+		return head + t.footer()
+	}
+	return head
 }
 
 // showHelp opens a scrollable overlay listing every keybinding — the complete
@@ -1518,105 +1477,41 @@ func (u *ui) helpFor(name string) string {
 func (u *ui) showHelp() {
 	km, app := u.km, u.app
 	kl := keyLabel
-	var b strings.Builder
-	sec := func(title string) { fmt.Fprintf(&b, "\n[aqua]%s[-]\n", title) }
-	line := func(keys, desc string) { fmt.Fprintf(&b, "  [yellow]%-9s[white] %s\n", keys, desc) }
-	// danger is line for a destructive key (delete / remove / stop): red, as
-	// in the footers. One key per line, so the colour never spills onto a
-	// harmless neighbour sharing the same column.
-	danger := func(keys, desc string) { fmt.Fprintf(&b, "  [red]%-9s[white] %s\n", keys, desc) }
+	h := &helpWriter{}
 
-	b.WriteString("[aqua]Global[-]\n")
-	line("?", "this help")
-	line(kl(km.Quit), "quit")
-	line(kl(km.Refresh), "refresh the current tab + cluster")
-	line(kl(km.Copy), "copy the current list to the clipboard")
-	line(kl(km.ToggleMouse), "toggle mouse on/off")
-	line("Tab", "next tab")
-	line("1–7", "jump to a tab by number")
-	line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
-	line("`", "toggle the client log view")
-	line("Esc", "close the current overlay / dialog")
+	h.b.WriteString("[aqua]Global[-]\n")
+	h.line("?", "this help")
+	h.line(kl(km.Quit), "quit")
+	h.line(kl(km.Refresh), "refresh the current tab + cluster")
+	h.line(kl(km.Copy), "copy the current list to the clipboard")
+	h.line(kl(km.ToggleMouse), "toggle mouse on/off")
+	h.line("Tab", "next tab")
+	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
+	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
+	h.line("`", "toggle the client log view")
+	h.line("Esc", "close the current overlay / dialog")
 
-	sec("Stacks/Services")
-	line("Enter", "expand a service · open a container's menu")
-	line(kl(km.Logs), "logs (container, service, or a whole stack)")
-	line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
-	line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
-	line(kl(km.Forward), "port-forward the task under the cursor (form: container port, local port, address; Enter forwards from any field)")
-	line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
-	line(kl(km.StackGroup), "group services by stack / flat list")
-	line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
-	danger("X", "remove: service · container’s service · whole stack (confirmed)")
-	line(kl(km.Search), "search services / containers / nodes")
+	// Every tab's own section, in tab order, from the registry.
+	for _, t := range uiTabList {
+		u.tab(t.key).helpSection(h)
+	}
 
-	sec("Service inspect (" + kl(km.ContainerInspect) + ")")
-	line("a", "actions menu (all edits below, no Shift needed)")
-	line("Enter", "NETWORKS: expand a network → its containers")
-	line("1 2 3", "table · stats (cpu/memory) · raw JSON")
-	line("t", "cycle those three views")
-	line("d / D", "diff spec · why (placement)")
-	line("R", "roll back to the previous version")
-	line("s / f", "scale · force-update")
-	line("u", "set the image version (update / pin / revert)")
-	line("p l e", "edit ports · labels · env")
-	line("n S v", "edit networks · secrets · mounts")
-	line("r P", "edit resources · placement")
-	danger("X", "remove the service")
+	h.sec("Contexts (sidebar, not a tab)")
+	h.line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
+	h.line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
+	h.line("i", "context details (endpoint, jump hosts)")
+	h.line(kl(km.CtxNew), "new")
+	h.danger(kl(km.CtxDelete), "delete")
+	h.line("▶ · ✗", "active · connected (instant) · last attempt refused")
 
-	sec("Volumes")
-	line(kl(km.VolNew), "new volume")
-	line(kl(km.VolSelect)+"/"+kl(km.VolSelectAll), "select / select all")
-	line(kl(km.VolAttach), "attach to a service")
-	danger(kl(km.VolDelete), "delete")
-	line(kl(km.VolPrune), "prune unused")
-	line("Enter", "which nodes hold it")
-	line(kl(km.VolUsedBy), "used-by (containers / services)")
-	line(kl(km.VolSort)+"/"+kl(km.VolSortRev), "sort / reverse")
-	line(kl(km.Search), "search")
-
-	sec("Networks")
-	line("Enter/"+kl(km.NetAttached), "attached services")
-	line(kl(km.NetNew), "new network")
-
-	sec("Secrets")
-	line("Enter / i", "details")
-	line("  a · d", "in details: attach to · detach from a service")
-	line("  r", "in details: rotate — new content, same name (services restart twice)")
-	line(kl(km.SecNew), "new (vim editor, :r file)")
-	danger(kl(km.SecDelete), "delete")
-
-	sec("Contexts (sidebar, not a tab)")
-	line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
-	line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
-	line("i", "context details (endpoint, jump hosts)")
-	line(kl(km.CtxNew), "new")
-	danger(kl(km.CtxDelete), "delete")
-	line("▶ · ✗", "active · connected (instant) · last attempt refused")
-
-	sec("Nodes")
-	line("Enter / i", "details")
-	line(kl(km.NodeLabels), "edit labels")
-	line(kl(km.NodeAvail), "availability: active / pause / drain")
-	danger(kl(km.NodePrune), "prune the node: containers, images, build cache, networks, volumes (choose + confirm)")
-	line(kl(km.NodePruneSched), "prune schedule for ALL nodes (restarts the agents on save)")
-	line("m", "in the details: measure reclaimable space now")
-
-	sec("Configs")
-	line("Enter / i", "details, including the config's content")
-
-	sec("Forwards")
-	line("Enter / i", "details")
-	danger(kl(km.FwdStop), "stop")
-	line(kl(km.FwdCopyURL), "copy URL")
-
-	sec("Log view (`)")
-	line("f", "follow on/off")
-	line("F", "cycle format")
-	line("a", "auto-detect format")
-	line("l", "cycle min level")
-	line("/", "filter message")
-	line("↑/↓", "scroll")
+	h.sec("Log view (`)")
+	h.line("f", "follow on/off")
+	h.line("F", "cycle format")
+	h.line("a", "auto-detect format")
+	h.line("l", "cycle min level")
+	h.line("/", "filter message")
+	h.line("↑/↓", "scroll")
+	b := &h.b
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetText(strings.TrimLeft(b.String(), "\n"))
@@ -1644,12 +1539,12 @@ func (u *ui) renderTabBar(active string) {
 }
 
 func (u *ui) setTab(name string) {
-	content, app := u.content, u.app
-	ctree, vtable, ftable := u.ctree, u.vtable, u.ftable
-	nettable, sectable := u.nettable, u.sectable
-	notable := u.notable
+	t := u.tab(name)
+	if t == nil {
+		return
+	}
 	u.active = name
-	content.SwitchToPage(name)
+	u.content.SwitchToPage(name)
 	u.curHelp = u.helpFor(name)
 	// Switching tab takes the keyboard back from the sidebar, so the footer it
 	// borrowed goes back too rather than being restored over the new tab's.
@@ -1659,44 +1554,31 @@ func (u *ui) setTab(name string) {
 	u.setFooter(u.curHelp)
 	u.renderTabBar(name)
 	u.updateStatus() // the selection count shows only on the volumes tab
-	switch name {
-	case "containers":
-		app.SetFocus(ctree)
-	case "volumes":
-		app.SetFocus(vtable)
-		u.loadVolumes()
-	case "forwards":
-		app.SetFocus(ftable)
-		u.renderForwards()
-	case "networks":
-		app.SetFocus(nettable)
-		u.loadNetworks()
-	case "secrets":
-		app.SetFocus(sectable)
-		u.loadSecrets()
-	case "nodes":
-		app.SetFocus(notable)
-		u.loadNodes()
-	case "configs":
-		app.SetFocus(u.cfgtable)
-		u.loadConfigs()
-	}
+	u.app.SetFocus(t.widget())
+	t.enter()
 }
 
+// startSearch opens the shared "/" bar over the tab registered as mode, which
+// must be a tabSearcher.
 func (u *ui) startSearch(mode string) {
 	root, search, app := u.root, u.search, u.app
+	s, ok := u.tab(mode).(tabSearcher)
+	if !ok {
+		return
+	}
 	u.searchMode = mode
 	root.ResizeItem(search, 1, 0)
 	u.savedHelp = u.footerBase
 	u.setFooter(" [yellow]type[white] to filter   [yellow]Enter[white] keep filter & exit   [yellow]Esc[white] clear & exit")
-	if mode == "volumes" {
-		search.SetPlaceholder("filter volumes / driver / node")
-		search.SetText(u.volFilter)
-	} else {
-		search.SetPlaceholder("filter services / containers / nodes")
-		search.SetText(u.filter)
-	}
+	search.SetPlaceholder(s.searchPlaceholder())
+	search.SetText(s.searchText())
 	app.SetFocus(search)
+}
+
+// searchTab is the tab the "/" bar currently filters, nil when none.
+func (u *ui) searchTab() tabSearcher {
+	s, _ := u.tab(u.searchMode).(tabSearcher)
+	return s
 }
 
 // refreshCluster probes the swarm in the background and updates the footer
@@ -1739,84 +1621,32 @@ func (u *ui) refreshForwardViews() {
 // yankCurrent copies the active tab's list to the system clipboard via the
 // terminal (OSC52), so it also works over ssh when the terminal supports it.
 func (u *ui) yankCurrent() {
-	screen := u.screen
-	active, activeCtx := u.active, u.activeCtx
+	if u.screen == nil {
+		return
+	}
+	var b strings.Builder
 	// The context list is no longer a tab, so "what is on screen" is no longer
 	// the same question as "which tab is this": when the sidebar holds the
 	// keyboard, that is what the operator means by copy.
 	if u.sidebarFocused() {
-		active = "contexts"
+		u.yankContexts(&b)
+	} else if t := u.activeTab(); t != nil {
+		t.yank(&b)
 	}
-	croot := u.croot
-	forwards := u.forwards
-	nets, secs, ctxs := u.nets, u.secs, u.ctxs
-	shownVols := u.shownVols
-	volUsage, volSizes := u.volUsage, u.volSizes
-	if screen == nil {
-		return
-	}
-	var b strings.Builder
-	switch active {
-	case "containers":
-		// Copy the tree as displayed, indenting by depth so a stack-grouped tree
-		// copies as a grouped tree (and an ungrouped one is unchanged).
-		for _, stackOrSvc := range croot.GetChildren() {
-			fmt.Fprintln(&b, trimFoldMarker(stackOrSvc.GetText()))
-			for _, svc := range stackOrSvc.GetChildren() {
-				fmt.Fprintf(&b, "  %s\n", trimFoldMarker(svc.GetText()))
-				for _, c := range svc.GetChildren() {
-					fmt.Fprintf(&b, "    %s\n", c.GetText())
-				}
-			}
-		}
-	case "forwards":
-		fmt.Fprintln(&b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
-		for _, e := range forwards.list() {
-			local := "-"
-			if e.boundPort() > 0 {
-				local = e.localEndpoint()
-			}
-			fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%s\t%s\n",
-				local, e.remote, shortID(e.cand.ContainerID),
-				orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
-		}
-	case "networks":
-		fmt.Fprintln(&b, "NETWORK\tDRIVER\tSCOPE\tTYPE\tSERVICES\tAGE")
-		for _, n := range nets {
-			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%d\t%s\n",
-				n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
-		}
-	case "secrets":
-		fmt.Fprintln(&b, "SECRET\tUSED BY\tAGE\tUPDATED\tLABELS")
-		for _, s := range secs {
-			fmt.Fprintf(&b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
-		}
-	case "contexts":
-		fmt.Fprintln(&b, "CONTEXT\tDOCKER HOST\tACTIVE")
-		for _, c := range ctxs {
-			mark := ""
-			if c.Name == activeCtx {
-				mark = "*"
-			}
-			fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
-		}
-	default:
-		// Copy the displayed (filtered + sorted) volumes.
-		fmt.Fprintln(&b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
-		for _, v := range shownVols {
-			used := "-"
-			if n := len(volUsage[v.Name]); n > 0 {
-				used = fmt.Sprintf("%d", n)
-			}
-			size := int64(-1)
-			if s, ok := volSizes[v.Name]; ok {
-				size = s
-			}
-			fmt.Fprintf(&b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), humanBytes(size))
-		}
-	}
-	screen.SetClipboard([]byte(b.String()))
+	u.screen.SetClipboard([]byte(b.String()))
 	u.flash(" [green]✓ copied to clipboard[white]")
+}
+
+// yankContexts writes the sidebar's context list as the clipboard receives it.
+func (u *ui) yankContexts(b *strings.Builder) {
+	fmt.Fprintln(b, "CONTEXT\tDOCKER HOST\tACTIVE")
+	for _, c := range u.ctxs {
+		mark := ""
+		if c.Name == u.activeCtx {
+			mark = "*"
+		}
+		fmt.Fprintf(b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
+	}
 }
 
 func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
@@ -1831,9 +1661,9 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	if ev.Key() == tcell.KeyTab {
-		for i, name := range uiTabOrder {
-			if name == active {
-				u.setTab(uiTabOrder[(i+1)%len(uiTabOrder)])
+		for i, t := range uiTabList {
+			if t.key == active {
+				u.setTab(uiTabList[(i+1)%len(uiTabList)].key)
 				break
 			}
 		}
@@ -1853,21 +1683,8 @@ func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
 			app.Stop()
 			return nil
 		case km.Refresh:
-			switch active {
-			case "containers":
-				u.loadContainers()
-				u.loadUsage()
-			case "volumes":
-				u.loadVolumes()
-			case "networks":
-				u.loadNetworks()
-			case "secrets":
-				u.loadSecrets()
-			case "nodes":
-				u.loadNodes()
-				u.loadUsage() // the node detail shows measured usage next to reservations
-			default:
-				u.renderForwards()
+			if t := u.activeTab(); t != nil {
+				t.refresh()
 			}
 			// The context list comes from docker's local store, so it costs
 			// nothing and is refreshed whatever tab you are on — it is always

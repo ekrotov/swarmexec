@@ -167,7 +167,6 @@ func volumesUI(t *testing.T, mgr *fakeManager, cfg config.Config) *ui {
 		u.cfg = cfg
 		u.agents = agentcall.New(cfg)
 		u.f = &uiFlags{connectTimeout: 3 * time.Second}
-		u.vtable = tview.NewTable()
 	})
 	return u
 }
@@ -216,7 +215,7 @@ func waitVolumesSettled(t *testing.T, u *ui) {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		done := false
-		onLoop(t, u, func() { done = !u.volSizesLoading && u.volSizes != nil })
+		onLoop(t, u, func() { st := u.volTab().st(); done = !st.sizesLoading && st.sizes != nil })
 		if done {
 			return
 		}
@@ -237,15 +236,15 @@ func TestVolumesLoad_OneNodeFailsMidFanOut(t *testing.T) {
 		"node-b": {fail: true},
 	})
 	u := volumesUI(t, mgr, cfg)
-	onLoop(t, u, func() { u.loadVolumes() })
+	onLoop(t, u, func() { u.volTab().load() })
 
 	waitVolumesSettled(t, u)
-	text := waitForTable(t, u, u.vtable, "shop_data", "1: node-a", "(1 node(s) unreachable)", "1.049MB")
+	text := waitForTable(t, u, u.volTab().table, "shop_data", "1: node-a", "(1 node(s) unreachable)", "1.049MB")
 	if strings.Contains(text, errNoAgent.Error()) {
 		t.Errorf("one failed node must not read as \"no agent\":\n%s", text)
 	}
 	var errs map[string]error
-	onLoop(t, u, func() { errs = u.volErrs })
+	onLoop(t, u, func() { errs = u.volTab().st().errs })
 	if err := errs["node-b"]; status.Code(err) != codes.Unavailable {
 		t.Errorf("node-b's error = %v, want its Unavailable kept", err)
 	}
@@ -261,8 +260,8 @@ func TestVolumesLoad_AllNodesFailAndNoAgentDeployed(t *testing.T) {
 	mgr := &fakeManager{nodes: []swarm.Node{readyNode("n1", "node-a"), readyNode("n2", "node-b")}}
 	cfg := startVolumeAgents(t, map[string]*volumeAgent{"node-a": {fail: true}}) // node-b: refused
 	u := volumesUI(t, mgr, cfg)
-	onLoop(t, u, func() { u.loadVolumes() })
-	waitForTable(t, u, u.vtable, errNoAgent.Error())
+	onLoop(t, u, func() { u.volTab().load() })
+	waitForTable(t, u, u.volTab().table, errNoAgent.Error())
 
 	// Same failure with the agent service deployed: no "run init" — the
 	// nodes are merely unreachable.
@@ -272,9 +271,9 @@ func TestVolumesLoad_AllNodesFailAndNoAgentDeployed(t *testing.T) {
 	agentSvc.Spec.Labels = map[string]string{agentRoleLabel: agentRoleValue}
 	mgr.services = []swarm.Service{agentSvc}
 	mgr.mu.Unlock()
-	onLoop(t, u, func() { u.loadVolumes() })
+	onLoop(t, u, func() { u.volTab().load() })
 	waitVolumesSettled(t, u)
-	text := waitForTable(t, u, u.vtable, "(2 node(s) unreachable)")
+	text := waitForTable(t, u, u.volTab().table, "(2 node(s) unreachable)")
 	if strings.Contains(text, errNoAgent.Error()) {
 		t.Errorf("a deployed agent must not be reported missing:\n%s", text)
 	}

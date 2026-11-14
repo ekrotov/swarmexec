@@ -21,8 +21,127 @@ import (
 	"github.com/rivo/tview"
 )
 
-func (u *ui) volMatches(v swarmVolume) bool {
-	q := strings.ToLower(strings.TrimSpace(u.volFilter))
+// volumesTab is the Volumes tab: the volume list across every node, its
+// selection, sort, "/" filter and the volume actions.
+//
+// It is the first tab with a type of its own (review A-02), and the shape the
+// others follow: the widget and the session preferences live on the tab, what
+// one cluster shows lives in a volumesState per cluster (see perCluster).
+type volumesTab struct {
+	u     *ui
+	table *tview.Table
+
+	// The sort order is the operator's preference, not a property of a
+	// cluster: it survives a switch.
+	sortField int
+	sortDesc  bool
+
+	per perCluster[volumesState]
+	// shownFor is the cluster whose rows the table holds, nil while it shows a
+	// loading or error state. A render for another cluster first saves this
+	// one's cursor — that is how a switch back lands on the same volume.
+	shownFor *clusterState
+}
+
+// volumesState is what the Volumes tab knows about one cluster.
+type volumesState struct {
+	vols  []swarmVolume
+	usage map[string][]volumeConsumer
+	sizes map[string]int64
+	errs  map[string]error
+	// sizesLoading is true while the (slow, du-style) size pass runs; the SIZE
+	// header carries a spinner meanwhile.
+	sizesLoading bool
+
+	// shown is the filtered + sorted subset currently displayed; it is what
+	// selected() and "select all" index.
+	shown []swarmVolume
+	// selected holds the volumes marked with space for a bulk delete, keyed
+	// by name so the selection survives sorting and re-render.
+	selected map[string]bool
+	filter   string // the "/" query
+	// cursor is the volume the cursor stood on when the table last showed
+	// this cluster, by name.
+	cursor string
+}
+
+func newVolumesTab(u *ui) *volumesTab {
+	t := &volumesTab{u: u}
+	t.per.init = func() *volumesState { return &volumesState{selected: map[string]bool{}} }
+	t.table = tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	t.table.SetSelectedStyle(u.selStyle)
+	t.table.SetSelectedFunc(func(int, int) {
+		if v, ok := t.selected(); ok && len(v.Nodes) > 0 {
+			t.showNodes(v)
+		}
+	})
+	t.table.SetInputCapture(t.keys)
+	return t
+}
+
+// volTab is the session's Volumes tab.
+func (u *ui) volTab() *volumesTab { return u.tab("volumes").(*volumesTab) }
+
+// st is the visible cluster's volume state.
+func (t *volumesTab) st() *volumesState { return t.per.of(t.u.clusterState) }
+
+func (t *volumesTab) widget() tview.Primitive { return t.table }
+func (t *volumesTab) enter()                  { t.load() }
+func (t *volumesTab) refresh()                { t.load() }
+
+func (t *volumesTab) footer() string {
+	km, kl := t.u.km, keyLabel
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]%s[white] search  [yellow]%s[white] new  [yellow]%s[white] select  [yellow]%s[white] all  [yellow]%s[white] attach  %s delete  [yellow]%s[white] prune  [yellow]Enter[white] nodes  [yellow]%s[white] used by  [yellow]%s[white] sort",
+		kl(km.Search), kl(km.VolNew), kl(km.VolSelect), kl(km.VolSelectAll), kl(km.VolAttach), keyTag(dangerKey(kl(km.VolDelete))), kl(km.VolPrune), kl(km.VolUsedBy), kl(km.VolSort))
+}
+
+func (t *volumesTab) helpSection(h *helpWriter) {
+	km, kl := t.u.km, keyLabel
+	h.sec("Volumes")
+	h.line(kl(km.VolNew), "new volume")
+	h.line(kl(km.VolSelect)+"/"+kl(km.VolSelectAll), "select / select all")
+	h.line(kl(km.VolAttach), "attach to a service")
+	h.danger(kl(km.VolDelete), "delete")
+	h.line(kl(km.VolPrune), "prune unused")
+	h.line("Enter", "which nodes hold it")
+	h.line(kl(km.VolUsedBy), "used-by (containers / services)")
+	h.line(kl(km.VolSort)+"/"+kl(km.VolSortRev), "sort / reverse")
+	h.line(kl(km.Search), "search")
+}
+
+// yank copies the displayed (filtered + sorted) volumes.
+func (t *volumesTab) yank(b *strings.Builder) {
+	st := t.st()
+	fmt.Fprintln(b, "NAME\tDRIVER\tNODES\tUSED BY\tAGE\tSIZE")
+	for _, v := range st.shown {
+		used := "-"
+		if n := len(st.usage[v.Name]); n > 0 {
+			used = fmt.Sprintf("%d", n)
+		}
+		size := int64(-1)
+		if s, ok := st.sizes[v.Name]; ok {
+			size = s
+		}
+		fmt.Fprintf(b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), humanBytes(size))
+	}
+}
+
+func (t *volumesTab) statusNote() string {
+	if n := len(t.st().selected); n > 0 {
+		return fmt.Sprintf("[yellow]▣ %d selected[white]", n)
+	}
+	return ""
+}
+
+func (t *volumesTab) searchText() string        { return t.st().filter }
+func (t *volumesTab) searchPlaceholder() string { return "filter volumes / driver / node" }
+func (t *volumesTab) setSearch(q string) {
+	t.st().filter = q
+	t.render()
+}
+
+func (st *volumesState) matches(v swarmVolume) bool {
+	q := strings.ToLower(strings.TrimSpace(st.filter))
 	if q == "" {
 		return true
 	}
@@ -37,13 +156,13 @@ func (u *ui) volMatches(v swarmVolume) bool {
 	return false
 }
 
-// sortVolumes orders rows by the active field; for size/age an unknown value
+// sortRows orders rows by the active field; for size/age an unknown value
 // always sorts last (regardless of direction), with name as the tiebreaker.
-func (u *ui) sortVolumes(rows []swarmVolume) {
+func (t *volumesTab) sortRows(st *volumesState, rows []swarmVolume) {
 	known := func(v swarmVolume) bool {
-		switch u.sortField {
+		switch t.sortField {
 		case volSortSize:
-			_, ok := u.volSizes[v.Name]
+			_, ok := st.sizes[v.Name]
 			return ok
 		case volSortAge:
 			return !v.Created.IsZero()
@@ -52,13 +171,13 @@ func (u *ui) sortVolumes(rows []swarmVolume) {
 		}
 	}
 	less := func(a, b swarmVolume) bool {
-		switch u.sortField {
+		switch t.sortField {
 		case volSortNodes:
 			if len(a.Nodes) != len(b.Nodes) {
 				return len(a.Nodes) < len(b.Nodes)
 			}
 		case volSortUsed:
-			if ua, ub := len(u.volUsage[a.Name]), len(u.volUsage[b.Name]); ua != ub {
+			if ua, ub := len(st.usage[a.Name]), len(st.usage[b.Name]); ua != ub {
 				return ua < ub
 			}
 		case volSortAge:
@@ -66,7 +185,7 @@ func (u *ui) sortVolumes(rows []swarmVolume) {
 				return a.Created.Before(b.Created) // earlier = older = "more age"
 			}
 		case volSortSize:
-			if sa, sb := u.volSizes[a.Name], u.volSizes[b.Name]; sa != sb {
+			if sa, sb := st.sizes[a.Name], st.sizes[b.Name]; sa != sb {
 				return sa < sb
 			}
 		}
@@ -77,26 +196,81 @@ func (u *ui) sortVolumes(rows []swarmVolume) {
 		if ka, kb := known(a), known(b); ka != kb {
 			return ka // known before unknown, both directions
 		}
-		if u.sortDesc {
+		if t.sortDesc {
 			return less(b, a)
 		}
 		return less(a, b)
 	})
 }
 
-func (u *ui) renderVolumeTable() {
-	vtable := u.vtable
-	// Keep the cursor on the same volume across re-render (sort/size refresh).
-	selName := ""
-	if row, _ := vtable.GetSelection(); row >= 1 {
-		if c := vtable.GetCell(row, 0); c != nil {
-			selName = strings.TrimLeft(c.Text, "▣ ") // drop the selection marker
+// remember saves the cursor of the cluster the table currently shows, before
+// the table is cleared — by a load's placeholder or by a render for another
+// cluster.
+func (t *volumesTab) remember() {
+	if t.shownFor == nil {
+		return
+	}
+	prev := t.per.of(t.shownFor)
+	if v, ok := selectedRow(t.table, prev.shown); ok {
+		prev.cursor = v.Name
+	}
+}
+
+// placeholder replaces the rows with a loading or error state.
+func (t *volumesTab) placeholder(cell *tview.TableCell) {
+	t.remember()
+	t.shownFor = nil
+	tableState(t.table, vHeaders, cell)
+}
+
+func (t *volumesTab) render() {
+	// Keep the cursor on the same volume across re-render (sort/size refresh)
+	// and across a cluster switch: each cluster puts back its own.
+	t.remember()
+	st := t.st()
+	t.shownFor = t.u.clusterState
+	t.table.Clear()
+	t.renderHeader(st)
+	// Build the displayed subset from the "/" filter, then sort it. The
+	// displayed order must match the slice selected() indexes, so both use
+	// shown — otherwise a filter/sort makes delete act on the wrong row.
+	st.shown = st.shown[:0]
+	for _, v := range st.vols {
+		if st.matches(v) {
+			st.shown = append(st.shown, v)
 		}
 	}
-	vtable.Clear()
+	t.sortRows(st, st.shown)
+	selRow := 1
+	for i, v := range st.shown {
+		t.renderRow(st, i+1, v)
+		if v.Name == st.cursor {
+			selRow = i + 1
+		}
+	}
+	if len(st.shown) > 0 {
+		t.table.Select(selRow, 0)
+	}
+	// Row 1 when the list is empty, so the note does not land on top of the
+	// empty state below it.
+	noteRow := len(st.shown) + 1
+	if len(st.shown) == 0 {
+		text := emptyText("volumes", keyHint(t.u.km.VolNew, "to create one"))
+		if st.filter != "" {
+			text = fmt.Sprintf("(no matches for %q)", st.filter)
+		}
+		t.table.SetCell(1, 0, emptyCell(text))
+		noteRow = 2
+	}
+	if len(st.errs) > 0 {
+		t.table.SetCell(noteRow, 0, stateCell(fmt.Sprintf("(%d node(s) unreachable)", len(st.errs)), tcell.ColorYellow))
+	}
+}
+
+func (t *volumesTab) renderHeader(st *volumesState) {
 	for c, h := range vHeaders {
-		if volSortCol[u.sortField] == c {
-			if u.sortDesc {
+		if volSortCol[t.sortField] == c {
+			if t.sortDesc {
 				h += " ▼"
 			} else {
 				h += " ▲"
@@ -104,72 +278,45 @@ func (u *ui) renderVolumeTable() {
 		}
 		// While the (slow) size scan runs, show a loading marker on the SIZE
 		// header; the spinner goroutine animates this cell.
-		if c == volSortCol[volSortSize] && u.volSizesLoading {
+		if c == volSortCol[volSortSize] && st.sizesLoading {
 			h += " " + loadingText
 		}
-		vtable.SetCell(0, c, headerCell(h))
-	}
-	// Build the displayed subset from the "/" filter, then sort it. The
-	// displayed order must match the slice selectedVolume() indexes, so both
-	// use shownVols — otherwise a filter/sort makes delete act on the wrong row.
-	u.shownVols = u.shownVols[:0]
-	for _, v := range u.vols {
-		if u.volMatches(v) {
-			u.shownVols = append(u.shownVols, v)
-		}
-	}
-	u.sortVolumes(u.shownVols)
-	selRow := 1
-	for i, v := range u.shownVols {
-		used := len(u.volUsage[v.Name])
-		usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if used > 0 {
-			usedCell = tview.NewTableCell(fmt.Sprintf("%d", used)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
-		}
-		sizeCell := tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if u.volSizes != nil {
-			size, color := int64(-1), tcell.ColorGray
-			if s, ok := u.volSizes[v.Name]; ok {
-				size, color = s, tcell.ColorWhite
-			}
-			sizeCell = tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1)
-		}
-		mark, nameColor := "  ", tcell.ColorWhite
-		if u.selectedVols[v.Name] {
-			mark, nameColor = "▣ ", tcell.ColorAqua
-		}
-		vtable.SetCell(i+1, 0, tview.NewTableCell(mark+v.Name).SetTextColor(nameColor).SetExpansion(1))
-		vtable.SetCell(i+1, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
-		vtable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
-		vtable.SetCell(i+1, 3, usedCell)
-		vtable.SetCell(i+1, 4, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
-		vtable.SetCell(i+1, 5, sizeCell)
-		if v.Name == selName {
-			selRow = i + 1
-		}
-	}
-	if len(u.shownVols) > 0 {
-		vtable.Select(selRow, 0)
-	}
-	// Row 1 when the list is empty, so the note does not land on top of the
-	// empty state below it.
-	noteRow := len(u.shownVols) + 1
-	if len(u.shownVols) == 0 {
-		text := emptyText("volumes", keyHint(u.km.VolNew, "to create one"))
-		if u.volFilter != "" {
-			text = fmt.Sprintf("(no matches for %q)", u.volFilter)
-		}
-		vtable.SetCell(1, 0, emptyCell(text))
-		noteRow = 2
-	}
-	if len(u.volErrs) > 0 {
-		vtable.SetCell(noteRow, 0, stateCell(fmt.Sprintf("(%d node(s) unreachable)", len(u.volErrs)), tcell.ColorYellow))
+		t.table.SetCell(0, c, headerCell(h))
 	}
 }
 
-func (u *ui) loadVolumes() {
-	r, ac, dcli, f, ctx, vtable := u.r, u.agents, u.dcli, u.f, u.ctx, u.vtable
-	tableState(vtable, vHeaders, loadingCell())
+func (t *volumesTab) renderRow(st *volumesState, row int, v swarmVolume) {
+	usedCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if used := len(st.usage[v.Name]); used > 0 {
+		usedCell = tview.NewTableCell(fmt.Sprintf("%d", used)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+	}
+	sizeCell := tview.NewTableCell("…").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if st.sizes != nil {
+		size, color := int64(-1), tcell.ColorGray
+		if s, ok := st.sizes[v.Name]; ok {
+			size, color = s, tcell.ColorWhite
+		}
+		sizeCell = tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1)
+	}
+	mark, nameColor := "  ", tcell.ColorWhite
+	if st.selected[v.Name] {
+		mark, nameColor = "▣ ", tcell.ColorAqua
+	}
+	t.table.SetCell(row, 0, tview.NewTableCell(mark+v.Name).SetTextColor(nameColor).SetExpansion(1))
+	t.table.SetCell(row, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
+	t.table.SetCell(row, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
+	t.table.SetCell(row, 3, usedCell)
+	t.table.SetCell(row, 4, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
+	t.table.SetCell(row, 5, sizeCell)
+}
+
+// load fetches the volume list in two passes: names, nodes and consumers
+// first, then the sizes, which come from a slow du-style scan.
+func (t *volumesTab) load() {
+	u := t.u
+	r, ac, dcli, f, ctx := u.r, u.agents, u.dcli, u.f, u.ctx
+	st := t.st()
+	t.placeholder(loadingCell())
 	gen := u.generation()
 	go func() {
 		start := time.Now()
@@ -187,63 +334,68 @@ func (u *ui) loadVolumes() {
 		}
 		clientlog.Timed("ui.loadVolumes", start, nerr, "nodes", len(nodes), "vols", len(vs))
 		u.onCluster(gen, func() {
-			u.vols, u.volUsage, u.volErrs, u.volSizes = vs, usage, errs, nil
+			st.vols, st.usage, st.errs, st.sizes = vs, usage, errs, nil
 			if nerr != nil {
-				tableState(vtable, vHeaders, errorCell(nerr))
+				t.placeholder(errorCell(nerr))
 				return
 			}
 			if noAgent {
-				tableState(vtable, vHeaders, stateCell(errNoAgent.Error(), tcell.ColorRed))
+				t.placeholder(stateCell(errNoAgent.Error(), tcell.ColorRed))
 				return
 			}
-			u.renderVolumeTable()
+			t.render()
 		})
-
-		// Sizes are computed via a du-style disk-usage scan, which is slow, so
-		// fill the SIZE column in a second pass once the list is already shown.
-		// A spinner on the SIZE header makes clear the data is still loading.
 		if nerr == nil && !noAgent {
-			u.onCluster(gen, func() {
-				u.volSizesLoading = true
-				u.renderVolumeTable()
-			})
-			stop := make(chan struct{})
-			go func() {
-				frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-				tk := time.NewTicker(150 * time.Millisecond)
-				defer tk.Stop()
-				for i := 0; ; i++ {
-					select {
-					case <-stop:
-						return
-					case <-tk.C:
-						frame := frames[i%len(frames)]
-						u.onCluster(gen, func() {
-							if u.volSizesLoading {
-								vtable.SetCell(0, volSortCol[volSortSize], headerCell("SIZE "+frame))
-							}
-						})
-					}
-				}
-			}()
-			sz := ac.VolumeSizes(ctx, nodes, f.connectTimeout)
-			close(stop)
-			u.onCluster(gen, func() {
-				u.volSizesLoading = false
-				u.volSizes = sz
-				u.renderVolumeTable()
-			})
+			t.loadSizes(gen, st, nodes)
 		}
 	}()
 }
 
-func (u *ui) selectedVolume() (swarmVolume, bool) {
-	vtable := u.vtable
-	return selectedRow(vtable, u.shownVols)
+// loadSizes is load's second pass: fill the SIZE column once the list is
+// already shown, with a spinner on the SIZE header meanwhile. Off the UI
+// goroutine.
+func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Node) {
+	u := t.u
+	ac, f, ctx := u.agents, u.f, u.ctx
+	u.onCluster(gen, func() {
+		st.sizesLoading = true
+		t.render()
+	})
+	stop := make(chan struct{})
+	go func() {
+		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		tk := time.NewTicker(150 * time.Millisecond)
+		defer tk.Stop()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			case <-tk.C:
+				frame := frames[i%len(frames)]
+				u.onCluster(gen, func() {
+					if st.sizesLoading {
+						t.table.SetCell(0, volSortCol[volSortSize], headerCell("SIZE "+frame))
+					}
+				})
+			}
+		}
+	}()
+	sz := ac.VolumeSizes(ctx, nodes, f.connectTimeout)
+	close(stop)
+	u.onCluster(gen, func() {
+		st.sizesLoading = false
+		st.sizes = sz
+		t.render()
+	})
 }
 
-func (u *ui) showVolumeNodes(v swarmVolume) {
-	ac, f, vtable := u.agents, u.f, u.vtable
+func (t *volumesTab) selected() (swarmVolume, bool) {
+	return selectedRow(t.table, t.st().shown)
+}
+
+func (t *volumesTab) showNodes(v swarmVolume) {
+	u := t.u
+	ac, f := u.agents, u.f
 	list := tview.NewList().ShowSecondaryText(false)
 	title := fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
 	if !v.Created.IsZero() {
@@ -266,7 +418,7 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 		}
 	}
 	render()
-	ov := u.overlayFor(pageVolNodes, vtable, "")
+	ov := u.overlayFor(pageVolNodes, t.table, "")
 	closeNodes := ov.Close
 
 	runDelete := func(targets []resolve.Node) {
@@ -274,7 +426,7 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 			return ac.RemoveVolume(ctx, targets, v.Name, false, f.connectTimeout), nil
 		}, func(results []agentcall.NodeResult, _ error) {
 			closeNodes()
-			u.loadVolumes()
+			t.load()
 			var b []string
 			for _, res := range results {
 				if res.Err != nil {
@@ -308,18 +460,7 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.VolDelete:
 			// The tab's own delete key (volume_delete), so one key deletes a
 			// volume whether you are on the list or in its per-node view.
-			var chosen []resolve.Node
-			for i, s := range sel {
-				if s {
-					chosen = append(chosen, v.Nodes[i])
-				}
-			}
-			if len(chosen) == 0 {
-				if i := list.GetCurrentItem(); i < len(v.Nodes) {
-					chosen = []resolve.Node{v.Nodes[i]}
-				}
-			}
-			if len(chosen) > 0 {
+			if chosen := chosenNodes(v.Nodes, sel, list.GetCurrentItem()); len(chosen) > 0 {
 				confirmDelete(chosen)
 			}
 			return nil
@@ -343,11 +484,27 @@ func (u *ui) showVolumeNodes(v swarmVolume) {
 	ov.show(centered(box, 64, len(v.Nodes)+5+labelH), list)
 }
 
-// showCreateVolume opens a form to create a volume (default driver local) with
+// chosenNodes is what the per-node view's delete key acts on: the marked
+// nodes, or else the one under the cursor.
+func chosenNodes(nodes []resolve.Node, sel []bool, cur int) []resolve.Node {
+	var chosen []resolve.Node
+	for i, s := range sel {
+		if s {
+			chosen = append(chosen, nodes[i])
+		}
+	}
+	if len(chosen) == 0 && cur >= 0 && cur < len(nodes) {
+		chosen = []resolve.Node{nodes[cur]}
+	}
+	return chosen
+}
+
+// showCreate opens a form to create a volume (default driver local) with
 // labels, targeting one node or (blank) all nodes — volumes are node-local, so
 // creation goes to each target node's agent.
-func (u *ui) showCreateVolume() {
-	r, ac, f, vtable := u.r, u.agents, u.f, u.vtable
+func (t *volumesTab) showCreate() {
+	u := t.u
+	r, ac, f := u.r, u.agents, u.f
 	o := newVolumeOpts{Driver: "local"}
 	var labels, nodeSel string
 	var allNodes []resolve.Node // fetched on open, for autocomplete + targeting
@@ -374,7 +531,7 @@ func (u *ui) showCreateVolume() {
 			allNodes = ns
 		}
 	})
-	ov := u.overlayFor(pageVolForm, vtable, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
+	ov := u.overlayFor(pageVolForm, t.table, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 	closeForm := ov.Close
 	form.AddButton("Create", func() {
 		lbls, err := swarmops.ParseKVList(labels)
@@ -404,7 +561,7 @@ func (u *ui) showCreateVolume() {
 			return ac.CreateVolume(ctx, targets, req, f.connectTimeout), nil
 		}, func(results []agentcall.NodeResult, _ error) {
 			closeForm()
-			u.loadVolumes()
+			t.load()
 			ok := 0
 			var failed []string
 			for _, res := range results {
@@ -432,10 +589,10 @@ func (u *ui) showCreateVolume() {
 	ov.show(centered(form, 66, 15), form)
 }
 
-// showVolumeConsumers lists the services/containers that mount a volume.
-func (u *ui) showVolumeConsumers(v swarmVolume) {
-	vtable := u.vtable
-	consumers := u.volUsage[v.Name]
+// showConsumers lists the services/containers that mount a volume.
+func (t *volumesTab) showConsumers(v swarmVolume) {
+	u := t.u
+	consumers := t.st().usage[v.Name]
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s — used by %d ", v.Name, len(consumers)))
 	if len(consumers) == 0 {
@@ -454,7 +611,7 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 			list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, orDash(c.Service), contW, orDash(c.Container), orDash(c.Node)), "", 0, nil)
 		}
 	}
-	ov := u.overlayFor(pageVolUsers, vtable, footerKeys("j/k", "move", "Esc", "back"))
+	ov := u.overlayFor(pageVolUsers, t.table, footerKeys("j/k", "move", "Esc", "back"))
 	closeUsers := ov.Close
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')) {
@@ -473,8 +630,8 @@ func (u *ui) showVolumeConsumers(v swarmVolume) {
 // deleteVolumes removes each target volume on every node that holds it, behind
 // a single confirm. Volumes are node-local, so a volume is removed across all
 // its v.Nodes. Shared by the multi-select delete and prune.
-func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
-	ac, f, vtable := u.agents, u.f, u.vtable
+func (t *volumesTab) deleteVolumes(targets []swarmVolume, prompt string) {
+	u := t.u
 	if len(targets) == 0 {
 		return
 	}
@@ -490,91 +647,98 @@ func (u *ui) deleteVolumes(targets []swarmVolume, prompt string) {
 	if extra > 0 {
 		body += fmt.Sprintf("\n(+%d more)", extra)
 	}
-	u.confirm(body, "Delete", vtable, func() {
-		// Deleting runs per volume across every node it holds, which can
-		// take a while, so show a progress overlay instead of freezing.
-		prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
-		prog.SetBorder(true).SetTitle(" deleting volumes ")
-		prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
-		// No focus to give back: the summary notice that replaces it takes it.
-		pov := u.overlayFor(pageVolProgress, nil, "")
-		pov.show(centered(prog, 60, 5), prog)
-		// The progress line is a second, streaming handoff: one update per
-		// finished volume, through the same generation check as the result.
-		gen := u.generation()
-		progress := func(d int) {
-			u.onCluster(gen, func() { prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets))) })
-		}
-		type outcome struct {
-			removed int
+	u.confirm(body, "Delete", t.table, func() { t.runDelete(targets) })
+}
+
+// runDelete is the confirmed half of deleteVolumes.
+func (t *volumesTab) runDelete(targets []swarmVolume) {
+	u := t.u
+	ac, f := u.agents, u.f
+	// Deleting runs per volume across every node it holds, which can take a
+	// while, so show a progress overlay instead of freezing.
+	prog := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
+	prog.SetBorder(true).SetTitle(" deleting volumes ")
+	prog.SetText(fmt.Sprintf("\ndeleted 0/%d…", len(targets)))
+	// No focus to give back: the summary notice that replaces it takes it.
+	pov := u.overlayFor(pageVolProgress, nil, "")
+	pov.show(centered(prog, 60, 5), prog)
+	// The progress line is a second, streaming handoff: one update per
+	// finished volume, through the same generation check as the result.
+	gen := u.generation()
+	progress := func(d int) {
+		u.onCluster(gen, func() { prog.SetText(fmt.Sprintf("\ndeleted %d/%d…", d, len(targets))) })
+	}
+	type outcome struct {
+		removed int
+		fails   []string
+	}
+	st := t.st()
+	async(u, "ui.volumes.delete", func(ctx context.Context) (outcome, error) {
+		// Delete volumes with bounded parallelism: each volume already fans
+		// out across its nodes, so a small volume-level pool keeps the total
+		// load on the agents in check. A mutex guards the shared counters
+		// and the progress overlay shows completions.
+		var (
+			mu      sync.Mutex
 			fails   []string
+			done    int
+			removed int
+		)
+		sem := make(chan struct{}, volumeDeleteFanout)
+		var wg sync.WaitGroup
+		for _, v := range targets {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(v swarmVolume) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ok := true
+				var vf []string
+				for _, res := range ac.RemoveVolume(ctx, v.Nodes, v.Name, false, f.connectTimeout) {
+					if res.Err != nil {
+						ok = false
+						vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.Node.Name, res.Err))
+					}
+				}
+				mu.Lock()
+				done++
+				if ok {
+					removed++
+				}
+				fails = append(fails, vf...)
+				d := done
+				mu.Unlock()
+				progress(d)
+			}(v)
 		}
-		async(u, "ui.volumes.delete", func(ctx context.Context) (outcome, error) {
-			// Delete volumes with bounded parallelism: each volume already
-			// fans out across its nodes, so a small volume-level pool keeps
-			// the total load on the agents in check. A mutex guards the
-			// shared counters and the progress overlay shows completions.
-			var (
-				mu      sync.Mutex
-				fails   []string
-				done    int
-				removed int
-			)
-			sem := make(chan struct{}, volumeDeleteFanout)
-			var wg sync.WaitGroup
-			for _, v := range targets {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func(v swarmVolume) {
-					defer wg.Done()
-					defer func() { <-sem }()
-					ok := true
-					var vf []string
-					for _, res := range ac.RemoveVolume(ctx, v.Nodes, v.Name, false, f.connectTimeout) {
-						if res.Err != nil {
-							ok = false
-							vf = append(vf, fmt.Sprintf("%s on %s: %v", shortVolume(v.Name), res.Node.Name, res.Err))
-						}
-					}
-					mu.Lock()
-					done++
-					if ok {
-						removed++
-					}
-					fails = append(fails, vf...)
-					d := done
-					mu.Unlock()
-					progress(d)
-				}(v)
-			}
-			wg.Wait()
-			return outcome{removed, fails}, nil
-		}, func(o outcome, _ error) {
-			removed, fails := o.removed, o.fails
-			pov.Close()
-			u.selectedVols = map[string]bool{}
-			u.loadVolumes()
-			u.updateStatus()
-			summary := fmt.Sprintf("removed %d of %d volume(s)", removed, len(targets))
-			if len(fails) > 0 {
-				summary += ":\n" + joinLines(fails)
-			}
-			u.info(summary)
-		})
+		wg.Wait()
+		return outcome{removed, fails}, nil
+	}, func(o outcome, _ error) {
+		pov.Close()
+		st.selected = map[string]bool{}
+		t.load()
+		u.updateStatus()
+		summary := fmt.Sprintf("removed %d of %d volume(s)", o.removed, len(targets))
+		if len(o.fails) > 0 {
+			summary += ":\n" + joinLines(o.fails)
+		}
+		u.info(summary)
 	})
 }
 
-// pruneVolumes deletes every volume that no running container mounts and no
-// service declares (service-declared volumes are spared even with no running
-// task). The service check needs a ServiceList, so it runs off the UI goroutine.
-func (u *ui) pruneVolumes() {
+// prune deletes every volume that no running container mounts and no service
+// declares (service-declared volumes are spared even with no running task).
+// The service check needs a ServiceList, so it runs off the UI goroutine.
+func (t *volumesTab) prune() {
+	u := t.u
 	dcli := u.dcli
 	async(u, "ui.volumes.prune.scan", func(ctx context.Context) (map[string]bool, error) {
 		return swarmops.ServiceVolumeNames(ctx, dcli), nil
 	}, func(declared map[string]bool, _ error) {
+		st := t.st()
 		var targets []swarmVolume
-		for _, v := range u.vols {
-			if len(u.volUsage[v.Name]) == 0 && !declared[v.Name] {
+		for _, v := range st.vols {
+			if len(st.usage[v.Name]) == 0 && !declared[v.Name] {
 				targets = append(targets, v)
 			}
 		}
@@ -582,12 +746,16 @@ func (u *ui) pruneVolumes() {
 			u.info("no unused volumes to prune (all are in use or declared by a service)")
 			return
 		}
-		u.deleteVolumes(targets, fmt.Sprintf("Prune %d unused volume(s)? This cannot be undone.", len(targets)))
+		t.deleteVolumes(targets, fmt.Sprintf("Prune %d unused volume(s)? This cannot be undone.", len(targets)))
 	})
 }
 
-func (u *ui) attachVolumeToService(volName string) {
-	app, dcli, vtable := u.app, u.dcli, u.vtable
+// attachToService mounts a volume into a service: pick a service
+// (autocomplete), enter the container target path, choose read-only or not,
+// then a ServiceUpdate adds the mount.
+func (t *volumesTab) attachToService(volName string) {
+	u := t.u
+	app, dcli, vtable := u.app, u.dcli, t.table
 	in := tview.NewInputField().SetLabel("service: ").SetFieldWidth(42).
 		SetPlaceholder("type or ↓ to pick; Enter next, Esc cancel")
 	names := u.serviceNamesFromCache()
@@ -641,7 +809,7 @@ func (u *ui) attachVolumeToService(volName string) {
 							u.info("attach failed: " + err.Error())
 							return
 						}
-						u.loadVolumes()
+						t.load()
 						u.info(fmt.Sprintf("attached volume %q to %q at %s — rolling update started", volName, svc, target))
 					})
 				})
@@ -654,91 +822,102 @@ func (u *ui) attachVolumeToService(volName string) {
 	ov.show(centeredPrompt(in, 64), in)
 }
 
-// volumeKeys is the key handler of the Volumes table.
-//
-// On the volumes table, "i" shows which services/containers use the volume.
-// attachVolumeToService mounts a volume into a service from the Volumes tab:
-// pick a service (autocomplete), enter the container target path, choose
-// read-only or not, then a ServiceUpdate adds the mount.
-func (u *ui) volumeKeys(ev *tcell.EventKey) *tcell.EventKey {
-	km := u.km
-	if ev.Key() == tcell.KeyRune {
-		switch ev.Rune() {
-		case km.Search:
-			u.startSearch("volumes")
-			return nil
-		case km.VolNew:
-			u.showCreateVolume()
-			return nil
-		case km.VolAttach:
-			if v, ok := u.selectedVolume(); ok {
-				u.attachVolumeToService(v.Name)
-			}
-			return nil
-		case km.VolSelect:
-			// Toggle the current volume's selection for a bulk delete.
-			if v, ok := u.selectedVolume(); ok {
-				if u.selectedVols[v.Name] {
-					delete(u.selectedVols, v.Name)
-				} else {
-					u.selectedVols[v.Name] = true
-				}
-				u.renderVolumeTable()
-				u.updateStatus()
-			}
-			return nil
-		case km.VolSelectAll:
-			// Select or deselect all currently displayed volumes.
-			all := len(u.shownVols) > 0
-			for _, v := range u.shownVols {
-				if !u.selectedVols[v.Name] {
-					all = false
-					break
-				}
-			}
-			for _, v := range u.shownVols {
-				if all {
-					delete(u.selectedVols, v.Name)
-				} else {
-					u.selectedVols[v.Name] = true
-				}
-			}
-			u.renderVolumeTable()
-			u.updateStatus()
-			return nil
-		case km.VolDelete:
-			// Delete the selected volumes, or the one under the cursor.
-			var targets []swarmVolume
-			if len(u.selectedVols) > 0 {
-				for _, v := range u.vols {
-					if u.selectedVols[v.Name] {
-						targets = append(targets, v)
-					}
-				}
-			} else if v, ok := u.selectedVolume(); ok {
-				targets = []swarmVolume{v}
-			}
-			u.deleteVolumes(targets, fmt.Sprintf("Remove %d volume(s) on every node that holds them?", len(targets)))
-			return nil
-		case km.VolPrune:
-			u.pruneVolumes()
-			return nil
-		case km.VolUsedBy:
-			if v, ok := u.selectedVolume(); ok {
-				u.showVolumeConsumers(v)
-			}
-			return nil
-		case km.VolSort:
-			// Cycle the sort field; pick a sensible default direction for it.
-			u.sortField = (u.sortField + 1) % 5
-			u.sortDesc = u.sortField != volSortName && u.sortField != volSortAge
-			u.renderVolumeTable()
-			return nil
-		case km.VolSortRev:
-			u.sortDesc = !u.sortDesc
-			u.renderVolumeTable()
-			return nil
+// toggleSelect marks or unmarks the volume under the cursor for a bulk delete.
+func (t *volumesTab) toggleSelect() {
+	v, ok := t.selected()
+	if !ok {
+		return
+	}
+	st := t.st()
+	if st.selected[v.Name] {
+		delete(st.selected, v.Name)
+	} else {
+		st.selected[v.Name] = true
+	}
+	t.render()
+	t.u.updateStatus()
+}
+
+// toggleSelectAll selects every displayed volume, or deselects them when all
+// of them already are.
+func (t *volumesTab) toggleSelectAll() {
+	st := t.st()
+	all := len(st.shown) > 0
+	for _, v := range st.shown {
+		if !st.selected[v.Name] {
+			all = false
+			break
 		}
 	}
-	return u.tabKeys(ev)
+	for _, v := range st.shown {
+		if all {
+			delete(st.selected, v.Name)
+		} else {
+			st.selected[v.Name] = true
+		}
+	}
+	t.render()
+	t.u.updateStatus()
+}
+
+// deleteTargets is what the delete key acts on: the selected volumes, or the
+// one under the cursor.
+func (t *volumesTab) deleteTargets() []swarmVolume {
+	st := t.st()
+	if len(st.selected) > 0 {
+		var targets []swarmVolume
+		for _, v := range st.vols {
+			if st.selected[v.Name] {
+				targets = append(targets, v)
+			}
+		}
+		return targets
+	}
+	if v, ok := t.selected(); ok {
+		return []swarmVolume{v}
+	}
+	return nil
+}
+
+// keys is the key handler of the Volumes table.
+func (t *volumesTab) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u, km := t.u, t.u.km
+	if ev.Key() != tcell.KeyRune {
+		return u.tabKeys(ev)
+	}
+	switch ev.Rune() {
+	case km.Search:
+		u.startSearch("volumes")
+	case km.VolNew:
+		t.showCreate()
+	case km.VolAttach:
+		if v, ok := t.selected(); ok {
+			t.attachToService(v.Name)
+		}
+	case km.VolSelect:
+		t.toggleSelect()
+	case km.VolSelectAll:
+		t.toggleSelectAll()
+	case km.VolDelete:
+		targets := t.deleteTargets()
+		t.deleteVolumes(targets, fmt.Sprintf("Remove %d volume(s) on every node that holds them?", len(targets)))
+	case km.VolPrune:
+		t.prune()
+	case km.VolUsedBy:
+		// Which services/containers use the volume.
+		if v, ok := t.selected(); ok {
+			t.showConsumers(v)
+		}
+	case km.VolSort:
+		// Cycle the sort field; pick a sensible default direction for it.
+		t.sortField = (t.sortField + 1) % 5
+		t.sortDesc = t.sortField != volSortName && t.sortField != volSortAge
+		t.render()
+	case km.VolSortRev:
+		t.sortDesc = !t.sortDesc
+		t.render()
+	default:
+		return u.tabKeys(ev)
+	}
+	return nil
 }
