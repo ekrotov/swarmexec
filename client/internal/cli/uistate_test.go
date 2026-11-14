@@ -20,8 +20,6 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		km:           defaultKeybinds(),
 		clusterState: newClusterState("test", "test"),
 		clusters:     map[string]*clusterState{},
-		notable:      newStateTable(),
-		ftable:       newStateTable(),
 		cxtable:      newStateTable(),
 		forwards:     newForwardRegistry(),
 	}
@@ -36,9 +34,9 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		{"secrets", u.secTab().render, u.secTab().table, 1, string(u.km.SecNew)},
 		{"networks", u.netTab().render, u.netTab().table, 1, string(u.km.NetNew)},
 		{"configs", u.cfgTab().render, u.cfgTab().table, 1, "docker config create"},
-		{"nodes", u.renderNodes, u.notable, 1, "the manager reported none"},
+		{"nodes", u.nodeTab().render, u.nodeTab().table, 1, "the manager reported none"},
 		{"volumes", u.volTab().render, u.volTab().table, 1, string(u.km.VolNew)},
-		{"forwards", u.renderForwards, u.ftable, 1, string(u.km.Forward)},
+		{"forwards", u.fwdTab().render, u.fwdTab().table, 1, string(u.km.Forward)},
 		{"contexts", u.renderContexts, u.cxtable, 0, string(u.km.CtxNew)},
 	}
 	for _, c := range cases {
@@ -69,12 +67,11 @@ func TestEmptyStateHintsFollowTheKeymap(t *testing.T) {
 		km:           defaultKeybinds(),
 		clusterState: newClusterState("test", "test"),
 		clusters:     map[string]*clusterState{},
-		ftable:       newStateTable(),
 		forwards:     newForwardRegistry(),
 	}
 	u.km.Forward = 'F'
-	u.renderForwards()
-	if got := u.ftable.GetCell(1, 0).Text; !strings.Contains(got, "F on a container") {
+	u.fwdTab().render()
+	if got := u.fwdTab().table.GetCell(1, 0).Text; !strings.Contains(got, "F on a container") {
 		t.Errorf("empty forwards = %q, want the remapped key", got)
 	}
 }

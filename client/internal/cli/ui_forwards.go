@@ -141,12 +141,74 @@ func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
 	ov.show(centeredPrompt(input, 62), input)
 }
 
-func (u *ui) renderForwards() {
-	forwards, ftable := u.forwards, u.ftable
+// forwardsTab is the Forwards tab: every port forward of the session.
+//
+// The one tab with no per-cluster state, on purpose: a forward is a local
+// listener the operator started and expects to keep, so the registry
+// (u.forwards) is session-wide and the table shows every cluster's forwards
+// side by side, with a CLUSTER column.
+type forwardsTab struct {
+	u     *ui
+	table *tview.Table
+	// rows mirrors the rendered table so a row maps to a forward.
+	rows []forwardEntry
+}
+
+func newForwardsTab(u *ui) *forwardsTab {
+	t := &forwardsTab{u: u}
+	t.table = tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
+	t.table.SetSelectedStyle(u.selStyle)
+	// Enter shows the full detail of a forward. The table truncates the state
+	// column, so this is where a failure reason is actually readable.
+	t.table.SetSelectedFunc(func(int, int) { t.showDetail() })
+	t.table.SetInputCapture(t.keys)
+	return t
+}
+
+// fwdTab is the session's Forwards tab.
+func (u *ui) fwdTab() *forwardsTab { return u.tab("forwards").(*forwardsTab) }
+
+func (t *forwardsTab) widget() tview.Primitive { return t.table }
+
+// enter and refresh repaint: the forwards live in this process, there is
+// nothing to load.
+func (t *forwardsTab) enter()   { t.render() }
+func (t *forwardsTab) refresh() { t.render() }
+
+func (t *forwardsTab) footer() string {
+	km := t.u.km
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  %s stop  [yellow]%s[white] copy url",
+		keyTag(dangerKey(keyLabel(km.FwdStop))), keyLabel(km.FwdCopyURL))
+}
+
+func (t *forwardsTab) helpSection(h *helpWriter) {
+	km := t.u.km
+	h.sec("Forwards")
+	h.line("Enter / i", "details")
+	h.danger(keyLabel(km.FwdStop), "stop")
+	h.line(keyLabel(km.FwdCopyURL), "copy URL")
+}
+
+func (t *forwardsTab) yank(b *strings.Builder) {
+	fmt.Fprintln(b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
+	for _, e := range t.u.forwards.list() {
+		local := "-"
+		if e.boundPort() > 0 {
+			local = e.localEndpoint()
+		}
+		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%s\n",
+			local, e.remote, shortID(e.cand.ContainerID),
+			orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
+	}
+}
+
+// render repaints the table from the registry, keeping the cursor's row.
+func (t *forwardsTab) render() {
+	u, ftable := t.u, t.table
 	prev, _ := ftable.GetSelection()
 	tableHeaders(ftable, fHeaders)
-	u.fRows = forwards.list()
-	for i, e := range u.fRows {
+	t.rows = u.forwards.list()
+	for i, e := range t.rows {
 		row := i + 1
 		local := "-"
 		if e.boundPort() > 0 {
@@ -199,7 +261,7 @@ func (u *ui) renderForwards() {
 		ftable.SetCell(row, 6, tview.NewTableCell(uptime(time.Since(e.started))))
 		ftable.SetCell(row, 7, tview.NewTableCell(state).SetTextColor(color))
 	}
-	if len(u.fRows) == 0 {
+	if len(t.rows) == 0 {
 		// The state every other tab's empty now follows. It used to name the
 		// key as a literal "p", which was quietly wrong for anyone who had
 		// remapped it — the hint now comes from the live keymap like every
@@ -207,22 +269,22 @@ func (u *ui) renderForwards() {
 		ftable.SetCell(1, 0, emptyCell(emptyText("forwards", keyHint(u.km.Forward, "on a container starts one"))))
 		return
 	}
-	if prev > 0 && prev <= len(u.fRows) {
+	if prev > 0 && prev <= len(t.rows) {
 		ftable.Select(prev, 0)
 	} else {
 		ftable.Select(1, 0)
 	}
 }
 
-// selectedForward maps the cursor row back to a forward.
-func (u *ui) selectedForward() (forwardEntry, bool) {
-	ftable := u.ftable
-	return selectedRow(ftable, u.fRows)
+// selected maps the cursor row back to a forward.
+func (t *forwardsTab) selected() (forwardEntry, bool) {
+	return selectedRow(t.table, t.rows)
 }
 
-func (u *ui) showForwardDetail() {
-	forwards, ftable := u.forwards, u.ftable
-	row, ok := u.selectedForward()
+func (t *forwardsTab) showDetail() {
+	u := t.u
+	forwards, ftable := u.forwards, t.table
+	row, ok := t.selected()
 	if !ok {
 		return
 	}
@@ -284,19 +346,20 @@ func (u *ui) showForwardDetail() {
 	ov.show(centered(tv, 66, lines+2), tv)
 }
 
-// forwardKeys is the key handler of the Forwards table.
+// keys is the key handler of the Forwards table.
 //
 // On the forwards table: Enter/i details, forward_stop (X) stops the forward,
 // forward_copy_url (o) copies its URL.
-func (u *ui) forwardKeys(ev *tcell.EventKey) *tcell.EventKey {
+func (t *forwardsTab) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u := t.u
 	km, forwards, screen := u.km, u.forwards, u.screen
 	if ev.Key() == tcell.KeyRune {
 		switch ev.Rune() {
 		case 'i':
-			u.showForwardDetail()
+			t.showDetail()
 			return nil
 		case km.FwdStop:
-			if e, ok := u.selectedForward(); ok {
+			if e, ok := t.selected(); ok {
 				forwards.remove(e.id)
 				u.refreshForwardViews()
 				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
@@ -306,7 +369,7 @@ func (u *ui) forwardKeys(ev *tcell.EventKey) *tcell.EventKey {
 			// Copy rather than launch a browser: the UI often runs over
 			// ssh, where opening a local browser would target the wrong
 			// machine — and the forward is bound on the operator's side.
-			if e, ok := u.selectedForward(); ok && e.state == forwardActive {
+			if e, ok := t.selected(); ok && e.state == forwardActive {
 				url := e.url()
 				if screen != nil {
 					screen.SetClipboard([]byte(url))
