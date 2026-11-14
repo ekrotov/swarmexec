@@ -148,22 +148,37 @@ func (l *Logger) ImagePrune(identity string, all bool, reclaimed int64, deleted 
 	)
 }
 
+// PruneRecord is one category of a Prune as the trail records it.
+type PruneRecord struct {
+	Identity string
+	// Trigger is "manual" (a client asked) or "schedule" (the agent's own
+	// prune schedule, identity "scheduler").
+	Trigger  string
+	Category string
+	// Freed is the bytes reclaimed, Count the objects removed.
+	Freed, Count int64
+	// Skipped marks a category not attempted (build cache under a label
+	// filter: it has no labels to match).
+	Skipped bool
+	OK      bool
+	Error   string
+}
+
 // Prune records one category of a Prune, manual or scheduled. One record per
 // category, because each is its own act with its own authorization: a policy
 // that allowed the containers and refused the volumes leaves exactly that in
-// the trail. trigger is "manual" (a client asked) or "schedule" (the agent's
-// own prune schedule, identity "scheduler").
-func (l *Logger) Prune(identity, trigger, category string, freed, count int64, skipped, ok bool, errMsg string) {
+// the trail.
+func (l *Logger) Prune(r PruneRecord) {
 	l.log.Info("prune",
 		"event", "prune",
-		"identity", identity,
-		"trigger", trigger,
-		"category", category,
-		"freed_bytes", freed,
-		"count", count,
-		"skipped", skipped,
-		"ok", ok,
-		"error", errMsg,
+		"identity", r.Identity,
+		"trigger", r.Trigger,
+		"category", r.Category,
+		"freed_bytes", r.Freed,
+		"count", r.Count,
+		"skipped", r.Skipped,
+		"ok", r.OK,
+		"error", r.Error,
 	)
 }
 

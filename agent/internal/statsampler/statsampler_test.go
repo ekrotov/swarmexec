@@ -333,6 +333,14 @@ func TestSamplerReadsCapacityOnce(t *testing.T) {
 // Run samples only while wanted and returns when its context ends.
 func TestSamplerRunSamplesWhileWanted(t *testing.T) {
 	d := statsFake(0, 0)
+	// The fake repeats its last frame, and a repeated frame has no CPU delta, so
+	// with only two frames cpuReady is true for a single 1ms pass — too short a
+	// window to poll for under -race. Counters that keep rising keep it true.
+	frames := make([]container.StatsResponse, 10000)
+	for i := range frames {
+		frames[i] = frame(uint64(i+1)*1_000_000_000, uint64(i+1)*4_000_000_000, 4, 1000, 8<<30, map[string]uint64{"inactive_file": 400})
+	}
+	d.statsFrames["c1"] = frames
 	c := New(d, discardLog(), time.Millisecond)
 	c.Get() // a reader arms it
 	ctx, cancel := context.WithCancel(context.Background())

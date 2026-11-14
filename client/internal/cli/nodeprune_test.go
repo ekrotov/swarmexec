@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -206,11 +207,11 @@ func agentSvc(labels map[string]string) swarm.Service {
 // against a concurrent edit.
 func TestSaveScheduleRoundTripKeepsEverythingElse(t *testing.T) {
 	f := &fakeAgentSvc{svcs: []swarm.Service{agentSvc(map[string]string{"team": "ops", prunesched.LabelTimes: "9"})}}
-	svc, err := findAgentService(context.Background(), f)
+	svc, err := swarmops.FindAgentService(context.Background(), f)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cur, err := agentSchedule(svc)
+	cur, err := swarmops.AgentSchedule(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +219,7 @@ func TestSaveScheduleRoundTripKeepsEverythingElse(t *testing.T) {
 	cur.Times = 3
 	cur.Days, _ = prunesched.ParseDays("mon-fri")
 	setCat(&cur, prunesched.Volumes, true)
-	if err := saveAgentSchedule(context.Background(), f, svc, cur); err != nil {
+	if err := swarmops.SaveAgentSchedule(context.Background(), f, svc, cur); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.updated) != 1 {

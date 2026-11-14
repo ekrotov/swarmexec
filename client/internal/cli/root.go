@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
@@ -252,9 +253,4 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 	return cfg, nil
 }
 
-func addrModeOf(cfg config.Config) resolve.AddrMode {
-	if cfg.AddrMode == config.AddrModeIP {
-		return resolve.AddrIP
-	}
-	return resolve.AddrHostname
-}
+func addrModeOf(cfg config.Config) resolve.AddrMode { return agentcall.AddrMode(cfg) }

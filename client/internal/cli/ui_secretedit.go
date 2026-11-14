@@ -14,15 +14,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
-
-// maxSecretSize is swarm's limit on a secret's value: 500 KB, as swarmkit's
-// MaxSecretSize counts it (500 × 1024 bytes). Checking it here turns a late
-// "secret data must be larger than 0 and less than 512000 bytes" from the
-// manager into a message on the status line before anything is sent.
-const maxSecretSize = 500 * 1024
 
 // secretFieldError is a validation error that belongs to one of the dialog's
 // input rows; the dialog moves focus there.
@@ -47,15 +43,15 @@ func validateSecret(name, labels, value string) (string, map[string]string, erro
 	if nm == "" {
 		return "", nil, &secretFieldError{secretFieldName, "name is required"}
 	}
-	lbls, err := parseKVList(labels)
+	lbls, err := swarmops.ParseKVList(labels)
 	if err != nil {
 		return "", nil, &secretFieldError{secretFieldLabels, "invalid labels: " + err.Error()}
 	}
 	if value == "" {
 		return "", nil, errors.New("value is empty — type it, paste it, or :r <file>")
 	}
-	if len(value) > maxSecretSize {
-		return "", nil, fmt.Errorf("value is %d bytes — over the swarm limit of %d (500 KB)", len(value), maxSecretSize)
+	if len(value) > swarmops.MaxSecretSize {
+		return "", nil, fmt.Errorf("value is %d bytes — over the swarm limit of %d (500 KB)", len(value), swarmops.MaxSecretSize)
 	}
 	return nm, lbls, nil
 }
@@ -90,26 +86,26 @@ func readSecretFile(path string, have int) (string, error) {
 		return "", fmt.Errorf("%s is a directory", path)
 	case !fi.Mode().IsRegular():
 		return "", fmt.Errorf("%s is not a regular file", path)
-	case fi.Size() > maxSecretSize:
-		return "", fmt.Errorf("%s is %d bytes — over the swarm limit of %d (500 KB)", path, fi.Size(), maxSecretSize)
+	case fi.Size() > swarmops.MaxSecretSize:
+		return "", fmt.Errorf("%s is %d bytes — over the swarm limit of %d (500 KB)", path, fi.Size(), swarmops.MaxSecretSize)
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, maxSecretSize+1)) // it may have grown since the stat
+	data, err := io.ReadAll(io.LimitReader(f, swarmops.MaxSecretSize+1)) // it may have grown since the stat
 	if err != nil {
 		return "", err
 	}
-	if len(data) > maxSecretSize {
-		return "", fmt.Errorf("%s is over the swarm limit of %d bytes (500 KB)", path, maxSecretSize)
+	if len(data) > swarmops.MaxSecretSize {
+		return "", fmt.Errorf("%s is over the swarm limit of %d bytes (500 KB)", path, swarmops.MaxSecretSize)
 	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return "", fmt.Errorf("%s is binary, not text — use docker secret create NAME FILE", path)
 	}
-	if have+len(data) > maxSecretSize {
-		return "", fmt.Errorf("%s (%d bytes) would make the value %d bytes — over the swarm limit of %d (500 KB)", path, len(data), have+len(data), maxSecretSize)
+	if have+len(data) > swarmops.MaxSecretSize {
+		return "", fmt.Errorf("%s (%d bytes) would make the value %d bytes — over the swarm limit of %d (500 KB)", path, len(data), have+len(data), swarmops.MaxSecretSize)
 	}
 	return string(data), nil
 }
@@ -132,7 +128,7 @@ func sizeText(text string) string {
 // swarm limit.
 func secretSize(text string) string {
 	s := sizeText(text)
-	if len(text) > maxSecretSize {
+	if len(text) > swarmops.MaxSecretSize {
 		return "[red::b]" + s + " > 500 KB[-::-]"
 	}
 	return "[gray]" + s + "[-]"
@@ -167,7 +163,7 @@ func (u *ui) showCreateSecret() {
 	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
 	u.openSecretEditor(u.secTab().table,
 		func(name string, data []byte, labels map[string]string) error {
-			return createSecret(ctx, dcli, name, data, labels)
+			return swarmops.CreateSecret(ctx, dcli, name, data, labels)
 		},
 		// The dialog belongs to the cluster it was opened on; a result that
 		// arrives after a switch away is dropped (see async).
@@ -342,7 +338,7 @@ func rotateFooterKeys(m vimMode) string {
 // dialog runs in a test without a cluster or an event loop.
 type rotateHooks struct {
 	// plan reads what the rotation would touch. It runs off the UI goroutine.
-	plan func() (rotatePlan, error)
+	plan func() (swarmops.RotatePlan, error)
 	// queue runs a function on the UI goroutine (QueueUpdateDraw).
 	queue func(func())
 	// confirm asks; ok runs when the operator agrees. Cancel returns to back.
@@ -401,7 +397,7 @@ func (u *ui) openRotateEditor(back tview.Primitive, name string, labels map[stri
 		u.showVimHelp(ed.ta, sectionHelp("Rotate",
 			":r <file>", "insert a local file at the cursor (~ works); text only",
 			":w  Ctrl-S", "rotate — lists the services that restart and asks first",
-			"name, labels", "kept; the services are parked on "+rotateTempName(name)+" meanwhile",
+			"name, labels", "kept; the services are parked on "+swarmops.RotateTempName(name)+" meanwhile",
 			"restarts", "every service using the secret restarts twice",
 			"rollback", "none — the old secret object is deleted",
 			"500 KB", "swarm's limit (512000 bytes); the status line shows the size"))

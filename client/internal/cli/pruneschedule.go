@@ -4,133 +4,17 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/prunesched"
 )
-
-// The cluster-wide prune schedule is a set of CONTAINER labels on the agent
-// service (internal/prunesched explains why there). Editing it is therefore a
-// service update of the agent, which restarts every agent one by one — the
-// warning both the TUI and this command show before saving.
-
-// scheduleRestartWarning is shown before every save.
-const scheduleRestartWarning = "Saving updates the agent service: the agents restart one by one, " +
-	"and open shells, log streams and port-forwards on a restarting node drop."
-
-// agentServiceAPI is the slice of the manager API the schedule editor needs,
-// so the label round trip is testable without a daemon.
-type agentServiceAPI interface {
-	ServiceList(context.Context, client.ServiceListOptions) (client.ServiceListResult, error)
-	ServiceUpdate(context.Context, string, client.ServiceUpdateOptions) (client.ServiceUpdateResult, error)
-}
-
-// findAgentService finds the deployed agent service: by the role label init
-// stamps on it, else by its image (an agent deployed from a stack file without
-// the label).
-func findAgentService(ctx context.Context, dcli agentServiceAPI) (*swarm.Service, error) {
-	res, err := dcli.ServiceList(ctx, client.ServiceListOptions{
-		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list services: %w", err)
-	}
-	for i := range res.Items {
-		if res.Items[i].Spec.TaskTemplate.ContainerSpec != nil {
-			return &res.Items[i], nil
-		}
-	}
-	all, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("list services: %w", err)
-	}
-	for i := range all.Items {
-		if cs := all.Items[i].Spec.TaskTemplate.ContainerSpec; cs != nil && isAgentImage(cs.Image) {
-			return &all.Items[i], nil
-		}
-	}
-	return nil, errNoAgent
-}
-
-// agentSchedule reads the schedule from the agent service. A spec whose labels
-// do not parse comes back with the error, so the editor can show what is wrong
-// and save a valid one over it.
-func agentSchedule(svc *swarm.Service) (prunesched.Schedule, error) {
-	return prunesched.Parse(svc.Spec.TaskTemplate.ContainerSpec.Labels)
-}
-
-// scheduleSpec returns the agent's spec with the schedule labels replaced and
-// every other part — other labels included — exactly as it was.
-func scheduleSpec(svc *swarm.Service, s prunesched.Schedule) swarm.ServiceSpec {
-	spec := svc.Spec
-	cs := *spec.TaskTemplate.ContainerSpec
-	cs.Labels = prunesched.Apply(cs.Labels, s)
-	spec.TaskTemplate.ContainerSpec = &cs
-	return spec
-}
-
-// saveAgentSchedule writes s onto the agent service. Only the container
-// labels change; the image digest stays (no registry query), so this never
-// sneaks an agent upgrade in with a schedule change.
-func saveAgentSchedule(ctx context.Context, dcli agentServiceAPI, svc *swarm.Service, s prunesched.Schedule) error {
-	if err := s.Validate(); err != nil {
-		return err
-	}
-	_, err := dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: svc.Version, Spec: scheduleSpec(svc, s)})
-	if err != nil {
-		return fmt.Errorf("update agent service: %w", err)
-	}
-	return nil
-}
-
-// describeSchedule renders a schedule for `prune-schedule show` and the TUI
-// preview: when it runs, what it prunes, and the next few runs.
-func describeSchedule(s prunesched.Schedule, now time.Time, upcoming int) string {
-	var b strings.Builder
-	state := "disabled"
-	if s.Enabled {
-		state = "enabled"
-	}
-	fmt.Fprintf(&b, "schedule:          %s\n", state)
-	fmt.Fprintf(&b, "days:              %s\n", orDash(prunesched.FormatDays(s.Days)))
-	fmt.Fprintf(&b, "runs at:           %s (%s)\n", strings.Join(runTimes(s), ", "), s.TZ)
-	fmt.Fprintf(&b, "categories:        %s\n", strings.Join(s.Categories, ", "))
-	fmt.Fprintf(&b, "containers kept:   %s after they stop\n", prunesched.FormatUntil(s.ContainersUntil))
-	if len(s.LabelFilters) > 0 {
-		fmt.Fprintf(&b, "only labelled:     %s\n", strings.Join(s.LabelFilters, ", "))
-	}
-	if s.Enabled && upcoming > 0 {
-		next := s.Upcoming(now, upcoming)
-		if len(next) == 0 {
-			b.WriteString("next runs:         none (no day selected)\n")
-		}
-		for i, t := range next {
-			label := "next runs:"
-			if i > 0 {
-				label = ""
-			}
-			fmt.Fprintf(&b, "%-18s %s\n", label, t.Format("Mon 2006-01-02 15:04 MST"))
-		}
-	}
-	return b.String()
-}
-
-func runTimes(s prunesched.Schedule) []string {
-	var out []string
-	for _, m := range s.TimesOfDay() {
-		out = append(out, prunesched.FormatClock(m))
-	}
-	return out
-}
 
 type pruneScheduleSetFlags struct {
 	days, start, tz, categories, until, labelFilter string
@@ -159,15 +43,15 @@ func newPruneScheduleCmd(g *globalFlags) *cobra.Command {
 			if err != nil {
 				return &cliError{code: usageExitCode, err: err}
 			}
-			svc, err := findAgentService(ctx, dcli)
+			svc, err := swarmops.FindAgentService(ctx, dcli)
 			if err != nil {
 				return &cliError{code: session.TransportFailure, err: err}
 			}
-			s, perr := agentSchedule(svc)
+			s, perr := swarmops.AgentSchedule(svc)
 			if perr != nil {
 				fmt.Fprintf(out, "the agent service's schedule labels are INVALID, so the agents run no schedule:\n  %v\n\n", perr)
 			}
-			fmt.Fprint(out, describeSchedule(s, time.Now(), 5))
+			fmt.Fprint(out, swarmops.DescribeSchedule(s, time.Now(), 5))
 			return nil
 		},
 	})
@@ -256,13 +140,13 @@ func runPruneScheduleSet(cmd *cobra.Command, g *globalFlags, f *pruneScheduleSet
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
-	svc, err := findAgentService(ctx, dcli)
+	svc, err := swarmops.FindAgentService(ctx, dcli)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 	// A current spec with broken labels is no reason to refuse: the defaults
 	// stand in for it, and this save is what repairs it.
-	cur, perr := agentSchedule(svc)
+	cur, perr := swarmops.AgentSchedule(svc)
 	if perr != nil {
 		fmt.Fprintf(out, "note: the current schedule labels are invalid (%v); starting from the defaults\n", perr)
 		cur = prunesched.Default()
@@ -272,13 +156,13 @@ func runPruneScheduleSet(cmd *cobra.Command, g *globalFlags, f *pruneScheduleSet
 		return &cliError{code: usageExitCode, err: err}
 	}
 	fmt.Fprintf(out, "agent service %q on context %q:\n\n", svc.Spec.Name, tctx.Name)
-	fmt.Fprint(out, describeSchedule(s, time.Now(), 3))
-	fmt.Fprintf(out, "\n%s\n", scheduleRestartWarning)
+	fmt.Fprint(out, swarmops.DescribeSchedule(s, time.Now(), 3))
+	fmt.Fprintf(out, "\n%s\n", swarmops.ScheduleRestartWarning)
 	if !f.yes && !confirm("Save?") {
 		fmt.Fprintln(out, "aborted (non-interactive runs need --yes)")
 		return &cliError{code: session.TransportFailure, silent: true}
 	}
-	if err := saveAgentSchedule(ctx, dcli, svc, s); err != nil {
+	if err := swarmops.SaveAgentSchedule(ctx, dcli, svc, s); err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
 	fmt.Fprintln(out, "✓ saved — the agents pick it up as they restart")

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/moby/moby/api/types/swarm"
 )
 
@@ -23,7 +25,7 @@ func TestServiceConfigMembership(t *testing.T) {
 		svcWithConfigs("api", &swarm.ConfigReference{ConfigID: "c1", ConfigName: "nginx.conf"}),
 		svcWithConfigs("lonely"),
 	}
-	m := serviceConfigMembership(svcs)
+	m := swarmops.ServiceConfigMembership(svcs)
 
 	// Keyed by BOTH id and name — a spec may reference either.
 	for _, key := range []string{"c1", "nginx.conf"} {
@@ -43,7 +45,7 @@ func TestServiceConfigMembership(t *testing.T) {
 	var bare swarm.Service
 	bare.Spec.Name = "bare"
 	withNil := svcWithConfigs("withnil", nil, &swarm.ConfigReference{ConfigID: "c9"})
-	m2 := serviceConfigMembership([]swarm.Service{bare, withNil})
+	m2 := swarmops.ServiceConfigMembership([]swarm.Service{bare, withNil})
 	if len(m2["c9"]) != 1 {
 		t.Errorf("c9: %v, want [withnil]", m2["c9"])
 	}
@@ -56,7 +58,7 @@ func TestServiceConfigMembershipDeduplicates(t *testing.T) {
 			&swarm.ConfigReference{ConfigID: "c1", ConfigName: "app.conf"},
 			&swarm.ConfigReference{ConfigID: "c1", ConfigName: "app.conf"}),
 	}
-	if got := serviceConfigMembership(svcs)["c1"]; len(got) != 1 {
+	if got := swarmops.ServiceConfigMembership(svcs)["c1"]; len(got) != 1 {
 		t.Errorf("c1: %v, want web once", got)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // tabsUI is a bare session with every shared widget the tab registry's
@@ -278,10 +279,10 @@ func TestVolumesTabCursorIsPerCluster(t *testing.T) {
 // copy key copied the volume list, Nodes' too. Each copies its own list now.
 func TestEveryTabYanksItsOwnList(t *testing.T) {
 	u := tabsUI()
-	u.cfgTab().st().rows = []swarmConfig{{Name: "nginx.conf", Size: 2048}}
-	u.nodeTab().st().rows = []swarmNodeInfo{{Hostname: "mgr-1", Role: "manager", Leader: true}}
-	u.netTab().st().rows = []swarmNetwork{{Name: "edge"}}
-	u.secTab().st().rows = []swarmSecret{{Name: "db_pw"}}
+	u.cfgTab().st().rows = []swarmops.Config{{Name: "nginx.conf", Size: 2048}}
+	u.nodeTab().st().rows = []swarmops.NodeInfo{{Hostname: "mgr-1", Role: "manager", Leader: true}}
+	u.netTab().st().rows = []swarmops.Network{{Name: "edge"}}
+	u.secTab().st().rows = []swarmops.Secret{{Name: "db_pw"}}
 	u.volTab().st().vols = []swarmVolume{vol("shop_data", "node-a")}
 	u.volTab().render()
 	u.croot.AddChild(tview.NewTreeNode("web"))

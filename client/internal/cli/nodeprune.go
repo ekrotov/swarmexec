@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -200,7 +201,7 @@ func scheduleSection(s *pb.PruneSchedule, last *pb.PruneRun, now time.Time) stri
 // uses (the image block above it), so the same layer store does not read as
 // GiB in one block and GB in the next. Zero is "0 B", not blank.
 func diskSize(b int64) string {
-	if s := formatMemBytes(b); s != "" {
+	if s := swarmops.FormatMemBytes(b); s != "" {
 		return s
 	}
 	return "0 B"

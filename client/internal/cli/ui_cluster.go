@@ -18,6 +18,7 @@ import (
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Switching cluster used to mean tearing the whole UI down and building it
@@ -97,7 +98,7 @@ type clusterState struct {
 	// and "this is the last thing we managed to read".
 	fetchErr error
 
-	regCache *registryCache // :latest version / newer-tag resolver
+	regCache *swarmops.RegistryCache // :latest version / newer-tag resolver
 
 	// containers tab
 	//

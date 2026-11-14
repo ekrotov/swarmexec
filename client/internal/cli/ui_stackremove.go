@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/rivo/tview"
 )
 
@@ -28,14 +30,14 @@ func (u *ui) openRemoveStack(stack string, back tview.Primitive, onRemoved func(
 	}
 
 	dcli := u.dcli
-	async(u, "ui.stack.remove.list", func(ctx context.Context) (stackContents, error) {
-		return stackContentsOf(ctx, dcli, stack)
-	}, func(contents stackContents, err error) {
+	async(u, "ui.stack.remove.list", func(ctx context.Context) (swarmops.StackContents, error) {
+		return swarmops.StackContentsOf(ctx, dcli, stack)
+	}, func(contents swarmops.StackContents, err error) {
 		if err != nil {
 			u.info("could not read stack " + stack + ": " + err.Error())
 			return
 		}
-		if contents.empty() {
+		if contents.Empty() {
 			// Docker says "Nothing found in stack" here, and so do we: the
 			// stack row exists because services are grouped under it, so an
 			// empty answer means the label is gone, not that nothing ran.
@@ -44,19 +46,19 @@ func (u *ui) openRemoveStack(stack string, back tview.Primitive, onRemoved func(
 		}
 		msg := fmt.Sprintf(
 			"Remove stack %q?\n\nThis deletes everything `docker stack rm` would:\n\n    %s\n\nAll its tasks stop. It cannot be undone.",
-			stack, contents.counts())
+			stack, contents.Counts())
 		u.confirm(msg, "Remove", back, func() {
-			u.info(fmt.Sprintf("removing stack %q (%s)…", stack, contents.counts()))
+			u.info(fmt.Sprintf("removing stack %q (%s)…", stack, contents.Counts()))
 			// Per-object failures are the result, not an error: the rest
 			// is gone and the notice must say what is left behind.
 			async(u, "ui.stack.remove", func(ctx context.Context) ([]error, error) {
-				return removeStack(ctx, dcli, contents), nil
+				return swarmops.RemoveStack(ctx, dcli, contents), nil
 			}, func(errs []error, _ error) {
 				if onRemoved != nil {
 					onRemoved()
 				}
 				if len(errs) == 0 {
-					u.info(fmt.Sprintf("removed stack %q (%s)", stack, contents.counts()))
+					u.info(fmt.Sprintf("removed stack %q (%s)", stack, contents.Counts()))
 					return
 				}
 				// Say what did NOT go, not just that something failed:

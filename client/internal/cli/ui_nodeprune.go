@@ -15,6 +15,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -25,7 +26,7 @@ import (
 // opens the prune dialog. The figures come from the agent's memory, so this is
 // a round trip, not a scan. An agent that predates the RPC gets the old
 // two-choice image menu instead — it can still do that much.
-func (u *ui) openNodePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
+func (u *ui) openNodePrune(n swarmops.NodeInfo, back tview.Primitive, after func()) {
 	u.flash(fmt.Sprintf(" [gray]asking %s's agent…[white]", n.Hostname))
 	u.loadNodeReclaim(n.Hostname, false, func(resp *pb.ReclaimStatsResponse, err error) {
 		switch {
@@ -42,7 +43,7 @@ func (u *ui) openNodePrune(n swarmNodeInfo, back tview.Primitive, after func()) 
 // showPruneDialog is the category checklist. Volumes sit last, unticked and
 // red, and "all" (a) leaves them alone: they are data, and the only way to
 // prune them is to tick them on purpose.
-func (u *ui) showPruneDialog(n swarmNodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
+func (u *ui) showPruneDialog(n swarmops.NodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
 	r, ac, f := u.r, u.agents, u.f
 	choice := defaultPruneChoice()
 
@@ -339,7 +340,7 @@ func schedPreview(s prunesched.Schedule, now time.Time) string {
 		fmt.Fprintf(&b, " [red]cannot save:[-] %s\n", escapeTags(err.Error()))
 		return b.String()
 	}
-	fmt.Fprintf(&b, " runs at %s %s on %s\n", strings.Join(runTimes(s), ", "), s.TZ, orDash(prunesched.FormatDays(s.Days)))
+	fmt.Fprintf(&b, " runs at %s %s on %s\n", strings.Join(swarmops.RunTimes(s), ", "), s.TZ, orDash(prunesched.FormatDays(s.Days)))
 	if !s.Enabled {
 		b.WriteString(" [gray]disabled — saving keeps these settings but runs nothing[-]\n")
 		return b.String()
@@ -362,7 +363,7 @@ func schedPreview(s prunesched.Schedule, now time.Time) string {
 func (u *ui) openPruneSchedule(back tview.Primitive) {
 	dcli := u.dcli
 	async(u, "ui.nodes.schedule.load", func(ctx context.Context) (*swarm.Service, error) {
-		return findAgentService(ctx, dcli)
+		return swarmops.FindAgentService(ctx, dcli)
 	}, func(svc *swarm.Service, err error) {
 		if err != nil {
 			u.info("prune schedule: " + err.Error())
@@ -393,7 +394,7 @@ type scheduleEditor struct {
 
 func (u *ui) showScheduleEditor(svc *swarm.Service, back tview.Primitive) {
 	e := &scheduleEditor{u: u, svc: svc, rows: schedRows()}
-	e.s, e.parseErr = agentSchedule(svc)
+	e.s, e.parseErr = swarmops.AgentSchedule(svc)
 	if e.parseErr != nil {
 		e.s = prunesched.Default()
 	}
@@ -525,14 +526,14 @@ func (e *scheduleEditor) save() {
 		u.info("cannot save: " + err.Error())
 		return
 	}
-	msg := fmt.Sprintf("Save the prune schedule for ALL nodes?\n\n%s\n\nAgents older than this release ignore the schedule.", scheduleRestartWarning)
+	msg := fmt.Sprintf("Save the prune schedule for ALL nodes?\n\n%s\n\nAgents older than this release ignore the schedule.", swarmops.ScheduleRestartWarning)
 	u.confirm(msg, "Save", e.table, func() {
 		e.ov.Close()
 		saved, svc := e.s, e.svc
 		u.flash(" [gray]saving the prune schedule…[white]")
 		dcli := u.dcli
 		asyncDo(u, "ui.nodes.schedule.save", func(ctx context.Context) error {
-			return saveAgentSchedule(ctx, dcli, svc, saved)
+			return swarmops.SaveAgentSchedule(ctx, dcli, svc, saved)
 		}, func(err error) {
 			if err != nil {
 				u.info("prune schedule: " + err.Error())

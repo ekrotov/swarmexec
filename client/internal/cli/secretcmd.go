@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
 )
 
@@ -73,7 +74,7 @@ func newSecretRotateCmd(g *globalFlags) *cobra.Command {
 	fl.StringVar(&f.fromFile, "from-file", "", "read the new value from this file")
 	fl.BoolVar(&f.fromStdin, "from-stdin", false, "read the new value from stdin")
 	fl.BoolVarP(&f.yes, "yes", "y", false, "do not ask for confirmation")
-	fl.DurationVar(&f.timeout, "timeout", defaultRotateTimeout, "how long to wait for each service's rolling update")
+	fl.DurationVar(&f.timeout, "timeout", swarmops.DefaultRotateTimeout, "how long to wait for each service's rolling update")
 	return cmd
 }
 
@@ -95,19 +96,19 @@ func readRotateValue(f *secretRotateFlags, stdin io.Reader) ([]byte, error) {
 			return nil, err
 		}
 		defer func() { _ = r.Close() }()
-		return io.ReadAll(io.LimitReader(r, maxSecretSize+1))
+		return io.ReadAll(io.LimitReader(r, swarmops.MaxSecretSize+1))
 	case f.fromStdin:
-		return io.ReadAll(io.LimitReader(stdin, maxSecretSize+1))
+		return io.ReadAll(io.LimitReader(stdin, swarmops.MaxSecretSize+1))
 	}
 	return nil, errors.New("the new value is required: --from-file FILE or --from-stdin")
 }
 
 // rotateConfirmText lists what a rotation does, for the CLI prompt and the
 // TUI confirm alike.
-func rotateConfirmText(p rotatePlan) string {
+func rotateConfirmText(p swarmops.RotatePlan) string {
 	var b strings.Builder
 	if p.Resume {
-		fmt.Fprintf(&b, "Resuming an interrupted rotation of %s at step %d/%d.\n", p.Name, p.StartStep, rotateSteps)
+		fmt.Fprintf(&b, "Resuming an interrupted rotation of %s at step %d/%d.\n", p.Name, p.StartStep, swarmops.RotateSteps)
 		if p.StartStep == 5 {
 			fmt.Fprintf(&b, "%s was already re-created by that run and keeps its content: the value given now is not used.\n", p.Name)
 		}
@@ -159,7 +160,7 @@ func secretTargetPath(t string) string {
 }
 
 func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, name string) error {
-	if err := validateRotateName(name); err != nil {
+	if err := swarmops.ValidateRotateName(name); err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
 	if f.timeout <= 0 {
@@ -169,7 +170,7 @@ func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, n
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
-	if err := validateRotateValue(data); err != nil {
+	if err := swarmops.ValidateRotateValue(data); err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
 	ctx := cmdContext(cmd)
@@ -177,7 +178,7 @@ func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, n
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
-	plan, err := planRotation(ctx, dcli, name)
+	plan, err := swarmops.PlanRotation(ctx, dcli, name)
 	if err != nil {
 		return &cliError{code: 1, err: err}
 	}
@@ -191,12 +192,12 @@ func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, n
 			return &cliError{code: 1, err: errors.New("aborted")}
 		}
 	}
-	err = rotateSecret(ctx, dcli, name, data, rotateOptions{
+	err = swarmops.RotateSecret(ctx, dcli, name, data, swarmops.RotateOptions{
 		Timeout:  f.timeout,
-		Progress: func(e rotateEvent) { fmt.Fprintln(stderr, e.String()) },
+		Progress: func(e swarmops.RotateEvent) { fmt.Fprintln(stderr, e.String()) },
 	})
 	if err != nil {
-		if hint := rotateResumeHint(err, "re-run `swarmexec secret rotate "+name+"`"); hint != "" {
+		if hint := swarmops.RotateResumeHint(err, "re-run `swarmexec secret rotate "+name+"`"); hint != "" {
 			err = fmt.Errorf("%w\n%s", err, hint)
 		}
 		return &cliError{code: 1, err: err}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/moby/moby/client"
 
 	"github.com/moby/moby/api/types/swarm"
@@ -92,7 +94,7 @@ func TestIsAgentImage(t *testing.T) {
 		"docker.io/library/redis:7": false,
 	}
 	for img, want := range cases {
-		if got := isAgentImage(img); got != want {
+		if got := swarmops.IsAgentImage(img); got != want {
 			t.Errorf("isAgentImage(%q) = %v, want %v", img, got, want)
 		}
 	}
@@ -113,7 +115,7 @@ func TestAgentDeployed(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := agentDeployed(context.Background(), c.f); got != c.want {
+			if got := swarmops.AgentDeployed(context.Background(), c.f); got != c.want {
 				t.Errorf("agentDeployed = %v, want %v", got, c.want)
 			}
 		})

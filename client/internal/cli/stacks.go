@@ -9,6 +9,7 @@ import (
 
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
+	"swarmexec/client/internal/swarmops"
 )
 
 // noStackLabel names the bucket for services that carry no stack label — one
@@ -51,7 +52,7 @@ func groupByStack(svcs []resolve.Service) []stackRow {
 		have, want := s.Progress()
 		row.Running += have
 		row.Desired += want
-		if _, _, active := updateStatusLabel(s.UpdateState); active {
+		if _, _, active := swarmops.UpdateStatusLabel(s.UpdateState); active {
 			row.Updating++
 		}
 		if secscan.Actionable(s.Risks) {

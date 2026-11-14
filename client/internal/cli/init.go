@@ -25,14 +25,12 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/session"
-	"swarmexec/client/internal/swarmapi"
+	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
@@ -235,7 +233,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		}
 	}
 
-	existing, err := serviceByName(ctx, dcli, f.serviceName)
+	existing, err := swarmops.ServiceByName(ctx, dcli, f.serviceName)
 	if err != nil {
 		fmt.Fprintln(out, "failed")
 		return &cliError{code: session.TransportFailure, err: err}
@@ -591,62 +589,6 @@ func generateSecret() string {
 	return base64.RawStdEncoding.EncodeToString(b)
 }
 
-// serviceByName returns the service with the given name, or nil.
-func serviceByName(ctx context.Context, dcli swarmapi.Client, name string) (*swarm.Service, error) {
-	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{
-		Filters: make(client.Filters).Add("name", name),
-	})
-	list := listRes.Items
-	if err != nil {
-		return nil, fmt.Errorf("list services: %w", err)
-	}
-	for i := range list {
-		if list[i].Spec.Name == name {
-			return &list[i], nil
-		}
-	}
-	return nil, nil
-}
-
-// agentDeployed reports whether a swarmexec agent service exists in the swarm —
-// either tagged with our role label or recognizable by its image. Used to turn
-// "can't reach an agent" into the actionable "run swarmexec init" hint.
-// serviceLister is the slice of the Docker manager API agentDeployed needs (so
-// it is unit-testable without a real client).
-type serviceLister interface {
-	ServiceList(context.Context, client.ServiceListOptions) (client.ServiceListResult, error)
-}
-
-func agentDeployed(ctx context.Context, dcli serviceLister) bool {
-	if list, err := dcli.ServiceList(ctx, client.ServiceListOptions{
-		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
-	}); err == nil && len(list.Items) > 0 {
-		return true
-	}
-	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
-	list := listRes.Items
-	if err != nil {
-		return true // can't tell — don't claim the agent is missing
-	}
-	for _, s := range list {
-		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && isAgentImage(cs.Image) {
-			return true
-		}
-	}
-	return false
-}
-
-// isAgentImage reports whether an image reference looks like the swarmexec
-// agent. Label matching is the primary signal (agentServiceSpec always sets
-// swarmexec.role=agent); this is the fallback for services deployed without
-// that label. It matches both the Docker Hub name (logleio/swarmexec-agent)
-// and the older GitLab-registry name (…/swarm-remote-exec/agent), so a cluster
-// mid-migration is still recognized whichever image it runs.
-func isAgentImage(image string) bool {
-	return strings.Contains(image, "swarmexec-agent") ||
-		strings.Contains(image, "swarm-remote-exec/agent")
-}
-
 // inspectServiceImage reads back a service's resolved image (Docker pins the
 // @sha256 digest on deploy when QueryRegistry is set).
 func inspectServiceImage(ctx context.Context, dcli *client.Client, serviceID string) string {
@@ -658,30 +600,9 @@ func inspectServiceImage(ctx context.Context, dcli *client.Client, serviceID str
 	return svc.Spec.TaskTemplate.ContainerSpec.Image
 }
 
-// agentServiceImage returns the image (including any pinned @sha256 digest) of
-// the deployed agent service, or "" if none is found.
-func agentServiceImage(ctx context.Context, dcli serviceLister) string {
-	if list, err := dcli.ServiceList(ctx, client.ServiceListOptions{
-		Filters: make(client.Filters).Add("label", agentRoleLabel+"="+agentRoleValue),
-	}); err == nil && len(list.Items) > 0 && list.Items[0].Spec.TaskTemplate.ContainerSpec != nil {
-		return list.Items[0].Spec.TaskTemplate.ContainerSpec.Image
-	}
-	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
-	list := listRes.Items
-	if err != nil {
-		return ""
-	}
-	for _, s := range list {
-		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && isAgentImage(cs.Image) {
-			return cs.Image
-		}
-	}
-	return ""
-}
-
 // portConflict reports whether a service other than ownName already publishes
 // the given host port, which would stop the global agent from binding it.
-func portConflict(ctx context.Context, dcli serviceLister, port int, ownName string) (string, bool) {
+func portConflict(ctx context.Context, dcli swarmops.ServiceLister, port int, ownName string) (string, bool) {
 	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	list := listRes.Items
 	if err != nil {
@@ -702,9 +623,7 @@ func portConflict(ctx context.Context, dcli serviceLister, port int, ownName str
 
 // agentTooOld reports whether err is a gRPC Unimplemented status, i.e. the agent
 // predates an RPC this cli uses.
-func agentTooOld(err error) bool {
-	return status.Code(err) == codes.Unimplemented
-}
+func agentTooOld(err error) bool { return agenterr.TooOld(err) }
 
 // encodedRegistryAuth resolves local credentials for the image's registry and
 // encodes them for ServiceCreate (so nodes can pull a private image). Returns ""

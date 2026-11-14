@@ -15,6 +15,7 @@ import (
 
 	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 )
 
@@ -22,7 +23,7 @@ import (
 // (tasks, volumes, image footprint) and the node actions — labels,
 // availability, prune and the cluster-wide prune schedule.
 type nodesTab struct {
-	*listTab[swarmNodeInfo]
+	*listTab[swarmops.NodeInfo]
 	// ext is what the node list itself does not carry: the per-node figures
 	// that come from the agents, one fan-out each, per cluster.
 	ext perCluster[nodesExtra]
@@ -38,7 +39,7 @@ type nodesExtra struct {
 func newNodesTab(u *ui) *nodesTab {
 	// The cursor's key is the hostname; the leader's cell carries a ★ the
 	// name func does not see.
-	t := &nodesTab{listTab: newListTab(u, noHeaders, func(n swarmNodeInfo) string { return n.Hostname })}
+	t := &nodesTab{listTab: newListTab(u, noHeaders, func(n swarmops.NodeInfo) string { return n.Hostname })}
 	t.ext.init = func() *nodesExtra { return &nodesExtra{} }
 	t.row = t.renderRow
 	// No advice to give: a swarm you are talking to has nodes, so an empty
@@ -97,7 +98,7 @@ func (t *nodesTab) yank(b *strings.Builder) {
 	}
 }
 
-func (t *nodesTab) renderRow(r int, n swarmNodeInfo) {
+func (t *nodesTab) renderRow(r int, n swarmops.NodeInfo) {
 	ex := t.extra()
 	name, nameColor := n.Hostname, tcell.ColorWhite
 	if n.Role == "manager" {
@@ -129,7 +130,7 @@ func (t *nodesTab) reload() {
 	// VOLS goes back to "…" for the new load. Reset here, at the start, not
 	// when the list arrives: the counts may well arrive first.
 	ex.volsLoaded = false
-	t.load("ui.loadNodes", func(ctx context.Context) ([]swarmNodeInfo, error) { return listNodeInfos(ctx, dcli) })
+	t.load("ui.loadNodes", func(ctx context.Context) ([]swarmops.NodeInfo, error) { return swarmops.ListNodes(ctx, dcli) })
 	// Image footprints are node-local too and only shown in the detail, so they
 	// load on their own and simply stay absent for an agent that cannot answer.
 	async(u, "ui.loadNodes.images", func(ctx context.Context) (map[string]nodeImages, error) {
@@ -155,7 +156,7 @@ func (t *nodesTab) reload() {
 		counts := map[string]int{}
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
 			vs, _ := ac.Volumes(ctx, ns, f.connectTimeout)
-			counts = volumeCountsByNode(vs)
+			counts = swarmops.VolumeCountsByNode(vs)
 		}
 		return counts, nil
 	}, func(counts map[string]int, _ error) {
@@ -170,9 +171,9 @@ func (t *nodesTab) reload() {
 // editNodeLabels is a compact staged editor (add/edit/delete/apply) over a
 // node's labels, applied via NodeUpdate. Dedicated (not the service editList)
 // because a node update is immediate — there is no rolling update.
-func (u *ui) editNodeLabels(n swarmNodeInfo, back tview.Primitive, after func()) {
+func (u *ui) editNodeLabels(n swarmops.NodeInfo, back tview.Primitive, after func()) {
 	app, dcli, notable := u.app, u.dcli, back
-	cur := kvPairs(n.Labels)
+	cur := swarmops.KVPairs(n.Labels)
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
 	render := func() {
@@ -205,7 +206,7 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, back tview.Primitive, after func())
 			if txt == "" {
 				return
 			}
-			if _, _, err := parseLabel(txt); err != nil {
+			if _, _, err := swarmops.ParseLabel(txt); err != nil {
 				u.info(err.Error())
 				return
 			}
@@ -216,14 +217,14 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, back tview.Primitive, after func())
 		pov.show(centeredPrompt(in, 60), in)
 	}
 	apply := func() {
-		lbls, err := labelsFromStrings(cur)
+		lbls, err := swarmops.LabelsFromStrings(cur)
 		if err != nil {
 			u.info(err.Error())
 			return
 		}
 		u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
 			asyncDo(u, "ui.nodes.labels", func(ctx context.Context) error {
-				return setNodeLabels(ctx, dcli, n.ID, lbls)
+				return swarmops.SetNodeLabels(ctx, dcli, n.ID, lbls)
 			}, func(err error) {
 				if err != nil {
 					u.info("update failed: " + err.Error())
@@ -272,7 +273,7 @@ func (u *ui) editNodeLabels(n swarmNodeInfo, back tview.Primitive, after func())
 //
 // Draining is confirmed because it evicts the node's tasks; active and pause are
 // applied directly (pause only stops NEW placements, it does not move anything).
-func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after func()) {
+func (u *ui) openNodeAvailability(n swarmops.NodeInfo, back tview.Primitive, after func()) {
 	dcli := u.dcli
 	list := tview.NewList().ShowSecondaryText(true)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" availability — %s ", n.Hostname))
@@ -281,7 +282,7 @@ func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after f
 
 	apply := func(to swarm.NodeAvailability) {
 		asyncDo(u, "ui.nodes.availability", func(ctx context.Context) error {
-			return setNodeAvailability(ctx, dcli, n.ID, to)
+			return swarmops.SetNodeAvailability(ctx, dcli, n.ID, to)
 		}, func(err error) {
 			if err != nil {
 				u.info(fmt.Sprintf("could not set %s to %s: %v", n.Hostname, to, err))
@@ -330,7 +331,7 @@ func (u *ui) openNodeAvailability(n swarmNodeInfo, back tview.Primitive, after f
 // RESERVATIONS. A task without one books nothing here while still being free to
 // consume the whole node, so that count is called out rather than quietly
 // ignored — otherwise "0% reserved" would read as "idle" on a busy node.
-func nodeResourceSection(n swarmNodeInfo) string {
+func nodeResourceSection(n swarmops.NodeInfo) string {
 	var b strings.Builder
 	b.WriteString("\n  [gray]reserved by tasks (scheduler's view)[-]\n")
 	if n.NanoCPUs == 0 && n.MemoryBytes == 0 {
@@ -353,8 +354,8 @@ func nodeResourceSection(n swarmNodeInfo) string {
 			b.WriteString("            [red]over-committed[-]\n")
 		}
 	}
-	line("cpu", n.ReservedNanoCPUs, n.NanoCPUs, formatCPUCores)
-	line("memory", n.ReservedMemoryBytes, n.MemoryBytes, formatMemBytes)
+	line("cpu", n.ReservedNanoCPUs, n.NanoCPUs, swarmops.FormatCPUCores)
+	line("memory", n.ReservedMemoryBytes, n.MemoryBytes, swarmops.FormatMemBytes)
 	if n.TasksWithoutReservation > 0 {
 		fmt.Fprintf(&b, "    [gray]%d task(s) here declare no reservation — they are invisible\n"+
 			"            to this figure and to the scheduler's placement maths.[-]\n", n.TasksWithoutReservation)
@@ -390,7 +391,7 @@ func resourceBar(booked, capacity int64) string {
 		color, strings.Repeat("█", filled), strings.Repeat("░", resourceBarWidth-filled))
 }
 
-func (t *nodesTab) showDetail(n swarmNodeInfo) {
+func (t *nodesTab) showDetail(n swarmops.NodeInfo) {
 	u, notable := t.u, t.table
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
@@ -461,7 +462,7 @@ func (t *nodesTab) showDetail(n swarmNodeInfo) {
 }
 
 // detailHead is everything in the node detail above the reclaim block.
-func (t *nodesTab) detailHead(n swarmNodeInfo) string {
+func (t *nodesTab) detailHead(n swarmops.NodeInfo) string {
 	u, ex := t.u, t.extra()
 	var b strings.Builder
 	kv := func(k, v string) { fmt.Fprintf(&b, "  [gray]%-13s[-] %s\n", k, tview.Escape(v)) }
@@ -477,8 +478,8 @@ func (t *nodesTab) detailHead(n swarmNodeInfo) string {
 	kv("address", orDash(n.Addr))
 	kv("engine", orDash(n.EngineVersion))
 	kv("platform", orDash(strings.Trim(n.OS+"/"+n.Arch, "/")))
-	kv("cpus", formatCPUCores(n.NanoCPUs))
-	kv("memory", formatMemBytes(n.MemoryBytes))
+	kv("cpus", swarmops.FormatCPUCores(n.NanoCPUs))
+	kv("memory", swarmops.FormatMemBytes(n.MemoryBytes))
 	kv("tasks", fmt.Sprintf("%d running", n.Tasks))
 	b.WriteString(nodeResourceSection(n))
 	use, known := u.nodeUse[n.Hostname]
@@ -491,7 +492,7 @@ func (t *nodesTab) detailHead(n swarmNodeInfo) string {
 	}
 	kv("volumes", vol)
 	b.WriteString("\n  [gray]labels[-]\n")
-	if lbls := kvPairs(n.Labels); len(lbls) > 0 {
+	if lbls := swarmops.KVPairs(n.Labels); len(lbls) > 0 {
 		for _, l := range lbls {
 			fmt.Fprintf(&b, "    %s\n", tview.Escape(l))
 		}
@@ -509,7 +510,7 @@ func (t *nodesTab) detailHead(n swarmNodeInfo) string {
 //
 // Absent when no agent answered — an unreachable or too-old agent leaves the
 // reservation view intact rather than showing zeros that look like "idle".
-func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
+func nodeUsageSection(n swarmops.NodeInfo, use nodeUsage, known bool) string {
 	if !known {
 		return ""
 	}
@@ -531,7 +532,7 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 		usedCores := int64(use.CPUPercent / 100 * 1e9)
 		capacity := cpus * 1e9
 		fmt.Fprintf(&b, "    %-7s %s  %s / %s\n", "cpu", resourceBar(usedCores, capacity),
-			formatCPUCores(usedCores), formatCPUCores(capacity))
+			swarmops.FormatCPUCores(usedCores), swarmops.FormatCPUCores(capacity))
 	default:
 		fmt.Fprintf(&b, "    %-7s %.2f cores\n", "cpu", use.CPUPercent/100)
 	}
@@ -542,9 +543,9 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 	}
 	if total > 0 {
 		fmt.Fprintf(&b, "    %-7s %s  %s / %s\n", "memory", resourceBar(use.MemBytes, total),
-			formatMemBytes(use.MemBytes), formatMemBytes(total))
+			swarmops.FormatMemBytes(use.MemBytes), swarmops.FormatMemBytes(total))
 	} else {
-		fmt.Fprintf(&b, "    %-7s %s\n", "memory", formatMemBytes(use.MemBytes))
+		fmt.Fprintf(&b, "    %-7s %s\n", "memory", swarmops.FormatMemBytes(use.MemBytes))
 	}
 
 	// Container usage is not node usage: the kernel, the daemon and anything
@@ -562,7 +563,7 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 // A checkbox invites getting the destructive one by accident; a menu makes the
 // operator name which one they mean, and each still goes through its own
 // confirm spelling out the consequence.
-func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
+func (u *ui) openNodeImagePrune(n swarmops.NodeInfo, back tview.Primitive, after func()) {
 	r, ac, f := u.r, u.agents, u.f
 	ni, known := u.nodeTab().extra().imgs[n.Hostname]
 	if !known {
@@ -600,7 +601,7 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 					return
 				}
 				u.flash(fmt.Sprintf(" [green]✓ %s freed on %s (%d image(s))[white]",
-					formatMemBytes(p.reclaimed), n.Hostname, p.deleted))
+					swarmops.FormatMemBytes(p.reclaimed), n.Hostname, p.deleted))
 				if after != nil {
 					after()
 				}
@@ -608,9 +609,9 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 		})
 	}
 
-	list.AddItem(fmt.Sprintf("untagged leftovers — frees %s", formatMemBytes(ni.Dangling)),
+	list.AddItem(fmt.Sprintf("untagged leftovers — frees %s", swarmops.FormatMemBytes(ni.Dangling)),
 		"safe: nothing can start from an untagged image", 0, func() { run(false) })
-	list.AddItem(fmt.Sprintf("[red]every unused image[white] — frees %s", formatMemBytes(ni.Dangling+ni.Unused)),
+	list.AddItem(fmt.Sprintf("[red]every unused image[white] — frees %s", swarmops.FormatMemBytes(ni.Dangling+ni.Unused)),
 		"also removes images a stopped service still needs", 0, func() { run(true) })
 	list.AddItem("cancel", "", 0, closeIt)
 
