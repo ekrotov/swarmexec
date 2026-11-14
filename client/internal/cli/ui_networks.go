@@ -14,64 +14,74 @@ import (
 	"github.com/rivo/tview"
 )
 
-func (u *ui) renderNetworks() {
-	nettable := u.nettable
-	selName := ""
-	if row, _ := nettable.GetSelection(); row >= 1 {
-		if c := nettable.GetCell(row, 0); c != nil {
-			selName = c.Text
-		}
-	}
-	tableHeaders(nettable, nHeaders)
-	if len(u.nets) == 0 {
-		nettable.SetCell(1, 0, emptyCell(emptyText("networks", keyHint(u.km.NetNew, "to create one"))))
-		return
-	}
-	selRow := 1
-	for i, n := range u.nets {
-		svcCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if len(n.Services) > 0 {
-			svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
-		}
-		typeColor := networkTypeColor(n)
-		encCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
-		if n.Encrypted {
-			encCell = tview.NewTableCell("🔒 yes").SetTextColor(tcell.ColorGreen).SetExpansion(1)
-		}
-		nettable.SetCell(i+1, 0, tview.NewTableCell(n.Name).SetTextColor(typeColor).SetExpansion(1))
-		nettable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
-		nettable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
-		nettable.SetCell(i+1, 3, tview.NewTableCell(networkType(n)).SetTextColor(typeColor).SetExpansion(1))
-		nettable.SetCell(i+1, 4, encCell)
-		nettable.SetCell(i+1, 5, svcCell)
-		nettable.SetCell(i+1, 6, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
-		if n.Name == selName {
-			selRow = i + 1
-		}
-	}
-	if len(u.nets) > 0 {
-		nettable.Select(selRow, 0)
-	}
+// networksTab is the Networks tab: the swarm's networks with the services
+// attached to each, and the create / attach / detach actions.
+type networksTab struct {
+	*listTab[swarmops.Network]
 }
 
-func (u *ui) loadNetworks() {
-	dcli, nettable := u.dcli, u.nettable
-	tableState(nettable, nHeaders, loadingCell())
-	async(u, "ui.loadNetworks", func(ctx context.Context) ([]swarmops.Network, error) {
-		return swarmops.ListNetworks(ctx, dcli)
-	}, func(list []swarmops.Network, err error) {
-		if err != nil {
-			tableState(nettable, nHeaders, errorCell(err))
-			return
+func newNetworksTab(u *ui) *networksTab {
+	t := &networksTab{newListTab(u, nHeaders, func(n swarmops.Network) string { return n.Name })}
+	t.row = t.renderRow
+	t.empty = func() string { return emptyText("networks", keyHint(u.km.NetNew, "to create one")) }
+	t.table.SetSelectedFunc(func(int, int) {
+		if n, ok := t.selected(); ok {
+			t.showMembers(n)
 		}
-		u.nets = list
-		u.renderNetworks()
 	})
+	t.table.SetInputCapture(t.keys)
+	return t
 }
 
-func (u *ui) selectedNetwork() (swarmops.Network, bool) {
-	nettable := u.nettable
-	return selectedRow(nettable, u.nets)
+// netTab is the session's Networks tab.
+func (u *ui) netTab() *networksTab { return u.tab("networks").(*networksTab) }
+
+func (t *networksTab) enter()   { t.reload() }
+func (t *networksTab) refresh() { t.reload() }
+
+// reload fetches the network list.
+func (t *networksTab) reload() {
+	dcli := t.u.dcli
+	t.load("ui.loadNetworks", func(ctx context.Context) ([]swarmops.Network, error) { return swarmops.ListNetworks(ctx, dcli) })
+}
+
+func (t *networksTab) footer() string {
+	km := t.u.km
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", keyLabel(km.NetAttached), keyLabel(km.NetNew))
+}
+
+func (t *networksTab) helpSection(h *helpWriter) {
+	km := t.u.km
+	h.sec("Networks")
+	h.line("Enter/"+keyLabel(km.NetAttached), "attached services")
+	h.line(keyLabel(km.NetNew), "new network")
+}
+
+func (t *networksTab) yank(b *strings.Builder) {
+	fmt.Fprintln(b, "NETWORK\tDRIVER\tSCOPE\tTYPE\tSERVICES\tAGE")
+	for _, n := range t.rows() {
+		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%d\t%s\n",
+			n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
+	}
+}
+
+func (t *networksTab) renderRow(r int, n swarmops.Network) {
+	svcCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if len(n.Services) > 0 {
+		svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
+	}
+	typeColor := networkTypeColor(n)
+	encCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
+	if n.Encrypted {
+		encCell = tview.NewTableCell("🔒 yes").SetTextColor(tcell.ColorGreen).SetExpansion(1)
+	}
+	t.table.SetCell(r, 0, tview.NewTableCell(n.Name).SetTextColor(typeColor).SetExpansion(1))
+	t.table.SetCell(r, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
+	t.table.SetCell(r, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
+	t.table.SetCell(r, 3, tview.NewTableCell(networkType(n)).SetTextColor(typeColor).SetExpansion(1))
+	t.table.SetCell(r, 4, encCell)
+	t.table.SetCell(r, 5, svcCell)
+	t.table.SetCell(r, 6, tview.NewTableCell(volumeAge(n.Created)).SetExpansion(1))
 }
 
 // serviceNamesFromCache returns the known service names (the containers-tab
@@ -149,11 +159,12 @@ type netMembersView struct {
 	ov *overlay
 }
 
-// showNetworkMembers lists the services attached to a network with the
-// containers of each service nested under it. Service membership is known
-// synchronously (from the list); the per-service containers need a task
-// lookup, so they fill in lazily after the overlay is up.
-func (u *ui) showNetworkMembers(n swarmops.Network) {
+// showMembers lists the services attached to a network with the containers of
+// each service nested under it. Service membership is known synchronously
+// (from the list); the per-service containers need a task lookup, so they fill
+// in lazily after the overlay is up.
+func (t *networksTab) showMembers(n swarmops.Network) {
+	u := t.u
 	list := tview.NewList().ShowSecondaryText(false)
 	badge := ""
 	if n.Encrypted {
@@ -305,7 +316,7 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			func(ctx context.Context, svc string) error {
 				return swarmops.AttachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
 			},
-			func() { v.close(); u.loadNetworks() },
+			func() { v.close(); u.netTab().reload() },
 		)
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
@@ -320,7 +331,7 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			func(ctx context.Context, svc string) error {
 				return swarmops.DetachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
 			},
-			func() { v.close(); u.loadNetworks() },
+			func() { v.close(); u.netTab().reload() },
 		)
 		return nil
 	}
@@ -331,7 +342,7 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 func (v *netMembersView) open() {
 	u, n, list := v.u, v.n, v.list
 	v.render()
-	v.ov = u.overlayFor(pageNetMembers, u.nettable, footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
+	v.ov = u.overlayFor(pageNetMembers, u.netTab().table, footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
 	list.SetInputCapture(v.handleKey)
 	height := len(n.Services) + 6
 	if height > 22 {
@@ -341,11 +352,12 @@ func (v *netMembersView) open() {
 	v.reload()
 }
 
-// showCreateNetwork opens a form to create a network (default driver overlay)
-// with the common swarm options — attachable, encrypted, internal, IPv6, MTU
-// and an optional subnet/gateway and labels.
-func (u *ui) showCreateNetwork() {
-	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
+// showCreate opens a form to create a network (default driver overlay) with
+// the common swarm options — attachable, encrypted, internal, IPv6, MTU and an
+// optional subnet/gateway and labels.
+func (t *networksTab) showCreate() {
+	u := t.u
+	dcli, ctx, nettable := u.dcli, u.ctx, t.table
 	o := swarmops.NewNetworkOpts{Driver: "overlay"}
 	var labels string
 	form := tview.NewForm()
@@ -375,7 +387,7 @@ func (u *ui) showCreateNetwork() {
 		}
 		name := strings.TrimSpace(o.Name)
 		closeForm()
-		u.loadNetworks()
+		t.reload()
 		u.flash(" [green]created[white] network " + name)
 	})
 	form.AddButton("Cancel", closeForm)
@@ -389,20 +401,20 @@ func (u *ui) showCreateNetwork() {
 	ov.show(centered(form, formWidth, 22), form)
 }
 
-// networkKeys is the key handler of the Networks table.
+// keys is the key handler of the Networks table.
 //
 // On the networks table, "i" (like the volumes tab) shows the attached
 // services/containers; Enter does the same.
-func (u *ui) networkKeys(ev *tcell.EventKey) *tcell.EventKey {
-	km := u.km
+func (t *networksTab) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u, km := t.u, t.u.km
 	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetAttached {
-		if n, ok := u.selectedNetwork(); ok {
-			u.showNetworkMembers(n)
+		if n, ok := t.selected(); ok {
+			t.showMembers(n)
 		}
 		return nil
 	}
 	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetNew {
-		u.showCreateNetwork()
+		t.showCreate()
 		return nil
 	}
 	return u.tabKeys(ev)

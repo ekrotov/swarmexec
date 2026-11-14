@@ -65,10 +65,10 @@ func newTabViews(u *ui) map[string]tabView {
 		"containers": containersTab{u},
 		"volumes":    newVolumesTab(u),
 		"forwards":   forwardsTab{u},
-		"networks":   networksTab{u},
-		"secrets":    secretsTab{u},
+		"networks":   newNetworksTab(u),
+		"secrets":    newSecretsTab(u),
 		"nodes":      nodesTab{u},
-		"configs":    configsTab{u},
+		"configs":    newConfigsTab(u),
 	}
 }
 

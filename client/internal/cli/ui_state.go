@@ -114,13 +114,12 @@ type ui struct {
 	forwards *forwardRegistry
 
 	// shared widgets (built in run(), once the tree/tables exist)
-	ctree                                        *tview.TreeView
-	croot                                        *tview.TreeNode
-	ftable, nettable, sectable, cxtable, notable *tview.Table
-	cfgtable                                     *tview.Table
-	tabBar                                       *tabStrip
-	help, status                                 *tview.TextView
-	footer, root                                 *tview.Flex
+	ctree                    *tview.TreeView
+	croot                    *tview.TreeNode
+	ftable, cxtable, notable *tview.Table
+	tabBar                   *tabStrip
+	help, status             *tview.TextView
+	footer, root             *tview.Flex
 	// statusRow holds the status line (left) and statusRight: the context-list
 	// hint while that list is hidden, and the client version at the far right.
 	statusRow   *tview.Flex

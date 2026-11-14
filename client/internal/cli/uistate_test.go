@@ -20,9 +20,6 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		km:           defaultKeybinds(),
 		clusterState: newClusterState("test", "test"),
 		clusters:     map[string]*clusterState{},
-		sectable:     newStateTable(),
-		nettable:     newStateTable(),
-		cfgtable:     newStateTable(),
 		notable:      newStateTable(),
 		ftable:       newStateTable(),
 		cxtable:      newStateTable(),
@@ -36,9 +33,9 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		row    int
 		want   string // the advice the empty state must carry
 	}{
-		{"secrets", u.renderSecrets, u.sectable, 1, string(u.km.SecNew)},
-		{"networks", u.renderNetworks, u.nettable, 1, string(u.km.NetNew)},
-		{"configs", u.renderConfigs, u.cfgtable, 1, "docker config create"},
+		{"secrets", u.secTab().render, u.secTab().table, 1, string(u.km.SecNew)},
+		{"networks", u.netTab().render, u.netTab().table, 1, string(u.km.NetNew)},
+		{"configs", u.cfgTab().render, u.cfgTab().table, 1, "docker config create"},
 		{"nodes", u.renderNodes, u.notable, 1, "the manager reported none"},
 		{"volumes", u.volTab().render, u.volTab().table, 1, string(u.km.VolNew)},
 		{"forwards", u.renderForwards, u.ftable, 1, string(u.km.Forward)},

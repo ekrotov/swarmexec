@@ -124,60 +124,6 @@ func (t forwardsTab) yank(b *strings.Builder) {
 	}
 }
 
-type networksTab struct{ u *ui }
-
-func (t networksTab) widget() tview.Primitive { return t.u.nettable }
-func (t networksTab) enter()                  { t.u.loadNetworks() }
-func (t networksTab) refresh()                { t.u.loadNetworks() }
-
-func (t networksTab) footer() string {
-	km := t.u.km
-	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", keyLabel(km.NetAttached), keyLabel(km.NetNew))
-}
-
-func (t networksTab) helpSection(h *helpWriter) {
-	km := t.u.km
-	h.sec("Networks")
-	h.line("Enter/"+keyLabel(km.NetAttached), "attached services")
-	h.line(keyLabel(km.NetNew), "new network")
-}
-
-func (t networksTab) yank(b *strings.Builder) {
-	fmt.Fprintln(b, "NETWORK\tDRIVER\tSCOPE\tTYPE\tSERVICES\tAGE")
-	for _, n := range t.u.nets {
-		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%d\t%s\n",
-			n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), len(n.Services), volumeAge(n.Created))
-	}
-}
-
-type secretsTab struct{ u *ui }
-
-func (t secretsTab) widget() tview.Primitive { return t.u.sectable }
-func (t secretsTab) enter()                  { t.u.loadSecrets() }
-func (t secretsTab) refresh()                { t.u.loadSecrets() }
-
-func (t secretsTab) footer() string {
-	km := t.u.km
-	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] new  %s delete", keyLabel(km.SecNew), keyTag(dangerKey(keyLabel(km.SecDelete))))
-}
-
-func (t secretsTab) helpSection(h *helpWriter) {
-	km := t.u.km
-	h.sec("Secrets")
-	h.line("Enter / i", "details")
-	h.line("  a · d", "in details: attach to · detach from a service")
-	h.line("  r", "in details: rotate — new content, same name (services restart twice)")
-	h.line(keyLabel(km.SecNew), "new (vim editor, :r file)")
-	h.danger(keyLabel(km.SecDelete), "delete")
-}
-
-func (t secretsTab) yank(b *strings.Builder) {
-	fmt.Fprintln(b, "SECRET\tUSED BY\tAGE\tUPDATED\tLABELS")
-	for _, s := range t.u.secs {
-		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%d\n", s.Name, len(s.Services), volumeAge(s.Created), volumeAge(s.Updated), len(s.Labels))
-	}
-}
-
 type nodesTab struct{ u *ui }
 
 func (t nodesTab) widget() tview.Primitive { return t.u.notable }
@@ -216,33 +162,5 @@ func (t nodesTab) yank(b *strings.Builder) {
 		}
 		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%d\t%d\n", name, orDash(n.Role), orDash(n.Availability),
 			orDash(n.State), orDash(n.EngineVersion), n.Tasks, len(n.Labels))
-	}
-}
-
-type configsTab struct{ u *ui }
-
-func (t configsTab) widget() tview.Primitive { return t.u.cfgtable }
-func (t configsTab) enter()                  { t.u.loadConfigs() }
-
-// refresh reloads the configs. Before the registry the refresh key's switch
-// had no configs case, and on this tab it repainted the forwards table.
-func (t configsTab) refresh() { t.u.loadConfigs() }
-
-func (t configsTab) footer() string {
-	return "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
-}
-
-func (t configsTab) helpSection(h *helpWriter) {
-	h.sec("Configs")
-	h.line("Enter / i", "details, including the config's content")
-}
-
-// yank copies the config list. Before the registry the Configs tab fell into
-// yankCurrent's default branch and copied the VOLUME list.
-func (t configsTab) yank(b *strings.Builder) {
-	fmt.Fprintln(b, "CONFIG\tUSED BY\tSIZE\tAGE\tUPDATED\tLABELS")
-	for _, c := range t.u.cfgs {
-		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%d\n", c.Name, len(c.Services), humanBytes(int64(c.Size)),
-			volumeAge(c.Created), volumeAge(c.Updated), len(c.Labels))
 	}
 }

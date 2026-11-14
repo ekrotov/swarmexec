@@ -161,7 +161,7 @@ type secretDialog struct {
 // showCreateSecret opens the create-secret dialog for the Secrets tab.
 func (u *ui) showCreateSecret() {
 	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
-	u.openSecretEditor(u.sectable,
+	u.openSecretEditor(u.secTab().table,
 		func(name string, data []byte, labels map[string]string) error {
 			return swarmops.CreateSecret(ctx, dcli, name, data, labels)
 		},
@@ -169,7 +169,7 @@ func (u *ui) showCreateSecret() {
 		// arrives after a switch away is dropped (see async).
 		func(fn func()) { u.onCluster(gen, fn) },
 		func(name string) {
-			u.loadSecrets()
+			u.secTab().reload()
 			u.flash(" [green]created[white] secret " + name)
 		})
 }

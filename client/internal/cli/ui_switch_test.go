@@ -109,7 +109,7 @@ func TestSecretRotationSurvivesASwitch(t *testing.T) {
 	}
 	t.Cleanup(func() { rotateSecretFn = orig })
 
-	onLoop(t, u, func() { u.runRotation("db_password", []byte("new")) })
+	onLoop(t, u, func() { u.secTab().runRotation("db_password", []byte("new")) })
 	var rctx context.Context
 	select {
 	case rctx = <-started:
