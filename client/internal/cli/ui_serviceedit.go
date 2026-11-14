@@ -752,37 +752,30 @@ func (u *ui) showVimHelp(back tview.Primitive, extra string) {
 	hov.show(centered(tv, 80, 48), tv)
 }
 
-// placementListEditor opens a staged list editor whose add/edit input
-// autocompletes cluster-derived candidates (excluding ones already staged).
-// Shared by the constraints and the spread-preferences editors.
-func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, validate func(string) (string, error), apply func(context.Context, []string) error, back tview.Primitive, after func()) {
+// placementListEditor opens the staged list editor cfg describes, editable
+// in place, with an add/edit input that autocompletes cluster-derived
+// candidates (excluding ones already staged). Shared by the constraints and
+// the spread-preferences editors.
+func (u *ui) placementListEditor(cfg editListConfig, cand []string) {
 	have := map[string]bool{}
-	for _, it := range items {
+	for _, it := range cfg.items {
 		have[it] = true
 	}
-	u.editList(editListConfig{
-		title:     title,
-		applyVerb: applyVerb,
-		items:     items,
-		validate:  validate,
-		onApply:   apply,
-		suggest: func(text string) []string {
-			text = strings.ToLower(strings.TrimSpace(text))
-			var out []string
-			for _, c := range cand {
-				if have[c] {
-					continue
-				}
-				if text == "" || strings.Contains(strings.ToLower(c), text) {
-					out = append(out, c)
-				}
+	cfg.allowEdit = true
+	cfg.suggest = func(text string) []string {
+		text = strings.ToLower(strings.TrimSpace(text))
+		var out []string
+		for _, c := range cand {
+			if have[c] {
+				continue
 			}
-			return out
-		},
-		allowEdit: true,
-		back:      back,
-		after:     after,
-	})
+			if text == "" || strings.Contains(strings.ToLower(c), text) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	u.editList(cfg)
 }
 
 // openPlacementConstraintsEditor edits the service's hard placement
@@ -801,10 +794,17 @@ func (u *ui) openPlacementConstraintsEditor(svcName string, back tview.Primitive
 			u.info("cannot load placement: " + err.Error())
 			return
 		}
-		u.placementListEditor("constraints of "+svcName, "Update the placement constraints",
-			l.items, l.cand, swarmops.ValidatePlacementConstraint,
-			func(ctx context.Context, list []string) error { return swarmops.SetServicePlacement(ctx, dcli, svcName, list) },
-			back, after)
+		u.placementListEditor(editListConfig{
+			title:     "constraints of " + svcName,
+			applyVerb: "Update the placement constraints",
+			items:     l.items,
+			validate:  swarmops.ValidatePlacementConstraint,
+			onApply: func(ctx context.Context, list []string) error {
+				return swarmops.SetServicePlacement(ctx, dcli, svcName, list)
+			},
+			back:  back,
+			after: after,
+		}, l.cand)
 	})
 }
 
@@ -829,10 +829,17 @@ func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()
 			u.info("cannot load spread preferences: " + err.Error())
 			return
 		}
-		u.placementListEditor("spread of "+svcName, "Update the spread preferences",
-			l.items, l.cand, swarmops.ValidateSpreadDescriptor,
-			func(ctx context.Context, list []string) error { return swarmops.SetServiceSpread(ctx, dcli, svcName, list) },
-			back, after)
+		u.placementListEditor(editListConfig{
+			title:     "spread of " + svcName,
+			applyVerb: "Update the spread preferences",
+			items:     l.items,
+			validate:  swarmops.ValidateSpreadDescriptor,
+			onApply: func(ctx context.Context, list []string) error {
+				return swarmops.SetServiceSpread(ctx, dcli, svcName, list)
+			},
+			back:  back,
+			after: after,
+		}, l.cand)
 	})
 }
 

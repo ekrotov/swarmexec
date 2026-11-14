@@ -179,9 +179,9 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	wake := make(chan struct{}, 1)
 	go watchContainerEvents(lctx, ac, ep, f.connectTimeout, lv.addNote, wake)
 	go func() {
-		lerr := streamServiceLogs(lctx, ac, r, target, ep,
-			logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout, wake: wake},
-			&logIngest{v: lv}, &logIngest{v: lv, stderr: true}, lv.addNote)
+		lerr := streamServiceLogs(lctx, logRun{ac: ac, r: r,
+			params: logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout, wake: wake},
+			stdout: &logIngest{v: lv}, stderr: &logIngest{v: lv, stderr: true}}, target, ep, lv.addNote)
 		if lerr != nil && lctx.Err() == nil {
 			app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 		}
@@ -251,11 +251,11 @@ func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, bySe
 			tail = 50
 		}
 		go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
-			lerr := streamServiceLogs(lctx, ac, r, target, ep,
-				logsParams{follow: true, tail: tail, connectTimeout: f.connectTimeout},
-				&logIngest{v: lv, prefix: prefix},
-				&logIngest{v: lv, prefix: prefix, stderr: true},
-				func(msg string) { lv.addNote(prefix + msg) })
+			lerr := streamServiceLogs(lctx, logRun{ac: ac, r: r,
+				params: logsParams{follow: true, tail: tail, connectTimeout: f.connectTimeout},
+				stdout: &logIngest{v: lv, prefix: prefix},
+				stderr: &logIngest{v: lv, prefix: prefix, stderr: true}},
+				target, ep, func(msg string) { lv.addNote(prefix + msg) })
 			if lerr != nil && lctx.Err() == nil {
 				app.QueueUpdateDraw(func() {
 					fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))

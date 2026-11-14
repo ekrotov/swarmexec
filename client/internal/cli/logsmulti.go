@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	cterm "swarmexec/client/internal/term"
 )
@@ -225,11 +224,13 @@ func colorOutput(f *os.File) bool {
 // dst unchanged when no filtering is asked for.
 type logFilterFactory func(dst io.Writer) (io.Writer, func())
 
-// streamManyLogs follows every source concurrently into the shared sinks. A
-// source that fails is reported in its own lines and does not stop the others;
-// the returned error says how many failed.
-func streamManyLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Resolver, sources []logSource, p logsParams, stdout, stderr io.Writer, color bool, wrap logFilterFactory) error {
-	outSink, errSink := newLineSinks(stdout, stderr)
+// streamManyLogs follows every source concurrently into the run's stdout and
+// stderr, each line prefixed with its source (coloured when color is set) and
+// passed through the filter chain wrap builds. A source that fails is reported
+// in its own lines and does not stop the others; the returned error says how
+// many failed.
+func streamManyLogs(ctx context.Context, run logRun, sources []logSource, color bool, wrap logFilterFactory) error {
+	outSink, errSink := newLineSinks(run.stdout, run.stderr)
 	prefixes := sourcePrefixes(sources, color)
 
 	var wg sync.WaitGroup
@@ -245,7 +246,9 @@ func streamManyLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Resolv
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := streamServiceLogs(ctx, ac, r, src.follow, src.ep, p, so, se, notify)
+			one := run
+			one.stdout, one.stderr = so, se
+			err := streamServiceLogs(ctx, one, src.follow, src.ep, notify)
 			flushOut()
 			flushErr()
 			po.Flush()

@@ -506,7 +506,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 		u.loadContainers()
 	}
 	tv.detach = closeTerm
-	tv.run(tctx, ac, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
+	tv.run(tctx, ac, terminalSession{ep: ep, command: command, tty: tty, user: user}, f.connectTimeout, func(code int, rerr error) {
 		app.QueueUpdateDraw(func() {
 			switch {
 			case tctx.Err() != nil:

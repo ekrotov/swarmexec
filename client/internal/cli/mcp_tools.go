@@ -563,7 +563,7 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 		return fw, fw.Flush
 	}
 	params := logsParams{tail: uint32(tail), since: since, connectTimeout: s.connectTimeout}
-	serr := streamManyLogs(lctx, ac, c.r, sources, params, buf, buf, false, wrap)
+	serr := streamManyLogs(lctx, logRun{ac: ac, r: c.r, params: params, stdout: buf, stderr: buf}, sources, false, wrap)
 
 	out := note + buf.String()
 	switch {
