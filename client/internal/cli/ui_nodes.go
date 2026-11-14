@@ -18,64 +18,118 @@ import (
 	"swarmexec/internal/pb"
 )
 
-func (u *ui) renderNodes() {
-	notable := u.notable
-	selName := ""
-	if row, _ := notable.GetSelection(); row >= 1 {
-		if c := notable.GetCell(row, 0); c != nil {
-			selName = strings.TrimPrefix(c.Text, "★ ")
+// nodesTab is the Nodes tab: the swarm's nodes, with what each one holds
+// (tasks, volumes, image footprint) and the node actions — labels,
+// availability, prune and the cluster-wide prune schedule.
+type nodesTab struct {
+	*listTab[swarmNodeInfo]
+	// ext is what the node list itself does not carry: the per-node figures
+	// that come from the agents, one fan-out each, per cluster.
+	ext perCluster[nodesExtra]
+}
+
+// nodesExtra is the agent-sourced part of one cluster's Nodes tab.
+type nodesExtra struct {
+	volCounts  map[string]int
+	volsLoaded bool // VOLS shows "…" until the counts arrive
+	imgs       map[string]nodeImages
+}
+
+func newNodesTab(u *ui) *nodesTab {
+	// The cursor's key is the hostname; the leader's cell carries a ★ the
+	// name func does not see.
+	t := &nodesTab{listTab: newListTab(u, noHeaders, func(n swarmNodeInfo) string { return n.Hostname })}
+	t.ext.init = func() *nodesExtra { return &nodesExtra{} }
+	t.row = t.renderRow
+	// No advice to give: a swarm you are talking to has nodes, so an empty
+	// list is a statement about the cluster, not something to act on here.
+	t.empty = func() string { return emptyText("nodes", "the manager reported none") }
+	t.table.SetSelectedFunc(func(int, int) {
+		if n, ok := t.selected(); ok {
+			t.showDetail(n)
 		}
-	}
-	tableHeaders(notable, noHeaders)
-	if len(u.nodeInfos) == 0 {
-		// No advice to give: a swarm you are talking to has nodes, so an empty
-		// list is a statement about the cluster, not something to act on here.
-		notable.SetCell(1, 0, emptyCell(emptyText("nodes", "the manager reported none")))
-		return
-	}
-	selRow := 1
-	for i, n := range u.nodeInfos {
-		name, nameColor := n.Hostname, tcell.ColorWhite
-		if n.Role == "manager" {
-			nameColor = tcell.ColorAqua
-		}
+	})
+	t.table.SetInputCapture(t.keys)
+	return t
+}
+
+// nodeTab is the session's Nodes tab.
+func (u *ui) nodeTab() *nodesTab { return u.tab("nodes").(*nodesTab) }
+
+// extra is the visible cluster's agent-sourced node figures.
+func (t *nodesTab) extra() *nodesExtra { return t.ext.of(t.u.clusterState) }
+
+func (t *nodesTab) enter() { t.reload() }
+
+func (t *nodesTab) refresh() {
+	t.reload()
+	t.u.loadUsage() // the node detail shows measured usage next to reservations
+}
+
+func (t *nodesTab) footer() string {
+	km, kl := t.u.km, keyLabel
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details  [yellow]%s[white] edit labels  [yellow]%s[white] availability  %s prune  [yellow]%s[white] prune schedule (all nodes)",
+		kl(km.NodeLabels), kl(km.NodeAvail), keyTag(dangerKey(kl(km.NodePrune))), kl(km.NodePruneSched))
+}
+
+func (t *nodesTab) helpSection(h *helpWriter) {
+	km, kl := t.u.km, keyLabel
+	h.sec("Nodes")
+	h.line("Enter / i", "details")
+	h.line(kl(km.NodeLabels), "edit labels")
+	h.line(kl(km.NodeAvail), "availability: active / pause / drain")
+	h.danger(kl(km.NodePrune), "prune the node: containers, images, build cache, networks, volumes (choose + confirm)")
+	h.line(kl(km.NodePruneSched), "prune schedule for ALL nodes (restarts the agents on save)")
+	h.line("m", "in the details: measure reclaimable space now")
+}
+
+// yank copies the node list. Before the registry the Nodes tab fell into
+// yankCurrent's default branch and copied the VOLUME list.
+func (t *nodesTab) yank(b *strings.Builder) {
+	fmt.Fprintln(b, "NODE\tROLE\tAVAIL\tSTATE\tENGINE\tTASKS\tLABELS")
+	for _, n := range t.rows() {
+		name := n.Hostname
 		if n.Leader {
-			name = "★ " + name
+			name += " (leader)"
 		}
-		volStr := "…"
-		if u.nodeVolsLoaded {
-			volStr = fmt.Sprintf("%d", u.nodeVolCounts[n.Hostname])
-		}
-		notable.SetCell(i+1, 0, tview.NewTableCell(name).SetTextColor(nameColor).SetExpansion(2))
-		notable.SetCell(i+1, 1, tview.NewTableCell(orDash(n.Role)).SetExpansion(1))
-		notable.SetCell(i+1, 2, tview.NewTableCell(orDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
-		notable.SetCell(i+1, 3, tview.NewTableCell(orDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
-		notable.SetCell(i+1, 4, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
-		notable.SetCell(i+1, 5, tview.NewTableCell(fmt.Sprintf("%d", n.Tasks)).SetExpansion(1))
-		notable.SetCell(i+1, 6, tview.NewTableCell(volStr).SetExpansion(1))
-		notable.SetCell(i+1, 7, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
-		if n.Hostname == selName {
-			selRow = i + 1
-		}
-	}
-	if len(u.nodeInfos) > 0 {
-		notable.Select(selRow, 0)
+		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%d\t%d\n", name, orDash(n.Role), orDash(n.Availability),
+			orDash(n.State), orDash(n.EngineVersion), n.Tasks, len(n.Labels))
 	}
 }
 
-func (u *ui) loadNodes() {
-	r, ac, dcli, f, notable := u.r, u.agents, u.dcli, u.f, u.notable
-	tableState(notable, noHeaders, loadingCell())
-	async(u, "ui.loadNodes", func(ctx context.Context) ([]swarmNodeInfo, error) {
-		return listNodeInfos(ctx, dcli)
-	}, func(list []swarmNodeInfo, err error) {
-		if err != nil {
-			tableState(notable, noHeaders, errorCell(err))
-			return
-		}
-		u.nodeInfos, u.nodeVolsLoaded = list, false
-		u.renderNodes()
-	})
+func (t *nodesTab) renderRow(r int, n swarmNodeInfo) {
+	ex := t.extra()
+	name, nameColor := n.Hostname, tcell.ColorWhite
+	if n.Role == "manager" {
+		nameColor = tcell.ColorAqua
+	}
+	if n.Leader {
+		name = "★ " + name
+	}
+	volStr := "…"
+	if ex.volsLoaded {
+		volStr = fmt.Sprintf("%d", ex.volCounts[n.Hostname])
+	}
+	t.table.SetCell(r, 0, tview.NewTableCell(name).SetTextColor(nameColor).SetExpansion(2))
+	t.table.SetCell(r, 1, tview.NewTableCell(orDash(n.Role)).SetExpansion(1))
+	t.table.SetCell(r, 2, tview.NewTableCell(orDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
+	t.table.SetCell(r, 3, tview.NewTableCell(orDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
+	t.table.SetCell(r, 4, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
+	t.table.SetCell(r, 5, tview.NewTableCell(fmt.Sprintf("%d", n.Tasks)).SetExpansion(1))
+	t.table.SetCell(r, 6, tview.NewTableCell(volStr).SetExpansion(1))
+	t.table.SetCell(r, 7, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
+}
+
+// reload fetches the node list from the manager, and — on their own, since
+// each is an agent fan-out — the image footprints and volume counts.
+func (t *nodesTab) reload() {
+	u := t.u
+	r, ac, dcli, f := u.r, u.agents, u.dcli, u.f
+	ex := t.extra()
+	// VOLS goes back to "…" for the new load. Reset here, at the start, not
+	// when the list arrives: the counts may well arrive first.
+	ex.volsLoaded = false
+	t.load("ui.loadNodes", func(ctx context.Context) ([]swarmNodeInfo, error) { return listNodeInfos(ctx, dcli) })
 	// Image footprints are node-local too and only shown in the detail, so they
 	// load on their own and simply stay absent for an agent that cannot answer.
 	async(u, "ui.loadNodes.images", func(ctx context.Context) (map[string]nodeImages, error) {
@@ -94,7 +148,7 @@ func (u *ui) loadNodes() {
 			}
 		}
 		return imgs, nil
-	}, func(imgs map[string]nodeImages, _ error) { u.nodeImgs = imgs })
+	}, func(imgs map[string]nodeImages, _ error) { ex.imgs = imgs })
 	// Per-node volume counts are node-local (agent fan-out), so fill them in
 	// asynchronously — the VOLS column shows "…" until they arrive.
 	async(u, "ui.loadNodes.volumes", func(ctx context.Context) (map[string]int, error) {
@@ -106,21 +160,18 @@ func (u *ui) loadNodes() {
 		return counts, nil
 	}, func(counts map[string]int, _ error) {
 		// Mark loaded even on failure so VOLS shows a number, not "…" forever.
-		u.nodeVolCounts, u.nodeVolsLoaded = counts, true
-		u.renderNodes()
+		ex.volCounts, ex.volsLoaded = counts, true
+		if t.shownFor == u.clusterState {
+			t.render() // only over rows; a loading or error state stays
+		}
 	})
-}
-
-func (u *ui) selectedNode() (swarmNodeInfo, bool) {
-	notable := u.notable
-	return selectedRow(notable, u.nodeInfos)
 }
 
 // editNodeLabels is a compact staged editor (add/edit/delete/apply) over a
 // node's labels, applied via NodeUpdate. Dedicated (not the service editList)
 // because a node update is immediate — there is no rolling update.
-func (u *ui) editNodeLabels(n swarmNodeInfo, after func()) {
-	app, dcli, notable := u.app, u.dcli, u.notable
+func (u *ui) editNodeLabels(n swarmNodeInfo, back tview.Primitive, after func()) {
+	app, dcli, notable := u.app, u.dcli, back
 	cur := kvPairs(n.Labels)
 	list := tview.NewList().ShowSecondaryText(false)
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
@@ -339,11 +390,11 @@ func resourceBar(booked, capacity int64) string {
 		color, strings.Repeat("█", filled), strings.Repeat("░", resourceBarWidth-filled))
 }
 
-func (u *ui) showNodeDetail(n swarmNodeInfo) {
-	notable := u.notable
+func (t *nodesTab) showDetail(n swarmNodeInfo) {
+	u, notable := t.u, t.table
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
-	head := u.nodeDetailHead(n)
+	head := t.detailHead(n)
 	// The reclaim block arrives from the agent after the detail is open. It is
 	// re-rendered in place; `closed` (UI goroutine only) stops a late answer
 	// from writing into a detail the operator already left.
@@ -389,7 +440,7 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.NodePrune:
 			closeDetail()
-			u.openNodePrune(n, notable, u.loadNodes)
+			u.openNodePrune(n, notable, t.reload)
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.NodePruneSched:
 			closeDetail()
@@ -397,7 +448,7 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
 			closeDetail()
-			u.editNodeLabels(n, u.loadNodes)
+			u.editNodeLabels(n, notable, t.reload)
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
 			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -409,8 +460,9 @@ func (u *ui) showNodeDetail(n swarmNodeInfo) {
 	ov.show(centered(tv, 80, 40), tv)
 }
 
-// nodeDetailHead is everything in the node detail above the reclaim block.
-func (u *ui) nodeDetailHead(n swarmNodeInfo) string {
+// detailHead is everything in the node detail above the reclaim block.
+func (t *nodesTab) detailHead(n swarmNodeInfo) string {
+	u, ex := t.u, t.extra()
 	var b strings.Builder
 	kv := func(k, v string) { fmt.Fprintf(&b, "  [gray]%-13s[-] %s\n", k, tview.Escape(v)) }
 	role := n.Role
@@ -431,11 +483,11 @@ func (u *ui) nodeDetailHead(n swarmNodeInfo) string {
 	b.WriteString(nodeResourceSection(n))
 	use, known := u.nodeUse[n.Hostname]
 	b.WriteString(nodeUsageSection(n, use, known))
-	imgs, imgsKnown := u.nodeImgs[n.Hostname]
+	imgs, imgsKnown := ex.imgs[n.Hostname]
 	b.WriteString(imageSection(imgs, imgsKnown))
 	vol := "…"
-	if u.nodeVolsLoaded {
-		vol = fmt.Sprintf("%d", u.nodeVolCounts[n.Hostname])
+	if ex.volsLoaded {
+		vol = fmt.Sprintf("%d", ex.volCounts[n.Hostname])
 	}
 	kv("volumes", vol)
 	b.WriteString("\n  [gray]labels[-]\n")
@@ -512,7 +564,7 @@ func nodeUsageSection(n swarmNodeInfo, use nodeUsage, known bool) string {
 // confirm spelling out the consequence.
 func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after func()) {
 	r, ac, f := u.r, u.agents, u.f
-	ni, known := u.nodeImgs[n.Hostname]
+	ni, known := u.nodeTab().extra().imgs[n.Hostname]
 	if !known {
 		u.info(fmt.Sprintf("No image information for %q.\n\n"+
 			"The node's agent did not answer — it may be unreachable, or older\n"+
@@ -572,36 +624,33 @@ func (u *ui) openNodeImagePrune(n swarmNodeInfo, back tview.Primitive, after fun
 	ov.show(centered(list, 66, 9), list)
 }
 
-// nodeKeys is the key handler of the Nodes table.
-func (u *ui) nodeKeys(ev *tcell.EventKey) *tcell.EventKey {
-	km, notable := u.km, u.notable
-	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeAvail {
-		if n, ok := u.selectedNode(); ok {
-			u.openNodeAvailability(n, notable, u.loadNodes)
+// keys is the key handler of the Nodes table.
+func (t *nodesTab) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u, km := t.u, t.u.km
+	if ev.Key() != tcell.KeyRune {
+		return u.tabKeys(ev)
+	}
+	switch ev.Rune() {
+	case km.NodeAvail:
+		if n, ok := t.selected(); ok {
+			u.openNodeAvailability(n, t.table, t.reload)
 		}
-		return nil
-	}
-	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodePrune {
-		if n, ok := u.selectedNode(); ok {
-			u.openNodePrune(n, notable, u.loadNodes)
+	case km.NodePrune:
+		if n, ok := t.selected(); ok {
+			u.openNodePrune(n, t.table, t.reload)
 		}
-		return nil
-	}
-	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodePruneSched {
-		u.openPruneSchedule(notable)
-		return nil
-	}
-	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NodeLabels {
-		if n, ok := u.selectedNode(); ok {
-			u.editNodeLabels(n, u.loadNodes)
+	case km.NodePruneSched:
+		u.openPruneSchedule(t.table)
+	case km.NodeLabels:
+		if n, ok := t.selected(); ok {
+			u.editNodeLabels(n, t.table, t.reload)
 		}
-		return nil
-	}
-	if ev.Key() == tcell.KeyRune && ev.Rune() == 'i' {
-		if n, ok := u.selectedNode(); ok {
-			u.showNodeDetail(n)
+	case 'i':
+		if n, ok := t.selected(); ok {
+			t.showDetail(n)
 		}
-		return nil
+	default:
+		return u.tabKeys(ev)
 	}
-	return u.tabKeys(ev)
+	return nil
 }

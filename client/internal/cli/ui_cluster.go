@@ -145,17 +145,9 @@ type clusterState struct {
 
 	clusterText string // last cluster-probe summary for the footer
 
-	// The tabs with a type of their own — Volumes, Networks, Secrets,
-	// Configs — keep their per-cluster state themselves (see perCluster): a
-	// tab owns what it shows, and this struct does not know it exists. The
-	// tabs below still keep theirs here until they are converted (review
-	// A-02).
-
-	// nodes tab
-	nodeInfos      []swarmNodeInfo
-	nodeVolCounts  map[string]int
-	nodeVolsLoaded bool
-	nodeImgs       map[string]nodeImages
+	// Every tab but Stacks/Services keeps its per-cluster state itself (see
+	// perCluster): a tab owns what it shows, and this struct does not know
+	// it exists. The tree's state above is the last to move (review A-02).
 }
 
 // treePos is where the cursor stood and what was unfolded in one cluster's tree.

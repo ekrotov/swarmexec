@@ -114,12 +114,12 @@ type ui struct {
 	forwards *forwardRegistry
 
 	// shared widgets (built in run(), once the tree/tables exist)
-	ctree                    *tview.TreeView
-	croot                    *tview.TreeNode
-	ftable, cxtable, notable *tview.Table
-	tabBar                   *tabStrip
-	help, status             *tview.TextView
-	footer, root             *tview.Flex
+	ctree        *tview.TreeView
+	croot        *tview.TreeNode
+	cxtable      *tview.Table
+	tabBar       *tabStrip
+	help, status *tview.TextView
+	footer, root *tview.Flex
 	// statusRow holds the status line (left) and statusRight: the context-list
 	// hint while that list is hidden, and the client version at the far right.
 	statusRow   *tview.Flex
@@ -186,9 +186,6 @@ type ui struct {
 	// the connect runs off the UI goroutine, and a second switch started in the
 	// meantime would race the first into the swap.
 	switching bool
-
-	// forwards tab cache: fRows mirrors the rendered table so a row maps to a forward.
-	fRows []forwardEntry
 
 	// The docker context list is the same whichever cluster is visible, so it
 	// stays here rather than being fetched again per cluster.

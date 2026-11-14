@@ -372,171 +372,203 @@ func (u *ui) openPruneSchedule(back tview.Primitive) {
 	})
 }
 
+// scheduleEditor is the cluster-wide prune schedule overlay: one row per
+// setting, a preview of the next runs under it, and save behind a confirm.
+//
+// It was one 170-line function whose render, prompt, toggle, edit, save and
+// key handler were closures over the same locals (review Q-01). As a type the
+// halves are separate methods — build (show), view (render), input (keys) and
+// apply (save) — the same split inspectView and netMembersView have.
+type scheduleEditor struct {
+	u        *ui
+	svc      *swarm.Service
+	s        prunesched.Schedule // the schedule being edited
+	parseErr error               // the service's labels did not parse; s holds the defaults
+	rows     []schedRow
+
+	table   *tview.Table
+	preview *tview.TextView
+	ov      *overlay
+}
+
 func (u *ui) showScheduleEditor(svc *swarm.Service, back tview.Primitive) {
-	s, parseErr := agentSchedule(svc)
-	if parseErr != nil {
-		s = prunesched.Default()
+	e := &scheduleEditor{u: u, svc: svc, rows: schedRows()}
+	e.s, e.parseErr = agentSchedule(svc)
+	if e.parseErr != nil {
+		e.s = prunesched.Default()
 	}
-	rows := schedRows()
+	e.table = tview.NewTable().SetSelectable(true, false)
+	e.table.SetBorder(true).SetTitle(" prune schedule — ALL nodes ")
+	e.preview = tview.NewTextView().SetDynamicColors(true).SetWrap(true)
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(e.table, len(e.rows)+2, 0, true).AddItem(e.preview, 0, 1, false)
+	e.ov = u.overlayFor(pageNodeSchedule, back, footerKeys("j/k", "move", "space", "toggle", "Enter", "edit", "+/-", "runs/day", "w", "save (restarts agents)", "Esc", "cancel"))
+	e.render()
+	e.table.SetInputCapture(e.keys)
+	e.ov.show(centered(layout, 84, len(e.rows)+7), e.table)
+}
 
-	table := tview.NewTable().SetSelectable(true, false)
-	table.SetBorder(true).SetTitle(" prune schedule — ALL nodes ")
-	preview := tview.NewTextView().SetDynamicColors(true).SetWrap(true)
-	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(table, len(rows)+2, 0, true).AddItem(preview, 0, 1, false)
-	ov := u.overlayFor(pageNodeSchedule, back, footerKeys("j/k", "move", "space", "toggle", "Enter", "edit", "+/-", "runs/day", "w", "save (restarts agents)", "Esc", "cancel"))
+// render repaints the rows and the preview from e.s, keeping the cursor row.
+func (e *scheduleEditor) render() {
+	row, _ := e.table.GetSelection()
+	e.table.Clear()
+	for i, r := range e.rows {
+		label, value, danger := schedRowText(e.s, r)
+		color := tcell.ColorWhite
+		if danger {
+			color = tcell.ColorRed
+		}
+		e.table.SetCell(i, 0, tview.NewTableCell(label).SetTextColor(tcell.ColorGray))
+		e.table.SetCell(i, 1, tview.NewTableCell(tview.Escape(value)).SetTextColor(color).SetExpansion(1))
+	}
+	e.table.Select(row, 0)
+	text := schedPreview(e.s, time.Now())
+	if e.parseErr != nil {
+		text = fmt.Sprintf(" [orange]the service's labels were invalid (%s); showing defaults[-]\n", escapeTags(e.parseErr.Error())) + text
+	}
+	e.preview.SetText(text)
+}
 
-	render := func() {
-		row, _ := table.GetSelection()
-		table.Clear()
-		for i, r := range rows {
-			label, value, danger := schedRowText(s, r)
-			color := tcell.ColorWhite
-			if danger {
-				color = tcell.ColorRed
-			}
-			table.SetCell(i, 0, tview.NewTableCell(label).SetTextColor(tcell.ColorGray))
-			table.SetCell(i, 1, tview.NewTableCell(tview.Escape(value)).SetTextColor(color).SetExpansion(1))
-		}
-		table.Select(row, 0)
-		text := schedPreview(s, time.Now())
-		if parseErr != nil {
-			text = fmt.Sprintf(" [orange]the service's labels were invalid (%s); showing defaults[-]\n", escapeTags(parseErr.Error())) + text
-		}
-		preview.SetText(text)
-	}
-	render()
-
-	prompt := func(label, initial string, apply func(string) error) {
-		in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(32)
-		pov := u.overlayFor(pageNodeSchedPrompt, table, "")
-		in.SetDoneFunc(func(k tcell.Key) {
-			pov.Close()
-			if k != tcell.KeyEnter {
-				return
-			}
-			if err := apply(strings.TrimSpace(in.GetText())); err != nil {
-				u.info(err.Error())
-				return
-			}
-			render()
-		})
-		in.SetBorder(true)
-		pov.show(centeredPrompt(in, 66), in)
-	}
-
-	toggle := func(r schedRow) {
-		switch r.kind {
-		case rowEnabled:
-			s.Enabled = !s.Enabled
-		case rowDay:
-			s.Days[r.day] = !s.Days[r.day]
-		case rowCat:
-			setCat(&s, r.cat, !slices.Contains(s.Categories, r.cat))
-		case rowImages:
-			cycleImages(&s)
-		}
-		render()
-	}
-	edit := func(r schedRow) {
-		switch r.kind {
-		case rowStart:
-			prompt("first run of the day (HH:MM): ", prunesched.FormatClock(s.Start), func(v string) error {
-				m, err := prunesched.ParseClock(v)
-				if err == nil {
-					s.Start = m
-				}
-				return err
-			})
-		case rowTimes:
-			prompt(fmt.Sprintf("runs per day (1-%d): ", prunesched.MaxTimesPerDay), fmt.Sprint(s.Times), func(v string) error {
-				var n int
-				if _, err := fmt.Sscan(v, &n); err != nil || n < 1 || n > prunesched.MaxTimesPerDay {
-					return fmt.Errorf("%q: want a number from 1 to %d", v, prunesched.MaxTimesPerDay)
-				}
-				s.Times = n
-				return nil
-			})
-		case rowTZ:
-			prompt("time zone (IANA, e.g. Europe/Berlin): ", s.TZ, func(v string) error {
-				if _, err := time.LoadLocation(v); err != nil || v == "" {
-					return fmt.Errorf("%q is not a time zone", v)
-				}
-				s.TZ = v
-				return nil
-			})
-		case rowUntil:
-			prompt("keep stopped containers for (24h, 2h, 0): ", prunesched.FormatUntil(s.ContainersUntil), func(v string) error {
-				d, err := prunesched.ParseUntil(v)
-				if err == nil {
-					s.ContainersUntil = d
-				}
-				return err
-			})
-		case rowFilter:
-			prompt("only objects labelled (k or k=v, comma-separated): ", strings.Join(s.LabelFilters, ","), func(v string) error {
-				f, err := prunesched.ParseLabelFilters(v)
-				if err == nil {
-					s.LabelFilters = f
-				}
-				return err
-			})
-		default:
-			toggle(r)
-		}
-	}
-	save := func() {
-		if err := s.Validate(); err != nil {
-			u.info("cannot save: " + err.Error())
+// prompt asks for one value; apply validates and stores it, and a refusal is
+// shown and leaves the schedule as it was.
+func (e *scheduleEditor) prompt(label, initial string, apply func(string) error) {
+	u := e.u
+	in := tview.NewInputField().SetLabel(label).SetText(initial).SetFieldWidth(32)
+	pov := u.overlayFor(pageNodeSchedPrompt, e.table, "")
+	in.SetDoneFunc(func(k tcell.Key) {
+		pov.Close()
+		if k != tcell.KeyEnter {
 			return
 		}
-		msg := fmt.Sprintf("Save the prune schedule for ALL nodes?\n\n%s\n\nAgents older than this release ignore the schedule.", scheduleRestartWarning)
-		u.confirm(msg, "Save", table, func() {
-			ov.Close()
-			saved := s
-			u.flash(" [gray]saving the prune schedule…[white]")
-			dcli := u.dcli
-			asyncDo(u, "ui.nodes.schedule.save", func(ctx context.Context) error {
-				return saveAgentSchedule(ctx, dcli, svc, saved)
-			}, func(err error) {
-				if err != nil {
-					u.info("prune schedule: " + err.Error())
-					return
-				}
-				u.flash(" [green]✓ prune schedule saved — the agents restart one by one[white]")
-			})
-		})
-	}
-
-	table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		row, _ := table.GetSelection()
-		if row < 0 || row >= len(rows) {
-			row = 0
+		if err := apply(strings.TrimSpace(in.GetText())); err != nil {
+			u.info(err.Error())
+			return
 		}
-		r := rows[row]
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
-			ov.Close()
-			return nil
-		case ev.Key() == tcell.KeyEnter:
-			edit(r)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == ' ':
-			toggle(r)
-			return nil
-		case ev.Key() == tcell.KeyRune && (ev.Rune() == '+' || ev.Rune() == '-'):
-			if ev.Rune() == '+' && s.Times < prunesched.MaxTimesPerDay {
-				s.Times++
-			}
-			if ev.Rune() == '-' && s.Times > 1 {
-				s.Times--
-			}
-			render()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
-			save()
-			return nil
-		}
-		return ev
+		e.render()
 	})
-	ov.show(centered(layout, 84, len(rows)+7), table)
+	in.SetBorder(true)
+	pov.show(centeredPrompt(in, 66), in)
+}
+
+// toggle flips a yes/no row (space): enabled, a weekday, a category, or the
+// images mode, which cycles.
+func (e *scheduleEditor) toggle(r schedRow) {
+	s := &e.s
+	switch r.kind {
+	case rowEnabled:
+		s.Enabled = !s.Enabled
+	case rowDay:
+		s.Days[r.day] = !s.Days[r.day]
+	case rowCat:
+		setCat(s, r.cat, !slices.Contains(s.Categories, r.cat))
+	case rowImages:
+		cycleImages(s)
+	}
+	e.render()
+}
+
+// edit is Enter on a row: a prompt for the rows that take a value, a toggle
+// for the others.
+func (e *scheduleEditor) edit(r schedRow) {
+	s := &e.s
+	switch r.kind {
+	case rowStart:
+		e.prompt("first run of the day (HH:MM): ", prunesched.FormatClock(s.Start), func(v string) error {
+			m, err := prunesched.ParseClock(v)
+			if err == nil {
+				s.Start = m
+			}
+			return err
+		})
+	case rowTimes:
+		e.prompt(fmt.Sprintf("runs per day (1-%d): ", prunesched.MaxTimesPerDay), fmt.Sprint(s.Times), func(v string) error {
+			var n int
+			if _, err := fmt.Sscan(v, &n); err != nil || n < 1 || n > prunesched.MaxTimesPerDay {
+				return fmt.Errorf("%q: want a number from 1 to %d", v, prunesched.MaxTimesPerDay)
+			}
+			s.Times = n
+			return nil
+		})
+	case rowTZ:
+		e.prompt("time zone (IANA, e.g. Europe/Berlin): ", s.TZ, func(v string) error {
+			if _, err := time.LoadLocation(v); err != nil || v == "" {
+				return fmt.Errorf("%q is not a time zone", v)
+			}
+			s.TZ = v
+			return nil
+		})
+	case rowUntil:
+		e.prompt("keep stopped containers for (24h, 2h, 0): ", prunesched.FormatUntil(s.ContainersUntil), func(v string) error {
+			d, err := prunesched.ParseUntil(v)
+			if err == nil {
+				s.ContainersUntil = d
+			}
+			return err
+		})
+	case rowFilter:
+		e.prompt("only objects labelled (k or k=v, comma-separated): ", strings.Join(s.LabelFilters, ","), func(v string) error {
+			f, err := prunesched.ParseLabelFilters(v)
+			if err == nil {
+				s.LabelFilters = f
+			}
+			return err
+		})
+	default:
+		e.toggle(r)
+	}
+}
+
+// save writes the schedule to the agent service, behind a confirm: saving
+// restarts every agent.
+func (e *scheduleEditor) save() {
+	u := e.u
+	if err := e.s.Validate(); err != nil {
+		u.info("cannot save: " + err.Error())
+		return
+	}
+	msg := fmt.Sprintf("Save the prune schedule for ALL nodes?\n\n%s\n\nAgents older than this release ignore the schedule.", scheduleRestartWarning)
+	u.confirm(msg, "Save", e.table, func() {
+		e.ov.Close()
+		saved, svc := e.s, e.svc
+		u.flash(" [gray]saving the prune schedule…[white]")
+		dcli := u.dcli
+		asyncDo(u, "ui.nodes.schedule.save", func(ctx context.Context) error {
+			return saveAgentSchedule(ctx, dcli, svc, saved)
+		}, func(err error) {
+			if err != nil {
+				u.info("prune schedule: " + err.Error())
+				return
+			}
+			u.flash(" [green]✓ prune schedule saved — the agents restart one by one[white]")
+		})
+	})
+}
+
+// keys is the table's input capture.
+func (e *scheduleEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
+	row, _ := e.table.GetSelection()
+	if row < 0 || row >= len(e.rows) {
+		row = 0
+	}
+	r := e.rows[row]
+	switch {
+	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == e.u.km.Quit):
+		e.ov.Close()
+	case ev.Key() == tcell.KeyEnter:
+		e.edit(r)
+	case ev.Key() == tcell.KeyRune && ev.Rune() == ' ':
+		e.toggle(r)
+	case ev.Key() == tcell.KeyRune && (ev.Rune() == '+' || ev.Rune() == '-'):
+		if ev.Rune() == '+' && e.s.Times < prunesched.MaxTimesPerDay {
+			e.s.Times++
+		}
+		if ev.Rune() == '-' && e.s.Times > 1 {
+			e.s.Times--
+		}
+		e.render()
+	case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
+		e.save()
+	default:
+		return ev
+	}
+	return nil
 }

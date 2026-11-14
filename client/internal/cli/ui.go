@@ -352,10 +352,6 @@ func (u *ui) run(keyWarnings []string) error {
 
 	// The volumes tab builds its own table (newVolumesTab, ui_volumes.go).
 
-	// ------------------------------------------------------------------ forwards
-	ftable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	ftable.SetSelectedStyle(selStyle)
-
 	// Networks, Secrets and Configs build their own tables (ui_networks.go,
 	// ui_secrets.go, ui_configs.go).
 
@@ -369,20 +365,11 @@ func (u *ui) run(keyWarnings []string) error {
 	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false)
 	cxtable.SetSelectedStyle(selStyle)
 
-	// -------------------------------------------------------------------- nodes
-	notable := tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
-	notable.SetSelectedStyle(selStyle)
-	notable.SetSelectedFunc(func(int, int) {
-		if n, ok := u.selectedNode(); ok {
-			u.showNodeDetail(n)
-		}
-	})
-
 	// ---------------------------------------------------------------- tabs/chrome
 	// Promote the tab widgets that still live on u before the registry is asked
 	// for its pages: the adapters of the not-yet-converted tabs read them.
 	u.ctree, u.croot = ctree, croot
-	u.ftable, u.cxtable, u.notable = ftable, cxtable, notable
+	u.cxtable = cxtable
 	for i, t := range uiTabList {
 		content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
 	}
@@ -473,18 +460,12 @@ func (u *ui) run(keyWarnings []string) error {
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 
 	ctree.SetInputCapture(u.containerTreeKeys)
-	// Enter shows the full detail of a forward. The table truncates the state
-	// column, so this is where a failure reason is actually readable.
-	ftable.SetSelectedFunc(func(int, int) { u.showForwardDetail() })
-	ftable.SetInputCapture(u.forwardKeys)
 	cxtable.SetInputCapture(u.contextKeys)
 	cxtable.SetSelectedFunc(func(int, int) {
 		if c, ok := u.selectedContext(); ok {
 			u.activateContext(c)
 		}
 	})
-
-	notable.SetInputCapture(u.nodeKeys)
 
 	// The sidebar is visible from the first frame, so its content is loaded
 	// before it: it comes from docker's local store, no network involved.
@@ -1601,7 +1582,7 @@ func (u *ui) refreshCluster() {
 // the UI goroutine.
 func (u *ui) refreshForwardViews() {
 	u.updateStatus()
-	u.renderForwards()
+	u.fwdTab().render()
 	u.renderContainers()
 }
 
