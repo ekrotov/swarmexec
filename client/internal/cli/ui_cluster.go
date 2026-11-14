@@ -31,7 +31,7 @@ import (
 // current; the connections, the caches and the operator's position are not.
 //
 // It is embedded in *ui BY POINTER, and that is load-bearing twice over. It
-// keeps every existing `u.dcli` / `u.vols` / `u.filter` reference compiling
+// keeps every existing `u.dcli` / `u.filter` reference compiling
 // unchanged (Go promotes an embedded pointer's fields), so this is a change of
 // lifetime, not a rewrite of two hundred call sites. And it avoids copying the
 // atomics in here — an embedded value would have to be assigned to switch, which
@@ -140,9 +140,8 @@ type clusterState struct {
 	// filter is the container-tree "/" query; empty shows everything. A
 	// candidate matches when it is a substring of its service, container id or
 	// node (case-insensitive).
-	filter    string
-	volFilter string // volumes "/" query
-	pos       treePos
+	filter string
+	pos    treePos
 	// restorePos makes the next tree render take its cursor and folds from pos
 	// instead of from the widget. Set by a switch INTO this cluster, and true
 	// for exactly one render — every later refresh must keep whatever the
@@ -151,18 +150,10 @@ type clusterState struct {
 
 	clusterText string // last cluster-probe summary for the footer
 
-	// volumes tab
-	// selectedVols holds the volumes marked with space for a bulk delete, keyed
-	// by name so the selection survives sorting and re-render.
-	selectedVols map[string]bool
-	// shownVols is the filtered + sorted subset currently displayed; it is what
-	// selectedVolume() and "select all" index.
-	shownVols       []swarmVolume
-	vols            []swarmVolume
-	volUsage        map[string][]volumeConsumer
-	volSizes        map[string]int64
-	volErrs         map[string]error
-	volSizesLoading bool
+	// The volumes tab keeps its per-cluster state itself (volumesState, see
+	// perCluster): a tab with a type of its own owns what it shows, and this
+	// struct does not know it exists. The tabs below still keep theirs here
+	// until they are converted (review A-02).
 
 	// networks / secrets / configs tabs
 	nets []swarmNetwork
@@ -222,9 +213,8 @@ func (u *ui) treePosFromWidget() treePos {
 // is separate (and lazy) so the switch itself cannot block on a dead bastion.
 func newClusterState(name, ctxOverride string) *clusterState {
 	return &clusterState{
-		name:         name,
-		ctxOverride:  ctxOverride,
-		selectedVols: map[string]bool{},
+		name:        name,
+		ctxOverride: ctxOverride,
 	}
 }
 

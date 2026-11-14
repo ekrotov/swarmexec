@@ -22,7 +22,6 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		nettable:     newStateTable(),
 		cfgtable:     newStateTable(),
 		notable:      newStateTable(),
-		vtable:       newStateTable(),
 		ftable:       newStateTable(),
 		cxtable:      newStateTable(),
 		forwards:     newForwardRegistry(),
@@ -39,7 +38,7 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		{"networks", u.renderNetworks, u.nettable, 1, string(u.km.NetNew)},
 		{"configs", u.renderConfigs, u.cfgtable, 1, "docker config create"},
 		{"nodes", u.renderNodes, u.notable, 1, "the manager reported none"},
-		{"volumes", u.renderVolumeTable, u.vtable, 1, string(u.km.VolNew)},
+		{"volumes", u.volTab().render, u.volTab().table, 1, string(u.km.VolNew)},
 		{"forwards", u.renderForwards, u.ftable, 1, string(u.km.Forward)},
 		{"contexts", u.renderContexts, u.cxtable, 0, string(u.km.CtxNew)},
 	}

@@ -3,10 +3,6 @@
 
 package cli
 
-import (
-	"github.com/rivo/tview"
-)
-
 // The contexts used to be a tab, and that was the wrong shape for them.
 //
 // A tab is a destination: you go there, you do something, you come back. That
@@ -152,24 +148,7 @@ func (u *ui) blurSidebar() {
 
 // focusActiveTab puts the keyboard back on whatever the visible tab's widget is.
 func (u *ui) focusActiveTab() {
-	var p tview.Primitive
-	switch u.active {
-	case "containers":
-		p = u.ctree
-	case "volumes":
-		p = u.vtable
-	case "forwards":
-		p = u.ftable
-	case "networks":
-		p = u.nettable
-	case "secrets":
-		p = u.sectable
-	case "nodes":
-		p = u.notable
-	case "configs":
-		p = u.cfgtable
-	}
-	if p != nil {
-		u.app.SetFocus(p)
+	if t := u.activeTab(); t != nil {
+		u.app.SetFocus(t.widget())
 	}
 }

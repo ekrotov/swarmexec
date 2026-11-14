@@ -903,8 +903,9 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 		// volNames feeds the volume-mode autocomplete. Seed from whatever the
 		// Volumes tab already loaded, then refresh in the background (volume
 		// listing is a per-node agent fan-out, so we don't block opening).
-		volNames := make([]string, 0, len(u.vols))
-		for _, v := range u.vols {
+		known := u.volTab().st().vols
+		volNames := make([]string, 0, len(known))
+		for _, v := range known {
 			volNames = append(volNames, v.Name)
 		}
 		async(u, "ui.serviceedit.mounts.volumes", func(ctx context.Context) ([]string, error) {
