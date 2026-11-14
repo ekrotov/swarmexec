@@ -9,28 +9,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/agentcall"
-	"swarmexec/client/internal/agenterr"
+	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
-	pb "swarmexec/internal/pb"
-)
-
-const (
-	// logReconnectDelay is how long to wait between attempts to find the
-	// replacement container after a followed log stream ends.
-	logReconnectDelay = time.Second
-	// logReconnectWindow bounds how long to keep waiting for a replacement before
-	// giving up (a rolling update normally schedules the new task within seconds).
-	logReconnectWindow = 30 * time.Second
+	cterm "swarmexec/client/internal/term"
 )
 
 type logsFlags struct {
@@ -112,13 +99,13 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	// unprefixed output. A service with several replicas used to stop here as
 	// "ambiguous"; it now follows all of them, like docker service logs.
 	var ep *resolve.Endpoint
-	var multi []logSource
+	var multi []logstream.Source
 	var notes []string
 	if len(args) == 1 && f.stack == "" {
 		ep, err = r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
 		if amb, ok := err.(*resolve.AmbiguousError); ok {
 			for _, c := range amb.Candidates {
-				multi = append(multi, sourceFromCandidate(c))
+				multi = append(multi, logstream.SourceFromCandidate(c))
 			}
 			err = nil
 		}
@@ -127,7 +114,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 			ep, multi, err = lastExitedSources(ctx, r, nr)
 		}
 	} else {
-		multi, notes, err = expandLogSources(ctx, r, args, f.stack, f.node)
+		multi, notes, err = logstream.ExpandSources(ctx, r, args, f.stack, f.node)
 	}
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
@@ -135,7 +122,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 
 	// Optional format-aware parsing + filtering (flags override config defaults).
 	formatName := firstNonEmpty(f.logFormat, cfg.Logs.Format)
-	format, filter, ferr := buildLogFilter(
+	format, filter, ferr := logstream.BuildFilter(
 		formatName,
 		firstNonEmpty(f.minLevel, cfg.Logs.MinLevel),
 		f.grep,
@@ -143,13 +130,13 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	if ferr != nil {
 		return &cliError{code: usageExitCode, err: ferr}
 	}
-	auto := logFormatAuto(formatName)
-	params := logsParams{
-		follow:         f.follow,
-		tail:           f.tail,
-		timestamps:     f.timestamps,
-		since:          f.since,
-		connectTimeout: f.connectTimeout,
+	auto := logstream.FormatAuto(formatName)
+	params := logstream.Params{
+		Follow:         f.follow,
+		Tail:           f.tail,
+		Timestamps:     f.timestamps,
+		Since:          f.since,
+		ConnectTimeout: f.connectTimeout,
 	}
 
 	if multi != nil {
@@ -157,42 +144,42 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 			fmt.Fprintln(os.Stderr, "── "+n+" ──")
 		}
 		wrap := func(dst io.Writer) (io.Writer, func()) {
-			if !auto && !filteringActive(format, filter) {
+			if !auto && !logstream.FilteringActive(format, filter) {
 				return dst, func() {}
 			}
-			fw := newFilterWriter(dst, format, filter, renderPlain)
+			fw := logstream.NewFilterWriter(dst, format, filter, logstream.RenderPlain)
 			if auto {
-				fw.detectFormat() // per source and per stream: services log differently
+				fw.DetectFormat() // per source and per stream: services log differently
 			}
 			return fw, fw.Flush
 		}
-		if err := streamManyLogs(ctx, ac, r, multi, params, os.Stdout, os.Stderr, colorOutput(os.Stdout), wrap); err != nil {
+		if err := logstream.StreamMany(ctx, logstream.Run{Agents: ac, Resolver: r, Params: params, Stdout: os.Stdout, Stderr: os.Stderr}, multi, colorOutput(os.Stdout), wrap); err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
 		}
 		return nil
 	}
 
 	var stdout, stderr io.Writer = os.Stdout, os.Stderr
-	var flushers []*filterWriter
-	if auto || filteringActive(format, filter) {
-		fo := newFilterWriter(os.Stdout, format, filter, renderPlain)
-		fe := newFilterWriter(os.Stderr, format, filter, renderPlain)
+	var flushers []*logstream.FilterWriter
+	if auto || logstream.FilteringActive(format, filter) {
+		fo := logstream.NewFilterWriter(os.Stdout, format, filter, logstream.RenderPlain)
+		fe := logstream.NewFilterWriter(os.Stderr, format, filter, logstream.RenderPlain)
 		if auto {
 			// Each stream is sniffed on its own: an app that logs JSON on stdout
 			// and a runtime that prints plain panics on stderr is the normal
 			// case, not an exotic one.
-			fo.detectFormat()
-			fe.detectFormat()
+			fo.DetectFormat()
+			fe.DetectFormat()
 		}
-		stdout, stderr, flushers = fo, fe, []*filterWriter{fo, fe}
+		stdout, stderr, flushers = fo, fe, []*logstream.FilterWriter{fo, fe}
 	}
 
 	// Follow across container replacements (rolling update / restart / reschedule)
 	// so `logs -f <service>` keeps streaming after a swap, like `docker service
 	// logs -f`. Reconnect notices go straight to the real stderr, bypassing the
 	// filter so they are never dropped.
-	err = streamServiceLogs(ctx, ac, r, followTargetFromTarget(args[0]), *ep, params,
-		stdout, stderr, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
+	err = logstream.Follow(ctx, logstream.Run{Agents: ac, Resolver: r, Params: params, Stdout: stdout, Stderr: stderr},
+		logstream.FollowTargetOf(args[0]), *ep, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	for _, w := range flushers {
 		w.Flush()
 	}
@@ -208,7 +195,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 // slot — one becomes ep, several become multi — and says on stderr that these
 // are not live. With none (the task never got a container: image pull failure,
 // no suitable node) the task error is the answer.
-func lastExitedSources(ctx context.Context, r *resolve.Resolver, nr *resolve.NoRunningTaskError) (*resolve.Endpoint, []logSource, error) {
+func lastExitedSources(ctx context.Context, r *resolve.Resolver, nr *resolve.NoRunningTaskError) (*resolve.Endpoint, []logstream.Source, error) {
 	cands, reason, err := r.LastExited(ctx, nr.Service, nr.Slot)
 	if err != nil {
 		return nil, nil, err
@@ -224,9 +211,9 @@ func lastExitedSources(ctx context.Context, r *resolve.Resolver, nr *resolve.NoR
 		c := cands[0]
 		return &resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}, nil, nil
 	}
-	multi := make([]logSource, 0, len(cands))
+	multi := make([]logstream.Source, 0, len(cands))
 	for _, c := range cands {
-		multi = append(multi, sourceFromCandidate(c))
+		multi = append(multi, logstream.SourceFromCandidate(c))
 	}
 	return nil, multi, nil
 }
@@ -251,153 +238,9 @@ func lastExitedNote(service string, cands []resolve.Candidate) string {
 	return fmt.Sprintf("%s has no running container; showing %s (%s)", service, what, end)
 }
 
-// followTargetFromTarget derives the logical replica to keep following from the
-// raw target argument: "service.slot" pins the slot, a bare name is treated as a
-// service. A task/container id also lands here as a Service name that will not
-// resolve, so Successor reports the target gone and following simply stops — the
-// same outcome as before, just with a friendly notice.
-func followTargetFromTarget(target string) resolve.FollowTarget {
-	target = strings.TrimSpace(target)
-	if i := strings.LastIndex(target, "."); i > 0 {
-		if slot, err := strconv.Atoi(target[i+1:]); err == nil {
-			return resolve.FollowTarget{Service: target[:i], Slot: slot}
-		}
-	}
-	return resolve.FollowTarget{Service: target}
-}
-
-// logsParams carries the Logs request options.
-type logsParams struct {
-	follow         bool
-	tail           uint32
-	timestamps     bool
-	since          time.Duration
-	connectTimeout time.Duration
-
-	// wake, when non-nil, cuts the wait between attempts to find a replacement
-	// container short. The TUI feeds it from the container's own event stream,
-	// so a restart is noticed by the node telling us rather than by asking the
-	// manager again a second later. Nothing depends on it: with a nil channel,
-	// or none arriving, the polling below behaves exactly as before.
-	wake <-chan struct{}
-}
-
-// streamLogs dials the agent and streams the container's logs into stdout/stderr.
-// It is shared by the `logs` command and the interactive `ui`. Returns nil when
-// the stream ends or ctx is cancelled.
-func streamLogs(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer) error {
-	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := ac.Conn(dctx, ep.DialHost)
-	dcancel()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	stream, err := conn.Agent().Logs(ctx, &pb.LogsRequest{
-		ContainerId:  ep.ContainerID,
-		Follow:       p.follow,
-		Tail:         p.tail,
-		Timestamps:   p.timestamps,
-		SinceSeconds: uint32(p.since.Seconds()),
-	})
-	if err != nil {
-		return fmt.Errorf("open logs stream: %w", err)
-	}
-
-	for {
-		chunk, err := stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
-				return nil
-			}
-			return agenterr.Readable(err)
-		}
-		switch pl := chunk.Payload.(type) {
-		case *pb.LogChunk_Stdout:
-			_, _ = stdout.Write(pl.Stdout)
-		case *pb.LogChunk_Stderr:
-			_, _ = stderr.Write(pl.Stderr)
-		case *pb.LogChunk_Error:
-			return fmt.Errorf("agent: %s", pl.Error)
-		}
-	}
-}
-
-// streamServiceLogs follows a target's logs across container replacements. It
-// streams the current container; when the stream ends cleanly while following
-// (the container was replaced by a rolling update, restart or reschedule), it
-// re-resolves the target's running container and reconnects, emitting a notice
-// via notify. It returns when: follow is false and the stream ends; ctx is
-// cancelled; a real transport/agent error occurs; or the target has no running
-// container left. notify may be nil.
-func streamServiceLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Resolver, t resolve.FollowTarget, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer, notify func(string)) error {
-	lastCID := ep.ContainerID
-	params := p
-	for {
-		if err := streamLogs(ctx, ac, ep, params, stdout, stderr); err != nil {
-			return err
-		}
-		if !p.follow || ctx.Err() != nil || t.Service == "" {
-			return nil
-		}
-
-		// The container ended while following. Wait for its successor — during a
-		// rolling update the replacement may still be scheduling.
-		c, ok, err := waitForSuccessor(ctx, r, t, p.wake, notify)
-		if !ok {
-			return err
-		}
-		ep = resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		params = p
-		if c.ContainerID == lastCID {
-			params.tail = 0 // same container still up (spurious end): resume, don't re-dump the tail
-		} else if notify != nil {
-			notify(fmt.Sprintf("── container replaced; reconnected to %s on %s ──", shortID(c.ContainerID), orDash(c.NodeName)))
-		}
-		lastCID = c.ContainerID
-	}
-}
-
-// waitForSuccessor polls for the FollowTarget's replacement container until one
-// is running, the service is gone, the wait window elapses, or ctx is cancelled.
-// It returns ok=false (with a nil error on a clean stop) when following should
-// end; err is non-nil only for an unrecovered resolve error.
-func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.FollowTarget, wake <-chan struct{}, notify func(string)) (resolve.Candidate, bool, error) {
-	var lastErr error
-	for waited := time.Duration(0); ; waited += logReconnectDelay {
-		c, ok, err := r.Successor(ctx, t)
-		switch {
-		case ok:
-			return c, true, nil
-		case errors.Is(err, resolve.ErrTargetGone):
-			if notify != nil {
-				notify("── target has no running container left; stopping ──")
-			}
-			return resolve.Candidate{}, false, nil
-		case ctx.Err() != nil:
-			return resolve.Candidate{}, false, nil
-		}
-		lastErr = err // nil while the replacement is merely still scheduling
-		if waited >= logReconnectWindow {
-			if notify != nil {
-				notify("── no replacement container appeared; stopping ──")
-			}
-			return resolve.Candidate{}, false, lastErr
-		}
-		select {
-		case <-ctx.Done():
-			return resolve.Candidate{}, false, nil
-		case <-wake:
-			// The node reported that the container started, died or restarted.
-			// Ask again now instead of sitting out the rest of the delay.
-			//
-			// The gain is bounded by logReconnectDelay — up to a second, not the
-			// "sub-second reconnect" the plan promised, because the wait was
-			// already a second. What it does remove is the case that looks
-			// worst: a container that restarts in place, where the replacement
-			// exists immediately and the view still paused before showing it.
-		case <-time.After(logReconnectDelay):
-		}
-	}
+// colorOutput reports whether prefixes should be coloured: only on a terminal,
+// and never when NO_COLOR is set (https://no-color.org).
+func colorOutput(f *os.File) bool {
+	_, noColor := os.LookupEnv("NO_COLOR")
+	return !noColor && cterm.IsTerminal(f.Fd())
 }

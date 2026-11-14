@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -55,9 +57,9 @@ func (u *ui) renderSecrets() {
 func (u *ui) loadSecrets() {
 	dcli, sectable := u.dcli, u.sectable
 	tableState(sectable, sHeaders, loadingCell())
-	async(u, "ui.loadSecrets", func(ctx context.Context) ([]swarmSecret, error) {
-		return listSecrets(ctx, dcli)
-	}, func(list []swarmSecret, err error) {
+	async(u, "ui.loadSecrets", func(ctx context.Context) ([]swarmops.Secret, error) {
+		return swarmops.ListSecrets(ctx, dcli)
+	}, func(list []swarmops.Secret, err error) {
 		if err != nil {
 			tableState(sectable, sHeaders, errorCell(err))
 			return
@@ -67,7 +69,7 @@ func (u *ui) loadSecrets() {
 	})
 }
 
-func (u *ui) selectedSecret() (swarmSecret, bool) {
+func (u *ui) selectedSecret() (swarmops.Secret, bool) {
 	sectable := u.sectable
 	return selectedRow(sectable, u.secs)
 }
@@ -76,7 +78,7 @@ func (u *ui) selectedSecret() (swarmSecret, bool) {
 // use it. The value is deliberately absent: the Docker API never returns it,
 // and the overlay says so. Usage (services with their running containers)
 // needs a task lookup, so it fills in lazily after the overlay is up.
-func (u *ui) showSecretDetail(s swarmSecret) {
+func (u *ui) showSecretDetail(s swarmops.Secret) {
 	pages, dcli, sectable := u.pages, u.dcli, u.sectable
 	ts := func(t time.Time) string {
 		if t.IsZero() {
@@ -86,7 +88,7 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 	}
 	tv := tview.NewTextView().SetDynamicColors(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s ", s.Name))
-	render := func(members []netService, loading bool) {
+	render := func(members []swarmops.NetService, loading bool) {
 		var b strings.Builder
 		fmt.Fprintf(&b, "Name:     %s\n", s.Name)
 		fmt.Fprintf(&b, "ID:       %s\n", s.ID)
@@ -127,9 +129,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 		tv.SetText(b.String())
 	}
 	// Seed with the service names already known from the list; containers pending.
-	init := make([]netService, 0, len(s.Services))
+	init := make([]swarmops.NetService, 0, len(s.Services))
 	for _, name := range s.Services {
-		init = append(init, netService{Name: name})
+		init = append(init, swarmops.NetService{Name: name})
 	}
 	render(init, true)
 	ov := u.overlayFor(pageSecDetail, sectable, footerKeys("a", "attach", "d", "detach", "r", "rotate", "j/k", "scroll", "Esc", "back"))
@@ -140,13 +142,13 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 			closeSecret()
 			return nil
 		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-			suggestions := servicesExcluding(u.serviceNamesFromCache(), s.Services)
+			suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), s.Services)
 			u.servicePrompt(
 				fmt.Sprintf("attach secret %q to a service", s.Name),
 				fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
 				suggestions, tv,
 				func(ctx context.Context, svc string) error {
-					return attachSecretToService(ctx, dcli, svc, s.ID, s.Name)
+					return swarmops.AttachSecretToService(ctx, dcli, svc, s.ID, s.Name)
 				},
 				func() { closeSecret(); u.loadSecrets() },
 			)
@@ -161,7 +163,7 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 				fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
 				s.Services, tv,
 				func(ctx context.Context, svc string) error {
-					return detachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
+					return swarmops.DetachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
 				},
 				func() { closeSecret(); u.loadSecrets() },
 			)
@@ -181,9 +183,9 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 		height = 24
 	}
 	ov.show(centered(tv, 72, height), tv)
-	async(u, "ui.secrets.members", func(ctx context.Context) ([]netService, error) {
-		return secretMembers(ctx, dcli, s), nil
-	}, func(members []netService, _ error) {
+	async(u, "ui.secrets.members", func(ctx context.Context) ([]swarmops.NetService, error) {
+		return swarmops.SecretMembers(ctx, dcli, s), nil
+	}, func(members []swarmops.NetService, _ error) {
 		if pages.HasPage(pageSecDetail) {
 			render(members, false)
 		}
@@ -194,12 +196,12 @@ func (u *ui) showSecretDetail(s swarmSecret) {
 // stand-in of an interrupted rotation (NAME_rotating, carrying the marker
 // label) rotates — that is, resumes — the secret it stands in for: after a
 // failure in step 4 that is the only row left to press r on.
-func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail func()) {
+func (u *ui) openRotateSecret(s swarmops.Secret, back tview.Primitive, closeDetail func()) {
 	name, labels := s.Name, s.Labels
-	if of := s.Labels[rotateMarkerLabel]; of != "" {
+	if of := s.Labels[swarmops.RotateMarkerLabel]; of != "" {
 		name, labels = of, map[string]string{}
 		for k, v := range s.Labels {
-			if k != rotateMarkerLabel {
+			if k != swarmops.RotateMarkerLabel {
 				labels[k] = v
 			}
 		}
@@ -210,7 +212,7 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 	}
 	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
 	u.openRotateEditor(back, name, labels, rotateHooks{
-		plan: func() (rotatePlan, error) { return planRotation(ctx, dcli, name) },
+		plan: func() (swarmops.RotatePlan, error) { return swarmops.PlanRotation(ctx, dcli, name) },
 		// The editor belongs to the cluster it was opened on: a plan read
 		// after a switch away is dropped like any other stale result.
 		queue: func(fn func()) { u.onCluster(gen, fn) },
@@ -226,7 +228,7 @@ func (u *ui) openRotateSecret(s swarmSecret, back tview.Primitive, closeDetail f
 
 // rotateSecretFn is the rotation runRotation starts; a variable only so a test
 // can stand in for the cluster.
-var rotateSecretFn = rotateSecret
+var rotateSecretFn = swarmops.RotateSecret
 
 // runRotation rotates name in the background behind a progress overlay.
 //
@@ -254,7 +256,7 @@ func (u *ui) runRotation(name string, data []byte) {
 	rotating[name] = true
 	cs := u.clusterState // the cluster the rotation runs on, whatever is visible later
 	app, ctx := u.app, u.runCtx
-	var dcli secretRotateAPI // a nil interface, not a nil *client.Client
+	var dcli swarmops.SecretRotateAPI // a nil interface, not a nil *client.Client
 	if cs.dcli != nil {
 		dcli = cs.dcli
 	}
@@ -300,9 +302,9 @@ func (u *ui) runRotation(name string, data []byte) {
 	// Deliberately not async: that would drop the report after a switch.
 	go func() {
 		start := time.Now()
-		err := rotateSecretFn(ctx, dcli, name, data, rotateOptions{
-			Progress: func(e rotateEvent) {
-				add(fmt.Sprintf("[yellow]%d/%d[-] %s", e.Step, rotateSteps, tview.Escape(e.Msg)))
+		err := rotateSecretFn(ctx, dcli, name, data, swarmops.RotateOptions{
+			Progress: func(e swarmops.RotateEvent) {
+				add(fmt.Sprintf("[yellow]%d/%d[-] %s", e.Step, swarmops.RotateSteps, tview.Escape(e.Msg)))
 			},
 		})
 		logOp(ctx, "ui.secrets.rotate", start, err, "cluster", cs.name, "secret", name)
@@ -318,8 +320,8 @@ func (u *ui) runRotation(name string, data []byte) {
 			}
 			if err != nil {
 				msg := "rotation of " + name + where + " failed:\n\n" + err.Error()
-				if rotateResumeHint(err, "") != "" {
-					msg += "\n\nThe services keep running on " + rotateTempName(name) +
+				if swarmops.RotateResumeHint(err, "") != "" {
+					msg += "\n\nThe services keep running on " + swarmops.RotateTempName(name) +
 						", which holds the new content.\nRe-run r on " + name + " to resume."
 				}
 				u.info(msg)
@@ -332,7 +334,7 @@ func (u *ui) runRotation(name string, data []byte) {
 
 // openDeleteSecret permanently removes a secret after a confirm. Docker refuses
 // to remove a secret a service still references, so warn up front when in use.
-func (u *ui) openDeleteSecret(s swarmSecret) {
+func (u *ui) openDeleteSecret(s swarmops.Secret) {
 	app, dcli, sectable := u.app, u.dcli, u.sectable
 	msg := fmt.Sprintf("Remove secret %q?\n\nThis permanently deletes the secret; it cannot be undone.", s.Name)
 	if len(s.Services) > 0 {

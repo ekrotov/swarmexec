@@ -18,8 +18,11 @@ import (
 
 // fakeDocker is the sampler's four Docker calls over in-memory state. Stats
 // frames are served in order per container, the last one repeating, so two
-// passes see two readings.
+// passes see two readings. With advance set, the CPU counters keep moving by
+// the last step instead, so every pass after the first has a CPU delta — what
+// a busy container looks like to a sampler running on a ticker.
 type fakeDocker struct {
+	advance     bool
 	mu          sync.Mutex
 	containers  []container.Summary
 	listErr     error
@@ -62,9 +65,16 @@ func (f *fakeDocker) ContainerStats(_ context.Context, id string, opts client.Co
 	if f.statsIdx == nil {
 		f.statsIdx = map[string]int{}
 	}
-	i := min(f.statsIdx[id], len(frames)-1)
-	f.statsIdx[id] = i + 1
-	body, err := json.Marshal(frames[i])
+	n := f.statsIdx[id]
+	f.statsIdx[id] = n + 1
+	fr := frames[min(n, len(frames)-1)]
+	if f.advance && n >= len(frames) && len(frames) >= 2 {
+		prev, last := frames[len(frames)-2], frames[len(frames)-1]
+		steps := uint64(n - len(frames) + 1)
+		fr.CPUStats.CPUUsage.TotalUsage += steps * (last.CPUStats.CPUUsage.TotalUsage - prev.CPUStats.CPUUsage.TotalUsage)
+		fr.CPUStats.SystemUsage += steps * (last.CPUStats.SystemUsage - prev.CPUStats.SystemUsage)
+	}
+	body, err := json.Marshal(fr)
 	if err != nil {
 		return client.ContainerStatsResult{}, err
 	}

@@ -11,6 +11,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Live resource usage is node-local: the manager API knows what the scheduler
@@ -23,13 +24,6 @@ import (
 type (
 	containerUsage = agentcall.ContainerUsage
 	nodeUsage      = agentcall.NodeUsage
-)
-
-// Health verdicts, matching docker's vocabulary and the agent's.
-const (
-	healthHealthy   = "healthy"
-	healthUnhealthy = "unhealthy"
-	healthStarting  = "starting"
 )
 
 // usageLevel classifies a ratio for colouring. The thresholds are deliberately
@@ -57,37 +51,6 @@ func levelOf(ratio float64) usageLevel {
 		return usageOK
 	}
 }
-
-// formatCPUUsage renders a CPU reading as "used of allowed", because the
-// percentage on its own is not readable: it tells you nothing about the scale
-// it is measured against.
-func formatCPUUsage(u containerUsage) string {
-	switch {
-	case !u.CPUReady:
-		return "…"
-	case u.CPULimitCores > 0:
-		return fmt.Sprintf("%.2f / %.2f cores (%s)", u.CPUPercent/100, u.CPULimitCores, formatRatio(u.CPURatio))
-	default:
-		return fmt.Sprintf("%.2f cores", u.CPUPercent/100)
-	}
-}
-
-// formatMemUsage renders memory as "used of allowed". It uses the binary units
-// formatMemBytes gives (MiB/GiB), not SI: cgroup limits are binary, docker
-// reports binary, and the node detail already shows the same figures that way —
-// the same number must not read differently in two places.
-func formatMemUsage(u containerUsage) string {
-	used := formatMemBytes(u.MemBytes)
-	if used == "" {
-		used = "0B" // formatMemBytes yields "" at zero; a table cell needs a value
-	}
-	if u.MemLimitBytes <= 0 {
-		return used
-	}
-	return fmt.Sprintf("%s / %s (%s)", used, formatMemBytes(u.MemLimitBytes), formatRatio(u.MemRatio))
-}
-
-func formatRatio(r float64) string { return fmt.Sprintf("%.0f%%", r*100) }
 
 // Resource markers. These sit at the END of a row, after the padded columns, so
 // their colour tags cannot disturb the alignment — the same place the
@@ -124,11 +87,11 @@ func usageBadge(u containerUsage) string {
 	var b strings.Builder
 	if u.CPUReady {
 		if c := usageColor(levelOf(u.CPURatio)); c != "" {
-			fmt.Fprintf(&b, "  [%s]%s %s[-]", c, cpuGlyph, formatRatio(u.CPURatio))
+			fmt.Fprintf(&b, "  [%s]%s %s[-]", c, cpuGlyph, swarmops.FormatRatio(u.CPURatio))
 		}
 	}
 	if c := usageColor(levelOf(u.MemRatio)); c != "" {
-		fmt.Fprintf(&b, "  [%s]%s %s[-]", c, memGlyph, formatRatio(u.MemRatio))
+		fmt.Fprintf(&b, "  [%s]%s %s[-]", c, memGlyph, swarmops.FormatRatio(u.MemRatio))
 	}
 	return b.String()
 }
@@ -163,44 +126,10 @@ func serviceUsage(usage map[string]containerUsage, cands []resolve.Candidate, se
 	return out, found
 }
 
-// serviceHealth counts the healthcheck verdicts across a service's containers.
-// unknown covers both "declares no healthcheck" and "no reading from the node";
-// neither entitles the view to claim anything.
-type serviceHealth struct {
-	Healthy, Unhealthy, Starting, Unknown int
-}
-
-// Total is how many containers were looked at.
-func (h serviceHealth) Total() int { return h.Healthy + h.Unhealthy + h.Starting + h.Unknown }
-
-// Checked is how many actually report a verdict — the denominator that makes
-// "1 unhealthy" mean something.
-func (h serviceHealth) Checked() int { return h.Healthy + h.Unhealthy + h.Starting }
-
-func healthOf(usage map[string]containerUsage, cands []resolve.Candidate, service string) serviceHealth {
-	var h serviceHealth
-	for _, c := range cands {
-		if c.Service != service {
-			continue
-		}
-		switch usage[c.ContainerID].Health {
-		case healthHealthy:
-			h.Healthy++
-		case healthUnhealthy:
-			h.Unhealthy++
-		case healthStarting:
-			h.Starting++
-		default:
-			h.Unknown++
-		}
-	}
-	return h
-}
-
 // healthBadge names a failing healthcheck on a row. Healthy and un-checked
 // containers get nothing: the badge exists to contradict the running/desired
 // count, and a badge on every row would stop doing that.
-func healthBadge(h serviceHealth) string {
+func healthBadge(h swarmops.ServiceHealth) string {
 	switch {
 	case h.Unhealthy > 0:
 		return fmt.Sprintf("  [red]✖ %d unhealthy[-]", h.Unhealthy)
@@ -214,9 +143,9 @@ func healthBadge(h serviceHealth) string {
 // containerHealthBadge is the same marker for a single container leaf.
 func containerHealthBadge(health string) string {
 	switch health {
-	case healthUnhealthy:
+	case swarmops.HealthUnhealthy:
 		return "  [red]✖ unhealthy[-]"
-	case healthStarting:
+	case swarmops.HealthStarting:
 		return "  [yellow]◌ starting[-]"
 	default:
 		return ""
@@ -230,7 +159,7 @@ func containerHealthBadge(health string) string {
 // as a calm "3/3" in aqua. A failing probe is degradation of the same kind as a
 // missing replica, so it is coloured the same way — every container failing is
 // as bad as none running.
-func healthColor(base tcell.Color, h serviceHealth) tcell.Color {
+func healthColor(base tcell.Color, h swarmops.ServiceHealth) tcell.Color {
 	switch {
 	case h.Unhealthy == 0:
 		return base

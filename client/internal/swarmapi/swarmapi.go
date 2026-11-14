@@ -8,15 +8,13 @@
 // thought experiment (review Q-06). It costs nothing at runtime: the value is
 // still the real *client.Client.
 //
-// The method set is exactly what the UI calls, directly or through the data
-// helpers it hands the client to (serviceedit.go, netsec.go, inspect.go,
-// nodes.go, stackfile, …) — not the hundred-method client.APIClient. Adding a
-// manager call to the UI means adding its method here, which is the point:
-// the dependency is visible. The narrower interfaces the cli package already
-// declares for single helpers (serviceLister, stackAPI, …) are subsets of it
-// and stay where they are; they describe what those helpers need.
-//
-// It is meant to grow into the swarmops package of review A-01.
+// The method set is exactly what the UI calls, directly or through the
+// swarmops helpers it hands the client to (and stackfile) — not the
+// hundred-method client.APIClient. Adding a manager call to the UI means
+// adding its method here, which is the point: the dependency is visible. The
+// narrower interfaces swarmops and cli declare for single helpers
+// (swarmops.ServiceLister, swarmops.StackAPI, …) are subsets of it and stay
+// where they are; they describe what those helpers need.
 package swarmapi
 
 import (

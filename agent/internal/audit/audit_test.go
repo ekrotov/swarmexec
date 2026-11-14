@@ -89,16 +89,18 @@ func TestNew_TagsIdentityVerification(t *testing.T) {
 // The table lists every Logger method; a method missing from it is a record
 // nobody checked, which is why TestEveryMethodIsInTheEventTable exists.
 var eventTable = map[string]func(*Logger){
-	"session_start":     func(l *Logger) { l.SessionStart("a", "c", "s", []string{"sh"}, true, "addr") },
-	"session_end":       func(l *Logger) { l.SessionEnd("a", "c", 0, time.Second, 1, 2) },
-	"logs_start":        func(l *Logger) { l.LogsStart("a", "c", "s", true, "addr") },
-	"logs_end":          func(l *Logger) { l.LogsEnd("a", "c", time.Second, 3) },
-	"forward_start":     func(l *Logger) { l.ForwardStart("a", "c", "s", 80, true, "addr") },
-	"forward_end":       func(l *Logger) { l.ForwardEnd("a", "c", 80, time.Second, 1, 2) },
-	"volume_remove":     func(l *Logger) { l.VolumeRemove("a", "v", true, "") },
-	"volume_create":     func(l *Logger) { l.VolumeCreate("a", "v", true, "") },
-	"image_prune":       func(l *Logger) { l.ImagePrune("a", true, 10, 1, true, "") },
-	"prune":             func(l *Logger) { l.Prune("a", "manual", "containers", 10, 1, false, true, "") },
+	"session_start": func(l *Logger) { l.SessionStart("a", "c", "s", []string{"sh"}, true, "addr") },
+	"session_end":   func(l *Logger) { l.SessionEnd("a", "c", 0, time.Second, 1, 2) },
+	"logs_start":    func(l *Logger) { l.LogsStart("a", "c", "s", true, "addr") },
+	"logs_end":      func(l *Logger) { l.LogsEnd("a", "c", time.Second, 3) },
+	"forward_start": func(l *Logger) { l.ForwardStart("a", "c", "s", 80, true, "addr") },
+	"forward_end":   func(l *Logger) { l.ForwardEnd("a", "c", 80, time.Second, 1, 2) },
+	"volume_remove": func(l *Logger) { l.VolumeRemove("a", "v", true, "") },
+	"volume_create": func(l *Logger) { l.VolumeCreate("a", "v", true, "") },
+	"image_prune":   func(l *Logger) { l.ImagePrune("a", true, 10, 1, true, "") },
+	"prune": func(l *Logger) {
+		l.Prune(PruneRecord{Identity: "a", Trigger: "manual", Category: "containers", Freed: 10, Count: 1, OK: true})
+	},
 	"event_watch_start": func(l *Logger) { l.EventWatchStart("a", "c", "s", "addr") },
 	"event_watch_end":   func(l *Logger) { l.EventWatchEnd("a", "c", time.Second, 4) },
 	"container_list":    func(l *Logger) { l.ContainerList("a", "web", 1) },

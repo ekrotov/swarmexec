@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
+	"time"
+
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
-	"sync"
-	"time"
+	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/moby/moby/api/types/mount"
@@ -326,7 +328,7 @@ func (t *volumesTab) load() {
 		if nerr == nil {
 			vs, errs = ac.Volumes(ctx, nodes, f.connectTimeout)
 			usage = ac.VolumeUsage(ctx, nodes, f.connectTimeout)
-			if len(nodes) > 0 && len(errs) == len(nodes) && !agentDeployed(ctx, dcli) {
+			if len(nodes) > 0 && len(errs) == len(nodes) && !swarmops.AgentDeployed(ctx, dcli) {
 				noAgent = true
 			}
 		}
@@ -472,7 +474,7 @@ func (t *volumesTab) showNodes(v swarmVolume) {
 	// The volume's labels (read-only) above the node list — Docker has no
 	// volume-update API, so they can't be edited after creation. Kept out of
 	// the list so the node row indices stay 1:1 with v.Nodes.
-	if lbls := kvPairs(v.Labels); len(lbls) > 0 {
+	if lbls := swarmops.KVPairs(v.Labels); len(lbls) > 0 {
 		lv := tview.NewTextView().SetDynamicColors(true).
 			SetText(" [gray]labels[-]\n   " + tview.Escape(strings.Join(lbls, "\n   ")))
 		labelH = len(lbls) + 1
@@ -532,7 +534,7 @@ func (t *volumesTab) showCreate() {
 	ov := u.overlayFor(pageVolForm, t.table, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 	closeForm := ov.Close
 	form.AddButton("Create", func() {
-		lbls, err := parseKVList(labels)
+		lbls, err := swarmops.ParseKVList(labels)
 		if err != nil {
 			u.info("invalid labels: " + err.Error())
 			return
@@ -731,7 +733,7 @@ func (t *volumesTab) prune() {
 	u := t.u
 	dcli := u.dcli
 	async(u, "ui.volumes.prune.scan", func(ctx context.Context) (map[string]bool, error) {
-		return serviceVolumeNames(ctx, dcli), nil
+		return swarmops.ServiceVolumeNames(ctx, dcli), nil
 	}, func(declared map[string]bool, _ error) {
 		st := t.st()
 		var targets []swarmVolume
@@ -800,7 +802,7 @@ func (t *volumesTab) attachToService(volName string) {
 					}
 					mnt := mount.Mount{Type: mount.TypeVolume, Source: volName, Target: target, ReadOnly: lbl == "Attach read-only"}
 					asyncDo(u, "ui.volumes.attach", func(ctx context.Context) error {
-						return addServiceMount(ctx, dcli, svc, mnt)
+						return swarmops.AddServiceMount(ctx, dcli, svc, mnt)
 					}, func(err error) {
 						app.SetFocus(vtable)
 						if err != nil {

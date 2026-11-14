@@ -14,6 +14,7 @@ import (
 
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/client/internal/swarmops"
 )
 
 type downFlags struct {
@@ -127,7 +128,7 @@ func removePolicyConfigs(ctx context.Context, dcli *client.Client) (int, error) 
 // findRemovableAgent locates the agent service by name, falling back to the
 // role label so `down` still finds it if the name differs.
 func findRemovableAgent(ctx context.Context, dcli *client.Client, name string) (*swarm.Service, error) {
-	if svc, err := serviceByName(ctx, dcli, name); err != nil {
+	if svc, err := swarmops.ServiceByName(ctx, dcli, name); err != nil {
 		return nil, err
 	} else if svc != nil {
 		return svc, nil

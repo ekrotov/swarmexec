@@ -5,12 +5,10 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/stackfile"
 )
@@ -55,7 +53,7 @@ func newStackDeployCmd(g *globalFlags) *cobra.Command {
 
 func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, args []string) error {
 	path := args[0]
-	name := stackNameFromPath(path)
+	name := stackfile.NameFromPath(path)
 	if len(args) > 1 {
 		name = args[1]
 	}
@@ -70,7 +68,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
-	writePlanReport(out, plan)
+	stackfile.WritePlanReport(out, plan)
 
 	if f.check {
 		if plan.Actionable() {
@@ -106,33 +104,6 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 	}
 	fmt.Fprintf(out, "deployed %s — %s\n", name, res.Summary())
 	return nil
-}
-
-// writePlanReport prints what the checks found, worst first.
-func writePlanReport(w io.Writer, plan *stackfile.Plan) {
-	if len(plan.Unsupported) > 0 {
-		fmt.Fprintf(w, "note: swarm ignores these keys in %s: %s\n\n",
-			plan.Path, strings.Join(plan.Unsupported, ", "))
-	}
-	flagged := plan.Flagged()
-	if len(flagged) == 0 {
-		// Name what was looked for, or "nothing found" is a claim with nothing
-		// behind it — the same rule the risks overlay follows.
-		fmt.Fprintf(w, "%d service(s) checked, nothing above informational.\n", len(plan.Services))
-		fmt.Fprintf(w, "Checked: %s.\n\n", strings.Join(secscan.Checks(), ", "))
-		return
-	}
-	fmt.Fprintf(w, "%d of %d service(s) flagged in %s:\n\n", len(flagged), len(plan.Services), plan.Path)
-	for _, s := range flagged {
-		fmt.Fprintf(w, "  %s\n", s.Name)
-		for _, find := range s.Findings {
-			if find.Severity == secscan.SevLow {
-				continue // informational; true of nearly every service
-			}
-			fmt.Fprintf(w, "    %-7s %s — %s\n", find.Severity, find.Title, find.Detail)
-		}
-		fmt.Fprintln(w)
-	}
 }
 
 // confirmDeploy asks, on the terminal, whether to go ahead anyway.

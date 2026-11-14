@@ -27,6 +27,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/client/internal/swarmfake"
 	pb "swarmexec/internal/pb"
 )
 
@@ -54,7 +55,7 @@ func (f *fakeManager) ServiceList(_ context.Context, o client.ServiceListOptions
 	defer f.mu.Unlock()
 	var out []swarm.Service
 	for _, s := range f.services {
-		if matchService(s, o.Filters) {
+		if swarmfake.MatchService(s, o.Filters) {
 			out = append(out, s)
 		}
 	}
@@ -134,7 +135,7 @@ func startVolumeAgents(t *testing.T, byHost map[string]*volumeAgent) config.Conf
 		if err != nil {
 			t.Fatal(err)
 		}
-		gs := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{selfSignedPair(t)}})))
+		gs := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{swarmfake.SelfSignedPair(t)}})))
 		pb.RegisterAgentServer(gs, a)
 		go func() { _ = gs.Serve(lis) }()
 		t.Cleanup(gs.Stop)

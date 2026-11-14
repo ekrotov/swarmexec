@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
 )
 
@@ -289,7 +290,7 @@ func (u *ui) connectCluster(c *clusterState) error {
 	// lands. It belongs to the cluster whose images it resolved, and the guard
 	// is pointer identity: if that cluster is no longer the visible one, the
 	// rows on screen are not its rows.
-	c.regCache = newRegistryCache(func() {
+	c.regCache = swarmops.NewRegistryCache(func() {
 		u.app.QueueUpdateDraw(func() {
 			if u.clusterState != c {
 				return
@@ -657,7 +658,7 @@ func colorLogLine(line string) string {
 	}
 }
 
-func networkType(n swarmNetwork) string {
+func networkType(n swarmops.Network) string {
 	switch {
 	case n.Attachable:
 		return "attachable"
@@ -675,7 +676,7 @@ func networkType(n swarmNetwork) string {
 // networkTypeColor marks a network by type. Priority (highest first) matches the
 // networkType switch: attachable→green, internal→yellow, ingress→gray,
 // overlay(swarm)→aqua, everything local (bridge/host/…)→dimmed.
-func networkTypeColor(n swarmNetwork) tcell.Color {
+func networkTypeColor(n swarmops.Network) tcell.Color {
 	switch {
 	case n.Attachable:
 		return tcell.ColorGreen
@@ -697,7 +698,7 @@ func networkTypeColor(n swarmNetwork) tcell.Color {
 // renderPlaceReport formats a placement diagnosis as colour-tagged text for the
 // overlay: a ✓/✗ per node (global) or per non-running task (replicated) with the
 // reason, and a short explanation of what "desired" means.
-func renderPlaceReport(rep placeReport) string {
+func renderPlaceReport(rep swarmops.PlacementReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "  [aqua]%s[-]  —  %s  —  %d/%d running\n\n", tview.Escape(rep.Service), rep.Mode, rep.Running, rep.Desired)
 	if len(rep.Rows) == 0 {
@@ -733,7 +734,7 @@ func renderPlaceReport(rep placeReport) string {
 // their node, desired/current state and last-change age, and — indented on its
 // own line so nothing is truncated — the scheduler/runtime error of any task
 // that failed. This is the detailed evidence behind the summary rows above.
-func renderTaskPS(b *strings.Builder, tasks []taskPS) {
+func renderTaskPS(b *strings.Builder, tasks []swarmops.TaskPS) {
 	if len(tasks) == 0 {
 		return
 	}
@@ -966,33 +967,12 @@ func securityBadge(risks []secscan.Finding) string {
 	return "🛡 "
 }
 
-// updateStatusLabel maps a swarm rolling-update state to a short glyph+label and
-// whether an update is actually in flight. Finished ("completed" /
-// "rollback_completed") and absent states report active=false. The colour name
-// is the accompanying severity tint (yellow = normal, orange/red = attention).
-// Shared by the tree badge and the inspect UPDATE line so both stay in sync.
-func updateStatusLabel(state string) (label, color string, active bool) {
-	switch state {
-	case "updating":
-		return "⟳ updating", "yellow", true
-	case "rollback_started":
-		return "↺ rolling back", "orange", true
-	default:
-		// Only the actively-converging states above are badged. Swarm keeps
-		// UpdateStatus.State indefinitely, and the default failure_action is
-		// "pause", so a single failed task in some past deploy pins a service at
-		// "paused" for weeks — a stale, misleading signal, not an ongoing update.
-		// "paused"/"rollback_paused" (and completed/none) therefore get no badge.
-		return "", "", false
-	}
-}
-
 // updateBadge renders a coloured in-progress marker for a service whose rolling
 // update (or rollback) is still running, so a mid-update service is visible at a
 // glance in the tree. The colour tags render because the tree draws node text
 // through tview's tag-aware printer.
 func updateBadge(state string) string {
-	label, color, active := updateStatusLabel(state)
+	label, color, active := swarmops.UpdateStatusLabel(state)
 	if !active {
 		return ""
 	}
