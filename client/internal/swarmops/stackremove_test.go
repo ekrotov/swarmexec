@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
-	"github.com/rivo/tview"
 )
 
 // fakeStackAPI records what was asked of it and in which order, so the two
@@ -101,7 +100,7 @@ func stackFixture() *fakeStackAPI {
 // into "shop-staging".
 func TestStackContentsFiltersByTheExactLabel(t *testing.T) {
 	f := stackFixture()
-	c, err := stackContentsOf(context.Background(), f, "shop")
+	c, err := StackContentsOf(context.Background(), f, "shop")
 	if err != nil {
 		t.Fatalf("stackContentsOf: %v", err)
 	}
@@ -128,8 +127,8 @@ func TestStackContentsFiltersByTheExactLabel(t *testing.T) {
 // networks are in use by definition, so every other removal would fail.
 func TestRemoveStackRemovesServicesFirstAndNetworksLast(t *testing.T) {
 	f := stackFixture()
-	c, _ := stackContentsOf(context.Background(), f, "shop")
-	if errs := removeStack(context.Background(), f, c); len(errs) != 0 {
+	c, _ := StackContentsOf(context.Background(), f, "shop")
+	if errs := RemoveStack(context.Background(), f, c); len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	want := []string{"service:svc1", "secret:sec1", "config:cfg1", "network:net1"}
@@ -143,9 +142,9 @@ func TestRemoveStackRemovesServicesFirstAndNetworksLast(t *testing.T) {
 func TestRemoveStackContinuesPastAFailure(t *testing.T) {
 	f := stackFixture()
 	f.failRemove = map[string]error{"sec1": errors.New("secret is in use")}
-	c, _ := stackContentsOf(context.Background(), f, "shop")
+	c, _ := StackContentsOf(context.Background(), f, "shop")
 
-	errs := removeStack(context.Background(), f, c)
+	errs := RemoveStack(context.Background(), f, c)
 	if len(errs) != 1 {
 		t.Fatalf("errors = %v, want exactly the one refusal", errs)
 	}
@@ -169,9 +168,9 @@ func TestRemoveStackWaitsForTheNetworkEndpointsToDrain(t *testing.T) {
 
 	f := stackFixture()
 	f.netFailsFor = 2 // busy twice, then free
-	c, _ := stackContentsOf(context.Background(), f, "shop")
+	c, _ := StackContentsOf(context.Background(), f, "shop")
 
-	if errs := removeStack(context.Background(), f, c); len(errs) != 0 {
+	if errs := RemoveStack(context.Background(), f, c); len(errs) != 0 {
 		t.Fatalf("errors = %v, want none — the network frees up on the third try", errs)
 	}
 	if f.netCalls != 3 {
@@ -188,9 +187,9 @@ func TestRemoveStackGivesUpOnAPermanentlyBusyNetwork(t *testing.T) {
 
 	f := stackFixture()
 	f.netFailsFor = 1000
-	c, _ := stackContentsOf(context.Background(), f, "shop")
+	c, _ := StackContentsOf(context.Background(), f, "shop")
 
-	errs := removeStack(context.Background(), f, c)
+	errs := RemoveStack(context.Background(), f, c)
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "network shop_default") {
 		t.Fatalf("errors = %v, want one naming the network", errs)
 	}
@@ -202,33 +201,17 @@ func TestRemoveStackGivesUpOnAPermanentlyBusyNetwork(t *testing.T) {
 // The confirm has to say what will go, and only what is actually there: a line
 // reading "0 configs" invites the reader to skim it.
 func TestStackContentsCounts(t *testing.T) {
-	c := stackContents{
+	c := StackContents{
 		Services: []stackObject{{Name: "a"}, {Name: "b"}},
 		Networks: []stackObject{{Name: "n"}},
 	}
-	if got := c.counts(); got != "2 services, 1 network" {
+	if got := c.Counts(); got != "2 services, 1 network" {
 		t.Errorf("counts = %q", got)
 	}
-	if (stackContents{}).empty() != true {
+	if (StackContents{}).Empty() != true {
 		t.Error("an empty stackContents must report empty")
 	}
-	if got := (stackContents{}).counts(); got != "nothing" {
+	if got := (StackContents{}).Counts(); got != "nothing" {
 		t.Errorf("empty counts = %q", got)
-	}
-}
-
-// "(no stack)" is a display grouping, not a stack. Nothing carries that label,
-// so removing it would either match nothing or — if anyone ever named a stack
-// that — match the wrong thing entirely.
-func TestRemoveStackRefusesTheUnstackedBucket(t *testing.T) {
-	f := stackFixture()
-	u := &ui{app: tview.NewApplication(), help: tview.NewTextView()}
-	u.openRemoveStack(noStackLabel, nil, nil)
-
-	if len(f.labels) != 0 || len(f.removed) != 0 {
-		t.Errorf("the unstacked bucket reached the API: lists=%v removes=%v", f.labels, f.removed)
-	}
-	if got := u.help.GetText(true); !strings.Contains(got, "no stack label") {
-		t.Errorf("footer = %q, want it to explain why nothing happened", got)
 	}
 }

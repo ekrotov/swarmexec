@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"strings"
@@ -38,7 +38,7 @@ func task(nodeID string, slot int, desired, state swarm.TaskState, errMsg string
 	return t
 }
 
-func rowFor(rep placeReport, node string) (placeRow, bool) {
+func rowFor(rep PlacementReport, node string) (placeRow, bool) {
 	for _, r := range rep.Rows {
 		if r.Node == node {
 			return r, true

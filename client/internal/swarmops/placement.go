@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -29,23 +29,23 @@ type placeRow struct {
 	Detail string
 }
 
-// placeReport is the full diagnosis for one service.
-type placeReport struct {
+// PlacementReport is the full diagnosis for one service.
+type PlacementReport struct {
 	Service     string
 	Mode        string
 	Global      bool
 	Running     int
 	Desired     int
 	Rows        []placeRow
-	Tasks       []taskPS // the `docker service ps` equivalent (recent tasks first)
+	Tasks       []TaskPS // the `docker service ps` equivalent (recent tasks first)
 	Unevaluated []string // constraints we can't check client-side (engine.labels.*)
 }
 
-// taskPS is one row of the `docker service ps` equivalent: a task with its
+// TaskPS is one row of the `docker service ps` equivalent: a task with its
 // target node, desired vs current state, when it last changed, and the
 // scheduler/runtime error if any. This is the authoritative detail behind a
 // vague "no task scheduled" — a failed/rejected task carries the real reason.
-type taskPS struct {
+type TaskPS struct {
 	Name    string    // service.slot (replicated) or service.hostname (global)
 	Node    string    // node hostname, or "(unassigned)"
 	Desired string    // desired state (Running / Shutdown / …)
@@ -54,34 +54,34 @@ type taskPS struct {
 	Err     string    // Status.Err / Message when the state itself isn't self-explanatory
 }
 
-// diagnoseServicePlacement fetches the service, nodes and tasks and builds the
+// DiagnosePlacement fetches the service, nodes and tasks and builds the
 // report.
-func diagnoseServicePlacement(ctx context.Context, dcli swarmapi.Client, name string) (placeReport, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func DiagnosePlacement(ctx context.Context, dcli swarmapi.Client, name string) (PlacementReport, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
-		return placeReport{}, err
+		return PlacementReport{}, err
 	}
 	if svc == nil {
-		return placeReport{}, fmt.Errorf("no service named %q", name)
+		return PlacementReport{}, fmt.Errorf("no service named %q", name)
 	}
 	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nodes := nodesRes.Items
 	if err != nil {
-		return placeReport{}, err
+		return PlacementReport{}, err
 	}
 	tasksRes, err := dcli.TaskList(ctx, client.TaskListOptions{
 		Filters: make(client.Filters).Add("service", svc.ID),
 	})
 	tasks := tasksRes.Items
 	if err != nil {
-		return placeReport{}, err
+		return PlacementReport{}, err
 	}
 	return buildPlaceReport(*svc, nodes, tasks), nil
 }
 
 // buildPlaceReport is the pure core (no I/O), so it is unit-testable.
-func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task) placeReport {
-	rep := placeReport{Service: svc.Spec.Name, Global: svc.Spec.Mode.Global != nil}
+func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task) PlacementReport {
+	rep := PlacementReport{Service: svc.Spec.Name, Global: svc.Spec.Mode.Global != nil}
 	rep.Mode = "replicated"
 	if rep.Global {
 		rep.Mode = "global"
@@ -176,8 +176,8 @@ func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task)
 // buildTaskPS renders the tasks as the `docker service ps` equivalent: most
 // recent state change first, each with its target node, desired/current state
 // and error. This is the detail the summary rows condense.
-func buildTaskPS(svcName string, tasks []swarm.Task, nodeByID map[string]swarm.Node) []taskPS {
-	out := make([]taskPS, 0, len(tasks))
+func buildTaskPS(svcName string, tasks []swarm.Task, nodeByID map[string]swarm.Node) []TaskPS {
+	out := make([]TaskPS, 0, len(tasks))
 	for _, t := range tasks {
 		node := "(unassigned)"
 		if n, ok := nodeByID[t.NodeID]; ok && n.Description.Hostname != "" {
@@ -192,7 +192,7 @@ func buildTaskPS(svcName string, tasks []swarm.Task, nodeByID map[string]swarm.N
 		if msg == "" && t.Status.Message != "" && t.Status.Message != string(t.Status.State) {
 			msg = t.Status.Message
 		}
-		out = append(out, taskPS{
+		out = append(out, TaskPS{
 			Name:    name,
 			Node:    node,
 			Desired: string(t.DesiredState),

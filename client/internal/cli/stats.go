@@ -11,6 +11,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Live resource usage is node-local: the manager API knows what the scheduler
@@ -73,18 +74,18 @@ func formatCPUUsage(u containerUsage) string {
 }
 
 // formatMemUsage renders memory as "used of allowed". It uses the binary units
-// formatMemBytes gives (MiB/GiB), not SI: cgroup limits are binary, docker
+// swarmops.FormatMemBytes gives (MiB/GiB), not SI: cgroup limits are binary, docker
 // reports binary, and the node detail already shows the same figures that way —
 // the same number must not read differently in two places.
 func formatMemUsage(u containerUsage) string {
-	used := formatMemBytes(u.MemBytes)
+	used := swarmops.FormatMemBytes(u.MemBytes)
 	if used == "" {
-		used = "0B" // formatMemBytes yields "" at zero; a table cell needs a value
+		used = "0B" // swarmops.FormatMemBytes yields "" at zero; a table cell needs a value
 	}
 	if u.MemLimitBytes <= 0 {
 		return used
 	}
-	return fmt.Sprintf("%s / %s (%s)", used, formatMemBytes(u.MemLimitBytes), formatRatio(u.MemRatio))
+	return fmt.Sprintf("%s / %s (%s)", used, swarmops.FormatMemBytes(u.MemLimitBytes), formatRatio(u.MemRatio))
 }
 
 func formatRatio(r float64) string { return fmt.Sprintf("%.0f%%", r*100) }

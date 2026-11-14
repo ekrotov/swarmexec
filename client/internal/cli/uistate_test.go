@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -111,19 +113,19 @@ func TestNodeStateColor(t *testing.T) {
 // Two grays a shade apart asked the eye to tell them apart for something the
 // TYPE column already says in words.
 func TestNetworkTypeColorHasOneDim(t *testing.T) {
-	ingress := networkTypeColor(swarmNetwork{Ingress: true})
-	plain := networkTypeColor(swarmNetwork{Driver: "bridge", Scope: "local"})
+	ingress := networkTypeColor(swarmops.Network{Ingress: true})
+	plain := networkTypeColor(swarmops.Network{Driver: "bridge", Scope: "local"})
 	if ingress != plain {
 		t.Errorf("ingress %v vs local %v — one dim, not two", ingress, plain)
 	}
 	// The hues that carry meaning are untouched.
-	if got := networkTypeColor(swarmNetwork{Attachable: true}); got != tcell.ColorGreen {
+	if got := networkTypeColor(swarmops.Network{Attachable: true}); got != tcell.ColorGreen {
 		t.Errorf("attachable = %v, want green", got)
 	}
-	if got := networkTypeColor(swarmNetwork{Internal: true}); got != tcell.ColorYellow {
+	if got := networkTypeColor(swarmops.Network{Internal: true}); got != tcell.ColorYellow {
 		t.Errorf("internal = %v, want yellow", got)
 	}
-	if got := networkTypeColor(swarmNetwork{Driver: "overlay"}); got != tcell.ColorAqua {
+	if got := networkTypeColor(swarmops.Network{Driver: "overlay"}); got != tcell.ColorAqua {
 		t.Errorf("overlay = %v, want aqua", got)
 	}
 }

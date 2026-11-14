@@ -1,13 +1,14 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"testing"
 
 	"github.com/moby/moby/api/types/swarm"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -65,11 +66,11 @@ func TestBuildNodeInfos(t *testing.T) {
 }
 
 func TestVolumeCountsByNode(t *testing.T) {
-	vols := []swarmVolume{
+	vols := []agentcall.Volume{
 		{Name: "a", Nodes: []resolve.Node{{Name: "n1"}, {Name: "n2"}}},
 		{Name: "b", Nodes: []resolve.Node{{Name: "n1"}}},
 	}
-	got := volumeCountsByNode(vols)
+	got := VolumeCountsByNode(vols)
 	if got["n1"] != 2 || got["n2"] != 1 {
 		t.Errorf("counts = %v, want n1=2 n2=1", got)
 	}

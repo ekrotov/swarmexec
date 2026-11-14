@@ -20,6 +20,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
 	pb "swarmexec/internal/pb"
 )
@@ -270,7 +271,7 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (*agentcall.Client, context
 // noAgentIfAllDown returns the "run init" error when every node failed to answer
 // and no agent service is deployed (the most likely cause).
 func noAgentIfAllDown(ctx context.Context, dcli *client.Client, nodes []resolve.Node, errs map[string]error) error {
-	if len(nodes) > 0 && len(errs) == len(nodes) && !agentDeployed(ctx, dcli) {
+	if len(nodes) > 0 && len(errs) == len(nodes) && !swarmops.AgentDeployed(ctx, dcli) {
 		return &cliError{code: session.TransportFailure, err: errNoAgent}
 	}
 	return nil

@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"bytes"
@@ -277,7 +277,7 @@ type rotateFixture struct {
 func newRotateFixture(t *testing.T) *rotateFixture {
 	t.Helper()
 	f := newFakeRotate()
-	labels := map[string]string{stackLabelKey: "shop", "team": "core"}
+	labels := map[string]string{StackLabelKey: "shop", "team": "core"}
 	db := f.addSecret("db", "old", labels)
 	api := f.addSecret("api", "token", nil)
 	web := swarm.SecretReference{SecretID: db.ID, SecretName: "db",
@@ -291,9 +291,9 @@ func newRotateFixture(t *testing.T) *rotateFixture {
 	return &rotateFixture{f: f, labels: labels, webRef: web, apiRefID: api.ID}
 }
 
-func fastRotate(events *[]rotateEvent) rotateOptions {
-	return rotateOptions{Timeout: 200 * time.Millisecond, Poll: time.Millisecond,
-		Progress: func(e rotateEvent) {
+func fastRotate(events *[]RotateEvent) RotateOptions {
+	return RotateOptions{Timeout: 200 * time.Millisecond, Poll: time.Millisecond,
+		Progress: func(e RotateEvent) {
 			if events != nil {
 				*events = append(*events, e)
 			}
@@ -332,8 +332,8 @@ func (x *rotateFixture) checkRotated(t *testing.T, want string) {
 
 func TestRotateSecret_HappyPath(t *testing.T) {
 	x := newRotateFixture(t)
-	var events []rotateEvent
-	if err := rotateSecret(context.Background(), x.f, "db", []byte("new\n"), fastRotate(&events)); err != nil {
+	var events []RotateEvent
+	if err := RotateSecret(context.Background(), x.f, "db", []byte("new\n"), fastRotate(&events)); err != nil {
 		t.Fatal(err)
 	}
 	x.checkRotated(t, "new\n")
@@ -350,7 +350,7 @@ func TestRotateSecret_HappyPath(t *testing.T) {
 			t.Errorf("progress leaked the value: %q", e.Msg)
 		}
 	}
-	for s := 1; s <= rotateSteps; s++ {
+	for s := 1; s <= RotateSteps; s++ {
 		if !seen[s] {
 			t.Errorf("no progress for step %d: %v", s, events)
 		}
@@ -360,21 +360,21 @@ func TestRotateSecret_HappyPath(t *testing.T) {
 func TestRotateSecret_TempCarriesLabelsAndMarker(t *testing.T) {
 	x := newRotateFixture(t)
 	x.f.failOnce["remove:db"] = true // stop after step 2
-	err := rotateSecret(context.Background(), x.f, "db", []byte("new"), fastRotate(nil))
+	err := RotateSecret(context.Background(), x.f, "db", []byte("new"), fastRotate(nil))
 	var re *rotateError
 	if !errors.As(err, &re) || re.Step != 3 || !re.Resumable {
 		t.Fatalf("err = %v, want a resumable step-3 failure", err)
 	}
 	tmp := x.f.byName("db_rotating")
 	want := maps.Clone(x.labels)
-	want[rotateMarkerLabel] = "db"
+	want[RotateMarkerLabel] = "db"
 	if tmp == nil || !maps.Equal(tmp.Spec.Labels, want) {
 		t.Fatalf("db_rotating labels = %v, want %v", tmp, want)
 	}
 	if string(x.f.data[tmp.ID]) != "new" {
 		t.Errorf("db_rotating content = %q", x.f.data[tmp.ID])
 	}
-	if h := rotateResumeHint(err, "re-run"); !strings.Contains(h, "re-run to resume") {
+	if h := RotateResumeHint(err, "re-run"); !strings.Contains(h, "re-run to resume") {
 		t.Errorf("hint = %q", h)
 	}
 }
@@ -402,25 +402,25 @@ func TestRotateSecret_ResumeFromEveryFailurePoint(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			x := newRotateFixture(t)
 			tc.setup(x.f)
-			err := rotateSecret(context.Background(), x.f, "db", []byte("first"), fastRotate(nil))
+			err := RotateSecret(context.Background(), x.f, "db", []byte("first"), fastRotate(nil))
 			var re *rotateError
 			if !errors.As(err, &re) || re.Step != tc.step || re.Resumable != tc.resumable {
 				t.Fatalf("first run: err = %v, want step %d resumable=%v", err, tc.step, tc.resumable)
 			}
 			x.f.stuck = map[string]bool{}
 			if tc.startAt > 0 {
-				p, err := planRotation(context.Background(), x.f, "db")
+				p, err := PlanRotation(context.Background(), x.f, "db")
 				if err != nil || !p.Resume || p.StartStep != tc.startAt {
 					t.Fatalf("plan = %+v, %v; want resume at %d", p, err, tc.startAt)
 				}
 				if len(p.Users) != 2 {
 					t.Errorf("plan users = %+v, want web and worker", p.Users)
 				}
-				if p.Stack != "shop" || p.Labels[rotateMarkerLabel] != "" {
+				if p.Stack != "shop" || p.Labels[RotateMarkerLabel] != "" {
 					t.Errorf("plan labels = %v stack %q", p.Labels, p.Stack)
 				}
 			}
-			if err := rotateSecret(context.Background(), x.f, "db", []byte("second"), fastRotate(nil)); err != nil {
+			if err := RotateSecret(context.Background(), x.f, "db", []byte("second"), fastRotate(nil)); err != nil {
 				t.Fatalf("re-run: %v", err)
 			}
 			x.checkRotated(t, tc.final)
@@ -441,17 +441,17 @@ func TestRotateSecret_ResumeInStep5(t *testing.T) {
 		}
 		return false
 	}}
-	err := rotateSecret(context.Background(), api, "db", []byte("first"), fastRotate(nil))
+	err := RotateSecret(context.Background(), api, "db", []byte("first"), fastRotate(nil))
 	var re *rotateError
 	if !errors.As(err, &re) || re.Step != 5 || !re.Resumable {
 		t.Fatalf("first run: err = %v, want a resumable step-5 failure", err)
 	}
-	p, err := planRotation(context.Background(), x.f, "db")
+	p, err := PlanRotation(context.Background(), x.f, "db")
 	if err != nil || p.StartStep != 5 {
 		t.Fatalf("plan = %+v, %v; want resume at 5", p, err)
 	}
-	var events []rotateEvent
-	if err := rotateSecret(context.Background(), x.f, "db", []byte("second"), fastRotate(&events)); err != nil {
+	var events []RotateEvent
+	if err := RotateSecret(context.Background(), x.f, "db", []byte("second"), fastRotate(&events)); err != nil {
 		t.Fatal(err)
 	}
 	x.checkRotated(t, "first")
@@ -483,21 +483,21 @@ func (s *stepFailAPI) ServiceUpdate(ctx context.Context, id string, o client.Ser
 func TestRotateSecret_RefusesForeignTemp(t *testing.T) {
 	for name, labels := range map[string]map[string]string{
 		"no marker":        {"owner": "someone"},
-		"other rotation":   {rotateMarkerLabel: "other"},
+		"other rotation":   {RotateMarkerLabel: "other"},
 		"no labels at all": nil,
 	} {
 		t.Run(name, func(t *testing.T) {
 			x := newRotateFixture(t)
 			x.f.addSecret("db_rotating", "theirs", labels)
 			x.f.mutations = nil
-			err := rotateSecret(context.Background(), x.f, "db", []byte("new"), fastRotate(nil))
+			err := RotateSecret(context.Background(), x.f, "db", []byte("new"), fastRotate(nil))
 			if err == nil || !strings.Contains(err.Error(), "did not create") {
 				t.Fatalf("err = %v, want a refusal", err)
 			}
 			if len(x.f.mutations) != 0 {
 				t.Errorf("touched the cluster: %v", x.f.mutations)
 			}
-			if _, err := planRotation(context.Background(), x.f, "db"); err == nil {
+			if _, err := PlanRotation(context.Background(), x.f, "db"); err == nil {
 				t.Error("plan accepted a foreign stand-in")
 			}
 		})
@@ -506,8 +506,8 @@ func TestRotateSecret_RefusesForeignTemp(t *testing.T) {
 
 func TestRotateSecret_RefusesRotatingTheStandIn(t *testing.T) {
 	f := newFakeRotate()
-	f.addSecret("db_rotating", "x", map[string]string{rotateMarkerLabel: "db"})
-	err := rotateSecret(context.Background(), f, "db_rotating", []byte("new"), fastRotate(nil))
+	f.addSecret("db_rotating", "x", map[string]string{RotateMarkerLabel: "db"})
+	err := RotateSecret(context.Background(), f, "db_rotating", []byte("new"), fastRotate(nil))
 	if err == nil || !strings.Contains(err.Error(), `rotate "db"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -520,7 +520,7 @@ func TestRotateSecret_UnusedSecret(t *testing.T) {
 	f := newFakeRotate()
 	labels := map[string]string{"a": "b"}
 	f.addSecret("lonely", "old", labels)
-	if err := rotateSecret(context.Background(), f, "lonely", []byte("new"), fastRotate(nil)); err != nil {
+	if err := RotateSecret(context.Background(), f, "lonely", []byte("new"), fastRotate(nil)); err != nil {
 		t.Fatal(err)
 	}
 	want := "create lonely_rotating,remove lonely,create lonely,remove lonely_rotating"
@@ -536,13 +536,13 @@ func TestRotateSecret_UnusedSecret(t *testing.T) {
 	f2 := newFakeRotate()
 	f2.addSecret("lonely", "old", labels)
 	f2.failOnce["create:lonely"] = true
-	if err := rotateSecret(context.Background(), f2, "lonely", []byte("new"), fastRotate(nil)); err == nil {
+	if err := RotateSecret(context.Background(), f2, "lonely", []byte("new"), fastRotate(nil)); err == nil {
 		t.Fatal("expected the injected failure")
 	}
 	if f2.byName("lonely") != nil {
 		t.Fatal("setup: lonely should be gone")
 	}
-	if err := rotateSecret(context.Background(), f2, "lonely", []byte("new"), fastRotate(nil)); err != nil {
+	if err := RotateSecret(context.Background(), f2, "lonely", []byte("new"), fastRotate(nil)); err != nil {
 		t.Fatal(err)
 	}
 	if s := f2.byName("lonely"); s == nil || !maps.Equal(s.Spec.Labels, labels) {
@@ -553,8 +553,8 @@ func TestRotateSecret_UnusedSecret(t *testing.T) {
 func TestRotateSecret_VersionConflictRetry(t *testing.T) {
 	x := newRotateFixture(t)
 	x.f.conflicts["web"] = 2
-	var events []rotateEvent
-	if err := rotateSecret(context.Background(), x.f, "db", []byte("new"), fastRotate(&events)); err != nil {
+	var events []RotateEvent
+	if err := RotateSecret(context.Background(), x.f, "db", []byte("new"), fastRotate(&events)); err != nil {
 		t.Fatal(err)
 	}
 	x.checkRotated(t, "new")
@@ -570,7 +570,7 @@ func TestRotateSecret_VersionConflictRetry(t *testing.T) {
 
 	y := newRotateFixture(t)
 	y.f.conflicts["web"] = rotateUpdateAttempts
-	err := rotateSecret(context.Background(), y.f, "db", []byte("new"), fastRotate(nil))
+	err := RotateSecret(context.Background(), y.f, "db", []byte("new"), fastRotate(nil))
 	if err == nil || !strings.Contains(err.Error(), "out of sequence") {
 		t.Fatalf("err = %v, want the conflict after %d attempts", err, rotateUpdateAttempts)
 	}
@@ -581,7 +581,7 @@ func TestRotateSecret_ScaledToZeroAndGlobalAreSwitched(t *testing.T) {
 	s := f.addSecret("s", "old", nil)
 	f.addService("idle", 0, &swarm.SecretReference{SecretID: s.ID, SecretName: "s", File: &swarm.SecretReferenceFileTarget{Name: "s"}})
 	f.addService("everywhere", -1, &swarm.SecretReference{SecretID: s.ID, SecretName: "s", File: &swarm.SecretReferenceFileTarget{Name: "s"}})
-	if err := rotateSecret(context.Background(), f, "s", []byte("new"), fastRotate(nil)); err != nil {
+	if err := RotateSecret(context.Background(), f, "s", []byte("new"), fastRotate(nil)); err != nil {
 		t.Fatal(err)
 	}
 	ns := f.byName("s")
@@ -596,7 +596,7 @@ func TestRotateSecret_ConvergenceTimeout(t *testing.T) {
 	x := newRotateFixture(t)
 	// The update is accepted but the new task never starts.
 	api := &pendingTasksAPI{fakeRotateAPI: x.f}
-	err := rotateSecret(context.Background(), api, "db", []byte("new"), rotateOptions{Timeout: 20 * time.Millisecond, Poll: time.Millisecond})
+	err := RotateSecret(context.Background(), api, "db", []byte("new"), RotateOptions{Timeout: 20 * time.Millisecond, Poll: time.Millisecond})
 	if err == nil || !strings.Contains(err.Error(), "did not converge within") {
 		t.Fatalf("err = %v", err)
 	}
@@ -618,14 +618,14 @@ func TestRotateSecret_ValidatesBeforeTouching(t *testing.T) {
 		data   []byte
 	}{
 		"empty value":   {"db", nil},
-		"too large":     {"db", bytes.Repeat([]byte("x"), maxSecretSize+1)},
+		"too large":     {"db", bytes.Repeat([]byte("x"), MaxSecretSize+1)},
 		"name too long": {strings.Repeat("n", 56), []byte("x")},
 		"no name":       {" ", []byte("x")},
 		"missing":       {"nope", []byte("x")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			x := newRotateFixture(t)
-			if err := rotateSecret(context.Background(), x.f, tc.secret, tc.data, fastRotate(nil)); err == nil {
+			if err := RotateSecret(context.Background(), x.f, tc.secret, tc.data, fastRotate(nil)); err == nil {
 				t.Fatal("accepted")
 			}
 			if len(x.f.mutations) != 0 {
@@ -637,7 +637,7 @@ func TestRotateSecret_ValidatesBeforeTouching(t *testing.T) {
 	f := newFakeRotate()
 	name := strings.Repeat("n", maxSecretNameLen-len(rotateSuffix))
 	f.addSecret(name, "x", nil)
-	if err := rotateSecret(context.Background(), f, name, bytes.Repeat([]byte("x"), maxSecretSize), fastRotate(nil)); err != nil {
+	if err := RotateSecret(context.Background(), f, name, bytes.Repeat([]byte("x"), MaxSecretSize), fastRotate(nil)); err != nil {
 		t.Fatal(err)
 	}
 }

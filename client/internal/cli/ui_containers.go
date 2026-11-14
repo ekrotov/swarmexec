@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
-	"time"
+	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -33,7 +35,7 @@ func (u *ui) versionSuffixFor(s resolve.Service) string {
 	if u.regCache == nil {
 		return ""
 	}
-	return versionSuffix(u.regCache.status(u.ctx, s.ImageRef))
+	return swarmops.VersionSuffix(u.regCache.Status(u.ctx, s.ImageRef))
 }
 
 func (u *ui) markService(n *tview.TreeNode) {

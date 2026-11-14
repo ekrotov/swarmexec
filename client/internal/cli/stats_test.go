@@ -11,6 +11,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 )
 
@@ -183,7 +184,7 @@ func TestInspModeCycles(t *testing.T) {
 
 // A node reading must not be invented when no agent answered.
 func TestNodeUsageSectionAbsentWhenUnknown(t *testing.T) {
-	n := swarmNodeInfo{Hostname: "host-a", NanoCPUs: 4e9, MemoryBytes: 8 << 30}
+	n := swarmops.NodeInfo{Hostname: "host-a", NanoCPUs: 4e9, MemoryBytes: 8 << 30}
 	if got := nodeUsageSection(n, nodeUsage{}, false); got != "" {
 		t.Errorf("no agent reading should render nothing, got %q", got)
 	}

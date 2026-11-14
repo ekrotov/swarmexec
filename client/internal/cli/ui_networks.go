@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -55,9 +57,9 @@ func (u *ui) renderNetworks() {
 func (u *ui) loadNetworks() {
 	dcli, nettable := u.dcli, u.nettable
 	tableState(nettable, nHeaders, loadingCell())
-	async(u, "ui.loadNetworks", func(ctx context.Context) ([]swarmNetwork, error) {
-		return listNetworks(ctx, dcli)
-	}, func(list []swarmNetwork, err error) {
+	async(u, "ui.loadNetworks", func(ctx context.Context) ([]swarmops.Network, error) {
+		return swarmops.ListNetworks(ctx, dcli)
+	}, func(list []swarmops.Network, err error) {
 		if err != nil {
 			tableState(nettable, nHeaders, errorCell(err))
 			return
@@ -67,7 +69,7 @@ func (u *ui) loadNetworks() {
 	})
 }
 
-func (u *ui) selectedNetwork() (swarmNetwork, bool) {
+func (u *ui) selectedNetwork() (swarmops.Network, bool) {
 	nettable := u.nettable
 	return selectedRow(nettable, u.nets)
 }
@@ -137,9 +139,9 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 // (build) half from handleKey (input), mirroring inspectView.
 type netMembersView struct {
 	u        *ui
-	n        swarmNetwork
+	n        swarmops.Network
 	list     *tview.List
-	members  []netService
+	members  []swarmops.NetService
 	rowSvc   []string // list row -> service it belongs to (for Enter/A)
 	expanded map[string]bool
 	loaded   bool
@@ -151,7 +153,7 @@ type netMembersView struct {
 // containers of each service nested under it. Service membership is known
 // synchronously (from the list); the per-service containers need a task
 // lookup, so they fill in lazily after the overlay is up.
-func (u *ui) showNetworkMembers(n swarmNetwork) {
+func (u *ui) showNetworkMembers(n swarmops.Network) {
 	list := tview.NewList().ShowSecondaryText(false)
 	badge := ""
 	if n.Encrypted {
@@ -164,9 +166,9 @@ func (u *ui) showNetworkMembers(n swarmNetwork) {
 	v := &netMembersView{u: u, n: n, list: list, expanded: map[string]bool{}}
 	// Seed with the services already known from the list; containers/aliases
 	// fill in once the task/spec lookup returns.
-	v.members = make([]netService, 0, len(n.Services))
+	v.members = make([]swarmops.NetService, 0, len(n.Services))
 	for _, s := range n.Services {
-		v.members = append(v.members, netService{Name: s})
+		v.members = append(v.members, swarmops.NetService{Name: s})
 	}
 	v.open()
 }
@@ -181,7 +183,7 @@ func (v *netMembersView) render() {
 	meta := func(svc string) { v.rowSvc = append(v.rowSvc, svc) }
 	// The network's own labels (read-only) at the top — Docker has no
 	// network-update API, so they can't be edited here.
-	if lbls := kvPairs(n.Labels); len(lbls) > 0 {
+	if lbls := swarmops.KVPairs(n.Labels); len(lbls) > 0 {
 		list.AddItem("[gray]labels[-]", "", 0, nil)
 		meta("")
 		for _, l := range lbls {
@@ -247,9 +249,9 @@ func (v *netMembersView) close() { v.ov.Close() }
 
 func (v *netMembersView) reload() {
 	u, dcli, n := v.u, v.u.dcli, v.n
-	async(u, "ui.networks.members", func(ctx context.Context) ([]netService, error) {
-		return networkMembers(ctx, dcli, n), nil
-	}, func(m []netService, _ error) {
+	async(u, "ui.networks.members", func(ctx context.Context) ([]swarmops.NetService, error) {
+		return swarmops.NetworkMembers(ctx, dcli, n), nil
+	}, func(m []swarmops.NetService, _ error) {
 		// Only repaint if this overlay is still the one on screen.
 		if u.pages.HasPage(pageNetMembers) {
 			v.members, v.loaded = m, true
@@ -291,17 +293,17 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		// Same staged alias editor as the inspect view; applies via
-		// setNetworkAliases, then reloads this view to show the new aliases.
+		// swarmops.SetNetworkAliases, then reloads this view to show the new aliases.
 		u.openAliasEditorForNet(svc, n.Name, n.ID, list, v.reload)
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-		suggestions := servicesExcluding(u.serviceNamesFromCache(), n.Services)
+		suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), n.Services)
 		u.servicePrompt(
 			fmt.Sprintf("attach a service to network %q", n.Name),
 			fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
 			suggestions, list,
 			func(ctx context.Context, svc string) error {
-				return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
+				return swarmops.AttachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
 			},
 			func() { v.close(); u.loadNetworks() },
 		)
@@ -316,7 +318,7 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
 			n.Services, list,
 			func(ctx context.Context, svc string) error {
-				return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
+				return swarmops.DetachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
 			},
 			func() { v.close(); u.loadNetworks() },
 		)
@@ -344,7 +346,7 @@ func (v *netMembersView) open() {
 // and an optional subnet/gateway and labels.
 func (u *ui) showCreateNetwork() {
 	dcli, ctx, nettable := u.dcli, u.ctx, u.nettable
-	o := newNetworkOpts{Driver: "overlay"}
+	o := swarmops.NewNetworkOpts{Driver: "overlay"}
 	var labels string
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" new network ")
@@ -361,13 +363,13 @@ func (u *ui) showCreateNetwork() {
 	ov := u.overlayFor(pageNetForm, nettable, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 	closeForm := ov.Close
 	form.AddButton("Create", func() {
-		lbls, err := parseKVList(labels)
+		lbls, err := swarmops.ParseKVList(labels)
 		if err != nil {
 			u.info("invalid labels: " + err.Error())
 			return
 		}
 		o.Labels = lbls
-		if err := createNetwork(ctx, dcli, o); err != nil {
+		if err := swarmops.CreateNetwork(ctx, dcli, o); err != nil {
 			u.info("create failed: " + err.Error())
 			return
 		}

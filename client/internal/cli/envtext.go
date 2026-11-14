@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"swarmexec/client/internal/swarmops"
 )
 
 // The env editor edits a service's whole environment as one text, a variable
@@ -32,7 +34,7 @@ var heredocStart = regexp.MustCompile(`^([^=\s]+)<<([A-Za-z_][A-Za-z0-9_]*)$`)
 func formatEnvText(items []string) string {
 	var b strings.Builder
 	for _, it := range items {
-		k, v, err := parseEnv(it)
+		k, v, err := swarmops.ParseEnv(it)
 		if err != nil || !strings.Contains(v, "\n") {
 			b.WriteString(it)
 			b.WriteByte('\n')
@@ -98,7 +100,7 @@ func parseEnvText(text string) ([]string, error) {
 			}
 			continue
 		}
-		k, v, err := parseEnv(l)
+		k, v, err := swarmops.ParseEnv(l)
 		if err != nil {
 			return nil, &lineError{line: n, msg: "expected KEY=VALUE (or KEY<<EOF for a multi-line value)"}
 		}
@@ -114,14 +116,14 @@ func parseEnvText(text string) ([]string, error) {
 func envChangeSummary(before, after []string) string {
 	old := map[string]string{}
 	for _, it := range before {
-		if k, v, err := parseEnv(it); err == nil {
+		if k, v, err := swarmops.ParseEnv(it); err == nil {
 			old[k] = v
 		}
 	}
 	var added, changed, removed []string
 	now := map[string]bool{}
 	for _, it := range after {
-		k, v, err := parseEnv(it)
+		k, v, err := swarmops.ParseEnv(it)
 		if err != nil {
 			continue
 		}
@@ -134,7 +136,7 @@ func envChangeSummary(before, after []string) string {
 		}
 	}
 	for _, it := range before {
-		if k, _, err := parseEnv(it); err == nil && !now[k] {
+		if k, _, err := swarmops.ParseEnv(it); err == nil && !now[k] {
 			removed = append(removed, k)
 		}
 	}

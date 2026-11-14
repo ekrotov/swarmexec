@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"bytes"
@@ -26,56 +26,56 @@ import (
 // colour them, make data lines individually selectable, and copy one. Both views
 // come from one manager inspect call.
 
-// inspKind classifies a formatted inspect line for display and selectability.
-type inspKind int
+// InspectKind classifies a formatted inspect line for display and selectability.
+type InspectKind int
 
 const (
-	inspTitle   inspKind = iota // the header line (service/task identity)
-	inspHeader                  // a section header
-	inspField                   // a data line — selectable/copyable
-	inspDim                     // a placeholder ("-") — not selectable
-	inspBlank                   // spacer
-	inspNet                     // a collapsible network row: "+ name (N dns names)"
-	inspUpgrade                 // an actionable "newer version available" row
-	inspUpdate                  // a rolling-update-in-progress status line
-	inspImage                   // the image ref; carries the version-picker data
+	InspectTitle   InspectKind = iota // the header line (service/task identity)
+	InspectHeader                     // a section header
+	InspectField                      // a data line — selectable/copyable
+	InspectDim                        // a placeholder ("-") — not selectable
+	InspectBlank                      // spacer
+	InspectNet                        // a collapsible network row: "+ name (N dns names)"
+	InspectUpgrade                    // an actionable "newer version available" row
+	InspectUpdate                     // a rolling-update-in-progress status line
+	InspectImage                      // the image ref; carries the version-picker data
 )
 
-// inspTaskRow is one container row in a network's drill-down: the column-aligned
+// InspectTaskRow is one container row in a network's drill-down: the column-aligned
 // text, and the value copying that row should yield (the bare address — what an
 // operator actually wants to paste).
-type inspTaskRow struct{ Text, Copy string }
+type InspectTaskRow struct{ Text, Copy string }
 
-// inspLine is one line of the tabular inspect view. For inspNet rows, Net is the
+// InspectLine is one line of the tabular inspect view. For InspectNet rows, Net is the
 // network name (collapse key), Count the number of DNS names, and Children the
-// lines revealed when expanded (DNS names, then any extra like addresses).
-type inspLine struct {
+// Lines revealed when expanded (DNS names, then any extra like addresses).
+type InspectLine struct {
 	Text      string
-	Kind      inspKind
+	Kind      InspectKind
 	Net       string
 	Count     int
 	Children  []string
-	Encrypted bool   // inspNet: network has overlay data-plane encryption on
-	Upgrade   string // inspUpgrade: the image ref to update the service to (default target)
+	Encrypted bool   // InspectNet: network has overlay data-plane encryption on
+	Upgrade   string // InspectUpgrade: the image ref to update the service to (default target)
 
-	// inspNet: the address that identifies this attachment — a service's virtual
+	// InspectNet: the address that identifies this attachment — a service's virtual
 	// IP or a task's own address — with the label to show it under ("vip" /
 	// "addr"). Shown in the collapsed row, because "what is its IP on this
 	// network" is the question the section is most often opened for.
 	Addr      string
 	AddrLabel string
 
-	// inspNet: the service's running containers on this network, revealed by a
+	// InspectNet: the service's running containers on this network, revealed by a
 	// second expand level below the DNS names. Empty for a task inspect (a task
 	// is one container — its own address is in Addr).
-	Tasks []inspTaskRow
+	Tasks []InspectTaskRow
 
-	// inspNet: replaces the "(N dns names)" suffix where that count says nothing
+	// InspectNet: replaces the "(N dns names)" suffix where that count says nothing
 	// — the ingress network carries no service DNS names, so it reads
 	// "(routing mesh)" instead of "(0 dns names)".
 	Note string
 
-	// inspUpgrade picker data (version-pinned services): the repo, the running
+	// InspectUpgrade picker data (version-pinned services): the repo, the running
 	// tag, the newer same-family tags (suggestions) and every known repo tag (to
 	// validate a typed-in override). Empty for a :latest digest update.
 	UpRepo    string
@@ -83,25 +83,25 @@ type inspLine struct {
 	UpNewer   []string
 	UpAll     []string
 
-	// inspUpdate: the raw swarm update state ("updating", "paused", …), so the
+	// InspectUpdate: the raw swarm update state ("updating", "paused", …), so the
 	// view can tint the line by severity.
 	UpdateState string
 }
 
-type inspBuilder struct{ lines []inspLine }
+type inspBuilder struct{ lines []InspectLine }
 
-func (b *inspBuilder) push(k inspKind, s string) {
-	b.lines = append(b.lines, inspLine{Text: s, Kind: k})
+func (b *inspBuilder) push(k InspectKind, s string) {
+	b.lines = append(b.lines, InspectLine{Text: s, Kind: k})
 }
-func (b *inspBuilder) title(s string)   { b.push(inspTitle, s) }
-func (b *inspBuilder) section(s string) { b.push(inspBlank, ""); b.push(inspHeader, s) }
+func (b *inspBuilder) title(s string)   { b.push(InspectTitle, s) }
+func (b *inspBuilder) section(s string) { b.push(InspectBlank, ""); b.push(InspectHeader, s) }
 
 // net adds a collapsible network row from a resolved attachment: the header
 // carries the DNS-name count, the lock icon and the address; the first expand
 // level shows the DNS names, the second the container addresses.
 func (b *inspBuilder) net(n netDNS) {
-	b.lines = append(b.lines, inspLine{
-		Kind:      inspNet,
+	b.lines = append(b.lines, InspectLine{
+		Kind:      InspectNet,
 		Text:      n.Name,
 		Net:       n.Name,
 		Count:     len(n.DNS),
@@ -117,9 +117,9 @@ func (b *inspBuilder) net(n netDNS) {
 // upgrade adds an actionable row offering to update the service's image. It
 // carries st's picker data (repo, running tag, newer tags, all tags) so the
 // overlay can open the version picker; target is the default (highest) ref.
-func (b *inspBuilder) upgrade(text, target string, st imageStatus) {
-	b.lines = append(b.lines, inspLine{
-		Kind: inspUpgrade, Text: text, Upgrade: target,
+func (b *inspBuilder) upgrade(text, target string, st ImageStatus) {
+	b.lines = append(b.lines, InspectLine{
+		Kind: InspectUpgrade, Text: text, Upgrade: target,
 		UpRepo: st.repo, UpCurrent: st.currentTag, UpNewer: st.newerVersions, UpAll: st.knownTags,
 	})
 }
@@ -127,29 +127,29 @@ func (b *inspBuilder) upgrade(text, target string, st imageStatus) {
 // updateStatus adds a rolling-update-in-progress line (tinted by severity in the
 // view). detail is an optional message from the manager (e.g. a failure reason).
 func (b *inspBuilder) updateStatus(state, detail string) {
-	label, _, _ := updateStatusLabel(state)
+	label, _, _ := UpdateStatusLabel(state)
 	text := label
 	if detail != "" {
 		text += " — " + detail
 	}
-	b.lines = append(b.lines, inspLine{Kind: inspUpdate, Text: text, UpdateState: state})
+	b.lines = append(b.lines, InspectLine{Kind: InspectUpdate, Text: text, UpdateState: state})
 }
 
 // image adds the image reference lines. The first carries the version-picker
 // data (repo, running tag, newer tags, every known tag) so "u" can set a version
 // whether or not a newer one exists — pinning or rolling back to a specific tag
 // is just as valid as taking the newest.
-func (b *inspBuilder) image(lines []string, st imageStatus) {
+func (b *inspBuilder) image(lines []string, st ImageStatus) {
 	if len(lines) == 0 {
 		b.list(nil)
 		return
 	}
-	b.lines = append(b.lines, inspLine{
-		Kind: inspImage, Text: "  " + lines[0],
+	b.lines = append(b.lines, InspectLine{
+		Kind: InspectImage, Text: "  " + lines[0],
 		UpRepo: st.repo, UpCurrent: st.currentTag, UpNewer: st.newerVersions, UpAll: st.knownTags,
 	})
 	for _, l := range lines[1:] {
-		b.push(inspField, "  "+l)
+		b.push(InspectField, "  "+l)
 	}
 }
 
@@ -157,22 +157,22 @@ func (b *inspBuilder) kv(k, v string) {
 	if v == "" {
 		return
 	}
-	b.push(inspField, fmt.Sprintf("  %-14s %s", k, v))
+	b.push(InspectField, fmt.Sprintf("  %-14s %s", k, v))
 }
 
 func (b *inspBuilder) list(items []string) {
 	if len(items) == 0 {
-		b.push(inspDim, "  -")
+		b.push(InspectDim, "  -")
 		return
 	}
 	for _, it := range items {
-		b.push(inspField, "  "+it)
+		b.push(InspectField, "  "+it)
 	}
 }
 
-// serviceInspectViews returns the formatted (tabular) lines and raw-JSON view of
+// ServiceInspectViews returns the formatted (tabular) lines and raw-JSON view of
 // a service inspect. ref is a service name or ID.
-func serviceInspectViews(ctx context.Context, dcli swarmapi.Client, ref string, reg *registryCache) ([]inspLine, string, error) {
+func ServiceInspectViews(ctx context.Context, dcli swarmapi.Client, ref string, reg *RegistryCache) ([]InspectLine, string, error) {
 	svcRes, err := dcli.ServiceInspect(ctx, ref, client.ServiceInspectOptions{})
 	svc, rawb := svcRes.Service, []byte(svcRes.Raw)
 	if err != nil {
@@ -188,16 +188,16 @@ func serviceInspectViews(ctx context.Context, dcli swarmapi.Client, ref string, 
 	}); err == nil {
 		info.tasks = tasks.Items
 	}
-	var img imageStatus
+	var img ImageStatus
 	if reg != nil && svc.Spec.TaskTemplate.ContainerSpec != nil {
 		img = reg.statusNow(ctx, svc.Spec.TaskTemplate.ContainerSpec.Image, 5*time.Second)
 	}
 	return formatServiceInspect(svc, info, img), prettyJSON(rawb), nil
 }
 
-// taskInspectViews returns the formatted lines and raw-JSON view of a task
+// TaskInspectViews returns the formatted lines and raw-JSON view of a task
 // inspect — the manager's view of a container instance.
-func taskInspectViews(ctx context.Context, dcli swarmapi.Client, taskID string) ([]inspLine, string, error) {
+func TaskInspectViews(ctx context.Context, dcli swarmapi.Client, taskID string) ([]InspectLine, string, error) {
 	taskRes, err := dcli.TaskInspect(ctx, taskID, client.TaskInspectOptions{})
 	task, rawb := taskRes.Task, []byte(taskRes.Raw)
 	if err != nil {
@@ -217,19 +217,19 @@ func taskInspectViews(ctx context.Context, dcli swarmapi.Client, taskID string) 
 	return formatTaskInspect(task, owning, info), prettyJSON(rawb), nil
 }
 
-// specDiff is serviceDiffLines' answer as one value (for the TUI's async).
-type specDiff struct {
-	lines   []string
-	hasPrev bool
+// SpecDiff is serviceDiffLines' answer as one value (for the TUI's async).
+type SpecDiff struct {
+	Lines   []string
+	HasPrev bool
 }
 
-func loadSpecDiff(ctx context.Context, dcli swarmapi.Client, svc string) (specDiff, error) {
+func LoadSpecDiff(ctx context.Context, dcli swarmapi.Client, svc string) (SpecDiff, error) {
 	lines, hasPrev, err := serviceDiffLines(ctx, dcli, svc)
-	return specDiff{lines, hasPrev}, err
+	return SpecDiff{lines, hasPrev}, err
 }
 
 // serviceDiffLines inspects a service and returns a unified diff of its current
-// spec against its PreviousSpec (what the last update changed). hasPrev is false
+// spec against its PreviousSpec (what the last update changed). HasPrev is false
 // when the service has never been updated (no PreviousSpec to compare against).
 func serviceDiffLines(ctx context.Context, dcli swarmapi.Client, ref string) (lines []string, hasPrev bool, err error) {
 	svcRes, err := dcli.ServiceInspect(ctx, ref, client.ServiceInspectOptions{})
@@ -299,7 +299,7 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 			out = append(out, "secret: "+s.SecretName)
 		}
 		for _, m := range cs.Mounts {
-			out = append(out, "mount: "+formatServiceMount(m))
+			out = append(out, "mount: "+FormatServiceMount(m))
 		}
 	}
 	switch {
@@ -337,7 +337,7 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 	}
 	if spec.EndpointSpec != nil {
 		for _, port := range spec.EndpointSpec.Ports {
-			out = append(out, "port: "+formatServicePort(port))
+			out = append(out, "port: "+FormatServicePort(port))
 		}
 	}
 	if r := spec.TaskTemplate.Resources; r != nil {
@@ -404,7 +404,7 @@ func prettyJSON(raw []byte) string {
 
 // --- tabular formatting -----------------------------------------------------
 
-func formatServiceInspect(svc swarm.Service, info netInfo, img imageStatus) []inspLine {
+func formatServiceInspect(svc swarm.Service, info netInfo, img ImageStatus) []InspectLine {
 	var b inspBuilder
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	b.title("SERVICE  " + svc.Spec.Name)
@@ -426,7 +426,7 @@ func formatServiceInspect(svc swarm.Service, info netInfo, img imageStatus) []in
 	// A rolling update in flight is surfaced right under the title too, so it is
 	// obvious the service is mid-update without reading task states.
 	if us := svc.UpdateStatus; us != nil {
-		if _, _, active := updateStatusLabel(string(us.State)); active {
+		if _, _, active := UpdateStatusLabel(string(us.State)); active {
 			b.updateStatus(string(us.State), strings.TrimSpace(us.Message))
 		}
 	}
@@ -440,26 +440,26 @@ func formatServiceInspect(svc swarm.Service, info netInfo, img imageStatus) []in
 		b.net(n)
 	}
 	b.section("LABELS")
-	b.list(kvPairs(svc.Spec.Labels))
+	b.list(KVPairs(svc.Spec.Labels))
 	b.section("VOLUMES / MOUNTS")
-	b.list(specMounts(cs))
+	b.list(SpecMounts(cs))
 	b.section("SECRETS")
-	b.list(specSecrets(cs))
-	if cfgs := specConfigs(cs); len(cfgs) > 0 {
+	b.list(SpecSecrets(cs))
+	if cfgs := SpecConfigs(cs); len(cfgs) > 0 {
 		b.section("CONFIGS")
 		b.list(cfgs)
 	}
 	b.section("PORTS")
-	b.list(servicePortLines(svc))
+	b.list(ServicePortLines(svc))
 	b.section("IMAGE")
 	b.image(imageLines(cs, img), img)
 	b.section("MODE")
-	b.list([]string{serviceModeStr(svc)})
+	b.list([]string{ServiceModeStr(svc)})
 	if cs != nil && len(cs.Env) > 0 {
 		b.section("ENV")
 		b.list(cs.Env)
 	}
-	if lines := resourceLines(svc.Spec.TaskTemplate.Resources); len(lines) > 0 {
+	if lines := ResourceLines(svc.Spec.TaskTemplate.Resources); len(lines) > 0 {
 		b.section("RESOURCES")
 		b.list(lines)
 	}
@@ -478,12 +478,12 @@ func formatServiceInspect(svc swarm.Service, info netInfo, img imageStatus) []in
 	}
 	b.section("META")
 	b.kv("id", svc.ID)
-	b.kv("created", tstr(svc.Meta.CreatedAt))
-	b.kv("updated", tstr(svc.Meta.UpdatedAt))
+	b.kv("created", FormatTime(svc.Meta.CreatedAt))
+	b.kv("updated", FormatTime(svc.Meta.UpdatedAt))
 	return b.lines
 }
 
-func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []inspLine {
+func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []InspectLine {
 	var b inspBuilder
 	cs := task.Spec.ContainerSpec
 	b.title(fmt.Sprintf("TASK  %s  (slot %d)", shortID(task.ID), task.Slot))
@@ -498,15 +498,15 @@ func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []i
 	}
 	b.section("LABELS")
 	if cs != nil {
-		b.list(kvPairs(cs.Labels))
+		b.list(KVPairs(cs.Labels))
 	} else {
 		b.list(nil)
 	}
 	b.section("VOLUMES / MOUNTS")
-	b.list(specMounts(cs))
+	b.list(SpecMounts(cs))
 	b.section("SECRETS")
-	b.list(specSecrets(cs))
-	if cfgs := specConfigs(cs); len(cfgs) > 0 {
+	b.list(SpecSecrets(cs))
+	if cfgs := SpecConfigs(cs); len(cfgs) > 0 {
 		b.section("CONFIGS")
 		b.list(cfgs)
 	}
@@ -518,7 +518,7 @@ func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []i
 	if st := task.Status.ContainerStatus; st != nil && st.ExitCode != 0 {
 		b.kv("exit code", fmt.Sprintf("%d", st.ExitCode))
 	}
-	b.kv("since", tstr(task.Status.Timestamp))
+	b.kv("since", FormatTime(task.Status.Timestamp))
 
 	b.section("PLACEMENT")
 	node := info.nodeNames[task.NodeID]
@@ -541,20 +541,20 @@ func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []i
 		b.section("ENV")
 		b.list(cs.Env)
 	}
-	if lines := resourceLines(task.Spec.Resources); len(lines) > 0 {
+	if lines := ResourceLines(task.Spec.Resources); len(lines) > 0 {
 		b.section("RESOURCES")
 		b.list(lines)
 	}
 	b.section("META")
 	b.kv("task id", task.ID)
 	b.kv("service id", task.ServiceID)
-	b.kv("created", tstr(task.Meta.CreatedAt))
+	b.kv("created", FormatTime(task.Meta.CreatedAt))
 	return b.lines
 }
 
 // --- field helpers ----------------------------------------------------------
 
-func kvPairs(m map[string]string) []string {
+func KVPairs(m map[string]string) []string {
 	if len(m) == 0 {
 		return nil
 	}
@@ -580,11 +580,11 @@ type netDNS struct {
 
 	// Addr is the address this attachment is reached at — a service's virtual IP
 	// or a task's own address — and AddrLabel says which ("vip" / "addr"). Both
-	// empty when there is none (e.g. a dnsrr service, which has no VIP).
+	// Empty when there is none (e.g. a dnsrr service, which has no VIP).
 	Addr      string
 	AddrLabel string
 
-	Tasks     []inspTaskRow // the service's containers on this network
+	Tasks     []InspectTaskRow // the service's containers on this network
 	Extra     []string
 	Encrypted bool
 	Note      string // shown instead of the DNS-name count when that says nothing
@@ -859,7 +859,7 @@ func taskDisplayName(svcName string, t swarm.Task) string {
 
 // taskAddrRows renders the container rows of one network: column-aligned for
 // reading, each carrying the bare address as its copy value.
-func taskAddrRows(ts []netTaskAddr) []inspTaskRow {
+func taskAddrRows(ts []netTaskAddr) []InspectTaskRow {
 	nameW, addrW := 0, 0
 	for _, t := range ts {
 		if w := len(t.Name); w > nameW {
@@ -875,7 +875,7 @@ func taskAddrRows(ts []netTaskAddr) []inspTaskRow {
 			nodeW = len(t.Node)
 		}
 	}
-	out := make([]inspTaskRow, 0, len(ts))
+	out := make([]InspectTaskRow, 0, len(ts))
 	for _, t := range ts {
 		row := fmt.Sprintf("%-*s  %-*s", nameW, t.Name, addrW, t.Addr)
 		if t.Node != "" {
@@ -884,7 +884,7 @@ func taskAddrRows(ts []netTaskAddr) []inspTaskRow {
 		if t.State != "" {
 			row += "  (" + t.State + ")"
 		}
-		out = append(out, inspTaskRow{Text: strings.TrimRight(row, " "), Copy: stripMask(t.Addr)})
+		out = append(out, InspectTaskRow{Text: strings.TrimRight(row, " "), Copy: StripMask(t.Addr)})
 	}
 	return out
 }
@@ -909,16 +909,16 @@ func prefixStrings(ps []netip.Prefix) []string {
 	return out
 }
 
-// stripMask turns "10.0.1.5/24" into "10.0.1.5" — the form that is useful to
+// StripMask turns "10.0.1.5/24" into "10.0.1.5" — the form that is useful to
 // paste into a curl or a ping.
-func stripMask(addr string) string {
+func StripMask(addr string) string {
 	if i := strings.IndexByte(addr, '/'); i >= 0 {
 		return addr[:i]
 	}
 	return addr
 }
 
-func specMounts(cs *swarm.ContainerSpec) []string {
+func SpecMounts(cs *swarm.ContainerSpec) []string {
 	if cs == nil {
 		return nil
 	}
@@ -936,7 +936,7 @@ func specMounts(cs *swarm.ContainerSpec) []string {
 	return out
 }
 
-func specSecrets(cs *swarm.ContainerSpec) []string {
+func SpecSecrets(cs *swarm.ContainerSpec) []string {
 	if cs == nil {
 		return nil
 	}
@@ -947,7 +947,7 @@ func specSecrets(cs *swarm.ContainerSpec) []string {
 	return out
 }
 
-func specConfigs(cs *swarm.ContainerSpec) []string {
+func SpecConfigs(cs *swarm.ContainerSpec) []string {
 	if cs == nil {
 		return nil
 	}
@@ -967,7 +967,7 @@ func imageLine(cs *swarm.ContainerSpec) []string {
 
 // imageLines is imageLine plus, for a :latest image, the real version behind the
 // pinned digest. The "newer available" notice is a separate actionable row.
-func imageLines(cs *swarm.ContainerSpec, st imageStatus) []string {
+func imageLines(cs *swarm.ContainerSpec, st ImageStatus) []string {
 	out := imageLine(cs)
 	if out == nil {
 		return nil
@@ -989,7 +989,7 @@ func shortDigest(d string) string {
 	return d
 }
 
-func servicePortLines(svc swarm.Service) []string {
+func ServicePortLines(svc swarm.Service) []string {
 	ports := svc.Endpoint.Ports
 	if len(ports) == 0 && svc.Spec.EndpointSpec != nil {
 		ports = svc.Spec.EndpointSpec.Ports
@@ -1001,10 +1001,10 @@ func servicePortLines(svc swarm.Service) []string {
 	return out
 }
 
-// serviceModeStr describes a service's mode for the inspect overlay. Jobs are
+// ServiceModeStr describes a service's mode for the inspect overlay. Jobs are
 // spelled out too: they used to fall through to "-", which read as "swarmexec
 // does not know what this is" for a perfectly ordinary service.
-func serviceModeStr(svc swarm.Service) string {
+func ServiceModeStr(svc swarm.Service) string {
 	m := svc.Spec.Mode
 	switch {
 	case m.Replicated != nil && m.Replicated.Replicas != nil:
@@ -1037,7 +1037,7 @@ func jobConcurrency(j *swarm.ReplicatedJob) uint64 {
 	return 1
 }
 
-func resourceLines(rr *swarm.ResourceRequirements) []string {
+func ResourceLines(rr *swarm.ResourceRequirements) []string {
 	if rr == nil {
 		return nil
 	}
@@ -1066,9 +1066,30 @@ func resStr(nanoCPU, memBytes int64) string {
 	return strings.Join(parts, ", ")
 }
 
-func tstr(t time.Time) string {
+func FormatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
 	return t.Local().Format("2006-01-02 15:04:05")
+}
+
+// UpdateStatusLabel maps a swarm rolling-update state to a short glyph+label and
+// whether an update is actually in flight. Finished ("completed" /
+// "rollback_completed") and absent states report active=false. The colour name
+// is the accompanying severity tint (yellow = normal, orange/red = attention).
+// Shared by the tree badge and the inspect UPDATE line so both stay in sync.
+func UpdateStatusLabel(state string) (label, color string, active bool) {
+	switch state {
+	case "updating":
+		return "⟳ updating", "yellow", true
+	case "rollback_started":
+		return "↺ rolling back", "orange", true
+	default:
+		// Only the actively-converging states above are badged. Swarm keeps
+		// UpdateStatus.State indefinitely, and the default failure_action is
+		// "pause", so a single failed task in some past deploy pins a service at
+		// "paused" for weeks — a stale, misleading signal, not an ongoing update.
+		// "paused"/"rollback_paused" (and completed/none) therefore get no badge.
+		return "", "", false
+	}
 }

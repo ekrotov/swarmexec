@@ -19,6 +19,7 @@ import (
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/swarmops"
 )
 
 // runningUI is overlayUI with its event loop actually running, on a simulated
@@ -266,7 +267,7 @@ func TestExplainErr(t *testing.T) {
 	unavailable := status.Error(codes.Unavailable, "connection refused")
 	for _, tc := range []struct {
 		name   string
-		lister serviceLister
+		lister swarmops.ServiceLister
 		err    error
 		want   string
 	}{

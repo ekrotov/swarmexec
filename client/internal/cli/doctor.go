@@ -14,6 +14,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
+	"swarmexec/client/internal/swarmops"
 )
 
 type doctorFlags struct {
@@ -81,8 +82,8 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 		return &cliError{code: session.TransportFailure, silent: true}
 	}
 
-	agentDep := agentDeployed(ctx, dcli)
-	image := agentServiceImage(ctx, dcli)
+	agentDep := swarmops.AgentDeployed(ctx, dcli)
+	image := swarmops.AgentServiceImage(ctx, dcli)
 
 	nodes, err := resolve.New(dcli, addrModeOf(cfg)).Nodes(ctx)
 	if err != nil {

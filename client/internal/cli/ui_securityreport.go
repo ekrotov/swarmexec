@@ -13,6 +13,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/secscan"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Writing the report from the ui is the same report the cli writes, gathered
@@ -54,8 +55,8 @@ func (u *ui) writeSecurityReport(path string, setHelp func(string), keys string)
 	setHelp(" [yellow]writing security report…[white] " + tview.Escape(path))
 	dcli, ac, g, timeout, name := u.dcli, u.agents, u.g, u.f.connectTimeout, u.contextName()
 	async(u, "ui.securityreport", func(ctx context.Context) (secscan.Report, error) {
-		report, err := gatherSecurityReport(ctx, dcli, ac, g,
-			&securityFlags{output: path, connectTimeout: timeout}, name)
+		report, err := swarmops.GatherSecurityReport(ctx, dcli, ac,
+			(&securityFlags{output: path, connectTimeout: timeout}).reportOptions(g, ac.Config(), name))
 		if err == nil {
 			err = writeReportFile(path, report.Markdown())
 		}

@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"net/netip"
@@ -57,12 +57,12 @@ func TestServiceAliasesOnNetwork(t *testing.T) {
 
 	cases := []struct {
 		name string
-		net  swarmNetwork
+		net  Network
 		want []string
 	}{
-		{"by id", swarmNetwork{ID: "net-id-1", Name: "frontend-net"}, []string{"web", "frontend"}},
-		{"by name", swarmNetwork{ID: "backend-id", Name: "backend"}, []string{"api"}},
-		{"not attached", swarmNetwork{ID: "other-id", Name: "other"}, nil},
+		{"by id", Network{ID: "net-id-1", Name: "frontend-net"}, []string{"web", "frontend"}},
+		{"by name", Network{ID: "backend-id", Name: "backend"}, []string{"api"}},
+		{"not attached", Network{ID: "other-id", Name: "other"}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestNetworkEncrypted(t *testing.T) {
 
 func TestBuildNetworkCreateOptions(t *testing.T) {
 	// Full happy path: every option set.
-	name, opts, err := buildNetworkCreateOptions(newNetworkOpts{
+	name, opts, err := buildNetworkCreateOptions(NewNetworkOpts{
 		Name: "  app-net ", Driver: "", Attachable: true, Encrypted: true,
 		Internal: true, IPv6: true, MTU: "1400", Subnet: "10.10.0.0/24",
 		Gateway: "10.10.0.1", Labels: map[string]string{"team": "infra"},
@@ -131,7 +131,7 @@ func TestBuildNetworkCreateOptions(t *testing.T) {
 	}
 
 	// Minimal: only a name → overlay, no driver options at all.
-	_, min, err := buildNetworkCreateOptions(newNetworkOpts{Name: "n"})
+	_, min, err := buildNetworkCreateOptions(NewNetworkOpts{Name: "n"})
 	if err != nil {
 		t.Fatalf("minimal: %v", err)
 	}
@@ -140,13 +140,13 @@ func TestBuildNetworkCreateOptions(t *testing.T) {
 	}
 
 	// Error cases.
-	if _, _, err := buildNetworkCreateOptions(newNetworkOpts{Name: ""}); err == nil {
+	if _, _, err := buildNetworkCreateOptions(NewNetworkOpts{Name: ""}); err == nil {
 		t.Error("expected error for empty name")
 	}
-	if _, _, err := buildNetworkCreateOptions(newNetworkOpts{Name: "n", MTU: "big"}); err == nil {
+	if _, _, err := buildNetworkCreateOptions(NewNetworkOpts{Name: "n", MTU: "big"}); err == nil {
 		t.Error("expected error for non-numeric MTU")
 	}
-	if _, _, err := buildNetworkCreateOptions(newNetworkOpts{Name: "n", Gateway: "10.0.0.1"}); err == nil {
+	if _, _, err := buildNetworkCreateOptions(NewNetworkOpts{Name: "n", Gateway: "10.0.0.1"}); err == nil {
 		t.Error("expected error for gateway without subnet")
 	}
 }
@@ -172,7 +172,7 @@ func TestServiceSecretMembership(t *testing.T) {
 	for _, m := range got {
 		sort.Strings(m)
 	}
-	// Keyed by both ID and name so listSecrets can match either.
+	// Keyed by both ID and name so ListSecrets can match either.
 	want := map[string][]string{
 		"sid1":    {"api", "web"},
 		"db-pw":   {"api", "web"},
@@ -208,32 +208,10 @@ func TestServiceVolumeMounts(t *testing.T) {
 		// No container spec must not panic.
 		{Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "bare"}}},
 	}
-	got := serviceVolumeMounts(svcs)
+	got := ServiceVolumeMounts(svcs)
 	want := map[string]bool{"pgdata": true, "assets": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("serviceVolumeMounts = %v, want %v", got, want)
-	}
-}
-
-func TestNetworkType(t *testing.T) {
-	cases := []struct {
-		n    swarmNetwork
-		want string
-	}{
-		{swarmNetwork{Ingress: true}, "ingress"},
-		{swarmNetwork{Internal: true}, "internal"},
-		{swarmNetwork{Attachable: true}, "attachable"},
-		{swarmNetwork{Driver: "overlay"}, "overlay"},
-		{swarmNetwork{Driver: "bridge"}, "bridge"},
-		{swarmNetwork{}, "-"},
-		// Attachable wins when several flags are set (matches the colour priority).
-		{swarmNetwork{Ingress: true, Internal: true, Attachable: true}, "attachable"},
-		{swarmNetwork{Ingress: true, Internal: true}, "internal"},
-	}
-	for _, c := range cases {
-		if got := networkType(c.n); got != c.want {
-			t.Errorf("networkType(%+v) = %q, want %q", c.n, got, c.want)
-		}
 	}
 }
 
@@ -252,7 +230,7 @@ func TestDropNetwork(t *testing.T) {
 }
 
 func TestServicesExcluding(t *testing.T) {
-	got := servicesExcluding([]string{"web", "db", "cache"}, []string{"db"})
+	got := ServicesExcluding([]string{"web", "db", "cache"}, []string{"db"})
 	want := []string{"cache", "web"} // sorted, db removed
 	if len(got) != len(want) {
 		t.Fatalf("servicesExcluding = %v, want %v", got, want)
@@ -263,7 +241,7 @@ func TestServicesExcluding(t *testing.T) {
 		}
 	}
 	// Nothing excluded → all, sorted.
-	if all := servicesExcluding([]string{"b", "a"}, nil); all[0] != "a" || all[1] != "b" {
+	if all := ServicesExcluding([]string{"b", "a"}, nil); all[0] != "a" || all[1] != "b" {
 		t.Errorf("servicesExcluding(no exclude) = %v, want [a b]", all)
 	}
 }

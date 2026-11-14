@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -57,19 +57,19 @@ func TestVersionFromConfig(t *testing.T) {
 }
 
 func TestVersionSuffix(t *testing.T) {
-	if s := versionSuffix(imageStatus{version: "1.2.3"}); s != " (1.2.3)" {
+	if s := VersionSuffix(ImageStatus{version: "1.2.3"}); s != " (1.2.3)" {
 		t.Errorf("version only = %q", s)
 	}
-	if s := versionSuffix(imageStatus{version: "1.2.3", newer: true}); s != " (1.2.3) ↑" {
+	if s := VersionSuffix(ImageStatus{version: "1.2.3", newer: true}); s != " (1.2.3) ↑" {
 		t.Errorf("version+newer = %q", s)
 	}
-	if s := versionSuffix(imageStatus{version: "2.11.1", newer: true, latestVersion: "3.0.0"}); s != " (2.11.1) ↑ 3.0.0" {
+	if s := VersionSuffix(ImageStatus{version: "2.11.1", newer: true, latestVersion: "3.0.0"}); s != " (2.11.1) ↑ 3.0.0" {
 		t.Errorf("version+newer+target = %q", s)
 	}
-	if s := versionSuffix(imageStatus{newer: true}); s != " ↑" {
+	if s := VersionSuffix(ImageStatus{newer: true}); s != " ↑" {
 		t.Errorf("newer only = %q", s)
 	}
-	if s := versionSuffix(imageStatus{}); s != "" {
+	if s := VersionSuffix(ImageStatus{}); s != "" {
 		t.Errorf("empty = %q, want empty", s)
 	}
 }
@@ -241,7 +241,7 @@ func TestIsDowngrade(t *testing.T) {
 		{"stable", "1.0.0", false},         // non-numeric current — unknown
 	}
 	for _, c := range cases {
-		if got := isDowngrade(c.current, c.target); got != c.want {
+		if got := IsDowngrade(c.current, c.target); got != c.want {
 			t.Errorf("isDowngrade(%q, %q) = %v, want %v", c.current, c.target, got, c.want)
 		}
 	}

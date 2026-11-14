@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"net/netip"
@@ -13,7 +13,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 )
 
-func joinInspLines(lines []inspLine) string {
+func joinInspLines(lines []InspectLine) string {
 	var b strings.Builder
 	for _, l := range lines {
 		b.WriteString(l.Text)
@@ -33,16 +33,16 @@ func joinInspLines(lines []inspLine) string {
 	return b.String()
 }
 
-func headerIndex(lines []inspLine, header string) int {
+func headerIndex(lines []InspectLine, header string) int {
 	for i, l := range lines {
-		if l.Kind == inspHeader && l.Text == header {
+		if l.Kind == InspectHeader && l.Text == header {
 			return i
 		}
 	}
 	return -1
 }
 
-func hasKind(lines []inspLine, k inspKind) *inspLine {
+func hasKind(lines []InspectLine, k InspectKind) *InspectLine {
 	for i := range lines {
 		if lines[i].Kind == k {
 			return &lines[i]
@@ -59,11 +59,11 @@ func TestFormatServiceInspect_UpdateStatus(t *testing.T) {
 		return s
 	}
 
-	// A rolling update in flight yields an inspUpdate line carrying its state.
+	// A rolling update in flight yields an InspectUpdate line carrying its state.
 	s := base()
 	s.UpdateStatus = &swarm.UpdateStatus{State: swarm.UpdateStateUpdating, Message: "update in progress"}
-	lines := formatServiceInspect(s, netInfo{}, imageStatus{})
-	up := hasKind(lines, inspUpdate)
+	lines := formatServiceInspect(s, netInfo{}, ImageStatus{})
+	up := hasKind(lines, InspectUpdate)
 	if up == nil {
 		t.Fatal("expected an inspUpdate line while the service is updating")
 	}
@@ -77,7 +77,7 @@ func TestFormatServiceInspect_UpdateStatus(t *testing.T) {
 	// A finished update produces no status line.
 	s = base()
 	s.UpdateStatus = &swarm.UpdateStatus{State: swarm.UpdateStateCompleted}
-	if hasKind(formatServiceInspect(s, netInfo{}, imageStatus{}), inspUpdate) != nil {
+	if hasKind(formatServiceInspect(s, netInfo{}, ImageStatus{}), InspectUpdate) != nil {
 		t.Error("a completed update should not produce an inspUpdate line")
 	}
 }
@@ -94,7 +94,7 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 		Mounts:  []mount.Mount{{Type: mount.TypeVolume, Source: "assets", Target: "/data"}},
 	}
 
-	lines := formatServiceInspect(s, netInfo{names: map[string]string{"netid1": "frontend-net"}, encrypted: map[string]bool{"netid1": true}}, imageStatus{version: "1.2.3", currentTag: "latest", newer: true, latestDigest: "sha256:abcdef0123456789", latestVersion: "1.5.0", updateTarget: "nginx:latest@sha256:abcdef0123456789"})
+	lines := formatServiceInspect(s, netInfo{names: map[string]string{"netid1": "frontend-net"}, encrypted: map[string]bool{"netid1": true}}, ImageStatus{version: "1.2.3", currentTag: "latest", newer: true, latestDigest: "sha256:abcdef0123456789", latestVersion: "1.5.0", updateTarget: "nginx:latest@sha256:abcdef0123456789"})
 	joined := joinInspLines(lines)
 
 	for _, want := range []string{"frontend-net", "tier=frontend", "assets -> /data", "db-pw", "nginx:1", "version behind :latest: 1.2.3", "newer version is available: 1.5.0"} {
@@ -102,16 +102,16 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 			t.Errorf("formatted output missing %q:\n%s", want, joined)
 		}
 	}
-	// The encrypted network's inspNet row must be marked so the view can show a lock.
+	// The encrypted network's InspectNet row must be marked so the view can show a lock.
 	for _, l := range lines {
-		if l.Kind == inspNet && l.Net == "frontend-net" && !l.Encrypted {
+		if l.Kind == InspectNet && l.Net == "frontend-net" && !l.Encrypted {
 			t.Errorf("network row not marked encrypted: %+v", l)
 		}
 	}
 	// A newer registry image produces an actionable upgrade row targeting the new digest.
-	var up *inspLine
+	var up *InspectLine
 	for i := range lines {
-		if lines[i].Kind == inspUpgrade {
+		if lines[i].Kind == InspectUpgrade {
 			up = &lines[i]
 		}
 	}
@@ -132,7 +132,7 @@ func TestFormatServiceInspect_OrderAndContent(t *testing.T) {
 	}
 	// The value lines must be selectable fields, the headers must not be.
 	for _, l := range lines {
-		if l.Kind == inspField && strings.TrimSpace(l.Text) == "" {
+		if l.Kind == InspectField && strings.TrimSpace(l.Text) == "" {
 			t.Errorf("empty field line should not be a selectable field")
 		}
 	}
@@ -197,10 +197,10 @@ func TestFormatTaskInspect_NetworksAndState(t *testing.T) {
 			t.Errorf("task inspect missing %q:\n%s", want, joined)
 		}
 	}
-	// The network row is a collapsible inspNet entry with a DNS-name count.
-	var netLine *inspLine
+	// The network row is a collapsible InspectNet entry with a DNS-name count.
+	var netLine *InspectLine
 	for i := range lines {
-		if lines[i].Kind == inspNet && lines[i].Net == "frontend-net" {
+		if lines[i].Kind == InspectNet && lines[i].Net == "frontend-net" {
 			netLine = &lines[i]
 		}
 	}
@@ -291,11 +291,8 @@ func TestServiceNetDNS_VIPAndContainerAddresses(t *testing.T) {
 	if n.Tasks[0].Copy != "10.0.1.5" {
 		t.Errorf("copy value = %q, want the bare address", n.Tasks[0].Copy)
 	}
-	if got := netRowCopy(inspLine{Text: "frontend-net", Addr: n.Addr}); got != "10.0.1.2" {
-		t.Errorf("net row copy = %q, want the bare vip", got)
-	}
 	// The stale task must not leak in through the name-keyed lookup either.
-	if strings.Contains(joinInspLines(formatServiceInspect(svc, info, imageStatus{})), "10.0.1.99") {
+	if strings.Contains(joinInspLines(formatServiceInspect(svc, info, ImageStatus{})), "10.0.1.99") {
 		t.Error("a shut-down task's released address must not be shown")
 	}
 }
@@ -378,22 +375,8 @@ func TestFirstIPv4AndStripMask(t *testing.T) {
 	if got := firstIPv4(nil); got != "" {
 		t.Errorf("no addresses should yield %q", got)
 	}
-	if got := stripMask("10.0.1.5"); got != "10.0.1.5" {
+	if got := StripMask("10.0.1.5"); got != "10.0.1.5" {
 		t.Errorf("stripMask of a bare address = %q", got)
-	}
-}
-
-// The container drill-down's collapse key must never collide with a network's
-// own key — a network named like the synthetic key would silently toggle both.
-func TestNetTasksKeyCannotCollide(t *testing.T) {
-	if netTasksKey("web") == "web" {
-		t.Fatal("the container level must not share the network's own collapse key")
-	}
-	if !strings.Contains(netTasksKey("web"), "\x00") {
-		t.Error("key must contain a NUL, which a Docker network name cannot")
-	}
-	if netTasksKey("a") == netTasksKey("b") {
-		t.Error("keys must be per network")
 	}
 }
 

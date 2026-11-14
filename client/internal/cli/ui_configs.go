@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -56,9 +58,9 @@ func (u *ui) renderConfigs() {
 func (u *ui) loadConfigs() {
 	dcli, cfgtable := u.dcli, u.cfgtable
 	tableState(cfgtable, cfHeaders, loadingCell())
-	async(u, "ui.loadConfigs", func(ctx context.Context) ([]swarmConfig, error) {
-		return listConfigs(ctx, dcli)
-	}, func(list []swarmConfig, err error) {
+	async(u, "ui.loadConfigs", func(ctx context.Context) ([]swarmops.Config, error) {
+		return swarmops.ListConfigs(ctx, dcli)
+	}, func(list []swarmops.Config, err error) {
 		if err != nil {
 			tableState(cfgtable, cfHeaders, errorCell(err))
 			return
@@ -68,7 +70,7 @@ func (u *ui) loadConfigs() {
 	})
 }
 
-func (u *ui) selectedConfig() (swarmConfig, bool) {
+func (u *ui) selectedConfig() (swarmops.Config, bool) {
 	return selectedRow(u.cfgtable, u.cfgs)
 }
 
@@ -77,7 +79,7 @@ func (u *ui) selectedConfig() (swarmConfig, bool) {
 // returns a config's payload, so the operator can see what a service really
 // receives without dropping to `docker config inspect`. The content is fetched
 // on demand, since a config can be a whole nginx.conf.
-func (u *ui) showConfigDetail(c swarmConfig) {
+func (u *ui) showConfigDetail(c swarmops.Config) {
 	pages, dcli := u.pages, u.dcli
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" config %s ", c.Name))
@@ -98,7 +100,7 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 			fmt.Fprintf(&b, "    %s\n", tview.Escape(s))
 		}
 	}
-	if lbls := kvPairs(c.Labels); len(lbls) > 0 {
+	if lbls := swarmops.KVPairs(c.Labels); len(lbls) > 0 {
 		b.WriteString("\n  [gray]labels[-]\n")
 		for _, l := range lbls {
 			fmt.Fprintf(&b, "    %s\n", tview.Escape(l))
@@ -126,7 +128,7 @@ func (u *ui) showConfigDetail(c swarmConfig) {
 	ov.show(centered(tv, 96, 28), tv)
 
 	async(u, "ui.configs.content", func(ctx context.Context) ([]byte, error) {
-		return configContent(ctx, dcli, c.ID)
+		return swarmops.ConfigContent(ctx, dcli, c.ID)
 	}, func(data []byte, err error) {
 		if !pages.HasPage(pageConfigDetail) {
 			return

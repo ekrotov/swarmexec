@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"swarmexec/client/internal/swarmops"
 )
 
 // inspectViewFor builds an inspectView detached from the app, so the render half
 // (populate) can be exercised without a screen.
-func inspectViewFor(lines []inspLine) *inspectView {
+func inspectViewFor(lines []swarmops.InspectLine) *inspectView {
 	table, tabs, frame := newInspectWidgets()
 	return &inspectView{
 		u:          &ui{km: defaultKeybinds()}, // the footer names the configured keys
@@ -43,16 +45,16 @@ func rendered(iv *inspectView) string {
 // answers "which IP is the service", expanding once gives the DNS names and a
 // container count, expanding that gives the containers' own addresses.
 func TestInspectNetworkDrillDown(t *testing.T) {
-	net := inspLine{
-		Kind: inspNet, Text: "gateway", Net: "gateway", Count: 2,
+	net := swarmops.InspectLine{
+		Kind: swarmops.InspectNet, Text: "gateway", Net: "gateway", Count: 2,
 		Addr: "10.0.1.2/24", AddrLabel: "vip",
 		Children: []string{"web", "tasks.web"},
-		Tasks: []inspTaskRow{
+		Tasks: []swarmops.InspectTaskRow{
 			{Text: "web.1  10.0.1.5/24  host-a", Copy: "10.0.1.5"},
 			{Text: "web.2  10.0.1.6/24  host-b", Copy: "10.0.1.6"},
 		},
 	}
-	iv := inspectViewFor([]inspLine{net})
+	iv := inspectViewFor([]swarmops.InspectLine{net})
 
 	// Collapsed: the VIP is visible without any expanding at all.
 	iv.populate()
@@ -124,7 +126,7 @@ func containsPlain(iv *inspectView, want string) bool {
 
 // A network without a VIP (dnsrr) keeps the old header shape and copies its name.
 func TestInspectNetworkRowWithoutVIP(t *testing.T) {
-	iv := inspectViewFor([]inspLine{{Kind: inspNet, Text: "dbnet", Net: "dbnet", Count: 1, Children: []string{"db"}}})
+	iv := inspectViewFor([]swarmops.InspectLine{{Kind: swarmops.InspectNet, Text: "dbnet", Net: "dbnet", Count: 1, Children: []string{"db"}}})
 	iv.populate()
 	if out := rendered(iv); !strings.Contains(out, "+ dbnet  (1 dns names)") {
 		t.Errorf("unexpected header for a vip-less network:\n%s", out)
@@ -136,8 +138,8 @@ func TestInspectNetworkRowWithoutVIP(t *testing.T) {
 
 // A row whose DNS-name count would say nothing (ingress) shows its note instead.
 func TestInspectNetworkRowNote(t *testing.T) {
-	iv := inspectViewFor([]inspLine{{
-		Kind: inspNet, Text: "ingress", Net: "ingress",
+	iv := inspectViewFor([]swarmops.InspectLine{{
+		Kind: swarmops.InspectNet, Text: "ingress", Net: "ingress",
 		Addr: "10.0.0.5/24", AddrLabel: "vip", Note: "routing mesh",
 		Children: []string{"published 8080 -> 80/tcp"},
 	}})
