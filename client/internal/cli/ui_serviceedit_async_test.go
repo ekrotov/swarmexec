@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"swarmexec/client/internal/swarmfake"
+
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
@@ -19,7 +21,7 @@ import (
 // the test opens the gate, so a switch can be made while one is in flight.
 func gatedAPI(t *testing.T) (dcli *client.Client, entered <-chan struct{}, open func()) {
 	t.Helper()
-	fs := &fakeSwarm{services: []swarm.Service{{
+	fs := &swarmfake.Swarm{Services: []swarm.Service{{
 		ID:   "s1",
 		Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "web"}},
 	}}}

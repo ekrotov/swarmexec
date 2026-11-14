@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -29,7 +30,7 @@ func TestStackLogMembers(t *testing.T) {
 	}}
 	var got []string
 	for _, c := range u.stackLogMembers("shop") {
-		got = append(got, sourceFromCandidate(c).label)
+		got = append(got, logstream.SourceFromCandidate(c).Label)
 	}
 	if strings.Join(got, " ") != "shop_db.1 shop_web.1 shop_web.2" {
 		t.Errorf("members = %v", got)

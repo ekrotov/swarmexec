@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -15,11 +17,11 @@ import (
 // networksTab is the Networks tab: the swarm's networks with the services
 // attached to each, and the create / attach / detach actions.
 type networksTab struct {
-	*listTab[swarmNetwork]
+	*listTab[swarmops.Network]
 }
 
 func newNetworksTab(u *ui) *networksTab {
-	t := &networksTab{newListTab(u, nHeaders, func(n swarmNetwork) string { return n.Name })}
+	t := &networksTab{newListTab(u, nHeaders, func(n swarmops.Network) string { return n.Name })}
 	t.row = t.renderRow
 	t.empty = func() string { return emptyText("networks", keyHint(u.km.NetNew, "to create one")) }
 	t.table.SetSelectedFunc(func(int, int) {
@@ -40,7 +42,7 @@ func (t *networksTab) refresh() { t.reload() }
 // reload fetches the network list.
 func (t *networksTab) reload() {
 	dcli := t.u.dcli
-	t.load("ui.loadNetworks", func(ctx context.Context) ([]swarmNetwork, error) { return listNetworks(ctx, dcli) })
+	t.load("ui.loadNetworks", func(ctx context.Context) ([]swarmops.Network, error) { return swarmops.ListNetworks(ctx, dcli) })
 }
 
 func (t *networksTab) footer() string {
@@ -63,7 +65,7 @@ func (t *networksTab) yank(b *strings.Builder) {
 	}
 }
 
-func (t *networksTab) renderRow(r int, n swarmNetwork) {
+func (t *networksTab) renderRow(r int, n swarmops.Network) {
 	svcCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
 	if len(n.Services) > 0 {
 		svcCell = tview.NewTableCell(fmt.Sprintf("%d", len(n.Services))).SetTextColor(tcell.ColorGreen).SetExpansion(1)
@@ -147,9 +149,9 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 // (build) half from handleKey (input), mirroring inspectView.
 type netMembersView struct {
 	u        *ui
-	n        swarmNetwork
+	n        swarmops.Network
 	list     *tview.List
-	members  []netService
+	members  []swarmops.NetService
 	rowSvc   []string // list row -> service it belongs to (for Enter/A)
 	expanded map[string]bool
 	loaded   bool
@@ -161,7 +163,7 @@ type netMembersView struct {
 // each service nested under it. Service membership is known synchronously
 // (from the list); the per-service containers need a task lookup, so they fill
 // in lazily after the overlay is up.
-func (t *networksTab) showMembers(n swarmNetwork) {
+func (t *networksTab) showMembers(n swarmops.Network) {
 	u := t.u
 	list := tview.NewList().ShowSecondaryText(false)
 	badge := ""
@@ -175,9 +177,9 @@ func (t *networksTab) showMembers(n swarmNetwork) {
 	v := &netMembersView{u: u, n: n, list: list, expanded: map[string]bool{}}
 	// Seed with the services already known from the list; containers/aliases
 	// fill in once the task/spec lookup returns.
-	v.members = make([]netService, 0, len(n.Services))
+	v.members = make([]swarmops.NetService, 0, len(n.Services))
 	for _, s := range n.Services {
-		v.members = append(v.members, netService{Name: s})
+		v.members = append(v.members, swarmops.NetService{Name: s})
 	}
 	v.open()
 }
@@ -192,7 +194,7 @@ func (v *netMembersView) render() {
 	meta := func(svc string) { v.rowSvc = append(v.rowSvc, svc) }
 	// The network's own labels (read-only) at the top — Docker has no
 	// network-update API, so they can't be edited here.
-	if lbls := kvPairs(n.Labels); len(lbls) > 0 {
+	if lbls := swarmops.KVPairs(n.Labels); len(lbls) > 0 {
 		list.AddItem("[gray]labels[-]", "", 0, nil)
 		meta("")
 		for _, l := range lbls {
@@ -258,9 +260,9 @@ func (v *netMembersView) close() { v.ov.Close() }
 
 func (v *netMembersView) reload() {
 	u, dcli, n := v.u, v.u.dcli, v.n
-	async(u, "ui.networks.members", func(ctx context.Context) ([]netService, error) {
-		return networkMembers(ctx, dcli, n), nil
-	}, func(m []netService, _ error) {
+	async(u, "ui.networks.members", func(ctx context.Context) ([]swarmops.NetService, error) {
+		return swarmops.NetworkMembers(ctx, dcli, n), nil
+	}, func(m []swarmops.NetService, _ error) {
 		// Only repaint if this overlay is still the one on screen.
 		if u.pages.HasPage(pageNetMembers) {
 			v.members, v.loaded = m, true
@@ -302,17 +304,17 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		// Same staged alias editor as the inspect view; applies via
-		// setNetworkAliases, then reloads this view to show the new aliases.
+		// swarmops.SetNetworkAliases, then reloads this view to show the new aliases.
 		u.openAliasEditorForNet(svc, n.Name, n.ID, list, v.reload)
 		return nil
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-		suggestions := servicesExcluding(u.serviceNamesFromCache(), n.Services)
+		suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), n.Services)
 		u.servicePrompt(
 			fmt.Sprintf("attach a service to network %q", n.Name),
 			fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
 			suggestions, list,
 			func(ctx context.Context, svc string) error {
-				return attachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
+				return swarmops.AttachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
 			},
 			func() { v.close(); u.netTab().reload() },
 		)
@@ -327,7 +329,7 @@ func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 			fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
 			n.Services, list,
 			func(ctx context.Context, svc string) error {
-				return detachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
+				return swarmops.DetachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
 			},
 			func() { v.close(); u.netTab().reload() },
 		)
@@ -356,7 +358,7 @@ func (v *netMembersView) open() {
 func (t *networksTab) showCreate() {
 	u := t.u
 	dcli, ctx, nettable := u.dcli, u.ctx, t.table
-	o := newNetworkOpts{Driver: "overlay"}
+	o := swarmops.NewNetworkOpts{Driver: "overlay"}
 	var labels string
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" new network ")
@@ -373,13 +375,13 @@ func (t *networksTab) showCreate() {
 	ov := u.overlayFor(pageNetForm, nettable, footerKeys("Tab", "next field", "Enter", "confirm", "Esc", "cancel"))
 	closeForm := ov.Close
 	form.AddButton("Create", func() {
-		lbls, err := parseKVList(labels)
+		lbls, err := swarmops.ParseKVList(labels)
 		if err != nil {
 			u.info("invalid labels: " + err.Error())
 			return
 		}
 		o.Labels = lbls
-		if err := createNetwork(ctx, dcli, o); err != nil {
+		if err := swarmops.CreateNetwork(ctx, dcli, o); err != nil {
 			u.info("create failed: " + err.Error())
 			return
 		}

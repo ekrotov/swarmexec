@@ -16,6 +16,7 @@ import (
 
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Dynamic shell completion: `swarmexec exec <TAB>` offers the services that
@@ -186,7 +187,7 @@ func completeSecrets(g *globalFlags) completeFunc {
 		var out []string
 		for _, s := range res.Items {
 			name := s.Spec.Name
-			if of := s.Spec.Labels[rotateMarkerLabel]; of != "" {
+			if of := s.Spec.Labels[swarmops.RotateMarkerLabel]; of != "" {
 				name = of
 			}
 			if !seen[name] {

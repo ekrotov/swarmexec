@@ -62,9 +62,19 @@ func newTerminalView(app *tview.Application) *terminalView {
 	return v
 }
 
+// terminalSession is what one exec session in the pane runs: the container,
+// the command, whether it gets a TTY, and the user to run it as ("" for the
+// image's default).
+type terminalSession struct {
+	ep      resolve.Endpoint
+	command []string
+	tty     bool
+	user    string
+}
+
 // run dials the agent and runs the exec session, feeding output into the
 // emulator. onDone is invoked (off the UI goroutine) when the session ends.
-func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, command []string, tty bool, user string, connectTimeout time.Duration, onDone func(int, error)) {
+func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, s terminalSession, connectTimeout time.Duration, onDone func(int, error)) {
 	pr, pw := io.Pipe()
 	v.mu.Lock()
 	v.stdin = pw
@@ -73,7 +83,7 @@ func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, ep resolve
 
 	go func() {
 		dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
-		conn, err := ac.Conn(dctx, ep.DialHost)
+		conn, err := ac.Conn(dctx, s.ep.DialHost)
 		dcancel()
 		if err != nil {
 			onDone(session.TransportFailure, err)
@@ -89,12 +99,12 @@ func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, ep resolve
 
 		code, runErr := session.Run(ctx, stream, session.Options{
 			Start: &pb.StartExec{
-				ContainerId: ep.ContainerID,
-				Cmd:         command,
-				Tty:         tty,
+				ContainerId: s.ep.ContainerID,
+				Cmd:         s.command,
+				Tty:         s.tty,
 				Width:       uint32(cols),
 				Height:      uint32(rows),
-				User:        user,
+				User:        s.user,
 			},
 			Stdin:        pr,
 			Stdout:       vtSink{v},

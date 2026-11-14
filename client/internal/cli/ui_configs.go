@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -17,11 +19,11 @@ import (
 // content is readable, so the detail overlay can show what a service actually
 // receives.
 type configsTab struct {
-	*listTab[swarmConfig]
+	*listTab[swarmops.Config]
 }
 
 func newConfigsTab(u *ui) *configsTab {
-	t := &configsTab{newListTab(u, cfHeaders, func(c swarmConfig) string { return c.Name })}
+	t := &configsTab{newListTab(u, cfHeaders, func(c swarmops.Config) string { return c.Name })}
 	t.row = t.renderRow
 	// Nothing in this tab creates a config: swarmexec reads them, docker
 	// writes them. Saying so beats an empty box that looks broken.
@@ -47,7 +49,7 @@ func (t *configsTab) refresh() { t.reload() }
 // reload fetches the config list.
 func (t *configsTab) reload() {
 	dcli := t.u.dcli
-	t.load("ui.loadConfigs", func(ctx context.Context) ([]swarmConfig, error) { return listConfigs(ctx, dcli) })
+	t.load("ui.loadConfigs", func(ctx context.Context) ([]swarmops.Config, error) { return swarmops.ListConfigs(ctx, dcli) })
 }
 
 func (t *configsTab) footer() string {
@@ -69,7 +71,7 @@ func (t *configsTab) yank(b *strings.Builder) {
 	}
 }
 
-func (t *configsTab) renderRow(r int, c swarmConfig) {
+func (t *configsTab) renderRow(r int, c swarmops.Config) {
 	used := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
 	if n := len(c.Services); n > 0 {
 		used = tview.NewTableCell(fmt.Sprintf("%d", n)).SetTextColor(tcell.ColorGreen).SetExpansion(1)
@@ -91,7 +93,7 @@ func (t *configsTab) renderRow(r int, c swarmConfig) {
 // returns a config's payload, so the operator can see what a service really
 // receives without dropping to `docker config inspect`. The content is fetched
 // on demand, since a config can be a whole nginx.conf.
-func (t *configsTab) showDetail(c swarmConfig) {
+func (t *configsTab) showDetail(c swarmops.Config) {
 	u := t.u
 	pages, dcli := u.pages, u.dcli
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
@@ -113,7 +115,7 @@ func (t *configsTab) showDetail(c swarmConfig) {
 			fmt.Fprintf(&b, "    %s\n", tview.Escape(s))
 		}
 	}
-	if lbls := kvPairs(c.Labels); len(lbls) > 0 {
+	if lbls := swarmops.KVPairs(c.Labels); len(lbls) > 0 {
 		b.WriteString("\n  [gray]labels[-]\n")
 		for _, l := range lbls {
 			fmt.Fprintf(&b, "    %s\n", tview.Escape(l))
@@ -141,7 +143,7 @@ func (t *configsTab) showDetail(c swarmConfig) {
 	ov.show(centered(tv, 96, 28), tv)
 
 	async(u, "ui.configs.content", func(ctx context.Context) ([]byte, error) {
-		return configContent(ctx, dcli, c.ID)
+		return swarmops.ConfigContent(ctx, dcli, c.ID)
 	}, func(data []byte, err error) {
 		if !pages.HasPage(pageConfigDetail) {
 			return

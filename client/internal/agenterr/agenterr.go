@@ -218,3 +218,9 @@ type explained struct{ shown, cause error }
 
 func (e explained) Error() string   { return e.shown.Error() }
 func (e explained) Unwrap() []error { return []error{e.shown, e.cause} }
+
+// TooOld reports whether err is a gRPC Unimplemented status, i.e. the agent
+// predates an RPC this client uses.
+func TooOld(err error) bool {
+	return status.Code(err) == codes.Unimplemented
+}

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/rivo/tview"
 )
 
@@ -96,7 +98,7 @@ func writeFile(t *testing.T, name, content string) string {
 }
 
 func TestValidateSecret(t *testing.T) {
-	big := strings.Repeat("x", maxSecretSize+1)
+	big := strings.Repeat("x", swarmops.MaxSecretSize+1)
 	for _, tc := range []struct {
 		name, labels, value string
 		field               int // -1: not a field error
@@ -104,7 +106,7 @@ func TestValidateSecret(t *testing.T) {
 	}{
 		{"db", "", "v", 0, true},
 		{"  db  ", "a=b, c=d", "v\n", 0, true},
-		{"db", "", strings.Repeat("x", maxSecretSize), 0, true},
+		{"db", "", strings.Repeat("x", swarmops.MaxSecretSize), 0, true},
 		{"", "", "v", secretFieldName, false},
 		{"   ", "", "v", secretFieldName, false},
 		{"db", "nokey", "v", secretFieldLabels, false},
@@ -160,7 +162,7 @@ func TestReadSecretFile(t *testing.T) {
 		"empty":    {"", 0, "usage"},
 		"missing":  {filepath.Join(home, "nope"), 0, "no such file"},
 		"dir":      {home, 0, "directory"},
-		"too big":  {writeFile(t, "big", strings.Repeat("x", maxSecretSize+1)), 0, "limit"},
+		"too big":  {writeFile(t, "big", strings.Repeat("x", swarmops.MaxSecretSize+1)), 0, "limit"},
 		"invalid":  {writeFile(t, "bin", "ok\xff\xfe"), 0, "binary"},
 		"nul":      {writeFile(t, "nul", "a\x00b"), 0, "binary"},
 		"combined": {writeFile(t, "half", strings.Repeat("x", 300*1024)), 300 * 1024, "would make"},
@@ -328,7 +330,7 @@ func TestSecretSizeStatus(t *testing.T) {
 	if got := sizeText(""); got != "0 lines · 0 bytes" {
 		t.Errorf("sizeText empty = %q", got)
 	}
-	if got := secretSize(strings.Repeat("x", maxSecretSize+1)); !strings.Contains(got, "[red") {
+	if got := secretSize(strings.Repeat("x", swarmops.MaxSecretSize+1)); !strings.Contains(got, "[red") {
 		t.Errorf("over the limit must be red: %q", got)
 	}
 }

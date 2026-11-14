@@ -10,6 +10,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Images are node-local and the manager API cannot see them at all — a node
@@ -28,10 +29,10 @@ func imageSection(ni nodeImages, known bool) string {
 	}
 	var b strings.Builder
 	b.WriteString("\n  [gray]images on this node[-]\n")
-	fmt.Fprintf(&b, "    %-10s %s in %d image(s)\n", "on disk", formatMemBytes(ni.Total), ni.Count)
+	fmt.Fprintf(&b, "    %-10s %s in %d image(s)\n", "on disk", swarmops.FormatMemBytes(ni.Total), ni.Count)
 	switch {
 	case ni.Dangling > 0:
-		fmt.Fprintf(&b, "    %-10s [green]%s[-] in untagged leftovers\n", "reclaim", formatMemBytes(ni.Dangling))
+		fmt.Fprintf(&b, "    %-10s [green]%s[-] in untagged leftovers\n", "reclaim", swarmops.FormatMemBytes(ni.Dangling))
 	default:
 		fmt.Fprintf(&b, "    %-10s [gray]nothing untagged to reclaim[-]\n", "reclaim")
 	}
@@ -39,7 +40,7 @@ func imageSection(ni nodeImages, known bool) string {
 		// Deliberately phrased as a cost, not an offer: these images belong to
 		// something that is merely not running right now.
 		fmt.Fprintf(&b, "    [gray]a further %s is tagged but unused — removing it means\n"+
-			"               pulling those images again.[-]\n", formatMemBytes(ni.Unused))
+			"               pulling those images again.[-]\n", swarmops.FormatMemBytes(ni.Unused))
 	}
 	return b.String()
 }
@@ -54,7 +55,7 @@ func pruneConfirmText(node string, ni nodeImages, all bool) string {
 				"Frees about [green]%s[white] in leftovers from rebuilds.\n\n"+
 				"[gray]Nothing can start from an untagged image, so this cannot\n"+
 				"stop a service or force a pull.[white]",
-			node, formatMemBytes(ni.Dangling))
+			node, swarmops.FormatMemBytes(ni.Dangling))
 	}
 	return fmt.Sprintf(
 		"Remove [red]every unused image[white] on %q?\n\n"+
@@ -64,7 +65,7 @@ func pruneConfirmText(node string, ni nodeImages, all bool) string {
 			"[gray]On a swarm node that includes every service scaled to zero and\n"+
 			"every task between restarts: each will have to pull its image again.\n"+
 			"If the registry is unreachable, they will not come back up.[white]",
-		node, formatMemBytes(ni.Dangling+ni.Unused), formatMemBytes(ni.Dangling), formatMemBytes(ni.Unused))
+		node, swarmops.FormatMemBytes(ni.Dangling+ni.Unused), swarmops.FormatMemBytes(ni.Dangling), swarmops.FormatMemBytes(ni.Unused))
 }
 
 // nodeByHostname finds the dialable node for a hostname. The node table row

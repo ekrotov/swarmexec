@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/rivo/tview"
 )
 
@@ -100,7 +102,7 @@ func TestSecretRotationSurvivesASwitch(t *testing.T) {
 
 	started, release := make(chan context.Context, 1), make(chan struct{})
 	orig := rotateSecretFn
-	rotateSecretFn = func(ctx context.Context, _ secretRotateAPI, _ string, _ []byte, _ rotateOptions) error {
+	rotateSecretFn = func(ctx context.Context, _ swarmops.SecretRotateAPI, _ string, _ []byte, _ swarmops.RotateOptions) error {
 		started <- ctx
 		<-release
 		return ctx.Err()

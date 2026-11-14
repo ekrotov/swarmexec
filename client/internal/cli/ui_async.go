@@ -13,6 +13,7 @@ import (
 
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Background work and the UI loop meet in exactly one shape: do something slow
@@ -64,7 +65,7 @@ func async[T any](u *ui, op string, work func(ctx context.Context) (T, error), a
 	if ctx == nil { // a cluster not connected yet has no context; nothing to bound by
 		ctx = context.Background()
 	}
-	var dcli serviceLister // stays a nil interface, not a nil *client.Client
+	var dcli swarmops.ServiceLister // stays a nil interface, not a nil *client.Client
 	if cs.dcli != nil {
 		dcli = cs.dcli
 	}
@@ -126,6 +127,6 @@ func logOp(ctx context.Context, op string, start time.Time, err error, attrs ...
 //
 // The explained error still wraps the original, so errors.Is / status.Code on
 // what apply receives keep answering for the original cause.
-func explainErr(ctx context.Context, auth agenterr.Auth, dcli serviceLister, err error) error {
+func explainErr(ctx context.Context, auth agenterr.Auth, dcli swarmops.ServiceLister, err error) error {
 	return agenterr.Explain(ctx, err, agenterr.Options{Auth: auth, AgentDeployed: deployedProbe(dcli)})
 }

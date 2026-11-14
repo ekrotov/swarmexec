@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
-	"time"
+	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -33,7 +35,7 @@ func (u *ui) versionSuffixFor(s resolve.Service) string {
 	if u.regCache == nil {
 		return ""
 	}
-	return versionSuffix(u.regCache.status(u.ctx, s.ImageRef))
+	return swarmops.VersionSuffix(u.regCache.Status(u.ctx, s.ImageRef))
 }
 
 func (u *ui) markService(n *tview.TreeNode) {
@@ -365,33 +367,11 @@ func (u *ui) sortCands(cands []resolve.Candidate) {
 // from u here, off the loop, they would be whichever cluster is visible by the
 // time the goroutine runs.
 func (u *ui) fetchContainers(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []resolve.Candidate, error) {
-	svcs, cands, err := fetchServicesAndContainers(ctx, r, "ui.containers")
+	svcs, cands, err := swarmops.ServicesAndContainers(ctx, r, "ui.containers")
 	if err != nil {
 		return nil, nil, err
 	}
 	u.sortCands(cands)
-	return svcs, cands, nil
-}
-
-// fetchServicesAndContainers is the topology read the tree and the MCP server
-// share: every service with its counts, and every running container. op
-// prefixes the timing log lines so a slow manager shows up under whoever
-// asked.
-func fetchServicesAndContainers(ctx context.Context, r *resolve.Resolver, op string) ([]resolve.Service, []resolve.Candidate, error) {
-	start := time.Now()
-	svcs, err := r.Services(ctx)
-	clientlog.Timed(op+".Services", start, err)
-	if err != nil {
-		return nil, nil, err
-	}
-	// Fetch every running container (not just the CLI-arg service); the tree
-	// filters client-side so services with 0 containers still appear.
-	start = time.Now()
-	cands, err := r.Candidates(ctx, "")
-	clientlog.Timed(op+".Candidates", start, err)
-	if err != nil {
-		return nil, nil, err
-	}
 	return svcs, cands, nil
 }
 
@@ -504,7 +484,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 		u.loadContainers()
 	}
 	tv.detach = closeTerm
-	tv.run(tctx, ac, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
+	tv.run(tctx, ac, terminalSession{ep: ep, command: command, tty: tty, user: user}, f.connectTimeout, func(code int, rerr error) {
 		app.QueueUpdateDraw(func() {
 			switch {
 			case tctx.Err() != nil:
@@ -607,7 +587,7 @@ func (u *ui) svcUsageBadge(service string) string {
 	// Health leads: it is the marker that contradicts the running/desired count
 	// standing right next to it, so it should not sit behind the resource
 	// numbers when the row is long.
-	badge := healthBadge(healthOf(u.usage, u.lastCands, service))
+	badge := healthBadge(swarmops.HealthOf(u.usage, u.lastCands, service))
 	if agg, ok := serviceUsage(u.usage, u.lastCands, service); ok {
 		badge += usageBadge(agg)
 	}
@@ -616,13 +596,13 @@ func (u *ui) svcUsageBadge(service string) string {
 
 // stackHealth folds the healthcheck verdicts of every container under a stack
 // into one count.
-func (u *ui) stackHealth(services []resolve.Service) serviceHealth {
-	var out serviceHealth
+func (u *ui) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
+	var out swarmops.ServiceHealth
 	if len(u.usage) == 0 {
 		return out
 	}
 	for _, svc := range services {
-		h := healthOf(u.usage, u.lastCands, svc.Name)
+		h := swarmops.HealthOf(u.usage, u.lastCands, svc.Name)
 		out.Healthy += h.Healthy
 		out.Unhealthy += h.Unhealthy
 		out.Starting += h.Starting
@@ -638,7 +618,7 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 	if len(u.usage) == 0 {
 		return base
 	}
-	return healthColor(base, healthOf(u.usage, u.lastCands, s.Name))
+	return healthColor(base, swarmops.HealthOf(u.usage, u.lastCands, s.Name))
 }
 
 // loadUsage refreshes the live resource readings in the background and re-marks
