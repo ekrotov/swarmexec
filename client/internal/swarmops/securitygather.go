@@ -1,21 +1,25 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/moby/moby/client"
 
+	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/agenterr"
+	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/swarmapi"
 )
 
 // This is the mapping layer between what the manager returns and what the
 // analyzers read. It deliberately reuses the listing helpers the ui already
-// uses (listNetworks, listSecrets, listConfigs), because those resolve the two
+// uses (ListNetworks, ListSecrets, ListConfigs), because those resolve the two
 // facts that are easy to get wrong on a second attempt: which services
 // reference an object — by id OR by name — and what a network's driver options
 // mean by "encrypted". A security report that disagrees with the screen about
@@ -39,7 +43,7 @@ func listServicesForScan(ctx context.Context, dcli swarmapi.Client) ([]secscan.S
 	return out, nil
 }
 
-// gatherCluster collects the cluster-level objects.
+// GatherCluster collects the cluster-level objects.
 //
 // Networks, secrets and configs are required: each is a thing the report claims
 // to have examined, and a silent empty list would turn a failed call into a
@@ -47,16 +51,16 @@ func listServicesForScan(ctx context.Context, dcli swarmapi.Client) ([]secscan.S
 // left nil on failure and the analyzer reports it as unknown, because "could
 // not read" and "autolock is off" are different statements and only one of them
 // is true.
-func gatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, error) {
-	nets, err := listNetworks(ctx, dcli)
+func GatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, error) {
+	nets, err := ListNetworks(ctx, dcli)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list networks: %w", err)
 	}
-	secrets, err := listSecrets(ctx, dcli)
+	secrets, err := ListSecrets(ctx, dcli)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list secrets: %w", err)
 	}
-	configs, err := listConfigs(ctx, dcli)
+	configs, err := ListConfigs(ctx, dcli)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list configs: %w", err)
 	}
@@ -92,7 +96,7 @@ func gatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, 
 	}
 	for _, n := range nodes {
 		c.Nodes = append(c.Nodes, secscan.Node{
-			Name:          nodeDisplayName(n.Description.Hostname, n.ID),
+			Name:          NodeDisplayName(n.Description.Hostname, n.ID),
 			Role:          string(n.Spec.Role),
 			EngineVersion: n.Description.Engine.EngineVersion,
 		})
@@ -105,10 +109,10 @@ func gatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, 
 	return c, nil
 }
 
-// nodeDisplayName prefers the hostname and falls back to the id, so a node that
+// NodeDisplayName prefers the hostname and falls back to the id, so a node that
 // has not reported a description still appears in the report under something
 // the operator can act on rather than as an empty row.
-func nodeDisplayName(hostname, id string) string {
+func NodeDisplayName(hostname, id string) string {
 	if hostname != "" {
 		return hostname
 	}
@@ -133,4 +137,86 @@ func contextLabel(ctx context.Context, dcli swarmapi.Client, contextName string)
 		return info.Name
 	}
 	return ""
+}
+
+// GatherSecurityReport collects everything the scan needs from the manager (and
+// optionally the agents) and builds the report.
+//
+// The manager calls are required: a report missing half the cluster is worse
+// than no report, because it looks complete. The agent round trip is optional
+// and its absence is recorded as a gap rather than passed over.
+// SecurityReportOptions is what a report run needs from its caller: who is
+// asking (the version stamp and the tool line), which cluster it is (the
+// context label), and whether and how to ask the agents.
+type SecurityReportOptions struct {
+	// ContextName is the docker context the report describes; the label in
+	// the report falls back to the swarm's own name without one.
+	ContextName string
+	// ClientVersion and ClientProto stamp the report with this client.
+	ClientVersion, ClientProto string
+	// Tool names the generator in the report header ("swarmexec v1.2.3").
+	Tool string
+	// SkipAgents leaves the agent round trip out; the report states the gap.
+	SkipAgents bool
+	// ConnectTimeout bounds each agent's Version call.
+	ConnectTimeout time.Duration
+	// AddrMode is how node addresses are picked for the agent calls.
+	AddrMode resolve.AddrMode
+}
+
+func GatherSecurityReport(ctx context.Context, dcli swarmapi.Client, ac *agentcall.Client, opts SecurityReportOptions) (secscan.Report, error) {
+	svcs, err := listServicesForScan(ctx, dcli)
+	if err != nil {
+		return secscan.Report{}, fmt.Errorf("list services: %w", err)
+	}
+
+	cluster, err := GatherCluster(ctx, dcli)
+	if err != nil {
+		return secscan.Report{}, err
+	}
+	cluster.ClientVersion, cluster.ClientProto = opts.ClientVersion, opts.ClientProto
+
+	if !opts.SkipAgents {
+		nodes, nerr := resolve.New(dcli, opts.AddrMode).Nodes(ctx)
+		if nerr == nil {
+			ApplyAgentVersions(ctx, &cluster, ac, nodes, opts.ConnectTimeout)
+		}
+		// A failure to resolve dialable nodes leaves AgentsChecked false, which
+		// the report turns into a stated gap. Better than a half-filled node
+		// list that reads as complete.
+	}
+
+	meta := secscan.ReportMeta{
+		Context:   contextLabel(ctx, dcli, opts.ContextName),
+		Generated: time.Now(),
+		Tool:      opts.Tool,
+	}
+	return secscan.BuildReport(meta, svcs, cluster), nil
+}
+
+// ApplyAgentVersions asks every node's agent for its version and records the
+// answer — including the failures, which are findings in their own right.
+func ApplyAgentVersions(ctx context.Context, c *secscan.Cluster, ac *agentcall.Client, nodes []resolve.Node, timeout time.Duration) {
+	results := ac.Versions(ctx, nodes, timeout)
+	byName := map[string]agentcall.NodeVersion{}
+	for _, r := range results {
+		byName[r.Node.Name] = r
+	}
+	for i := range c.Nodes {
+		r, ok := byName[c.Nodes[i].Name]
+		if !ok {
+			continue
+		}
+		switch {
+		case r.Err != nil && agenterr.TooOld(r.Err):
+			// The same signal doctor reads: an agent predating the Version RPC
+			// answers Unimplemented rather than failing to connect.
+			c.Nodes[i].AgentTooOld = true
+		case r.Err != nil:
+			c.Nodes[i].AgentError = r.Err.Error()
+		default:
+			c.Nodes[i].AgentVersion, c.Nodes[i].AgentProto = r.Version, r.Proto
+		}
+	}
+	c.AgentsChecked = true
 }

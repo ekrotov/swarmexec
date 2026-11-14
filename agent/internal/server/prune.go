@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/prunecat"
 	"swarmexec/internal/pb"
@@ -126,7 +127,7 @@ func (s *Server) runPrune(ctx context.Context, identity, trigger string, cats []
 
 		if reason, ok := s.decide(ctx, auth.Request{Action: pc.Action, Identity: identity}); !ok {
 			res.Error = "authorization denied: " + reason
-			s.audit.Prune(identity, trigger, pc.Name, 0, 0, false, false, res.Error)
+			s.audit.Prune(audit.PruneRecord{Identity: identity, Trigger: trigger, Category: pc.Name, Error: res.Error})
 			continue
 		}
 
@@ -138,7 +139,10 @@ func (s *Server) runPrune(ctx context.Context, identity, trigger string, cats []
 			res.Error = errMsg
 			s.log.Error("prune failed", "category", pc.Name, "trigger", trigger, "err", err)
 		}
-		s.audit.Prune(identity, trigger, pc.Name, freed, count, skipped, err == nil, errMsg)
+		s.audit.Prune(audit.PruneRecord{
+			Identity: identity, Trigger: trigger, Category: pc.Name,
+			Freed: freed, Count: count, Skipped: skipped, OK: err == nil, Error: errMsg,
+		})
 	}
 	return out
 }

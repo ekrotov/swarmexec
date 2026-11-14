@@ -8,6 +8,7 @@ import (
 
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/swarmops"
 )
 
 // The ways this package hands an agent error to agenterr.Explain. They differ
@@ -17,7 +18,7 @@ import (
 // explainSession explains the failure that ended a whole agent session — CLI
 // exec, logs, port-forward, the TUI terminal. Any failure there, a dial error
 // included, may mean no agent is deployed, so dcli is asked about that.
-func explainSession(ctx context.Context, cfg config.Config, dcli serviceLister, err error) error {
+func explainSession(ctx context.Context, cfg config.Config, dcli swarmops.ServiceLister, err error) error {
 	return agenterr.Explain(ctx, err, agenterr.Options{
 		Auth:          agenterr.AuthOf(cfg),
 		AgentDeployed: deployedProbe(dcli),
@@ -25,11 +26,11 @@ func explainSession(ctx context.Context, cfg config.Config, dcli serviceLister, 
 	})
 }
 
-// deployedProbe adapts agentDeployed to agenterr's question, or returns nil
+// deployedProbe adapts swarmops.AgentDeployed to agenterr's question, or returns nil
 // when there is no manager client to ask.
-func deployedProbe(dcli serviceLister) func(context.Context) bool {
+func deployedProbe(dcli swarmops.ServiceLister) func(context.Context) bool {
 	if dcli == nil {
 		return nil
 	}
-	return func(ctx context.Context) bool { return agentDeployed(ctx, dcli) }
+	return func(ctx context.Context) bool { return swarmops.AgentDeployed(ctx, dcli) }
 }

@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -24,15 +24,15 @@ import (
 // be its own kind of surprise — and the operator's mental model of what a stack
 // *is* comes from that command.
 
-// stackLabelKey is the only link between an object and its stack: swarm has no
+// StackLabelKey is the only link between an object and its stack: swarm has no
 // stack object, and `docker stack deploy` stamps this label on everything it
 // creates. Docker's own constant, not ours, which is why a local copy is not
 // the kind of duplication that drifts.
-const stackLabelKey = "com.docker.stack.namespace"
+const StackLabelKey = "com.docker.stack.namespace"
 
-// stackAPI is the slice of the Docker client a stack removal needs.
+// StackAPI is the slice of the Docker client a stack removal needs.
 // *client.Client satisfies it.
-type stackAPI interface {
+type StackAPI interface {
 	ServiceList(context.Context, client.ServiceListOptions) (client.ServiceListResult, error)
 	ServiceRemove(context.Context, string, client.ServiceRemoveOptions) (client.ServiceRemoveResult, error)
 	SecretList(context.Context, client.SecretListOptions) (client.SecretListResult, error)
@@ -45,28 +45,28 @@ type stackAPI interface {
 
 // The assertion lives here so a Docker client upgrade that changes one of these
 // signatures breaks at the definition, not at the call site.
-var _ stackAPI = (*client.Client)(nil)
+var _ StackAPI = (*client.Client)(nil)
 
 // stackObject is one thing a stack owns: the id it is deleted by, and the name
 // it is reported as.
 type stackObject struct{ ID, Name string }
 
-// stackContents is everything labelled for one stack, held in the order it has
+// StackContents is everything labelled for one stack, held in the order it has
 // to be removed in.
-type stackContents struct {
+type StackContents struct {
 	Services []stackObject
 	Secrets  []stackObject
 	Configs  []stackObject
 	Networks []stackObject
 }
 
-func (c stackContents) empty() bool {
+func (c StackContents) Empty() bool {
 	return len(c.Services)+len(c.Secrets)+len(c.Configs)+len(c.Networks) == 0
 }
 
-// counts renders "4 services, 2 secrets, 1 network" — only what is actually
+// Counts renders "4 services, 2 secrets, 1 network" — only what is actually
 // there. A confirm that lists "0 configs" invites the reader to skim it.
-func (c stackContents) counts() string {
+func (c StackContents) Counts() string {
 	var parts []string
 	for _, p := range []struct {
 		n    int
@@ -91,11 +91,11 @@ func (c stackContents) counts() string {
 	return strings.Join(parts, ", ")
 }
 
-// stackContentsOf lists everything labelled for stack. Filtered at the daemon,
+// StackContentsOf lists everything labelled for stack. Filtered at the daemon,
 // so a stack whose name is a prefix of another's cannot be caught by accident.
-func stackContentsOf(ctx context.Context, api stackAPI, stack string) (stackContents, error) {
-	f := make(client.Filters).Add("label", stackLabelKey+"="+stack)
-	var c stackContents
+func StackContentsOf(ctx context.Context, api StackAPI, stack string) (StackContents, error) {
+	f := make(client.Filters).Add("label", StackLabelKey+"="+stack)
+	var c StackContents
 
 	svcsRes, err := api.ServiceList(ctx, client.ServiceListOptions{Filters: f})
 	svcs := svcsRes.Items
@@ -150,13 +150,13 @@ var (
 	networkRetryWait = time.Second
 )
 
-// removeStack deletes everything in c, in docker's order, and returns one error
+// RemoveStack deletes everything in c, in docker's order, and returns one error
 // per object that refused.
 //
 // It does not stop at the first failure. A stack left half-removed because one
 // secret is still referenced elsewhere is worse than one removed as far as it
 // can be, with a report of exactly what would not go.
-func removeStack(ctx context.Context, api stackAPI, c stackContents) []error {
+func RemoveStack(ctx context.Context, api StackAPI, c StackContents) []error {
 	var errs []error
 	fail := func(kind string, o stackObject, err error) {
 		errs = append(errs, fmt.Errorf("%s %s: %w", kind, o.Name, err))

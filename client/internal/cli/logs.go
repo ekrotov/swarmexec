@@ -166,7 +166,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 			}
 			return fw, fw.Flush
 		}
-		if err := streamManyLogs(ctx, ac, r, multi, params, os.Stdout, os.Stderr, colorOutput(os.Stdout), wrap); err != nil {
+		if err := streamManyLogs(ctx, logRun{ac: ac, r: r, params: params, stdout: os.Stdout, stderr: os.Stderr}, multi, colorOutput(os.Stdout), wrap); err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
 		}
 		return nil
@@ -191,8 +191,8 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	// so `logs -f <service>` keeps streaming after a swap, like `docker service
 	// logs -f`. Reconnect notices go straight to the real stderr, bypassing the
 	// filter so they are never dropped.
-	err = streamServiceLogs(ctx, ac, r, followTargetFromTarget(args[0]), *ep, params,
-		stdout, stderr, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
+	err = streamServiceLogs(ctx, logRun{ac: ac, r: r, params: params, stdout: stdout, stderr: stderr},
+		followTargetFromTarget(args[0]), *ep, func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	for _, w := range flushers {
 		w.Flush()
 	}
@@ -282,12 +282,23 @@ type logsParams struct {
 	wake <-chan struct{}
 }
 
-// streamLogs dials the agent and streams the container's logs into stdout/stderr.
-// It is shared by the `logs` command and the interactive `ui`. Returns nil when
-// the stream ends or ctx is cancelled.
-func streamLogs(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer) error {
+// logRun is a log stream's plumbing, the same for every container it ends up
+// following: the agents to read from, the resolver that finds a replacement
+// container, what to ask for, and where the two streams go.
+type logRun struct {
+	ac             *agentcall.Client
+	r              *resolve.Resolver
+	params         logsParams
+	stdout, stderr io.Writer
+}
+
+// streamLogs dials the agent and streams the container's logs into the run's
+// stdout/stderr. It is shared by the `logs` command and the interactive `ui`.
+// Returns nil when the stream ends or ctx is cancelled.
+func streamLogs(ctx context.Context, run logRun, ep resolve.Endpoint) error {
+	p, stdout, stderr := run.params, run.stdout, run.stderr
 	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := ac.Conn(dctx, ep.DialHost)
+	conn, err := run.ac.Conn(dctx, ep.DialHost)
 	dcancel()
 	if err != nil {
 		return err
@@ -331,11 +342,12 @@ func streamLogs(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, 
 // via notify. It returns when: follow is false and the stream ends; ctx is
 // cancelled; a real transport/agent error occurs; or the target has no running
 // container left. notify may be nil.
-func streamServiceLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Resolver, t resolve.FollowTarget, ep resolve.Endpoint, p logsParams, stdout, stderr io.Writer, notify func(string)) error {
+func streamServiceLogs(ctx context.Context, run logRun, t resolve.FollowTarget, ep resolve.Endpoint, notify func(string)) error {
+	p := run.params
 	lastCID := ep.ContainerID
-	params := p
+	cur := run
 	for {
-		if err := streamLogs(ctx, ac, ep, params, stdout, stderr); err != nil {
+		if err := streamLogs(ctx, cur, ep); err != nil {
 			return err
 		}
 		if !p.follow || ctx.Err() != nil || t.Service == "" {
@@ -344,14 +356,14 @@ func streamServiceLogs(ctx context.Context, ac *agentcall.Client, r *resolve.Res
 
 		// The container ended while following. Wait for its successor — during a
 		// rolling update the replacement may still be scheduling.
-		c, ok, err := waitForSuccessor(ctx, r, t, p.wake, notify)
+		c, ok, err := waitForSuccessor(ctx, run.r, t, p.wake, notify)
 		if !ok {
 			return err
 		}
 		ep = resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		params = p
+		cur = run
 		if c.ContainerID == lastCID {
-			params.tail = 0 // same container still up (spurious end): resume, don't re-dump the tail
+			cur.params.tail = 0 // same container still up (spurious end): resume, don't re-dump the tail
 		} else if notify != nil {
 			notify(fmt.Sprintf("── container replaced; reconnected to %s on %s ──", shortID(c.ContainerID), orDash(c.NodeName)))
 		}

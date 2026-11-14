@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -30,7 +30,7 @@ import (
 // mutating set*/scale*/updateService* function shares — so each caller is just
 // its spec mutation. mutate may return an error to abort before the update.
 func updateServiceSpec(ctx context.Context, dcli swarmapi.Client, name string, mutate func(spec *swarm.ServiceSpec) error) error {
-	svc, err := serviceByName(ctx, dcli, name)
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return err
 	}
@@ -77,8 +77,8 @@ func hasLegacyNetworks(raw []byte) bool {
 	return json.Unmarshal(raw, &v) == nil && len(v.Spec.Networks) > 0
 }
 
-// scaleService sets the replica count of a replicated service.
-func scaleService(ctx context.Context, dcli swarmapi.Client, name string, replicas uint64) error {
+// ScaleService sets the replica count of a replicated service.
+func ScaleService(ctx context.Context, dcli swarmapi.Client, name string, replicas uint64) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.Mode.Replicated == nil {
 			return fmt.Errorf("service %q is not replicated and cannot be scaled", name)
@@ -89,8 +89,8 @@ func scaleService(ctx context.Context, dcli swarmapi.Client, name string, replic
 	})
 }
 
-// setServicePorts replaces a service's published ports.
-func setServicePorts(ctx context.Context, dcli swarmapi.Client, name string, ports []swarm.PortConfig) error {
+// SetServicePorts replaces a service's published ports.
+func SetServicePorts(ctx context.Context, dcli swarmapi.Client, name string, ports []swarm.PortConfig) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.EndpointSpec == nil {
 			spec.EndpointSpec = &swarm.EndpointSpec{}
@@ -100,17 +100,17 @@ func setServicePorts(ctx context.Context, dcli swarmapi.Client, name string, por
 	})
 }
 
-// setServiceLabels replaces a service's labels.
-func setServiceLabels(ctx context.Context, dcli swarmapi.Client, name string, labels map[string]string) error {
+// SetServiceLabels replaces a service's labels.
+func SetServiceLabels(ctx context.Context, dcli swarmapi.Client, name string, labels map[string]string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		spec.Labels = labels
 		return nil
 	})
 }
 
-// currentServicePorts returns a service's published ports as editable strings.
-func currentServicePorts(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+// CurrentServicePorts returns a service's published ports as editable strings.
+func CurrentServicePorts(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -120,28 +120,28 @@ func currentServicePorts(ctx context.Context, dcli swarmapi.Client, name string)
 	var out []string
 	if svc.Spec.EndpointSpec != nil {
 		for _, p := range svc.Spec.EndpointSpec.Ports {
-			out = append(out, formatServicePort(p))
+			out = append(out, FormatServicePort(p))
 		}
 	}
 	return out, nil
 }
 
-// currentServiceLabels returns a service's labels as editable "key=value" strings.
-func currentServiceLabels(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+// CurrentServiceLabels returns a service's labels as editable "key=value" strings.
+func CurrentServiceLabels(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
 	if svc == nil {
 		return nil, fmt.Errorf("no service named %q", name)
 	}
-	return kvPairs(svc.Spec.Labels), nil
+	return KVPairs(svc.Spec.Labels), nil
 }
 
-// currentServiceReplicas returns the replica count and whether the service is
+// CurrentServiceReplicas returns the replica count and whether the service is
 // replicated (and therefore scalable).
-func currentServiceReplicas(ctx context.Context, dcli swarmapi.Client, name string) (replicas uint64, replicated bool, err error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func CurrentServiceReplicas(ctx context.Context, dcli swarmapi.Client, name string) (replicas uint64, replicated bool, err error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return 0, false, err
 	}
@@ -158,10 +158,10 @@ func currentServiceReplicas(ctx context.Context, dcli swarmapi.Client, name stri
 	return replicas, true, nil
 }
 
-// setServiceNetworks replaces the networks a service is attached to. targetIDs
+// SetServiceNetworks replaces the networks a service is attached to. targetIDs
 // are network IDs (or names the daemon can resolve). It writes the current
 // TaskTemplate.Networks.
-func setServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, targetIDs []string) error {
+func SetServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, targetIDs []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		var nets []swarm.NetworkAttachmentConfig
 		for _, id := range targetIDs {
@@ -172,9 +172,9 @@ func setServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, 
 	})
 }
 
-// listNetworkRefs returns name->ID and ID->name maps plus the sorted network
+// ListNetworkRefs returns name->ID and ID->name maps plus the sorted network
 // names, for the networks editor (autocomplete + name/ID resolution).
-func listNetworkRefs(ctx context.Context, dcli swarmapi.Client) (idByName, idToName map[string]string, names []string) {
+func ListNetworkRefs(ctx context.Context, dcli swarmapi.Client) (idByName, idToName map[string]string, names []string) {
 	idByName, idToName = map[string]string{}, map[string]string{}
 	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
 	nets := netsRes.Items
@@ -190,26 +190,26 @@ func listNetworkRefs(ctx context.Context, dcli swarmapi.Client) (idByName, idToN
 	return idByName, idToName, names
 }
 
-// attachedNet is one of a service's network attachments, with the network's
+// AttachedNet is one of a service's network attachments, with the network's
 // resolved name and its custom aliases — for the alias editor.
-type attachedNet struct {
+type AttachedNet struct {
 	Target  string
 	Name    string
 	Aliases []string
 }
 
-// serviceAttachedNetworks lists a service's network attachments with their
+// ServiceAttachedNetworks lists a service's network attachments with their
 // current aliases.
-func serviceAttachedNetworks(ctx context.Context, dcli swarmapi.Client, name string) ([]attachedNet, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func ServiceAttachedNetworks(ctx context.Context, dcli swarmapi.Client, name string) ([]AttachedNet, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
 	if svc == nil {
 		return nil, fmt.Errorf("no service named %q", name)
 	}
-	_, idToName, _ := listNetworkRefs(ctx, dcli)
-	var out []attachedNet
+	_, idToName, _ := ListNetworkRefs(ctx, dcli)
+	var out []AttachedNet
 	seen := map[string]bool{}
 	add := func(a swarm.NetworkAttachmentConfig) {
 		if a.Target == "" || seen[a.Target] {
@@ -220,7 +220,7 @@ func serviceAttachedNetworks(ctx context.Context, dcli swarmapi.Client, name str
 		if n == "" {
 			n = a.Target
 		}
-		out = append(out, attachedNet{Target: a.Target, Name: n, Aliases: append([]string{}, a.Aliases...)})
+		out = append(out, AttachedNet{Target: a.Target, Name: n, Aliases: append([]string{}, a.Aliases...)})
 	}
 	for _, a := range svc.Spec.TaskTemplate.Networks {
 		add(a)
@@ -228,9 +228,9 @@ func serviceAttachedNetworks(ctx context.Context, dcli swarmapi.Client, name str
 	return out, nil
 }
 
-// setNetworkAliases replaces the aliases of a service's attachment to one
+// SetNetworkAliases replaces the aliases of a service's attachment to one
 // network (read-modify-write ServiceUpdate, rolling update).
-func setNetworkAliases(ctx context.Context, dcli swarmapi.Client, name, target string, aliases []string) error {
+func SetNetworkAliases(ctx context.Context, dcli swarmapi.Client, name, target string, aliases []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		found := false
 		for i := range spec.TaskTemplate.Networks {
@@ -246,9 +246,9 @@ func setNetworkAliases(ctx context.Context, dcli swarmapi.Client, name, target s
 	})
 }
 
-// currentServiceNetworks returns the network names a service is attached to.
-func currentServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, idToName map[string]string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+// CurrentServiceNetworks returns the network names a service is attached to.
+func CurrentServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, idToName map[string]string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -274,9 +274,9 @@ func currentServiceNetworks(ctx context.Context, dcli swarmapi.Client, name stri
 	return out, nil
 }
 
-// setServiceEnv replaces a service's environment variables ("KEY=VALUE").
+// SetServiceEnv replaces a service's environment variables ("KEY=VALUE").
 // Read-modify-write ServiceUpdate (rolling update).
-func setServiceEnv(ctx context.Context, dcli swarmapi.Client, name string, env []string) error {
+func SetServiceEnv(ctx context.Context, dcli swarmapi.Client, name string, env []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -286,22 +286,22 @@ func setServiceEnv(ctx context.Context, dcli swarmapi.Client, name string, env [
 	})
 }
 
-// forceUpdateService redeploys a service without changing its spec — the
+// ForceUpdateService redeploys a service without changing its spec — the
 // equivalent of `docker service update --force`. Bumping TaskTemplate.ForceUpdate
 // makes Swarm reconcile every task (restart/reschedule), which is how you unstick
 // a service sitting in an incomplete state (e.g. 1/2 replicas). Read-modify-write
 // ServiceUpdate; nothing else in the spec changes.
-func forceUpdateService(ctx context.Context, dcli swarmapi.Client, name string) error {
+func ForceUpdateService(ctx context.Context, dcli swarmapi.Client, name string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		spec.TaskTemplate.ForceUpdate++
 		return nil
 	})
 }
 
-// removeService permanently deletes a service (and stops all its tasks). This
+// RemoveService permanently deletes a service (and stops all its tasks). This
 // cannot be undone; the caller confirms first.
-func removeService(ctx context.Context, dcli swarmapi.Client, name string) error {
-	svc, err := serviceByName(ctx, dcli, name)
+func RemoveService(ctx context.Context, dcli swarmapi.Client, name string) error {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return err
 	}
@@ -312,7 +312,7 @@ func removeService(ctx context.Context, dcli swarmapi.Client, name string) error
 	return err
 }
 
-// rollbackService asks the manager to roll a service back to its previous spec.
+// RollbackService asks the manager to roll a service back to its previous spec.
 //
 // This is a SERVER-side rollback (ServiceUpdateOptions.Rollback = "previous"),
 // not a read-modify-write of PreviousSpec: the daemon then honours the service's
@@ -320,8 +320,8 @@ func removeService(ctx context.Context, dcli swarmapi.Client, name string) error
 // as UpdateStatus "rollback_started", which the tree's ↺ badge already renders.
 // The spec argument is required by the API but ignored when Rollback is set, so
 // the current spec is passed unchanged.
-func rollbackService(ctx context.Context, dcli swarmapi.Client, name string) error {
-	svc, err := serviceByName(ctx, dcli, name)
+func RollbackService(ctx context.Context, dcli swarmapi.Client, name string) error {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return err
 	}
@@ -336,10 +336,10 @@ func rollbackService(ctx context.Context, dcli swarmapi.Client, name string) err
 	return err
 }
 
-// updateServiceImage sets a service's image (read-modify-write ServiceUpdate,
+// UpdateServiceImage sets a service's image (read-modify-write ServiceUpdate,
 // rolling update). Used to move a :latest service onto the registry's current
 // digest — the caller passes the fully-qualified ref (repo:latest@sha256:…).
-func updateServiceImage(ctx context.Context, dcli swarmapi.Client, name, image string) error {
+func UpdateServiceImage(ctx context.Context, dcli swarmapi.Client, name, image string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -349,9 +349,9 @@ func updateServiceImage(ctx context.Context, dcli swarmapi.Client, name, image s
 	})
 }
 
-// currentServiceEnv returns a service's environment variables as "KEY=VALUE".
-func currentServiceEnv(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+// CurrentServiceEnv returns a service's environment variables as "KEY=VALUE".
+func CurrentServiceEnv(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -365,9 +365,9 @@ func currentServiceEnv(ctx context.Context, dcli swarmapi.Client, name string) (
 	return out, nil
 }
 
-// parseEnv splits "KEY=VALUE"; the key is trimmed and required, the value is
+// ParseEnv splits "KEY=VALUE"; the key is trimmed and required, the value is
 // kept verbatim (env values may contain '=' and meaningful whitespace).
-func parseEnv(s string) (key, value string, err error) {
+func ParseEnv(s string) (key, value string, err error) {
 	i := strings.Index(s, "=")
 	if i <= 0 {
 		return "", "", fmt.Errorf("environment variable must be KEY=VALUE")
@@ -379,12 +379,12 @@ func parseEnv(s string) (key, value string, err error) {
 	return key, s[i+1:], nil
 }
 
-// envFromStrings validates edited "KEY=VALUE" entries and rejects a duplicate key.
-func envFromStrings(items []string) ([]string, error) {
+// EnvFromStrings validates edited "KEY=VALUE" entries and rejects a duplicate key.
+func EnvFromStrings(items []string) ([]string, error) {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(items))
 	for _, it := range items {
-		k, v, err := parseEnv(it)
+		k, v, err := ParseEnv(it)
 		if err != nil {
 			return nil, err
 		}
@@ -397,10 +397,10 @@ func envFromStrings(items []string) ([]string, error) {
 	return out, nil
 }
 
-// setServiceSecrets replaces the secrets a service references. secretNames are
+// SetServiceSecrets replaces the secrets a service references. SecretNames are
 // resolved to their IDs; each is mounted at /run/secrets/<name>. Read-modify-
 // write ServiceUpdate (rolling update).
-func setServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string, secretNames []string) error {
+func SetServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string, secretNames []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -428,9 +428,9 @@ func setServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string, s
 	})
 }
 
-// currentServiceSecrets returns the secret names a service references.
-func currentServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+// CurrentServiceSecrets returns the secret names a service references.
+func CurrentServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -446,9 +446,9 @@ func currentServiceSecrets(ctx context.Context, dcli swarmapi.Client, name strin
 	return out, nil
 }
 
-// secretNames lists all secret names in the swarm, for the secrets editor's
+// SecretNames lists all secret names in the swarm, for the secrets editor's
 // autocomplete. Best effort.
-func secretNames(ctx context.Context, dcli swarmapi.Client) []string {
+func SecretNames(ctx context.Context, dcli swarmapi.Client) []string {
 	var out []string
 	if secs, e := dcli.SecretList(ctx, client.SecretListOptions{}); e == nil {
 		for _, s := range secs.Items {
@@ -459,9 +459,9 @@ func secretNames(ctx context.Context, dcli swarmapi.Client) []string {
 	return out
 }
 
-// setServiceMounts replaces a service's mounts (volumes/binds). Read-modify-
+// SetServiceMounts replaces a service's mounts (volumes/binds). Read-modify-
 // write ServiceUpdate (rolling update).
-func setServiceMounts(ctx context.Context, dcli swarmapi.Client, name string, mounts []mount.Mount) error {
+func SetServiceMounts(ctx context.Context, dcli swarmapi.Client, name string, mounts []mount.Mount) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -471,9 +471,9 @@ func setServiceMounts(ctx context.Context, dcli swarmapi.Client, name string, mo
 	})
 }
 
-// addServiceMount appends a single mount to a service (read-modify-write
+// AddServiceMount appends a single mount to a service (read-modify-write
 // ServiceUpdate). Errors if a mount already exists at the same target.
-func addServiceMount(ctx context.Context, dcli swarmapi.Client, name string, m mount.Mount) error {
+func AddServiceMount(ctx context.Context, dcli swarmapi.Client, name string, m mount.Mount) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
@@ -488,9 +488,9 @@ func addServiceMount(ctx context.Context, dcli swarmapi.Client, name string, m m
 	})
 }
 
-// currentServiceMountSpecs returns a service's mounts as editable strings.
-func currentServiceMountSpecs(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+// CurrentServiceMountSpecs returns a service's mounts as editable strings.
+func CurrentServiceMountSpecs(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -500,14 +500,14 @@ func currentServiceMountSpecs(ctx context.Context, dcli swarmapi.Client, name st
 	var out []string
 	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil {
 		for _, m := range cs.Mounts {
-			out = append(out, formatServiceMount(m))
+			out = append(out, FormatServiceMount(m))
 		}
 	}
 	return out, nil
 }
 
-// formatServiceMount renders a mount as "type:source:target[:ro]".
-func formatServiceMount(m mount.Mount) string {
+// FormatServiceMount renders a mount as "type:source:target[:ro]".
+func FormatServiceMount(m mount.Mount) string {
 	s := fmt.Sprintf("%s:%s:%s", m.Type, m.Source, m.Target)
 	if m.ReadOnly {
 		s += ":ro"
@@ -515,9 +515,9 @@ func formatServiceMount(m mount.Mount) string {
 	return s
 }
 
-// parseServiceMount parses "TYPE:SOURCE:TARGET[:ro]" (TYPE volume|bind) into a
+// ParseServiceMount parses "TYPE:SOURCE:TARGET[:ro]" (TYPE volume|bind) into a
 // Mount. Bind sources must be absolute host paths; targets must be absolute.
-func parseServiceMount(s string) (mount.Mount, error) {
+func ParseServiceMount(s string) (mount.Mount, error) {
 	parts := strings.Split(strings.TrimSpace(s), ":")
 	ro := false
 	if len(parts) > 0 && parts[len(parts)-1] == "ro" {
@@ -549,13 +549,13 @@ func parseServiceMount(s string) (mount.Mount, error) {
 	return mount.Mount{Type: mt, Source: src, Target: tgt, ReadOnly: ro}, nil
 }
 
-// mountsFromStrings converts edited strings back to mounts, rejecting a
+// MountsFromStrings converts edited strings back to mounts, rejecting a
 // duplicate target.
-func mountsFromStrings(items []string) ([]mount.Mount, error) {
+func MountsFromStrings(items []string) ([]mount.Mount, error) {
 	var out []mount.Mount
 	seen := map[string]bool{}
 	for _, it := range items {
-		m, err := parseServiceMount(it)
+		m, err := ParseServiceMount(it)
 		if err != nil {
 			return nil, err
 		}
@@ -568,14 +568,14 @@ func mountsFromStrings(items []string) ([]mount.Mount, error) {
 	return out, nil
 }
 
-// candidateNodesForService computes, client-side, the hostnames of nodes a
+// CandidateNodesForService computes, client-side, the hostnames of nodes a
 // service could be scheduled on (ready + active, satisfying every placement
 // constraint we can evaluate). It also returns any constraints it could not
 // evaluate, so the caller can qualify the result. Used for the bind-mount guard
 // warning — swarmexec cannot check host paths, so it at least tells the operator
 // which nodes must carry the path.
-func candidateNodesForService(ctx context.Context, dcli swarmapi.Client, name string) (nodes []string, unevaluated []string, err error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func CandidateNodesForService(ctx context.Context, dcli swarmapi.Client, name string) (nodes []string, unevaluated []string, err error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -661,10 +661,10 @@ func nodeMatchesConstraint(n swarm.Node, c string) (matches, known bool) {
 	return eq, true
 }
 
-// currentServicePlacement returns the service's placement constraints (the
+// CurrentServicePlacement returns the service's placement constraints (the
 // `node.*` / `engine.*` == / != expressions).
-func currentServicePlacement(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func CurrentServicePlacement(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -677,10 +677,10 @@ func currentServicePlacement(ctx context.Context, dcli swarmapi.Client, name str
 	return nil, nil
 }
 
-// setServicePlacement replaces the service's placement constraints in one
+// SetServicePlacement replaces the service's placement constraints in one
 // ServiceUpdate (read-modify-write; preferences and other placement fields are
 // preserved).
-func setServicePlacement(ctx context.Context, dcli swarmapi.Client, name string, constraints []string) error {
+func SetServicePlacement(ctx context.Context, dcli swarmapi.Client, name string, constraints []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.Placement == nil {
 			spec.TaskTemplate.Placement = &swarm.Placement{}
@@ -690,10 +690,10 @@ func setServicePlacement(ctx context.Context, dcli swarmapi.Client, name string,
 	})
 }
 
-// validatePlacementConstraint checks a single constraint and returns it in the
+// ValidatePlacementConstraint checks a single constraint and returns it in the
 // canonical spaceless "key==value" / "key!=value" form. Keys are limited to the
 // ones Swarm understands (and that nodeMatchesConstraint can evaluate).
-func validatePlacementConstraint(s string) (string, error) {
+func ValidatePlacementConstraint(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	op, at := "", -1
 	if i := strings.Index(s, "=="); i >= 0 {
@@ -723,11 +723,11 @@ func validatePlacementConstraint(s string) (string, error) {
 	return key + op + val, nil
 }
 
-// placementSuggestions builds fully-formed candidate constraints from the
+// PlacementSuggestions builds fully-formed candidate constraints from the
 // current cluster (node roles, hostnames, platforms and labels) for the
 // placement editor's autocomplete. The operator offered is ==; the user can
 // still type an != constraint by hand.
-func placementSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, error) {
+func PlacementSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, error) {
 	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nl := nlRes.Items
 	if err != nil {
@@ -759,10 +759,10 @@ func placementSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, 
 	return out, nil
 }
 
-// currentServiceSpread returns the descriptors of the service's spread
+// CurrentServiceSpread returns the descriptors of the service's spread
 // placement preferences (Placement.Preferences[].Spread.SpreadDescriptor).
-func currentServiceSpread(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func CurrentServiceSpread(ctx context.Context, dcli swarmapi.Client, name string) ([]string, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
 		return nil, err
 	}
@@ -780,10 +780,10 @@ func currentServiceSpread(ctx context.Context, dcli swarmapi.Client, name string
 	return out, nil
 }
 
-// setServiceSpread replaces the service's spread placement preferences (in the
+// SetServiceSpread replaces the service's spread placement preferences (in the
 // given order) in one ServiceUpdate. Constraints and other placement fields are
 // preserved.
-func setServiceSpread(ctx context.Context, dcli swarmapi.Client, name string, descriptors []string) error {
+func SetServiceSpread(ctx context.Context, dcli swarmapi.Client, name string, descriptors []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.Placement == nil {
 			spec.TaskTemplate.Placement = &swarm.Placement{}
@@ -797,9 +797,9 @@ func setServiceSpread(ctx context.Context, dcli swarmapi.Client, name string, de
 	})
 }
 
-// validateSpreadDescriptor checks a spread descriptor — a bare node attribute
+// ValidateSpreadDescriptor checks a spread descriptor — a bare node attribute
 // (no operator/value) that Swarm spreads tasks evenly over.
-func validateSpreadDescriptor(s string) (string, error) {
+func ValidateSpreadDescriptor(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return "", fmt.Errorf("spread descriptor must not be empty, e.g. node.labels.zone")
@@ -817,9 +817,9 @@ func validateSpreadDescriptor(s string) (string, error) {
 	return s, nil
 }
 
-// spreadSuggestions builds candidate spread descriptors (bare node attributes)
+// SpreadSuggestions builds candidate spread descriptors (bare node attributes)
 // from the current cluster for the spread editor's autocomplete.
-func spreadSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, error) {
+func SpreadSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, error) {
 	nlRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nl := nlRes.Items
 	if err != nil {
@@ -845,41 +845,41 @@ func spreadSuggestions(ctx context.Context, dcli swarmapi.Client) ([]string, err
 	return out, nil
 }
 
-// serviceResources holds a service's CPU/memory limits and reservations as
+// ServiceResources holds a service's CPU/memory limits and reservations as
 // display strings (empty = unset). CPU is in cores (e.g. "0.5"); memory is a
 // human size (e.g. "512MiB").
-type serviceResources struct {
+type ServiceResources struct {
 	CPULimit, MemLimit, CPUReservation, MemReservation string
 }
 
-// currentServiceResources returns the service's current limits/reservations as
+// CurrentServiceResources returns the service's current limits/reservations as
 // display strings for the resources editor.
-func currentServiceResources(ctx context.Context, dcli swarmapi.Client, name string) (serviceResources, error) {
-	svc, err := serviceByName(ctx, dcli, name)
+func CurrentServiceResources(ctx context.Context, dcli swarmapi.Client, name string) (ServiceResources, error) {
+	svc, err := ServiceByName(ctx, dcli, name)
 	if err != nil {
-		return serviceResources{}, err
+		return ServiceResources{}, err
 	}
 	if svc == nil {
-		return serviceResources{}, fmt.Errorf("no service named %q", name)
+		return ServiceResources{}, fmt.Errorf("no service named %q", name)
 	}
-	var r serviceResources
+	var r ServiceResources
 	if res := svc.Spec.TaskTemplate.Resources; res != nil {
 		if l := res.Limits; l != nil {
-			r.CPULimit = formatCPUCores(l.NanoCPUs)
-			r.MemLimit = formatMemBytes(l.MemoryBytes)
+			r.CPULimit = FormatCPUCores(l.NanoCPUs)
+			r.MemLimit = FormatMemBytes(l.MemoryBytes)
 		}
 		if rv := res.Reservations; rv != nil {
-			r.CPUReservation = formatCPUCores(rv.NanoCPUs)
-			r.MemReservation = formatMemBytes(rv.MemoryBytes)
+			r.CPUReservation = FormatCPUCores(rv.NanoCPUs)
+			r.MemReservation = FormatMemBytes(rv.MemoryBytes)
 		}
 	}
 	return r, nil
 }
 
-// setServiceResources sets the service's CPU/memory limits and reservations in
+// SetServiceResources sets the service's CPU/memory limits and reservations in
 // one ServiceUpdate. A zero value clears that field (Swarm treats 0 as
 // unlimited). Pids limits and generic (device) reservations are preserved.
-func setServiceResources(ctx context.Context, dcli swarmapi.Client, name string, cpuLimit, memLimit, cpuReservation, memReservation int64) error {
+func SetServiceResources(ctx context.Context, dcli swarmapi.Client, name string, cpuLimit, memLimit, cpuReservation, memReservation int64) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.Resources == nil {
 			spec.TaskTemplate.Resources = &swarm.ResourceRequirements{}
@@ -899,9 +899,9 @@ func setServiceResources(ctx context.Context, dcli swarmapi.Client, name string,
 	})
 }
 
-// parseCPUCores parses a CPU amount in cores ("0.5", "2") into NanoCPUs. An
-// empty string means "unset" (0).
-func parseCPUCores(s string) (int64, error) {
+// ParseCPUCores parses a CPU amount in cores ("0.5", "2") into NanoCPUs. An
+// Empty string means "unset" (0).
+func ParseCPUCores(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
@@ -913,9 +913,9 @@ func parseCPUCores(s string) (int64, error) {
 	return int64(cores * 1e9), nil
 }
 
-// parseMemBytes parses a human memory size ("512m", "2g", "1.5GiB") into bytes.
+// ParseMemBytes parses a human memory size ("512m", "2g", "1.5GiB") into bytes.
 // An empty string means "unset" (0).
-func parseMemBytes(s string) (int64, error) {
+func ParseMemBytes(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
@@ -927,30 +927,30 @@ func parseMemBytes(s string) (int64, error) {
 	return b, nil
 }
 
-// formatCPUCores renders NanoCPUs as a compact cores string ("" when unset).
-func formatCPUCores(nano int64) string {
+// FormatCPUCores renders NanoCPUs as a compact cores string ("" when unset).
+func FormatCPUCores(nano int64) string {
 	if nano <= 0 {
 		return ""
 	}
 	return strconv.FormatFloat(float64(nano)/1e9, 'f', -1, 64)
 }
 
-// formatMemBytes renders bytes as a 1024-based size ("" when unset).
-func formatMemBytes(b int64) string {
+// FormatMemBytes renders bytes as a 1024-based size ("" when unset).
+func FormatMemBytes(b int64) string {
 	if b <= 0 {
 		return ""
 	}
 	return units.BytesSize(float64(b))
 }
 
-// formatServicePort renders a port config as "published:target/proto".
-func formatServicePort(p swarm.PortConfig) string {
+// FormatServicePort renders a port config as "published:target/proto".
+func FormatServicePort(p swarm.PortConfig) string {
 	return fmt.Sprintf("%d:%d/%s", p.PublishedPort, p.TargetPort, p.Protocol)
 }
 
-// parseServicePort parses "PUBLISHED:TARGET[/proto]" (proto tcp|udp|sctp,
+// ParseServicePort parses "PUBLISHED:TARGET[/proto]" (proto tcp|udp|sctp,
 // default tcp) into a PortConfig published in ingress mode.
-func parseServicePort(s string) (swarm.PortConfig, error) {
+func ParseServicePort(s string) (swarm.PortConfig, error) {
 	s = strings.TrimSpace(s)
 	proto := "tcp"
 	if i := strings.LastIndex(s, "/"); i >= 0 {
@@ -982,13 +982,13 @@ func parseServicePort(s string) (swarm.PortConfig, error) {
 	}, nil
 }
 
-// portsFromStrings converts edited strings back to port configs, rejecting a
+// PortsFromStrings converts edited strings back to port configs, rejecting a
 // duplicate published-port/protocol pair.
-func portsFromStrings(items []string) ([]swarm.PortConfig, error) {
+func PortsFromStrings(items []string) ([]swarm.PortConfig, error) {
 	var out []swarm.PortConfig
 	seen := map[string]bool{}
 	for _, it := range items {
-		p, err := parseServicePort(it)
+		p, err := ParseServicePort(it)
 		if err != nil {
 			return nil, err
 		}
@@ -1002,8 +1002,8 @@ func portsFromStrings(items []string) ([]swarm.PortConfig, error) {
 	return out, nil
 }
 
-// parseLabel splits "key=value" (value may be empty; key may not).
-func parseLabel(s string) (string, string, error) {
+// ParseLabel splits "key=value" (value may be empty; key may not).
+func ParseLabel(s string) (string, string, error) {
 	i := strings.Index(s, "=")
 	if i <= 0 {
 		return "", "", fmt.Errorf("label must be key=value")
@@ -1015,12 +1015,12 @@ func parseLabel(s string) (string, string, error) {
 	return k, strings.TrimSpace(s[i+1:]), nil
 }
 
-// labelsFromStrings converts edited "key=value" strings back to a label map,
+// LabelsFromStrings converts edited "key=value" strings back to a label map,
 // rejecting a duplicate key.
-func labelsFromStrings(items []string) (map[string]string, error) {
+func LabelsFromStrings(items []string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, it := range items {
-		k, v, err := parseLabel(it)
+		k, v, err := ParseLabel(it)
 		if err != nil {
 			return nil, err
 		}
@@ -1032,9 +1032,9 @@ func labelsFromStrings(items []string) (map[string]string, error) {
 	return out, nil
 }
 
-// parseKVList parses a comma-separated "k=v,k=v" string into a map, tolerating
+// ParseKVList parses a comma-separated "k=v,k=v" string into a map, tolerating
 // surrounding spaces and empty segments. Empty input yields a nil map.
-func parseKVList(s string) (map[string]string, error) {
+func ParseKVList(s string) (map[string]string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, nil
@@ -1048,5 +1048,5 @@ func parseKVList(s string) (map[string]string, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
-	return labelsFromStrings(items)
+	return LabelsFromStrings(items)
 }

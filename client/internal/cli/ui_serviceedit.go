@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/rivo/tview"
@@ -335,7 +337,7 @@ func fieldText(ta *tview.TextArea) string {
 func (u *ui) openPortsEditor(svcName string, back tview.Primitive, after func()) {
 	dcli := u.dcli
 	async(u, "ui.serviceedit.ports.load", func(ctx context.Context) ([]string, error) {
-		return currentServicePorts(ctx, dcli, svcName)
+		return swarmops.CurrentServicePorts(ctx, dcli, svcName)
 	}, func(items []string, err error) {
 		if err != nil {
 			u.info("cannot load ports: " + err.Error())
@@ -346,18 +348,18 @@ func (u *ui) openPortsEditor(svcName string, back tview.Primitive, after func())
 			applyVerb: "Update the published ports",
 			items:     items,
 			validate: func(s string) (string, error) {
-				p, e := parseServicePort(s)
+				p, e := swarmops.ParseServicePort(s)
 				if e != nil {
 					return "", e
 				}
-				return formatServicePort(p), nil
+				return swarmops.FormatServicePort(p), nil
 			},
 			onApply: func(ctx context.Context, list []string) error {
-				ports, e := portsFromStrings(list)
+				ports, e := swarmops.PortsFromStrings(list)
 				if e != nil {
 					return e
 				}
-				return setServicePorts(ctx, dcli, svcName, ports)
+				return swarmops.SetServicePorts(ctx, dcli, svcName, ports)
 			},
 			allowEdit: true,
 			back:      back,
@@ -369,7 +371,7 @@ func (u *ui) openPortsEditor(svcName string, back tview.Primitive, after func())
 func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()) {
 	dcli := u.dcli
 	async(u, "ui.serviceedit.labels.load", func(ctx context.Context) ([]string, error) {
-		return currentServiceLabels(ctx, dcli, svcName)
+		return swarmops.CurrentServiceLabels(ctx, dcli, svcName)
 	}, func(items []string, err error) {
 		if err != nil {
 			u.info("cannot load labels: " + err.Error())
@@ -380,18 +382,18 @@ func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()
 			applyVerb: "Update the labels",
 			items:     items,
 			validate: func(s string) (string, error) {
-				k, v, e := parseLabel(s)
+				k, v, e := swarmops.ParseLabel(s)
 				if e != nil {
 					return "", e
 				}
 				return k + "=" + v, nil
 			},
 			onApply: func(ctx context.Context, list []string) error {
-				labels, e := labelsFromStrings(list)
+				labels, e := swarmops.LabelsFromStrings(list)
 				if e != nil {
 					return e
 				}
-				return setServiceLabels(ctx, dcli, svcName, labels)
+				return swarmops.SetServiceLabels(ctx, dcli, svcName, labels)
 			},
 			allowEdit:  true,
 			formPrompt: labelForm,
@@ -407,7 +409,7 @@ func (u *ui) openLabelsEditor(svcName string, back tview.Primitive, after func()
 // readable. It hands the list editor the usual key=value entry.
 func labelForm(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
 	key, val := "", ""
-	if k, v, err := parseLabel(initial); err == nil {
+	if k, v, err := swarmops.ParseLabel(initial); err == nil {
 		key, val = k, v
 	}
 	form := tview.NewForm()
@@ -447,9 +449,9 @@ func labelForm(initial string, submit func(raw string) error, cancel func()) tvi
 // in that context, not as a top-level inspect key.
 func (u *ui) openAliasEditorForNet(svcName, netName, target string, back tview.Primitive, after func()) {
 	dcli := u.dcli
-	async(u, "ui.serviceedit.aliases.load", func(ctx context.Context) ([]attachedNet, error) {
-		return serviceAttachedNetworks(ctx, dcli, svcName)
-	}, func(att []attachedNet, err error) {
+	async(u, "ui.serviceedit.aliases.load", func(ctx context.Context) ([]swarmops.AttachedNet, error) {
+		return swarmops.ServiceAttachedNetworks(ctx, dcli, svcName)
+	}, func(att []swarmops.AttachedNet, err error) {
 		if err != nil {
 			u.info("cannot load aliases: " + err.Error())
 			return
@@ -478,7 +480,7 @@ func (u *ui) openAliasEditorForNet(svcName, netName, target string, back tview.P
 				return s, nil
 			},
 			onApply: func(ctx context.Context, list []string) error {
-				return setNetworkAliases(ctx, dcli, svcName, target, list)
+				return swarmops.SetNetworkAliases(ctx, dcli, svcName, target, list)
 			},
 			allowEdit: true,
 			back:      back,
@@ -498,9 +500,9 @@ func (u *ui) openNetworksEditor(svcName string, back tview.Primitive, after func
 	}
 	async(u, "ui.serviceedit.networks.load", func(ctx context.Context) (loaded, error) {
 		var l loaded
-		l.idByName, l.idToName, l.allNames = listNetworkRefs(ctx, dcli)
+		l.idByName, l.idToName, l.allNames = swarmops.ListNetworkRefs(ctx, dcli)
 		var err error
-		l.current, err = currentServiceNetworks(ctx, dcli, svcName, l.idToName)
+		l.current, err = swarmops.CurrentServiceNetworks(ctx, dcli, svcName, l.idToName)
 		return l, err
 	}, func(l loaded, err error) {
 		idByName, idToName, allNames, current := l.idByName, l.idToName, l.allNames, l.current
@@ -534,7 +536,7 @@ func (u *ui) openNetworksEditor(svcName string, back tview.Primitive, after func
 					}
 					ids = append(ids, id)
 				}
-				return setServiceNetworks(ctx, dcli, svcName, ids)
+				return swarmops.SetServiceNetworks(ctx, dcli, svcName, ids)
 			},
 			suggest: func(text string) []string {
 				text = strings.ToLower(strings.TrimSpace(text))
@@ -567,8 +569,8 @@ func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func(
 	dcli := u.dcli
 	type loaded struct{ all, current []string }
 	async(u, "ui.serviceedit.secrets.load", func(ctx context.Context) (loaded, error) {
-		all := secretNames(ctx, dcli)
-		current, err := currentServiceSecrets(ctx, dcli, svcName)
+		all := swarmops.SecretNames(ctx, dcli)
+		current, err := swarmops.CurrentServiceSecrets(ctx, dcli, svcName)
 		return loaded{all, current}, err
 	}, func(l loaded, err error) {
 		all, current := l.all, l.current
@@ -594,7 +596,9 @@ func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func(
 				}
 				return "", fmt.Errorf("unknown secret %q", s)
 			},
-			onApply: func(ctx context.Context, list []string) error { return setServiceSecrets(ctx, dcli, svcName, list) },
+			onApply: func(ctx context.Context, list []string) error {
+				return swarmops.SetServiceSecrets(ctx, dcli, svcName, list)
+			},
 			suggest: func(text string) []string {
 				text = strings.ToLower(strings.TrimSpace(text))
 				var out []string
@@ -620,7 +624,7 @@ func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func(
 func (u *ui) openEnvEditor(svcName string, back tview.Primitive, after func()) {
 	dcli := u.dcli
 	async(u, "ui.serviceedit.env.load", func(ctx context.Context) ([]string, error) {
-		return currentServiceEnv(ctx, dcli, svcName)
+		return swarmops.CurrentServiceEnv(ctx, dcli, svcName)
 	}, func(items []string, err error) {
 		if err != nil {
 			u.info("cannot load env: " + err.Error())
@@ -639,18 +643,18 @@ func (u *ui) envListConfig(svcName string, items []string, back tview.Primitive,
 		applyVerb: "Update the environment",
 		items:     items,
 		validate: func(s string) (string, error) {
-			k, v, e := parseEnv(s)
+			k, v, e := swarmops.ParseEnv(s)
 			if e != nil {
 				return "", e
 			}
 			return k + "=" + v, nil
 		},
 		onApply: func(ctx context.Context, list []string) error {
-			env, e := envFromStrings(list)
+			env, e := swarmops.EnvFromStrings(list)
 			if e != nil {
 				return e
 			}
-			return setServiceEnv(ctx, dcli, svcName, env)
+			return swarmops.SetServiceEnv(ctx, dcli, svcName, env)
 		},
 		allowEdit: true,
 		multiline: true,
@@ -705,7 +709,7 @@ func (u *ui) openEnvText(svcName string, items []string, back tview.Primitive, a
 		msg := envChangeSummary(items, list) + "\n\nUpdate the environment?\n\nThis triggers a rolling update of the service."
 		u.confirm(msg, "Apply", ed.ta, func() {
 			asyncDo(u, "ui.serviceedit.env.apply", func(ctx context.Context) error {
-				return setServiceEnv(ctx, dcli, svcName, list)
+				return swarmops.SetServiceEnv(ctx, dcli, svcName, list)
 			}, func(err error) {
 				if err != nil {
 					ed.setMsg("update failed: "+err.Error(), true)
@@ -750,37 +754,30 @@ func (u *ui) showVimHelp(back tview.Primitive, extra string) {
 	hov.show(centered(tv, 80, 48), tv)
 }
 
-// placementListEditor opens a staged list editor whose add/edit input
-// autocompletes cluster-derived candidates (excluding ones already staged).
-// Shared by the constraints and the spread-preferences editors.
-func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, validate func(string) (string, error), apply func(context.Context, []string) error, back tview.Primitive, after func()) {
+// placementListEditor opens the staged list editor cfg describes, editable
+// in place, with an add/edit input that autocompletes cluster-derived
+// candidates (excluding ones already staged). Shared by the constraints and
+// the spread-preferences editors.
+func (u *ui) placementListEditor(cfg editListConfig, cand []string) {
 	have := map[string]bool{}
-	for _, it := range items {
+	for _, it := range cfg.items {
 		have[it] = true
 	}
-	u.editList(editListConfig{
-		title:     title,
-		applyVerb: applyVerb,
-		items:     items,
-		validate:  validate,
-		onApply:   apply,
-		suggest: func(text string) []string {
-			text = strings.ToLower(strings.TrimSpace(text))
-			var out []string
-			for _, c := range cand {
-				if have[c] {
-					continue
-				}
-				if text == "" || strings.Contains(strings.ToLower(c), text) {
-					out = append(out, c)
-				}
+	cfg.allowEdit = true
+	cfg.suggest = func(text string) []string {
+		text = strings.ToLower(strings.TrimSpace(text))
+		var out []string
+		for _, c := range cand {
+			if have[c] {
+				continue
 			}
-			return out
-		},
-		allowEdit: true,
-		back:      back,
-		after:     after,
-	})
+			if text == "" || strings.Contains(strings.ToLower(c), text) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	u.editList(cfg)
 }
 
 // openPlacementConstraintsEditor edits the service's hard placement
@@ -788,8 +785,8 @@ func (u *ui) placementListEditor(title, applyVerb string, items, cand []string, 
 func (u *ui) openPlacementConstraintsEditor(svcName string, back tview.Primitive, after func()) {
 	dcli := u.dcli
 	async(u, "ui.serviceedit.placement.load", func(ctx context.Context) (placementLoad, error) {
-		items, err := currentServicePlacement(ctx, dcli, svcName)
-		cand, cerr := placementSuggestions(ctx, dcli)
+		items, err := swarmops.CurrentServicePlacement(ctx, dcli, svcName)
+		cand, cerr := swarmops.PlacementSuggestions(ctx, dcli)
 		if cerr != nil {
 			cand = nil // autocomplete is best-effort
 		}
@@ -799,10 +796,17 @@ func (u *ui) openPlacementConstraintsEditor(svcName string, back tview.Primitive
 			u.info("cannot load placement: " + err.Error())
 			return
 		}
-		u.placementListEditor("constraints of "+svcName, "Update the placement constraints",
-			l.items, l.cand, validatePlacementConstraint,
-			func(ctx context.Context, list []string) error { return setServicePlacement(ctx, dcli, svcName, list) },
-			back, after)
+		u.placementListEditor(editListConfig{
+			title:     "constraints of " + svcName,
+			applyVerb: "Update the placement constraints",
+			items:     l.items,
+			validate:  swarmops.ValidatePlacementConstraint,
+			onApply: func(ctx context.Context, list []string) error {
+				return swarmops.SetServicePlacement(ctx, dcli, svcName, list)
+			},
+			back:  back,
+			after: after,
+		}, l.cand)
 	})
 }
 
@@ -816,8 +820,8 @@ type placementLoad struct{ items, cand []string }
 func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()) {
 	dcli := u.dcli
 	async(u, "ui.serviceedit.spread.load", func(ctx context.Context) (placementLoad, error) {
-		items, err := currentServiceSpread(ctx, dcli, svcName)
-		cand, cerr := spreadSuggestions(ctx, dcli)
+		items, err := swarmops.CurrentServiceSpread(ctx, dcli, svcName)
+		cand, cerr := swarmops.SpreadSuggestions(ctx, dcli)
 		if cerr != nil {
 			cand = nil
 		}
@@ -827,10 +831,17 @@ func (u *ui) openSpreadEditor(svcName string, back tview.Primitive, after func()
 			u.info("cannot load spread preferences: " + err.Error())
 			return
 		}
-		u.placementListEditor("spread of "+svcName, "Update the spread preferences",
-			l.items, l.cand, validateSpreadDescriptor,
-			func(ctx context.Context, list []string) error { return setServiceSpread(ctx, dcli, svcName, list) },
-			back, after)
+		u.placementListEditor(editListConfig{
+			title:     "spread of " + svcName,
+			applyVerb: "Update the spread preferences",
+			items:     l.items,
+			validate:  swarmops.ValidateSpreadDescriptor,
+			onApply: func(ctx context.Context, list []string) error {
+				return swarmops.SetServiceSpread(ctx, dcli, svcName, list)
+			},
+			back:  back,
+			after: after,
+		}, l.cand)
 	})
 }
 
@@ -871,8 +882,8 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 	async(u, "ui.serviceedit.mounts.load", func(ctx context.Context) (loaded, error) {
 		var l loaded
 		var err error
-		l.items, err = currentServiceMountSpecs(ctx, dcli, svcName)
-		l.nodes, l.uneval, l.nerr = candidateNodesForService(ctx, dcli, svcName)
+		l.items, err = swarmops.CurrentServiceMountSpecs(ctx, dcli, svcName)
+		l.nodes, l.uneval, l.nerr = swarmops.CandidateNodesForService(ctx, dcli, svcName)
 		return l, err
 	}, func(l loaded, err error) {
 		items, nodes, uneval, nerr := l.items, l.nodes, l.uneval, l.nerr
@@ -883,7 +894,7 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 		confirmNote := func(list []string) string {
 			var binds []string
 			for _, it := range list {
-				if m, e := parseServiceMount(it); e == nil && m.Type == mount.TypeBind {
+				if m, e := swarmops.ParseServiceMount(it); e == nil && m.Type == mount.TypeBind {
 					binds = append(binds, m.Source)
 				}
 			}
@@ -930,7 +941,7 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 		// "type:source:target[:ro]" text entry.
 		mountForm := func(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
 			isBind, src, tgt, ro := false, "", "", false
-			if m, e := parseServiceMount(initial); e == nil {
+			if m, e := swarmops.ParseServiceMount(initial); e == nil {
 				isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
 			}
 			form := tview.NewForm()
@@ -1016,18 +1027,18 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 			applyVerb: "Update the mounts",
 			items:     items,
 			validate: func(s string) (string, error) {
-				m, e := parseServiceMount(s)
+				m, e := swarmops.ParseServiceMount(s)
 				if e != nil {
 					return "", e
 				}
-				return formatServiceMount(m), nil
+				return swarmops.FormatServiceMount(m), nil
 			},
 			onApply: func(ctx context.Context, list []string) error {
-				ms, e := mountsFromStrings(list)
+				ms, e := swarmops.MountsFromStrings(list)
 				if e != nil {
 					return e
 				}
-				return setServiceMounts(ctx, dcli, svcName, ms)
+				return swarmops.SetServiceMounts(ctx, dcli, svcName, ms)
 			},
 			allowEdit:   true,
 			confirmNote: confirmNote,
@@ -1046,7 +1057,7 @@ func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func())
 		replicated bool
 	}
 	async(u, "ui.serviceedit.scale.load", func(ctx context.Context) (replicas, error) {
-		cur, replicated, err := currentServiceReplicas(ctx, dcli, svcName)
+		cur, replicated, err := swarmops.CurrentServiceReplicas(ctx, dcli, svcName)
 		return replicas{cur, replicated}, err
 	}, func(rs replicas, err error) {
 		cur, replicated := rs.cur, rs.replicated
@@ -1072,7 +1083,7 @@ func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func())
 				return
 			}
 			asyncDo(u, "ui.serviceedit.scale", func(ctx context.Context) error {
-				return scaleService(ctx, dcli, svcName, n)
+				return swarmops.ScaleService(ctx, dcli, svcName, n)
 			}, func(serr error) {
 				if serr != nil {
 					u.info("scale failed: " + serr.Error())
@@ -1097,7 +1108,7 @@ func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func())
 	u.confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
 		app.SetFocus(back)
 		asyncDo(u, "ui.serviceedit.forceupdate", func(ctx context.Context) error {
-			return forceUpdateService(ctx, dcli, svcName)
+			return swarmops.ForceUpdateService(ctx, dcli, svcName)
 		}, func(err error) {
 			if err != nil {
 				u.info("force update failed: " + err.Error())
@@ -1113,7 +1124,7 @@ func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func())
 
 // promptDeleteOrphanSecrets asks whether to also delete secrets that the
 // just-removed service was the only user of (nothing references them now).
-func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
+func (u *ui) promptDeleteOrphanSecrets(orphans []swarmops.SecretRef) {
 	dcli, ctree := u.dcli, u.ctree
 	names := make([]string, 0, len(orphans))
 	for _, o := range orphans {
@@ -1156,12 +1167,12 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []secretRef) {
 func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved func()) {
 	app, dcli := u.app, u.dcli
 	u.confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
-		async(u, "ui.serviceedit.remove", func(ctx context.Context) ([]secretRef, error) {
+		async(u, "ui.serviceedit.remove", func(ctx context.Context) ([]swarmops.SecretRef, error) {
 			// Compute orphaned secrets BEFORE removal (we need the service's
 			// spec and the other services' current usage).
-			orphans, _ := secretsOnlyUsedBy(ctx, dcli, svcName)
-			return orphans, removeService(ctx, dcli, svcName)
-		}, func(orphans []secretRef, err error) {
+			orphans, _ := swarmops.SecretsOnlyUsedBy(ctx, dcli, svcName)
+			return orphans, swarmops.RemoveService(ctx, dcli, svcName)
+		}, func(orphans []swarmops.SecretRef, err error) {
 			// Order matters: whatever is shown LAST owns the focus. Both
 			// app.SetFocus(back) and onRemoved (which closes the inspect and
 			// refocuses the tree) used to run *after* u.info, leaving the
@@ -1279,7 +1290,7 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 			u.info(fmt.Sprintf("no such tag in %s: %q", info.repo, tag))
 			return
 		}
-		u.confirmImageUpdate(svcName, info.repo+":"+tag, isDowngrade(info.current, tag), back, after)
+		u.confirmImageUpdate(svcName, info.repo+":"+tag, swarmops.IsDowngrade(info.current, tag), back, after)
 	})
 	in.SetBorder(true).SetTitle(fmt.Sprintf(" update %s — running %s ", svcName, info.current))
 	iov.show(centeredPrompt(in, 60), in)
@@ -1296,7 +1307,7 @@ func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tvi
 	u.confirm(msg, "Update", back, func() {
 		app.SetFocus(back)
 		asyncDo(u, "ui.serviceedit.image", func(ctx context.Context) error {
-			return updateServiceImage(ctx, dcli, svcName, target)
+			return swarmops.UpdateServiceImage(ctx, dcli, svcName, target)
 		}, func(err error) {
 			if err != nil {
 				u.info("update failed: " + err.Error())
@@ -1333,9 +1344,9 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 		return ev
 	})
 	ov.show(centered(tv, 90, 24), tv)
-	async(u, "ui.serviceedit.placement.diagnose", func(ctx context.Context) (placeReport, error) {
-		return diagnoseServicePlacement(ctx, dcli, svcName)
-	}, func(rep placeReport, err error) {
+	async(u, "ui.serviceedit.placement.diagnose", func(ctx context.Context) (swarmops.PlacementReport, error) {
+		return swarmops.DiagnosePlacement(ctx, dcli, svcName)
+	}, func(rep swarmops.PlacementReport, err error) {
 		if !pages.HasPage(pagePlaceDiag) {
 			return
 		}
@@ -1352,9 +1363,9 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 // does one ServiceUpdate (rolling update).
 func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after func()) {
 	app, dcli := u.app, u.dcli
-	async(u, "ui.serviceedit.resources.load", func(ctx context.Context) (serviceResources, error) {
-		return currentServiceResources(ctx, dcli, svcName)
-	}, func(rc serviceResources, err error) {
+	async(u, "ui.serviceedit.resources.load", func(ctx context.Context) (swarmops.ServiceResources, error) {
+		return swarmops.CurrentServiceResources(ctx, dcli, svcName)
+	}, func(rc swarmops.ServiceResources, err error) {
 		if err != nil {
 			u.info("cannot load resources: " + err.Error())
 			return
@@ -1368,10 +1379,10 @@ func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after fun
 		rov := u.overlayFor(pageResEdit, back, footerKeys("Tab", "move", "Enter", "button", "Esc", "cancel"))
 		closeForm := rov.Close
 		apply := func() {
-			cl, e1 := parseCPUCores(cpuL.GetText())
-			ml, e2 := parseMemBytes(memL.GetText())
-			cr, e3 := parseCPUCores(cpuR.GetText())
-			mr, e4 := parseMemBytes(memR.GetText())
+			cl, e1 := swarmops.ParseCPUCores(cpuL.GetText())
+			ml, e2 := swarmops.ParseMemBytes(memL.GetText())
+			cr, e3 := swarmops.ParseCPUCores(cpuR.GetText())
+			mr, e4 := swarmops.ParseMemBytes(memR.GetText())
 			for _, e := range []error{e1, e2, e3, e4} {
 				if e != nil {
 					setTitle(" ⚠ " + e.Error() + " ")
@@ -1388,7 +1399,7 @@ func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after fun
 			}
 			u.confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
 				asyncDo(u, "ui.serviceedit.resources.apply", func(ctx context.Context) error {
-					return setServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
+					return swarmops.SetServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
 				}, func(aerr error) {
 					if aerr != nil {
 						u.info("update failed: " + aerr.Error())

@@ -23,6 +23,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/stackfile"
+	"swarmexec/client/internal/swarmops"
 )
 
 // The tools. Descriptions are what the model reads to decide what to call, so
@@ -244,7 +245,7 @@ func (s *mcpServer) toolOverview(ctx context.Context, in mcpCtxIn) (string, erro
 		Nodes: []mcpNodeRow{}, Services: []mcpServiceRow{}}
 	for _, n := range nodes.Items {
 		row := mcpNodeRow{
-			Hostname:     nodeDisplayName(n.Description.Hostname, n.ID),
+			Hostname:     swarmops.NodeDisplayName(n.Description.Hostname, n.ID),
 			Role:         string(n.Spec.Role),
 			State:        string(n.Status.State),
 			Availability: string(n.Spec.Availability),
@@ -411,15 +412,15 @@ func (s *mcpServer) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Serv
 		Name:      svc.Spec.Name,
 		ID:        svc.ID,
 		Stack:     svc.Spec.Labels["com.docker.stack.namespace"],
-		Mode:      serviceModeStr(svc),
+		Mode:      swarmops.ServiceModeStr(svc),
 		Labels:    mcpaccess.Strip(svc.Spec.Labels),
-		Mounts:    specMounts(cs),
-		Secrets:   specSecrets(cs),
-		Configs:   specConfigs(cs),
-		Ports:     servicePortLines(svc),
-		Resources: resourceLines(svc.Spec.TaskTemplate.Resources),
-		Created:   tstr(svc.Meta.CreatedAt),
-		Updated:   tstr(svc.Meta.UpdatedAt),
+		Mounts:    swarmops.SpecMounts(cs),
+		Secrets:   swarmops.SpecSecrets(cs),
+		Configs:   swarmops.SpecConfigs(cs),
+		Ports:     swarmops.ServicePortLines(svc),
+		Resources: swarmops.ResourceLines(svc.Spec.TaskTemplate.Resources),
+		Created:   swarmops.FormatTime(svc.Meta.CreatedAt),
+		Updated:   swarmops.FormatTime(svc.Meta.UpdatedAt),
 	}
 	if cs != nil {
 		out.Image = cs.Image
@@ -462,7 +463,7 @@ func (s *mcpServer) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Serv
 			row := mcpTaskRow{
 				ID: shortID(t.ID), Slot: t.Slot, Node: firstNonEmpty(nodeNames[t.NodeID], shortID(t.NodeID)),
 				State: string(t.Status.State), Desired: string(t.DesiredState),
-				Message: t.Status.Message, Error: t.Status.Err, Since: tstr(t.Status.Timestamp),
+				Message: t.Status.Message, Error: t.Status.Err, Since: swarmops.FormatTime(t.Status.Timestamp),
 			}
 			if st := t.Status.ContainerStatus; st != nil {
 				row.Container, row.ExitCode = shortID(st.ContainerID), st.ExitCode
@@ -562,7 +563,7 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 		return fw, fw.Flush
 	}
 	params := logsParams{tail: uint32(tail), since: since, connectTimeout: s.connectTimeout}
-	serr := streamManyLogs(lctx, ac, c.r, sources, params, buf, buf, false, wrap)
+	serr := streamManyLogs(lctx, logRun{ac: ac, r: c.r, params: params, stdout: buf, stderr: buf}, sources, false, wrap)
 
 	out := note + buf.String()
 	switch {
@@ -736,7 +737,7 @@ func (s *mcpServer) toolVolumes(ctx context.Context, in mcpCtxIn) (string, error
 	}
 	users := map[string][]string{}
 	for _, ms := range v.services {
-		for name := range serviceVolumeMounts([]swarm.Service{ms.svc}) {
+		for name := range swarmops.ServiceVolumeMounts([]swarm.Service{ms.svc}) {
 			users[name] = append(users[name], ms.svc.Spec.Name)
 		}
 	}
@@ -752,7 +753,7 @@ func (s *mcpServer) toolNetworks(ctx context.Context, in mcpCtxIn) (string, erro
 	if err != nil {
 		return "", err
 	}
-	nets, err := listNetworks(ctx, c.dcli)
+	nets, err := swarmops.ListNetworks(ctx, c.dcli)
 	if err != nil {
 		return "", err
 	}
@@ -774,7 +775,7 @@ func (s *mcpServer) toolSecrets(ctx context.Context, in mcpCtxIn) (string, error
 	if err != nil {
 		return "", err
 	}
-	secs, err := listSecrets(ctx, c.dcli)
+	secs, err := swarmops.ListSecrets(ctx, c.dcli)
 	if err != nil {
 		return "", err
 	}
@@ -796,7 +797,7 @@ func (s *mcpServer) toolConfigs(ctx context.Context, in mcpCtxIn) (string, error
 	if err != nil {
 		return "", err
 	}
-	cfgs, err := listConfigs(ctx, c.dcli)
+	cfgs, err := swarmops.ListConfigs(ctx, c.dcli)
 	if err != nil {
 		return "", err
 	}
@@ -1020,7 +1021,7 @@ func (s *mcpServer) toolReport(ctx context.Context, in mcpCtxIn) (string, error)
 	for _, ms := range v.services {
 		scans = append(scans, secscan.ServiceScan{Name: ms.svc.Spec.Name, Findings: secscan.Scan(ms.svc)})
 	}
-	cluster, err := gatherCluster(ctx, c.dcli)
+	cluster, err := swarmops.GatherCluster(ctx, c.dcli)
 	if err != nil {
 		return "", err
 	}
@@ -1028,7 +1029,7 @@ func (s *mcpServer) toolReport(ctx context.Context, in mcpCtxIn) (string, error)
 	cluster.ClientVersion, cluster.ClientProto = s.g.version.Binary, s.g.version.Proto
 	if ac, aerr := c.agents(); aerr == nil {
 		if nodes, nerr := c.r.Nodes(ctx); nerr == nil {
-			applyAgentVersions(ctx, &cluster, ac, nodes, s.connectTimeout)
+			swarmops.ApplyAgentVersions(ctx, &cluster, ac, nodes, s.connectTimeout)
 		}
 	}
 	meta := secscan.ReportMeta{Context: c.label, Generated: time.Now(), Tool: "swarmexec " + s.g.version.Binary + " (mcp)"}
@@ -1149,7 +1150,7 @@ func execRefusal(svc swarm.Service) error {
 	}
 	// The agent itself, should its mounts ever be spelled in a way the check
 	// above does not know.
-	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil && isAgentImage(cs.Image) {
+	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil && swarmops.IsAgentImage(cs.Image) {
 		return errDockerSocket
 	}
 	return nil

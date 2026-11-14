@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ import (
 func TestParseServicePort(t *testing.T) {
 	ok := []struct {
 		in   string
-		want string // via formatServicePort
+		want string // via FormatServicePort
 	}{
 		{"8080:80/tcp", "8080:80/tcp"},
 		{"8080:80", "8080:80/tcp"}, // default proto
@@ -21,53 +21,53 @@ func TestParseServicePort(t *testing.T) {
 		{" 443 : 8443 / tcp ", "443:8443/tcp"},
 	}
 	for _, c := range ok {
-		p, err := parseServicePort(c.in)
+		p, err := ParseServicePort(c.in)
 		if err != nil {
 			t.Errorf("parseServicePort(%q) error: %v", c.in, err)
 			continue
 		}
-		if got := formatServicePort(p); got != c.want {
+		if got := FormatServicePort(p); got != c.want {
 			t.Errorf("parseServicePort(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 	for _, bad := range []string{"", "8080", "abc:80", "8080:xyz", "0:80", "8080:0", "8080:80/foo"} {
-		if _, err := parseServicePort(bad); err == nil {
+		if _, err := ParseServicePort(bad); err == nil {
 			t.Errorf("parseServicePort(%q) should have errored", bad)
 		}
 	}
 }
 
 func TestPortsFromStrings_DuplicateRejected(t *testing.T) {
-	if _, err := portsFromStrings([]string{"8080:80/tcp", "8080:81/tcp"}); err == nil {
+	if _, err := PortsFromStrings([]string{"8080:80/tcp", "8080:81/tcp"}); err == nil {
 		t.Error("duplicate published port/proto should be rejected")
 	}
 	// Same published port but different protocol is fine.
-	if _, err := portsFromStrings([]string{"53:53/tcp", "53:53/udp"}); err != nil {
+	if _, err := PortsFromStrings([]string{"53:53/tcp", "53:53/udp"}); err != nil {
 		t.Errorf("tcp+udp on same port should be allowed: %v", err)
 	}
 }
 
 func TestParseLabel(t *testing.T) {
-	k, v, err := parseLabel("tier=frontend")
+	k, v, err := ParseLabel("tier=frontend")
 	if err != nil || k != "tier" || v != "frontend" {
 		t.Errorf("parseLabel = %q/%q/%v", k, v, err)
 	}
-	if _, v, err := parseLabel("empty="); err != nil || v != "" {
+	if _, v, err := ParseLabel("empty="); err != nil || v != "" {
 		t.Errorf("empty value should be allowed, got v=%q err=%v", v, err)
 	}
 	for _, bad := range []string{"nokey", "=v", "  =v"} {
-		if _, _, err := parseLabel(bad); err == nil {
+		if _, _, err := ParseLabel(bad); err == nil {
 			t.Errorf("parseLabel(%q) should have errored", bad)
 		}
 	}
 }
 
 func TestLabelsFromStrings_DuplicateRejected(t *testing.T) {
-	m, err := labelsFromStrings([]string{"a=1", "b=2"})
+	m, err := LabelsFromStrings([]string{"a=1", "b=2"})
 	if err != nil || m["a"] != "1" || m["b"] != "2" {
 		t.Errorf("labelsFromStrings = %v err=%v", m, err)
 	}
-	if _, err := labelsFromStrings([]string{"a=1", "a=2"}); err == nil {
+	if _, err := LabelsFromStrings([]string{"a=1", "a=2"}); err == nil {
 		t.Error("duplicate label key should be rejected")
 	}
 }
@@ -84,7 +84,7 @@ func TestParseServiceMount(t *testing.T) {
 		{" bind:/etc/app:/etc/app ", mount.TypeBind, "/etc/app", "/etc/app", false},
 	}
 	for _, c := range ok {
-		m, err := parseServiceMount(c.in)
+		m, err := ParseServiceMount(c.in)
 		if err != nil {
 			t.Errorf("parseServiceMount(%q) error: %v", c.in, err)
 			continue
@@ -93,7 +93,7 @@ func TestParseServiceMount(t *testing.T) {
 			t.Errorf("parseServiceMount(%q) = %+v", c.in, m)
 		}
 		// round-trip
-		if got, _ := parseServiceMount(formatServiceMount(m)); got != m {
+		if got, _ := ParseServiceMount(FormatServiceMount(m)); got != m {
 			t.Errorf("round-trip failed for %q: %+v", c.in, got)
 		}
 	}
@@ -103,7 +103,7 @@ func TestParseServiceMount(t *testing.T) {
 		"volume:pgdata:rel",   // target not absolute
 		"volume::/data",       // empty source
 	} {
-		if _, err := parseServiceMount(bad); err == nil {
+		if _, err := ParseServiceMount(bad); err == nil {
 			t.Errorf("parseServiceMount(%q) should have errored", bad)
 		}
 	}
@@ -118,7 +118,7 @@ func TestValidatePlacementConstraint(t *testing.T) {
 		{"engine.labels.driver==overlay2", "engine.labels.driver==overlay2"},
 	}
 	for _, c := range ok {
-		got, err := validatePlacementConstraint(c.in)
+		got, err := ValidatePlacementConstraint(c.in)
 		if err != nil {
 			t.Errorf("validatePlacementConstraint(%q) error: %v", c.in, err)
 			continue
@@ -135,7 +135,7 @@ func TestValidatePlacementConstraint(t *testing.T) {
 		"node.labels.==x",      // empty label name
 		"node.role==two words", // value with spaces
 	} {
-		if _, err := validatePlacementConstraint(bad); err == nil {
+		if _, err := ValidatePlacementConstraint(bad); err == nil {
 			t.Errorf("validatePlacementConstraint(%q) should have errored", bad)
 		}
 	}
@@ -143,7 +143,7 @@ func TestValidatePlacementConstraint(t *testing.T) {
 
 func TestValidateSpreadDescriptor(t *testing.T) {
 	for _, ok := range []string{"node.hostname", "node.labels.zone", "engine.labels.driver", "node.platform.os"} {
-		if got, err := validateSpreadDescriptor(" " + ok + " "); err != nil || got != ok {
+		if got, err := ValidateSpreadDescriptor(" " + ok + " "); err != nil || got != ok {
 			t.Errorf("validateSpreadDescriptor(%q) = %q, %v", ok, got, err)
 		}
 	}
@@ -154,55 +154,55 @@ func TestValidateSpreadDescriptor(t *testing.T) {
 		"foo.bar",              // unknown attribute
 		"node hostname",        // space
 	} {
-		if _, err := validateSpreadDescriptor(bad); err == nil {
+		if _, err := ValidateSpreadDescriptor(bad); err == nil {
 			t.Errorf("validateSpreadDescriptor(%q) should have errored", bad)
 		}
 	}
 }
 
 func TestResourceParseFormat(t *testing.T) {
-	if n, err := parseCPUCores("0.5"); err != nil || n != 500_000_000 {
+	if n, err := ParseCPUCores("0.5"); err != nil || n != 500_000_000 {
 		t.Errorf("parseCPUCores(0.5) = %d, %v", n, err)
 	}
-	if n, err := parseCPUCores(""); err != nil || n != 0 {
+	if n, err := ParseCPUCores(""); err != nil || n != 0 {
 		t.Errorf("empty CPU should parse to 0, got %d, %v", n, err)
 	}
 	for _, bad := range []string{"abc", "-1"} {
-		if _, err := parseCPUCores(bad); err == nil {
+		if _, err := ParseCPUCores(bad); err == nil {
 			t.Errorf("parseCPUCores(%q) should have errored", bad)
 		}
 	}
-	if got := formatCPUCores(500_000_000); got != "0.5" {
+	if got := FormatCPUCores(500_000_000); got != "0.5" {
 		t.Errorf("formatCPUCores(0.5 cores) = %q", got)
 	}
-	if got := formatCPUCores(0); got != "" {
+	if got := FormatCPUCores(0); got != "" {
 		t.Errorf("formatCPUCores(0) = %q, want empty", got)
 	}
 
-	if b, err := parseMemBytes("512m"); err != nil || b != 512*1024*1024 {
+	if b, err := ParseMemBytes("512m"); err != nil || b != 512*1024*1024 {
 		t.Errorf("parseMemBytes(512m) = %d, %v", b, err)
 	}
-	if n, err := parseMemBytes(""); err != nil || n != 0 {
+	if n, err := ParseMemBytes(""); err != nil || n != 0 {
 		t.Errorf("empty memory should parse to 0, got %d, %v", n, err)
 	}
-	if _, err := parseMemBytes("bogus"); err == nil {
+	if _, err := ParseMemBytes("bogus"); err == nil {
 		t.Error("parseMemBytes(bogus) should have errored")
 	}
-	if got := formatMemBytes(0); got != "" {
+	if got := FormatMemBytes(0); got != "" {
 		t.Errorf("formatMemBytes(0) = %q, want empty", got)
 	}
 	// memory round-trips through format→parse
 	const twoGiB = int64(2 * 1024 * 1024 * 1024)
-	if rb, _ := parseMemBytes(formatMemBytes(twoGiB)); rb != twoGiB {
+	if rb, _ := ParseMemBytes(FormatMemBytes(twoGiB)); rb != twoGiB {
 		t.Errorf("memory round-trip failed: %d", rb)
 	}
 }
 
 func TestMountsFromStrings_DuplicateTarget(t *testing.T) {
-	if _, err := mountsFromStrings([]string{"volume:a:/data", "bind:/x:/data"}); err == nil {
+	if _, err := MountsFromStrings([]string{"volume:a:/data", "bind:/x:/data"}); err == nil {
 		t.Error("duplicate mount target should be rejected")
 	}
-	if _, err := mountsFromStrings([]string{"volume:a:/data", "bind:/x:/other"}); err != nil {
+	if _, err := MountsFromStrings([]string{"volume:a:/data", "bind:/x:/other"}); err != nil {
 		t.Errorf("distinct targets should be fine: %v", err)
 	}
 }
@@ -242,22 +242,22 @@ func TestNodeMatchesConstraint(t *testing.T) {
 
 func TestParseEnvAndFromStrings(t *testing.T) {
 	// value may contain '=' and is kept verbatim; key is trimmed.
-	k, v, err := parseEnv("URL=https://a?b=c")
+	k, v, err := ParseEnv("URL=https://a?b=c")
 	if err != nil || k != "URL" || v != "https://a?b=c" {
 		t.Errorf("parseEnv = %q/%q/%v", k, v, err)
 	}
-	if _, v, err := parseEnv("EMPTY="); err != nil || v != "" {
+	if _, v, err := ParseEnv("EMPTY="); err != nil || v != "" {
 		t.Errorf("empty value should be allowed, got v=%q err=%v", v, err)
 	}
 	for _, bad := range []string{"noeq", "=v", "  =v"} {
-		if _, _, err := parseEnv(bad); err == nil {
+		if _, _, err := ParseEnv(bad); err == nil {
 			t.Errorf("parseEnv(%q) should have errored", bad)
 		}
 	}
-	if _, err := envFromStrings([]string{"A=1", "A=2"}); err == nil {
+	if _, err := EnvFromStrings([]string{"A=1", "A=2"}); err == nil {
 		t.Error("duplicate env key should be rejected")
 	}
-	if got, err := envFromStrings([]string{"A=1", "B=2"}); err != nil || len(got) != 2 {
+	if got, err := EnvFromStrings([]string{"A=1", "B=2"}); err != nil || len(got) != 2 {
 		t.Errorf("envFromStrings = %v err=%v", got, err)
 	}
 }

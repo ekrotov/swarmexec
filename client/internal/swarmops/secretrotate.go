@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -50,24 +50,24 @@ import (
 const (
 	// rotateSuffix names the temporary secret.
 	rotateSuffix = "_rotating"
-	// rotateMarkerLabel is set on the temporary secret, valued with the name
+	// RotateMarkerLabel is set on the temporary secret, valued with the name
 	// it stands in for. A NAME_rotating without it is someone else's secret,
 	// and is left alone.
-	rotateMarkerLabel = "swarmexec.rotating-for"
-	// rotateSteps is the number of steps progress is counted in.
-	rotateSteps = 6
+	RotateMarkerLabel = "swarmexec.rotating-for"
+	// RotateSteps is the number of steps progress is counted in.
+	RotateSteps = 6
 	// maxSecretNameLen is swarm's limit on an object name.
 	maxSecretNameLen = 64
-	// defaultRotateTimeout bounds each convergence wait.
-	defaultRotateTimeout = 5 * time.Minute
+	// DefaultRotateTimeout bounds each convergence wait.
+	DefaultRotateTimeout = 5 * time.Minute
 	// rotateUpdateAttempts is how often a service update is tried when the
 	// service changed between reading and writing it.
 	rotateUpdateAttempts = 5
 )
 
-// secretRotateAPI is the slice of the Docker client a rotation needs.
+// SecretRotateAPI is the slice of the Docker client a rotation needs.
 // *client.Client satisfies it.
-type secretRotateAPI interface {
+type SecretRotateAPI interface {
 	SecretList(context.Context, client.SecretListOptions) (client.SecretListResult, error)
 	SecretCreate(context.Context, client.SecretCreateOptions) (client.SecretCreateResult, error)
 	SecretRemove(context.Context, string, client.SecretRemoveOptions) (client.SecretRemoveResult, error)
@@ -77,24 +77,24 @@ type secretRotateAPI interface {
 	TaskList(context.Context, client.TaskListOptions) (client.TaskListResult, error)
 }
 
-var _ secretRotateAPI = (*client.Client)(nil)
+var _ SecretRotateAPI = (*client.Client)(nil)
 
-// rotateEvent is one progress line. It never carries the secret's value.
-type rotateEvent struct {
+// RotateEvent is one progress line. It never carries the secret's value.
+type RotateEvent struct {
 	Step    int    // 1..rotateSteps
 	Service string // the service the line is about, "" for a secret step
 	Msg     string
 }
 
-func (e rotateEvent) String() string {
-	return fmt.Sprintf("[%d/%d] %s", e.Step, rotateSteps, e.Msg)
+func (e RotateEvent) String() string {
+	return fmt.Sprintf("[%d/%d] %s", e.Step, RotateSteps, e.Msg)
 }
 
-// rotateOptions tunes a rotation. The zero value is usable.
-type rotateOptions struct {
-	Timeout  time.Duration     // per convergence wait; 0 means defaultRotateTimeout
+// RotateOptions tunes a rotation. The zero value is usable.
+type RotateOptions struct {
+	Timeout  time.Duration     // per convergence wait; 0 means DefaultRotateTimeout
 	Poll     time.Duration     // convergence poll interval; 0 means 1s
-	Progress func(rotateEvent) // may be nil; called from the rotating goroutine
+	Progress func(RotateEvent) // may be nil; called from the rotating goroutine
 }
 
 // rotateError is a failed rotation: the step it failed in, and whether the
@@ -107,26 +107,26 @@ type rotateError struct {
 }
 
 func (e *rotateError) Error() string {
-	return fmt.Sprintf("rotate secret %s: step %d/%d: %v", e.Name, e.Step, rotateSteps, e.Err)
+	return fmt.Sprintf("rotate secret %s: step %d/%d: %v", e.Name, e.Step, RotateSteps, e.Err)
 }
 
 func (e *rotateError) Unwrap() error { return e.Err }
 
-// rotateUser is a service that mounts the secret (or its stand-in), with the
+// RotateUser is a service that mounts the secret (or its stand-in), with the
 // file targets it mounts it at.
-type rotateUser struct {
+type RotateUser struct {
 	ID      string
 	Name    string
 	Targets []string
 	OnTemp  bool // already switched to NAME_rotating
 }
 
-// rotatePlan is what a rotation of Name would do, for the confirm.
-type rotatePlan struct {
+// RotatePlan is what a rotation of Name would do, for the confirm.
+type RotatePlan struct {
 	Name   string
 	Temp   string
 	Labels map[string]string // the labels NAME keeps
-	Users  []rotateUser
+	Users  []RotateUser
 	Stack  string // com.docker.stack.namespace, "" when not from a stack
 	// Resume is set when an interrupted rotation is found; StartStep is
 	// where this run picks it up.
@@ -166,29 +166,29 @@ func (s rotateState) startStep() int {
 	}
 }
 
-// rotateTempName is the stand-in's name.
-func rotateTempName(name string) string { return name + rotateSuffix }
+// RotateTempName is the stand-in's name.
+func RotateTempName(name string) string { return name + rotateSuffix }
 
-// validateRotateName checks the name before anything is read.
-func validateRotateName(name string) error {
+// ValidateRotateName checks the name before anything is read.
+func ValidateRotateName(name string) error {
 	if strings.TrimSpace(name) == "" || name != strings.TrimSpace(name) {
 		return errors.New("secret name is required (and has no surrounding spaces)")
 	}
-	if n := len(rotateTempName(name)); n > maxSecretNameLen {
+	if n := len(RotateTempName(name)); n > maxSecretNameLen {
 		return fmt.Errorf("secret name %q is too long to rotate: the temporary %q would be %d characters, over swarm's %d",
-			name, rotateTempName(name), n, maxSecretNameLen)
+			name, RotateTempName(name), n, maxSecretNameLen)
 	}
 	return nil
 }
 
-// validateRotateValue holds the new content to the editor's rules: not empty,
+// ValidateRotateValue holds the new content to the editor's rules: not empty,
 // not over swarm's 500 KB. Nothing is trimmed — the bytes are sent as given.
-func validateRotateValue(data []byte) error {
+func ValidateRotateValue(data []byte) error {
 	if len(data) == 0 {
 		return errors.New("the new value is empty")
 	}
-	if len(data) > maxSecretSize {
-		return fmt.Errorf("the new value is %d bytes — over the swarm limit of %d (500 KB)", len(data), maxSecretSize)
+	if len(data) > MaxSecretSize {
+		return fmt.Errorf("the new value is %d bytes — over the swarm limit of %d (500 KB)", len(data), MaxSecretSize)
 	}
 	return nil
 }
@@ -196,13 +196,13 @@ func validateRotateValue(data []byte) error {
 // loadRotateState reads the two secrets and every service. A NAME_rotating
 // this tool did not create for NAME is refused, as is asking to rotate the
 // stand-in itself.
-func loadRotateState(ctx context.Context, api secretRotateAPI, name string) (rotateState, error) {
+func loadRotateState(ctx context.Context, api SecretRotateAPI, name string) (rotateState, error) {
 	st := rotateState{name: name}
 	secs, err := api.SecretList(ctx, client.SecretListOptions{})
 	if err != nil {
 		return st, fmt.Errorf("list secrets: %w", err)
 	}
-	temp := rotateTempName(name)
+	temp := RotateTempName(name)
 	for i := range secs.Items {
 		s := secs.Items[i]
 		switch s.Spec.Name {
@@ -213,13 +213,13 @@ func loadRotateState(ctx context.Context, api secretRotateAPI, name string) (rot
 		}
 	}
 	if st.orig != nil {
-		if of, ok := st.orig.Spec.Labels[rotateMarkerLabel]; ok {
+		if of, ok := st.orig.Spec.Labels[RotateMarkerLabel]; ok {
 			return st, fmt.Errorf("%q is the temporary secret of an interrupted rotation of %q — rotate %q to finish it", name, of, of)
 		}
 	}
-	if st.temp != nil && st.temp.Spec.Labels[rotateMarkerLabel] != name {
+	if st.temp != nil && st.temp.Spec.Labels[RotateMarkerLabel] != name {
 		return st, fmt.Errorf("a secret %q exists that swarmexec did not create for this rotation (no %s=%s label) — refusing to touch it; rename or remove it first",
-			temp, rotateMarkerLabel, name)
+			temp, RotateMarkerLabel, name)
 	}
 	if st.orig == nil && st.temp == nil {
 		return st, fmt.Errorf("no secret named %q", name)
@@ -234,8 +234,8 @@ func loadRotateState(ctx context.Context, api secretRotateAPI, name string) (rot
 
 // usersOf returns the services whose container spec references secretID,
 // sorted by name, with the targets they mount it at.
-func usersOf(svcs []swarm.Service, secretID string) []rotateUser {
-	var out []rotateUser
+func usersOf(svcs []swarm.Service, secretID string) []RotateUser {
+	var out []RotateUser
 	for _, s := range svcs {
 		cs := s.Spec.TaskTemplate.ContainerSpec
 		if cs == nil || secretID == "" {
@@ -252,25 +252,25 @@ func usersOf(svcs []swarm.Service, secretID string) []rotateUser {
 			}
 		}
 		if len(targets) > 0 {
-			out = append(out, rotateUser{ID: s.ID, Name: s.Spec.Name, Targets: targets})
+			out = append(out, RotateUser{ID: s.ID, Name: s.Spec.Name, Targets: targets})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
-// planRotation describes what rotating name would do, without doing it.
-func planRotation(ctx context.Context, api secretRotateAPI, name string) (rotatePlan, error) {
-	if err := validateRotateName(name); err != nil {
-		return rotatePlan{}, err
+// PlanRotation describes what rotating name would do, without doing it.
+func PlanRotation(ctx context.Context, api SecretRotateAPI, name string) (RotatePlan, error) {
+	if err := ValidateRotateName(name); err != nil {
+		return RotatePlan{}, err
 	}
 	st, err := loadRotateState(ctx, api, name)
 	if err != nil {
-		return rotatePlan{}, err
+		return RotatePlan{}, err
 	}
-	p := rotatePlan{Name: name, Temp: rotateTempName(name), Labels: st.keptLabels(), StartStep: st.startStep()}
+	p := RotatePlan{Name: name, Temp: RotateTempName(name), Labels: st.keptLabels(), StartStep: st.startStep()}
 	p.Resume = st.temp != nil
-	p.Stack = p.Labels[stackLabelKey]
+	p.Stack = p.Labels[StackLabelKey]
 	if st.orig != nil {
 		p.Users = append(p.Users, usersOf(st.services, st.orig.ID)...)
 	}
@@ -297,40 +297,40 @@ func (s rotateState) keptLabels() map[string]string {
 	}
 	out := map[string]string{}
 	for k, v := range src {
-		if k != rotateMarkerLabel {
+		if k != RotateMarkerLabel {
 			out[k] = v
 		}
 	}
 	return out
 }
 
-// rotateSecret replaces the content of the secret called name with data,
+// RotateSecret replaces the content of the secret called name with data,
 // keeping its name, labels and every service's mount of it. See the comment
 // at the top of this file for the steps; on a re-run after a failure it
 // continues where the cluster says the last run stopped.
-func rotateSecret(ctx context.Context, api secretRotateAPI, name string, data []byte, opt rotateOptions) error {
-	if err := validateRotateName(name); err != nil {
+func RotateSecret(ctx context.Context, api SecretRotateAPI, name string, data []byte, opt RotateOptions) error {
+	if err := ValidateRotateName(name); err != nil {
 		return err
 	}
-	if err := validateRotateValue(data); err != nil {
+	if err := ValidateRotateValue(data); err != nil {
 		return err
 	}
 	if opt.Timeout <= 0 {
-		opt.Timeout = defaultRotateTimeout
+		opt.Timeout = DefaultRotateTimeout
 	}
 	if opt.Poll <= 0 {
 		opt.Poll = time.Second
 	}
-	r := &rotation{api: api, name: name, temp: rotateTempName(name), data: data, opt: opt}
+	r := &rotation{api: api, name: name, temp: RotateTempName(name), data: data, opt: opt}
 	return r.run(ctx)
 }
 
 type rotation struct {
-	api  secretRotateAPI
+	api  SecretRotateAPI
 	name string
 	temp string
 	data []byte
-	opt  rotateOptions
+	opt  RotateOptions
 	step int
 	// resumable turns true once NAME_rotating exists: from then on, a failure
 	// leaves a state a re-run can finish.
@@ -339,7 +339,7 @@ type rotation struct {
 
 func (r *rotation) progress(service, format string, args ...any) {
 	if r.opt.Progress != nil {
-		r.opt.Progress(rotateEvent{Step: r.step, Service: service, Msg: fmt.Sprintf(format, args...)})
+		r.opt.Progress(RotateEvent{Step: r.step, Service: service, Msg: fmt.Sprintf(format, args...)})
 	}
 }
 
@@ -369,7 +369,7 @@ func (r *rotation) run(ctx context.Context) error {
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		labels[rotateMarkerLabel] = r.name
+		labels[RotateMarkerLabel] = r.name
 		r.progress("", "creating %s", r.temp)
 		temp, err := r.create(ctx, r.temp, labels)
 		if err != nil {
@@ -489,7 +489,7 @@ func (r *rotation) switchAll(ctx context.Context, fromID string, to *swarm.Secre
 // the version it was read at. A version conflict (someone else updated it in
 // between) is retried on a fresh read. changed is false when no reference
 // pointed at fromID any more.
-func (r *rotation) switchService(ctx context.Context, u rotateUser, fromID string, to *swarm.Secret) (changed bool, err error) {
+func (r *rotation) switchService(ctx context.Context, u RotateUser, fromID string, to *swarm.Secret) (changed bool, err error) {
 	for attempt := 1; ; attempt++ {
 		res, err := r.api.ServiceInspect(ctx, u.ID, client.ServiceInspectOptions{})
 		if err != nil {
@@ -556,7 +556,7 @@ func isVersionConflict(err error) bool {
 //
 // A service scaled to 0 (or a global one with no eligible node) has no tasks
 // and converges at once — its spec is what had to change.
-func (r *rotation) waitConverged(ctx context.Context, u rotateUser, secretID, secretName string) error {
+func (r *rotation) waitConverged(ctx context.Context, u RotateUser, secretID, secretName string) error {
 	deadline := time.Now().Add(r.opt.Timeout)
 	last := ""
 	for {
@@ -635,11 +635,17 @@ func taskUsesSecret(t swarm.Task, secretID string) bool {
 	return false
 }
 
-// rotateResumeHint is the line a failure ends with.
-func rotateResumeHint(err error, rerun string) string {
+// RotateResumeHint is the line a failure ends with.
+func RotateResumeHint(err error, rerun string) string {
 	var re *rotateError
 	if errors.As(err, &re) && re.Resumable {
-		return fmt.Sprintf("the rotation stopped half-way; the services keep running (%s holds the new content) — %s to resume", rotateTempName(re.Name), rerun)
+		return fmt.Sprintf("the rotation stopped half-way; the services keep running (%s holds the new content) — %s to resume", RotateTempName(re.Name), rerun)
 	}
 	return ""
 }
+
+// MaxSecretSize is swarm's limit on a secret's value: 500 KB, as swarmkit's
+// MaxSecretSize counts it (500 × 1024 bytes). Checking it here turns a late
+// "secret data must be larger than 0 and less than 512000 bytes" from the
+// manager into a message on the status line before anything is sent.
+const MaxSecretSize = 500 * 1024

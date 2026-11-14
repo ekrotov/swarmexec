@@ -14,6 +14,7 @@ import (
 
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // inspectView is one open inspect overlay: a table rendered from structured
@@ -25,15 +26,15 @@ import (
 type inspectView struct {
 	u       *ui
 	title   string
-	op      string                             // clientlog label for the initial fetch
-	editSvc string                             // "" for a task/container inspect — disables the service editor keys
-	subject statsSubject                       // what the STATS view measures
-	fetch   func() ([]inspLine, string, error) // pure data source (see inspect.go)
+	op      string                                         // clientlog label for the initial fetch
+	editSvc string                                         // "" for a task/container inspect — disables the service editor keys
+	subject statsSubject                                   // what the STATS view measures
+	fetch   func() ([]swarmops.InspectLine, string, error) // pure data source (see inspect.go)
 
 	table      *tview.Table
 	tabs       *tview.TextView // the view strip, pinned above the scrolling table
 	frame      *tview.Flex     // strip + table; carries the border and title
-	lines      []inspLine
+	lines      []swarmops.InspectLine
 	rawJSON    string
 	plain      []string        // plain text of each current row, for copy
 	rowNet     map[int]string  // table row -> network name, for collapsible net rows
@@ -73,7 +74,7 @@ func newInspectWidgets() (*tview.Table, *tview.TextView, *tview.Flex) {
 // The overlay has two views: a tabular, operator-first summary (default) and
 // the raw daemon JSON, toggled with `t`. fetch runs off the UI goroutine so a
 // slow manager cannot freeze the loop.
-func (u *ui) showInspect(title string, op string, editSvc string, subject statsSubject, fetch func() ([]inspLine, string, error)) {
+func (u *ui) showInspect(title string, op string, editSvc string, subject statsSubject, fetch func() ([]swarmops.InspectLine, string, error)) {
 	table, tabs, frame := newInspectWidgets()
 	iv := &inspectView{
 		u:          u,
@@ -242,15 +243,15 @@ func (iv *inspectView) populate() {
 	default:
 		for _, ln := range iv.lines {
 			switch ln.Kind {
-			case inspTitle:
+			case swarmops.InspectTitle:
 				put(ln.Text, tcell.ColorAqua, true, false, ln.Text, "")
-			case inspHeader:
+			case swarmops.InspectHeader:
 				put(ln.Text, tcell.ColorAqua, false, false, ln.Text, "")
-			case inspDim:
+			case swarmops.InspectDim:
 				put(ln.Text, tcell.ColorGray, false, false, ln.Text, "")
-			case inspBlank:
+			case swarmops.InspectBlank:
 				put("", tcell.ColorWhite, false, false, "", "")
-			case inspNet:
+			case swarmops.InspectNet:
 				// Two drill-down levels: the network row expands to its DNS names,
 				// and below them a "N containers" row expands to the addresses of
 				// the containers behind the VIP.
@@ -282,7 +283,7 @@ func (iv *inspectView) populate() {
 						}
 					}
 				}
-			case inspUpgrade:
+			case swarmops.InspectUpgrade:
 				up := r // row index this line will occupy
 				put("  "+ln.Text, tcell.ColorYellow, true, true, ln.Text, "")
 				iv.rowUpgrade[up] = ln.Upgrade
@@ -294,7 +295,7 @@ func (iv *inspectView) populate() {
 					newer:   ln.UpNewer,
 					all:     ln.UpAll,
 				}
-			case inspImage:
+			case swarmops.InspectImage:
 				// Renders like any field, but it is what makes "u" available even
 				// when no newer version exists: pinning or rolling back to a
 				// specific tag is a normal thing to want.
@@ -307,13 +308,13 @@ func (iv *inspectView) populate() {
 						all:     ln.UpAll,
 					}
 				}
-			case inspUpdate:
+			case swarmops.InspectUpdate:
 				color := tcell.ColorYellow // updating
 				if ln.UpdateState == "rollback_started" {
 					color = tcell.ColorOrange
 				}
 				put("  "+ln.Text, color, true, false, ln.Text, "")
-			default: // inspField
+			default: // swarmops.InspectField
 				put(ln.Text, tcell.ColorWhite, false, true, ln.Text, "")
 			}
 		}
@@ -360,9 +361,9 @@ func lockIcon(encrypted bool) string {
 // netRowCopy is what y/Enter yields on a network row: its address without the
 // mask — the value an operator wants to paste — falling back to the network
 // name when the attachment has none.
-func netRowCopy(ln inspLine) string {
+func netRowCopy(ln swarmops.InspectLine) string {
 	if ln.Addr != "" {
-		return stripMask(ln.Addr)
+		return swarmops.StripMask(ln.Addr)
 	}
 	return ln.Text
 }
@@ -424,10 +425,10 @@ func (iv *inspectView) openDiff() {
 	})
 	tv.SetText(loadingText)
 	dov.show(centered(tv, 100, 32), tv)
-	async(u, "ui.inspect.diff", func(ctx context.Context) (specDiff, error) {
-		return loadSpecDiff(ctx, dcli, svc)
-	}, func(d specDiff, derr error) {
-		lines, hasPrev := d.lines, d.hasPrev
+	async(u, "ui.inspect.diff", func(ctx context.Context) (swarmops.SpecDiff, error) {
+		return swarmops.LoadSpecDiff(ctx, dcli, svc)
+	}, func(d swarmops.SpecDiff, derr error) {
+		lines, hasPrev := d.Lines, d.HasPrev
 		if !pages.HasPage(pageInspectDiff) {
 			return
 		}
@@ -466,10 +467,10 @@ func (iv *inspectView) openRollback() {
 	dcli := u.dcli
 	svc := iv.editSvc
 
-	async(u, "ui.inspect.rollback.diff", func(ctx context.Context) (specDiff, error) {
-		return loadSpecDiff(ctx, dcli, svc)
-	}, func(d specDiff, err error) {
-		lines, hasPrev := d.lines, d.hasPrev
+	async(u, "ui.inspect.rollback.diff", func(ctx context.Context) (swarmops.SpecDiff, error) {
+		return swarmops.LoadSpecDiff(ctx, dcli, svc)
+	}, func(d swarmops.SpecDiff, err error) {
+		lines, hasPrev := d.Lines, d.HasPrev
 		switch {
 		case err != nil:
 			u.info("rollback: " + err.Error())
@@ -482,7 +483,7 @@ func (iv *inspectView) openRollback() {
 
 		u.confirm(rollbackConfirmText(svc, lines), "Roll back", iv.table, func() {
 			asyncDo(u, "ui.inspect.rollback", func(ctx context.Context) error {
-				return rollbackService(ctx, dcli, svc)
+				return swarmops.RollbackService(ctx, dcli, svc)
 			}, func(rerr error) {
 				if rerr != nil {
 					u.info("rollback failed: " + rerr.Error())
@@ -736,7 +737,7 @@ func (iv *inspectView) open() {
 
 // inspData is one fetch's answer: the structured lines and the raw JSON.
 type inspData struct {
-	lines []inspLine
+	lines []swarmops.InspectLine
 	raw   string
 }
 
@@ -759,18 +760,20 @@ func (u *ui) inspectCurrent() {
 	if c, ok := n.GetReference().(resolve.Candidate); ok {
 		u.showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task", "",
 			statsSubject{containerID: c.ContainerID},
-			func() ([]inspLine, string, error) { return taskInspectViews(ctx, dcli, c.TaskID) })
+			func() ([]swarmops.InspectLine, string, error) { return swarmops.TaskInspectViews(ctx, dcli, c.TaskID) })
 		return
 	}
 	if ref, ok := n.GetReference().(svcRef); ok {
 		u.showInspect(fmt.Sprintf("service %s", ref.name), "ui.inspect.service", ref.name,
 			statsSubject{service: ref.name},
-			func() ([]inspLine, string, error) { return serviceInspectViews(ctx, dcli, ref.name, u.regCache) })
+			func() ([]swarmops.InspectLine, string, error) {
+				return swarmops.ServiceInspectViews(ctx, dcli, ref.name, u.regCache)
+			})
 	}
 }
 
 // statsRow is one rendered line of the STATS view. It is deliberately not an
-// inspLine: that type carries the tabular view's collapse/upgrade machinery,
+// swarmops.InspectLine: that type carries the tabular view's collapse/upgrade machinery,
 // none of which applies here.
 type statsRow struct {
 	text  string

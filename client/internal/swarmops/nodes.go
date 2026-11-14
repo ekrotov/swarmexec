@@ -1,13 +1,14 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
 	"fmt"
 	"sort"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/swarmapi"
 
 	"github.com/moby/moby/api/types/swarm"
@@ -18,10 +19,10 @@ import (
 // labels come straight from the manager API (NodeList / NodeUpdate). The
 // running-task count per node also comes from the manager (TaskList); the
 // per-node volume count is node-local and filled in separately from the agent
-// volume sweep (volumeCountsByNode).
+// volume sweep (VolumeCountsByNode).
 
-// swarmNodeInfo is a cluster node with the aggregations shown in the nodes tab.
-type swarmNodeInfo struct {
+// NodeInfo is a cluster node with the aggregations shown in the nodes tab.
+type NodeInfo struct {
 	ID            string
 	Hostname      string
 	Role          string // "manager" | "worker"
@@ -54,7 +55,7 @@ type swarmNodeInfo struct {
 // buildNodeInfos maps the manager's node list plus the task list into the tab's
 // row model, counting the running tasks scheduled on each node. Pure, so it is
 // unit-testable without a daemon.
-func buildNodeInfos(nodes []swarm.Node, tasks []swarm.Task) []swarmNodeInfo {
+func buildNodeInfos(nodes []swarm.Node, tasks []swarm.Task) []NodeInfo {
 	running := map[string]int{}
 	bookedCPU := map[string]int64{}
 	bookedMem := map[string]int64{}
@@ -75,9 +76,9 @@ func buildNodeInfos(nodes []swarm.Node, tasks []swarm.Task) []swarmNodeInfo {
 		bookedCPU[t.NodeID] += res.Reservations.NanoCPUs
 		bookedMem[t.NodeID] += res.Reservations.MemoryBytes
 	}
-	out := make([]swarmNodeInfo, 0, len(nodes))
+	out := make([]NodeInfo, 0, len(nodes))
 	for _, n := range nodes {
-		info := swarmNodeInfo{
+		info := NodeInfo{
 			ID:            n.ID,
 			Hostname:      n.Description.Hostname,
 			Role:          string(n.Spec.Role),
@@ -131,10 +132,10 @@ func taskHoldsResources(t swarm.Task) bool {
 	return true
 }
 
-// setNodeAvailability moves a node between active / pause / drain. Read-modify-
-// write on the node spec like setNodeLabels; applies immediately (nodes have no
+// SetNodeAvailability moves a node between active / pause / drain. Read-modify-
+// write on the node spec like SetNodeLabels; applies immediately (nodes have no
 // rolling update). Draining reschedules the node's tasks elsewhere.
-func setNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID string, availability swarm.NodeAvailability) error {
+func SetNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID string, availability swarm.NodeAvailability) error {
 	nodeRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	node := nodeRes.Node
 	if err != nil {
@@ -146,8 +147,8 @@ func setNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID strin
 	return err
 }
 
-// listNodeInfos returns the cluster's nodes with their running-task counts.
-func listNodeInfos(ctx context.Context, dcli swarmapi.Client) ([]swarmNodeInfo, error) {
+// ListNodes returns the cluster's nodes with their running-task counts.
+func ListNodes(ctx context.Context, dcli swarmapi.Client) ([]NodeInfo, error) {
 	nodesRes, err := dcli.NodeList(ctx, client.NodeListOptions{})
 	nodes := nodesRes.Items
 	if err != nil {
@@ -158,9 +159,9 @@ func listNodeInfos(ctx context.Context, dcli swarmapi.Client) ([]swarmNodeInfo, 
 	return buildNodeInfos(nodes, tasks.Items), nil
 }
 
-// volumeCountsByNode counts, per node hostname, the volumes that node holds.
+// VolumeCountsByNode counts, per node hostname, the volumes that node holds.
 // swarmVolume.Nodes carries the nodes a named volume exists on.
-func volumeCountsByNode(vols []swarmVolume) map[string]int {
+func VolumeCountsByNode(vols []agentcall.Volume) map[string]int {
 	counts := map[string]int{}
 	for _, v := range vols {
 		for _, n := range v.Nodes {
@@ -170,9 +171,9 @@ func volumeCountsByNode(vols []swarmVolume) map[string]int {
 	return counts
 }
 
-// setNodeLabels replaces a node's labels via NodeUpdate (read-modify-write on the
+// SetNodeLabels replaces a node's labels via NodeUpdate (read-modify-write on the
 // node spec). Applies immediately — nodes have no rolling update.
-func setNodeLabels(ctx context.Context, dcli swarmapi.Client, nodeID string, labels map[string]string) error {
+func SetNodeLabels(ctx context.Context, dcli swarmapi.Client, nodeID string, labels map[string]string) error {
 	nRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	n := nRes.Node
 	if err != nil {

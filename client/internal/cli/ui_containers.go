@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
-	"time"
+	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -33,7 +35,7 @@ func (u *ui) versionSuffixFor(s resolve.Service) string {
 	if u.regCache == nil {
 		return ""
 	}
-	return versionSuffix(u.regCache.status(u.ctx, s.ImageRef))
+	return swarmops.VersionSuffix(u.regCache.Status(u.ctx, s.ImageRef))
 }
 
 func (u *ui) markService(n *tview.TreeNode) {
@@ -504,7 +506,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 		u.loadContainers()
 	}
 	tv.detach = closeTerm
-	tv.run(tctx, ac, ep, command, tty, user, f.connectTimeout, func(code int, rerr error) {
+	tv.run(tctx, ac, terminalSession{ep: ep, command: command, tty: tty, user: user}, f.connectTimeout, func(code int, rerr error) {
 		app.QueueUpdateDraw(func() {
 			switch {
 			case tctx.Err() != nil:

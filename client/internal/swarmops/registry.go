@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -25,9 +25,9 @@ import (
 // version is really running behind `:latest`. Best-effort: any registry error
 // just leaves the service unannotated.
 
-// imageStatus is what a registry check yields for one image — either a pinned
+// ImageStatus is what a registry check yields for one image — either a pinned
 // `:latest` (digest drift) or a version-pinned tag (a newer semver tag exists).
-type imageStatus struct {
+type ImageStatus struct {
 	pinnedDigest  string // sha256:… the service is pinned to (:latest path)
 	version       string // running version: the image.version label (:latest) or the tag (version-pinned)
 	currentTag    string // the running tag: "latest" or e.g. "2.11.1"
@@ -204,10 +204,10 @@ func newerTagsInFamily(current string, candidates []string) []string {
 	return out
 }
 
-// isDowngrade reports whether target is an older version than current within the
+// IsDowngrade reports whether target is an older version than current within the
 // same variant family. A tag that is not a parseable same-family version (or is
 // newer/equal) is not a downgrade — the picker only warns when it is certain.
-func isDowngrade(current, target string) bool {
+func IsDowngrade(current, target string) bool {
 	curNums, curSuffix, ok := splitTag(current)
 	if !ok {
 		return false
@@ -274,20 +274,20 @@ func (c craneResolver) versionLabel(ctx context.Context, repo, digest string) (s
 // checkImageStatus does a single, blocking best-effort registry check for a spec
 // image ref. Returns a zero status (with ok=false) for non-:latest images or on
 // any registry error.
-func checkImageStatus(ctx context.Context, resolver imageResolver, specRef string) imageStatus {
+func checkImageStatus(ctx context.Context, resolver imageResolver, specRef string) ImageStatus {
 	if repo, digest, isLatest := parsePinnedLatest(specRef); isLatest {
 		return checkLatest(ctx, resolver, repo, digest)
 	}
 	if repo, tag, isVersion := parsePinnedVersion(specRef); isVersion {
 		return checkVersionTag(ctx, resolver, repo, tag)
 	}
-	return imageStatus{}
+	return ImageStatus{}
 }
 
 // checkLatest handles a pinned :latest image: a newer image is a different
 // current :latest digest than the one the service is pinned to.
-func checkLatest(ctx context.Context, resolver imageResolver, repo, digest string) imageStatus {
-	st := imageStatus{pinnedDigest: digest, currentTag: "latest", repo: repo}
+func checkLatest(ctx context.Context, resolver imageResolver, repo, digest string) ImageStatus {
+	st := ImageStatus{pinnedDigest: digest, currentTag: "latest", repo: repo}
 	// The repo's tags are fetched even though :latest has no "newer tag" notion:
 	// they are what lets the version picker offer concrete versions, so a service
 	// on :latest can be pinned to one — which is exactly what the unpinned-image
@@ -315,12 +315,12 @@ func checkLatest(ctx context.Context, resolver imageResolver, repo, digest strin
 // checkVersionTag handles a version-pinned image (repo:2.11.1): a newer image is
 // the highest registry tag in the same variant family that outranks the running
 // tag. The update target is that plain repo:tag — the manager re-pins the digest.
-func checkVersionTag(ctx context.Context, resolver imageResolver, repo, tag string) imageStatus {
+func checkVersionTag(ctx context.Context, resolver imageResolver, repo, tag string) ImageStatus {
 	tags, err := resolver.listTags(ctx, repo)
 	if err != nil {
-		return imageStatus{}
+		return ImageStatus{}
 	}
-	st := imageStatus{currentTag: tag, version: tag, ok: true, repo: repo, knownTags: tags}
+	st := ImageStatus{currentTag: tag, version: tag, ok: true, repo: repo, knownTags: tags}
 	st.newerVersions = newerTagsInFamily(tag, tags)
 	if len(st.newerVersions) > 0 {
 		nt := st.newerVersions[0]
@@ -330,10 +330,10 @@ func checkVersionTag(ctx context.Context, resolver imageResolver, repo, tag stri
 	return st
 }
 
-// registryCache memoises image checks so the tree's periodic re-render (and many
+// RegistryCache memoises image checks so the tree's periodic re-render (and many
 // services sharing an image) don't hammer the registry. Successful lookups are
 // cached for successTTL, failures for the shorter failTTL (to retry sooner).
-type registryCache struct {
+type RegistryCache struct {
 	mu         sync.Mutex
 	entries    map[string]*regEntry
 	successTTL time.Duration
@@ -343,14 +343,14 @@ type registryCache struct {
 }
 
 type regEntry struct {
-	status    imageStatus
+	status    ImageStatus
 	fetchedAt time.Time
 	inflight  bool
 	attempted bool
 }
 
-func newRegistryCache(onUpdate func()) *registryCache {
-	return &registryCache{
+func NewRegistryCache(onUpdate func()) *RegistryCache {
+	return &RegistryCache{
 		entries:    map[string]*regEntry{},
 		successTTL: 10 * time.Minute,
 		failTTL:    1 * time.Minute,
@@ -359,13 +359,13 @@ func newRegistryCache(onUpdate func()) *registryCache {
 	}
 }
 
-// status returns the best-known status for a spec image ref and, when the entry
+// Status returns the best-known Status for a spec image ref and, when the entry
 // is missing or stale, kicks off an async refresh (returning the last-known
-// status meanwhile — the zero value if never fetched). Non-:latest refs return
+// Status meanwhile — the zero value if never fetched). Non-:latest refs return
 // the zero status without any registry call.
-func (c *registryCache) status(ctx context.Context, specRef string) imageStatus {
+func (c *RegistryCache) Status(ctx context.Context, specRef string) ImageStatus {
 	if !checkableRef(specRef) {
-		return imageStatus{}
+		return ImageStatus{}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -392,9 +392,9 @@ func (c *registryCache) status(ctx context.Context, specRef string) imageStatus 
 // statusNow returns a usable status for an on-demand caller (the inspect view):
 // the cached value when it's warm, otherwise a bounded synchronous fetch whose
 // result is also cached (so the tree benefits too). Non-:latest refs return zero.
-func (c *registryCache) statusNow(ctx context.Context, specRef string, timeout time.Duration) imageStatus {
+func (c *RegistryCache) statusNow(ctx context.Context, specRef string, timeout time.Duration) ImageStatus {
 	if !checkableRef(specRef) {
-		return imageStatus{}
+		return ImageStatus{}
 	}
 	c.mu.Lock()
 	if e := c.entries[specRef]; e != nil && e.status.ok && time.Since(e.fetchedAt) < c.successTTL {
@@ -412,7 +412,7 @@ func (c *registryCache) statusNow(ctx context.Context, specRef string, timeout t
 	return st
 }
 
-func (c *registryCache) fetch(ctx context.Context, specRef string) {
+func (c *RegistryCache) fetch(ctx context.Context, specRef string) {
 	fctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	st := checkImageStatus(fctx, c.resolver, specRef)
@@ -424,10 +424,10 @@ func (c *registryCache) fetch(ctx context.Context, specRef string) {
 	}
 }
 
-// versionSuffix is the compact annotation appended to a service row: the resolved
+// VersionSuffix is the compact annotation appended to a service row: the resolved
 // version in parens and an up-arrow when a newer image is available. Empty when
 // nothing is known yet.
-func versionSuffix(st imageStatus) string {
+func VersionSuffix(st ImageStatus) string {
 	var b strings.Builder
 	if st.version != "" {
 		b.WriteString(" (" + st.version + ")")

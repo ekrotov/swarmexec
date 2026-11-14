@@ -1,7 +1,6 @@
-package cli
+package swarmops
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/swarm"
@@ -121,7 +120,7 @@ func TestBuildNodeInfosAttributesPerNode(t *testing.T) {
 		reservedTask("n2", 2*oneCPU, 2<<30),
 		reservedTask("", oneCPU, 1<<30), // unassigned: belongs to no node
 	}
-	by := map[string]swarmNodeInfo{}
+	by := map[string]NodeInfo{}
 	for _, n := range buildNodeInfos(nodes, tasks) {
 		by[n.Hostname] = n
 	}
@@ -130,63 +129,5 @@ func TestBuildNodeInfosAttributesPerNode(t *testing.T) {
 	}
 	if by["host-b"].ReservedNanoCPUs != 2*oneCPU {
 		t.Errorf("host-b cpu = %d, want %d", by["host-b"].ReservedNanoCPUs, int64(2*oneCPU))
-	}
-}
-
-func TestNodeResourceSection(t *testing.T) {
-	n := swarmNodeInfo{
-		Hostname: "host-a", NanoCPUs: 4 * oneCPU, MemoryBytes: 8 << 30,
-		ReservedNanoCPUs: 2 * oneCPU, ReservedMemoryBytes: 4 << 30,
-	}
-	got := nodeResourceSection(n)
-	if !strings.Contains(got, "free") {
-		t.Errorf("section should report what is left:\n%s", got)
-	}
-	// Half booked → neither the empty nor the full bar.
-	if !strings.Contains(got, "█") || !strings.Contains(got, "░") {
-		t.Errorf("bar should be partially filled:\n%s", got)
-	}
-
-	// A node reporting no capacity must say so rather than divide by zero.
-	empty := nodeResourceSection(swarmNodeInfo{Hostname: "x"})
-	if !strings.Contains(empty, "no capacity") {
-		t.Errorf("a capacity-less node should be called out:\n%s", empty)
-	}
-
-	// Over-commitment must be visible, and "free" must not go negative.
-	over := nodeResourceSection(swarmNodeInfo{
-		Hostname: "host-b", NanoCPUs: oneCPU, MemoryBytes: 1 << 30,
-		ReservedNanoCPUs: 3 * oneCPU, ReservedMemoryBytes: 3 << 30,
-	})
-	if !strings.Contains(over, "over-committed") {
-		t.Errorf("over-commitment should be flagged:\n%s", over)
-	}
-	if strings.Contains(over, "-") && strings.Contains(over, "(-") {
-		t.Errorf("free must not render negative:\n%s", over)
-	}
-
-	// Unreserved tasks are called out, so 0%% does not read as "idle".
-	withBare := nodeResourceSection(swarmNodeInfo{
-		Hostname: "host-c", NanoCPUs: 4 * oneCPU, MemoryBytes: 8 << 30,
-		TasksWithoutReservation: 3,
-	})
-	if !strings.Contains(withBare, "no reservation") {
-		t.Errorf("unreserved tasks should be called out:\n%s", withBare)
-	}
-}
-
-func TestResourceBarBounds(t *testing.T) {
-	if got := resourceBar(0, 100); strings.Count(got, "█") != 0 {
-		t.Errorf("empty bar has %d filled cells, want 0", strings.Count(got, "█"))
-	}
-	if got := resourceBar(100, 100); strings.Count(got, "█") != resourceBarWidth {
-		t.Errorf("full bar has %d filled cells, want %d", strings.Count(got, "█"), resourceBarWidth)
-	}
-	// Over-committed must clamp, not overflow the bar.
-	if got := resourceBar(500, 100); strings.Count(got, "█") != resourceBarWidth {
-		t.Errorf("over-committed bar has %d filled cells, want %d", strings.Count(got, "█"), resourceBarWidth)
-	}
-	if got := resourceBar(1, 0); strings.Count(got, "█") != 0 {
-		t.Errorf("zero capacity must not panic or fill: %q", got)
 	}
 }

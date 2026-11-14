@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package swarmops
 
 import (
 	"context"
@@ -25,11 +25,11 @@ import (
 // API — no per-node agent RPC. This file is the read-only data layer; modifying
 // actions (remove/create) can hang off the same types later.
 
-// swarmNetwork is a network plus the services attached to it. Service
+// Network is a network plus the services attached to it. Service
 // membership comes from service specs (one ServiceList call, cluster-wide);
 // container membership is resolved lazily via networkContainers when the
 // operator opens a network, because it needs a verbose inspect per network.
-type swarmNetwork struct {
+type Network struct {
 	ID         string
 	Name       string
 	Driver     string
@@ -51,19 +51,19 @@ type netContainer struct {
 	IPv4 string
 }
 
-// netService groups the containers attached to a network by the service they
+// NetService groups the containers attached to a network by the service they
 // belong to — the shape the network detail view renders. Aliases are the
 // service's custom DNS aliases on this network (collapsible in the view).
-type netService struct {
+type NetService struct {
 	Name       string
 	Containers []netContainer
 	Aliases    []string
 }
 
-// swarmSecret is a secret's metadata plus the services that use it. Secret
+// Secret is a secret's metadata plus the services that use it. Secret
 // *values* are never retrievable via the Docker API, so only metadata is
 // surfaced.
-type swarmSecret struct {
+type Secret struct {
 	ID       string
 	Name     string
 	Created  time.Time
@@ -72,16 +72,16 @@ type swarmSecret struct {
 	Services []string // service names that reference the secret
 }
 
-// listNetworks returns every network on the manager with attached-service
+// ListNetworks returns every network on the manager with attached-service
 // membership resolved from service specs.
-func listNetworks(ctx context.Context, dcli swarmapi.Client) ([]swarmNetwork, error) {
+func ListNetworks(ctx context.Context, dcli swarmapi.Client) ([]Network, error) {
 	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
 	nets := netsRes.Items
 	if err != nil {
 		return nil, err
 	}
 	members := networkServiceMembers(ctx, dcli)
-	out := make([]swarmNetwork, 0, len(nets))
+	out := make([]Network, 0, len(nets))
 	for _, n := range nets {
 		// A service references a network by either ID or name (Target), so pull
 		// from both buckets and de-duplicate.
@@ -94,7 +94,7 @@ func listNetworks(ctx context.Context, dcli swarmapi.Client) ([]swarmNetwork, er
 			}
 		}
 		sort.Strings(svcs)
-		out = append(out, swarmNetwork{
+		out = append(out, Network{
 			ID:         n.ID,
 			Name:       n.Name,
 			Driver:     n.Driver,
@@ -124,9 +124,9 @@ func networkEncrypted(opts map[string]string) bool {
 	return v != "false" && v != "0"
 }
 
-// newNetworkOpts is the create-network form's collected input. Empty optional
+// NewNetworkOpts is the create-network form's collected input. Empty optional
 // fields are omitted. Driver defaults to overlay (the swarm-scoped default).
-type newNetworkOpts struct {
+type NewNetworkOpts struct {
 	Name       string
 	Driver     string
 	Attachable bool
@@ -140,9 +140,9 @@ type newNetworkOpts struct {
 }
 
 // buildNetworkCreateOptions maps the form input onto docker's CreateOptions,
-// validating the numeric/relational constraints. Split out from createNetwork so
+// validating the numeric/relational constraints. Split out from CreateNetwork so
 // the mapping is unit-testable without a daemon.
-func buildNetworkCreateOptions(o newNetworkOpts) (string, client.NetworkCreateOptions, error) {
+func buildNetworkCreateOptions(o NewNetworkOpts) (string, client.NetworkCreateOptions, error) {
 	name := strings.TrimSpace(o.Name)
 	if name == "" {
 		return "", client.NetworkCreateOptions{}, fmt.Errorf("network name is required")
@@ -201,8 +201,8 @@ func buildNetworkCreateOptions(o newNetworkOpts) (string, client.NetworkCreateOp
 	return name, opts, nil
 }
 
-// createNetwork creates a network from the form input (default driver overlay).
-func createNetwork(ctx context.Context, dcli swarmapi.Client, o newNetworkOpts) error {
+// CreateNetwork creates a network from the form input (default driver overlay).
+func CreateNetwork(ctx context.Context, dcli swarmapi.Client, o NewNetworkOpts) error {
 	name, opts, err := buildNetworkCreateOptions(o)
 	if err != nil {
 		return err
@@ -211,9 +211,9 @@ func createNetwork(ctx context.Context, dcli swarmapi.Client, o newNetworkOpts) 
 	return err
 }
 
-// servicesExcluding returns the names in all that are not in exclude, sorted —
+// ServicesExcluding returns the names in all that are not in exclude, sorted —
 // the eligible attach targets (every service not already attached).
-func servicesExcluding(all, exclude []string) []string {
+func ServicesExcluding(all, exclude []string) []string {
 	skip := make(map[string]bool, len(exclude))
 	for _, e := range exclude {
 		skip[e] = true
@@ -228,12 +228,12 @@ func servicesExcluding(all, exclude []string) []string {
 	return out
 }
 
-// attachServiceToNetwork adds a network to a service's spec via a
+// AttachServiceToNetwork adds a network to a service's spec via a
 // read-modify-write ServiceUpdate. This triggers a rolling update of the
 // service. It errors (a no-op) if the service is already attached, or if the
 // service does not exist.
-func attachServiceToNetwork(ctx context.Context, dcli swarmapi.Client, serviceName, networkID, networkName string) error {
-	svc, err := serviceByName(ctx, dcli, serviceName)
+func AttachServiceToNetwork(ctx context.Context, dcli swarmapi.Client, serviceName, networkID, networkName string) error {
+	svc, err := ServiceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
 	}
@@ -254,12 +254,12 @@ func attachServiceToNetwork(ctx context.Context, dcli swarmapi.Client, serviceNa
 	return err
 }
 
-// attachSecretToService adds a secret reference to a service's container spec
+// AttachSecretToService adds a secret reference to a service's container spec
 // (read-modify-write ServiceUpdate), mounted at /run/secrets/<name> like
 // `docker service update --secret-add`. Triggers a rolling update. Errors (a
 // no-op) if the service already uses the secret, or does not exist.
-func attachSecretToService(ctx context.Context, dcli swarmapi.Client, serviceName, secretID, secretName string) error {
-	svc, err := serviceByName(ctx, dcli, serviceName)
+func AttachSecretToService(ctx context.Context, dcli swarmapi.Client, serviceName, secretID, secretName string) error {
+	svc, err := ServiceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
 	}
@@ -293,11 +293,11 @@ func attachSecretToService(ctx context.Context, dcli swarmapi.Client, serviceNam
 	return err
 }
 
-// detachServiceFromNetwork removes a network from a service's spec via a
+// DetachServiceFromNetwork removes a network from a service's spec via a
 // read-modify-write ServiceUpdate (rolling update). Errors (a no-op) if the
 // service is not attached, or does not exist.
-func detachServiceFromNetwork(ctx context.Context, dcli swarmapi.Client, serviceName, networkID, networkName string) error {
-	svc, err := serviceByName(ctx, dcli, serviceName)
+func DetachServiceFromNetwork(ctx context.Context, dcli swarmapi.Client, serviceName, networkID, networkName string) error {
+	svc, err := ServiceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
 	}
@@ -333,11 +333,11 @@ func dropNetwork(nets []swarm.NetworkAttachmentConfig, matches func(string) bool
 	return out, removed
 }
 
-// detachSecretFromService removes a secret reference from a service's container
+// DetachSecretFromService removes a secret reference from a service's container
 // spec via a read-modify-write ServiceUpdate (rolling update). Errors (a no-op)
 // if the service does not use the secret, or does not exist.
-func detachSecretFromService(ctx context.Context, dcli swarmapi.Client, serviceName, secretID, secretName string) error {
-	svc, err := serviceByName(ctx, dcli, serviceName)
+func DetachSecretFromService(ctx context.Context, dcli swarmapi.Client, serviceName, secretID, secretName string) error {
+	svc, err := ServiceByName(ctx, dcli, serviceName)
 	if err != nil {
 		return err
 	}
@@ -402,13 +402,13 @@ func serviceNetworkMembership(svcs []swarm.Service) map[string][]string {
 	return m
 }
 
-// networkMembers returns the services attached to a network, each carrying the
+// NetworkMembers returns the services attached to a network, each carrying the
 // running containers (swarm tasks) attached to that network. Grouping is driven
 // by tasks — the reliable source that ties a container to both its service and
 // its networks. A service with a spec attachment but no running task still
 // appears (with zero containers). Best effort: failed API calls degrade to
-// empty rather than failing the view.
-func networkMembers(ctx context.Context, dcli swarmapi.Client, net swarmNetwork) []netService {
+// Empty rather than failing the view.
+func NetworkMembers(ctx context.Context, dcli swarmapi.Client, net Network) []NetService {
 	nodeName := nodeHostnames(ctx, dcli)
 
 	// One ServiceList yields both id→name (to label each task's service) and each
@@ -443,7 +443,7 @@ func networkMembers(ctx context.Context, dcli swarmapi.Client, net swarmNetwork)
 	// Union the services known from specs (may have zero running tasks) with the
 	// services actually running tasks on the network.
 	seen := map[string]bool{}
-	var out []netService
+	var out []NetService
 	add := func(name string) {
 		if name == "" || seen[name] {
 			return
@@ -451,7 +451,7 @@ func networkMembers(ctx context.Context, dcli swarmapi.Client, net swarmNetwork)
 		seen[name] = true
 		cs := byService[name]
 		sort.Slice(cs, func(i, j int) bool { return cs[i].ID < cs[j].ID })
-		out = append(out, netService{Name: name, Containers: cs, Aliases: aliasesBySvc[name]})
+		out = append(out, NetService{Name: name, Containers: cs, Aliases: aliasesBySvc[name]})
 	}
 	for _, s := range net.Services {
 		add(s)
@@ -498,7 +498,7 @@ func taskOnNetwork(t swarm.Task, netID string) bool {
 func taskIPv4(t swarm.Task, netID string) string {
 	for _, a := range t.NetworksAttachments {
 		if a.Network.ID == netID {
-			return stripMask(firstIPv4(a.Addresses))
+			return StripMask(firstIPv4(a.Addresses))
 		}
 	}
 	return ""
@@ -507,7 +507,7 @@ func taskIPv4(t swarm.Task, netID string) string {
 // serviceAliasesOnNetwork returns a service's custom DNS aliases on one network,
 // read straight from its spec — the attachment whose Target matches the network
 // by id or name. Empty when the service sets no aliases there.
-func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
+func serviceAliasesOnNetwork(s swarm.Service, net Network) []string {
 	match := func(a swarm.NetworkAttachmentConfig) bool {
 		return a.Target == net.ID || a.Target == net.Name
 	}
@@ -519,14 +519,14 @@ func serviceAliasesOnNetwork(s swarm.Service, net swarmNetwork) []string {
 	return nil
 }
 
-// listSecrets returns secret metadata (never the value — the API does not
+// ListSecrets returns secret metadata (never the value — the API does not
 // expose it) with the services that use each secret resolved from service specs.
-// createSecret creates a new swarm secret with the given value and labels.
+// CreateSecret creates a new swarm secret with the given value and labels.
 // Docker secrets are write-only and immutable, so a name clash cannot be
 // "updated" — it is reported as an error the caller can surface. The name check
 // is best-effort (racy), but Docker also rejects a duplicate name server-side,
 // so correctness does not depend on it.
-func createSecret(ctx context.Context, dcli swarmapi.Client, name string, data []byte, labels map[string]string) error {
+func CreateSecret(ctx context.Context, dcli swarmapi.Client, name string, data []byte, labels map[string]string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("name is required")
@@ -551,14 +551,14 @@ func createSecret(ctx context.Context, dcli swarmapi.Client, name string, data [
 	return err
 }
 
-func listSecrets(ctx context.Context, dcli swarmapi.Client) ([]swarmSecret, error) {
+func ListSecrets(ctx context.Context, dcli swarmapi.Client) ([]Secret, error) {
 	secsRes, err := dcli.SecretList(ctx, client.SecretListOptions{})
 	secs := secsRes.Items
 	if err != nil {
 		return nil, err
 	}
 	members := secretServiceMembers(ctx, dcli)
-	out := make([]swarmSecret, 0, len(secs))
+	out := make([]Secret, 0, len(secs))
 	for _, s := range secs {
 		// A reference may name the secret by ID or name, so merge both buckets.
 		set := map[string]bool{}
@@ -570,7 +570,7 @@ func listSecrets(ctx context.Context, dcli swarmapi.Client) ([]swarmSecret, erro
 			}
 		}
 		sort.Strings(svcs)
-		out = append(out, swarmSecret{
+		out = append(out, Secret{
 			ID:       s.ID,
 			Name:     s.Spec.Name,
 			Created:  s.Meta.CreatedAt,
@@ -595,13 +595,13 @@ func secretServiceMembers(ctx context.Context, dcli swarmapi.Client) map[string]
 	return serviceSecretMembership(svcs)
 }
 
-// secretRef identifies a secret by its id and name.
-type secretRef struct{ ID, Name string }
+// SecretRef identifies a secret by its id and name.
+type SecretRef struct{ ID, Name string }
 
 // orphanSecrets returns the secrets referenced by target that NO other service
 // in all references — i.e. the ones that become unused if target is removed.
 // Pure, so it is unit-testable.
-func orphanSecrets(target swarm.Service, all []swarm.Service) []secretRef {
+func orphanSecrets(target swarm.Service, all []swarm.Service) []SecretRef {
 	cs := target.Spec.TaskTemplate.ContainerSpec
 	if cs == nil || len(cs.Secrets) == 0 {
 		return nil
@@ -623,7 +623,7 @@ func orphanSecrets(target swarm.Service, all []swarm.Service) []secretRef {
 		}
 	}
 	seen := map[string]bool{}
-	var out []secretRef
+	var out []SecretRef
 	for _, r := range cs.Secrets {
 		key := r.SecretID + "\x00" + r.SecretName
 		if seen[key] {
@@ -631,15 +631,15 @@ func orphanSecrets(target swarm.Service, all []swarm.Service) []secretRef {
 		}
 		seen[key] = true
 		if !usedElsewhere[r.SecretID] && !usedElsewhere[r.SecretName] {
-			out = append(out, secretRef{ID: r.SecretID, Name: r.SecretName})
+			out = append(out, SecretRef{ID: r.SecretID, Name: r.SecretName})
 		}
 	}
 	return out
 }
 
-// secretsOnlyUsedBy returns the secrets referenced only by the named service —
+// SecretsOnlyUsedBy returns the secrets referenced only by the named service —
 // the ones orphaned if it is removed. Best-effort (empty on error/not found).
-func secretsOnlyUsedBy(ctx context.Context, dcli swarmapi.Client, name string) ([]secretRef, error) {
+func SecretsOnlyUsedBy(ctx context.Context, dcli swarmapi.Client, name string) ([]SecretRef, error) {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -680,11 +680,11 @@ func serviceSecretMembership(svcs []swarm.Service) map[string][]string {
 	return m
 }
 
-// secretMembers returns the services that use a secret, each carrying the
+// SecretMembers returns the services that use a secret, each carrying the
 // running containers (swarm tasks) of that service. Structure mirrors
-// networkMembers so the detail views render the same way. Best effort: failed
+// NetworkMembers so the detail views render the same way. Best effort: failed
 // API calls degrade to empty.
-func secretMembers(ctx context.Context, dcli swarmapi.Client, secret swarmSecret) []netService {
+func SecretMembers(ctx context.Context, dcli swarmapi.Client, secret Secret) []NetService {
 	usingIDs := map[string]bool{}
 	usingNames := map[string]bool{}
 	idName := map[string]string{}
@@ -721,11 +721,11 @@ func secretMembers(ctx context.Context, dcli swarmapi.Client, secret swarmSecret
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	out := make([]netService, 0, len(names))
+	out := make([]NetService, 0, len(names))
 	for _, name := range names {
 		cs := byService[name]
 		sort.Slice(cs, func(i, j int) bool { return cs[i].ID < cs[j].ID })
-		out = append(out, netService{Name: name, Containers: cs})
+		out = append(out, NetService{Name: name, Containers: cs})
 	}
 	return out
 }
@@ -745,21 +745,21 @@ func serviceUsesSecret(s swarm.Service, id, name string) bool {
 	return false
 }
 
-// serviceVolumeNames returns the set of named volumes referenced by any service
+// ServiceVolumeNames returns the set of named volumes referenced by any service
 // spec (its TaskTemplate mounts). Used to spare service-declared volumes from a
 // prune even when no task currently runs. Best effort: a ServiceList failure
 // yields an empty set (prune then falls back to the running-container view).
-func serviceVolumeNames(ctx context.Context, dcli swarmapi.Client) map[string]bool {
+func ServiceVolumeNames(ctx context.Context, dcli swarmapi.Client) map[string]bool {
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
 		return map[string]bool{}
 	}
-	return serviceVolumeMounts(svcs)
+	return ServiceVolumeMounts(svcs)
 }
 
-// serviceVolumeMounts is the pure core of serviceVolumeNames.
-func serviceVolumeMounts(svcs []swarm.Service) map[string]bool {
+// ServiceVolumeMounts is the pure core of ServiceVolumeNames.
+func ServiceVolumeMounts(svcs []swarm.Service) map[string]bool {
 	m := map[string]bool{}
 	for _, s := range svcs {
 		cs := s.Spec.TaskTemplate.ContainerSpec
@@ -775,10 +775,10 @@ func serviceVolumeMounts(svcs []swarm.Service) map[string]bool {
 	return m
 }
 
-// swarmConfig is a swarm config with the services that mount it. Unlike a
+// Config is a swarm config with the services that mount it. Unlike a
 // secret, a config's content is readable — Size is its length, and the detail
 // view can show the content itself.
-type swarmConfig struct {
+type Config struct {
 	ID       string
 	Name     string
 	Created  time.Time
@@ -788,17 +788,17 @@ type swarmConfig struct {
 	Services []string // service names that mount the config
 }
 
-// listConfigs returns every config on the manager with service membership
-// resolved from service specs — the same derivation listSecrets does, since
+// ListConfigs returns every config on the manager with service membership
+// resolved from service specs — the same derivation ListSecrets does, since
 // swarm has no reverse index either way.
-func listConfigs(ctx context.Context, dcli swarmapi.Client) ([]swarmConfig, error) {
+func ListConfigs(ctx context.Context, dcli swarmapi.Client) ([]Config, error) {
 	cfgsRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{})
 	cfgs := cfgsRes.Items
 	if err != nil {
 		return nil, err
 	}
 	members := configServiceMembers(ctx, dcli)
-	out := make([]swarmConfig, 0, len(cfgs))
+	out := make([]Config, 0, len(cfgs))
 	for _, c := range cfgs {
 		// A reference may name the config by ID or name, so merge both buckets.
 		set := map[string]bool{}
@@ -810,7 +810,7 @@ func listConfigs(ctx context.Context, dcli swarmapi.Client) ([]swarmConfig, erro
 			}
 		}
 		sort.Strings(svcs)
-		out = append(out, swarmConfig{
+		out = append(out, Config{
 			ID:       c.ID,
 			Name:     c.Spec.Name,
 			Created:  c.Meta.CreatedAt,
@@ -831,13 +831,13 @@ func configServiceMembers(ctx context.Context, dcli swarmapi.Client) map[string]
 	if err != nil {
 		return map[string][]string{}
 	}
-	return serviceConfigMembership(svcs)
+	return ServiceConfigMembership(svcs)
 }
 
-// serviceConfigMembership derives config -> services from service specs, keyed
+// ServiceConfigMembership derives config -> services from service specs, keyed
 // by both config id and name (a reference may match on either). Pure, so it is
 // unit-testable without a daemon.
-func serviceConfigMembership(svcs []swarm.Service) map[string][]string {
+func ServiceConfigMembership(svcs []swarm.Service) map[string][]string {
 	m := map[string][]string{}
 	for _, s := range svcs {
 		cs := s.Spec.TaskTemplate.ContainerSpec
@@ -863,10 +863,10 @@ func serviceConfigMembership(svcs []swarm.Service) map[string][]string {
 	return m
 }
 
-// configContent fetches a config's payload. Configs are readable (secrets are
+// ConfigContent fetches a config's payload. Configs are readable (secrets are
 // not), so the detail view can show what a service actually receives. Fetched on
 // demand rather than with the list: a config can be a whole nginx.conf.
-func configContent(ctx context.Context, dcli swarmapi.Client, id string) ([]byte, error) {
+func ConfigContent(ctx context.Context, dcli swarmapi.Client, id string) ([]byte, error) {
 	res, err := dcli.ConfigInspect(ctx, id, client.ConfigInspectOptions{})
 	if err != nil {
 		return nil, err

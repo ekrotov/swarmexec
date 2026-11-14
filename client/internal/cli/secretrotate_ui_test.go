@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/rivo/tview"
 )
 
@@ -21,7 +23,7 @@ type rotateHarness struct {
 	u       *ui
 	d       *rotateDialog
 	queued  chan func()
-	plan    rotatePlan
+	plan    swarmops.RotatePlan
 	planErr error
 	asked   []string
 	started [][]byte
@@ -30,10 +32,10 @@ type rotateHarness struct {
 func openRotateHarness(t *testing.T, labels map[string]string) *rotateHarness {
 	t.Helper()
 	h := &rotateHarness{t: t, u: overlayUI(), queued: make(chan func(), 4)}
-	h.plan = rotatePlan{Name: "db", Temp: "db_rotating", Labels: labels, Stack: labels[stackLabelKey], StartStep: 1,
-		Users: []rotateUser{{Name: "web", Targets: []string{"db_password"}}, {Name: "worker", Targets: []string{"/etc/db"}}}}
+	h.plan = swarmops.RotatePlan{Name: "db", Temp: "db_rotating", Labels: labels, Stack: labels[swarmops.StackLabelKey], StartStep: 1,
+		Users: []swarmops.RotateUser{{Name: "web", Targets: []string{"db_password"}}, {Name: "worker", Targets: []string{"/etc/db"}}}}
 	h.d = h.u.openRotateEditor(tview.NewBox(), "db", labels, rotateHooks{
-		plan:    func() (rotatePlan, error) { return h.plan, h.planErr },
+		plan:    func() (swarmops.RotatePlan, error) { return h.plan, h.planErr },
 		queue:   func(fn func()) { h.queued <- fn },
 		confirm: func(msg string, _ tview.Primitive, ok func()) { h.asked = append(h.asked, msg); ok() },
 		start:   func(data []byte) { h.started = append(h.started, data) },
@@ -60,7 +62,7 @@ func (h *rotateHarness) settle() {
 }
 
 func TestRotateEditor_NameAndLabelsAreShownNotEdited(t *testing.T) {
-	h := openRotateHarness(t, map[string]string{stackLabelKey: "shop", "team": "core"})
+	h := openRotateHarness(t, map[string]string{swarmops.StackLabelKey: "shop", "team": "core"})
 	if h.u.app.GetFocus() != h.d.ed.ta {
 		t.Fatal("focus must start in the value editor — there is nothing else to edit")
 	}
@@ -89,7 +91,7 @@ func TestRotateEditor_EmptyValueRefused(t *testing.T) {
 }
 
 func TestRotateEditor_ConfirmThenStartWithExactBytes(t *testing.T) {
-	h := openRotateHarness(t, map[string]string{stackLabelKey: "shop"})
+	h := openRotateHarness(t, map[string]string{swarmops.StackLabelKey: "shop"})
 	content := "line1\r\n\tline2\n"
 	p := filepath.Join(t.TempDir(), "v.txt")
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
@@ -131,12 +133,12 @@ func TestRotateEditor_PlanErrorStaysOpen(t *testing.T) {
 }
 
 func TestRotateConfirmText(t *testing.T) {
-	q := rotateConfirmText(rotatePlan{Name: "lonely", Temp: "lonely_rotating"})
+	q := rotateConfirmText(swarmops.RotatePlan{Name: "lonely", Temp: "lonely_rotating"})
 	if !strings.Contains(q, "No service uses lonely") || strings.Contains(q, "restarts twice") || strings.Contains(q, "Hint") {
 		t.Errorf("unused, unstacked:\n%s", q)
 	}
-	q = rotateConfirmText(rotatePlan{Name: "db", Temp: "db_rotating", Resume: true, StartStep: 5,
-		Users: []rotateUser{{Name: "web", Targets: []string{"db"}, OnTemp: true}}})
+	q = rotateConfirmText(swarmops.RotatePlan{Name: "db", Temp: "db_rotating", Resume: true, StartStep: 5,
+		Users: []swarmops.RotateUser{{Name: "web", Targets: []string{"db"}, OnTemp: true}}})
 	for _, want := range []string{"Resuming", "step 5/6", "value given now is not used", "(on db_rotating — restarts once more)"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("resume text lacks %q:\n%s", want, q)
