@@ -23,6 +23,7 @@ import (
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
 
@@ -129,4 +130,13 @@ func (c *Client) Conn(ctx context.Context, host string) (*Conn, error) {
 // caller's question, asked once rather than per node, so it is not asked here.
 func (c *Client) Explain(ctx context.Context, err error) error {
 	return agenterr.Explain(ctx, err, agenterr.Options{Auth: agenterr.AuthOf(c.cfg)})
+}
+
+// AddrMode is the node address the configuration dials agents on: the node's
+// IP, or its hostname.
+func AddrMode(cfg config.Config) resolve.AddrMode {
+	if cfg.AddrMode == config.AddrModeIP {
+		return resolve.AddrIP
+	}
+	return resolve.AddrHostname
 }

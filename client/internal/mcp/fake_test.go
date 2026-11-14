@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package mcp
 
 import (
 	"context"
@@ -260,7 +260,7 @@ func (a *fakeAgent) snapshot() (execs, logs, operators []string) {
 type mcpFixture struct {
 	swarm *swarmfake.Swarm
 	agent *fakeAgent
-	srv   *mcpServer
+	srv   *Server
 
 	// connected records the context names the server tried to connect to.
 	connected []string
@@ -317,8 +317,10 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &globalFlags{version: Version{Binary: "test", Proto: pb.ProtocolVersion}}
-	s := newMCPServer(g, nil, mcpaccess.Policy{Default: def}, allowReport, 3*time.Second)
+	s := New(Options{
+		Policy: mcpaccess.Policy{Default: def}, AllowReport: allowReport, ConnectTimeout: 3 * time.Second,
+		ClientVersion: "test", ClientProto: pb.ProtocolVersion,
+	})
 	// The real waits are seconds; the fake agent warms up in milliseconds.
 	s.statsWait, s.statsPoll = 2*time.Second, 20*time.Millisecond
 	fake := &mcpCluster{
@@ -326,7 +328,7 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 		agent: agentcall.New(cfg), cfgErr: cfg.Validate(),
 	}
 	// Every context the server agrees to connect to is the fake cluster; which
-	// names it agrees to is the server's business (mcpServer.cluster), and is
+	// names it agrees to is the server's business (Server.cluster), and is
 	// what the context tests check.
 	s.connect = func(_ context.Context, name string) (*mcpCluster, error) {
 		fx.connected = append(fx.connected, name)

@@ -112,7 +112,7 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 				name = args[1]
 			}
 			if name == "" {
-				name = stackNameFromPath(path)
+				name = stackfile.NameFromPath(path)
 			}
 			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
@@ -162,30 +162,4 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text | json")
 	cmd.Flags().StringSliceVar(&ignore, "ignore", nil, "leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)")
 	return cmd
-}
-
-// stackNameFromPath derives a stack name from a file name the way an operator
-// would expect: "prod/web.yml" is the "web" stack.
-func stackNameFromPath(path string) string {
-	base := path
-	if i := lastIndexAny(base, "/\\"); i >= 0 {
-		base = base[i+1:]
-	}
-	for _, ext := range []string{".yaml", ".yml", ".json"} {
-		if len(base) > len(ext) && base[len(base)-len(ext):] == ext {
-			return base[:len(base)-len(ext)]
-		}
-	}
-	return base
-}
-
-func lastIndexAny(s, chars string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		for _, c := range chars {
-			if rune(s[i]) == c {
-				return i
-			}
-		}
-	}
-	return -1
 }

@@ -57,7 +57,7 @@ type Run struct {
 }
 
 // Stream dials the agent and streams the container's logs into the run's
-// Stdout/stderr. It is shared by the `logs` command and the interactive `ui`.
+// Stdout/Stderr. It is shared by the `logs` command and the interactive `ui`.
 // Returns nil when the stream ends or ctx is cancelled.
 func Stream(ctx context.Context, run Run, ep resolve.Endpoint) error {
 	p, stdout, stderr := run.Params, run.Stdout, run.Stderr

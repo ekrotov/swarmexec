@@ -12,6 +12,7 @@ import (
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/mcp"
 )
 
 // setStoredCurrent marks a context current in the test DOCKER_CONFIG, the way
@@ -64,7 +65,7 @@ func TestUIContextNameHonoursDockerHost(t *testing.T) {
 	}
 
 	// The same answer reaches mcp and `config show`.
-	if got := servedContextName(""); got != "default" {
+	if got := mcp.ServedContextName(""); got != "default" {
 		t.Errorf("mcp served context = %q, want default", got)
 	}
 	if v := buildConfigView(&globalFlags{}, config.Config{}); v.DockerContext != "default" || v.ManagerHost != local {

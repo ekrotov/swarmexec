@@ -10,7 +10,10 @@
 // secrets and configs with their member services (netsec.go), nodes, labels
 // and availability (nodes.go), the placement diagnosis (placement.go), stack
 // removal, secret rotation, the agent service and its prune schedule, the
-// registry update check and the security-report gathering.
+// registry update check and the security-report gathering — plus the
+// readings both front-ends (the TUI and the MCP server) render the same way:
+// usage against limits, a service's health tally, an agent's version verdict,
+// the topology read (readings.go).
 //
 // Everything takes a swarmapi.Client (or a narrower subset), so it runs
 // against a plain Go fake. The cli package and its TUI call it; it never calls

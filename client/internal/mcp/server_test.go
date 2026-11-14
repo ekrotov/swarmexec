@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package mcp
 
 import (
 	"context"
@@ -16,23 +16,21 @@ import (
 
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"swarmexec/client/internal/mcpaccess"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // mcpSession connects an in-memory MCP client to the fixture's server — the
 // protocol end to end, minus only the pipe.
-func mcpSession(t *testing.T, fx *mcpFixture) *mcp.ClientSession {
+func mcpSession(t *testing.T, fx *mcpFixture) *sdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
-	st, ct := mcp.NewInMemoryTransports()
+	st, ct := sdk.NewInMemoryTransports()
 	ss, err := fx.srv.build().Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ss.Close() })
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,18 +48,18 @@ type mcpOutcome struct {
 	isError bool
 }
 
-func callTool(t *testing.T, cs *mcp.ClientSession, c mcpCall) mcpOutcome {
+func callTool(t *testing.T, cs *sdk.ClientSession, c mcpCall) mcpOutcome {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: c.tool, Arguments: c.args})
 	if err != nil {
 		// A protocol-level error is an outcome too, and must be just as clean.
 		return mcpOutcome{text: "protocol error: " + err.Error(), isError: true}
 	}
 	var b strings.Builder
 	for _, ct := range res.Content {
-		if tc, ok := ct.(*mcp.TextContent); ok {
+		if tc, ok := ct.(*sdk.TextContent); ok {
 			b.WriteString(tc.Text)
 		}
 	}
@@ -389,27 +387,30 @@ func TestMCPExecRefusesDockerSocket(t *testing.T) {
 }
 
 func TestMCPResultScrubsAndCaps(t *testing.T) {
-	s := newMCPServer(&globalFlags{}, nil, mcpaccess.Policy{}, false, time.Second)
+	// The caller says what an ssh sign-in failure looks like (the cli's
+	// isSSHAuthError); the server says what to do about it.
+	sshAuth := func(err error) bool { return strings.Contains(err.Error(), "Permission denied (") }
+	s := New(Options{ConnectTimeout: time.Second, IsSSHAuthError: sshAuth})
 
 	big := strings.Repeat("x", mcpMaxOutput+100)
 	res := s.result("t", time.Now(), big, nil)
-	text := res.Content[0].(*mcp.TextContent).Text
+	text := res.Content[0].(*sdk.TextContent).Text
 	if len(text) > mcpMaxOutput+200 || !strings.Contains(text, "truncated") {
 		t.Errorf("output not capped/annotated: %d bytes", len(text))
 	}
 
 	res = s.result("t", time.Now(), "a\nlabel swarmexec.mcp.exec=true\nb\n", nil)
-	if got := res.Content[0].(*mcp.TextContent).Text; got != "a\nb\n" {
+	if got := res.Content[0].(*sdk.TextContent).Text; got != "a\nb\n" {
 		t.Errorf("result not scrubbed: %q", got)
 	}
 
 	res = s.result("t", time.Now(), "", errors.New("filter swarmexec.mcp.enable=true rejected"))
-	if got := res.Content[0].(*mcp.TextContent).Text; !res.IsError || strings.Contains(got, "swarmexec.mcp") || got == "" {
+	if got := res.Content[0].(*sdk.TextContent).Text; !res.IsError || strings.Contains(got, "swarmexec.mcp") || got == "" {
 		t.Errorf("error not scrubbed: %q", got)
 	}
 
 	res = s.result("t", time.Now(), "", errors.New("ssh: Permission denied (publickey)."))
-	if got := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(got, "ssh-agent") {
+	if got := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(got, "ssh-agent") {
 		t.Errorf("ssh auth failure does not say to use ssh-agent: %q", got)
 	}
 }
@@ -439,10 +440,10 @@ func TestMCPOperatorAndAllow(t *testing.T) {
 			t.Errorf("mcpOperator(%q) = %q, want %q", in, got, want)
 		}
 	}
-	if r, err := parseMCPAllow([]string{"report"}); err != nil || !r {
+	if r, err := ParseAllow([]string{"report"}); err != nil || !r {
 		t.Errorf("--allow report: %v %v", r, err)
 	}
-	if _, err := parseMCPAllow([]string{"reprot"}); err == nil {
+	if _, err := ParseAllow([]string{"reprot"}); err == nil {
 		t.Error("--allow accepted a typo")
 	}
 }

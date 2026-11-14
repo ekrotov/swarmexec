@@ -847,12 +847,12 @@ func (iv *inspectView) statsLines() []statsRow {
 			// The worst replica, not the average: an average hides the one that is
 			// about to be OOM-killed, which is the container you opened this for.
 			rows = append(rows, statsRow{
-				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", formatRatio(agg.CPURatio)),
+				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", swarmops.FormatRatio(agg.CPURatio)),
 				color: tcell.ColorWhite,
 			})
 			rows = append(rows, statsRow{
 				text: fmt.Sprintf("  %-10s %s of its limit (worst replica) · %s in total",
-					"memory", formatRatio(agg.MemRatio), humanBytes(agg.MemBytes)),
+					"memory", swarmops.FormatRatio(agg.MemRatio), humanBytes(agg.MemBytes)),
 				color: tcell.ColorWhite,
 			})
 		}
@@ -877,7 +877,7 @@ func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage)
 		measured++
 		cells = append(cells, []string{
 			name, orDash(c.NodeName), healthCell(u.Health),
-			formatCPUUsage(u), formatMemUsage(u),
+			swarmops.FormatCPUUsage(u), swarmops.FormatMemUsage(u),
 		})
 	}
 	return cells, measured
@@ -887,11 +887,11 @@ func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage)
 // as healthy and must not render as a blank, which would read as a pass.
 func healthCell(health string) string {
 	switch health {
-	case healthUnhealthy:
+	case swarmops.HealthUnhealthy:
 		return "unhealthy"
-	case healthStarting:
+	case swarmops.HealthStarting:
 		return "starting"
-	case healthHealthy:
+	case swarmops.HealthHealthy:
 		return "healthy"
 	default:
 		return "none"
