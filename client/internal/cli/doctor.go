@@ -96,7 +96,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	healthy := agentDep
 	rows := make([]doctorNode, 0, len(results))
 	for _, r := range results {
-		st, ver, proto, ok := classifyNode(r, g.version)
+		st, ver, proto, ok := swarmops.ClassifyNode(r, g.version.Binary, g.version.Proto)
 		if !ok {
 			healthy = false
 		}
@@ -145,22 +145,3 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	fmt.Fprintln(out, "⚠ some checks need attention (see above)")
 	return &cliError{code: session.TransportFailure, silent: true}
 }
-
-// classifyNode turns a node's version-probe result into a display status.
-func classifyNode(r nodeHealth, v Version) (status, version, proto string, ok bool) {
-	switch {
-	case r.Err != nil && agentTooOld(r.Err):
-		return "too old (init --force)", "-", "-", false
-	case r.Err != nil:
-		return "unreachable", "-", "-", false
-	case r.Proto != v.Proto:
-		return "PROTO MISMATCH", r.Version, r.Proto, false
-	case r.Version != v.Binary && v.Binary != "" && v.Binary != "dev":
-		return "ok (version skew)", r.Version, r.Proto, true
-	default:
-		return "ok", r.Version, r.Proto, true
-	}
-}
-
-// nodeHealth is one node's Version answer (agentcall.Versions).
-type nodeHealth = agentcall.NodeVersion

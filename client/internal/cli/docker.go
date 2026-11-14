@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"swarmexec/client/internal/swarmops"
+
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/moby/moby/client"
 )
@@ -96,19 +98,5 @@ func shortID(id string) string {
 	return id
 }
 
-func uptime(d time.Duration) string {
-	if d <= 0 {
-		return "-"
-	}
-	d = d.Round(time.Second)
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
-	default:
-		return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
-	}
-}
+// uptime renders how long a container has run, compactly ("3d4h").
+func uptime(d time.Duration) string { return swarmops.FormatUptime(d) }

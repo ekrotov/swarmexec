@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package mcp
 
 import (
 	"context"
@@ -16,9 +16,11 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
@@ -73,14 +75,14 @@ type mcpExecIn struct {
 // mcpTool registers one tool. Every handler returns text or an error, and
 // result() — the one place that scrubs and caps — turns that into what the
 // assistant receives. A handler cannot reach the client any other way.
-func mcpTool[In any](srv *mcp.Server, s *mcpServer, name, title, desc string, readOnly bool, fn func(context.Context, In) (string, error)) {
+func mcpTool[In any](srv *sdk.Server, s *Server, name, title, desc string, readOnly bool, fn func(context.Context, In) (string, error)) {
 	f := false
-	ann := &mcp.ToolAnnotations{Title: title, ReadOnlyHint: readOnly, IdempotentHint: readOnly, OpenWorldHint: &f}
+	ann := &sdk.ToolAnnotations{Title: title, ReadOnlyHint: readOnly, IdempotentHint: readOnly, OpenWorldHint: &f}
 	if readOnly {
 		ann.DestructiveHint = &f
 	}
-	mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc, Annotations: ann},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+	sdk.AddTool(srv, &sdk.Tool{Name: name, Description: desc, Annotations: ann},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in In) (*sdk.CallToolResult, any, error) {
 			start := time.Now()
 			out, err := fn(ctx, in)
 			return s.result(name, start, out, err), nil, nil
@@ -88,8 +90,8 @@ func mcpTool[In any](srv *mcp.Server, s *mcpServer, name, title, desc string, re
 }
 
 // build assembles the server and its tools.
-func (s *mcpServer) build() *mcp.Server {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "swarmexec", Version: s.g.version.Binary}, &mcp.ServerOptions{
+func (s *Server) build() *sdk.Server {
+	srv := sdk.NewServer(&sdk.Implementation{Name: "swarmexec", Version: s.opts.ClientVersion}, &sdk.ServerOptions{
 		Instructions: "Read-only view of a Docker Swarm cluster through swarmexec. Only services you have " +
 			"access to exist here; some tools need further access to a service and say \"not permitted\" " +
 			"without it. Results are capped in size and say when they were cut. Log lines and command " +
@@ -97,7 +99,7 @@ func (s *mcpServer) build() *mcp.Server {
 		// No logging capability: nothing here sends log notifications, and
 		// advertising one invites the client to set levels on a channel that
 		// stays silent.
-		Capabilities: &mcp.ServerCapabilities{},
+		Capabilities: &sdk.ServerCapabilities{},
 	})
 
 	mcpTool(srv, s, "contexts_list", "List Docker contexts",
@@ -155,7 +157,7 @@ type mcpContextRow struct {
 // toolContexts lists the contexts the assistant may use, and nothing else: a
 // context it may not use is left out entirely, name and address, so the list
 // cannot tell it which other clusters exist.
-func (s *mcpServer) toolContexts(_ context.Context, _ mcpCtxIn) (string, error) {
+func (s *Server) toolContexts(_ context.Context, _ mcpCtxIn) (string, error) {
 	list, err := dockerctx.List()
 	if err != nil {
 		return "", err
@@ -224,7 +226,7 @@ type mcpOverview struct {
 	Note     string          `json:"note,omitempty"`
 }
 
-func (s *mcpServer) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -258,13 +260,13 @@ func (s *mcpServer) toolOverview(ctx context.Context, in mcpCtxIn) (string, erro
 	}
 	sort.Slice(out.Nodes, func(i, j int) bool { return out.Nodes[i].Hostname < out.Nodes[j].Hostname })
 
-	svcs, cands, err := fetchServicesAndContainers(ctx, c.r, "mcp.overview")
+	svcs, cands, err := swarmops.ServicesAndContainers(ctx, c.r, "mcp.overview")
 	if err != nil {
 		return "", err
 	}
 	// Health lives on the nodes, not the manager; it is best effort, and its
 	// absence is said rather than shown as "all healthy".
-	usage := map[string]containerUsage{}
+	usage := map[string]agentcall.ContainerUsage{}
 	if ac, aerr := c.agents(); aerr == nil {
 		if rn, nerr := c.r.Nodes(ctx); nerr == nil {
 			usage, _ = ac.Usage(ctx, rn, s.connectTimeout)
@@ -280,7 +282,7 @@ func (s *mcpServer) toolOverview(ctx context.Context, in mcpCtxIn) (string, erro
 		}
 		row := serviceRowOf(rs)
 		if len(usage) > 0 {
-			h := healthOf(usage, cands, rs.Name)
+			h := swarmops.HealthOf(usage, cands, rs.Name)
 			row.Health = &mcpHealth{Healthy: h.Healthy, Unhealthy: h.Unhealthy, Starting: h.Starting, NoCheck: h.Unknown}
 		}
 		have, want := rs.Progress()
@@ -306,7 +308,7 @@ func serviceRowOf(rs resolve.Service) mcpServiceRow {
 
 // --- services_list -----------------------------------------------------------
 
-func (s *mcpServer) toolServices(ctx context.Context, in mcpOptServiceIn) (string, error) {
+func (s *Server) toolServices(ctx context.Context, in mcpOptServiceIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -320,14 +322,14 @@ func (s *mcpServer) toolServices(ctx context.Context, in mcpOptServiceIn) (strin
 			return "", err
 		}
 	}
-	svcs, cands, err := fetchServicesAndContainers(ctx, c.r, "mcp.services")
+	svcs, cands, err := swarmops.ServicesAndContainers(ctx, c.r, "mcp.services")
 	if err != nil {
 		return "", err
 	}
 	byService := map[string][]mcpContainerRow{}
 	for _, cd := range cands {
 		byService[cd.Service] = append(byService[cd.Service], mcpContainerRow{
-			Slot: cd.Slot, Container: shortID(cd.ContainerID), Node: orDash(cd.NodeName), Uptime: uptime(cd.Uptime),
+			Slot: cd.Slot, Container: shortID(cd.ContainerID), Node: orDash(cd.NodeName), Uptime: swarmops.FormatUptime(cd.Uptime),
 		})
 	}
 	rows := []mcpServiceRow{}
@@ -388,7 +390,7 @@ type mcpInspect struct {
 // crash loop, not every task a long-lived service ever had.
 const mcpInspectTasks = 20
 
-func (s *mcpServer) toolInspect(ctx context.Context, in mcpServiceIn) (string, error) {
+func (s *Server) toolInspect(ctx context.Context, in mcpServiceIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -406,7 +408,7 @@ func (s *mcpServer) toolInspect(ctx context.Context, in mcpServiceIn) (string, e
 
 // inspectOf renders a visible service. Labels go through Strip and env through
 // MaskEnv here, structurally — Scrub at the exit is the backstop, not the plan.
-func (s *mcpServer) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service) mcpInspect {
+func (s *Server) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service) mcpInspect {
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	out := mcpInspect{
 		Name:      svc.Spec.Name,
@@ -484,7 +486,7 @@ const (
 	mcpLogMaxSources  = 20
 )
 
-func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
+func (s *Server) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -519,20 +521,20 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 		}
 	}
 	formatName := firstNonEmpty(in.Format, "auto")
-	format, filter, err := buildLogFilter(formatName, in.MinLevel, in.Grep)
+	format, filter, err := logstream.BuildFilter(formatName, in.MinLevel, in.Grep)
 	if err != nil {
 		return "", err
 	}
-	auto := logFormatAuto(formatName)
+	auto := logstream.FormatAuto(formatName)
 
 	cands, err := c.r.Candidates(ctx, ms.svc.Spec.Name)
 	if err != nil {
 		return "", err
 	}
-	var sources []logSource
+	var sources []logstream.Source
 	for _, cd := range cands {
 		if in.Slot == 0 || cd.Slot == in.Slot {
-			sources = append(sources, sourceFromCandidate(cd))
+			sources = append(sources, logstream.SourceFromCandidate(cd))
 		}
 	}
 	if len(sources) == 0 {
@@ -553,17 +555,17 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 	// the streams stop there.
 	buf := &capWriter{max: mcpLogMaxBytes, onFull: cancel}
 	wrap := func(dst io.Writer) (io.Writer, func()) {
-		if !auto && !filteringActive(format, filter) {
+		if !auto && !logstream.FilteringActive(format, filter) {
 			return dst, func() {}
 		}
-		fw := newFilterWriter(dst, format, filter, renderPlain)
+		fw := logstream.NewFilterWriter(dst, format, filter, logstream.RenderPlain)
 		if auto {
-			fw.detectFormat()
+			fw.DetectFormat()
 		}
 		return fw, fw.Flush
 	}
-	params := logsParams{tail: uint32(tail), since: since, connectTimeout: s.connectTimeout}
-	serr := streamManyLogs(lctx, logRun{ac: ac, r: c.r, params: params, stdout: buf, stderr: buf}, sources, false, wrap)
+	params := logstream.Params{Tail: uint32(tail), Since: since, ConnectTimeout: s.connectTimeout}
+	serr := logstream.StreamMany(lctx, logstream.Run{Agents: ac, Resolver: c.r, Params: params, Stdout: buf, Stderr: buf}, sources, false, wrap)
 
 	out := note + buf.String()
 	switch {
@@ -619,7 +621,7 @@ const (
 
 // statsComplete reports whether every container in mine has a full reading —
 // or cannot get one by waiting, because its node's agent did not answer.
-func statsComplete(mine []resolve.Candidate, usage map[string]containerUsage, answered map[string]bool) bool {
+func statsComplete(mine []resolve.Candidate, usage map[string]agentcall.ContainerUsage, answered map[string]bool) bool {
 	for _, cd := range mine {
 		if !answered[cd.NodeName] {
 			continue
@@ -631,7 +633,7 @@ func statsComplete(mine []resolve.Candidate, usage map[string]containerUsage, an
 	return true
 }
 
-func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, error) {
+func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -675,7 +677,7 @@ func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, 
 	}
 	// Ask, and while a node's sampler is still warming up, ask again — within a
 	// bound, so a node that never gets there costs seconds, not the session.
-	usage := map[string]containerUsage{}
+	usage := map[string]agentcall.ContainerUsage{}
 	answered := map[string]bool{}
 	deadline := time.Now().Add(s.statsWait)
 	for {
@@ -701,7 +703,7 @@ func (s *mcpServer) toolStats(ctx context.Context, in mcpOptServiceIn) (string, 
 		u, ok := usage[cd.ContainerID]
 		switch {
 		case ok:
-			row.CPU, row.Memory, row.Health = formatCPUUsage(u), formatMemUsage(u), u.Health
+			row.CPU, row.Memory, row.Health = swarmops.FormatCPUUsage(u), swarmops.FormatMemUsage(u), u.Health
 			if !u.CPUReady {
 				row.CPU, row.Note = statsWarmingUp, statsWarmingUpNote
 			}
@@ -726,7 +728,7 @@ type mcpNamedRow struct {
 // not "what exists": an object only hidden services use is as absent as the
 // services themselves, or its "used by" would be a count of them.
 
-func (s *mcpServer) toolVolumes(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolVolumes(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -744,7 +746,7 @@ func (s *mcpServer) toolVolumes(ctx context.Context, in mcpCtxIn) (string, error
 	return jsonText(namedRows(users))
 }
 
-func (s *mcpServer) toolNetworks(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolNetworks(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -766,7 +768,7 @@ func (s *mcpServer) toolNetworks(ctx context.Context, in mcpCtxIn) (string, erro
 	return jsonText(namedRows(users))
 }
 
-func (s *mcpServer) toolSecrets(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolSecrets(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -788,7 +790,7 @@ func (s *mcpServer) toolSecrets(ctx context.Context, in mcpCtxIn) (string, error
 	return jsonText(namedRows(users))
 }
 
-func (s *mcpServer) toolConfigs(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolConfigs(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -856,7 +858,7 @@ func (a visibleAPI) ServiceList(ctx context.Context, o client.ServiceListOptions
 // describe — and diff against — a service the assistant could never see. A
 // file the assistant may not use is refused as a whole; it names no service,
 // because the file is the assistant's own input and it can read it anyway.
-func (s *mcpServer) stackInput(in mcpStackIn) (path, name string, err error) {
+func (s *Server) stackInput(in mcpStackIn) (path, name string, err error) {
 	path = strings.TrimSpace(in.Path)
 	if path == "" {
 		return "", "", errors.New("path is required")
@@ -871,7 +873,7 @@ func (s *mcpServer) stackInput(in mcpStackIn) (path, name string, err error) {
 	}
 	name = strings.TrimSpace(in.Stack)
 	if name == "" {
-		name = stackNameFromPath(path)
+		name = stackfile.NameFromPath(path)
 	}
 	labels, err := stackfile.ServiceLabels(path)
 	if err != nil {
@@ -885,11 +887,11 @@ func (s *mcpServer) stackInput(in mcpStackIn) (path, name string, err error) {
 	return path, name, nil
 }
 
-func (s *mcpServer) visibleClient(c *mcpCluster) visibleAPI {
+func (s *Server) visibleClient(c *mcpCluster) visibleAPI {
 	return visibleAPI{APIClient: c.dcli, visible: func(svc swarm.Service) bool { return s.evaluate(svc).Visible }}
 }
 
-func (s *mcpServer) toolStackDiff(ctx context.Context, in mcpStackIn) (string, error) {
+func (s *Server) toolStackDiff(ctx context.Context, in mcpStackIn) (string, error) {
 	path, name, err := s.stackInput(in)
 	if err != nil {
 		return "", err
@@ -919,7 +921,7 @@ func (s *mcpServer) toolStackDiff(ctx context.Context, in mcpStackIn) (string, e
 	return out, nil
 }
 
-func (s *mcpServer) toolStackCheck(ctx context.Context, in mcpStackIn) (string, error) {
+func (s *Server) toolStackCheck(ctx context.Context, in mcpStackIn) (string, error) {
 	path, name, err := s.stackInput(in)
 	if err != nil {
 		return "", err
@@ -933,7 +935,7 @@ func (s *mcpServer) toolStackCheck(ctx context.Context, in mcpStackIn) (string, 
 		return "", err
 	}
 	var b strings.Builder
-	writePlanReport(&b, plan)
+	stackfile.WritePlanReport(&b, plan)
 	if plan.Actionable() {
 		b.WriteString("Result: the check found something above informational; `swarmexec stack deploy` would stop and ask.\n")
 	} else {
@@ -1008,7 +1010,7 @@ func nilIfEmpty(m map[string]string) map[string]string {
 
 // --- security_report ---------------------------------------------------------
 
-func (s *mcpServer) toolReport(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolReport(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -1026,13 +1028,13 @@ func (s *mcpServer) toolReport(ctx context.Context, in mcpCtxIn) (string, error)
 		return "", err
 	}
 	restrictCluster(&cluster, v)
-	cluster.ClientVersion, cluster.ClientProto = s.g.version.Binary, s.g.version.Proto
+	cluster.ClientVersion, cluster.ClientProto = s.opts.ClientVersion, s.opts.ClientProto
 	if ac, aerr := c.agents(); aerr == nil {
 		if nodes, nerr := c.r.Nodes(ctx); nerr == nil {
 			swarmops.ApplyAgentVersions(ctx, &cluster, ac, nodes, s.connectTimeout)
 		}
 	}
-	meta := secscan.ReportMeta{Context: c.label, Generated: time.Now(), Tool: "swarmexec " + s.g.version.Binary + " (mcp)"}
+	meta := secscan.ReportMeta{Context: c.label, Generated: time.Now(), Tool: "swarmexec " + s.opts.ClientVersion + " (mcp)"}
 	md := secscan.BuildReport(meta, scans, cluster).Markdown()
 	return md + "\nScope: only the services you have access to, and the networks, secrets and configs they use.\n", nil
 }
@@ -1082,7 +1084,7 @@ type mcpDoctorNode struct {
 	Proto   string `json:"proto,omitempty"`
 }
 
-func (s *mcpServer) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -1091,7 +1093,7 @@ func (s *mcpServer) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error)
 	if err != nil {
 		return "", err
 	}
-	out := mcpDoctor{Context: c.label, Client: s.g.version.Binary, Proto: s.g.version.Proto, Manager: info.Info.Name, Healthy: true}
+	out := mcpDoctor{Context: c.label, Client: s.opts.ClientVersion, Proto: s.opts.ClientProto, Manager: info.Info.Name, Healthy: true}
 	ac, err := c.agents()
 	if err != nil {
 		out.Healthy, out.Problem = false, err.Error()
@@ -1102,7 +1104,7 @@ func (s *mcpServer) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error)
 		return "", err
 	}
 	for _, r := range ac.Versions(ctx, nodes, s.connectTimeout) {
-		st, ver, proto, ok := classifyNode(r, s.g.version)
+		st, ver, proto, ok := swarmops.ClassifyNode(r, s.opts.ClientVersion, s.opts.ClientProto)
 		if !ok {
 			out.Healthy = false
 		}
@@ -1156,7 +1158,7 @@ func execRefusal(svc swarm.Service) error {
 	return nil
 }
 
-func (s *mcpServer) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
+func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err

@@ -1,24 +1,14 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package mcp
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/json"
 	"fmt"
-	"io"
-	"math/big"
 	"net"
-	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -27,7 +17,6 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -37,6 +26,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmfake"
 	"swarmexec/internal/authmeta"
 	pb "swarmexec/internal/pb"
 )
@@ -50,137 +40,6 @@ import (
 // which talk to a *client.Client — lets a hidden service or an access label
 // through. So the fake sits underneath the real client, and every layer above
 // it runs as it does against a cluster.
-
-type fakeSwarm struct {
-	services []swarm.Service
-	tasks    []swarm.Task
-	nodes    []swarm.Node
-	networks []network.Summary
-	secrets  []swarm.Secret
-	configs  []swarm.Config
-
-	mu      sync.Mutex
-	unknown []string // API paths the fake does not serve, for diagnosis
-}
-
-var apiVersionPrefix = regexp.MustCompile(`^/v[0-9.]+`)
-
-func (f *fakeSwarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := apiVersionPrefix.ReplaceAllString(r.URL.Path, "")
-	filters := map[string]map[string]bool{}
-	if raw := r.URL.Query().Get("filters"); raw != "" {
-		_ = json.Unmarshal([]byte(raw), &filters)
-	}
-	reply := func(v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
-	switch {
-	case path == "/_ping":
-		w.Header().Set("Api-Version", client.MaxAPIVersion)
-		w.Header().Set("Ostype", "linux")
-		_, _ = io.WriteString(w, "OK")
-	case path == "/info":
-		reply(system.Info{Name: "manager-1", ServerVersion: "28.0.0"})
-	case path == "/swarm":
-		reply(swarm.Swarm{})
-	case path == "/services":
-		var out []swarm.Service
-		for _, s := range f.services {
-			if matchService(s, filters) {
-				out = append(out, s)
-			}
-		}
-		reply(out)
-	case strings.HasPrefix(path, "/services/"):
-		id := strings.TrimPrefix(path, "/services/")
-		for _, s := range f.services {
-			if s.ID == id || s.Spec.Name == id {
-				reply(s)
-				return
-			}
-		}
-		notFound(w, "service "+id)
-	case path == "/tasks":
-		var out []swarm.Task
-		for _, t := range f.tasks {
-			if matchTask(t, filters) {
-				out = append(out, t)
-			}
-		}
-		reply(out)
-	case path == "/nodes":
-		reply(f.nodes)
-	case strings.HasPrefix(path, "/nodes/"):
-		id := strings.TrimPrefix(path, "/nodes/")
-		for _, n := range f.nodes {
-			if n.ID == id {
-				reply(n)
-				return
-			}
-		}
-		notFound(w, "node "+id)
-	case path == "/networks":
-		reply(f.networks)
-	case path == "/secrets":
-		reply(filterNamed(f.secrets, filters, func(s swarm.Secret) string { return s.Spec.Name }))
-	case path == "/configs":
-		reply(filterNamed(f.configs, filters, func(c swarm.Config) string { return c.Spec.Name }))
-	default:
-		f.mu.Lock()
-		f.unknown = append(f.unknown, r.Method+" "+path)
-		f.mu.Unlock()
-		notFound(w, path)
-	}
-}
-
-func notFound(w http.ResponseWriter, what string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "not found: " + what})
-}
-
-func matchService(s swarm.Service, f map[string]map[string]bool) bool {
-	for name := range f["name"] {
-		if !strings.Contains(s.Spec.Name, name) {
-			return false
-		}
-	}
-	for l := range f["label"] {
-		k, v, hasV := strings.Cut(l, "=")
-		got, ok := s.Spec.Labels[k]
-		if !ok || (hasV && got != v) {
-			return false
-		}
-	}
-	return true
-}
-
-func matchTask(t swarm.Task, f map[string]map[string]bool) bool {
-	if want := f["service"]; len(want) > 0 && !want[t.ServiceID] {
-		return false
-	}
-	if want := f["desired-state"]; len(want) > 0 && !want[string(t.DesiredState)] {
-		return false
-	}
-	return true
-}
-
-func filterNamed[T any](items []T, f map[string]map[string]bool, name func(T) string) []T {
-	if len(f["name"]) == 0 {
-		return items
-	}
-	var out []T
-	for _, it := range items {
-		for n := range f["name"] {
-			if strings.Contains(name(it), n) {
-				out = append(out, it)
-				break
-			}
-		}
-	}
-	return out
-}
 
 // --- the fixture cluster ------------------------------------------------------
 
@@ -226,7 +85,7 @@ func fixtureTask(id, svcID, node, container string, slot int) swarm.Task {
 	return t
 }
 
-func newFixtureSwarm() *fakeSwarm {
+func newFixtureSwarm() *swarmfake.Swarm {
 	web := fixtureService("svc-web", "shop_web", "shop", map[string]string{lEnable: "true", lLogs: "true", lExec: "true"}, 2)
 	web.Spec.TaskTemplate.ContainerSpec.Secrets = []*swarm.SecretReference{{SecretID: "sec-shop", SecretName: "shop_db_pw"}}
 	web.Spec.TaskTemplate.ContainerSpec.Configs = []*swarm.ConfigReference{{ConfigID: "cfg-shop", ConfigName: "shop_cfg"}}
@@ -282,9 +141,9 @@ func newFixtureSwarm() *fakeSwarm {
 		return c
 	}
 
-	return &fakeSwarm{
-		services: []swarm.Service{web, api, hidden, off, sock, ghost},
-		tasks: []swarm.Task{
+	return &swarmfake.Swarm{
+		Services: []swarm.Service{web, api, hidden, off, sock, ghost},
+		Tasks: []swarm.Task{
 			fixtureTask("t-web1", "svc-web", "node1", "c-web1", 1),
 			fixtureTask("t-web2", "svc-web", "node2", "c-web2", 2),
 			fixtureTask("t-api1", "svc-api", "node1", "c-api1", 1),
@@ -293,13 +152,13 @@ func newFixtureSwarm() *fakeSwarm {
 			fixtureTask("t-sock1", "svc-sock", "node1", "c-sock", 1),
 			fixtureTask("t-ghost1", "svc-ghost", "node2", "c-ghost", 1),
 		},
-		nodes: []swarm.Node{node("node1", "node-a", true), node("node2", "node-b", false)},
-		networks: []network.Summary{
+		Nodes: []swarm.Node{node("node1", "node-a", true), node("node2", "node-b", false)},
+		Networks: []network.Summary{
 			netw("net-shop", "shop_net", map[string]string{"com.docker.stack.namespace": "shop", lEnable: "true"}),
 			netw("net-hidden", "hidden_net", nil),
 		},
-		secrets: []swarm.Secret{secret("sec-shop", "shop_db_pw"), secret("sec-hidden", "hidden_secret")},
-		configs: []swarm.Config{cfg("cfg-shop", "shop_cfg"), cfg("cfg-hidden", "hidden_cfg")},
+		Secrets: []swarm.Secret{secret("sec-shop", "shop_db_pw"), secret("sec-hidden", "hidden_secret")},
+		Configs: []swarm.Config{cfg("cfg-shop", "shop_cfg"), cfg("cfg-hidden", "hidden_cfg")},
 	}
 }
 
@@ -396,35 +255,12 @@ func (a *fakeAgent) snapshot() (execs, logs, operators []string) {
 	return append([]string(nil), a.execs...), append([]string(nil), a.logs...), append([]string(nil), a.operators...)
 }
 
-// selfSignedPair makes a throwaway server certificate for the fake agent.
-func selfSignedPair(t *testing.T) tls.Certificate {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "fake-agent"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		DNSNames:     []string{"localhost"},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
-}
-
 // --- wiring -------------------------------------------------------------------
 
 type mcpFixture struct {
-	swarm *fakeSwarm
+	swarm *swarmfake.Swarm
 	agent *fakeAgent
-	srv   *mcpServer
+	srv   *Server
 
 	// connected records the context names the server tried to connect to.
 	connected []string
@@ -445,7 +281,7 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 	if err != nil {
 		t.Fatal(err)
 	}
-	gs := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{selfSignedPair(t)}})))
+	gs := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{swarmfake.SelfSignedPair(t)}})))
 	agent := &fakeAgent{}
 	pb.RegisterAgentServer(gs, agent)
 	go func() { _ = gs.Serve(lis) }()
@@ -481,8 +317,10 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &globalFlags{version: Version{Binary: "test", Proto: pb.ProtocolVersion}}
-	s := newMCPServer(g, nil, mcpaccess.Policy{Default: def}, allowReport, 3*time.Second)
+	s := New(Options{
+		Policy: mcpaccess.Policy{Default: def}, AllowReport: allowReport, ConnectTimeout: 3 * time.Second,
+		ClientVersion: "test", ClientProto: pb.ProtocolVersion,
+	})
 	// The real waits are seconds; the fake agent warms up in milliseconds.
 	s.statsWait, s.statsPoll = 2*time.Second, 20*time.Millisecond
 	fake := &mcpCluster{
@@ -490,7 +328,7 @@ func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFix
 		agent: agentcall.New(cfg), cfgErr: cfg.Validate(),
 	}
 	// Every context the server agrees to connect to is the fake cluster; which
-	// names it agrees to is the server's business (mcpServer.cluster), and is
+	// names it agrees to is the server's business (Server.cluster), and is
 	// what the context tests check.
 	s.connect = func(_ context.Context, name string) (*mcpCluster, error) {
 		fx.connected = append(fx.connected, name)

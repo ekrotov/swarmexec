@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package mcp
 
 import (
 	"encoding/json"
@@ -35,19 +35,19 @@ func TestMCPContextsRestricted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	extra, err := parseMCPContexts([]string{"lab", " lab ", ""})
+	extra, err := ParseContexts([]string{"lab", " lab ", ""})
 	if err != nil || !slices.Equal(extra, []string{"lab"}) {
-		t.Fatalf("parseMCPContexts = %v, %v", extra, err)
+		t.Fatalf("mcpParseContexts = %v, %v", extra, err)
 	}
-	if _, err := parseMCPContexts([]string{"no-such-context"}); err == nil {
+	if _, err := ParseContexts([]string{"no-such-context"}); err == nil {
 		t.Error("--contexts accepted a context that does not exist")
 	}
-	if _, err := parseMCPContexts([]string{"default"}); err != nil {
+	if _, err := ParseContexts([]string{"default"}); err != nil {
 		t.Errorf("--contexts default: %v", err)
 	}
 
 	fx := newMCPFixture(t, "none", false)
-	fx.srv.g.dockerContext = "staging"
+	fx.srv.opts.DockerContext = "staging"
 	fx.srv.allowContexts(extra)
 	cs := mcpSession(t, fx)
 

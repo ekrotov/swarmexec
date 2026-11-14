@@ -66,7 +66,7 @@ func TestUsageIgnoresUnreadyCPU(t *testing.T) {
 	if usageLevelOf(u) != usageCrit {
 		t.Errorf("level = %v, want crit from memory alone", usageLevelOf(u))
 	}
-	if got := formatCPUUsage(u); got != "…" {
+	if got := swarmops.FormatCPUUsage(u); got != "…" {
 		t.Errorf("cpu display = %q, want a placeholder rather than a number", got)
 	}
 	if strings.Contains(usageBadge(u), cpuGlyph) {
@@ -214,31 +214,31 @@ func TestHealthColorContradictsTheCount(t *testing.T) {
 	full := serviceColor(3, 3) // what the row used to be, unconditionally
 
 	// Every container failing is as bad as none running.
-	allBad := healthOf(map[string]containerUsage{
-		"c1": {Health: healthUnhealthy}, "c2": {Health: healthUnhealthy}, "c3": {Health: healthUnhealthy},
+	allBad := swarmops.HealthOf(map[string]containerUsage{
+		"c1": {Health: swarmops.HealthUnhealthy}, "c2": {Health: swarmops.HealthUnhealthy}, "c3": {Health: swarmops.HealthUnhealthy},
 	}, cands, "web")
 	if got := healthColor(full, allBad); got != tcell.ColorRed {
 		t.Errorf("all unhealthy = %v, want red", got)
 	}
 
 	// Some failing is degradation, like a missing replica.
-	someBad := healthOf(map[string]containerUsage{
-		"c1": {Health: healthUnhealthy}, "c2": {Health: healthHealthy}, "c3": {Health: healthHealthy},
+	someBad := swarmops.HealthOf(map[string]containerUsage{
+		"c1": {Health: swarmops.HealthUnhealthy}, "c2": {Health: swarmops.HealthHealthy}, "c3": {Health: swarmops.HealthHealthy},
 	}, cands, "web")
 	if got := healthColor(full, someBad); got != tcell.ColorOrange {
 		t.Errorf("one of three unhealthy = %v, want orange", got)
 	}
 
 	// All healthy must not change what the count already said.
-	allGood := healthOf(map[string]containerUsage{
-		"c1": {Health: healthHealthy}, "c2": {Health: healthHealthy}, "c3": {Health: healthHealthy},
+	allGood := swarmops.HealthOf(map[string]containerUsage{
+		"c1": {Health: swarmops.HealthHealthy}, "c2": {Health: swarmops.HealthHealthy}, "c3": {Health: swarmops.HealthHealthy},
 	}, cands, "web")
 	if got := healthColor(full, allGood); got != full {
 		t.Errorf("all healthy = %v, want the count's own colour %v", got, full)
 	}
 
 	// No healthchecks at all: we know nothing, so we must not recolour.
-	none := healthOf(map[string]containerUsage{}, cands, "web")
+	none := swarmops.HealthOf(map[string]containerUsage{}, cands, "web")
 	if got := healthColor(full, none); got != full {
 		t.Errorf("no verdicts = %v, want the count's own colour", got)
 	}
@@ -256,9 +256,9 @@ func TestHealthColorContradictsTheCount(t *testing.T) {
 func TestHealthBadges(t *testing.T) {
 	cands := healthCands()
 	usage := map[string]containerUsage{
-		"c1": {Health: healthUnhealthy}, "c2": {Health: healthStarting}, "c3": {Health: healthHealthy},
+		"c1": {Health: swarmops.HealthUnhealthy}, "c2": {Health: swarmops.HealthStarting}, "c3": {Health: swarmops.HealthHealthy},
 	}
-	h := healthOf(usage, cands, "web")
+	h := swarmops.HealthOf(usage, cands, "web")
 	if h.Unhealthy != 1 || h.Starting != 1 || h.Healthy != 1 || h.Total() != 3 {
 		t.Fatalf("counts wrong: %+v", h)
 	}
@@ -273,24 +273,24 @@ func TestHealthBadges(t *testing.T) {
 	}
 
 	// Starting alone is worth showing, but not in red.
-	starting := healthBadge(serviceHealth{Starting: 2, Healthy: 1})
+	starting := healthBadge(swarmops.ServiceHealth{Starting: 2, Healthy: 1})
 	if !strings.Contains(starting, "2 starting") || strings.Contains(starting, "red") {
 		t.Errorf("starting badge = %q", starting)
 	}
 
 	// A healthy service gets no badge — it must not become wallpaper.
-	if got := healthBadge(serviceHealth{Healthy: 3}); got != "" {
+	if got := healthBadge(swarmops.ServiceHealth{Healthy: 3}); got != "" {
 		t.Errorf("healthy service badge = %q, want none", got)
 	}
-	if got := healthBadge(serviceHealth{Unknown: 3}); got != "" {
+	if got := healthBadge(swarmops.ServiceHealth{Unknown: 3}); got != "" {
 		t.Errorf("a service with no healthchecks must not be badged, got %q", got)
 	}
 
 	// Per-container markers follow the same rule.
-	if got := containerHealthBadge(healthUnhealthy); !strings.Contains(got, "unhealthy") {
+	if got := containerHealthBadge(swarmops.HealthUnhealthy); !strings.Contains(got, "unhealthy") {
 		t.Errorf("container badge = %q", got)
 	}
-	for _, quiet := range []string{healthHealthy, "", "bogus"} {
+	for _, quiet := range []string{swarmops.HealthHealthy, "", "bogus"} {
 		if got := containerHealthBadge(quiet); got != "" {
 			t.Errorf("containerHealthBadge(%q) = %q, want none", quiet, got)
 		}
@@ -306,9 +306,9 @@ func TestStackHealthRollsUp(t *testing.T) {
 			usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
 		},
 		usage: map[string]containerUsage{
-			"c1": {Health: healthUnhealthy},
-			"c2": {Health: healthHealthy},
-			"c3": {Health: healthUnhealthy},
+			"c1": {Health: swarmops.HealthUnhealthy},
+			"c2": {Health: swarmops.HealthHealthy},
+			"c3": {Health: swarmops.HealthUnhealthy},
 		},
 	}}
 	svcs := []resolve.Service{{Name: "web"}, {Name: "api"}}
@@ -343,7 +343,7 @@ func TestStatsTableCellsCarryTheirUnits(t *testing.T) {
 		"c1": {
 			CPUReady: true, CPUPercent: 180, CPULimitCores: 2, CPURatio: 0.9, CPULimited: true,
 			MemBytes: 900 << 20, MemLimitBytes: 1 << 30, MemRatio: 0.88, MemLimited: true,
-			Health: healthHealthy,
+			Health: swarmops.HealthHealthy,
 		},
 		// c2 has no reading at all.
 	}
@@ -384,11 +384,11 @@ func TestStatsTableCellsCarryTheirUnits(t *testing.T) {
 // "No healthcheck" is not the same as healthy and must not render as a blank.
 func TestHealthCell(t *testing.T) {
 	for verdict, want := range map[string]string{
-		healthHealthy:   "healthy",
-		healthUnhealthy: "unhealthy",
-		healthStarting:  "starting",
-		"":              "none",
-		"bogus":         "none",
+		swarmops.HealthHealthy:   "healthy",
+		swarmops.HealthUnhealthy: "unhealthy",
+		swarmops.HealthStarting:  "starting",
+		"":                       "none",
+		"bogus":                  "none",
 	} {
 		if got := healthCell(verdict); got != want {
 			t.Errorf("healthCell(%q) = %q, want %q", verdict, got, want)
@@ -414,17 +414,6 @@ func TestStatsTableAlignment(t *testing.T) {
 	}
 	if r2 != strings.TrimRight(r2, " ") {
 		t.Errorf("row has trailing padding: %q", r2)
-	}
-}
-
-// A CPU reading with no known denominator must not invent one.
-func TestFormatCPUUsageWithoutALimit(t *testing.T) {
-	got := formatCPUUsage(containerUsage{CPUReady: true, CPUPercent: 250})
-	if strings.Contains(got, "/") || strings.Contains(got, "%") {
-		t.Errorf("cpu = %q, want just the cores when nothing bounds them", got)
-	}
-	if !strings.Contains(got, "2.50 cores") {
-		t.Errorf("cpu = %q, want the measured cores", got)
 	}
 }
 

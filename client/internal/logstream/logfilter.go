@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package logstream
 
 import (
 	"bytes"
@@ -15,20 +15,20 @@ import (
 	"swarmexec/client/internal/logfmt"
 )
 
-// logFormatAuto reports whether a configured format name asks for content
+// FormatAuto reports whether a configured format name asks for content
 // detection rather than naming a format. It is answered separately from
-// buildLogFilter because what "auto" resolves to is not known until lines have
+// BuildFilter because what "auto" resolves to is not known until lines have
 // arrived: until then the stream is parsed by the default, exactly as before.
-func logFormatAuto(name string) bool {
+func FormatAuto(name string) bool {
 	return strings.EqualFold(strings.TrimSpace(name), logfmt.AutoName)
 }
 
-// buildLogFilter resolves a format name, min-level and grep into a Format and
+// BuildFilter resolves a format name, min-level and grep into a Format and
 // Filter, validating each. An empty formatName — or "auto", whose verdict comes
 // later from the content — yields the default format.
-func buildLogFilter(formatName, minLevel, grep string) (logfmt.Format, logfmt.Filter, error) {
+func BuildFilter(formatName, minLevel, grep string) (logfmt.Format, logfmt.Filter, error) {
 	format := logfmt.DefaultFormat()
-	if formatName != "" && !logFormatAuto(formatName) {
+	if formatName != "" && !FormatAuto(formatName) {
 		f, ok := logfmt.ByName(formatName)
 		if !ok {
 			return nil, logfmt.Filter{}, fmt.Errorf("unknown log format %q (want: auto, classic, json, logfmt, gelf, raw)", formatName)
@@ -53,13 +53,13 @@ func buildLogFilter(formatName, minLevel, grep string) (logfmt.Format, logfmt.Fi
 	return format, filter, nil
 }
 
-// filteringActive reports whether the format/filter would change the output, so
+// FilteringActive reports whether the format/filter would change the output, so
 // the caller can skip wrapping the writer when it would be a no-op.
-func filteringActive(format logfmt.Format, filter logfmt.Filter) bool {
+func FilteringActive(format logfmt.Format, filter logfmt.Filter) bool {
 	return format.Structured() || filter.MinLevel != logfmt.LevelUnknown || filter.Grep != nil
 }
 
-// filterWriter parses each complete line it receives with a log Format, drops
+// FilterWriter parses each complete line it receives with a log Format, drops
 // the lines the Filter rejects, and writes the rendered survivors to dst. It
 // buffers partial lines across writes. Shared by the `logs` command and the TUI
 // log view.
@@ -81,7 +81,7 @@ const (
 // waiting a real second for it.
 var autoHoldFor = time.Second
 
-type filterWriter struct {
+type FilterWriter struct {
 	dst    io.Writer
 	format logfmt.Format
 	filter logfmt.Filter
@@ -97,19 +97,19 @@ type filterWriter struct {
 	timer *time.Timer
 }
 
-// detectFormat arms content detection: the writer holds its first lines, picks
+// DetectFormat arms content detection: the writer holds its first lines, picks
 // the format they are in, and emits everything through it.
-func (w *filterWriter) detectFormat() {
+func (w *FilterWriter) DetectFormat() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.auto = true
 }
 
-func newFilterWriter(dst io.Writer, f logfmt.Format, flt logfmt.Filter, render func(logfmt.Format, logfmt.Entry) string) *filterWriter {
-	return &filterWriter{dst: dst, format: f, filter: flt, render: render}
+func NewFilterWriter(dst io.Writer, f logfmt.Format, flt logfmt.Filter, render func(logfmt.Format, logfmt.Entry) string) *FilterWriter {
+	return &FilterWriter{dst: dst, format: f, filter: flt, render: render}
 }
 
-func (w *filterWriter) Write(p []byte) (int, error) {
+func (w *FilterWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.buf = append(w.buf, p...)
@@ -130,7 +130,7 @@ func (w *filterWriter) Write(p []byte) (int, error) {
 // Flush renders any buffered partial line (a final line without a trailing
 // newline) and releases anything detection is still holding. Call it once after
 // the stream ends.
-func (w *filterWriter) Flush() {
+func (w *FilterWriter) Flush() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if len(w.buf) > 0 {
@@ -145,7 +145,7 @@ func (w *filterWriter) Flush() {
 
 // emit renders one line, or holds it while the format is still being detected.
 // Caller holds mu.
-func (w *filterWriter) emit(line string) error {
+func (w *FilterWriter) emit(line string) error {
 	if w.auto {
 		w.held = append(w.held, line)
 		if _, ok := logfmt.Detect(w.held); ok || len(w.held) >= autoHoldLines {
@@ -162,7 +162,7 @@ func (w *filterWriter) emit(line string) error {
 // decideLocked settles the format from whatever has arrived and releases the
 // held lines. An undecided sample keeps the default, which is what the stream
 // would have been parsed as anyway. Caller holds mu.
-func (w *filterWriter) decideLocked() error {
+func (w *FilterWriter) decideLocked() error {
 	f, _ := logfmt.Detect(w.held)
 	w.format = f
 	w.auto = false
@@ -180,7 +180,7 @@ func (w *filterWriter) decideLocked() error {
 	return nil
 }
 
-func (w *filterWriter) decideAfterWait() {
+func (w *FilterWriter) decideAfterWait() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.auto {
@@ -188,7 +188,7 @@ func (w *filterWriter) decideAfterWait() {
 	}
 }
 
-func (w *filterWriter) write(line string) error {
+func (w *FilterWriter) write(line string) error {
 	e := w.format.Parse(line)
 	if !w.filter.Match(e) {
 		return nil
@@ -197,10 +197,10 @@ func (w *filterWriter) write(line string) error {
 	return err
 }
 
-// renderPlain is the pipe-safe renderer: a structured format collapses to
+// RenderPlain is the pipe-safe renderer: a structured format collapses to
 // "LEVEL  message" (or just the message when no level was detected); a plain
 // format keeps the raw line unchanged.
-func renderPlain(f logfmt.Format, e logfmt.Entry) string {
+func RenderPlain(f logfmt.Format, e logfmt.Entry) string {
 	if f.Structured() {
 		if l := e.Level.String(); l != "" {
 			return l + "  " + e.Message
