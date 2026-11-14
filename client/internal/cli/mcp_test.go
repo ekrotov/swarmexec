@@ -320,7 +320,7 @@ func TestMCPNeverRevealsLabelsOrHiddenServices(t *testing.T) {
 	if got := results["stack_diff "+mustJSON(map[string]any{"path": "/etc/passwd"})]; !got.isError {
 		t.Errorf("stack_diff read a file that is not a stack file: %q", got.text)
 	}
-	if u := fx.swarm.unknown; len(u) > 0 {
+	if u := fx.swarm.Unknown; len(u) > 0 {
 		t.Logf("fake API was asked for paths it does not serve: %v", u)
 	}
 }

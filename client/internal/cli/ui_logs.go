@@ -15,6 +15,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/logfmt"
+	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -24,11 +25,11 @@ import (
 // from the config.
 func (u *ui) logDefaults() (logfmt.Format, logfmt.Filter, bool) {
 	cfg := u.cfg
-	format, filter, err := buildLogFilter(cfg.Logs.Format, cfg.Logs.MinLevel, "")
+	format, filter, err := logstream.BuildFilter(cfg.Logs.Format, cfg.Logs.MinLevel, "")
 	if err != nil {
 		return logfmt.DefaultFormat(), logfmt.Filter{}, false
 	}
-	return format, filter, logFormatAuto(cfg.Logs.Format)
+	return format, filter, logstream.FormatAuto(cfg.Logs.Format)
 }
 
 // newLogView builds the viewer both log views share: format+filter from the
@@ -179,9 +180,9 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	wake := make(chan struct{}, 1)
 	go watchContainerEvents(lctx, ac, ep, f.connectTimeout, lv.addNote, wake)
 	go func() {
-		lerr := streamServiceLogs(lctx, logRun{ac: ac, r: r,
-			params: logsParams{follow: true, tail: 1000, connectTimeout: f.connectTimeout, wake: wake},
-			stdout: &logIngest{v: lv}, stderr: &logIngest{v: lv, stderr: true}}, target, ep, lv.addNote)
+		lerr := logstream.Follow(lctx, logstream.Run{Agents: ac, Resolver: r,
+			Params: logstream.Params{Follow: true, Tail: 1000, ConnectTimeout: f.connectTimeout, Wake: wake},
+			Stdout: &logIngest{v: lv}, Stderr: &logIngest{v: lv, stderr: true}}, target, ep, lv.addNote)
 		if lerr != nil && lctx.Err() == nil {
 			app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
 		}
@@ -247,14 +248,14 @@ func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, bySe
 		tail := uint32(200)
 		if byService {
 			// The same names the CLI prints: svc.slot, svc@node.
-			prefix = "[" + sourceFromCandidate(c).label + "] "
+			prefix = "[" + logstream.SourceFromCandidate(c).Label + "] "
 			tail = 50
 		}
 		go func(ep resolve.Endpoint, target resolve.FollowTarget, prefix string) {
-			lerr := streamServiceLogs(lctx, logRun{ac: ac, r: r,
-				params: logsParams{follow: true, tail: tail, connectTimeout: f.connectTimeout},
-				stdout: &logIngest{v: lv, prefix: prefix},
-				stderr: &logIngest{v: lv, prefix: prefix, stderr: true}},
+			lerr := logstream.Follow(lctx, logstream.Run{Agents: ac, Resolver: r,
+				Params: logstream.Params{Follow: true, Tail: tail, ConnectTimeout: f.connectTimeout},
+				Stdout: &logIngest{v: lv, prefix: prefix},
+				Stderr: &logIngest{v: lv, prefix: prefix, stderr: true}},
 				target, ep, func(msg string) { lv.addNote(prefix + msg) })
 			if lerr != nil && lctx.Err() == nil {
 				app.QueueUpdateDraw(func() {

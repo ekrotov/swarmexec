@@ -19,6 +19,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
@@ -519,20 +520,20 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 		}
 	}
 	formatName := firstNonEmpty(in.Format, "auto")
-	format, filter, err := buildLogFilter(formatName, in.MinLevel, in.Grep)
+	format, filter, err := logstream.BuildFilter(formatName, in.MinLevel, in.Grep)
 	if err != nil {
 		return "", err
 	}
-	auto := logFormatAuto(formatName)
+	auto := logstream.FormatAuto(formatName)
 
 	cands, err := c.r.Candidates(ctx, ms.svc.Spec.Name)
 	if err != nil {
 		return "", err
 	}
-	var sources []logSource
+	var sources []logstream.Source
 	for _, cd := range cands {
 		if in.Slot == 0 || cd.Slot == in.Slot {
-			sources = append(sources, sourceFromCandidate(cd))
+			sources = append(sources, logstream.SourceFromCandidate(cd))
 		}
 	}
 	if len(sources) == 0 {
@@ -553,17 +554,17 @@ func (s *mcpServer) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) 
 	// the streams stop there.
 	buf := &capWriter{max: mcpLogMaxBytes, onFull: cancel}
 	wrap := func(dst io.Writer) (io.Writer, func()) {
-		if !auto && !filteringActive(format, filter) {
+		if !auto && !logstream.FilteringActive(format, filter) {
 			return dst, func() {}
 		}
-		fw := newFilterWriter(dst, format, filter, renderPlain)
+		fw := logstream.NewFilterWriter(dst, format, filter, logstream.RenderPlain)
 		if auto {
-			fw.detectFormat()
+			fw.DetectFormat()
 		}
 		return fw, fw.Flush
 	}
-	params := logsParams{tail: uint32(tail), since: since, connectTimeout: s.connectTimeout}
-	serr := streamManyLogs(lctx, logRun{ac: ac, r: c.r, params: params, stdout: buf, stderr: buf}, sources, false, wrap)
+	params := logstream.Params{Tail: uint32(tail), Since: since, ConnectTimeout: s.connectTimeout}
+	serr := logstream.StreamMany(lctx, logstream.Run{Agents: ac, Resolver: c.r, Params: params, Stdout: buf, Stderr: buf}, sources, false, wrap)
 
 	out := note + buf.String()
 	switch {

@@ -1,20 +1,18 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package logstream
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 
 	"swarmexec/client/internal/resolve"
-	cterm "swarmexec/client/internal/term"
 )
 
 // One `logs` invocation can follow several sources at once: several targets,
@@ -23,37 +21,37 @@ import (
 // differently — and they meet only at a shared sink, one whole line at a time,
 // each line carrying the name of the source it came from.
 
-// logSource is one container to stream, and what to follow when it is replaced.
-type logSource struct {
-	label  string // what the prefix says: svc.slot, svc@node, or the raw target
-	ep     resolve.Endpoint
-	follow resolve.FollowTarget
+// Source is one container to stream, and what to follow when it is replaced.
+type Source struct {
+	Label    string // what the prefix says: svc.slot, svc@node, or the raw target
+	Endpoint resolve.Endpoint
+	Target   resolve.FollowTarget
 }
 
-func sourceFromCandidate(c resolve.Candidate) logSource {
+func SourceFromCandidate(c resolve.Candidate) Source {
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	if c.Slot > 0 {
-		return logSource{label: fmt.Sprintf("%s.%d", c.Service, c.Slot), ep: ep,
-			follow: resolve.FollowTarget{Service: c.Service, Slot: c.Slot}}
+		return Source{Label: fmt.Sprintf("%s.%d", c.Service, c.Slot), Endpoint: ep,
+			Target: resolve.FollowTarget{Service: c.Service, Slot: c.Slot}}
 	}
 	// A global service has no slots; one task per node is its identity.
-	return logSource{label: c.Service + "@" + orDash(c.NodeName), ep: ep,
-		follow: resolve.FollowTarget{Service: c.Service, NodeID: c.NodeID}}
+	return Source{Label: c.Service + "@" + orDash(c.NodeName), Endpoint: ep,
+		Target: resolve.FollowTarget{Service: c.Service, NodeID: c.NodeID}}
 }
 
-// logResolver is the part of resolve.Resolver that expanding needs.
-type logResolver interface {
+// Resolver is the part of resolve.Resolver that expanding needs.
+type Resolver interface {
 	Services(ctx context.Context) ([]resolve.Service, error)
 	Candidates(ctx context.Context, service string) ([]resolve.Candidate, error)
 	Resolve(ctx context.Context, req resolve.Request) (*resolve.Endpoint, error)
 }
 
-// expandLogSources turns targets and an optional stack into sources. A service
+// ExpandSources turns targets and an optional stack into sources. A service
 // name means every running replica of it; anything else (service.slot, a task
 // or container id) is resolved as one container. notes are things the operator
 // should hear about but that do not stop the others — a service with nothing
 // running is the normal case in a stack with a scaled-down worker.
-func expandLogSources(ctx context.Context, r logResolver, targets []string, stack, nodeHint string) ([]logSource, []string, error) {
+func ExpandSources(ctx context.Context, r Resolver, targets []string, stack, nodeHint string) ([]Source, []string, error) {
 	var services []string
 	if stack != "" {
 		svcs, err := r.Services(ctx)
@@ -71,12 +69,12 @@ func expandLogSources(ctx context.Context, r logResolver, targets []string, stac
 		sort.Strings(services)
 	}
 
-	var out []logSource
+	var out []Source
 	var notes []string
 	seen := map[string]bool{}
-	add := func(s logSource) {
-		if !seen[s.ep.ContainerID] {
-			seen[s.ep.ContainerID] = true
+	add := func(s Source) {
+		if !seen[s.Endpoint.ContainerID] {
+			seen[s.Endpoint.ContainerID] = true
 			out = append(out, s)
 		}
 	}
@@ -95,7 +93,7 @@ func expandLogSources(ctx context.Context, r logResolver, targets []string, stac
 			return cands[i].NodeName < cands[j].NodeName
 		})
 		for _, c := range cands {
-			add(sourceFromCandidate(c))
+			add(SourceFromCandidate(c))
 		}
 		return nil
 	}
@@ -116,7 +114,7 @@ func expandLogSources(ctx context.Context, r logResolver, targets []string, stac
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", t, err)
 		}
-		add(logSource{label: t, ep: *ep, follow: followTargetFromTarget(t)})
+		add(Source{Label: t, Endpoint: *ep, Target: FollowTargetOf(t)})
 	}
 	if len(out) == 0 {
 		return nil, notes, fmt.Errorf("nothing to stream: %s", strings.Join(notes, "; "))
@@ -126,7 +124,7 @@ func expandLogSources(ctx context.Context, r logResolver, targets []string, stac
 
 // isServiceName reports whether t names a service exactly. Candidates errors
 // for anything that is not one, which is the cheapest way to ask.
-func isServiceName(ctx context.Context, r logResolver, t string) bool {
+func isServiceName(ctx context.Context, r Resolver, t string) bool {
 	_, err := r.Candidates(ctx, t)
 	return err == nil
 }
@@ -197,40 +195,33 @@ var prefixColors = []string{"36", "33", "32", "35", "34", "31"}
 
 // sourcePrefixes renders "label | " for every source, padded to one width so
 // the messages line up, coloured when color is true.
-func sourcePrefixes(sources []logSource, color bool) []string {
+func sourcePrefixes(sources []Source, color bool) []string {
 	width := 0
 	for _, s := range sources {
-		width = max(width, len(s.label))
+		width = max(width, len(s.Label))
 	}
 	out := make([]string, len(sources))
 	for i, s := range sources {
-		p := fmt.Sprintf("%-*s | ", width, s.label)
+		p := fmt.Sprintf("%-*s | ", width, s.Label)
 		if color {
-			p = "\x1b[" + prefixColors[i%len(prefixColors)] + "m" + fmt.Sprintf("%-*s", width, s.label) + "\x1b[0m | "
+			p = "\x1b[" + prefixColors[i%len(prefixColors)] + "m" + fmt.Sprintf("%-*s", width, s.Label) + "\x1b[0m | "
 		}
 		out[i] = p
 	}
 	return out
 }
 
-// colorOutput reports whether prefixes should be coloured: only on a terminal,
-// and never when NO_COLOR is set (https://no-color.org).
-func colorOutput(f *os.File) bool {
-	_, noColor := os.LookupEnv("NO_COLOR")
-	return !noColor && cterm.IsTerminal(f.Fd())
-}
-
-// logFilterFactory builds one source's filter chain in front of dst, or returns
+// FilterFactory builds one source's filter chain in front of dst, or returns
 // dst unchanged when no filtering is asked for.
-type logFilterFactory func(dst io.Writer) (io.Writer, func())
+type FilterFactory func(dst io.Writer) (io.Writer, func())
 
-// streamManyLogs follows every source concurrently into the run's stdout and
-// stderr, each line prefixed with its source (coloured when color is set) and
+// StreamMany follows every source concurrently into the run's stdout and
+// Stderr, each line prefixed with its source (coloured when color is set) and
 // passed through the filter chain wrap builds. A source that fails is reported
 // in its own lines and does not stop the others; the returned error says how
 // many failed.
-func streamManyLogs(ctx context.Context, run logRun, sources []logSource, color bool, wrap logFilterFactory) error {
-	outSink, errSink := newLineSinks(run.stdout, run.stderr)
+func StreamMany(ctx context.Context, run Run, sources []Source, color bool, wrap FilterFactory) error {
+	outSink, errSink := newLineSinks(run.Stdout, run.Stderr)
 	prefixes := sourcePrefixes(sources, color)
 
 	var wg sync.WaitGroup
@@ -247,8 +238,8 @@ func streamManyLogs(ctx context.Context, run logRun, sources []logSource, color 
 		go func() {
 			defer wg.Done()
 			one := run
-			one.stdout, one.stderr = so, se
-			err := streamServiceLogs(ctx, one, src.follow, src.ep, notify)
+			one.Stdout, one.Stderr = so, se
+			err := Follow(ctx, one, src.Target, src.Endpoint, notify)
 			flushOut()
 			flushErr()
 			po.Flush()
@@ -256,7 +247,7 @@ func streamManyLogs(ctx context.Context, run logRun, sources []logSource, color 
 			if err != nil {
 				notify("── stream ended: " + err.Error() + " ──")
 				mu.Lock()
-				failed = append(failed, src.label)
+				failed = append(failed, src.Label)
 				mu.Unlock()
 			}
 		}()

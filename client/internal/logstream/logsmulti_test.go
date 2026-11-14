@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package logstream
 
 import (
 	"bytes"
@@ -109,7 +109,7 @@ func TestPrefixWriterFlushesATrailingPartialLine(t *testing.T) {
 }
 
 func TestSourcePrefixesAlignAndColourOnlyWhenAsked(t *testing.T) {
-	srcs := []logSource{{label: "api.1"}, {label: "worker.12"}}
+	srcs := []Source{{Label: "api.1"}, {Label: "worker.12"}}
 	plain := sourcePrefixes(srcs, false)
 	if plain[0] != "api.1     | " || plain[1] != "worker.12 | " {
 		t.Errorf("plain prefixes not aligned: %q", plain)
@@ -169,16 +169,16 @@ func shopCluster() *fakeLogResolver {
 	}
 }
 
-func labels(srcs []logSource) []string {
+func labels(srcs []Source) []string {
 	out := make([]string, len(srcs))
 	for i, s := range srcs {
-		out[i] = s.label
+		out[i] = s.Label
 	}
 	return out
 }
 
 func TestExpandLogSourcesStack(t *testing.T) {
-	srcs, notes, err := expandLogSources(context.Background(), shopCluster(), nil, "shop", "")
+	srcs, notes, err := ExpandSources(context.Background(), shopCluster(), nil, "shop", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,15 +189,15 @@ func TestExpandLogSourcesStack(t *testing.T) {
 	if len(notes) != 1 || !strings.Contains(notes[0], "shop_worker") {
 		t.Errorf("the scaled-down worker should be named, got %v", notes)
 	}
-	if srcs[2].follow != (resolve.FollowTarget{Service: "shop_web", Slot: 2}) {
-		t.Errorf("a replica follows its slot, got %+v", srcs[2].follow)
+	if srcs[2].Target != (resolve.FollowTarget{Service: "shop_web", Slot: 2}) {
+		t.Errorf("a replica follows its slot, got %+v", srcs[2].Target)
 	}
 }
 
 func TestExpandLogSourcesMixedTargets(t *testing.T) {
 	// A service, a pinned slot that repeats one of its replicas, a global
 	// service and a raw container id.
-	srcs, _, err := expandLogSources(context.Background(), shopCluster(),
+	srcs, _, err := ExpandSources(context.Background(), shopCluster(),
 		[]string{"shop_web", "shop_web.1", "agent", "abc123"}, "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -205,21 +205,21 @@ func TestExpandLogSourcesMixedTargets(t *testing.T) {
 	if got := strings.Join(labels(srcs), " "); got != "shop_web.1 shop_web.2 agent@n3 abc123" {
 		t.Errorf("sources = %s (the repeated container must appear once)", got)
 	}
-	if srcs[2].follow != (resolve.FollowTarget{Service: "agent", NodeID: "id3"}) {
-		t.Errorf("a global task follows its node, got %+v", srcs[2].follow)
+	if srcs[2].Target != (resolve.FollowTarget{Service: "agent", NodeID: "id3"}) {
+		t.Errorf("a global task follows its node, got %+v", srcs[2].Target)
 	}
 }
 
 func TestExpandLogSourcesErrors(t *testing.T) {
-	if _, _, err := expandLogSources(context.Background(), shopCluster(), nil, "nope", ""); err == nil ||
+	if _, _, err := ExpandSources(context.Background(), shopCluster(), nil, "nope", ""); err == nil ||
 		!strings.Contains(err.Error(), `no services in stack "nope"`) {
 		t.Errorf("unknown stack: %v", err)
 	}
-	if _, _, err := expandLogSources(context.Background(), shopCluster(), []string{"missing"}, "", ""); err == nil ||
+	if _, _, err := ExpandSources(context.Background(), shopCluster(), []string{"missing"}, "", ""); err == nil ||
 		!strings.Contains(err.Error(), "missing") {
 		t.Errorf("an unresolvable target must be named: %v", err)
 	}
-	if _, _, err := expandLogSources(context.Background(), shopCluster(), []string{"shop_worker"}, "", ""); err == nil ||
+	if _, _, err := ExpandSources(context.Background(), shopCluster(), []string{"shop_worker"}, "", ""); err == nil ||
 		!strings.Contains(err.Error(), "nothing to stream") {
 		t.Errorf("only empty services: %v", err)
 	}
