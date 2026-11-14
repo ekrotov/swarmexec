@@ -331,8 +331,13 @@ func TestSamplerReadsCapacityOnce(t *testing.T) {
 }
 
 // Run samples only while wanted and returns when its context ends.
+//
+// The fake advances its CPU counters: with the last frame merely repeating,
+// only the second pass had a CPU delta, so the ready state lasted one 1ms tick
+// and a loaded (-race) run polling every millisecond regularly missed it.
 func TestSamplerRunSamplesWhileWanted(t *testing.T) {
 	d := statsFake(0, 0)
+	d.advance = true
 	c := New(d, discardLog(), time.Millisecond)
 	c.Get() // a reader arms it
 	ctx, cancel := context.WithCancel(context.Background())
