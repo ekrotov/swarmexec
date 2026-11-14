@@ -596,7 +596,9 @@ func (u *ui) openSecretsEditor(svcName string, back tview.Primitive, after func(
 				}
 				return "", fmt.Errorf("unknown secret %q", s)
 			},
-			onApply: func(ctx context.Context, list []string) error { return swarmops.SetServiceSecrets(ctx, dcli, svcName, list) },
+			onApply: func(ctx context.Context, list []string) error {
+				return swarmops.SetServiceSecrets(ctx, dcli, svcName, list)
+			},
 			suggest: func(text string) []string {
 				text = strings.ToLower(strings.TrimSpace(text))
 				var out []string
