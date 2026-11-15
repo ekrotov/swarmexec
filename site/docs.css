@@ -1,6 +1,6 @@
 /* The docs (docs.html, docs/*.html), the recipes and the comparison in the landing page's look:
    the same paper and ink, light and dark, Archivo for text and headings,
-   JetBrains Mono for code, and the same top bar. Fonts come from fonts/fonts.css.
+   JetBrains Mono for code. The top bar is nav.css. Fonts come from fonts/fonts.css.
    This file is the only place the look lives. */
 
 :root {
@@ -76,28 +76,7 @@ a { color: var(--aqua); text-underline-offset: 3px; text-decoration-thickness: 1
 a:hover { text-decoration-thickness: 2px; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
 
-.skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: var(--paper); padding: .5rem .8rem; z-index: 99; }
-.skip:focus { left: 8px; }
-
-/* ---------- top bar, as on the landing page ---------- */
-.rail {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .6rem var(--gutter);
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--rule);
-}
-.mark { display: inline-flex; align-items: center; gap: .5rem; color: var(--ink); text-decoration: none; font-family: var(--mono); font-weight: 700; font-size: .95rem; }
-.mark svg { color: var(--aqua); }
-.rail-nav { display: flex; gap: 1.1rem; align-items: center; font-size: .92rem; }
-.rail-nav > a { color: var(--ink-2); text-decoration: none; }
-.rail-nav > a:hover { color: var(--ink); text-decoration: underline; }
-/* GitHub mark (Octicons mark-github, MIT) beside the "GitHub" link text; follows the link colour. */
-.gh { white-space: nowrap; }
-.gh-icon { width: 1em; height: 1em; vertical-align: -.125em; margin-right: .35em; fill: currentColor; }
-/* Below ~340px the docs bar (Docs, Examples, GitHub) only fits as text, as before. */
-@media (max-width: 339px) { .gh-icon { display: none; } }
+/* The top bar and the skip link are styled by nav.css (every page). */
 
 /* ---------- page ---------- */
 main { width: 100%; max-width: 920px; margin: 0 auto; padding: 2.5rem var(--gutter) 4rem; }
@@ -219,6 +198,4 @@ footer code { font-size: .84em; }
 
 @media (max-width: 620px) {
   .toc ol { columns: 1; }
-  .rail-nav { gap: .7rem; }
-  .rail-nav > .rail-link { display: none; }
 }

@@ -31,10 +31,27 @@ its container is next recreated. The other links on the page go to the GitHub
 repository (source, releases, issues), the GitLab original it is mirrored from,
 and the agent image on Docker Hub (`logleio/swarmexec-agent`).
 
-The build bakes the version into `index.html`, `docs.html`, `docs/*.html`, `examples.html` and `compare.html`
-(the `__VERSION__` placeholder, also used as `?v=` on stylesheets and scripts),
+The build bakes the version into every page (the `__VERSION__` placeholder,
+also used as `?v=` on stylesheets and scripts),
 stamps the build date into `sitemap.xml` (`<lastmod>`), and fetches the tag list
 from the GitLab API into `releases.json` for the release-notes page.
+
+## The top bar
+
+Every page has the same top bar: the swarmexec mark (home), Docs, Examples,
+Compare, Releases, GitHub and the Install button. The markup lives once, in
+[`partials/nav.html`](partials/nav.html); each page carries a verbatim copy in
+which only the item for the page itself has `aria-current` (`page`; `true` on
+the docs topic pages, which are inside Docs). It is styled only by `nav.css`,
+which every page links. To change it, edit the partial (and `nav.css`), then
+
+```sh
+sh site/nav.sh write   # copy the partial into every page
+sh site/nav.sh check   # what CI runs (site-check job): fails on any difference
+```
+
+A new page goes into the table at the top of `nav.sh`; `check` fails for a
+served page that is missing from it.
 
 ## How a change gets live
 

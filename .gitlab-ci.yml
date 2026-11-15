@@ -552,6 +552,21 @@ agent-image:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   # dev: :<sha> + :main
 
 # ----------------------------------------------------------------------------
+# site-check — every page of the site has the same top bar: the copy in each
+# page must equal site/partials/nav.html (only the current page's aria-current
+# differs) and every page must load nav.css. site/nav.sh is POSIX sh, so the
+# plain alpine image suffices. No rules: it takes seconds, and site-image
+# needs it, which a rules-filtered job could not offer on every pipeline.
+# ----------------------------------------------------------------------------
+site-check:
+  stage: test
+  image: $ALPINE_IMAGE
+  interruptible: true # no side effects
+  needs: []
+  script:
+    - sh site/nav.sh check
+
+# ----------------------------------------------------------------------------
 # site-image — build the swarm-exec.cloud-surfers.net landing page image (nginx). The
 # deployed service tracks :latest (Watchtower auto-updates it). :latest is
 # refreshed both on a release (version baked in) and when site/ changes on the
@@ -561,7 +576,10 @@ agent-image:
 site-image:
   stage: image
   interruptible: false # pushes to a registry: never stop half-way
-  needs: !reference [.release-gate, needs]
+  needs:
+    - !reference [.release-gate, needs]
+    - job: site-check
+      artifacts: false
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: [""]
