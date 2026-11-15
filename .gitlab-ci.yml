@@ -34,17 +34,25 @@ variables:
   # pin, not alpine:3: a new Alpine minor can change those tools under seven
   # release jobs, and runners keep floating tags stale anyway (see GO_IMAGE).
   ALPINE_IMAGE: "alpine:3.24"
+  # GOPATH stays in the project dir: its bin/ holds the pinned tools, which
+  # the GitLab cache keeps (tools, below).
   GOPATH: "$CI_PROJECT_DIR/.gocache"
-  # Go's build cache, inside the project dir so the GitLab cache can keep it
-  # (the default, /root/.cache/go-build, died with every job container, and
-  # ~80% of Go job time was recompiling unchanged code). STATICCHECK_CACHE is
-  # staticcheck's analysis cache, kept by the lint job.
-  GOCACHE: "$CI_PROJECT_DIR/.gocache/build"
+  # Go's build and module caches live on Docker volumes that every runner host
+  # mounts into every job (runner config.toml, [runners.docker] volumes:
+  # go-build-cache:/go-cache/build, go-mod-cache:/go-cache/mod). One copy per
+  # host, shared by all its slots, nothing zipped or unzipped. Go's caches are
+  # safe for concurrent go processes. If a host lacks the mount, Go creates the
+  # directory inside the container and the job runs cold (see
+  # .go-volume-check). The default, /root/.cache/go-build, died with every job
+  # container, and ~80% of Go job time was recompiling unchanged code.
+  GOCACHE: "/go-cache/build"
+  GOMODCACHE: "/go-cache/mod"
+  # staticcheck's analysis cache, kept by the lint job's GitLab cache.
   STATICCHECK_CACHE: "$CI_PROJECT_DIR/.gocache/staticcheck"
-  # Cache archives: fastzip with the fastest compression. The caches are Go
-  # module sources and binaries; zipping them harder costs more CPU time on
-  # these shared, CPU-bound runners than it saves in transfer (the caches are
-  # local to each runner host, there is no remote cache server).
+  # Cache archives: fastzip with the fastest compression. Zipping harder
+  # costs more CPU time on these shared, CPU-bound runners than it saves in
+  # transfer (the caches are local to each runner host, there is no remote
+  # cache server).
   FF_USE_FASTZIP: "true"
   CACHE_COMPRESSION_LEVEL: "fastest"
 
@@ -76,7 +84,12 @@ workflow:
     on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # A tag builds from scratch, without the shared Go cache volumes (see
+    # "Caches" below): project-local, empty GOCACHE/GOMODCACHE.
     - if: $CI_COMMIT_TAG
+      variables:
+        GOCACHE: "$CI_PROJECT_DIR/.gocache/build"
+        GOMODCACHE: "$CI_PROJECT_DIR/.gocache/mod"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
         - site/**/*
@@ -103,45 +116,47 @@ default:
   if: '$CI_COMMIT_TAG =~ /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/'
 
 # ----------------------------------------------------------------------------
-# Caches. Measured on this runner fleet (MR !279): the GitLab cache is NOT
-# shared, not even per host — without a cache server each runner keeps it in a
-# Docker volume per concurrent slot (runner-...-concurrent-<n>-cache), so there
-# are ~10 independent copies (3 hosts, ~10 slots). A cache only a designated
-# writer job pushes therefore stays cold in every slot that writer never ran
-# in, which on 10 slots is most of them. So every job that uses a cache also
-# pushes it (pull-push), and the caches are shaped to be cheap to re-zip:
+# Caches.
 #
-#   mod     Go's module DOWNLOAD cache ($GOPATH/pkg/mod/cache/download: the
-#           module zips, ~700 files) keyed on go.sum — not the extracted tree
-#           (~25-60k files), whose zipping cost every job 15-20 s. go
-#           extracts what a build needs from the zips locally, offline.
+# Go's build cache (GOCACHE) and module cache (GOMODCACHE) are NOT GitLab
+# caches: every runner host mounts the Docker volumes go-build-cache and
+# go-mod-cache at /go-cache/build and /go-cache/mod into every job (runner
+# config.toml, [runners.docker] volumes). One copy per host, shared by all of
+# its concurrent slots, with nothing to unzip before a job or zip after it.
+# Before that (MR !279), each job restored and re-archived a per-slot GitLab
+# cache of its GOCACHE and of the module zips: 20-75 s per Go job, and ~10
+# independent copies (3 hosts x slots) that each warmed up on their own.
+# Concurrent go processes on one cache are safe (Go locks and writes its cache
+# entries atomically). Go trims build-cache entries unused for 5 days itself;
+# the module cache only grows (clear it with `go clean -modcache` in a job, or
+# remove the volume on the host). Each new host starts cold, once.
+#
+# Tag pipelines do NOT use the volumes. They are writable by every job on the
+# host: MR pipelines and other projects' jobs on this instance runner too, so
+# they cross the line that ci_separated_caches drew between protected and
+# unprotected caches. A release must not depend on a cache any job can write.
+# So a tag (workflow:rules above) sets GOCACHE/GOMODCACHE to empty
+# project-local directories (.gocache/build, .gocache/mod; no GitLab cache
+# either), and every Go job runs `go mod verify` first (.go-volume-check), so
+# the modules a release is built and tested from are checked against go.sum.
+# A release pipeline is therefore a cold build, which is rare and acceptable.
+# (The tools cache still applies on tags, under the -protected key: buf,
+# staticcheck, govulncheck, scip-go check the release but are not part of it.
+# The agent image is built by Kaniko from agent/Dockerfile and never sees the
+# volumes.) Residual: the runners are privileged with the host's docker.sock
+# mounted, so any job is root on its host anyway; this is defence in depth.
+#
+# What stays a GitLab cache is what is not on a volume:
 #   tools   buf, protoc plugins, staticcheck, govulncheck, scip-go binaries
 #           in $GOPATH/bin, keyed on tools.mk (the pinned versions); the
 #           Makefile's stamps also record the Go version, so a toolchain bump
 #           reinstalls even under an unchanged key. Each job installs the
 #           tools it needs only when they are missing (`make tool-<name>`),
-#           and the slot's cache accumulates them.
-#   gobuild-<job>-<Go image>   GOCACHE of one job (test: vet + race; lint:
-#           plus staticcheck's cache; build-cli: the cross targets). One key
-#           per job because each compiles in a different mode. Keyed on the
-#           Go image, NOT on go.sum: the build cache is content-addressed, so
-#           a dependency bump still reuses everything unchanged (std, the
-#           race runtime, untouched modules), and Go itself trims entries
-#           unused for 5 days. when: always — a failed test run's compile
-#           results are just as valid, and the fix-up push wants them.
-#
-# Every slot warms up on its own, the first time a job runs there. The real
-# fix is runner-side (a shared cache server, or Go cache volumes mounted on
-# each host), which needs no zipping at all.
+#           and the slot's cache accumulates them. Every job that uses it
+#           also pushes it (pull-push): a single designated writer would leave
+#           most slots cold.
+#   staticcheck-<Go image>   staticcheck's analysis cache, lint only.
 # ----------------------------------------------------------------------------
-.cache-mod: &cache-mod
-  key:
-    files:
-      - go.sum
-    prefix: mod
-  paths:
-    - .gocache/pkg/mod/cache/download
-
 .cache-tools: &cache-tools
   key:
     files:
@@ -152,8 +167,28 @@ default:
 
 .go-cache: &go-cache
   cache:
-    - *cache-mod
     - *cache-tools
+
+# Every Go job extends this. On a tag it runs `go mod verify` against the
+# cold project-local module cache. Otherwise it says in the log whether this
+# host mounts the Go cache volumes, so a host that lost them (a rebuilt
+# runner, a config.toml without the volumes line) shows up as a warning
+# instead of as a slow job. The job still runs, just cold.
+.go-volume-check:
+  before_script:
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        # Release: cold, project-local caches (workflow:rules), modules
+        # verified against go.sum before anything is built from them.
+        echo "tag pipeline: GOCACHE=$GOCACHE GOMODCACHE=$GOMODCACHE (no shared volumes)"
+        go mod verify
+      elif grep -qs ' /go-cache/build ' /proc/self/mountinfo && grep -qs ' /go-cache/mod ' /proc/self/mountinfo; then
+        if [ -e /go-cache/build/trim.txt ]; then state="warm"; else state="empty (first job on this host)"; fi
+        echo "Go cache volumes mounted on this host; build cache: $state"
+      else
+        echo "WARNING: /go-cache/build and/or /go-cache/mod is not a mounted volume on this runner host, so Go builds run cold."
+        echo "WARNING: add \"go-build-cache:/go-cache/build\", \"go-mod-cache:/go-cache/mod\" to [runners.docker] volumes in its config.toml."
+      fi
 
 # The quality gate as a `needs:` list. Jobs run as a DAG (needs), not stage by
 # stage, so nothing waits for unrelated jobs — but every job that PUBLISHES
@@ -204,12 +239,7 @@ test:
   stage: test
   image: $GO_IMAGE
   interruptible: true # no side effects
-  cache:
-    - *cache-mod
-    - key: gobuild-test-$GO_IMAGE
-      paths:
-        - .gocache/build
-      when: always
+  extends: .go-volume-check
   script:
     - go vet ./...
     - |
@@ -239,13 +269,12 @@ lint:
   stage: test
   image: $GO_IMAGE
   interruptible: true # no side effects
+  extends: .go-volume-check
   cache:
-    - *cache-mod
     - *cache-tools
-    - key: gobuild-lint-$GO_IMAGE
+    - key: staticcheck-$GO_IMAGE
       paths:
-        - .gocache/build # staticcheck loads packages via `go list -export`
-        - .gocache/staticcheck
+        - .gocache/staticcheck # the packages it loads come from GOCACHE (volume)
       when: always
   script:
     - make lint # staticcheck from the tool cache (installed once, not `go run` per job)
@@ -270,6 +299,7 @@ generate-check:
   stage: test
   image: $GO_IMAGE
   interruptible: true # no side effects
+  extends: .go-volume-check
   <<: *go-cache
   script:
     - make tools # buf + plugins; no-op when the tool cache has them
@@ -315,6 +345,7 @@ vulncheck:
   stage: test
   image: $GO_IMAGE
   interruptible: true # no side effects
+  extends: .go-volume-check
   <<: *go-cache
   variables:
     # GO-ID: reason. Reachable-but-unfixable in our dependency line.
@@ -388,6 +419,7 @@ code_navigation:
   stage: test
   image: $GO_IMAGE
   interruptible: true # output is a job artifact
+  extends: .go-volume-check
   <<: *go-cache
   allow_failure: true
   script:
@@ -409,12 +441,7 @@ build-cli:
   stage: build
   image: $GO_IMAGE
   interruptible: true # output is a job artifact; publishing jobs ship it
-  cache:
-    - *cache-mod # no tools needed
-    - key: gobuild-build-cli-$GO_IMAGE
-      paths:
-        - .gocache/build
-      when: always
+  extends: .go-volume-check # no GitLab cache: no tools needed
   # Starts at once, in parallel with the test jobs: it needs nothing from them,
   # and it publishes nothing itself (dist/ is a job artifact). Everything that
   # ships dist/ needs the release gate. On a tag it still waits for the
