@@ -319,7 +319,7 @@ func TestSearchOpensOverSearchableTabsOnly(t *testing.T) {
 	if u.search.GetText() != "shop" || u.searchTab() == nil {
 		t.Errorf("bar = %q, want the volumes filter", u.search.GetText())
 	}
-	u.filter = "web"
+	u.treeTab().st().filter = "web"
 	u.startSearch("containers")
 	if u.search.GetText() != "web" {
 		t.Errorf("bar = %q, want the tree filter", u.search.GetText())

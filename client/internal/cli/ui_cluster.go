@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
@@ -32,16 +31,16 @@ import (
 // current; the connections, the caches and the operator's position are not.
 //
 // It is embedded in *ui BY POINTER, and that is load-bearing twice over. It
-// keeps every existing `u.dcli` / `u.filter` reference compiling
+// keeps every existing `u.dcli` / `u.ctx` reference compiling
 // unchanged (Go promotes an embedded pointer's fields), so this is a change of
 // lifetime, not a rewrite of two hundred call sites. And it avoids copying the
 // atomics in here — an embedded value would have to be assigned to switch, which
 // is exactly what `go vet`'s copylocks check forbids.
 //
 // What is NOT in here is as deliberate as what is: the widgets, the keymap, the
-// mouse mode, the sort preference, the fold-by-stack toggle and the forward
-// registry stay on *ui. They belong to the operator's session, not to a cluster,
-// and a switch must not reset them.
+// mouse mode and the forward registry stay on *ui, and a tab's preferences (a
+// sort order, the fold-by-stack toggle) on the tab. They belong to the
+// operator's session, not to a cluster, and a switch must not reset them.
 type clusterState struct {
 	// name is what this cluster is CALLED — the footer, the Contexts tab's
 	// marker, the map key. Always a real name.
@@ -86,111 +85,26 @@ type clusterState struct {
 	// not shown again on every refresh (see offerSSHAdd).
 	sshAddOffered bool
 
-	// loaded says whether the first fetch has happened. A cluster is connected
-	// lazily on first switch, so "no services" and "not looked yet" stay
-	// distinguishable.
-	loaded bool
-
-	// fetchErr is the outcome of the MOST RECENT service fetch, kept separately
-	// from err/loaded: a refresh can fail long after the first one succeeded, and
-	// then lastSvcs still holds the previous answer. Views that make a claim
-	// about the cluster need to know the difference between "this is current"
-	// and "this is the last thing we managed to read".
-	fetchErr error
-
 	regCache *swarmops.RegistryCache // :latest version / newer-tag resolver
 
-	// containers tab
-	//
-	// lastCands / lastSvcs cache the most recent fetch so the "/" filter can
-	// re-render locally without hitting the docker API on every keystroke (a
-	// remote call over the ssh tunnel — doing it per keystroke makes typing
-	// crawl). lastSvcs drives the tree so every service shows, even one with no
-	// running task; lastCands supplies the container leaves.
-	//
-	// svcByName / svcCols cache the current services and the column widths so the
-	// fold marker (▸/▾) can be rebuilt on a fold — and the docker service ls-style
-	// row (mode, replicas, image, ports) stays aligned — without re-rendering the
-	// whole tree. A service with no containers gets no marker (nothing to expand),
-	// just padding so the rows still line up.
-	lastCands []resolve.Candidate
-	lastSvcs  []resolve.Service
-	svcByName map[string]resolve.Service
-	svcCols   svcColumns
-	// resetCols lets the next render start the column widths over. Set by the
-	// explicit loaders only: an operator asking for a refresh, a service being
-	// removed, a stack being deployed. The background poll must never set it,
-	// or the widths follow every transient service again.
-	resetCols       bool
+	// autoRefreshBusy keeps the tree's background re-list from overlapping
+	// itself. Here rather than in the tree tab's per-cluster state because
+	// it is read off the UI goroutine, by the poll and the event stream —
+	// perCluster is UI-goroutine only — like usageBusy below.
 	autoRefreshBusy atomic.Bool
 
 	// live resource usage, from this cluster's node agents
 	usage     map[string]containerUsage
 	usageHist map[string]*usageRing // the last minutes of usage per container
-	leafBase  map[string]string
 	nodeUse   map[string]nodeUsage
 	usageBusy atomic.Bool
 
-	// where the operator was standing in this cluster. Restored on a switch
-	// back, which is the whole point of keeping the state at all.
-	// filter is the container-tree "/" query; empty shows everything. A
-	// candidate matches when it is a substring of its service, container id or
-	// node (case-insensitive).
-	filter string
-	pos    treePos
-	// restorePos makes the next tree render take its cursor and folds from pos
-	// instead of from the widget. Set by a switch INTO this cluster, and true
-	// for exactly one render — every later refresh must keep whatever the
-	// operator has since selected.
-	restorePos bool
-
 	clusterText string // last cluster-probe summary for the footer
 
-	// Every tab but Stacks/Services keeps its per-cluster state itself (see
-	// perCluster): a tab owns what it shows, and this struct does not know
-	// it exists. The tree's state above is the last to move (review A-02).
-}
-
-// treePos is where the cursor stood and what was unfolded in one cluster's tree.
-//
-// The tree already restores both across a refresh, but it reads them off the
-// widget it is about to rebuild — which is right for a refresh and wrong for a
-// switch, where the widget still holds the PREVIOUS cluster. So the position is
-// captured before a switch and handed to the next render explicitly.
-type treePos struct {
-	container string // cursor on a container, by id
-	service   string // else on a service, by name
-	stack     string // else on a stack, by name
-	svcFolds  map[string]bool
-	stackFold map[string]bool
-}
-
-// posFromWidget reads the cursor and fold state out of the tree as it
-// stands. This is the normal source: a refresh must put the operator back
-// exactly where they were.
-func (t *treeTab) posFromWidget() treePos {
-	pos := treePos{svcFolds: map[string]bool{}, stackFold: map[string]bool{}}
-	if n := t.tree.GetCurrentNode(); n != nil {
-		switch ref := n.GetReference().(type) {
-		case resolve.Candidate:
-			pos.container = ref.ContainerID
-		case svcRef:
-			pos.service = ref.name
-		case stackRef:
-			pos.stack = ref.name
-		}
-	}
-	t.root.Walk(func(n, _ *tview.TreeNode) bool {
-		switch ref := n.GetReference().(type) {
-		case svcRef:
-			pos.svcFolds[ref.name] = n.IsExpanded()
-			return false // a service's children are containers; nothing to record
-		case stackRef:
-			pos.stackFold[ref.name] = n.IsExpanded()
-		}
-		return true
-	})
-	return pos
+	// Every tab keeps its per-cluster state itself (see perCluster): a tab
+	// owns what it shows, and this struct does not know it exists. Where the
+	// operator was standing — cursor, folds, filters — comes back with the
+	// cluster because each tab keeps it per cluster.
 }
 
 // newClusterState prepares a cluster the UI has not connected to yet. Connecting
@@ -289,9 +203,8 @@ func (u *ui) activateCluster(c *clusterState) {
 	if u.clusterState == c {
 		return
 	}
-	// Save where the operator was standing before the widgets are rebuilt for
-	// somebody else's data.
-	u.pos = u.treeTab().posFromWidget()
+	// Where the operator was standing is saved by each tab as it re-renders
+	// for the new cluster (see treeTab.remember).
 	closed := u.leaveCluster()
 
 	u.clusterState = c
@@ -303,7 +216,6 @@ func (u *ui) activateCluster(c *clusterState) {
 	// dies with the switch away, exactly like the polling does.
 	go u.watchTopology(c.ctx, c)
 	u.activeCtx = c.name
-	u.restorePos = true
 
 	// Now that the UI is actually on this cluster, make it docker's current
 	// context too, so a `docker` command in the next terminal agrees with what
@@ -332,7 +244,7 @@ func (u *ui) activateCluster(c *clusterState) {
 
 	u.refocusTopOverlay() // a session overlay the switch kept (askpass, client log) keeps the keyboard
 
-	msg := switchedFlash(c.name, c.loaded, useErr, os.Getenv("DOCKER_HOST") != "")
+	msg := switchedFlash(c.name, u.treeTab().st().loaded, useErr, os.Getenv("DOCKER_HOST") != "")
 	if closed > 0 {
 		msg += fmt.Sprintf(" [gray]— closed %d dialog(s) of the previous cluster[white]", closed)
 	}

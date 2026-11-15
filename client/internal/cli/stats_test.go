@@ -302,15 +302,15 @@ func TestHealthBadges(t *testing.T) {
 // every service under it is failing its probes.
 func TestStackHealthRollsUp(t *testing.T) {
 	u := &ui{clusterState: &clusterState{
-		lastCands: []resolve.Candidate{
-			usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
-		},
 		usage: map[string]containerUsage{
 			"c1": {Health: swarmops.HealthUnhealthy},
 			"c2": {Health: swarmops.HealthHealthy},
 			"c3": {Health: swarmops.HealthUnhealthy},
 		},
 	}}
+	u.treeTab().st().cands = []resolve.Candidate{
+		usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
+	}
 	svcs := []resolve.Service{{Name: "web"}, {Name: "api"}}
 
 	h := u.treeTab().stackHealth(svcs)

@@ -89,8 +89,9 @@ func (t *networksTab) renderRow(r int, n swarmops.Network) {
 // the actual attach resolves the name live, so a just-created service that is
 // not cached yet can still be typed in.
 func (u *ui) serviceNamesFromCache() []string {
-	names := make([]string, 0, len(u.lastSvcs))
-	for _, s := range u.lastSvcs {
+	svcs := u.treeTab().st().svcs
+	names := make([]string, 0, len(svcs))
+	for _, s := range svcs {
 		names = append(names, s.Name)
 	}
 	return names

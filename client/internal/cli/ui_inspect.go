@@ -800,7 +800,7 @@ func (iv *inspectView) statsLines() []statsRow {
 	dim := func(s string) { rows = append(rows, statsRow{text: s, color: tcell.ColorGray}) }
 	blank := func() { rows = append(rows, statsRow{}) }
 
-	cands := iv.subject.containers(u.lastCands)
+	cands := iv.subject.containers(u.treeTab().st().cands)
 	head("RESOURCE USAGE")
 	if len(cands) == 0 {
 		dim("  (no running container to measure)")
@@ -841,7 +841,7 @@ func (iv *inspectView) statsLines() []statsRow {
 	}
 
 	if measured > 1 && iv.subject.service != "" {
-		if agg, ok := serviceUsage(u.usage, u.lastCands, iv.subject.service); ok {
+		if agg, ok := serviceUsage(u.usage, u.treeTab().st().cands, iv.subject.service); ok {
 			blank()
 			head("ACROSS " + fmt.Sprint(measured) + " CONTAINERS")
 			// The worst replica, not the average: an average hides the one that is

@@ -222,7 +222,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 	}
 	u.clusterState = first
 	u.activeCtx = first.name
-	u.filter = service // `swarmexec ui web` opens pre-narrowed
 
 	// Install the global theme before any primitive is constructed: tview reads
 	// its palette at construction time and its border glyphs at draw time.
@@ -338,6 +337,9 @@ func (u *ui) run(keyWarnings []string) error {
 	for i, t := range uiTabList {
 		content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
 	}
+	// `swarmexec ui web` opens pre-narrowed. The first cluster only: the
+	// argument named a service there, not on whatever cluster comes next.
+	u.treeTab().st().filter = u.service
 
 	tabBar := newTabStrip(uiTabList, func(key string) { u.setTab(key) })
 	// Two-line footer: the per-tab key hints on top, then one consolidated status

@@ -73,7 +73,7 @@ var volSortCol = map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, vo
 // capture. runUI builds it and hands off to (*ui).run; the closures still living
 // in run() reference these fields, and the infra methods are methods on *ui.
 type ui struct {
-	// The visible cluster. Embedded by pointer so `u.dcli`, `u.filter`
+	// The visible cluster. Embedded by pointer so `u.dcli`, `u.ctx`
 	// and friends keep resolving; switching cluster assigns this one field.
 	*clusterState
 

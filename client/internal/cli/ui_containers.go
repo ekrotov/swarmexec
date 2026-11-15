@@ -35,10 +35,64 @@ type treeTab struct {
 	// property of a cluster: it survives a switch. Only takes effect once a
 	// service carries a stack label (see anyStacked).
 	groupByStack bool
+
+	per perCluster[treeState]
+	// shownFor is the cluster whose services the tree holds, nil while it
+	// shows an error. A render for another cluster first saves this one's
+	// position — that is how a switch back lands where the operator was.
+	shownFor *clusterState
+}
+
+// treeState is what the Stacks/Services tab knows about one cluster.
+type treeState struct {
+	// svcs / cands cache the most recent fetch so the "/" filter can re-render
+	// locally without hitting the docker API on every keystroke (a remote call
+	// over the ssh tunnel — doing it per keystroke makes typing crawl). svcs
+	// drives the tree so every service shows, even one with no running task;
+	// cands supplies the container leaves. Other views read them too (stack
+	// logs, the security overlay, the inspect STATS view): it is the cluster's
+	// service list as last seen.
+	svcs  []resolve.Service
+	cands []resolve.Candidate
+	// loaded says whether the first fetch has happened. A cluster is connected
+	// lazily on first switch, so "no services" and "not looked yet" stay
+	// distinguishable.
+	loaded bool
+	// fetchErr is the outcome of the MOST RECENT fetch, kept separately from
+	// loaded: a refresh can fail long after the first one succeeded, and then
+	// svcs still holds the previous answer. Views that make a claim about the
+	// cluster need to know the difference between "this is current" and "this
+	// is the last thing we managed to read".
+	fetchErr error
+
+	// byName / cols cache the current services and the column widths so the
+	// fold marker (▸/▾) can be rebuilt on a fold — and the docker service
+	// ls-style row (mode, replicas, image, ports) stays aligned — without
+	// re-rendering the whole tree. A service with no containers gets no marker
+	// (nothing to expand), just padding so the rows still line up.
+	byName map[string]resolve.Service
+	cols   svcColumns
+	// resetCols lets the next render start the column widths over. Set by the
+	// explicit loaders only: an operator asking for a refresh, a service being
+	// removed, a stack being deployed. The background poll must never set it,
+	// or the widths follow every transient service again.
+	resetCols bool
+	// leafBase is each container row without its usage badge, so new readings
+	// re-mark a row in place (remarkUsage).
+	leafBase map[string]string
+
+	// filter is the "/" query; empty shows everything. A candidate matches when
+	// it is a substring of its service, container id or node (case-insensitive).
+	filter string
+	// pos is where the operator stood in this cluster's tree when it was last
+	// shown: saved when the tree is rebuilt for another cluster, restored when
+	// it shows this one again.
+	pos treePos
 }
 
 func newTreeTab(u *ui) *treeTab {
 	t := &treeTab{u: u, groupByStack: true}
+	t.per.init = func() *treeState { return &treeState{} }
 	t.tree = tview.NewTreeView()
 	t.root = tview.NewTreeNode("")
 	t.tree.SetRoot(t.root).SetTopLevel(1) // hide the synthetic root; services are top-level
@@ -50,6 +104,83 @@ func newTreeTab(u *ui) *treeTab {
 
 // treeTab is the session's Stacks/Services tab.
 func (u *ui) treeTab() *treeTab { return u.tab("containers").(*treeTab) }
+
+// st is the visible cluster's tree state.
+func (t *treeTab) st() *treeState { return t.per.of(t.u.clusterState) }
+
+// treePos is where the cursor stood and what was unfolded in one cluster's tree.
+//
+// A refresh restores both by reading them off the widget it is about to
+// rebuild — which is right for a refresh and wrong for a switch, where the
+// widget still holds the PREVIOUS cluster. So the position is saved per
+// cluster whenever the tree is rebuilt for another one.
+type treePos struct {
+	container string // cursor on a container, by id
+	service   string // else on a service, by name
+	stack     string // else on a stack, by name
+	svcFolds  map[string]bool
+	stackFold map[string]bool
+}
+
+// posFromWidget reads the cursor and fold state out of the tree as it
+// stands. This is the normal source: a refresh must put the operator back
+// exactly where they were.
+func (t *treeTab) posFromWidget() treePos {
+	pos := treePos{svcFolds: map[string]bool{}, stackFold: map[string]bool{}}
+	if n := t.tree.GetCurrentNode(); n != nil {
+		switch ref := n.GetReference().(type) {
+		case resolve.Candidate:
+			pos.container = ref.ContainerID
+		case svcRef:
+			pos.service = ref.name
+		case stackRef:
+			pos.stack = ref.name
+		}
+	}
+	t.root.Walk(func(n, _ *tview.TreeNode) bool {
+		switch ref := n.GetReference().(type) {
+		case svcRef:
+			pos.svcFolds[ref.name] = n.IsExpanded()
+			return false // a service's children are containers; nothing to record
+		case stackRef:
+			pos.stackFold[ref.name] = n.IsExpanded()
+		}
+		return true
+	})
+	return pos
+}
+
+// remember saves the position of the cluster the tree currently shows.
+func (t *treeTab) remember() {
+	if t.shownFor != nil {
+		t.per.of(t.shownFor).pos = t.posFromWidget()
+	}
+}
+
+// restorePos is where the cursor goes and what stays unfolded in the render
+// about to happen, and marks the tree as showing the visible cluster.
+//
+// Normally that is whatever the tree shows right now — a render runs on every
+// refresh, and the operator must not be moved by one. When the tree holds
+// another cluster (a switch) or an error, the widget says nothing about this
+// cluster, and the position saved for it wins instead. remember covers both:
+// for the cluster on screen it has just saved what the widget shows.
+func (t *treeTab) restorePos() treePos {
+	t.remember()
+	t.shownFor = t.u.clusterState
+	return t.st().pos
+}
+
+// placeholder replaces the tree with an error state, keeping the position for
+// the next render of this cluster.
+func (t *treeTab) placeholder(nodes ...*tview.TreeNode) {
+	t.remember()
+	t.shownFor = nil
+	t.root.ClearChildren()
+	for _, n := range nodes {
+		t.root.AddChild(n)
+	}
+}
 
 func (t *treeTab) widget() tview.Primitive { return t.tree }
 func (t *treeTab) enter()                  {}
@@ -112,11 +243,11 @@ func (t *treeTab) yank(b *strings.Builder) {
 	}
 }
 
-func (t *treeTab) searchText() string        { return t.u.filter }
+func (t *treeTab) searchText() string        { return t.st().filter }
 func (t *treeTab) searchPlaceholder() string { return "filter services / containers / nodes" }
 
 func (t *treeTab) setSearch(q string) {
-	t.u.filter = q
+	t.st().filter = q
 	t.render()
 }
 
@@ -142,11 +273,11 @@ func (t *treeTab) onSelect(node *tview.TreeNode) {
 func (t *treeTab) remarkServices() { eachServiceNode(t.root, t.markService) }
 
 func (t *treeTab) matchesFilter(c resolve.Candidate) bool {
-	u := t.u
-	if u.filter == "" {
+	st := t.st()
+	if st.filter == "" {
 		return true
 	}
-	q := strings.ToLower(u.filter)
+	q := strings.ToLower(st.filter)
 	return strings.Contains(strings.ToLower(c.Service), q) ||
 		strings.Contains(strings.ToLower(c.ContainerID), q) ||
 		strings.Contains(strings.ToLower(c.NodeName), q)
@@ -164,13 +295,13 @@ func (t *treeTab) versionSuffixFor(s resolve.Service) string {
 }
 
 func (t *treeTab) markService(n *tview.TreeNode) {
-	u := t.u
+	st := t.st()
 	ref, ok := n.GetReference().(svcRef)
 	if !ok {
 		return
 	}
-	svc := u.svcByName[ref.name]
-	row := serviceRow(svc, u.svcCols, t.versionSuffixFor(svc), t.svcUsageBadge(ref.name))
+	svc := st.byName[ref.name]
+	row := serviceRow(svc, st.cols, t.versionSuffixFor(svc), t.svcUsageBadge(ref.name))
 	switch {
 	case len(n.GetChildren()) == 0:
 		n.SetText("  " + row)
@@ -182,21 +313,10 @@ func (t *treeTab) markService(n *tview.TreeNode) {
 }
 
 func (t *treeTab) render() {
+	st := t.st()
 	u := t.u
 	forwards, ctree, croot := u.forwards, t.tree, t.root
-	// Where to put the cursor and what to leave unfolded. Normally that is
-	// whatever the tree shows right now — this runs on every refresh, and the
-	// operator must not be moved by one.
-	//
-	// After a cluster switch it is NOT: the widget still holds the cluster we
-	// just left, and restoring from it would drop the cursor on a service of the
-	// wrong cluster (or nowhere). So the switch hands over the position it saved
-	// for THIS cluster, and that wins exactly once.
-	pos := t.posFromWidget()
-	if u.restorePos {
-		pos = u.pos
-		u.restorePos = false
-	}
+	pos := t.restorePos()
 	prevID, prevSvc, prevStack := pos.container, pos.service, pos.stack
 	wasExpanded, stackExpanded := pos.svcFolds, pos.stackFold
 	seenStack := map[string]bool{}
@@ -207,7 +327,7 @@ func (t *treeTab) render() {
 
 	// Group running containers by service for the leaves.
 	byService := map[string][]resolve.Candidate{}
-	for _, c := range u.lastCands {
+	for _, c := range st.cands {
 		byService[c.Service] = append(byService[c.Service], c)
 	}
 	// Pre-compute column widths so every container row lines up, regardless
@@ -219,7 +339,7 @@ func (t *treeTab) render() {
 		return ""
 	}
 	nodeW, slotW := 0, 0
-	for _, c := range u.lastCands {
+	for _, c := range st.cands {
 		if w := len(orDash(c.NodeName)); w > nodeW {
 			nodeW = w
 		}
@@ -233,15 +353,15 @@ func (t *treeTab) render() {
 	// into the widths already in use, so it stays stable over time too. Only an
 	// explicit reload starts over.
 	fresh := svcColumns{}
-	if u.resetCols {
-		u.svcCols = svcColumns{}
-		u.resetCols = false
+	if st.resetCols {
+		st.cols = svcColumns{}
+		st.resetCols = false
 	}
-	u.svcByName = make(map[string]resolve.Service, len(u.lastSvcs))
+	st.byName = make(map[string]resolve.Service, len(st.svcs))
 	// Rebuilt with the tree, so a container that has gone leaves no entry behind.
-	u.leafBase = make(map[string]string, len(u.lastCands))
-	for _, s := range u.lastSvcs {
-		u.svcByName[s.Name] = s
+	st.leafBase = make(map[string]string, len(st.cands))
+	for _, s := range st.svcs {
+		st.byName[s.Name] = s
 		if w := len(orDash(s.Name)); w > fresh.name {
 			fresh.name = w
 		}
@@ -260,22 +380,22 @@ func (t *treeTab) render() {
 			fresh.image = w
 		}
 	}
-	u.svcCols.growTo(fresh)
+	st.cols.growTo(fresh)
 
-	q := strings.ToLower(strings.TrimSpace(u.filter))
+	q := strings.ToLower(strings.TrimSpace(st.filter))
 	var firstSvc, targetSvc, targetLeaf, targetStack *tview.TreeNode
 
 	// Group by stack unless the operator turned it off, and only when at least
 	// one service actually carries a stack label — otherwise every row would
 	// hang under a single pointless "(no stack)" parent.
-	grouped := t.groupByStack && anyStacked(u.lastSvcs)
+	grouped := t.groupByStack && anyStacked(st.svcs)
 	stackNodes := map[string]*tview.TreeNode{}
 	if grouped {
 		// Create the stack nodes up front in groupByStack's order (alphabetical,
 		// unstacked last) so the tree order does not depend on which service
 		// happened to be seen first. Stacks left empty by the filter are dropped
 		// again below.
-		for _, row := range groupByStack(u.lastSvcs) {
+		for _, row := range groupByStack(st.svcs) {
 			expanded := true // a stack the operator has not touched starts open
 			if seenStack[row.Name] {
 				expanded = stackExpanded[row.Name]
@@ -302,7 +422,7 @@ func (t *treeTab) render() {
 		return croot
 	}
 
-	for _, s := range u.lastSvcs {
+	for _, s := range st.svcs {
 		nameMatch := q == "" || strings.Contains(strings.ToLower(s.Name), q)
 		// Which running containers to list: all when the service name matches,
 		// otherwise only the containers that match the filter themselves.
@@ -318,7 +438,7 @@ func (t *treeTab) render() {
 			continue
 		}
 		// Collapsed by default (spec); keep a service the operator expanded.
-		svcNode := tview.NewTreeNode(serviceRow(s, u.svcCols, "", t.svcUsageBadge(s.Name))).
+		svcNode := tview.NewTreeNode(serviceRow(s, st.cols, "", t.svcUsageBadge(s.Name))).
 			SetColor(t.svcColor(s)).
 			SetReference(svcRef{name: s.Name}).
 			SetExpanded(wasExpanded[s.Name])
@@ -340,7 +460,7 @@ func (t *treeTab) render() {
 			// Keep the badge-free label: re-marking a row when new readings land
 			// then just re-appends, instead of trying to cut the old marker back
 			// off a string that also carries the forward and update markers.
-			u.leafBase[c.ContainerID] = label
+			st.leafBase[c.ContainerID] = label
 			usage := u.usage[c.ContainerID]
 			leaf := tview.NewTreeNode(label + containerHealthBadge(usage.Health) + usageBadge(usage)).SetReference(c)
 			svcNode.AddChild(leaf)
@@ -369,7 +489,7 @@ func (t *treeTab) render() {
 	if len(croot.GetChildren()) == 0 {
 		empty := emptyText("services", "nothing is deployed on this swarm")
 		if q != "" {
-			empty = fmt.Sprintf("(no matches for %q)", u.filter)
+			empty = fmt.Sprintf("(no matches for %q)", st.filter)
 		}
 		croot.AddChild(tview.NewTreeNode(empty).SetColor(tcell.ColorGray).SetSelectable(false))
 	}
@@ -392,7 +512,7 @@ func (t *treeTab) render() {
 // name, service count, aggregate tasks, and the update/risk counts. Called after
 // the children are attached and again on a fold, like markService.
 func (t *treeTab) markStack(n *tview.TreeNode) {
-	u := t.u
+	st := t.st()
 	ref, ok := n.GetReference().(stackRef)
 	if !ok {
 		return
@@ -400,7 +520,7 @@ func (t *treeTab) markStack(n *tview.TreeNode) {
 	var members []resolve.Service
 	for _, child := range n.GetChildren() {
 		if sref, ok := child.GetReference().(svcRef); ok {
-			if s, found := u.svcByName[sref.name]; found {
+			if s, found := st.byName[sref.name]; found {
 				members = append(members, s)
 			}
 		}
@@ -506,31 +626,32 @@ func fetchTree(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []r
 
 // apply updates the tree from a fetch result. UI-goroutine only.
 func (t *treeTab) apply(svcs []resolve.Service, cands []resolve.Candidate, err error) {
+	st := t.st()
 	u := t.u
-	croot := t.root
-	u.fetchErr = err
+	st.fetchErr = err
 	if err != nil {
-		croot.ClearChildren()
-		croot.AddChild(tview.NewTreeNode(errorText(err)).SetColor(tcell.ColorRed).SetSelectable(false))
+		nodes := []*tview.TreeNode{tview.NewTreeNode(errorText(err)).SetColor(tcell.ColorRed).SetSelectable(false)}
 		if askpassActive() && isSSHAuthError(err) {
 			// After a cancelled sign-in nothing asks again on its own; say how.
-			croot.AddChild(tview.NewTreeNode(fmt.Sprintf("ssh could not sign in — press %c to be asked again", u.km.Refresh)).
+			nodes = append(nodes, tview.NewTreeNode(fmt.Sprintf("ssh could not sign in — press %c to be asked again", u.km.Refresh)).
 				SetColor(tcell.ColorYellow).SetSelectable(false))
 		}
+		t.placeholder(nodes...)
 		u.offerSSHAdd(u.clusterState, err, t.load)
 		return
 	}
-	u.lastSvcs = svcs
-	u.lastCands = cands
-	u.loaded = true // this cluster has been looked at; "empty" now means empty
+	st.svcs = svcs
+	st.cands = cands
+	st.loaded = true // this cluster has been looked at; "empty" now means empty
 	t.render()
 }
 
 // loadSync fetches and applies on the caller's goroutine — used at
 // startup, before app.Run, where QueueUpdateDraw would deadlock.
 func (t *treeTab) loadSync() {
+	st := t.st()
 	u := t.u
-	u.resetCols = true
+	st.resetCols = true
 	svcs, cands, err := fetchTree(u.ctx, u.r)
 	t.apply(svcs, cands, err)
 }
@@ -543,8 +664,9 @@ func (t *treeTab) loadSync() {
 // deployed stack, a closed terminal, a cluster becoming visible. Those may
 // narrow the columns again; the background poll may not.
 func (t *treeTab) load() {
+	st := t.st()
 	u := t.u
-	u.resetCols = true
+	st.resetCols = true
 	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
 	gen, ctx, r := u.generation(), u.ctx, u.r
 	go func() {
@@ -714,6 +836,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 // svcUsageBadge is the resource marker for a service row: the worst reading
 // across its containers. Empty when nothing is known yet or nothing is hot.
 func (t *treeTab) svcUsageBadge(service string) string {
+	st := t.st()
 	u := t.u
 	if len(u.usage) == 0 {
 		return ""
@@ -721,8 +844,8 @@ func (t *treeTab) svcUsageBadge(service string) string {
 	// Health leads: it is the marker that contradicts the running/desired count
 	// standing right next to it, so it should not sit behind the resource
 	// numbers when the row is long.
-	badge := healthBadge(swarmops.HealthOf(u.usage, u.lastCands, service))
-	if agg, ok := serviceUsage(u.usage, u.lastCands, service); ok {
+	badge := healthBadge(swarmops.HealthOf(u.usage, st.cands, service))
+	if agg, ok := serviceUsage(u.usage, st.cands, service); ok {
 		badge += usageBadge(agg)
 	}
 	return badge
@@ -731,13 +854,14 @@ func (t *treeTab) svcUsageBadge(service string) string {
 // stackHealth folds the healthcheck verdicts of every container under a stack
 // into one count.
 func (t *treeTab) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
+	st := t.st()
 	u := t.u
 	var out swarmops.ServiceHealth
 	if len(u.usage) == 0 {
 		return out
 	}
 	for _, svc := range services {
-		h := swarmops.HealthOf(u.usage, u.lastCands, svc.Name)
+		h := swarmops.HealthOf(u.usage, st.cands, svc.Name)
 		out.Healthy += h.Healthy
 		out.Unhealthy += h.Unhealthy
 		out.Starting += h.Starting
@@ -749,12 +873,13 @@ func (t *treeTab) stackHealth(services []resolve.Service) swarmops.ServiceHealth
 // svcColor is the tree colour for a service row: the progress verdict,
 // overridden when the healthchecks disagree with it.
 func (t *treeTab) svcColor(s resolve.Service) tcell.Color {
+	st := t.st()
 	u := t.u
 	base := progressColor(s)
 	if len(u.usage) == 0 {
 		return base
 	}
-	return healthColor(base, swarmops.HealthOf(u.usage, u.lastCands, s.Name))
+	return healthColor(base, swarmops.HealthOf(u.usage, st.cands, s.Name))
 }
 
 // loadUsage refreshes the live resource readings in the background and re-marks
@@ -811,16 +936,17 @@ func (u *ui) loadUsage() {
 // remarkUsage refreshes the badge on every row in place, leaving the tree's
 // shape, cursor and fold state alone.
 func (t *treeTab) remarkUsage() {
+	st := t.st()
 	u := t.u
 	t.root.Walk(func(n, parent *tview.TreeNode) bool {
 		switch ref := n.GetReference().(type) {
 		case svcRef:
 			t.markService(n)
-			if svc, ok := u.svcByName[ref.name]; ok {
+			if svc, ok := st.byName[ref.name]; ok {
 				n.SetColor(t.svcColor(svc))
 			}
 		case resolve.Candidate:
-			if base, ok := u.leafBase[ref.ContainerID]; ok {
+			if base, ok := st.leafBase[ref.ContainerID]; ok {
 				usage := u.usage[ref.ContainerID]
 				n.SetText(base + containerHealthBadge(usage.Health) + usageBadge(usage))
 			}
@@ -911,7 +1037,7 @@ func (t *treeTab) keys(ev *tcell.EventKey) *tcell.EventKey {
 		case km.StackGroup:
 			// Toggle stack grouping. Only meaningful once something carries a
 			// stack label; say so rather than redrawing an identical tree.
-			if !anyStacked(u.lastSvcs) {
+			if !anyStacked(t.st().svcs) {
 				u.flash(" [gray]no service carries a stack label[white]")
 				return nil
 			}

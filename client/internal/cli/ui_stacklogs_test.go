@@ -15,19 +15,19 @@ import (
 // the last fetch, so a folded service counts as much as an open one — and
 // nothing from another stack or from the unstacked bucket.
 func TestStackLogMembers(t *testing.T) {
-	u := &ui{clusterState: &clusterState{
-		lastSvcs: []resolve.Service{
-			{Name: "shop_web", Stack: "shop"}, {Name: "shop_db", Stack: "shop"},
-			{Name: "other_api", Stack: "other"}, {Name: "loose"},
-		},
-		lastCands: []resolve.Candidate{
-			{Service: "shop_web", Slot: 2, ContainerID: "w2"},
-			{Service: "other_api", Slot: 1, ContainerID: "o1"},
-			{Service: "shop_db", Slot: 1, ContainerID: "d1"},
-			{Service: "shop_web", Slot: 1, ContainerID: "w1"},
-			{Service: "loose", Slot: 1, ContainerID: "l1"},
-		},
-	}}
+	u := &ui{clusterState: &clusterState{}}
+	st := u.treeTab().st()
+	st.svcs = []resolve.Service{
+		{Name: "shop_web", Stack: "shop"}, {Name: "shop_db", Stack: "shop"},
+		{Name: "other_api", Stack: "other"}, {Name: "loose"},
+	}
+	st.cands = []resolve.Candidate{
+		{Service: "shop_web", Slot: 2, ContainerID: "w2"},
+		{Service: "other_api", Slot: 1, ContainerID: "o1"},
+		{Service: "shop_db", Slot: 1, ContainerID: "d1"},
+		{Service: "shop_web", Slot: 1, ContainerID: "w1"},
+		{Service: "loose", Slot: 1, ContainerID: "l1"},
+	}
 	var got []string
 	for _, c := range u.stackLogMembers("shop") {
 		got = append(got, logstream.SourceFromCandidate(c).Label)
