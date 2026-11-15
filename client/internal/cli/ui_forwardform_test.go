@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/swarmfake"
 	pb "swarmexec/internal/pb"
 )
 
@@ -568,5 +569,147 @@ func TestForwardFormGrowsAndShrinks(t *testing.T) {
 	d.addr.SetText("0.0.0.0")
 	if u.overlayOpen() || u.pages.HasPage(pageFwdPrompt) {
 		t.Error("an update after Esc must not re-open the dialog")
+	}
+}
+
+// Each field's refusal keeps the form open with the reason and starts
+// nothing; the next edit clears the reason.
+func TestForwardFormRefusesBadFields(t *testing.T) {
+	cases := []struct {
+		cport, lport, addr string
+		want               string
+	}{
+		{"70000", "", "127.0.0.1", `invalid container port "70000": expected 1-65535`},
+		{"80", "0", "127.0.0.1", `invalid local port "0": expected 1-65535`},
+		{"80", "", "bad host!", `invalid local address "bad host!": expected an IP or a hostname`},
+	}
+	for _, c := range cases {
+		u := forwardFormUI()
+		started := false
+		u.openForwardForm(cand("abc123456789", "api", "n1"), func(forwardSpec) { started = true })
+		d := openDialog(t, u)
+		d.cport.SetText(c.cport)
+		d.lport.SetText(c.lport)
+		d.addr.SetText(c.addr)
+		press(u, tcell.KeyEnter)
+		if !u.overlayOpen() || started {
+			t.Errorf("%+v: the form must stay open and start nothing (open=%v started=%v)", c, u.overlayOpen(), started)
+		}
+		if txt := d.status.GetText(true); !strings.Contains(txt, c.want) {
+			t.Errorf("%+v: status %q, want %q", c, txt, c.want)
+		}
+		d.addr.SetText(c.addr + " ")
+		if strings.Contains(d.status.GetText(true), "invalid") {
+			t.Errorf("%+v: an edit must clear the reason: %q", c, d.status.GetText(true))
+		}
+	}
+}
+
+// The local port follows the container port until it is given a value of
+// its own, and follows again once cleared.
+func TestForwardFormLocalPortFollows(t *testing.T) {
+	u := forwardFormUI()
+	u.openForwardForm(cand("abc123456789", "api", "n1"), func(forwardSpec) {})
+	d := openDialog(t, u)
+	steps := []struct {
+		field     *fwdField
+		text      string
+		wantLocal string
+	}{
+		{d.cport, "80", "80"},
+		{d.lport, "81", "81"},
+		{d.cport, "90", "81"}, // edited: no longer follows
+		{d.lport, "", ""},
+		{d.cport, "91", "91"}, // cleared: follows again
+	}
+	for i, s := range steps {
+		s.field.SetText(s.text)
+		if got := d.lport.GetText(); got != s.wantLocal {
+			t.Errorf("step %d (%q): local port %q, want %q", i, s.text, got, s.wantLocal)
+		}
+	}
+}
+
+// Closing the form, however it closes, hands the focus back to the tree it
+// was opened from.
+func TestForwardFormReturnsFocusToTheTree(t *testing.T) {
+	for _, how := range []string{"Esc", "Cancel", "Forward"} {
+		u := forwardFormUI()
+		u.openForwardForm(cand("abc123456789", "api", "n1"), func(forwardSpec) {})
+		d := openDialog(t, u)
+		d.cport.SetText("9000")
+		switch how {
+		case "Esc":
+			press(u, tcell.KeyEscape)
+		case "Cancel":
+			press(u, tcell.KeyBacktab)
+			press(u, tcell.KeyEnter)
+		case "Forward":
+			press(u, tcell.KeyEnter)
+		}
+		if u.overlayOpen() {
+			t.Errorf("%s: the form is still open", how)
+		}
+		if u.app.GetFocus() != u.ctree {
+			t.Errorf("%s: focus on %T, want the tree", how, u.app.GetFocus())
+		}
+	}
+}
+
+// runningForwardForm opens the form on a running app whose manager knows the
+// service's ports, so the background port lookup lands. before runs on the
+// UI goroutine right after the form opens, ahead of that lookup.
+func runningForwardForm(t *testing.T, before func(d *fwdDialog)) *fwdDialog {
+	t.Helper()
+	u := runningUI(t)
+	u.forwards = newForwardRegistry()
+	u.f = &uiFlags{connectTimeout: time.Second}
+	u.ctree = tview.NewTreeView()
+	var svc swarm.Service
+	svc.ID, svc.Spec.Name = "s1", "api"
+	svc.Spec.EndpointSpec = &swarm.EndpointSpec{Ports: []swarm.PortConfig{{TargetPort: 8080}, {TargetPort: 80}}}
+	u.clusterState.dcli = fakeSwarmClient(t, &swarmfake.Swarm{Services: []swarm.Service{svc}})
+
+	var d *fwdDialog
+	onLoop(t, u, func() {
+		u.openForwardForm(cand("abc123456789", "api", "n1"), func(forwardSpec) {})
+		d = openDialog(t, u)
+		if before != nil {
+			before(d)
+		}
+	})
+	waitFor(t, "the port lookup", func() bool {
+		var done bool
+		onLoop(t, u, func() { done = !strings.Contains(d.status.GetText(true), "looking up") })
+		return done
+	})
+	return d
+}
+
+// The service's ports arrive while the form is open: listed under the
+// fields, marked on the container port, and the lowest one prefilled — the
+// local port following it.
+func TestForwardFormSuggestsTheServicePorts(t *testing.T) {
+	d := runningForwardForm(t, nil)
+	if txt := d.status.GetText(true); !strings.HasPrefix(txt, "exposed 80 · 8080  ↓ to pick") {
+		t.Errorf("status = %q", txt)
+	}
+	if d.cport.GetText() != "80" || d.lport.GetText() != "80" {
+		t.Errorf("prefill: container %q, local %q, want 80 and 80", d.cport.GetText(), d.lport.GetText())
+	}
+	if !d.cport.marker() {
+		t.Error("the container port must show the ▾ marker once there are suggestions")
+	}
+}
+
+// A port typed while the lookup ran is the operator's; the lookup only
+// fills an untouched field.
+func TestForwardFormKeepsATypedPort(t *testing.T) {
+	d := runningForwardForm(t, func(d *fwdDialog) { d.cport.SetText("9000") })
+	if d.cport.GetText() != "9000" {
+		t.Errorf("container port = %q, want the typed 9000 kept", d.cport.GetText())
+	}
+	if !strings.Contains(d.status.GetText(true), "exposed 80 · 8080") {
+		t.Errorf("the suggestions must still be listed: %q", d.status.GetText(true))
 	}
 }
