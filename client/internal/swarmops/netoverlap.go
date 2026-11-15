@@ -65,6 +65,12 @@ type OverlapFinding struct {
 	Kind     string
 	Severity OverlapSeverity
 	Message  string
+
+	// Structured detail, so a caller with restricted visibility (MCP) can
+	// rephrase the finding without revealing what it may not see.
+	Subnet  netip.Prefix // the checked subnet (or the pool, for default-pool)
+	Hosts   int          // host-ips: how many node addresses lie inside
+	Network string       // network: the other network's name
 }
 
 // OverlapRemedy is the fix, shown wherever a finding is: Docker cannot
@@ -168,14 +174,14 @@ func CheckSubnet(subnet netip.Prefix, skipID string, nodes []NodeAddr, underlay 
 	}
 	if len(hosts) > 0 {
 		out = append(out, OverlapFinding{
-			Kind: OverlapHostIPs, Severity: OverlapHigh,
+			Kind: OverlapHostIPs, Severity: OverlapHigh, Subnet: subnet, Hosts: len(hosts),
 			Message: fmt.Sprintf("%s contains host IPs: %s", subnet, strings.Join(hosts, ", ")),
 		})
 	}
 	for _, u := range underlay {
 		if subnet.Overlaps(u) {
 			out = append(out, OverlapFinding{
-				Kind: OverlapUnderlay, Severity: OverlapWarn,
+				Kind: OverlapUnderlay, Severity: OverlapWarn, Subnet: subnet,
 				Message: fmt.Sprintf("%s overlaps the underlay %s", subnet, u.Masked()),
 			})
 		}
@@ -187,7 +193,7 @@ func CheckSubnet(subnet netip.Prefix, skipID string, nodes []NodeAddr, underlay 
 		for _, sp := range other.Subnets {
 			if subnet.Overlaps(sp) {
 				out = append(out, OverlapFinding{
-					Kind: OverlapNetwork, Severity: OverlapWarn,
+					Kind: OverlapNetwork, Severity: OverlapWarn, Subnet: subnet, Network: other.Name,
 					Message: fmt.Sprintf("%s overlaps network %s (%s)", subnet, other.Name, sp),
 				})
 			}
@@ -236,7 +242,7 @@ func CheckDefaultPool(pool []netip.Prefix, subnetSize uint32, nodes []NodeAddr, 
 		}
 		if len(hits) > 0 {
 			out = append(out, OverlapFinding{
-				Kind: OverlapDefaultPool, Severity: OverlapWarn,
+				Kind: OverlapDefaultPool, Severity: OverlapWarn, Subnet: p,
 				Message: fmt.Sprintf("no subnet given: Docker will pick a /%d from the default address pool %s, "+
 					"which also holds %s — the picked subnet may overlap the hosts. Set an explicit subnet "+
 					"outside the hosts' network (e.g. 10.100.1.0/24).", subnetSize, p, strings.Join(hits, ", ")),

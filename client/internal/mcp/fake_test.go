@@ -140,6 +140,9 @@ func newFixtureSwarm() *swarmfake.Swarm {
 	// overlap analysis must flag it in networks_list.
 	shopNet := netw("net-shop", "shop_net", map[string]string{"com.docker.stack.namespace": "shop", lEnable: "true"})
 	shopNet.IPAM.Config = []network.IPAMConfig{{Subnet: netip.MustParsePrefix("10.0.0.0/24")}}
+	// hidden_net overlaps shop_net: the finding on shop_net must not name it.
+	hiddenNet := netw("net-hidden", "hidden_net", nil)
+	hiddenNet.IPAM.Config = []network.IPAMConfig{{Subnet: netip.MustParsePrefix("10.0.0.128/25")}}
 	cfg := func(id, name string) swarm.Config {
 		var c swarm.Config
 		c.ID, c.Spec.Name = id, name
@@ -160,7 +163,7 @@ func newFixtureSwarm() *swarmfake.Swarm {
 		Nodes: []swarm.Node{node("node1", "node-a", true), node("node2", "node-b", false)},
 		Networks: []network.Summary{
 			shopNet,
-			netw("net-hidden", "hidden_net", nil),
+			hiddenNet,
 		},
 		Secrets: []swarm.Secret{secret("sec-shop", "shop_db_pw"), secret("sec-hidden", "hidden_secret")},
 		Configs: []swarm.Config{cfg("cfg-shop", "shop_cfg"), cfg("cfg-hidden", "hidden_cfg")},

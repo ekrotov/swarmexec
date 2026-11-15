@@ -759,15 +759,36 @@ func (s *Server) toolNetworks(ctx context.Context, in mcpCtxIn) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	rows := []mcpNetworkRow{}
+	type shown struct {
+		n      swarmops.Network
+		usedBy []string
+	}
+	var vis []shown
+	visible := map[string]bool{}
 	for _, n := range nets {
-		u := v.visibleOnly(n.Services)
-		if len(u) == 0 {
-			continue
+		if u := v.visibleOnly(n.Services); len(u) > 0 {
+			vis = append(vis, shown{n, u})
+			visible[n.Name] = true
 		}
-		rows = append(rows, networkRow(n, u))
+	}
+	rows := []mcpNetworkRow{}
+	for _, s := range vis {
+		rows = append(rows, networkRow(s.n, s.usedBy, visible))
 	}
 	return jsonText(rows)
+}
+
+// mcpOverlapMessage is a finding as a restricted caller may read it.
+func mcpOverlapMessage(f swarmops.OverlapFinding, visible map[string]bool) string {
+	switch f.Kind {
+	case swarmops.OverlapHostIPs:
+		return fmt.Sprintf("%s contains %d host IPs", f.Subnet, f.Hosts)
+	case swarmops.OverlapNetwork:
+		if !visible[f.Network] {
+			return fmt.Sprintf("%s overlaps another network (not visible)", f.Subnet)
+		}
+	}
+	return f.Message
 }
 
 // mcpNetworkRow is a networks_list row: the shared name/used_by pair plus the
@@ -783,7 +804,11 @@ type mcpNetworkRow struct {
 	Remedy          string   `json:"remedy,omitempty"`
 }
 
-func networkRow(n swarmops.Network, usedBy []string) mcpNetworkRow {
+// networkRow builds the row. The overlap findings were computed against the
+// whole cluster, so they are re-worded here to say no more than the caller may
+// see: another network's name only when that network is visible, and node
+// addresses only as a count (no MCP tool reveals node IPs).
+func networkRow(n swarmops.Network, usedBy []string, visible map[string]bool) mcpNetworkRow {
 	sort.Strings(usedBy)
 	r := mcpNetworkRow{Name: n.Name, UsedBy: usedBy}
 	for _, p := range n.Subnets {
@@ -792,7 +817,7 @@ func networkRow(n swarmops.Network, usedBy []string) mcpNetworkRow {
 	if len(n.Overlaps) > 0 {
 		r.OverlapSeverity = n.OverlapSeverity().String()
 		for _, f := range n.Overlaps {
-			r.Overlaps = append(r.Overlaps, f.Message)
+			r.Overlaps = append(r.Overlaps, mcpOverlapMessage(f, visible))
 		}
 		r.Remedy = swarmops.OverlapRemedy
 	}
