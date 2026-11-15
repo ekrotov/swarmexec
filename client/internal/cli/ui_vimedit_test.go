@@ -35,13 +35,18 @@ func newTestVim(t *testing.T, text string) (*vimEditor, func(keys string)) {
 	return e, press
 }
 
-// parseKeys turns "dd<Esc>:w<CR>" into key events: runes, plus <Esc>, <CR>,
-// <BS>, <C-r>, <C-s>, <Tab> and <S-Tab>.
+// parseKeys turns "dd<Esc>:w<CR>" into key events: runes, plus the named keys
+// in special below (<Esc>, <CR>, <BS>, <C-r>, <Left>, …).
 func parseKeys(t *testing.T, keys string) []*tcell.EventKey {
 	t.Helper()
 	special := map[string]tcell.Key{"<Esc>": tcell.KeyEscape, "<CR>": tcell.KeyEnter,
-		"<BS>": tcell.KeyBackspace2, "<C-r>": tcell.KeyCtrlR, "<C-s>": tcell.KeyCtrlS,
-		"<Tab>": tcell.KeyTab, "<S-Tab>": tcell.KeyBacktab}
+		"<BS>": tcell.KeyBackspace2, "<C-h>": tcell.KeyBackspace, "<C-r>": tcell.KeyCtrlR,
+		"<C-s>": tcell.KeyCtrlS, "<Tab>": tcell.KeyTab, "<S-Tab>": tcell.KeyBacktab,
+		"<Left>": tcell.KeyLeft, "<Right>": tcell.KeyRight, "<Up>": tcell.KeyUp,
+		"<Down>": tcell.KeyDown, "<Home>": tcell.KeyHome, "<End>": tcell.KeyEnd,
+		"<Del>": tcell.KeyDelete, "<C-d>": tcell.KeyCtrlD, "<C-u>": tcell.KeyCtrlU,
+		"<C-f>": tcell.KeyCtrlF, "<C-b>": tcell.KeyCtrlB, "<PgDn>": tcell.KeyPgDn,
+		"<PgUp>": tcell.KeyPgUp}
 	var out []*tcell.EventKey
 	for keys != "" {
 		matched := false
@@ -325,5 +330,162 @@ func TestVimAltKeyIsEscapeThenKey(t *testing.T) {
 	}
 	if got := cur(e); got != "XA=1\n|B=2" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// Every Normal-mode binding, one row each: the key's spellings (rune and named
+// key), counts and the multi-key prefixes.
+func TestVimNormalKeys(t *testing.T) {
+	const two = "KEY=one two\n  B=2\nC=3"
+	cases := []struct {
+		name, text, keys, want string
+		mode                   vimMode
+	}{
+		// motions, in every spelling
+		{"h", "ABC", "$h", "A|BC", vimNormal},
+		{"Left", "ABC", "$<Left>", "A|BC", vimNormal},
+		{"BS", "ABC", "$<BS>", "A|BC", vimNormal},
+		{"C-h", "ABC", "$<C-h>", "A|BC", vimNormal},
+		{"count h", "ABCD", "$2h", "A|BCD", vimNormal},
+		{"l", "ABC", "l", "A|BC", vimNormal},
+		{"space", "ABC", " ", "A|BC", vimNormal},
+		{"Right", "ABC", "<Right>", "A|BC", vimNormal},
+		{"l stops at the end", "ABC", "9l", "AB|C", vimNormal},
+		{"j", "A\nB\nC", "j", "A\n|B\nC", vimNormal},
+		{"Down", "A\nB\nC", "<Down>", "A\n|B\nC", vimNormal},
+		{"count j", "A\nB\nC", "2j", "A\nB\n|C", vimNormal},
+		{"k", "A\nB\nC", "Gk", "A\n|B\nC", vimNormal},
+		{"Up", "A\nB\nC", "G<Up>", "A\n|B\nC", vimNormal},
+		{"Enter", two, "<CR>", "KEY=one two\n  |B=2\nC=3", vimNormal},
+		{"+", two, "+", "KEY=one two\n  |B=2\nC=3", vimNormal},
+		{"-", two, "G-", "KEY=one two\n  |B=2\nC=3", vimNormal},
+		{"0", "ABC", "$0", "|ABC", vimNormal},
+		{"Home", "ABC", "$<Home>", "|ABC", vimNormal},
+		{"^", "  AB", "$^", "  |AB", vimNormal},
+		{"$", "ABC", "$", "AB|C", vimNormal},
+		{"End", "ABC", "<End>", "AB|C", vimNormal},
+		{"$ sticks to the end", "ABC\nABCDE", "$j", "ABC\nABCD|E", vimNormal},
+		{"w", two, "w", "KEY|=one two\n  B=2\nC=3", vimNormal},
+		{"count w", two, "3w", "KEY=one |two\n  B=2\nC=3", vimNormal},
+		{"b", two, "$b", "KEY=one |two\n  B=2\nC=3", vimNormal},
+		{"count b", two, "$2b", "KEY=|one two\n  B=2\nC=3", vimNormal},
+		{"e", two, "e", "KE|Y=one two\n  B=2\nC=3", vimNormal},
+		{"count e", two, "2e", "KEY|=one two\n  B=2\nC=3", vimNormal},
+		{"G", two, "G", "KEY=one two\n  B=2\n|C=3", vimNormal},
+		{"count G", two, "2G", "KEY=one two\n  |B=2\nC=3", vimNormal},
+		{"gg", two, "Ggg", "|KEY=one two\n  B=2\nC=3", vimNormal},
+		{"count gg", two, "2gg", "KEY=one two\n  |B=2\nC=3", vimNormal},
+		{"g then other", two, "gjj", "KEY=one two\n|  B=2\nC=3", vimNormal},
+		{"0 continues a count", "ABCDEFGHIJKL", "10l", "ABCDEFGHIJ|KL", vimNormal},
+		// paging goes to the TextArea, which moves the cursor by a page
+		{"C-d", "A\nB", "<C-d>", "A\nB|", vimNormal},
+		{"PgDn", "A\nB", "<PgDn>", "A\nB|", vimNormal},
+		{"C-f", "A\nB", "<C-f>", "A\nB|", vimNormal},
+		{"C-u", "A\nB", "<C-u>", "|A\nB", vimNormal},
+		{"PgUp", "A\nB", "<PgUp>", "|A\nB", vimNormal},
+		{"C-b", "A\nB", "<C-b>", "|A\nB", vimNormal},
+		// entering Insert mode
+		{"i", "ABC", "li", "A|BC", vimInsert},
+		{"a", "ABC", "la", "AB|C", vimInsert},
+		{"a at the end", "ABC", "$a", "ABC|", vimInsert},
+		{"I", "  AB", "$I", "  |AB", vimInsert},
+		{"A", "AB\nC", "A", "AB|\nC", vimInsert},
+		{"o", "AB\nC", "o", "AB\n|\nC", vimInsert},
+		{"O", "AB\nC", "jO", "AB\n|\nC", vimInsert},
+		{"S", "AB\nC", "S", "|\nC", vimInsert},
+		{"count S", "AB\nC\nD", "2S", "|\nD", vimInsert},
+		{"C", "ABC", "lC", "A|", vimInsert},
+		// editing
+		{"x", "ABC", "x", "|BC", vimNormal},
+		{"Del", "ABC", "<Del>", "|BC", vimNormal},
+		{"count x stops at the line end", "AB\nC", "5x", "|\nC", vimNormal},
+		{"X", "ABC", "$X", "A|C", vimNormal},
+		{"count X", "ABCD", "$2X", "A|D", vimNormal},
+		{"D", "ABC", "lD", "|A", vimNormal},
+		{"Y p", "A\nB", "Yp", "A\n|A\nB", vimNormal},
+		{"count Y p", "A\nB\nC", "2YGp", "A\nB\nC\n|A\nB", vimNormal},
+		{"count p", "A\nB", "yy2p", "A\n|A\nA\nB", vimNormal},
+		{"charwise p", "AB", "xp", "B|A", vimNormal},
+		{"charwise P", "AB", "xP", "|AB", vimNormal},
+		{"p with an empty register", "AB", "p", "|AB", vimNormal},
+		{"count J", "A\nB\nC", "3J", "A B| C", vimNormal},
+		{"r", "ABC", "rX", "|XBC", vimNormal},
+		{"r then a non-rune", "ABC", "r<Esc>", "|ABC", vimNormal},
+		{"count u", "ABC", "xxx2u", "|BC", vimNormal},
+		{"count C-r", "ABC", "xxx3u2<C-r>", "|C", vimNormal},
+		// operators and their motions
+		{"3dd keeps the count", "A\nB\nC\nD", "3dd", "|D", vimNormal},
+		{"d3d", "A\nB\nC\nD", "d3d", "|D", vimNormal},
+		{"de", two, "de", "|=one two\n  B=2\nC=3", vimNormal},
+		{"2dw", two, "2dw", "|one two\n  B=2\nC=3", vimNormal},
+		{"dEnd", "ABC", "ld<End>", "|A", vimNormal},
+		{"d0", "ABC", "$d0", "|C", vimNormal},
+		{"dHome", "ABC", "$d<Home>", "|C", vimNormal},
+		{"y$ P", "ABC", "ly$P", "AB|CBC", vimNormal},
+		{"yw P", two, "ywP", "KE|YKEY=one two\n  B=2\nC=3", vimNormal},
+		{"c$", "ABC", "lc$", "A|", vimInsert},
+		{"d then nothing", "ABC", "dj", "|ABC", vimNormal},
+		// search
+		{"N wraps", "A=1\nB=1\nC=1", "/=1<CR>N", "A=1\nB=1\nC|=1", vimNormal},
+		{"n without a search", "ABC", "ln", "A|BC", vimNormal},
+		// modes and stray keys
+		{":", "ABC", ":", "|ABC", vimCommand},
+		{"/", "ABC", "/", "|ABC", vimCommand},
+		{"unbound rune", "ABC", "lq", "A|BC", vimNormal},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e, press := newTestVim(t, c.text)
+			press(c.keys)
+			if got := cur(e); got != c.want {
+				t.Fatalf("%q on %q: got %q, want %q", c.keys, c.text, got, c.want)
+			}
+			if e.mode != c.mode {
+				t.Fatalf("ended in mode %d, want %d", e.mode, c.mode)
+			}
+			if c.mode == vimNormal && (e.pending != "" || e.count != 0) {
+				t.Fatalf("left pending %q count %d", e.pending, e.count)
+			}
+		})
+	}
+}
+
+// The Normal-mode keys that reach the owner: ZZ writes, ZQ leaves without
+// asking, Tab / Shift-Tab move between fields; and a count is capped.
+func TestVimNormalKeysReachTheOwner(t *testing.T) {
+	e, press := newTestVim(t, "A=1")
+	var wrote string
+	quit, tabs, backs := 0, 0, 0
+	e.onWrite = func(s string) error { wrote = s; return nil }
+	e.onQuit = func() { quit++ }
+	e.onTab = func(back bool) {
+		if back {
+			backs++
+		} else {
+			tabs++
+		}
+	}
+	press("xZZ")
+	if wrote != "=1" {
+		t.Fatalf("ZZ wrote %q", wrote)
+	}
+	press("ZX") // not a Z command: nothing happens, the prefix is gone
+	if quit != 0 || e.pending != "" {
+		t.Fatalf("ZX: quit %d, pending %q", quit, e.pending)
+	}
+	press("xZQ") // ZQ leaves even with changes
+	if quit != 1 {
+		t.Fatal("ZQ did not leave")
+	}
+	press("<Tab><S-Tab><Tab>")
+	if tabs != 2 || backs != 1 {
+		t.Fatalf("Tab %d, Shift-Tab %d", tabs, backs)
+	}
+	press("9999999")
+	if e.count != 99999 {
+		t.Fatalf("count %d, want it capped at 99999", e.count)
+	}
+	if !strings.Contains(e.status.GetText(true), "99999") {
+		t.Fatalf("the pending count is not shown: %q", e.status.GetText(true))
 	}
 }
