@@ -84,7 +84,12 @@ workflow:
     on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # A tag builds from scratch, without the shared Go cache volumes (see
+    # "Caches" below): project-local, empty GOCACHE/GOMODCACHE.
     - if: $CI_COMMIT_TAG
+      variables:
+        GOCACHE: "$CI_PROJECT_DIR/.gocache/build"
+        GOMODCACHE: "$CI_PROJECT_DIR/.gocache/mod"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
         - site/**/*
@@ -126,6 +131,21 @@ default:
 # the module cache only grows (clear it with `go clean -modcache` in a job, or
 # remove the volume on the host). Each new host starts cold, once.
 #
+# Tag pipelines do NOT use the volumes. They are writable by every job on the
+# host: MR pipelines and other projects' jobs on this instance runner too, so
+# they cross the line that ci_separated_caches drew between protected and
+# unprotected caches. A release must not depend on a cache any job can write.
+# So a tag (workflow:rules above) sets GOCACHE/GOMODCACHE to empty
+# project-local directories (.gocache/build, .gocache/mod; no GitLab cache
+# either), and every Go job runs `go mod verify` first (.go-volume-check), so
+# the modules a release is built and tested from are checked against go.sum.
+# A release pipeline is therefore a cold build, which is rare and acceptable.
+# (The tools cache still applies on tags, under the -protected key: buf,
+# staticcheck, govulncheck, scip-go check the release but are not part of it.
+# The agent image is built by Kaniko from agent/Dockerfile and never sees the
+# volumes.) Residual: the runners are privileged with the host's docker.sock
+# mounted, so any job is root on its host anyway; this is defence in depth.
+#
 # What stays a GitLab cache is what is not on a volume:
 #   tools   buf, protoc plugins, staticcheck, govulncheck, scip-go binaries
 #           in $GOPATH/bin, keyed on tools.mk (the pinned versions); the
@@ -149,14 +169,20 @@ default:
   cache:
     - *cache-tools
 
-# Every Go job extends this: it says in the log whether this host mounts the
-# Go cache volumes, so a host that lost them (a rebuilt runner, a config.toml
-# without the volumes line) shows up as a warning instead of as a slow job.
-# The job still runs, just cold.
+# Every Go job extends this. On a tag it runs `go mod verify` against the
+# cold project-local module cache. Otherwise it says in the log whether this
+# host mounts the Go cache volumes, so a host that lost them (a rebuilt
+# runner, a config.toml without the volumes line) shows up as a warning
+# instead of as a slow job. The job still runs, just cold.
 .go-volume-check:
   before_script:
     - |
-      if grep -qs ' /go-cache/build ' /proc/self/mountinfo && grep -qs ' /go-cache/mod ' /proc/self/mountinfo; then
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        # Release: cold, project-local caches (workflow:rules), modules
+        # verified against go.sum before anything is built from them.
+        echo "tag pipeline: GOCACHE=$GOCACHE GOMODCACHE=$GOMODCACHE (no shared volumes)"
+        go mod verify
+      elif grep -qs ' /go-cache/build ' /proc/self/mountinfo && grep -qs ' /go-cache/mod ' /proc/self/mountinfo; then
         if [ -e /go-cache/build/trim.txt ]; then state="warm"; else state="empty (first job on this host)"; fi
         echo "Go cache volumes mounted on this host; build cache: $state"
       else

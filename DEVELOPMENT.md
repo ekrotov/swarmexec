@@ -107,7 +107,9 @@ How the pipeline stays fast (details in the comments of `.gitlab-ci.yml`):
   `config.toml`, `[runners.docker] volumes`), and CI sets `GOCACHE` /
   `GOMODCACHE` to them. One copy per host, shared by its slots, nothing
   zipped. Every Go job logs whether its host mounts them and warns if not
-  (the job then runs cold). Only the tool binaries (keyed on `tools.mk`) and
+  (the job then runs cold). Tag (release) pipelines do not use the volumes,
+  because any job on a host can write them: they build cold from
+  project-local caches and run `go mod verify` first. Only the tool binaries (keyed on `tools.mk`) and
   staticcheck's analysis cache remain GitLab caches; without a cache server
   the runners keep those per host *and concurrent slot*, so every job that
   uses one also writes it.
