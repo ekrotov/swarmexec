@@ -239,46 +239,15 @@ func (e *vimEditor) leaveInsert() {
 	e.setMode(vimNormal)
 }
 
-// normalKey interprets one key in Normal mode.
+// normalKey interprets one key in Normal mode: first the key a pending prefix
+// waits for, then a count, then an operator's motion, and otherwise the
+// command bound to the key in normalRunes / normalKeys.
 func (e *vimEditor) normalKey(ev *tcell.EventKey) {
 	r := ev.Rune()
 	if ev.Key() != tcell.KeyRune {
 		r = 0
 	}
-	// Prefixes that take the next key as their argument.
-	switch e.pending {
-	case "r":
-		e.pending = ""
-		if r != 0 {
-			e.replaceChar(r)
-		}
-		e.render()
-		return
-	case "g":
-		e.pending = ""
-		if r == 'g' {
-			e.gotoLine(e.countOr(1))
-		}
-		e.count = 0
-		e.render()
-		return
-	case "Z":
-		e.pending, e.count = "", 0
-		switch r {
-		case 'Z':
-			e.write()
-		case 'Q':
-			e.quit(true)
-		}
-		e.render()
-		return
-	}
-	// A count prefix: 1-9 start it, 0 continues it (a bare 0 is a motion).
-	if r >= '1' && r <= '9' || r == '0' && e.count > 0 {
-		e.count = e.count*10 + int(r-'0')
-		if e.count > 99999 {
-			e.count = 99999
-		}
+	if e.prefixKey(r) || e.countKey(r) {
 		e.render()
 		return
 	}
@@ -287,156 +256,295 @@ func (e *vimEditor) normalKey(ev *tcell.EventKey) {
 		e.render()
 		return
 	}
-	typed, n := e.count > 0, e.countOr(1)
+	cmd := normalKeys[ev.Key()]
+	if ev.Key() == tcell.KeyRune {
+		cmd = normalRunes[r]
+	}
+	c := normalCtx{ev: ev, r: r, typed: e.count > 0, n: e.countOr(1)}
 	e.count = 0
-	text, pos := e.ta.GetText(), e.cursor()
-	switch {
-	case r == 'h' || ev.Key() == tcell.KeyLeft || ev.Key() == tcell.KeyBackspace || ev.Key() == tcell.KeyBackspace2:
-		for i := 0; i < n; i++ {
-			pos = prevInLine(text, pos)
-		}
-		e.moveCol(text, pos)
-	case r == 'l' || r == ' ' || ev.Key() == tcell.KeyRight:
-		for i := 0; i < n; i++ {
-			pos = nextInLine(text, pos)
-		}
-		e.moveCol(text, pos)
-	case r == 'j' || ev.Key() == tcell.KeyDown:
-		e.moveLines(text, pos, n)
-	case r == 'k' || ev.Key() == tcell.KeyUp:
-		e.moveLines(text, pos, -n)
-	case ev.Key() == tcell.KeyEnter || r == '+':
-		e.moveLines(text, pos, n)
-		e.firstNonBlank()
-	case r == '-':
-		e.moveLines(text, pos, -n)
-		e.firstNonBlank()
-	case r == '0' || ev.Key() == tcell.KeyHome:
-		ls, _ := lineBounds(text, pos)
-		e.moveCol(text, ls)
-	case r == '^':
-		e.firstNonBlank()
-	case r == '$' || ev.Key() == tcell.KeyEnd:
-		_, le := lineBounds(text, pos)
-		e.moveTo(clampNormal(text, le))
-		e.wantCol = -1
-	case r == 'w':
-		for i := 0; i < n; i++ {
-			pos = wordForward(text, pos)
-		}
-		e.moveCol(text, clampNormal(text, pos))
-	case r == 'b':
-		for i := 0; i < n; i++ {
-			pos = wordBackward(text, pos)
-		}
-		e.moveCol(text, pos)
-	case r == 'e':
-		for i := 0; i < n; i++ {
-			pos = wordEnd(text, pos)
-		}
-		e.moveCol(text, pos)
-	case r == 'G':
-		if typed {
-			e.gotoLine(n)
-		} else {
-			e.gotoLine(strings.Count(text, "\n") + 1)
-		}
-	case r == 'g' || r == 'd' || r == 'y' || r == 'c' || r == 'r' || r == 'Z':
-		e.pending = string(r)
-		if n > 1 {
-			e.count = n // keep the count for the operator (3dd)
-		}
-	case ev.Key() == tcell.KeyCtrlD || ev.Key() == tcell.KeyPgDn || ev.Key() == tcell.KeyCtrlF:
-		e.send(tcell.KeyPgDn)
-	case ev.Key() == tcell.KeyCtrlU || ev.Key() == tcell.KeyPgUp || ev.Key() == tcell.KeyCtrlB:
-		e.send(tcell.KeyPgUp)
-	case r == 'i':
-		e.setMode(vimInsert)
-	case r == 'a':
-		_, le := lineBounds(text, pos)
-		if pos < le {
-			_, sz := utf8.DecodeRuneInString(text[pos:])
-			e.moveTo(pos + sz)
-		}
-		e.setMode(vimInsert)
-	case r == 'I':
-		e.firstNonBlank()
-		e.setMode(vimInsert)
-	case r == 'A':
-		_, le := lineBounds(text, pos)
-		e.moveTo(le)
-		e.setMode(vimInsert)
-	case r == 'o':
-		_, le := lineBounds(text, pos)
-		e.ta.Replace(le, le, "\n")
-		e.setMode(vimInsert)
-	case r == 'O':
-		ls, _ := lineBounds(text, pos)
-		e.ta.Replace(ls, ls, "\n")
-		e.moveTo(ls)
-		e.setMode(vimInsert)
-	case r == 'x' || ev.Key() == tcell.KeyDelete:
-		_, le := lineBounds(text, pos)
-		end := pos
-		for i := 0; i < n && end < le; i++ {
-			_, sz := utf8.DecodeRuneInString(text[end:])
-			end += sz
-		}
-		e.cut(pos, end, false)
-	case r == 'X':
-		ls, _ := lineBounds(text, pos)
-		start := pos
-		for i := 0; i < n && start > ls; i++ {
-			start = prevInLine(text, start)
-		}
-		e.cut(start, pos, false)
-	case r == 'D':
-		_, le := lineBounds(text, pos)
-		e.cut(pos, le, false)
-	case r == 'C':
-		_, le := lineBounds(text, pos)
-		e.cut(pos, le, true)
-		e.setMode(vimInsert)
-	case r == 'S':
-		e.changeLines(pos, n)
-	case r == 'Y':
-		e.yankLines(pos, n)
-	case r == 'p':
-		e.put(true, n)
-	case r == 'P':
-		e.put(false, n)
-	case r == 'J':
-		e.joinLines(pos, n)
-	case r == 'u':
-		e.history(tcell.KeyCtrlZ, n)
-	case ev.Key() == tcell.KeyCtrlR:
-		e.history(tcell.KeyCtrlY, n)
-	case r == 'n':
-		e.find(e.search, true)
-	case r == 'N':
-		e.find(e.search, false)
-	case r == ':' || r == '/':
-		e.cmd = string(r)
-		e.setMode(vimCommand)
-	case r == '?':
-		if e.onHelp != nil {
-			e.onHelp()
-		}
-	case ev.Key() == tcell.KeyTab || ev.Key() == tcell.KeyBacktab:
-		if e.onTab != nil {
-			e.onTab(ev.Key() == tcell.KeyBacktab)
-		}
-	case ev.Key() == tcell.KeyEscape:
-		// Escape in Normal mode cancels a half-typed command; with nothing
-		// pending and nothing changed it closes, as Esc does everywhere else
-		// in the TUI. With changes it says how to leave instead.
-		if !e.dirty() {
-			e.quit(false)
-			return
-		}
-		e.setMsg("unsaved changes — :w applies, :q! discards", false)
+	c.text, c.pos = e.ta.GetText(), e.cursor()
+	if cmd != nil {
+		cmd(e, c)
 	}
 	e.render()
+}
+
+// prefixKey completes the prefixes that take the next key as their argument
+// (r, g, Z); it reports whether one was pending. Like vim, r keeps a count
+// typed before it, while g and Z use theirs up.
+func (e *vimEditor) prefixKey(r rune) bool {
+	switch e.pending {
+	case "r":
+		e.pending = ""
+		if r != 0 {
+			e.replaceChar(r)
+		}
+	case "g":
+		e.pending = ""
+		if r == 'g' {
+			e.gotoLine(e.countOr(1))
+		}
+		e.count = 0
+	case "Z":
+		e.pending, e.count = "", 0
+		switch r {
+		case 'Z':
+			e.write()
+		case 'Q':
+			e.quit(true)
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// countKey adds a digit to the count prefix: 1-9 start it, 0 continues it (a
+// bare 0 is a motion). It reports whether r was taken as one.
+func (e *vimEditor) countKey(r rune) bool {
+	if !(r >= '1' && r <= '9' || r == '0' && e.count > 0) {
+		return false
+	}
+	e.count = min(e.count*10+int(r-'0'), 99999)
+	return true
+}
+
+// normalCtx is what a Normal-mode command acts on: the key, the text and the
+// cursor as they were when it was pressed, and its count — n is 1 when none
+// was typed, and typed tells the two apart (G is not 1G).
+type normalCtx struct {
+	ev    *tcell.EventKey
+	r     rune // 0 for a named key
+	text  string
+	pos   int
+	n     int
+	typed bool
+}
+
+// normalCmd is one Normal-mode command.
+type normalCmd func(e *vimEditor, c normalCtx)
+
+// normalRunes and normalKeys are the Normal-mode bindings: typed characters by
+// rune, the rest by tcell key. A command with two spellings (h and Left) is
+// listed under both. The prefixes only arm e.pending here; prefixKey and
+// operator read the key that completes them. vimHelpText describes the same
+// set for the operator — keep the two in step.
+var (
+	normalRunes = map[rune]normalCmd{
+		'h': vimLeft, 'l': vimRight, ' ': vimRight,
+		'j': vimDown, 'k': vimUp,
+		'+': vimNextLine, '-': vimPrevLine,
+		'0': vimLineStart, '^': func(e *vimEditor, _ normalCtx) { e.firstNonBlank() }, '$': vimLineEnd,
+		'w': vimWordForward, 'b': vimWordBackward, 'e': vimWordEnd,
+		'G': vimGoto,
+		'g': vimPrefix, 'd': vimPrefix, 'y': vimPrefix, 'c': vimPrefix, 'r': vimPrefix, 'Z': vimPrefix,
+		'i': func(e *vimEditor, _ normalCtx) { e.setMode(vimInsert) },
+		'a': vimAppend, 'I': vimInsertLineStart, 'A': vimAppendLineEnd,
+		'o': vimOpenBelow, 'O': vimOpenAbove,
+		'x': vimDeleteChar, 'X': vimDeleteCharBefore,
+		'D': vimDeleteToEnd, 'C': vimChangeToEnd,
+		'S': func(e *vimEditor, c normalCtx) { e.changeLines(c.pos, c.n) },
+		'Y': func(e *vimEditor, c normalCtx) { e.yankLines(c.pos, c.n) },
+		'p': func(e *vimEditor, c normalCtx) { e.put(true, c.n) },
+		'P': func(e *vimEditor, c normalCtx) { e.put(false, c.n) },
+		'J': func(e *vimEditor, c normalCtx) { e.joinLines(c.pos, c.n) },
+		'u': func(e *vimEditor, c normalCtx) { e.history(tcell.KeyCtrlZ, c.n) },
+		'n': func(e *vimEditor, _ normalCtx) { e.find(e.search, true) },
+		'N': func(e *vimEditor, _ normalCtx) { e.find(e.search, false) },
+		':': vimCommandLine, '/': vimCommandLine,
+		'?': vimHelp,
+	}
+	normalKeys = map[tcell.Key]normalCmd{
+		tcell.KeyLeft: vimLeft, tcell.KeyBackspace: vimLeft, tcell.KeyBackspace2: vimLeft,
+		tcell.KeyRight: vimRight,
+		tcell.KeyDown:  vimDown, tcell.KeyUp: vimUp,
+		tcell.KeyEnter: vimNextLine,
+		tcell.KeyHome:  vimLineStart, tcell.KeyEnd: vimLineEnd,
+		tcell.KeyCtrlD: vimPageDown, tcell.KeyPgDn: vimPageDown, tcell.KeyCtrlF: vimPageDown,
+		tcell.KeyCtrlU: vimPageUp, tcell.KeyPgUp: vimPageUp, tcell.KeyCtrlB: vimPageUp,
+		tcell.KeyDelete: vimDeleteChar,
+		tcell.KeyCtrlR:  func(e *vimEditor, c normalCtx) { e.history(tcell.KeyCtrlY, c.n) },
+		tcell.KeyTab:    vimTab, tcell.KeyBacktab: vimTab,
+		tcell.KeyEscape: vimEscape,
+	}
+)
+
+func vimLeft(e *vimEditor, c normalCtx) {
+	pos := c.pos
+	for i := 0; i < c.n; i++ {
+		pos = prevInLine(c.text, pos)
+	}
+	e.moveCol(c.text, pos)
+}
+
+func vimRight(e *vimEditor, c normalCtx) {
+	pos := c.pos
+	for i := 0; i < c.n; i++ {
+		pos = nextInLine(c.text, pos)
+	}
+	e.moveCol(c.text, pos)
+}
+
+func vimDown(e *vimEditor, c normalCtx) { e.moveLines(c.text, c.pos, c.n) }
+func vimUp(e *vimEditor, c normalCtx)   { e.moveLines(c.text, c.pos, -c.n) }
+
+func vimNextLine(e *vimEditor, c normalCtx) {
+	e.moveLines(c.text, c.pos, c.n)
+	e.firstNonBlank()
+}
+
+func vimPrevLine(e *vimEditor, c normalCtx) {
+	e.moveLines(c.text, c.pos, -c.n)
+	e.firstNonBlank()
+}
+
+func vimLineStart(e *vimEditor, c normalCtx) {
+	ls, _ := lineBounds(c.text, c.pos)
+	e.moveCol(c.text, ls)
+}
+
+func vimLineEnd(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	e.moveTo(clampNormal(c.text, le))
+	e.wantCol = -1
+}
+
+func vimWordForward(e *vimEditor, c normalCtx) {
+	pos := c.pos
+	for i := 0; i < c.n; i++ {
+		pos = wordForward(c.text, pos)
+	}
+	e.moveCol(c.text, clampNormal(c.text, pos))
+}
+
+func vimWordBackward(e *vimEditor, c normalCtx) {
+	pos := c.pos
+	for i := 0; i < c.n; i++ {
+		pos = wordBackward(c.text, pos)
+	}
+	e.moveCol(c.text, pos)
+}
+
+func vimWordEnd(e *vimEditor, c normalCtx) {
+	pos := c.pos
+	for i := 0; i < c.n; i++ {
+		pos = wordEnd(c.text, pos)
+	}
+	e.moveCol(c.text, pos)
+}
+
+// vimGoto is G: the last line, or line n with a count.
+func vimGoto(e *vimEditor, c normalCtx) {
+	if c.typed {
+		e.gotoLine(c.n)
+		return
+	}
+	e.gotoLine(strings.Count(c.text, "\n") + 1)
+}
+
+// vimPrefix arms a prefix or operator; its count waits for it (3dd).
+func vimPrefix(e *vimEditor, c normalCtx) {
+	e.pending = string(c.r)
+	if c.n > 1 {
+		e.count = c.n
+	}
+}
+
+func vimPageDown(e *vimEditor, _ normalCtx) { e.send(tcell.KeyPgDn) }
+func vimPageUp(e *vimEditor, _ normalCtx)   { e.send(tcell.KeyPgUp) }
+
+func vimAppend(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	if c.pos < le {
+		_, sz := utf8.DecodeRuneInString(c.text[c.pos:])
+		e.moveTo(c.pos + sz)
+	}
+	e.setMode(vimInsert)
+}
+
+func vimInsertLineStart(e *vimEditor, _ normalCtx) {
+	e.firstNonBlank()
+	e.setMode(vimInsert)
+}
+
+func vimAppendLineEnd(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	e.moveTo(le)
+	e.setMode(vimInsert)
+}
+
+func vimOpenBelow(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	e.ta.Replace(le, le, "\n")
+	e.setMode(vimInsert)
+}
+
+func vimOpenAbove(e *vimEditor, c normalCtx) {
+	ls, _ := lineBounds(c.text, c.pos)
+	e.ta.Replace(ls, ls, "\n")
+	e.moveTo(ls)
+	e.setMode(vimInsert)
+}
+
+// vimDeleteChar is x: n characters, never past the line end.
+func vimDeleteChar(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	end := c.pos
+	for i := 0; i < c.n && end < le; i++ {
+		_, sz := utf8.DecodeRuneInString(c.text[end:])
+		end += sz
+	}
+	e.cut(c.pos, end, false)
+}
+
+// vimDeleteCharBefore is X: n characters before the cursor, within the line.
+func vimDeleteCharBefore(e *vimEditor, c normalCtx) {
+	ls, _ := lineBounds(c.text, c.pos)
+	start := c.pos
+	for i := 0; i < c.n && start > ls; i++ {
+		start = prevInLine(c.text, start)
+	}
+	e.cut(start, c.pos, false)
+}
+
+func vimDeleteToEnd(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	e.cut(c.pos, le, false)
+}
+
+func vimChangeToEnd(e *vimEditor, c normalCtx) {
+	_, le := lineBounds(c.text, c.pos)
+	e.cut(c.pos, le, true)
+	e.setMode(vimInsert)
+}
+
+func vimCommandLine(e *vimEditor, c normalCtx) {
+	e.cmd = string(c.r)
+	e.setMode(vimCommand)
+}
+
+func vimHelp(e *vimEditor, _ normalCtx) {
+	if e.onHelp != nil {
+		e.onHelp()
+	}
+}
+
+func vimTab(e *vimEditor, c normalCtx) {
+	if e.onTab != nil {
+		e.onTab(c.ev.Key() == tcell.KeyBacktab)
+	}
+}
+
+// vimEscape: Escape in Normal mode cancels a half-typed command (the prefix
+// or operator takes it before this); with nothing pending and nothing changed
+// it closes, as Esc does everywhere else in the TUI. With changes it says how
+// to leave instead.
+func vimEscape(e *vimEditor, _ normalCtx) {
+	if !e.dirty() {
+		e.quit(false)
+		return
+	}
+	e.setMsg("unsaved changes — :w applies, :q! discards", false)
 }
 
 // history undoes (Ctrl-Z) or redoes (Ctrl-Y) n steps with the TextArea's own
