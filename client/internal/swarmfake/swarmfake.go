@@ -7,6 +7,11 @@
 // *client.Client at it through httptest, and every layer above the client
 // runs as it does against a cluster.
 //
+// It also takes the writes `swarmexec init` makes — creating secrets, configs
+// and services, and updating a service — into the same lists, with the two
+// refusals of a real manager that init's behaviour depends on: a name that is
+// taken, and an update computed from a stale version.
+//
 // Test-only: nothing outside _test.go files imports it.
 package swarmfake
 
@@ -18,6 +23,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -41,14 +47,36 @@ type Swarm struct {
 	Secrets  []swarm.Secret
 	Configs  []swarm.Config
 
+	// Info is what /info answers; nil answers a bare "manager-1", which is
+	// not a manager as far as init can tell (no ControlAvailable).
+	Info *system.Info
+	// Fail makes the named calls ("POST /services/create") answer 500, for
+	// the error paths of a write.
+	Fail map[string]bool
+
+	// mu covers every field: the handler holds it for the whole request, so a
+	// test reading the lists after a write does not race the server.
 	mu      sync.Mutex
 	Unknown []string // API paths the fake does not serve, for diagnosis
+	// RegistryAuth is the X-Registry-Auth header of each service create and
+	// update, in order ("" when none was sent).
+	RegistryAuth []string
 }
 
 var apiVersionPrefix = regexp.MustCompile(`^/v[0-9.]+`)
 
 func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	path := apiVersionPrefix.ReplaceAllString(r.URL.Path, "")
+	if f.Fail[r.Method+" "+path] {
+		fail(w, http.StatusInternalServerError, "injected failure: "+r.Method+" "+path)
+		return
+	}
+	if r.Method == http.MethodPost {
+		f.write(w, r, path)
+		return
+	}
 	filters := map[string]map[string]bool{}
 	if raw := r.URL.Query().Get("filters"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &filters)
@@ -63,6 +91,10 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Ostype", "linux")
 		_, _ = io.WriteString(w, "OK")
 	case path == "/info":
+		if f.Info != nil {
+			reply(f.Info)
+			return
+		}
 		reply(system.Info{Name: "manager-1", ServerVersion: "28.0.0"})
 	case path == "/swarm":
 		reply(swarm.Swarm{})
@@ -109,17 +141,116 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/configs":
 		reply(filterNamed(f.Configs, filters, func(c swarm.Config) string { return c.Spec.Name }))
 	default:
-		f.mu.Lock()
-		f.Unknown = append(f.Unknown, r.Method+" "+path)
-		f.mu.Unlock()
-		notFound(w, path)
+		f.unknown(w, r, path)
 	}
 }
 
+func (f *Swarm) unknown(w http.ResponseWriter, r *http.Request, path string) {
+	f.Unknown = append(f.Unknown, r.Method+" "+path)
+	notFound(w, path)
+}
+
+// write serves the creates and the service update. A new object's id is
+// "<kind>-<name>", so a test can lay down tasks for a service init has yet to
+// create.
+func (f *Swarm) write(w http.ResponseWriter, r *http.Request, path string) {
+	created := func(id string) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"ID": id})
+	}
+	taken := func(kind, name string) {
+		fail(w, http.StatusConflict, kind+" "+name+" already exists")
+	}
+	switch {
+	case path == "/secrets/create":
+		var spec swarm.SecretSpec
+		if !decode(w, r, &spec) {
+			return
+		}
+		for _, s := range f.Secrets {
+			if s.Spec.Name == spec.Name {
+				taken("secret", spec.Name)
+				return
+			}
+		}
+		f.Secrets = append(f.Secrets, swarm.Secret{ID: "secret-" + spec.Name, Spec: spec})
+		created("secret-" + spec.Name)
+	case path == "/configs/create":
+		var spec swarm.ConfigSpec
+		if !decode(w, r, &spec) {
+			return
+		}
+		for _, c := range f.Configs {
+			if c.Spec.Name == spec.Name {
+				taken("config", spec.Name)
+				return
+			}
+		}
+		f.Configs = append(f.Configs, swarm.Config{ID: "config-" + spec.Name, Spec: spec})
+		created("config-" + spec.Name)
+	case path == "/services/create":
+		var spec swarm.ServiceSpec
+		if !decode(w, r, &spec) {
+			return
+		}
+		for _, s := range f.Services {
+			if s.Spec.Name == spec.Name {
+				taken("service", spec.Name)
+				return
+			}
+		}
+		f.RegistryAuth = append(f.RegistryAuth, r.Header.Get("X-Registry-Auth"))
+		var s swarm.Service
+		s.ID, s.Version.Index, s.Spec = "service-"+spec.Name, 1, spec
+		f.Services = append(f.Services, s)
+		created(s.ID)
+	case strings.HasPrefix(path, "/services/") && strings.HasSuffix(path, "/update"):
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/services/"), "/update")
+		var spec swarm.ServiceSpec
+		if !decode(w, r, &spec) {
+			return
+		}
+		for i := range f.Services {
+			s := &f.Services[i]
+			if s.ID != id && s.Spec.Name != id {
+				continue
+			}
+			// The manager's optimistic lock: an update names the version it
+			// was computed from, and loses to any write since.
+			if r.URL.Query().Get("version") != fmt.Sprint(s.Version.Index) {
+				fail(w, http.StatusInternalServerError, "update out of sequence")
+				return
+			}
+			f.RegistryAuth = append(f.RegistryAuth, r.Header.Get("X-Registry-Auth"))
+			s.Spec = spec
+			s.Version.Index++
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(swarm.ServiceUpdateResponse{})
+			return
+		}
+		notFound(w, "service "+id)
+	default:
+		f.unknown(w, r, path)
+	}
+}
+
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		fail(w, http.StatusBadRequest, "bad request body: "+err.Error())
+		return false
+	}
+	return true
+}
+
 func notFound(w http.ResponseWriter, what string) {
+	fail(w, http.StatusNotFound, "not found: "+what)
+}
+
+func fail(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "not found: " + what})
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": msg})
 }
 
 func MatchService(s swarm.Service, f map[string]map[string]bool) bool {
