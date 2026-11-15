@@ -101,6 +101,11 @@ How the pipeline stays fast (details in the comments of `.gitlab-ci.yml`):
   (images, release, mirror, packages, site deploy) lists the quality gate
   `.release-gate` explicitly: test, lint, generate-check and vulncheck (and
   `verify-tag-on-main` on a tag) must pass first.
+- **Runner.** Every job carries the tag `no-docker` and runs on the project
+  runner `swarmexec-no-docker`: unprivileged, without the host's
+  `docker.sock`. No job needs either (Kaniko builds the images). The shared
+  instance runner mounts `docker.sock` privileged, which makes any of its
+  jobs root on the host.
 - **Caches.** Go's build cache and module cache are not GitLab caches: each
   runner host mounts the Docker volumes `go-build-cache` and `go-mod-cache`
   at `/go-cache/build` and `/go-cache/mod` into every job (runner

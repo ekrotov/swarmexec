@@ -107,6 +107,13 @@ workflow:
 # siblings are still cancelled.)
 default:
   interruptible: false
+  # Every job runs on the project runner tagged no-docker: unprivileged and
+  # without the host's docker.sock (runner config.toml, [[runners]]
+  # "swarmexec-no-docker"). Nothing here needs either: the images are built by
+  # Kaniko, everything else is Go or alpine. On the shared instance runner,
+  # privileged with docker.sock, any job (an MR pipeline's too) is root on its
+  # host and can reach other jobs' containers there.
+  tags: [no-docker]
 
 # A semantic-version tag: vMAJOR.MINOR.PATCH with an optional -prerelease
 # (the leading "v" is optional). Anchored so it can be reused in several jobs.
@@ -143,8 +150,9 @@ default:
 # (The tools cache still applies on tags, under the -protected key: buf,
 # staticcheck, govulncheck, scip-go check the release but are not part of it.
 # The agent image is built by Kaniko from agent/Dockerfile and never sees the
-# volumes.) Residual: the runners are privileged with the host's docker.sock
-# mounted, so any job is root on its host anyway; this is defence in depth.
+# volumes.) Our jobs run on the no-docker runner (see default:), but the
+# volumes are shared with the instance runner, whose jobs have docker.sock;
+# hence cold releases.
 #
 # What stays a GitLab cache is what is not on a volume:
 #   tools   buf, protoc plugins, staticcheck, govulncheck, scip-go binaries
