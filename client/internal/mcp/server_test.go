@@ -303,6 +303,8 @@ func TestMCPNeverRevealsLabelsOrHiddenServices(t *testing.T) {
 	expect("services_list "+mustJSON(map[string]any{}), "shop_api")
 	expect("secrets_list "+mustJSON(map[string]any{}), "shop_db_pw")
 	expect("networks_list "+mustJSON(map[string]any{}), "shop_net")
+	expect("networks_list "+mustJSON(map[string]any{}), `"10.0.0.0/24 contains host IPs: 10.0.0.1 (node-a), 10.0.0.2 (node-b)"`)
+	expect("networks_list "+mustJSON(map[string]any{}), `"overlap_severity": "high"`)
 	expect("volumes_list "+mustJSON(map[string]any{}), "shop_data")
 	expect("configs_list "+mustJSON(map[string]any{}), "shop_cfg")
 	expect("stats "+mustJSON(map[string]any{}), "64MiB / 256MiB")

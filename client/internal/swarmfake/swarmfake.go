@@ -40,6 +40,9 @@ type Swarm struct {
 	Networks []network.Summary
 	Secrets  []swarm.Secret
 	Configs  []swarm.Config
+	// SwarmInfo answers GET /swarm (nil = an empty swarm.Swarm: no default
+	// address pool set, i.e. swarm's built-in 10.0.0.0/8).
+	SwarmInfo *swarm.Swarm
 
 	mu      sync.Mutex
 	Unknown []string // API paths the fake does not serve, for diagnosis
@@ -65,6 +68,10 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/info":
 		reply(system.Info{Name: "manager-1", ServerVersion: "28.0.0"})
 	case path == "/swarm":
+		if f.SwarmInfo != nil {
+			reply(f.SwarmInfo)
+			return
+		}
 		reply(swarm.Swarm{})
 	case path == "/services":
 		var out []swarm.Service

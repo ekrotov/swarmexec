@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -86,6 +87,11 @@ type Config struct {
 	// UI holds appearance settings for the `ui` TUI.
 	UI UIConfig `yaml:"ui"`
 
+	// Contexts holds optional per-Docker-context settings, keyed by the
+	// context name as `docker context ls` shows it ("default" for
+	// $DOCKER_HOST / the local socket). See ContextConfig.
+	Contexts map[string]ContextConfig `yaml:"contexts,omitempty"`
+
 	// ProxyDialer, when set, establishes the TCP connection to the agent
 	// instead of dialing the node directly. It is wired at runtime (never from
 	// YAML) when the Docker context is an ssh:// endpoint, so agent traffic
@@ -102,6 +108,56 @@ type LogsConfig struct {
 	Format string `yaml:"format"`
 	// MinLevel hides lines below this level: trace..fatal. Empty = no filter.
 	MinLevel string `yaml:"min_level"`
+}
+
+// ContextConfig is the per-context part of the config: facts about one
+// cluster that the Docker API cannot tell us.
+type ContextConfig struct {
+	// Underlay lists the CIDRs of the hosts' own network (the "underlay" the
+	// overlay networks run on), e.g. [10.0.0.0/16] for a Hetzner private
+	// network. Optional: the Networks tab then also flags overlay subnets that
+	// overlap it. Without it only the nodes' own addresses are checked.
+	Underlay []string `yaml:"underlay,omitempty"`
+}
+
+// Underlay returns the parsed underlay CIDRs configured for a context (nil if
+// none). Entries were validated at load time; a malformed one that slipped in
+// through a hand-built Config is skipped rather than failing the caller.
+func (c Config) Underlay(contextName string) []netip.Prefix {
+	cc, ok := c.Contexts[contextName]
+	if !ok {
+		return nil
+	}
+	var out []netip.Prefix
+	for _, s := range cc.Underlay {
+		if p, err := parseUnderlay(s); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// parseUnderlay parses one underlay entry as a CIDR, normalised to its
+// network address (10.0.1.5/16 -> 10.0.0.0/16).
+func parseUnderlay(s string) (netip.Prefix, error) {
+	p, err := netip.ParsePrefix(strings.TrimSpace(s))
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	return p.Masked(), nil
+}
+
+// validateContexts checks the per-context settings, so a typo in an underlay
+// CIDR is a load error naming the key instead of a silently missing warning.
+func (c Config) validateContexts() error {
+	for name, cc := range c.Contexts {
+		for _, s := range cc.Underlay {
+			if _, err := parseUnderlay(s); err != nil {
+				return fmt.Errorf("contexts.%s.underlay: %q is not a CIDR like 10.0.0.0/16", name, s)
+			}
+		}
+	}
+	return nil
 }
 
 // DefaultUIDim is how far the backdrop behind an open overlay is faded toward
@@ -199,6 +255,9 @@ func overlayFile(cfg *Config, path string) error {
 	// Decode into the existing struct so unspecified keys keep their defaults.
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("parse config file %s: %w", path, err)
+	}
+	if err := cfg.validateContexts(); err != nil {
+		return fmt.Errorf("config file %s: %w", path, err)
 	}
 	return nil
 }

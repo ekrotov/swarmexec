@@ -151,8 +151,18 @@
           <tr><td><code>logs.format</code></td><td>string</td><td>default log format for <code>logs</code> and the TUI: <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> (empty = <code>classic</code>)</td></tr>
           <tr><td><code>logs.min_level</code></td><td>string</td><td>default minimum level: <code>trace</code>..<code>fatal</code> (omit for no level filter)</td></tr>
           <tr><td><code>ui.dim</code></td><td>float</td><td>how far the backdrop behind an open overlay is faded, a fraction <code>0</code>–<code>1</code> (default <code>0.6</code>; <code>0</code> = no dimming)</td></tr>
+          <tr><td><code>contexts.&lt;name&gt;.underlay</code></td><td>list of CIDRs</td><td>optional, per Docker context: the hosts' own network (e.g. <code>[10.0.0.0/16]</code>). The <a href="/docs/tui-tabs#tui-networks">Networks tab</a>, the create-network check and the MCP <code>networks_list</code> then also flag overlay subnets that overlap it. Without it only the nodes' own addresses are checked. A malformed CIDR is a load error naming the key</td></tr>
         </tbody>
       </table></div>
+      <p>
+        The <code>contexts:</code> section holds settings for one Docker context, keyed by
+        its name as <code>docker context ls</code> shows it (<code>default</code> for
+        <code>$DOCKER_HOST</code> / the local socket). <code>config show</code> prints the
+        underlay of the context it resolves:
+      </p>
+      <div class="cmd">contexts:
+  prod:
+    underlay: [10.0.0.0/16]   <span class="k"># e.g. the Hetzner private network the nodes sit on</span></div>
       <p>
         The <code>logs:</code> section sets defaults for format-aware log parsing and
         filtering; the <code>logs</code> command's <code>--log-format</code> /

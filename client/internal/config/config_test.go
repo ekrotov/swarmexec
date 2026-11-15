@@ -6,8 +6,56 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestContextUnderlay(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.yaml")
+	body := "contexts:\n  prod:\n    underlay: [10.0.1.5/16, \" fd00::/64 \"]\n"
+	if err := os.WriteFile(good, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := c.Underlay("prod")
+	if len(got) != 2 || got[0].String() != "10.0.0.0/16" || got[1].String() != "fd00::/64" {
+		t.Errorf("Underlay(prod) = %v, want [10.0.0.0/16 fd00::/64]", got)
+	}
+	if got := c.Underlay("other"); got != nil {
+		t.Errorf("Underlay(other) = %v, want nil", got)
+	}
+	// A hand-built config with a bad entry skips it instead of failing.
+	hand := Config{Contexts: map[string]ContextConfig{"x": {Underlay: []string{"nope", "192.168.0.0/24"}}}}
+	if got := hand.Underlay("x"); len(got) != 1 || got[0].String() != "192.168.0.0/24" {
+		t.Errorf("hand Underlay = %v", got)
+	}
+
+	bad := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(bad, []byte("contexts:\n  prod:\n    underlay: [10.0.0.0]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), "contexts.prod.underlay") {
+		t.Errorf("bad underlay: err = %v, want one naming contexts.prod.underlay", err)
+	}
+}
+
+func TestSaveOmitsEmptyContexts(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	if _, err := Default().Save(p); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "contexts") {
+		t.Errorf("saved config mentions contexts without any set:\n%s", b)
+	}
+}
 
 func TestDefaults(t *testing.T) {
 	c := Default()

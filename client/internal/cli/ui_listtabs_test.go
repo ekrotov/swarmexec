@@ -30,6 +30,10 @@ type listManager struct {
 	cfgErr   error
 	calls    map[string]int
 	removed  []string
+	tasks    []swarm.Task                  // TaskList (the networks' CONTAINERS count)
+	swarmInf swarm.Swarm                   // SwarmInspect (default address pool)
+	created  []client.NetworkCreateOptions // NetworkCreate calls, in order
+	netNames []string                      // their names
 }
 
 func (m *listManager) count(op string) {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -135,6 +136,10 @@ func newFixtureSwarm() *swarmfake.Swarm {
 		s.Spec.Labels = map[string]string{lEnable: "true"}
 		return s
 	}
+	// shop_net sits on the nodes' own range (they are 10.0.0.1/.2): the
+	// overlap analysis must flag it in networks_list.
+	shopNet := netw("net-shop", "shop_net", map[string]string{"com.docker.stack.namespace": "shop", lEnable: "true"})
+	shopNet.IPAM.Config = []network.IPAMConfig{{Subnet: netip.MustParsePrefix("10.0.0.0/24")}}
 	cfg := func(id, name string) swarm.Config {
 		var c swarm.Config
 		c.ID, c.Spec.Name = id, name
@@ -154,7 +159,7 @@ func newFixtureSwarm() *swarmfake.Swarm {
 		},
 		Nodes: []swarm.Node{node("node1", "node-a", true), node("node2", "node-b", false)},
 		Networks: []network.Summary{
-			netw("net-shop", "shop_net", map[string]string{"com.docker.stack.namespace": "shop", lEnable: "true"}),
+			shopNet,
 			netw("net-hidden", "hidden_net", nil),
 		},
 		Secrets: []swarm.Secret{secret("sec-shop", "shop_db_pw"), secret("sec-hidden", "hidden_secret")},
