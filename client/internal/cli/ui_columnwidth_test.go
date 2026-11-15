@@ -18,8 +18,8 @@ import (
 // deciding WHICH widths to use.
 func svcRowText(t *testing.T, u *ui, name string) string {
 	t.Helper()
-	u.renderContainers()
-	for _, n := range u.croot.GetChildren() {
+	u.treeTab().render()
+	for _, n := range u.treeTab().root.GetChildren() {
 		if ref, ok := n.GetReference().(svcRef); ok && ref.name == name {
 			return n.GetText()
 		}
@@ -122,15 +122,15 @@ func TestColumnWidthsAccountForTheVersionSuffix(t *testing.T) {
 	u := treeUI("cs", nil, nil)
 	// No registry cache: the suffix is empty and the width is the image length.
 	u.lastSvcs = []resolve.Service{{Name: "web", Mode: "replicated", Running: 1, Desired: 1, Image: "nginx:1.25"}}
-	u.renderContainers()
+	u.treeTab().render()
 	if u.svcCols.image != len("nginx:1.25") {
 		t.Errorf("image width = %d, want %d", u.svcCols.image, len("nginx:1.25"))
 	}
 
 	// The row must fit inside the width the render computed, or the cell
 	// overflows and everything after it on that row moves.
-	row := serviceRow(u.lastSvcs[0], u.svcCols, u.versionSuffixFor(u.lastSvcs[0]), "")
-	if got := len(u.lastSvcs[0].Image) + len(u.versionSuffixFor(u.lastSvcs[0])); got > u.svcCols.image {
+	row := serviceRow(u.lastSvcs[0], u.svcCols, u.treeTab().versionSuffixFor(u.lastSvcs[0]), "")
+	if got := len(u.lastSvcs[0].Image) + len(u.treeTab().versionSuffixFor(u.lastSvcs[0])); got > u.svcCols.image {
 		t.Errorf("image cell overflows: content %d > width %d (row %q)", got, u.svcCols.image, row)
 	}
 }

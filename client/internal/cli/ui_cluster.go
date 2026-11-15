@@ -165,12 +165,12 @@ type treePos struct {
 	stackFold map[string]bool
 }
 
-// treePosFromWidget reads the cursor and fold state out of the tree as it
+// posFromWidget reads the cursor and fold state out of the tree as it
 // stands. This is the normal source: a refresh must put the operator back
 // exactly where they were.
-func (u *ui) treePosFromWidget() treePos {
+func (t *treeTab) posFromWidget() treePos {
 	pos := treePos{svcFolds: map[string]bool{}, stackFold: map[string]bool{}}
-	if n := u.ctree.GetCurrentNode(); n != nil {
+	if n := t.tree.GetCurrentNode(); n != nil {
 		switch ref := n.GetReference().(type) {
 		case resolve.Candidate:
 			pos.container = ref.ContainerID
@@ -180,7 +180,7 @@ func (u *ui) treePosFromWidget() treePos {
 			pos.stack = ref.name
 		}
 	}
-	u.croot.Walk(func(n, _ *tview.TreeNode) bool {
+	t.root.Walk(func(n, _ *tview.TreeNode) bool {
 		switch ref := n.GetReference().(type) {
 		case svcRef:
 			pos.svcFolds[ref.name] = n.IsExpanded()
@@ -291,7 +291,7 @@ func (u *ui) activateCluster(c *clusterState) {
 	}
 	// Save where the operator was standing before the widgets are rebuilt for
 	// somebody else's data.
-	u.pos = u.treePosFromWidget()
+	u.pos = u.treeTab().posFromWidget()
 	closed := u.leaveCluster()
 
 	u.clusterState = c
@@ -321,7 +321,7 @@ func (u *ui) activateCluster(c *clusterState) {
 
 	// From cache first: if this cluster has been visited, the operator is back
 	// where they were before the network is touched at all.
-	u.renderContainers()
+	u.treeTab().render()
 	// The sidebar is the thing that says WHERE you are, so it has to be
 	// repainted by the switch itself. It used to be a tab, and repainting came
 	// free with activating that tab; now nothing else would do it, and the
@@ -337,7 +337,7 @@ func (u *ui) activateCluster(c *clusterState) {
 		msg += fmt.Sprintf(" [gray]— closed %d dialog(s) of the previous cluster[white]", closed)
 	}
 	u.flash(msg)
-	u.loadContainers()
+	u.treeTab().load()
 	u.refreshCluster()
 }
 

@@ -114,8 +114,11 @@ type ui struct {
 	forwards *forwardRegistry
 
 	// shared widgets (built in run(), once the tree/tables exist)
+	//
+	// ctree is the Stacks/Services tab's tree (treeTab builds and owns it).
+	// It is kept here because it is the session's home widget: the dialogs
+	// opened from it, in a dozen files, hand the keyboard back to it.
 	ctree        *tview.TreeView
-	croot        *tview.TreeNode
 	cxtable      *tview.Table
 	tabBar       *tabStrip
 	help, status *tview.TextView
@@ -137,10 +140,6 @@ type ui struct {
 	// sidebarHidden is true while the terminal is too narrow to show the
 	// context list unasked; the footer then says which key brings it up.
 	sidebarHidden bool
-
-	// Preferences that belong to the operator's session, not to a cluster —
-	// they must survive a switch rather than reset with it.
-	groupByStack bool // nest services under their stack (toggled by the stack_group key)
 
 	// tabs is the tab registry, by uiTabList key (see newTabViews). A tab
 	// with a type of its own keeps its widget, its preferences and its

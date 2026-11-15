@@ -325,6 +325,6 @@ func (u *ui) applyStack(plan *stackfile.Plan) {
 			return
 		}
 		u.info("deployed " + plan.Stack + " — " + res.Summary())
-		u.loadContainers()
+		u.treeTab().load()
 	})
 }

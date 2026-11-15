@@ -18,7 +18,131 @@ import (
 	"github.com/rivo/tview"
 )
 
-func (u *ui) matchesFilter(c resolve.Candidate) bool {
+// treeTab is the Stacks/Services tab: the tree of stacks, services and their
+// running containers, and the entry point to logs, exec, port-forward and the
+// service inspect.
+//
+// It converted last (review A-02): the tree is the session's home widget, so
+// more of the UI leans on it than on any table. The tree is still reachable as
+// u.ctree for that reason — every dialog opened from it hands the keyboard
+// back there — but it is built and owned here.
+type treeTab struct {
+	u    *ui
+	tree *tview.TreeView
+	root *tview.TreeNode // synthetic, hidden: stacks or services hang under it
+
+	// Nest services under their stack. A preference of the operator's, not a
+	// property of a cluster: it survives a switch. Only takes effect once a
+	// service carries a stack label (see anyStacked).
+	groupByStack bool
+}
+
+func newTreeTab(u *ui) *treeTab {
+	t := &treeTab{u: u, groupByStack: true}
+	t.tree = tview.NewTreeView()
+	t.root = tview.NewTreeNode("")
+	t.tree.SetRoot(t.root).SetTopLevel(1) // hide the synthetic root; services are top-level
+	t.tree.SetSelectedFunc(t.onSelect)
+	t.tree.SetInputCapture(t.keys)
+	u.ctree = t.tree
+	return t
+}
+
+// treeTab is the session's Stacks/Services tab.
+func (u *ui) treeTab() *treeTab { return u.tab("containers").(*treeTab) }
+
+func (t *treeTab) widget() tview.Primitive { return t.tree }
+func (t *treeTab) enter()                  {}
+
+func (t *treeTab) refresh() {
+	t.load()
+	t.u.loadUsage()
+}
+
+// footer is the widest footer and already fills a ~117-column terminal;
+// anything past the edge wraps onto a hidden second row. So labels here are
+// kept terse to make room for X (destructive, and it must not be the thing
+// that silently falls off the end).
+func (t *treeTab) footer() string {
+	km, kl := t.u.km, keyLabel
+	return fmt.Sprintf("[yellow]j/k[white] move  [yellow]Enter[white] open  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] stacks  %s remove",
+		kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup), keyTag(dangerKey("X")))
+}
+
+func (t *treeTab) helpSection(h *helpWriter) {
+	km, kl := t.u.km, keyLabel
+	h.sec("Stacks/Services")
+	h.line("Enter", "expand a service · open a container's menu")
+	h.line(kl(km.Logs), "logs (container, service, or a whole stack)")
+	h.line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
+	h.line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
+	h.line(kl(km.Forward), "port-forward the task under the cursor (form: container port, local port, address; Enter forwards from any field)")
+	h.line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
+	h.line(kl(km.StackGroup), "group services by stack / flat list")
+	h.line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
+	h.danger("X", "remove: service · container’s service · whole stack (confirmed)")
+	h.line(kl(km.Search), "search services / containers / nodes")
+
+	h.sec("Service inspect (" + kl(km.ContainerInspect) + ")")
+	h.line("a", "actions menu (all edits below, no Shift needed)")
+	h.line("Enter", "NETWORKS: expand a network → its containers")
+	h.line("1 2 3", "table · stats (cpu/memory) · raw JSON")
+	h.line("t", "cycle those three views")
+	h.line("d / D", "diff spec · why (placement)")
+	h.line("R", "roll back to the previous version")
+	h.line("s / f", "scale · force-update")
+	h.line("u", "set the image version (update / pin / revert)")
+	h.line("p l e", "edit ports · labels · env")
+	h.line("n S v", "edit networks · secrets · mounts")
+	h.line("r P", "edit resources · placement")
+	h.danger("X", "remove the service")
+}
+
+// yank copies the tree as displayed, indenting by depth so a stack-grouped
+// tree copies as a grouped tree (and an ungrouped one is unchanged).
+func (t *treeTab) yank(b *strings.Builder) {
+	for _, stackOrSvc := range t.root.GetChildren() {
+		fmt.Fprintln(b, trimFoldMarker(stackOrSvc.GetText()))
+		for _, svc := range stackOrSvc.GetChildren() {
+			fmt.Fprintf(b, "  %s\n", trimFoldMarker(svc.GetText()))
+			for _, c := range svc.GetChildren() {
+				fmt.Fprintf(b, "    %s\n", c.GetText())
+			}
+		}
+	}
+}
+
+func (t *treeTab) searchText() string        { return t.u.filter }
+func (t *treeTab) searchPlaceholder() string { return "filter services / containers / nodes" }
+
+func (t *treeTab) setSearch(q string) {
+	t.u.filter = q
+	t.render()
+}
+
+// onSelect is Enter on a row: a container opens its action menu, a service or
+// a stack folds or unfolds. Logs are on their own key.
+func (t *treeTab) onSelect(node *tview.TreeNode) {
+	if ref, ok := node.GetReference().(resolve.Candidate); ok {
+		t.u.containerMenu(ref)
+		return
+	}
+	switch {
+	case isServiceNode(node):
+		node.SetExpanded(!node.IsExpanded())
+		t.markService(node)
+	case isStackNode(node):
+		node.SetExpanded(!node.IsExpanded())
+		t.markStack(node)
+	}
+}
+
+// remarkServices re-renders every service row in place: a background version
+// check landed, and only the "↑ 2.12.0" annotation changes.
+func (t *treeTab) remarkServices() { eachServiceNode(t.root, t.markService) }
+
+func (t *treeTab) matchesFilter(c resolve.Candidate) bool {
+	u := t.u
 	if u.filter == "" {
 		return true
 	}
@@ -31,20 +155,22 @@ func (u *ui) matchesFilter(c resolve.Candidate) bool {
 // versionSuffixFor is the "↑ 2.12.0" annotation for a service, or "". One
 // helper because the width calculation and the row rendering must agree: when
 // they disagreed, the suffix overflowed the cell it was measured out of.
-func (u *ui) versionSuffixFor(s resolve.Service) string {
+func (t *treeTab) versionSuffixFor(s resolve.Service) string {
+	u := t.u
 	if u.regCache == nil {
 		return ""
 	}
 	return swarmops.VersionSuffix(u.regCache.Status(u.ctx, s.ImageRef))
 }
 
-func (u *ui) markService(n *tview.TreeNode) {
+func (t *treeTab) markService(n *tview.TreeNode) {
+	u := t.u
 	ref, ok := n.GetReference().(svcRef)
 	if !ok {
 		return
 	}
 	svc := u.svcByName[ref.name]
-	row := serviceRow(svc, u.svcCols, u.versionSuffixFor(svc), u.svcUsageBadge(ref.name))
+	row := serviceRow(svc, u.svcCols, t.versionSuffixFor(svc), t.svcUsageBadge(ref.name))
 	switch {
 	case len(n.GetChildren()) == 0:
 		n.SetText("  " + row)
@@ -55,8 +181,9 @@ func (u *ui) markService(n *tview.TreeNode) {
 	}
 }
 
-func (u *ui) renderContainers() {
-	forwards, ctree, croot := u.forwards, u.ctree, u.croot
+func (t *treeTab) render() {
+	u := t.u
+	forwards, ctree, croot := u.forwards, t.tree, t.root
 	// Where to put the cursor and what to leave unfolded. Normally that is
 	// whatever the tree shows right now — this runs on every refresh, and the
 	// operator must not be moved by one.
@@ -65,7 +192,7 @@ func (u *ui) renderContainers() {
 	// just left, and restoring from it would drop the cursor on a service of the
 	// wrong cluster (or nowhere). So the switch hands over the position it saved
 	// for THIS cluster, and that wins exactly once.
-	pos := u.treePosFromWidget()
+	pos := t.posFromWidget()
 	if u.restorePos {
 		pos = u.pos
 		u.restorePos = false
@@ -129,7 +256,7 @@ func (u *ui) renderContainers() {
 		// overflow its cell and shove that row's ports sideways — and since the
 		// registry cache re-checks a failed lookup every minute, the suffix could
 		// appear and vanish on its own.
-		if w := len(s.Image) + len(u.versionSuffixFor(s)); w > fresh.image {
+		if w := len(s.Image) + len(t.versionSuffixFor(s)); w > fresh.image {
 			fresh.image = w
 		}
 	}
@@ -141,7 +268,7 @@ func (u *ui) renderContainers() {
 	// Group by stack unless the operator turned it off, and only when at least
 	// one service actually carries a stack label — otherwise every row would
 	// hang under a single pointless "(no stack)" parent.
-	grouped := u.groupByStack && anyStacked(u.lastSvcs)
+	grouped := t.groupByStack && anyStacked(u.lastSvcs)
 	stackNodes := map[string]*tview.TreeNode{}
 	if grouped {
 		// Create the stack nodes up front in groupByStack's order (alphabetical,
@@ -181,7 +308,7 @@ func (u *ui) renderContainers() {
 		// otherwise only the containers that match the filter themselves.
 		var shown []resolve.Candidate
 		for _, c := range byService[s.Name] {
-			if nameMatch || u.matchesFilter(c) {
+			if nameMatch || t.matchesFilter(c) {
 				shown = append(shown, c)
 			}
 		}
@@ -191,8 +318,8 @@ func (u *ui) renderContainers() {
 			continue
 		}
 		// Collapsed by default (spec); keep a service the operator expanded.
-		svcNode := tview.NewTreeNode(serviceRow(s, u.svcCols, "", u.svcUsageBadge(s.Name))).
-			SetColor(u.svcColor(s)).
+		svcNode := tview.NewTreeNode(serviceRow(s, u.svcCols, "", t.svcUsageBadge(s.Name))).
+			SetColor(t.svcColor(s)).
 			SetReference(svcRef{name: s.Name}).
 			SetExpanded(wasExpanded[s.Name])
 		parentFor(s).AddChild(svcNode)
@@ -224,7 +351,7 @@ func (u *ui) renderContainers() {
 		}
 		// Marker depends on the final child count / expanded state, so set it
 		// once the leaves are attached.
-		u.markService(svcNode)
+		t.markService(svcNode)
 	}
 	if grouped {
 		// Drop stacks the filter emptied, and label the rest — the summary counts
@@ -234,7 +361,7 @@ func (u *ui) renderContainers() {
 			if isStackNode(n) && len(n.GetChildren()) == 0 {
 				continue
 			}
-			u.markStack(n)
+			t.markStack(n)
 			kept = append(kept, n)
 		}
 		croot.SetChildren(kept)
@@ -264,7 +391,8 @@ func (u *ui) renderContainers() {
 // markStack (re)renders a stack group row from the services currently under it:
 // name, service count, aggregate tasks, and the update/risk counts. Called after
 // the children are attached and again on a fold, like markService.
-func (u *ui) markStack(n *tview.TreeNode) {
+func (t *treeTab) markStack(n *tview.TreeNode) {
+	u := t.u
 	ref, ok := n.GetReference().(stackRef)
 	if !ok {
 		return
@@ -299,35 +427,36 @@ func (u *ui) markStack(n *tview.TreeNode) {
 	// failing their probes would otherwise read as calm at exactly the level an
 	// operator scans first — the same misleading "everything is up" one tier
 	// above the service rows.
-	health := u.stackHealth(summary.Services)
+	health := t.stackHealth(summary.Services)
 	extra.WriteString(healthBadge(health))
 	n.SetText(fmt.Sprintf("%s %s  [gray](%d svc · %d/%d)[-]%s",
 		marker, ref.name, len(summary.Services), summary.Running, summary.Desired, extra.String()))
 	n.SetColor(healthColor(serviceColor(summary.Running, summary.Desired), health))
 }
 
-// removeServiceUnderCursor removes whatever the tree cursor is on, so it can be
+// removeUnderCursor removes whatever the tree cursor is on, so it can be
 // deleted from the tree itself rather than only from inside the inspect overlay
 // (i → X). Each row removes what it IS: a container leaf resolves to its owning
 // service, because a task alone cannot be removed; a stack row removes the
 // stack, with `docker stack rm`'s reach.
-func (u *ui) removeServiceUnderCursor() {
-	n := u.ctree.GetCurrentNode()
+func (t *treeTab) removeUnderCursor() {
+	u := t.u
+	n := t.tree.GetCurrentNode()
 	if n == nil {
 		return
 	}
 	switch ref := n.GetReference().(type) {
 	case svcRef:
-		u.openRemoveService(ref.name, u.ctree, u.loadContainers)
+		u.openRemoveService(ref.name, t.tree, t.load)
 	case resolve.Candidate:
 		// A task cannot be removed on its own — swarm would just reschedule it.
 		// Offer the owning service, which is what the operator means.
 		if ref.Service == "" {
 			return
 		}
-		u.openRemoveService(ref.Service, u.ctree, u.loadContainers)
+		u.openRemoveService(ref.Service, t.tree, t.load)
 	case stackRef:
-		u.openRemoveStack(ref.name, u.ctree, u.loadContainers)
+		u.openRemoveStack(ref.name, t.tree, t.load)
 	}
 }
 
@@ -349,7 +478,7 @@ func anyStacked(svcs []resolve.Service) bool {
 	return false
 }
 
-func (u *ui) sortCands(cands []resolve.Candidate) {
+func sortCands(cands []resolve.Candidate) {
 	sort.SliceStable(cands, func(i, j int) bool {
 		if cands[i].Service != cands[j].Service {
 			return cands[i].Service < cands[j].Service
@@ -361,23 +490,24 @@ func (u *ui) sortCands(cands []resolve.Candidate) {
 	})
 }
 
-// fetchContainers does the two manager round-trips (off the UI goroutine) and
+// fetchTree does the two manager round-trips (off the UI goroutine) and
 // returns sorted results. It is instrumented so a slow manager shows up in the
 // log viewer. ctx and r are the caller's, captured on the UI goroutine: read
 // from u here, off the loop, they would be whichever cluster is visible by the
 // time the goroutine runs.
-func (u *ui) fetchContainers(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []resolve.Candidate, error) {
+func fetchTree(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []resolve.Candidate, error) {
 	svcs, cands, err := swarmops.ServicesAndContainers(ctx, r, "ui.containers")
 	if err != nil {
 		return nil, nil, err
 	}
-	u.sortCands(cands)
+	sortCands(cands)
 	return svcs, cands, nil
 }
 
-// applyContainers updates the tree from a fetch result. UI-goroutine only.
-func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, err error) {
-	croot := u.croot
+// apply updates the tree from a fetch result. UI-goroutine only.
+func (t *treeTab) apply(svcs []resolve.Service, cands []resolve.Candidate, err error) {
+	u := t.u
+	croot := t.root
 	u.fetchErr = err
 	if err != nil {
 		croot.ClearChildren()
@@ -387,51 +517,54 @@ func (u *ui) applyContainers(svcs []resolve.Service, cands []resolve.Candidate, 
 			croot.AddChild(tview.NewTreeNode(fmt.Sprintf("ssh could not sign in — press %c to be asked again", u.km.Refresh)).
 				SetColor(tcell.ColorYellow).SetSelectable(false))
 		}
-		u.offerSSHAdd(u.clusterState, err, u.loadContainers)
+		u.offerSSHAdd(u.clusterState, err, t.load)
 		return
 	}
 	u.lastSvcs = svcs
 	u.lastCands = cands
 	u.loaded = true // this cluster has been looked at; "empty" now means empty
-	u.renderContainers()
+	t.render()
 }
 
-// loadContainersSync fetches and applies on the caller's goroutine — used at
+// loadSync fetches and applies on the caller's goroutine — used at
 // startup, before app.Run, where QueueUpdateDraw would deadlock.
-func (u *ui) loadContainersSync() {
+func (t *treeTab) loadSync() {
+	u := t.u
 	u.resetCols = true
-	svcs, cands, err := u.fetchContainers(u.ctx, u.r)
-	u.applyContainers(svcs, cands, err)
+	svcs, cands, err := fetchTree(u.ctx, u.r)
+	t.apply(svcs, cands, err)
 }
 
-// loadContainers refreshes without freezing the event loop: it fetches off the
+// load refreshes without freezing the event loop: it fetches off the
 // UI goroutine (two manager round-trips that used to run inline and stall the
 // whole TUI) and applies the result via QueueUpdateDraw.
 //
 // It is the EXPLICIT reload: the refresh key, a removed service, a
 // deployed stack, a closed terminal, a cluster becoming visible. Those may
 // narrow the columns again; the background poll may not.
-func (u *ui) loadContainers() {
+func (t *treeTab) load() {
+	u := t.u
 	u.resetCols = true
 	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
 	gen, ctx, r := u.generation(), u.ctx, u.r
 	go func() {
-		svcs, cands, err := u.fetchContainers(ctx, r)
-		u.onCluster(gen, func() { u.applyContainers(svcs, cands, err) })
+		svcs, cands, err := fetchTree(ctx, r)
+		u.onCluster(gen, func() { t.apply(svcs, cands, err) })
 	}()
 }
 
-// autoRefreshContainers re-lists services/containers off the UI goroutine on a
+// autoRefresh re-lists services/containers off the UI goroutine on a
 // timer so a container replaced by a rolling update (or a scaled service) shows
-// up without pressing r. renderContainers restores the cursor and expanded
+// up without pressing r. render restores the cursor and expanded
 // services, so the refresh is unobtrusive. A transient probe error is ignored
 // rather than clobbering the tree with an error node.
 //
 // It skips while an overlay is open — the tree is hidden, and its periodic
-// renderContainers on the UI goroutine would compete with keystrokes in the
+// render on the UI goroutine would compete with keystrokes in the
 // overlay (laggy input) — and never overlaps itself (a slow probe over ssh can
 // outlast the tick).
-func (u *ui) autoRefreshContainers() {
+func (t *treeTab) autoRefresh() {
+	u := t.u
 	ctx, r := u.ctx, u.r
 	// Cheap gate: skip the fetch when an overlay is known to be open. Best
 	// effort by design — the invariant is enforced below, on the UI goroutine.
@@ -441,7 +574,7 @@ func (u *ui) autoRefreshContainers() {
 	gen := u.generation()
 	go func() {
 		defer u.autoRefreshBusy.Store(false)
-		svcs, cands, err := u.fetchContainers(ctx, r)
+		svcs, cands, err := fetchTree(ctx, r)
 		if err != nil || ctx.Err() != nil {
 			return // transient error, or the run is ending
 		}
@@ -452,7 +585,7 @@ func (u *ui) autoRefreshContainers() {
 			if u.overlayOpen() {
 				return
 			}
-			u.applyContainers(svcs, cands, nil)
+			t.apply(svcs, cands, nil)
 		})
 	}()
 }
@@ -481,7 +614,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 		app.EnableMouse(prevMouse)
 		tcancel()
 		ov.Close()
-		u.loadContainers()
+		u.treeTab().load()
 	}
 	tv.detach = closeTerm
 	tv.run(tctx, ac, terminalSession{ep: ep, command: command, tty: tty, user: user}, f.connectTimeout, func(code int, rerr error) {
@@ -580,7 +713,8 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 
 // svcUsageBadge is the resource marker for a service row: the worst reading
 // across its containers. Empty when nothing is known yet or nothing is hot.
-func (u *ui) svcUsageBadge(service string) string {
+func (t *treeTab) svcUsageBadge(service string) string {
+	u := t.u
 	if len(u.usage) == 0 {
 		return ""
 	}
@@ -596,7 +730,8 @@ func (u *ui) svcUsageBadge(service string) string {
 
 // stackHealth folds the healthcheck verdicts of every container under a stack
 // into one count.
-func (u *ui) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
+func (t *treeTab) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
+	u := t.u
 	var out swarmops.ServiceHealth
 	if len(u.usage) == 0 {
 		return out
@@ -613,7 +748,8 @@ func (u *ui) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
 
 // svcColor is the tree colour for a service row: the progress verdict,
 // overridden when the healthchecks disagree with it.
-func (u *ui) svcColor(s resolve.Service) tcell.Color {
+func (t *treeTab) svcColor(s resolve.Service) tcell.Color {
+	u := t.u
 	base := progressColor(s)
 	if len(u.usage) == 0 {
 		return base
@@ -624,7 +760,7 @@ func (u *ui) svcColor(s resolve.Service) tcell.Color {
 // loadUsage refreshes the live resource readings in the background and re-marks
 // the tree when they land.
 //
-// Deliberately not part of fetchContainers: usage comes from the node agents
+// Deliberately not part of fetchTree: usage comes from the node agents
 // rather than the manager, is best-effort, and can be slower than the tree
 // fetch. Folding it in would make the whole tree wait on the slowest agent —
 // and an agent too old to know the RPC would then break the view instead of
@@ -667,23 +803,21 @@ func (u *ui) loadUsage() {
 			}
 			// Re-mark rather than rebuild: the readings only change row text, and
 			// rebuilding would fight the operator's cursor and fold state.
-			u.remarkUsage()
+			u.treeTab().remarkUsage()
 		})
 	}()
 }
 
 // remarkUsage refreshes the badge on every row in place, leaving the tree's
 // shape, cursor and fold state alone.
-func (u *ui) remarkUsage() {
-	if u.croot == nil {
-		return
-	}
-	u.croot.Walk(func(n, parent *tview.TreeNode) bool {
+func (t *treeTab) remarkUsage() {
+	u := t.u
+	t.root.Walk(func(n, parent *tview.TreeNode) bool {
 		switch ref := n.GetReference().(type) {
 		case svcRef:
-			u.markService(n)
+			t.markService(n)
 			if svc, ok := u.svcByName[ref.name]; ok {
-				n.SetColor(u.svcColor(svc))
+				n.SetColor(t.svcColor(svc))
 			}
 		case resolve.Candidate:
 			if base, ok := u.leafBase[ref.ContainerID]; ok {
@@ -695,13 +829,14 @@ func (u *ui) remarkUsage() {
 	})
 }
 
-// containerTreeKeys is the key handler of the container tree.
+// keys is the key handler of the container tree.
 //
 // On the tree the search key opens search and fold/unfold (h/l by default)
 // collapse/expand the service under the cursor; j/k stay down/up via the
 // shared keys.
-func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
-	km, ctree, croot := u.km, u.ctree, u.croot
+func (t *treeTab) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u := t.u
+	km, ctree, croot := u.km, t.tree, t.root
 	// g / G (and Home / End) jump the SELECTION to the first / last row. tview's
 	// tree only scrolls on them and leaves the cursor where it was — off screen,
 	// so the next j or Enter acts on a row the operator can no longer see.
@@ -731,7 +866,7 @@ func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
 			// Remove the service under the cursor, without the detour through
 			// the inspect overlay. Destructive, so it is a fixed capital key
 			// (like X in the inspect) and always behind a confirm.
-			u.removeServiceUnderCursor()
+			t.removeUnderCursor()
 			return nil
 		case km.Fold:
 			// Collapse. tview's TreeView has no fold key — Left/Right only
@@ -743,10 +878,10 @@ func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
 				switch {
 				case isStackNode(n):
 					n.SetExpanded(false)
-					u.markStack(n)
+					t.markStack(n)
 				case isServiceNode(n) && n.IsExpanded():
 					n.SetExpanded(false)
-					u.markService(n)
+					t.markService(n)
 				default:
 					if p := parentOf(croot, n); p != nil && p != croot {
 						ctree.SetCurrentNode(p)
@@ -763,9 +898,9 @@ func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
 				} else {
 					n.SetExpanded(true)
 					if isStackNode(n) {
-						u.markStack(n)
+						t.markStack(n)
 					} else {
-						u.markService(n)
+						t.markService(n)
 					}
 				}
 			}
@@ -780,9 +915,9 @@ func (u *ui) containerTreeKeys(ev *tcell.EventKey) *tcell.EventKey {
 				u.flash(" [gray]no service carries a stack label[white]")
 				return nil
 			}
-			u.groupByStack = !u.groupByStack
-			u.renderContainers()
-			if u.groupByStack {
+			t.groupByStack = !t.groupByStack
+			t.render()
+			if t.groupByStack {
 				u.flash(" [green]grouped by stack[white]")
 			} else {
 				u.flash(" [green]flat service list[white]")

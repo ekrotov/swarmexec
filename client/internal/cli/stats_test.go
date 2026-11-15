@@ -313,7 +313,7 @@ func TestStackHealthRollsUp(t *testing.T) {
 	}}
 	svcs := []resolve.Service{{Name: "web"}, {Name: "api"}}
 
-	h := u.stackHealth(svcs)
+	h := u.treeTab().stackHealth(svcs)
 	if h.Unhealthy != 2 || h.Healthy != 1 {
 		t.Errorf("roll-up = %+v, want 2 unhealthy across both services", h)
 	}
@@ -322,7 +322,7 @@ func TestStackHealthRollsUp(t *testing.T) {
 	}
 
 	// With no readings at all the stack keeps the count's own colour.
-	empty := (&ui{clusterState: &clusterState{}}).stackHealth(svcs)
+	empty := (&ui{clusterState: &clusterState{}}).treeTab().stackHealth(svcs)
 	if empty.Total() != 0 {
 		t.Errorf("no readings should roll up to nothing, got %+v", empty)
 	}

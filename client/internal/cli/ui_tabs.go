@@ -62,7 +62,7 @@ type tabStatusNoter interface {
 // registry test (TestEveryTabIsRegistered) keeps the two lists in step.
 func newTabViews(u *ui) map[string]tabView {
 	return map[string]tabView{
-		"containers": containersTab{u},
+		"containers": newTreeTab(u),
 		"volumes":    newVolumesTab(u),
 		"forwards":   newForwardsTab(u),
 		"networks":   newNetworksTab(u),
@@ -74,8 +74,9 @@ func newTabViews(u *ui) map[string]tabView {
 
 // tab returns the view registered under key, or nil for a key that is not a
 // tab ("contexts" is the sidebar). The registry is built on first use, so a
-// test that builds a bare *ui gets it as well as run() does — run() asks for
-// the widgets only after the shared ones the adapters read exist.
+// test that builds a bare *ui gets it as well as run() does. Not before run(),
+// though: every tab builds its widget here, and tview reads the theme's
+// palette when a widget is constructed (applyTheme runs just before run).
 func (u *ui) tab(key string) tabView {
 	if u.tabs == nil {
 		u.tabs = newTabViews(u)

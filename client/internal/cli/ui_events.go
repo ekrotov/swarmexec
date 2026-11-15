@@ -144,7 +144,7 @@ func (u *ui) streamTopology(ctx context.Context, c *clusterState, f client.Filte
 	return consumeTopology(ctx, msgs, errs, defaultTopologyTiming, func(ev events.Message) {
 		clientlog.L().Debug("topology event",
 			"cluster", c.name, "type", ev.Type, "action", ev.Action)
-	}, u.autoRefreshContainers)
+	}, u.treeTab().autoRefresh)
 }
 
 // consumeTopology coalesces a stream of events into refresh calls, and reports
@@ -238,7 +238,7 @@ func (u *ui) pollTopology(ctx context.Context) {
 				rate = want
 				t.Reset(rate)
 			}
-			u.autoRefreshContainers()
+			u.treeTab().autoRefresh()
 			// Usage rides the same tick but on its own goroutine, so a slow or
 			// unreachable agent delays only the badges, never the tree.
 			u.loadUsage()

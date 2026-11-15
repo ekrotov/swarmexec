@@ -209,9 +209,6 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 		cancelRun: cancelRun,
 		service:   service,
 		selStyle:  tcell.StyleDefault.Background(tcell.ColorTeal).Foreground(tcell.ColorWhite),
-		// Grouping is on by default; it only takes effect once something in the
-		// cluster actually carries a stack label (see anyStacked).
-		groupByStack: true,
 	}
 
 	// The cluster the flags/env point at. This one must come up: there is no UI
@@ -295,7 +292,7 @@ func (u *ui) connectCluster(c *clusterState) error {
 			if u.clusterState != c {
 				return
 			}
-			eachServiceNode(u.croot, u.markService)
+			u.treeTab().remarkServices()
 		})
 	})
 	c.err = nil
@@ -323,38 +320,8 @@ func (u *ui) run(keyWarnings []string) error {
 	// Every cluster this session touched, not only the visible one.
 	defer u.closeClusters()
 
-	// ---------------------------------------------------------------- containers
-	// A tree: services are parent nodes, their containers are children.
-	ctree := tview.NewTreeView()
-	croot := tview.NewTreeNode("")
-	ctree.SetRoot(croot).SetTopLevel(1) // hide the synthetic root; services are top-level
-	// The per-cluster state the tree reads — the "/" filter (pre-set from the
-	// optional `ui [service]` argument), the registry cache and the volume
-	// selection — is owned by the clusterState: newClusterState, connectCluster
-	// and runUI set it up, so a later cluster gets the same setup as the first.
-
-	ctree.SetSelectedFunc(func(node *tview.TreeNode) {
-		if ref, ok := node.GetReference().(resolve.Candidate); ok {
-			u.containerMenu(ref)
-			return
-		}
-		// Service node → toggle expand/collapse. Logs are on the L key.
-		if isServiceNode(node) {
-			node.SetExpanded(!node.IsExpanded())
-			u.markService(node)
-			return
-		}
-		// Stack node → toggle the whole group.
-		if isStackNode(node) {
-			node.SetExpanded(!node.IsExpanded())
-			u.markStack(node)
-		}
-	})
-
-	// The volumes tab builds its own table (newVolumesTab, ui_volumes.go).
-
-	// Networks, Secrets and Configs build their own tables (ui_networks.go,
-	// ui_secrets.go, ui_configs.go).
+	// Every tab builds its own widget: the tree in newTreeTab (ui_containers.go),
+	// the tables in newVolumesTab, newNetworksTab and the rest.
 
 	// ------------------------------------------------------------------ contexts
 	// activeCtx (the name in the footer, and the row marked here) is set with the
@@ -367,9 +334,6 @@ func (u *ui) run(keyWarnings []string) error {
 	cxtable.SetSelectedStyle(selStyle)
 
 	// ---------------------------------------------------------------- tabs/chrome
-	// Promote the tab widgets that still live on u before the registry is asked
-	// for its pages: the adapters of the not-yet-converted tabs read them.
-	u.ctree, u.croot = ctree, croot
 	u.cxtable = cxtable
 	for i, t := range uiTabList {
 		content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
@@ -460,7 +424,6 @@ func (u *ui) run(keyWarnings []string) error {
 	u.mouseEnabled = true
 	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
 
-	ctree.SetInputCapture(u.containerTreeKeys)
 	cxtable.SetInputCapture(u.contextKeys)
 	cxtable.SetSelectedFunc(func(int, int) {
 		if c, ok := u.selectedContext(); ok {
@@ -471,7 +434,7 @@ func (u *ui) run(keyWarnings []string) error {
 	// The sidebar is visible from the first frame, so its content is loaded
 	// before it: it comes from docker's local store, no network involved.
 	u.loadContexts()
-	u.loadContainersSync() // startup: before app.Run, so fetch+apply inline
+	u.treeTab().loadSync() // startup: before app.Run, so fetch+apply inline
 	// Arm the agents' samplers right away: the first reading carries memory but
 	// no CPU (a percentage needs two), so asking at startup means the numbers are
 	// complete by the time the operator has looked at anything.
@@ -1347,7 +1310,7 @@ func (u *ui) toggleMouse() {
 }
 
 // The background refreshers must not run while an overlay is open: their
-// renderContainers / remarkUsage pass walks the whole tree on the UI goroutine
+// tree render / remarkUsage pass walks the whole tree on the UI goroutine
 // — the same goroutine that services keystrokes in the overlay — and it rebuilds
 // and reselects the tree underneath whatever the operator is looking at.
 //
@@ -1563,7 +1526,7 @@ func (u *ui) refreshCluster() {
 func (u *ui) refreshForwardViews() {
 	u.updateStatus()
 	u.fwdTab().render()
-	u.renderContainers()
+	u.treeTab().render()
 }
 
 // yankCurrent copies the active tab's list to the system clipboard via the

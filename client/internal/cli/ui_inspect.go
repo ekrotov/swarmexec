@@ -397,7 +397,7 @@ func (iv *inspectView) close() {
 // reload re-fetches the inspect (after an edit) and refreshes the tree.
 func (iv *inspectView) reload() {
 	u := iv.u
-	u.loadContainers()
+	u.treeTab().load()
 	async(u, iv.op+".reload", iv.fetchCtx, func(d inspData, err error) {
 		if err != nil || !u.pages.HasPage(pageInspect) {
 			return
@@ -613,7 +613,7 @@ func (iv *inspectView) serviceActions() []serviceAction {
 	add('r', "edit resources", func() { u.openResourcesEditor(editSvc, table, iv.reload) })
 	add('P', "edit placement", func() { u.openPlacementMenu(editSvc, table, iv.reload) })
 	add('X', "[red]remove service[white]", func() {
-		u.openRemoveService(editSvc, table, func() { iv.close(); u.loadContainers() })
+		u.openRemoveService(editSvc, table, func() { iv.close(); u.treeTab().load() })
 	})
 	return out
 }
