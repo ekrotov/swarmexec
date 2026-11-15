@@ -2912,6 +2912,508 @@ func (x *PruneResponse) GetResults() []*PruneCategoryResult {
 	return nil
 }
 
+type NetworkEndpointsRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// network_ids narrows the answer to these networks (ID or name). Empty means
+	// every swarm-scope network THIS node has joined. A requested network that
+	// is missing or not swarm-scope comes back with its error set, not as a
+	// failed RPC.
+	NetworkIds []string `protobuf:"bytes,1,rep,name=network_ids,json=networkIds,proto3" json:"network_ids,omitempty"`
+}
+
+func (x *NetworkEndpointsRequest) Reset() {
+	*x = NetworkEndpointsRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[40]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkEndpointsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkEndpointsRequest) ProtoMessage() {}
+
+func (x *NetworkEndpointsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[40]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkEndpointsRequest.ProtoReflect.Descriptor instead.
+func (*NetworkEndpointsRequest) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *NetworkEndpointsRequest) GetNetworkIds() []string {
+	if x != nil {
+		return x.NetworkIds
+	}
+	return nil
+}
+
+type NetworkEndpointsResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Networks []*NetworkEndpointsInfo `protobuf:"bytes,1,rep,name=networks,proto3" json:"networks,omitempty"` // sorted by name
+}
+
+func (x *NetworkEndpointsResponse) Reset() {
+	*x = NetworkEndpointsResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[41]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkEndpointsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkEndpointsResponse) ProtoMessage() {}
+
+func (x *NetworkEndpointsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[41]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkEndpointsResponse.ProtoReflect.Descriptor instead.
+func (*NetworkEndpointsResponse) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *NetworkEndpointsResponse) GetNetworks() []*NetworkEndpointsInfo {
+	if x != nil {
+		return x.Networks
+	}
+	return nil
+}
+
+// NetworkEndpointsInfo is one network as THIS node's daemon sees it.
+type NetworkEndpointsInfo struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Id      string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name    string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Driver  string `protobuf:"bytes,3,opt,name=driver,proto3" json:"driver,omitempty"`    // "overlay" for every swarm network today
+	Ingress bool   `protobuf:"varint,4,opt,name=ingress,proto3" json:"ingress,omitempty"` // the routing-mesh network
+	// local_endpoints are the endpoints attached ON THIS NODE: task containers,
+	// attachable containers, and the node's load-balancer endpoint. Sorted by
+	// name.
+	LocalEndpoints []*NetworkLocalEndpoint `protobuf:"bytes,5,rep,name=local_endpoints,json=localEndpoints,proto3" json:"local_endpoints,omitempty"`
+	// services is the daemon's networkdb view of the WHOLE network, every
+	// node's tasks included. Sorted by name.
+	Services []*NetworkServiceEndpoints `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
+	// peers are the nodes this daemon believes share the network, itself
+	// included. Sorted by IP.
+	Peers []*NetworkPeer `protobuf:"bytes,7,rep,name=peers,proto3" json:"peers,omitempty"`
+	// error is set when this network could not be inspected, or was requested
+	// but is missing or not swarm-scope; the fields above (bar id) are then
+	// empty, and the other networks are still reported.
+	Error string `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
+}
+
+func (x *NetworkEndpointsInfo) Reset() {
+	*x = NetworkEndpointsInfo{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[42]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkEndpointsInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkEndpointsInfo) ProtoMessage() {}
+
+func (x *NetworkEndpointsInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[42]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkEndpointsInfo.ProtoReflect.Descriptor instead.
+func (*NetworkEndpointsInfo) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *NetworkEndpointsInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *NetworkEndpointsInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NetworkEndpointsInfo) GetDriver() string {
+	if x != nil {
+		return x.Driver
+	}
+	return ""
+}
+
+func (x *NetworkEndpointsInfo) GetIngress() bool {
+	if x != nil {
+		return x.Ingress
+	}
+	return false
+}
+
+func (x *NetworkEndpointsInfo) GetLocalEndpoints() []*NetworkLocalEndpoint {
+	if x != nil {
+		return x.LocalEndpoints
+	}
+	return nil
+}
+
+func (x *NetworkEndpointsInfo) GetServices() []*NetworkServiceEndpoints {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *NetworkEndpointsInfo) GetPeers() []*NetworkPeer {
+	if x != nil {
+		return x.Peers
+	}
+	return nil
+}
+
+func (x *NetworkEndpointsInfo) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type NetworkLocalEndpoint struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// container_id is the daemon's key for the endpoint: a container ID, or
+	// for the load-balancer endpoint "lb-<network>" ("ingress-sbox" on ingress).
+	ContainerId string `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Name        string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	EndpointId  string `protobuf:"bytes,3,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	Ipv4Address string `protobuf:"bytes,4,opt,name=ipv4_address,json=ipv4Address,proto3" json:"ipv4_address,omitempty"` // CIDR as the daemon reports it, "10.0.1.5/24"; empty if none
+	Ipv6Address string `protobuf:"bytes,5,opt,name=ipv6_address,json=ipv6Address,proto3" json:"ipv6_address,omitempty"` // CIDR; empty if none
+	MacAddress  string `protobuf:"bytes,6,opt,name=mac_address,json=macAddress,proto3" json:"mac_address,omitempty"`    // "02:42:0a:00:01:05"; empty if the daemon reported none
+	// load_balancer marks the node's load-balancer endpoint: not a task, but it
+	// holds an IP and a MAC on the network all the same.
+	LoadBalancer bool `protobuf:"varint,7,opt,name=load_balancer,json=loadBalancer,proto3" json:"load_balancer,omitempty"`
+}
+
+func (x *NetworkLocalEndpoint) Reset() {
+	*x = NetworkLocalEndpoint{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[43]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkLocalEndpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkLocalEndpoint) ProtoMessage() {}
+
+func (x *NetworkLocalEndpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[43]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkLocalEndpoint.ProtoReflect.Descriptor instead.
+func (*NetworkLocalEndpoint) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *NetworkLocalEndpoint) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *NetworkLocalEndpoint) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NetworkLocalEndpoint) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *NetworkLocalEndpoint) GetIpv4Address() string {
+	if x != nil {
+		return x.Ipv4Address
+	}
+	return ""
+}
+
+func (x *NetworkLocalEndpoint) GetIpv6Address() string {
+	if x != nil {
+		return x.Ipv6Address
+	}
+	return ""
+}
+
+func (x *NetworkLocalEndpoint) GetMacAddress() string {
+	if x != nil {
+		return x.MacAddress
+	}
+	return ""
+}
+
+func (x *NetworkLocalEndpoint) GetLoadBalancer() bool {
+	if x != nil {
+		return x.LoadBalancer
+	}
+	return false
+}
+
+type NetworkServiceEndpoints struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// name is the service name. The daemon files every node's load-balancer
+	// endpoint under the EMPTY name, so "" is a real entry, not a missing one.
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Vip   string                 `protobuf:"bytes,2,opt,name=vip,proto3" json:"vip,omitempty"`     // the service's virtual IP; empty for dnsrr and for ""
+	Tasks []*NetworkTaskEndpoint `protobuf:"bytes,3,rep,name=tasks,proto3" json:"tasks,omitempty"` // sorted by name
+}
+
+func (x *NetworkServiceEndpoints) Reset() {
+	*x = NetworkServiceEndpoints{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[44]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkServiceEndpoints) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkServiceEndpoints) ProtoMessage() {}
+
+func (x *NetworkServiceEndpoints) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[44]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkServiceEndpoints.ProtoReflect.Descriptor instead.
+func (*NetworkServiceEndpoints) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *NetworkServiceEndpoints) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NetworkServiceEndpoints) GetVip() string {
+	if x != nil {
+		return x.Vip
+	}
+	return ""
+}
+
+func (x *NetworkServiceEndpoints) GetTasks() []*NetworkTaskEndpoint {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+type NetworkTaskEndpoint struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Name       string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // task container name; "<network>-endpoint" for a load balancer
+	EndpointId string `protobuf:"bytes,2,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	EndpointIp string `protobuf:"bytes,3,opt,name=endpoint_ip,json=endpointIp,proto3" json:"endpoint_ip,omitempty"` // bare address, no prefix length
+	HostIp     string `protobuf:"bytes,4,opt,name=host_ip,json=hostIp,proto3" json:"host_ip,omitempty"`             // the node owning the endpoint (Info["Host IP"]); empty if not reported
+}
+
+func (x *NetworkTaskEndpoint) Reset() {
+	*x = NetworkTaskEndpoint{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[45]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkTaskEndpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkTaskEndpoint) ProtoMessage() {}
+
+func (x *NetworkTaskEndpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[45]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkTaskEndpoint.ProtoReflect.Descriptor instead.
+func (*NetworkTaskEndpoint) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *NetworkTaskEndpoint) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NetworkTaskEndpoint) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *NetworkTaskEndpoint) GetEndpointIp() string {
+	if x != nil {
+		return x.EndpointIp
+	}
+	return ""
+}
+
+func (x *NetworkTaskEndpoint) GetHostIp() string {
+	if x != nil {
+		return x.HostIp
+	}
+	return ""
+}
+
+type NetworkPeer struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // the peer node's networkdb name
+	Ip   string `protobuf:"bytes,2,opt,name=ip,proto3" json:"ip,omitempty"`
+}
+
+func (x *NetworkPeer) Reset() {
+	*x = NetworkPeer{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[46]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NetworkPeer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkPeer) ProtoMessage() {}
+
+func (x *NetworkPeer) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[46]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkPeer.ProtoReflect.Descriptor instead.
+func (*NetworkPeer) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *NetworkPeer) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NetworkPeer) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
 var File_swarmexec_proto protoreflect.FileDescriptor
 
 var file_swarmexec_proto_rawDesc = []byte{
@@ -3238,7 +3740,71 @@ var file_swarmexec_proto_rawDesc = []byte{
 	0x65, 0x12, 0x38, 0x0a, 0x07, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03,
 	0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x50,
 	0x72, 0x75, 0x6e, 0x65, 0x43, 0x61, 0x74, 0x65, 0x67, 0x6f, 0x72, 0x79, 0x52, 0x65, 0x73, 0x75,
-	0x6c, 0x74, 0x52, 0x07, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x73, 0x2a, 0xe6, 0x01, 0x0a, 0x0d,
+	0x6c, 0x74, 0x52, 0x07, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x73, 0x22, 0x3a, 0x0a, 0x17, 0x4e,
+	0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72,
+	0x6b, 0x5f, 0x69, 0x64, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0a, 0x6e, 0x65, 0x74,
+	0x77, 0x6f, 0x72, 0x6b, 0x49, 0x64, 0x73, 0x22, 0x57, 0x0a, 0x18, 0x4e, 0x65, 0x74, 0x77, 0x6f,
+	0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x12, 0x3b, 0x0a, 0x08, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x73, 0x18,
+	0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65,
+	0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e,
+	0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x08, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x73,
+	0x22, 0xba, 0x02, 0x0a, 0x14, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70,
+	0x6f, 0x69, 0x6e, 0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d,
+	0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x16, 0x0a,
+	0x06, 0x64, 0x72, 0x69, 0x76, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x64,
+	0x72, 0x69, 0x76, 0x65, 0x72, 0x12, 0x18, 0x0a, 0x07, 0x69, 0x6e, 0x67, 0x72, 0x65, 0x73, 0x73,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x69, 0x6e, 0x67, 0x72, 0x65, 0x73, 0x73, 0x12,
+	0x48, 0x0a, 0x0f, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x5f, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e,
+	0x74, 0x73, 0x18, 0x05, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d,
+	0x65, 0x78, 0x65, 0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x4c, 0x6f, 0x63, 0x61,
+	0x6c, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x6c, 0x6f, 0x63, 0x61, 0x6c,
+	0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x12, 0x3e, 0x0a, 0x08, 0x73, 0x65, 0x72,
+	0x76, 0x69, 0x63, 0x65, 0x73, 0x18, 0x06, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x73, 0x77,
+	0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x53,
+	0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52,
+	0x08, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x73, 0x12, 0x2c, 0x0a, 0x05, 0x70, 0x65, 0x65,
+	0x72, 0x73, 0x18, 0x07, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d,
+	0x65, 0x78, 0x65, 0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x50, 0x65, 0x65, 0x72,
+	0x52, 0x05, 0x70, 0x65, 0x65, 0x72, 0x73, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72,
+	0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x22, 0xfa, 0x01,
+	0x0a, 0x14, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x4c, 0x6f, 0x63, 0x61, 0x6c, 0x45, 0x6e,
+	0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x21, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69,
+	0x6e, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x63, 0x6f,
+	0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x49, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d,
+	0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x1f, 0x0a,
+	0x0b, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0a, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x49, 0x64, 0x12, 0x21,
+	0x0a, 0x0c, 0x69, 0x70, 0x76, 0x34, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x04,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x69, 0x70, 0x76, 0x34, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x12, 0x21, 0x0a, 0x0c, 0x69, 0x70, 0x76, 0x36, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x69, 0x70, 0x76, 0x36, 0x41, 0x64, 0x64,
+	0x72, 0x65, 0x73, 0x73, 0x12, 0x1f, 0x0a, 0x0b, 0x6d, 0x61, 0x63, 0x5f, 0x61, 0x64, 0x64, 0x72,
+	0x65, 0x73, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x6d, 0x61, 0x63, 0x41, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x23, 0x0a, 0x0d, 0x6c, 0x6f, 0x61, 0x64, 0x5f, 0x62, 0x61,
+	0x6c, 0x61, 0x6e, 0x63, 0x65, 0x72, 0x18, 0x07, 0x20, 0x01, 0x28, 0x08, 0x52, 0x0c, 0x6c, 0x6f,
+	0x61, 0x64, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x72, 0x22, 0x75, 0x0a, 0x17, 0x4e, 0x65,
+	0x74, 0x77, 0x6f, 0x72, 0x6b, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x45, 0x6e, 0x64, 0x70,
+	0x6f, 0x69, 0x6e, 0x74, 0x73, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x76, 0x69, 0x70,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x76, 0x69, 0x70, 0x12, 0x34, 0x0a, 0x05, 0x74,
+	0x61, 0x73, 0x6b, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x73, 0x77, 0x61,
+	0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x54, 0x61,
+	0x73, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x52, 0x05, 0x74, 0x61, 0x73, 0x6b,
+	0x73, 0x22, 0x84, 0x01, 0x0a, 0x13, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x54, 0x61, 0x73,
+	0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d,
+	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x1f, 0x0a,
+	0x0b, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0a, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x49, 0x64, 0x12, 0x1f,
+	0x0a, 0x0b, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x5f, 0x69, 0x70, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x0a, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x49, 0x70, 0x12,
+	0x17, 0x0a, 0x07, 0x68, 0x6f, 0x73, 0x74, 0x5f, 0x69, 0x70, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x06, 0x68, 0x6f, 0x73, 0x74, 0x49, 0x70, 0x22, 0x31, 0x0a, 0x0b, 0x4e, 0x65, 0x74, 0x77,
+	0x6f, 0x72, 0x6b, 0x50, 0x65, 0x65, 0x72, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x69,
+	0x70, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x70, 0x2a, 0xe6, 0x01, 0x0a, 0x0d,
 	0x50, 0x72, 0x75, 0x6e, 0x65, 0x43, 0x61, 0x74, 0x65, 0x67, 0x6f, 0x72, 0x79, 0x12, 0x1e, 0x0a,
 	0x1a, 0x50, 0x52, 0x55, 0x4e, 0x45, 0x5f, 0x43, 0x41, 0x54, 0x45, 0x47, 0x4f, 0x52, 0x59, 0x5f,
 	0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x1d, 0x0a,
@@ -3253,7 +3819,7 @@ var file_swarmexec_proto_rawDesc = []byte{
 	0x52, 0x55, 0x4e, 0x45, 0x5f, 0x43, 0x41, 0x54, 0x45, 0x47, 0x4f, 0x52, 0x59, 0x5f, 0x4e, 0x45,
 	0x54, 0x57, 0x4f, 0x52, 0x4b, 0x53, 0x10, 0x05, 0x12, 0x1a, 0x0a, 0x16, 0x50, 0x52, 0x55, 0x4e,
 	0x45, 0x5f, 0x43, 0x41, 0x54, 0x45, 0x47, 0x4f, 0x52, 0x59, 0x5f, 0x56, 0x4f, 0x4c, 0x55, 0x4d,
-	0x45, 0x53, 0x10, 0x06, 0x32, 0x87, 0x08, 0x0a, 0x05, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x12, 0x41,
+	0x45, 0x53, 0x10, 0x06, 0x32, 0xe4, 0x08, 0x0a, 0x05, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x12, 0x41,
 	0x0a, 0x0e, 0x4c, 0x69, 0x73, 0x74, 0x43, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x73,
 	0x12, 0x16, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x4c, 0x69, 0x73,
 	0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d,
@@ -3313,20 +3879,25 @@ var file_swarmexec_proto_rawDesc = []byte{
 	0x12, 0x3a, 0x0a, 0x05, 0x50, 0x72, 0x75, 0x6e, 0x65, 0x12, 0x17, 0x2e, 0x73, 0x77, 0x61, 0x72,
 	0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x50, 0x72, 0x75, 0x6e, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65,
 	0x73, 0x74, 0x1a, 0x18, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x50,
-	0x72, 0x75, 0x6e, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x40, 0x0a, 0x07,
-	0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x19, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65,
-	0x78, 0x65, 0x63, 0x2e, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65,
-	0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x56,
-	0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x7a,
-	0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x42,
-	0x0e, 0x53, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50,
-	0x01, 0x5a, 0x15, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2f, 0x69, 0x6e, 0x74,
-	0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x70, 0x62, 0xa2, 0x02, 0x03, 0x53, 0x58, 0x58, 0xaa, 0x02,
-	0x09, 0x53, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0xca, 0x02, 0x09, 0x53, 0x77, 0x61,
-	0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0xe2, 0x02, 0x15, 0x53, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78,
-	0x65, 0x63, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02,
-	0x09, 0x53, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x33,
+	0x72, 0x75, 0x6e, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x5b, 0x0a, 0x10,
+	0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73,
+	0x12, 0x22, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x4e, 0x65, 0x74,
+	0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x71,
+	0x75, 0x65, 0x73, 0x74, 0x1a, 0x23, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63,
+	0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74,
+	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x40, 0x0a, 0x07, 0x56, 0x65, 0x72,
+	0x73, 0x69, 0x6f, 0x6e, 0x12, 0x19, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63,
+	0x2e, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x1a, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2e, 0x56, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x7a, 0x0a, 0x0d, 0x63,
+	0x6f, 0x6d, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x42, 0x0e, 0x53, 0x77,
+	0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x15,
+	0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e,
+	0x61, 0x6c, 0x2f, 0x70, 0x62, 0xa2, 0x02, 0x03, 0x53, 0x58, 0x58, 0xaa, 0x02, 0x09, 0x53, 0x77,
+	0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0xca, 0x02, 0x09, 0x53, 0x77, 0x61, 0x72, 0x6d, 0x65,
+	0x78, 0x65, 0x63, 0xe2, 0x02, 0x15, 0x53, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x5c,
+	0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x53, 0x77,
+	0x61, 0x72, 0x6d, 0x65, 0x78, 0x65, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3342,7 +3913,7 @@ func file_swarmexec_proto_rawDescGZIP() []byte {
 }
 
 var file_swarmexec_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_swarmexec_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_swarmexec_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_swarmexec_proto_goTypes = []any{
 	(PruneCategory)(0),                  // 0: swarmexec.PruneCategory
 	(*ListRequest)(nil),                 // 1: swarmexec.ListRequest
@@ -3385,18 +3956,25 @@ var file_swarmexec_proto_goTypes = []any{
 	(*PruneRequest)(nil),                // 38: swarmexec.PruneRequest
 	(*PruneCategoryResult)(nil),         // 39: swarmexec.PruneCategoryResult
 	(*PruneResponse)(nil),               // 40: swarmexec.PruneResponse
-	nil,                                 // 41: swarmexec.VolumeInfo.LabelsEntry
-	nil,                                 // 42: swarmexec.CreateVolumeRequest.LabelsEntry
-	nil,                                 // 43: swarmexec.CreateVolumeRequest.DriverOptsEntry
+	(*NetworkEndpointsRequest)(nil),     // 41: swarmexec.NetworkEndpointsRequest
+	(*NetworkEndpointsResponse)(nil),    // 42: swarmexec.NetworkEndpointsResponse
+	(*NetworkEndpointsInfo)(nil),        // 43: swarmexec.NetworkEndpointsInfo
+	(*NetworkLocalEndpoint)(nil),        // 44: swarmexec.NetworkLocalEndpoint
+	(*NetworkServiceEndpoints)(nil),     // 45: swarmexec.NetworkServiceEndpoints
+	(*NetworkTaskEndpoint)(nil),         // 46: swarmexec.NetworkTaskEndpoint
+	(*NetworkPeer)(nil),                 // 47: swarmexec.NetworkPeer
+	nil,                                 // 48: swarmexec.VolumeInfo.LabelsEntry
+	nil,                                 // 49: swarmexec.CreateVolumeRequest.LabelsEntry
+	nil,                                 // 50: swarmexec.CreateVolumeRequest.DriverOptsEntry
 }
 var file_swarmexec_proto_depIdxs = []int32{
 	3,  // 0: swarmexec.ListResponse.containers:type_name -> swarmexec.ContainerInfo
 	5,  // 1: swarmexec.ClientMessage.start:type_name -> swarmexec.StartExec
 	6,  // 2: swarmexec.ClientMessage.resize:type_name -> swarmexec.Resize
 	14, // 3: swarmexec.ListVolumesResponse.volumes:type_name -> swarmexec.VolumeInfo
-	41, // 4: swarmexec.VolumeInfo.labels:type_name -> swarmexec.VolumeInfo.LabelsEntry
-	42, // 5: swarmexec.CreateVolumeRequest.labels:type_name -> swarmexec.CreateVolumeRequest.LabelsEntry
-	43, // 6: swarmexec.CreateVolumeRequest.driver_opts:type_name -> swarmexec.CreateVolumeRequest.DriverOptsEntry
+	48, // 4: swarmexec.VolumeInfo.labels:type_name -> swarmexec.VolumeInfo.LabelsEntry
+	49, // 5: swarmexec.CreateVolumeRequest.labels:type_name -> swarmexec.CreateVolumeRequest.LabelsEntry
+	50, // 6: swarmexec.CreateVolumeRequest.driver_opts:type_name -> swarmexec.CreateVolumeRequest.DriverOptsEntry
 	14, // 7: swarmexec.CreateVolumeResponse.volume:type_name -> swarmexec.VolumeInfo
 	19, // 8: swarmexec.ForwardClientMessage.start:type_name -> swarmexec.StartForward
 	21, // 9: swarmexec.ForwardServerMessage.ready:type_name -> swarmexec.ForwardReady
@@ -3411,39 +3989,46 @@ var file_swarmexec_proto_depIdxs = []int32{
 	0,  // 18: swarmexec.PruneRequest.categories:type_name -> swarmexec.PruneCategory
 	0,  // 19: swarmexec.PruneCategoryResult.category:type_name -> swarmexec.PruneCategory
 	39, // 20: swarmexec.PruneResponse.results:type_name -> swarmexec.PruneCategoryResult
-	1,  // 21: swarmexec.Agent.ListContainers:input_type -> swarmexec.ListRequest
-	4,  // 22: swarmexec.Agent.Exec:input_type -> swarmexec.ClientMessage
-	8,  // 23: swarmexec.Agent.Logs:input_type -> swarmexec.LogsRequest
-	9,  // 24: swarmexec.Agent.WatchContainerEvents:input_type -> swarmexec.WatchContainerEventsRequest
-	12, // 25: swarmexec.Agent.ListVolumes:input_type -> swarmexec.ListVolumesRequest
-	15, // 26: swarmexec.Agent.RemoveVolume:input_type -> swarmexec.RemoveVolumeRequest
-	17, // 27: swarmexec.Agent.CreateVolume:input_type -> swarmexec.CreateVolumeRequest
-	20, // 28: swarmexec.Agent.PortForward:input_type -> swarmexec.ForwardClientMessage
-	25, // 29: swarmexec.Agent.Stats:input_type -> swarmexec.StatsRequest
-	28, // 30: swarmexec.Agent.ListImages:input_type -> swarmexec.ListImagesRequest
-	31, // 31: swarmexec.Agent.PruneImages:input_type -> swarmexec.PruneImagesRequest
-	33, // 32: swarmexec.Agent.ReclaimStats:input_type -> swarmexec.ReclaimStatsRequest
-	38, // 33: swarmexec.Agent.Prune:input_type -> swarmexec.PruneRequest
-	23, // 34: swarmexec.Agent.Version:input_type -> swarmexec.VersionRequest
-	2,  // 35: swarmexec.Agent.ListContainers:output_type -> swarmexec.ListResponse
-	7,  // 36: swarmexec.Agent.Exec:output_type -> swarmexec.ServerMessage
-	11, // 37: swarmexec.Agent.Logs:output_type -> swarmexec.LogChunk
-	10, // 38: swarmexec.Agent.WatchContainerEvents:output_type -> swarmexec.ContainerEvent
-	13, // 39: swarmexec.Agent.ListVolumes:output_type -> swarmexec.ListVolumesResponse
-	16, // 40: swarmexec.Agent.RemoveVolume:output_type -> swarmexec.RemoveVolumeResponse
-	18, // 41: swarmexec.Agent.CreateVolume:output_type -> swarmexec.CreateVolumeResponse
-	22, // 42: swarmexec.Agent.PortForward:output_type -> swarmexec.ForwardServerMessage
-	26, // 43: swarmexec.Agent.Stats:output_type -> swarmexec.StatsResponse
-	29, // 44: swarmexec.Agent.ListImages:output_type -> swarmexec.ListImagesResponse
-	32, // 45: swarmexec.Agent.PruneImages:output_type -> swarmexec.PruneImagesResponse
-	35, // 46: swarmexec.Agent.ReclaimStats:output_type -> swarmexec.ReclaimStatsResponse
-	40, // 47: swarmexec.Agent.Prune:output_type -> swarmexec.PruneResponse
-	24, // 48: swarmexec.Agent.Version:output_type -> swarmexec.VersionResponse
-	35, // [35:49] is the sub-list for method output_type
-	21, // [21:35] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	43, // 21: swarmexec.NetworkEndpointsResponse.networks:type_name -> swarmexec.NetworkEndpointsInfo
+	44, // 22: swarmexec.NetworkEndpointsInfo.local_endpoints:type_name -> swarmexec.NetworkLocalEndpoint
+	45, // 23: swarmexec.NetworkEndpointsInfo.services:type_name -> swarmexec.NetworkServiceEndpoints
+	47, // 24: swarmexec.NetworkEndpointsInfo.peers:type_name -> swarmexec.NetworkPeer
+	46, // 25: swarmexec.NetworkServiceEndpoints.tasks:type_name -> swarmexec.NetworkTaskEndpoint
+	1,  // 26: swarmexec.Agent.ListContainers:input_type -> swarmexec.ListRequest
+	4,  // 27: swarmexec.Agent.Exec:input_type -> swarmexec.ClientMessage
+	8,  // 28: swarmexec.Agent.Logs:input_type -> swarmexec.LogsRequest
+	9,  // 29: swarmexec.Agent.WatchContainerEvents:input_type -> swarmexec.WatchContainerEventsRequest
+	12, // 30: swarmexec.Agent.ListVolumes:input_type -> swarmexec.ListVolumesRequest
+	15, // 31: swarmexec.Agent.RemoveVolume:input_type -> swarmexec.RemoveVolumeRequest
+	17, // 32: swarmexec.Agent.CreateVolume:input_type -> swarmexec.CreateVolumeRequest
+	20, // 33: swarmexec.Agent.PortForward:input_type -> swarmexec.ForwardClientMessage
+	25, // 34: swarmexec.Agent.Stats:input_type -> swarmexec.StatsRequest
+	28, // 35: swarmexec.Agent.ListImages:input_type -> swarmexec.ListImagesRequest
+	31, // 36: swarmexec.Agent.PruneImages:input_type -> swarmexec.PruneImagesRequest
+	33, // 37: swarmexec.Agent.ReclaimStats:input_type -> swarmexec.ReclaimStatsRequest
+	38, // 38: swarmexec.Agent.Prune:input_type -> swarmexec.PruneRequest
+	41, // 39: swarmexec.Agent.NetworkEndpoints:input_type -> swarmexec.NetworkEndpointsRequest
+	23, // 40: swarmexec.Agent.Version:input_type -> swarmexec.VersionRequest
+	2,  // 41: swarmexec.Agent.ListContainers:output_type -> swarmexec.ListResponse
+	7,  // 42: swarmexec.Agent.Exec:output_type -> swarmexec.ServerMessage
+	11, // 43: swarmexec.Agent.Logs:output_type -> swarmexec.LogChunk
+	10, // 44: swarmexec.Agent.WatchContainerEvents:output_type -> swarmexec.ContainerEvent
+	13, // 45: swarmexec.Agent.ListVolumes:output_type -> swarmexec.ListVolumesResponse
+	16, // 46: swarmexec.Agent.RemoveVolume:output_type -> swarmexec.RemoveVolumeResponse
+	18, // 47: swarmexec.Agent.CreateVolume:output_type -> swarmexec.CreateVolumeResponse
+	22, // 48: swarmexec.Agent.PortForward:output_type -> swarmexec.ForwardServerMessage
+	26, // 49: swarmexec.Agent.Stats:output_type -> swarmexec.StatsResponse
+	29, // 50: swarmexec.Agent.ListImages:output_type -> swarmexec.ListImagesResponse
+	32, // 51: swarmexec.Agent.PruneImages:output_type -> swarmexec.PruneImagesResponse
+	35, // 52: swarmexec.Agent.ReclaimStats:output_type -> swarmexec.ReclaimStatsResponse
+	40, // 53: swarmexec.Agent.Prune:output_type -> swarmexec.PruneResponse
+	42, // 54: swarmexec.Agent.NetworkEndpoints:output_type -> swarmexec.NetworkEndpointsResponse
+	24, // 55: swarmexec.Agent.Version:output_type -> swarmexec.VersionResponse
+	41, // [41:56] is the sub-list for method output_type
+	26, // [26:41] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_swarmexec_proto_init() }
@@ -3932,6 +4517,90 @@ func file_swarmexec_proto_init() {
 				return nil
 			}
 		}
+		file_swarmexec_proto_msgTypes[40].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkEndpointsRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[41].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkEndpointsResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[42].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkEndpointsInfo); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[43].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkLocalEndpoint); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[44].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkServiceEndpoints); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[45].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkTaskEndpoint); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[46].Exporter = func(v any, i int) any {
+			switch v := v.(*NetworkPeer); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	file_swarmexec_proto_msgTypes[3].OneofWrappers = []any{
 		(*ClientMessage_Start)(nil),
@@ -3964,7 +4633,7 @@ func file_swarmexec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_swarmexec_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   43,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

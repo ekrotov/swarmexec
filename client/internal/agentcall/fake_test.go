@@ -122,6 +122,17 @@ func (a *fakeAgent) ReclaimStats(ctx context.Context, _ *pb.ReclaimStatsRequest)
 	return &pb.ReclaimStatsResponse{}, nil
 }
 
+func (a *fakeAgent) NetworkEndpoints(ctx context.Context, req *pb.NetworkEndpointsRequest) (*pb.NetworkEndpointsResponse, error) {
+	if err := a.check(ctx, "NetworkEndpoints"); err != nil {
+		return nil, err
+	}
+	out := &pb.NetworkEndpointsResponse{}
+	for _, id := range req.GetNetworkIds() {
+		out.Networks = append(out.Networks, &pb.NetworkEndpointsInfo{Id: id})
+	}
+	return out, nil
+}
+
 func (a *fakeAgent) Prune(ctx context.Context, _ *pb.PruneRequest) (*pb.PruneResponse, error) {
 	if err := a.check(ctx, "Prune"); err != nil {
 		return nil, err
