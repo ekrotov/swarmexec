@@ -20,10 +20,10 @@ import (
 // analyzers surface here automatically. Bound to '!' on the containers tab. The
 // service under the cursor, if flagged, is pre-highlighted and scrolled into view.
 func (u *ui) showSecurityRisks() {
-	app := u.app
+	app, tree := u.app, u.treeTab().st()
 
 	var flagged []resolve.Service
-	for _, s := range u.lastSvcs {
+	for _, s := range tree.svcs {
 		if secscan.Actionable(s.Risks) {
 			flagged = append(flagged, s)
 		}
@@ -32,10 +32,10 @@ func (u *ui) showSecurityRisks() {
 	tv := tview.NewTextView().SetDynamicColors(true).SetRegions(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" security risks ")
 	tv.SetText(securityOverlayText(securityOverlayState{
-		scanned:  len(u.lastSvcs),
+		scanned:  len(tree.svcs),
 		flagged:  flagged,
-		loaded:   u.loaded,
-		staleErr: u.fetchErr,
+		loaded:   tree.loaded,
+		staleErr: tree.fetchErr,
 	}))
 
 	// Pre-select the service under the cursor if it is among the flagged ones.

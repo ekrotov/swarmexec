@@ -353,14 +353,15 @@ func (u *ui) showStackLogs(stack string) {
 // stackLogMembers is every running container of the stack's services, in
 // service and slot order.
 func (u *ui) stackLogMembers(stack string) []resolve.Candidate {
+	tree := u.treeTab().st()
 	inStack := map[string]bool{}
-	for _, s := range u.lastSvcs {
+	for _, s := range tree.svcs {
 		if stackNameOf(s) == stack {
 			inStack[s.Name] = true
 		}
 	}
 	var out []resolve.Candidate
-	for _, c := range u.lastCands {
+	for _, c := range tree.cands {
 		if inStack[c.Service] {
 			out = append(out, c)
 		}

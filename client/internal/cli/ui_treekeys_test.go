@@ -22,8 +22,8 @@ func TestTreeGMovesTheCursor(t *testing.T) {
 	}
 	u := treeUI("a", svcList(names...), nil)
 	u.km = defaultKeybinds()
-	u.groupByStack = false
-	u.renderContainers()
+	u.treeTab().groupByStack = false
+	u.treeTab().render()
 
 	scr := tcell.NewSimulationScreen("UTF-8")
 	if err := scr.Init(); err != nil {
@@ -35,7 +35,7 @@ func TestTreeGMovesTheCursor(t *testing.T) {
 	u.ctree.Draw(scr)
 
 	press := func(ev *tcell.EventKey) {
-		if out := u.containerTreeKeys(ev); out != nil {
+		if out := u.treeTab().keys(ev); out != nil {
 			u.ctree.InputHandler()(out, func(tview.Primitive) {})
 		}
 		u.ctree.Draw(scr)

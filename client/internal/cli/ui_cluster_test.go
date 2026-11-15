@@ -5,6 +5,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/client"
@@ -13,23 +15,20 @@ import (
 	"swarmexec/client/internal/resolve"
 )
 
-// treeUI is the smallest ui that can render a container tree: the widgets it
-// draws into, a forward registry for the annotations, and a cluster to hold the
-// data. Everything else renderContainers touches is nil-tolerant.
+// treeUI is the smallest ui that can render a container tree: a forward
+// registry for the annotations and a cluster to hold the data; the tree tab
+// builds its widgets on first use. Everything else the render touches is
+// nil-tolerant.
 func treeUI(cluster string, svcs []resolve.Service, cands []resolve.Candidate) *ui {
-	ctree := tview.NewTreeView()
-	croot := tview.NewTreeNode("")
-	ctree.SetRoot(croot).SetTopLevel(1)
 	u := &ui{
 		clusterState: newClusterState(cluster, cluster),
 		clusters:     map[string]*clusterState{},
-		ctree:        ctree,
-		croot:        croot,
 		forwards:     newForwardRegistry(),
 		activeCtx:    cluster,
 	}
 	u.clusters[cluster] = u.clusterState
-	u.lastSvcs, u.lastCands = svcs, cands
+	st := u.treeTab().st()
+	st.svcs, st.cands = svcs, cands
 	return u
 }
 
@@ -49,34 +48,43 @@ func currentRef(u *ui) any {
 	return n.GetReference()
 }
 
+// selectService puts the tree cursor on the named service row.
+func selectService(t *testing.T, u *ui, name string) {
+	t.Helper()
+	var found bool
+	eachServiceNode(u.treeTab().root, func(n *tview.TreeNode) {
+		if n.GetReference().(svcRef).name == name {
+			u.ctree.SetCurrentNode(n)
+			found = true
+		}
+	})
+	if !found {
+		t.Fatalf("service %q not in the tree", name)
+	}
+}
+
 // The point of the whole feature: come back to a cluster and be where you were.
 func TestSwitchingBackRestoresThePosition(t *testing.T) {
 	u := treeUI("a", svcList("alpha", "beta", "gamma"), nil)
-	u.groupByStack = false
-	u.renderContainers()
+	tt := u.treeTab()
+	tt.groupByStack = false
+	tt.render()
 
 	// Stand on "gamma" — not the first row, so a reset would be obvious.
-	for _, n := range u.croot.GetChildren() {
-		if ref, ok := n.GetReference().(svcRef); ok && ref.name == "gamma" {
-			u.ctree.SetCurrentNode(n)
-		}
-	}
+	selectService(t, u, "gamma")
 
-	// Switch away: the position is captured, and the widget is rebuilt for a
-	// cluster that has no "gamma" at all.
-	u.pos = u.treePosFromWidget()
-	other := newClusterState("b", "b")
-	other.lastSvcs = svcList("db", "web")
-	u.clusterState = other
-	u.renderContainers()
+	// Switch away: the widget is rebuilt for a cluster that has no "gamma" at
+	// all, and the render saves a's position before it does.
+	u.clusterState = newClusterState("b", "b")
+	tt.st().svcs = svcList("db", "web")
+	tt.render()
 	if ref, ok := currentRef(u).(svcRef); !ok || ref.name != "db" {
 		t.Fatalf("the other cluster should start at its own first row, got %#v", currentRef(u))
 	}
 
 	// …and back.
 	u.clusterState = u.clusters["a"]
-	u.restorePos = true
-	u.renderContainers()
+	tt.render()
 
 	ref, ok := currentRef(u).(svcRef)
 	if !ok || ref.name != "gamma" {
@@ -84,31 +92,47 @@ func TestSwitchingBackRestoresThePosition(t *testing.T) {
 	}
 }
 
-// The restore is for the switch only. A plain refresh must take the position
-// from the tree as it stands, or every refresh would drag the operator back to
-// wherever they were when they last arrived.
-func TestRestoreAppliesToOneRenderOnly(t *testing.T) {
+// The saved position is for a switch only. A plain refresh must take the
+// position from the tree as it stands, or every refresh would drag the
+// operator back to wherever they were when they last arrived.
+func TestSavedPositionAppliesToTheSwitchOnly(t *testing.T) {
 	u := treeUI("a", svcList("alpha", "beta"), nil)
-	u.groupByStack = false
-	u.pos = treePos{service: "alpha"}
-	u.restorePos = true
-	u.renderContainers()
-	if ref, _ := currentRef(u).(svcRef); ref.name != "alpha" {
-		t.Fatalf("restore did not take: %#v", currentRef(u))
-	}
-	if u.restorePos {
-		t.Error("restorePos must be consumed by the render that used it")
+	tt := u.treeTab()
+	tt.groupByStack = false
+	tt.st().pos = treePos{service: "beta"} // as a switch away from a would leave it
+	tt.render()
+	if ref, _ := currentRef(u).(svcRef); ref.name != "beta" {
+		t.Fatalf("the saved position did not take: %#v", currentRef(u))
 	}
 
 	// The operator moves, then a refresh happens.
-	for _, n := range u.croot.GetChildren() {
-		if ref, ok := n.GetReference().(svcRef); ok && ref.name == "beta" {
-			u.ctree.SetCurrentNode(n)
-		}
+	selectService(t, u, "alpha")
+	tt.render()
+	if ref, _ := currentRef(u).(svcRef); ref.name != "alpha" {
+		t.Errorf("a refresh moved the cursor to %#v, want alpha", currentRef(u))
 	}
-	u.renderContainers()
+}
+
+// An error in between does not lose the position either: the tree shows the
+// error, and the next good fetch puts the cursor back.
+func TestAnErrorKeepsThePosition(t *testing.T) {
+	u := treeUI("a", svcList("alpha", "beta", "gamma"), nil)
+	tt := u.treeTab()
+	tt.groupByStack = false
+	tt.render()
+	selectService(t, u, "beta")
+
+	tt.apply(nil, nil, errors.New("manager unreachable"))
+	if got := tt.root.GetChildren()[0].GetText(); !strings.Contains(got, "manager unreachable") {
+		t.Fatalf("error state = %q", got)
+	}
+	if tt.st().svcs == nil || tt.st().fetchErr == nil {
+		t.Error("a failed fetch keeps the last services, and says they are stale")
+	}
+
+	tt.apply(svcList("alpha", "beta", "gamma"), nil, nil)
 	if ref, _ := currentRef(u).(svcRef); ref.name != "beta" {
-		t.Errorf("a refresh moved the cursor to %#v, want beta", currentRef(u))
+		t.Errorf("cursor after the error cleared = %#v, want beta", currentRef(u))
 	}
 }
 
@@ -120,11 +144,11 @@ func TestFoldStateTravelsWithThePosition(t *testing.T) {
 		{Name: "app_db", Mode: "replicated", Running: 1, Desired: 1, Stack: "app"},
 	}
 	u := treeUI("a", svcs, nil)
-	u.groupByStack = true
-	u.renderContainers()
+	tt := u.treeTab()
+	tt.render()
 
 	var stack *tview.TreeNode
-	for _, n := range u.croot.GetChildren() {
+	for _, n := range tt.root.GetChildren() {
 		if isStackNode(n) {
 			stack = n
 		}
@@ -137,11 +161,17 @@ func TestFoldStateTravelsWithThePosition(t *testing.T) {
 	}
 	stack.SetExpanded(false)
 
-	pos := u.treePosFromWidget()
-	u.pos, u.restorePos = pos, true
-	u.renderContainers()
-
-	for _, n := range u.croot.GetChildren() {
+	// Away to a cluster with the same stack name, where it starts open…
+	u.clusterState = newClusterState("b", "b")
+	tt.st().svcs = svcs
+	tt.render()
+	if !tt.root.GetChildren()[0].IsExpanded() {
+		t.Fatal("b's stack must not inherit a's fold")
+	}
+	// …and back, where it is still closed.
+	u.clusterState = u.clusters["a"]
+	tt.render()
+	for _, n := range tt.root.GetChildren() {
 		if isStackNode(n) && n.IsExpanded() {
 			t.Error("the collapsed stack came back open")
 		}

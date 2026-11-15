@@ -46,7 +46,7 @@ func (u *ui) stackUnderCursor() string {
 // splitting the name on "_": a service called "a_b_c" is ambiguous, and the
 // manager already told us which stack it belongs to.
 func (u *ui) stackOfService(name string) string {
-	for _, s := range u.lastSvcs {
+	for _, s := range u.treeTab().st().svcs {
 		if s.Name == name {
 			return s.Stack
 		}
@@ -325,6 +325,6 @@ func (u *ui) applyStack(plan *stackfile.Plan) {
 			return
 		}
 		u.info("deployed " + plan.Stack + " — " + res.Summary())
-		u.loadContainers()
+		u.treeTab().load()
 	})
 }

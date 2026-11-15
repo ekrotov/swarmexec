@@ -11,15 +11,15 @@ import (
 )
 
 // rowFor returns the rendered text of one service node, through the real
-// render path — renderContainers → svcCols → serviceRow → markService.
+// render path — render → cols → serviceRow → markService.
 //
 // Going through the widget matters: the existing row tests hand svcColumns in
 // by hand, so they check the formatting and can never see the bug, which is in
 // deciding WHICH widths to use.
 func svcRowText(t *testing.T, u *ui, name string) string {
 	t.Helper()
-	u.renderContainers()
-	for _, n := range u.croot.GetChildren() {
+	u.treeTab().render()
+	for _, n := range u.treeTab().root.GetChildren() {
 		if ref, ok := n.GetReference().(svcRef); ok && ref.name == name {
 			return n.GetText()
 		}
@@ -48,11 +48,11 @@ func TestColumnWidthsSurviveATransientJobService(t *testing.T) {
 	u := treeUI("cs", steady, nil)
 	_ = svcRowText(t, u, "web") // first frame, narrow
 
-	u.lastSvcs = withJob
+	u.treeTab().st().svcs = withJob
 	during := svcRowText(t, u, "web")
 
 	// The job finishes and is removed — the poll must not take the space back.
-	u.lastSvcs = steady
+	u.treeTab().st().svcs = steady
 	after := svcRowText(t, u, "web")
 	if after != during {
 		t.Errorf("row moved back when the transient service went away:\n during: %q\n  after: %q", during, after)
@@ -60,11 +60,11 @@ func TestColumnWidthsSurviveATransientJobService(t *testing.T) {
 
 	// Two more cycles: still no movement, in either direction.
 	for i := 0; i < 2; i++ {
-		u.lastSvcs = withJob
+		u.treeTab().st().svcs = withJob
 		if got := svcRowText(t, u, "web"); got != during {
 			t.Fatalf("cycle %d with the job: %q, want %q", i, got, during)
 		}
-		u.lastSvcs = steady
+		u.treeTab().st().svcs = steady
 		if got := svcRowText(t, u, "web"); got != during {
 			t.Fatalf("cycle %d without the job: %q, want %q", i, got, during)
 		}
@@ -81,10 +81,10 @@ func TestColumnWidthsSurviveATransientLongName(t *testing.T) {
 	u := treeUI("cs", steady, nil)
 	_ = svcRowText(t, u, "web")
 
-	u.lastSvcs = []resolve.Service{steady[0], long}
+	u.treeTab().st().svcs = []resolve.Service{steady[0], long}
 	wide := svcRowText(t, u, "web")
 
-	u.lastSvcs = steady
+	u.treeTab().st().svcs = steady
 	if after := svcRowText(t, u, "web"); after != wide {
 		t.Errorf("width oscillated after the long name went away:\n  wide: %q\n after: %q", wide, after)
 	}
@@ -96,17 +96,17 @@ func TestExplicitReloadResetsColumnWidths(t *testing.T) {
 	steady := []resolve.Service{{Name: "web", Mode: "replicated", Running: 1, Desired: 1}}
 	u := treeUI("cs", steady, nil)
 
-	u.lastSvcs = append(append([]resolve.Service{}, steady...),
+	u.treeTab().st().svcs = append(append([]resolve.Service{}, steady...),
 		resolve.Service{Name: "job", Mode: "replicated-job", Running: 0, Desired: 1})
 	wide := svcRowText(t, u, "web")
 
-	u.lastSvcs = steady
+	u.treeTab().st().svcs = steady
 	if got := svcRowText(t, u, "web"); got != wide {
 		t.Fatalf("the poll must not narrow the columns:\n want: %q\n  got: %q", wide, got)
 	}
 
-	// What loadContainers sets before it re-renders.
-	u.resetCols = true
+	// What load sets before it re-renders.
+	u.treeTab().st().resetCols = true
 	narrow := svcRowText(t, u, "web")
 	if narrow == wide {
 		t.Errorf("an explicit reload should narrow the columns again, still %q", narrow)
@@ -120,18 +120,20 @@ func TestExplicitReloadResetsColumnWidths(t *testing.T) {
 // alone, so the suffix overflowed and pushed that row's ports sideways.
 func TestColumnWidthsAccountForTheVersionSuffix(t *testing.T) {
 	u := treeUI("cs", nil, nil)
+	tt, st := u.treeTab(), u.treeTab().st()
 	// No registry cache: the suffix is empty and the width is the image length.
-	u.lastSvcs = []resolve.Service{{Name: "web", Mode: "replicated", Running: 1, Desired: 1, Image: "nginx:1.25"}}
-	u.renderContainers()
-	if u.svcCols.image != len("nginx:1.25") {
-		t.Errorf("image width = %d, want %d", u.svcCols.image, len("nginx:1.25"))
+	st.svcs = []resolve.Service{{Name: "web", Mode: "replicated", Running: 1, Desired: 1, Image: "nginx:1.25"}}
+	tt.render()
+	if st.cols.image != len("nginx:1.25") {
+		t.Errorf("image width = %d, want %d", st.cols.image, len("nginx:1.25"))
 	}
 
 	// The row must fit inside the width the render computed, or the cell
 	// overflows and everything after it on that row moves.
-	row := serviceRow(u.lastSvcs[0], u.svcCols, u.versionSuffixFor(u.lastSvcs[0]), "")
-	if got := len(u.lastSvcs[0].Image) + len(u.versionSuffixFor(u.lastSvcs[0])); got > u.svcCols.image {
-		t.Errorf("image cell overflows: content %d > width %d (row %q)", got, u.svcCols.image, row)
+	web := st.svcs[0]
+	row := serviceRow(web, st.cols, tt.versionSuffixFor(web), "")
+	if got := len(web.Image) + len(tt.versionSuffixFor(web)); got > st.cols.image {
+		t.Errorf("image cell overflows: content %d > width %d (row %q)", got, st.cols.image, row)
 	}
 }
 

@@ -5,7 +5,6 @@ package cli
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -26,13 +25,6 @@ func gatedAPI(t *testing.T) (dcli *client.Client, entered <-chan struct{}, open 
 		Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "web"}},
 	}}}
 	gate, in := make(chan struct{}), make(chan struct{}, 16)
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/services") {
-			in <- struct{}{}
-			<-gate
-		}
-		fs.ServeHTTP(w, r)
-	}))
 	opened := false
 	open = func() {
 		if !opened {
@@ -40,12 +32,16 @@ func gatedAPI(t *testing.T) (dcli *client.Client, entered <-chan struct{}, open 
 			close(gate)
 		}
 	}
-	t.Cleanup(func() { open(); api.Close() })
-	dcli, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { dcli.Close() })
+	dcli = fakeSwarmClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/services") {
+			in <- struct{}{}
+			<-gate
+		}
+		fs.ServeHTTP(w, r)
+	}))
+	// Registered after the server's: cleanups run last-first, so the gate
+	// opens before the server waits for its handlers to return.
+	t.Cleanup(open)
 	return dcli, in, open
 }
 

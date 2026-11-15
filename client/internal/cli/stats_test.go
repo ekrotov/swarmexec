@@ -302,18 +302,18 @@ func TestHealthBadges(t *testing.T) {
 // every service under it is failing its probes.
 func TestStackHealthRollsUp(t *testing.T) {
 	u := &ui{clusterState: &clusterState{
-		lastCands: []resolve.Candidate{
-			usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
-		},
 		usage: map[string]containerUsage{
 			"c1": {Health: swarmops.HealthUnhealthy},
 			"c2": {Health: swarmops.HealthHealthy},
 			"c3": {Health: swarmops.HealthUnhealthy},
 		},
 	}}
+	u.treeTab().st().cands = []resolve.Candidate{
+		usageCand("web", "c1", 1), usageCand("web", "c2", 2), usageCand("api", "c3", 1),
+	}
 	svcs := []resolve.Service{{Name: "web"}, {Name: "api"}}
 
-	h := u.stackHealth(svcs)
+	h := u.treeTab().stackHealth(svcs)
 	if h.Unhealthy != 2 || h.Healthy != 1 {
 		t.Errorf("roll-up = %+v, want 2 unhealthy across both services", h)
 	}
@@ -322,7 +322,7 @@ func TestStackHealthRollsUp(t *testing.T) {
 	}
 
 	// With no readings at all the stack keeps the count's own colour.
-	empty := (&ui{clusterState: &clusterState{}}).stackHealth(svcs)
+	empty := (&ui{clusterState: &clusterState{}}).treeTab().stackHealth(svcs)
 	if empty.Total() != 0 {
 		t.Errorf("no readings should roll up to nothing, got %+v", empty)
 	}

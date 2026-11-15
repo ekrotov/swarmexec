@@ -105,7 +105,6 @@ func TestNodesTabKeys(t *testing.T) {
 // belong to, the stop key stops the one under the cursor, and Enter shows it.
 func TestForwardsTabStopKey(t *testing.T) {
 	u := tabsUI()
-	u.ctree, u.croot = tview.NewTreeView(), tview.NewTreeNode("")
 	stopped := map[string]bool{}
 	for _, name := range []string{"api", "web"} {
 		e := u.forwards.addAt("other-cluster", "127.0.0.1", resolve.Candidate{Service: name, ContainerID: "c-" + name, NodeName: "n1"}, 0, 80, func() { stopped[name] = true })

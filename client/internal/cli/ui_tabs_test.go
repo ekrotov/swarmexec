@@ -14,19 +14,18 @@ import (
 	"swarmexec/client/internal/swarmops"
 )
 
-// tabsUI is a bare session with every shared widget the tab registry's
-// adapters read, on cluster "a". No event loop: the tab methods under test
-// run synchronously.
+// tabsUI is a bare session with every shared widget the tabs read, on
+// cluster "a", and the tab registry built. No event loop: the tab methods
+// under test run synchronously.
 func tabsUI() *ui {
 	u := overlayUI()
 	u.km = defaultKeybinds()
 	u.clusterState = newClusterState("a", "a")
 	u.clusters = map[string]*clusterState{"a": u.clusterState}
-	u.ctree, u.croot = tview.NewTreeView(), tview.NewTreeNode("")
-	u.ctree.SetRoot(u.croot)
 	u.cxtable = newStateTable()
 	u.status = tview.NewTextView()
 	u.forwards = newForwardRegistry()
+	u.tab("containers") // builds the registry, and with it the tree u.ctree names
 	return u
 }
 
@@ -285,7 +284,7 @@ func TestEveryTabYanksItsOwnList(t *testing.T) {
 	u.secTab().st().rows = []swarmops.Secret{{Name: "db_pw"}}
 	u.volTab().st().vols = []swarmVolume{vol("shop_data", "node-a")}
 	u.volTab().render()
-	u.croot.AddChild(tview.NewTreeNode("web"))
+	u.treeTab().root.AddChild(tview.NewTreeNode("web"))
 
 	for key, want := range map[string]string{
 		"configs":    "nginx.conf\t0\t2.048kB",
@@ -320,7 +319,7 @@ func TestSearchOpensOverSearchableTabsOnly(t *testing.T) {
 	if u.search.GetText() != "shop" || u.searchTab() == nil {
 		t.Errorf("bar = %q, want the volumes filter", u.search.GetText())
 	}
-	u.filter = "web"
+	u.treeTab().st().filter = "web"
 	u.startSearch("containers")
 	if u.search.GetText() != "web" {
 		t.Errorf("bar = %q, want the tree filter", u.search.GetText())
