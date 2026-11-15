@@ -201,12 +201,8 @@ func (iv *inspectView) populate() {
 	keepRow, _ := table.GetSelection()
 	table.Clear()
 	iv.plain = iv.plain[:0]
-	for k := range iv.rowNet {
-		delete(iv.rowNet, k)
-	}
-	for k := range iv.rowUpgrade {
-		delete(iv.rowUpgrade, k)
-	}
+	clear(iv.rowNet)
+	clear(iv.rowUpgrade)
 	iv.hasUpgrade = false
 	iv.upInfo = nil
 	if !iv.loaded {
@@ -215,120 +211,137 @@ func (iv *inspectView) populate() {
 		iv.setFooter("")
 		return
 	}
-	firstSel, r := -1, 0
-	put := func(text string, color tcell.Color, bold, selectable bool, plainText, net string) {
-		cell := tview.NewTableCell(tview.Escape(text)).SetTextColor(color).SetSelectable(selectable)
-		if bold {
-			cell.SetAttributes(tcell.AttrBold)
-		}
-		table.SetCell(r, 0, cell)
-		iv.plain = append(iv.plain, plainText)
-		if net != "" {
-			iv.rowNet[r] = net
-		}
-		if selectable && firstSel < 0 {
-			firstSel = r
-		}
-		r++
-	}
+	p := &inspRows{iv: iv, firstSel: -1}
 	switch iv.mode {
 	case inspModeRaw:
 		for _, ln := range strings.Split(iv.rawJSON, "\n") {
-			put(ln, tcell.ColorWhite, false, true, ln, "")
+			p.put(ln, tcell.ColorWhite, false, true, ln, "")
 		}
 	case inspModeStats:
 		for _, ln := range iv.statsLines() {
-			put(ln.text, ln.color, ln.bold, ln.text != "", strings.TrimSpace(ln.text), "")
+			p.put(ln.text, ln.color, ln.bold, ln.text != "", strings.TrimSpace(ln.text), "")
 		}
 	default:
 		for _, ln := range iv.lines {
-			switch ln.Kind {
-			case swarmops.InspectTitle:
-				put(ln.Text, tcell.ColorAqua, true, false, ln.Text, "")
-			case swarmops.InspectHeader:
-				put(ln.Text, tcell.ColorAqua, false, false, ln.Text, "")
-			case swarmops.InspectDim:
-				put(ln.Text, tcell.ColorGray, false, false, ln.Text, "")
-			case swarmops.InspectBlank:
-				put("", tcell.ColorWhite, false, false, "", "")
-			case swarmops.InspectNet:
-				// Two drill-down levels: the network row expands to its DNS names,
-				// and below them a "N containers" row expands to the addresses of
-				// the containers behind the VIP.
-				head := fmt.Sprintf("  %s %s%s", expandMarker(iv.expanded[ln.Net]), ln.Text, lockIcon(ln.Encrypted))
-				if ln.Addr != "" {
-					head += fmt.Sprintf("  %s %s", ln.AddrLabel, ln.Addr)
-				}
-				if ln.Note != "" {
-					head += "  (" + ln.Note + ")"
-				} else {
-					head += fmt.Sprintf("  (%d dns names)", ln.Count)
-				}
-				// Copying a network row yields the address rather than the name:
-				// it is the one value on the row you paste somewhere else.
-				put(head, tcell.ColorWhite, false, true, netRowCopy(ln), ln.Net)
-				if !iv.expanded[ln.Net] {
-					break
-				}
-				for _, c := range ln.Children {
-					put("      "+c, tcell.ColorGray, false, true, c, "")
-				}
-				if len(ln.Tasks) > 0 {
-					key := netTasksKey(ln.Net)
-					put(fmt.Sprintf("      %s %s", expandMarker(iv.expanded[key]), plural(len(ln.Tasks), "container")),
-						tcell.ColorWhite, false, true, "", key)
-					if iv.expanded[key] {
-						for _, t := range ln.Tasks {
-							put("          "+t.Text, tcell.ColorGray, false, true, t.Copy, "")
-						}
-					}
-				}
-			case swarmops.InspectUpgrade:
-				up := r // row index this line will occupy
-				put("  "+ln.Text, tcell.ColorYellow, true, true, ln.Text, "")
-				iv.rowUpgrade[up] = ln.Upgrade
-				iv.hasUpgrade = true
-				iv.upInfo = &upgradeInfo{
-					repo:    ln.UpRepo,
-					current: ln.UpCurrent,
-					target:  ln.Upgrade,
-					newer:   ln.UpNewer,
-					all:     ln.UpAll,
-				}
-			case swarmops.InspectImage:
-				// Renders like any field, but it is what makes "u" available even
-				// when no newer version exists: pinning or rolling back to a
-				// specific tag is a normal thing to want.
-				put(ln.Text, tcell.ColorWhite, false, true, strings.TrimSpace(ln.Text), "")
-				if ln.UpRepo != "" && iv.upInfo == nil {
-					iv.upInfo = &upgradeInfo{
-						repo:    ln.UpRepo,
-						current: ln.UpCurrent,
-						newer:   ln.UpNewer,
-						all:     ln.UpAll,
-					}
-				}
-			case swarmops.InspectUpdate:
-				color := tcell.ColorYellow // updating
-				if ln.UpdateState == "rollback_started" {
-					color = tcell.ColorOrange
-				}
-				put("  "+ln.Text, color, true, false, ln.Text, "")
-			default: // swarmops.InspectField
-				put(ln.Text, tcell.ColorWhite, false, true, ln.Text, "")
-			}
+			iv.putLine(p, ln)
 		}
 	}
 	table.ScrollToBeginning()
-	if firstSel < 0 {
-		firstSel = 0
-	}
-	if keepRow > 0 && keepRow < r {
+	firstSel := max(p.firstSel, 0)
+	if keepRow > 0 && keepRow < p.r {
 		table.Select(keepRow, 0)
 	} else {
 		table.Select(firstSel, 0)
 	}
 	iv.setFooter("")
+}
+
+// inspRows is populate's row writer: put adds the next table row together
+// with its plain (copy) text and network key, and remembers the first row the
+// cursor may land on.
+type inspRows struct {
+	iv       *inspectView
+	r        int // the next row
+	firstSel int // -1 until a selectable row is written
+}
+
+func (p *inspRows) put(text string, color tcell.Color, bold, selectable bool, plainText, net string) {
+	cell := tview.NewTableCell(tview.Escape(text)).SetTextColor(color).SetSelectable(selectable)
+	if bold {
+		cell.SetAttributes(tcell.AttrBold)
+	}
+	p.iv.table.SetCell(p.r, 0, cell)
+	p.iv.plain = append(p.iv.plain, plainText)
+	if net != "" {
+		p.iv.rowNet[p.r] = net
+	}
+	if selectable && p.firstSel < 0 {
+		p.firstSel = p.r
+	}
+	p.r++
+}
+
+// putLine writes one line of the service view, styled by its kind.
+func (iv *inspectView) putLine(p *inspRows, ln swarmops.InspectLine) {
+	switch ln.Kind {
+	case swarmops.InspectTitle:
+		p.put(ln.Text, tcell.ColorAqua, true, false, ln.Text, "")
+	case swarmops.InspectHeader:
+		p.put(ln.Text, tcell.ColorAqua, false, false, ln.Text, "")
+	case swarmops.InspectDim:
+		p.put(ln.Text, tcell.ColorGray, false, false, ln.Text, "")
+	case swarmops.InspectBlank:
+		p.put("", tcell.ColorWhite, false, false, "", "")
+	case swarmops.InspectNet:
+		iv.putNet(p, ln)
+	case swarmops.InspectUpgrade:
+		iv.rowUpgrade[p.r] = ln.Upgrade // the row this line is about to occupy
+		p.put("  "+ln.Text, tcell.ColorYellow, true, true, ln.Text, "")
+		iv.hasUpgrade = true
+		iv.upInfo = &upgradeInfo{
+			repo:    ln.UpRepo,
+			current: ln.UpCurrent,
+			target:  ln.Upgrade,
+			newer:   ln.UpNewer,
+			all:     ln.UpAll,
+		}
+	case swarmops.InspectImage:
+		// Renders like any field, but it is what makes "u" available even
+		// when no newer version exists: pinning or rolling back to a
+		// specific tag is a normal thing to want.
+		p.put(ln.Text, tcell.ColorWhite, false, true, strings.TrimSpace(ln.Text), "")
+		if ln.UpRepo != "" && iv.upInfo == nil {
+			iv.upInfo = &upgradeInfo{
+				repo:    ln.UpRepo,
+				current: ln.UpCurrent,
+				newer:   ln.UpNewer,
+				all:     ln.UpAll,
+			}
+		}
+	case swarmops.InspectUpdate:
+		color := tcell.ColorYellow // updating
+		if ln.UpdateState == "rollback_started" {
+			color = tcell.ColorOrange
+		}
+		p.put("  "+ln.Text, color, true, false, ln.Text, "")
+	default: // swarmops.InspectField
+		p.put(ln.Text, tcell.ColorWhite, false, true, ln.Text, "")
+	}
+}
+
+// putNet writes a network row and, when expanded, its drill-down. Two levels:
+// the network row expands to its DNS names, and below them a "N containers"
+// row expands to the addresses of the containers behind the VIP.
+func (iv *inspectView) putNet(p *inspRows, ln swarmops.InspectLine) {
+	head := fmt.Sprintf("  %s %s%s", expandMarker(iv.expanded[ln.Net]), ln.Text, lockIcon(ln.Encrypted))
+	if ln.Addr != "" {
+		head += fmt.Sprintf("  %s %s", ln.AddrLabel, ln.Addr)
+	}
+	if ln.Note != "" {
+		head += "  (" + ln.Note + ")"
+	} else {
+		head += fmt.Sprintf("  (%d dns names)", ln.Count)
+	}
+	// Copying a network row yields the address rather than the name:
+	// it is the one value on the row you paste somewhere else.
+	p.put(head, tcell.ColorWhite, false, true, netRowCopy(ln), ln.Net)
+	if !iv.expanded[ln.Net] {
+		return
+	}
+	for _, c := range ln.Children {
+		p.put("      "+c, tcell.ColorGray, false, true, c, "")
+	}
+	if len(ln.Tasks) == 0 {
+		return
+	}
+	key := netTasksKey(ln.Net)
+	p.put(fmt.Sprintf("      %s %s", expandMarker(iv.expanded[key]), plural(len(ln.Tasks), "container")),
+		tcell.ColorWhite, false, true, "", key)
+	if iv.expanded[key] {
+		for _, t := range ln.Tasks {
+			p.put("          "+t.Text, tcell.ColorGray, false, true, t.Copy, "")
+		}
+	}
 }
 
 // netTasksKey is the collapse key of a network's container drill-down, kept
