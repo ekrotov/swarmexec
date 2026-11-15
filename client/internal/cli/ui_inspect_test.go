@@ -274,3 +274,45 @@ func TestServiceActionKeysAreUniqueAndFree(t *testing.T) {
 		seen[a.key] = a.label
 	}
 }
+
+// Each line kind renders with its own rules: headings are not selectable, so
+// the cursor starts on the first field; an upgrade row is mapped for `u` and
+// wins over the image line's version list; a re-render keeps the cursor.
+func TestInspectLineKinds(t *testing.T) {
+	iv := inspectViewFor([]swarmops.InspectLine{
+		{Kind: swarmops.InspectTitle, Text: "web"},
+		{Kind: swarmops.InspectHeader, Text: "SPEC"},
+		{Kind: swarmops.InspectImage, Text: "  image  nginx:1.0 ", UpRepo: "nginx", UpCurrent: "1.0", UpAll: []string{"1.0"}},
+		{Kind: swarmops.InspectBlank},
+		{Kind: swarmops.InspectUpgrade, Text: "upgrade to 1.1", Upgrade: "nginx:1.1", UpRepo: "nginx", UpCurrent: "1.0"},
+		{Kind: swarmops.InspectUpdate, Text: "rolling back", UpdateState: "rollback_started"},
+		{Kind: swarmops.InspectField, Text: "  replicas  2"},
+	})
+	iv.populate()
+	if row, _ := iv.table.GetSelection(); row != 2 {
+		t.Fatalf("cursor on row %d, want the first field (2)", row)
+	}
+	if iv.plain[2] != "image  nginx:1.0" {
+		t.Errorf("the image row copies %q", iv.plain[2])
+	}
+	if !iv.hasUpgrade || iv.rowUpgrade[4] != "nginx:1.1" || iv.upInfo == nil || iv.upInfo.target != "nginx:1.1" {
+		t.Fatalf("upgrade row not mapped: has %v rows %v info %+v", iv.hasUpgrade, iv.rowUpgrade, iv.upInfo)
+	}
+	for row, selectable := range []bool{false, false, true, false, true, false, true} {
+		if got := iv.table.GetCell(row, 0).NotSelectable; got == selectable {
+			t.Errorf("row %d selectable %v, want %v", row, !got, selectable)
+		}
+	}
+	iv.table.Select(6, 0)
+	iv.populate()
+	if row, _ := iv.table.GetSelection(); row != 6 {
+		t.Fatalf("a re-render moved the cursor to %d", row)
+	}
+
+	// Without an upgrade row, the image line alone makes `u` available.
+	iv = inspectViewFor([]swarmops.InspectLine{{Kind: swarmops.InspectImage, Text: "image", UpRepo: "nginx", UpCurrent: "1.0"}})
+	iv.populate()
+	if iv.hasUpgrade || iv.upInfo == nil || iv.upInfo.repo != "nginx" || iv.upInfo.target != "" {
+		t.Fatalf("image-only: has %v info %+v", iv.hasUpgrade, iv.upInfo)
+	}
+}
