@@ -272,17 +272,6 @@ func (t *treeTab) onSelect(node *tview.TreeNode) {
 // check landed, and only the "↑ 2.12.0" annotation changes.
 func (t *treeTab) remarkServices() { eachServiceNode(t.root, t.markService) }
 
-func (t *treeTab) matchesFilter(c resolve.Candidate) bool {
-	st := t.st()
-	if st.filter == "" {
-		return true
-	}
-	q := strings.ToLower(st.filter)
-	return strings.Contains(strings.ToLower(c.Service), q) ||
-		strings.Contains(strings.ToLower(c.ContainerID), q) ||
-		strings.Contains(strings.ToLower(c.NodeName), q)
-}
-
 // versionSuffixFor is the "↑ 2.12.0" annotation for a service, or "". One
 // helper because the width calculation and the row rendering must agree: when
 // they disagreed, the suffix overflowed the cell it was measured out of.
@@ -294,6 +283,8 @@ func (t *treeTab) versionSuffixFor(s resolve.Service) string {
 	return swarmops.VersionSuffix(u.regCache.Status(u.ctx, s.ImageRef))
 }
 
+// markService (re)renders a service row in place: the fold marker, the
+// docker service ls-style columns and the version and usage markers.
 func (t *treeTab) markService(n *tview.TreeNode) {
 	st := t.st()
 	ref, ok := n.GetReference().(svcRef)
@@ -312,200 +303,264 @@ func (t *treeTab) markService(n *tview.TreeNode) {
 	}
 }
 
+// render rebuilds the tree from the visible cluster's cached fetch: measure
+// the columns, filter, hang the services under their stacks, and put the
+// cursor and the folds back where they were. It runs on every refresh, so
+// none of it may move the operator.
 func (t *treeTab) render() {
 	st := t.st()
-	u := t.u
-	forwards, ctree, croot := u.forwards, t.tree, t.root
 	pos := t.restorePos()
-	prevID, prevSvc, prevStack := pos.container, pos.service, pos.stack
-	wasExpanded, stackExpanded := pos.svcFolds, pos.stackFold
-	seenStack := map[string]bool{}
-	for name := range stackExpanded {
-		seenStack[name] = true
-	}
-	croot.ClearChildren()
+	t.root.ClearChildren()
+	t.measure(st)
+	// Rebuilt with the tree, so a container that has gone leaves no entry behind.
+	st.leafBase = make(map[string]string, len(st.cands))
+	leaves := leafColumnsOf(st.cands)
 
-	// Group running containers by service for the leaves.
-	byService := map[string][]resolve.Candidate{}
-	for _, c := range st.cands {
-		byService[c.Service] = append(byService[c.Service], c)
+	var cur treeCursor
+	// Group by stack unless the operator turned it off, and only when at least
+	// one service actually carries a stack label — otherwise every row would
+	// hang under a single pointless "(no stack)" parent.
+	grouped := t.groupByStack && anyStacked(st.svcs)
+	var stacks map[string]*tview.TreeNode // nil when flat: every service hangs under the root
+	if grouped {
+		stacks = t.addStackNodes(st.svcs, pos, &cur)
 	}
-	// Pre-compute column widths so every container row lines up, regardless
-	// of node-name length or whether a task carries a slot.
-	slotStr := func(c resolve.Candidate) string {
-		if c.Slot > 0 {
-			return fmt.Sprintf("slot %d", c.Slot)
+	for _, row := range filterTree(st.svcs, st.cands, st.filter) {
+		parent := t.root
+		if n, ok := stacks[stackNameOf(row.svc)]; ok {
+			parent = n
 		}
-		return ""
+		t.addService(st, parent, row, leaves, pos, &cur)
 	}
-	nodeW, slotW := 0, 0
-	for _, c := range st.cands {
-		if w := len(orDash(c.NodeName)); w > nodeW {
-			nodeW = w
-		}
-		if w := len(slotStr(c)); w > slotW {
-			slotW = w
-		}
+	if grouped {
+		t.pruneStacks()
 	}
+	if len(t.root.GetChildren()) == 0 {
+		empty := emptyText("services", "nothing is deployed on this swarm")
+		if strings.TrimSpace(st.filter) != "" {
+			empty = fmt.Sprintf("(no matches for %q)", st.filter)
+		}
+		t.root.AddChild(tview.NewTreeNode(empty).SetColor(tcell.ColorGray).SetSelectable(false))
+	}
+	if n := cur.pick(t.root); n != nil {
+		t.tree.SetCurrentNode(n)
+	}
+}
 
-	// Column widths for the docker service ls-style service rows, computed over
-	// every service so the alignment stays stable while filtering — and merged
-	// into the widths already in use, so it stays stable over time too. Only an
-	// explicit reload starts over.
-	fresh := svcColumns{}
+// measure refreshes what the row markers read besides the tree itself: the
+// services by name, and the column widths of the docker service ls-style rows.
+//
+// The widths are computed over every service, so the alignment stays stable
+// while filtering — and merged into the widths already in use, so it stays
+// stable over time too. Only an explicit reload (resetCols) starts over.
+func (t *treeTab) measure(st *treeState) {
 	if st.resetCols {
 		st.cols = svcColumns{}
 		st.resetCols = false
 	}
 	st.byName = make(map[string]resolve.Service, len(st.svcs))
-	// Rebuilt with the tree, so a container that has gone leaves no entry behind.
-	st.leafBase = make(map[string]string, len(st.cands))
 	for _, s := range st.svcs {
 		st.byName[s.Name] = s
-		if w := len(orDash(s.Name)); w > fresh.name {
-			fresh.name = w
-		}
-		if w := len(orDash(s.Mode)); w > fresh.mode {
-			fresh.mode = w
-		}
-		if w := len(progressCount(s)); w > fresh.repl {
-			fresh.repl = w
-		}
+	}
+	st.cols.growTo(serviceWidths(st.svcs, t.versionSuffixFor))
+}
+
+// serviceWidths is the widest cell of each service-row column over svcs.
+// suffix is the version annotation the image cell carries.
+func serviceWidths(svcs []resolve.Service, suffix func(resolve.Service) string) svcColumns {
+	var w svcColumns
+	for _, s := range svcs {
+		w.name = max(w.name, len(orDash(s.Name)))
+		w.mode = max(w.mode, len(orDash(s.Mode)))
+		w.repl = max(w.repl, len(progressCount(s)))
 		// The image cell renders image+suffix (the "↑ 2.12.0" annotation), so the
 		// width has to measure both. Measuring only the image let the suffix
 		// overflow its cell and shove that row's ports sideways — and since the
 		// registry cache re-checks a failed lookup every minute, the suffix could
 		// appear and vanish on its own.
-		if w := len(s.Image) + len(t.versionSuffixFor(s)); w > fresh.image {
-			fresh.image = w
-		}
+		w.image = max(w.image, len(s.Image)+len(suffix(s)))
 	}
-	st.cols.growTo(fresh)
+	return w
+}
 
-	q := strings.ToLower(strings.TrimSpace(st.filter))
-	var firstSvc, targetSvc, targetLeaf, targetStack *tview.TreeNode
+// leafColumns are the widths of a container row's node and slot cells,
+// measured over every container so the rows line up regardless of node-name
+// length or whether a task carries a slot.
+type leafColumns struct{ node, slot int }
 
-	// Group by stack unless the operator turned it off, and only when at least
-	// one service actually carries a stack label — otherwise every row would
-	// hang under a single pointless "(no stack)" parent.
-	grouped := t.groupByStack && anyStacked(st.svcs)
-	stackNodes := map[string]*tview.TreeNode{}
-	if grouped {
-		// Create the stack nodes up front in groupByStack's order (alphabetical,
-		// unstacked last) so the tree order does not depend on which service
-		// happened to be seen first. Stacks left empty by the filter are dropped
-		// again below.
-		for _, row := range groupByStack(st.svcs) {
-			expanded := true // a stack the operator has not touched starts open
-			if seenStack[row.Name] {
-				expanded = stackExpanded[row.Name]
-			}
-			n := tview.NewTreeNode("").
-				SetReference(stackRef{name: row.Name}).
-				SetExpanded(expanded)
-			stackNodes[row.Name] = n
-			croot.AddChild(n)
-			if row.Name == prevStack {
-				targetStack = n
-			}
-		}
+func leafColumnsOf(cands []resolve.Candidate) leafColumns {
+	var w leafColumns
+	for _, c := range cands {
+		w.node = max(w.node, len(orDash(c.NodeName)))
+		w.slot = max(w.slot, len(slotText(c)))
 	}
-	// parentFor returns the node a service hangs under: its stack node when
-	// grouped, else the root.
-	parentFor := func(s resolve.Service) *tview.TreeNode {
-		if !grouped {
-			return croot
-		}
-		if n, ok := stackNodes[stackNameOf(s)]; ok {
-			return n
-		}
-		return croot
-	}
+	return w
+}
 
-	for _, s := range st.svcs {
+// slotText is a task's slot cell, empty for a global service's task.
+func slotText(c resolve.Candidate) string {
+	if c.Slot > 0 {
+		return fmt.Sprintf("slot %d", c.Slot)
+	}
+	return ""
+}
+
+// label is a container row without its markers. The slot column only exists
+// when some task has a slot.
+func (w leafColumns) label(c resolve.Candidate) string {
+	if w.slot > 0 {
+		return fmt.Sprintf("%-12s  %-*s  %-*s  up %s", shortID(c.ContainerID), w.node, orDash(c.NodeName), w.slot, slotText(c), uptime(c.Uptime))
+	}
+	return fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), w.node, orDash(c.NodeName), uptime(c.Uptime))
+}
+
+// shownService is a service row the "/" filter keeps, with the containers to
+// list under it.
+type shownService struct {
+	svc   resolve.Service
+	cands []resolve.Candidate
+}
+
+// filterTree applies the "/" query to the services and their containers, in
+// service order. A service whose name matches lists all its containers;
+// otherwise only the containers that match themselves (by service, id or
+// node). A service is hidden only if neither it nor any of its containers
+// matches — so a service with no running task still shows while unfiltered.
+func filterTree(svcs []resolve.Service, cands []resolve.Candidate, filter string) []shownService {
+	q := strings.ToLower(strings.TrimSpace(filter))
+	byService := containersByService(cands)
+	var out []shownService
+	for _, s := range svcs {
 		nameMatch := q == "" || strings.Contains(strings.ToLower(s.Name), q)
-		// Which running containers to list: all when the service name matches,
-		// otherwise only the containers that match the filter themselves.
 		var shown []resolve.Candidate
 		for _, c := range byService[s.Name] {
-			if nameMatch || t.matchesFilter(c) {
+			if nameMatch || candidateMatches(c, q) {
 				shown = append(shown, c)
 			}
 		}
-		// Hide a service only if it neither matches by name nor has any
-		// matching container.
 		if !nameMatch && len(shown) == 0 {
 			continue
 		}
-		// Collapsed by default (spec); keep a service the operator expanded.
-		svcNode := tview.NewTreeNode(serviceRow(s, st.cols, "", t.svcUsageBadge(s.Name))).
-			SetColor(t.svcColor(s)).
-			SetReference(svcRef{name: s.Name}).
-			SetExpanded(wasExpanded[s.Name])
-		parentFor(s).AddChild(svcNode)
-		if firstSvc == nil {
-			firstSvc = svcNode
-		}
-		if s.Name == prevSvc {
-			targetSvc = svcNode
-		}
-		for _, c := range shown {
-			var label string
-			if slotW > 0 {
-				label = fmt.Sprintf("%-12s  %-*s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), slotW, slotStr(c), uptime(c.Uptime))
-			} else {
-				label = fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), nodeW, orDash(c.NodeName), uptime(c.Uptime))
-			}
-			label = annotateForwards(label, forwards.forContainer(u.activeCtx, c.ContainerID))
-			// Keep the badge-free label: re-marking a row when new readings land
-			// then just re-appends, instead of trying to cut the old marker back
-			// off a string that also carries the forward and update markers.
-			st.leafBase[c.ContainerID] = label
-			usage := u.usage[c.ContainerID]
-			leaf := tview.NewTreeNode(label + containerHealthBadge(usage.Health) + usageBadge(usage)).SetReference(c)
-			svcNode.AddChild(leaf)
-			if c.ContainerID == prevID {
-				targetLeaf = leaf
-				svcNode.SetExpanded(true) // reveal the previously-selected leaf
-			}
-		}
-		// Marker depends on the final child count / expanded state, so set it
-		// once the leaves are attached.
-		t.markService(svcNode)
+		out = append(out, shownService{svc: s, cands: shown})
 	}
-	if grouped {
-		// Drop stacks the filter emptied, and label the rest — the summary counts
-		// what actually ended up under each, so it follows the filter.
-		kept := make([]*tview.TreeNode, 0, len(croot.GetChildren()))
-		for _, n := range croot.GetChildren() {
-			if isStackNode(n) && len(n.GetChildren()) == 0 {
-				continue
-			}
-			t.markStack(n)
-			kept = append(kept, n)
-		}
-		croot.SetChildren(kept)
+	return out
+}
+
+// containersByService groups the running containers by their service, each
+// group in the fetch's order.
+func containersByService(cands []resolve.Candidate) map[string][]resolve.Candidate {
+	out := map[string][]resolve.Candidate{}
+	for _, c := range cands {
+		out[c.Service] = append(out[c.Service], c)
 	}
-	if len(croot.GetChildren()) == 0 {
-		empty := emptyText("services", "nothing is deployed on this swarm")
-		if q != "" {
-			empty = fmt.Sprintf("(no matches for %q)", st.filter)
-		}
-		croot.AddChild(tview.NewTreeNode(empty).SetColor(tcell.ColorGray).SetSelectable(false))
-	}
+	return out
+}
+
+// candidateMatches reports whether a container matches q, which is already
+// lower case: a substring of its service, container id or node.
+func candidateMatches(c resolve.Candidate, q string) bool {
+	return strings.Contains(strings.ToLower(c.Service), q) ||
+		strings.Contains(strings.ToLower(c.ContainerID), q) ||
+		strings.Contains(strings.ToLower(c.NodeName), q)
+}
+
+// treeCursor collects, while the tree is built, the rows the cursor may land
+// on afterwards.
+type treeCursor struct {
+	leaf, service, stack *tview.TreeNode // where it stood: a container, else a service, else a stack
+	first                *tview.TreeNode // the first service row, for a cursor that stood nowhere still shown
+}
+
+// pick is the row the cursor goes to: the most specific one it stood on that
+// is still there, else the first service, else the first row at all (grouped
+// with every stack collapsed, or the empty state).
+func (c treeCursor) pick(root *tview.TreeNode) *tview.TreeNode {
 	switch {
-	case targetLeaf != nil:
-		ctree.SetCurrentNode(targetLeaf)
-	case targetSvc != nil:
-		ctree.SetCurrentNode(targetSvc)
-	case targetStack != nil:
-		ctree.SetCurrentNode(targetStack)
-	case firstSvc != nil:
-		ctree.SetCurrentNode(firstSvc)
-	case len(croot.GetChildren()) > 0:
-		// Grouped and every stack collapsed: land on the first stack row.
-		ctree.SetCurrentNode(croot.GetChildren()[0])
+	case c.leaf != nil:
+		return c.leaf
+	case c.service != nil:
+		return c.service
+	case c.stack != nil:
+		return c.stack
+	case c.first != nil:
+		return c.first
+	case len(root.GetChildren()) > 0:
+		return root.GetChildren()[0]
 	}
+	return nil
+}
+
+// addStackNodes creates the stack rows up front, in groupByStack's order
+// (alphabetical, unstacked last), so the tree order does not depend on which
+// service happened to be seen first. A stack the operator has not touched
+// starts open. Stacks the filter leaves empty are dropped again by
+// pruneStacks.
+func (t *treeTab) addStackNodes(svcs []resolve.Service, pos treePos, cur *treeCursor) map[string]*tview.TreeNode {
+	nodes := map[string]*tview.TreeNode{}
+	for _, row := range groupByStack(svcs) {
+		expanded, seen := pos.stackFold[row.Name]
+		if !seen {
+			expanded = true
+		}
+		n := tview.NewTreeNode("").
+			SetReference(stackRef{name: row.Name}).
+			SetExpanded(expanded)
+		nodes[row.Name] = n
+		t.root.AddChild(n)
+		if row.Name == pos.stack {
+			cur.stack = n
+		}
+	}
+	return nodes
+}
+
+// addService hangs one service row and its container leaves under parent.
+// Services start collapsed (spec); one the operator expanded stays open, and
+// so does the one holding the container the cursor stood on.
+func (t *treeTab) addService(st *treeState, parent *tview.TreeNode, row shownService, leaves leafColumns, pos treePos, cur *treeCursor) {
+	s := row.svc
+	svcNode := tview.NewTreeNode(serviceRow(s, st.cols, "", t.svcUsageBadge(s.Name))).
+		SetColor(t.svcColor(s)).
+		SetReference(svcRef{name: s.Name}).
+		SetExpanded(pos.svcFolds[s.Name])
+	parent.AddChild(svcNode)
+	if cur.first == nil {
+		cur.first = svcNode
+	}
+	if s.Name == pos.service {
+		cur.service = svcNode
+	}
+	for _, c := range row.cands {
+		label := annotateForwards(leaves.label(c), t.u.forwards.forContainer(t.u.activeCtx, c.ContainerID))
+		// Keep the badge-free label: re-marking a row when new readings land
+		// then just re-appends, instead of trying to cut the old marker back
+		// off a string that also carries the forward and update markers.
+		st.leafBase[c.ContainerID] = label
+		usage := t.u.usage[c.ContainerID]
+		leaf := tview.NewTreeNode(label + containerHealthBadge(usage.Health) + usageBadge(usage)).SetReference(c)
+		svcNode.AddChild(leaf)
+		if c.ContainerID == pos.container {
+			cur.leaf = leaf
+			svcNode.SetExpanded(true) // reveal the previously-selected leaf
+		}
+	}
+	// Marker depends on the final child count / expanded state, so set it
+	// once the leaves are attached.
+	t.markService(svcNode)
+}
+
+// pruneStacks drops the stacks the filter emptied and labels the rest — the
+// summary counts what actually ended up under each, so it follows the filter.
+func (t *treeTab) pruneStacks() {
+	kept := make([]*tview.TreeNode, 0, len(t.root.GetChildren()))
+	for _, n := range t.root.GetChildren() {
+		if isStackNode(n) && len(n.GetChildren()) == 0 {
+			continue
+		}
+		t.markStack(n)
+		kept = append(kept, n)
+	}
+	t.root.SetChildren(kept)
 }
 
 // markStack (re)renders a stack group row from the services currently under it:
