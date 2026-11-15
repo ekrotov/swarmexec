@@ -10,6 +10,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // The pieces the tree render is made of, one at a time. The render tests in
@@ -239,5 +240,66 @@ func TestRenderRevealsTheSelectedContainer(t *testing.T) {
 	}
 	if base := tt.st().leafBase["bbb222"]; !strings.Contains(base, "node-b") {
 		t.Errorf("leafBase = %q, want the badge-free row", base)
+	}
+}
+
+// Enter folds a service or a stack; fold (h) on a container walks up to its
+// service, and on a closed service up to its stack.
+func TestTreeEnterAndFoldWalk(t *testing.T) {
+	svcs := []resolve.Service{
+		{Name: "shop_web", Stack: "shop", Mode: "replicated", Running: 2, Desired: 2},
+	}
+	u := treeUI("a", svcs, treeCands()[:2])
+	u.km = defaultKeybinds()
+	tt := u.treeTab()
+	tt.render()
+	stack := tt.root.GetChildren()[0]
+	web := stack.GetChildren()[0]
+
+	tt.onSelect(web)
+	if !web.IsExpanded() || !strings.HasPrefix(web.GetText(), "▾") {
+		t.Fatalf("Enter on a folded service: %q", web.GetText())
+	}
+	u.ctree.SetCurrentNode(web.GetChildren()[1])
+	tt.keys(rune_(u.km.Fold))
+	if u.ctree.GetCurrentNode() != web {
+		t.Fatal("fold on a container must step out to its service")
+	}
+	tt.keys(rune_(u.km.Fold))
+	if web.IsExpanded() {
+		t.Fatal("fold on an open service closes it")
+	}
+	tt.keys(rune_(u.km.Fold))
+	if u.ctree.GetCurrentNode() != stack {
+		t.Fatal("fold on a closed service steps out to its stack")
+	}
+	tt.onSelect(stack)
+	if stack.IsExpanded() || !strings.HasPrefix(stack.GetText(), "▸") {
+		t.Errorf("Enter on an open stack: %q", stack.GetText())
+	}
+}
+
+// New readings re-mark the rows in place: the container row gains its badge
+// on top of the label it was built with, and the tree keeps its shape.
+func TestRemarkUsageKeepsTheTree(t *testing.T) {
+	u := treeUI("a", svcList("shop_web"), treeCands()[:1])
+	tt := u.treeTab()
+	tt.groupByStack = false
+	tt.render()
+	web := tt.root.GetChildren()[0]
+	web.SetExpanded(true)
+	leaf := web.GetChildren()[0]
+	before := leaf.GetText()
+
+	u.usage = map[string]containerUsage{"aaa111": {Health: swarmops.HealthUnhealthy}}
+	tt.remarkUsage()
+	if got := leaf.GetText(); got != before+containerHealthBadge(swarmops.HealthUnhealthy) {
+		t.Errorf("re-marked leaf = %q", got)
+	}
+	if !web.IsExpanded() || tt.root.GetChildren()[0] != web {
+		t.Error("re-marking rebuilt or refolded the tree")
+	}
+	if !strings.Contains(web.GetText(), "unhealthy") {
+		t.Errorf("service row %q should carry its container's health", web.GetText())
 	}
 }
