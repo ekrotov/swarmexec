@@ -352,7 +352,7 @@ func (f *fwdField) Draw(screen tcell.Screen) {
 // Two tview.Forms, so the fields and the buttons get the look every other form
 // in the app has (label colour, field and button backgrounds, focus colours all
 // come from the theme), with the status lines between them. Tab and Shift-Tab
-// cross from one form to the other; see openForwardForm.
+// cross from one form to the other; see forwardForm.
 type fwdDialog struct {
 	*tview.Flex
 	header             *tview.TextView
@@ -480,190 +480,242 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 // nothing has no endpoint ports, and an agent that predates the field reports
 // no EXPOSE ports — so both are asked and merged. Any port can still be typed.
 func (u *ui) openForwardForm(c resolve.Candidate, start func(forwardSpec)) {
-	app, ctree, ac, dcli, f := u.app, u.ctree, u.agents, u.dcli, u.f
-	d := newFwdDialog(c)
-	cport, lport, addr, status := d.cport, d.lport, d.addr, d.status
+	e := u.newForwardForm(c, start)
+	e.show()
+	e.lookupPorts()
+}
 
-	var (
-		suggested []uint32
-		loading   = true
-		errMsg    string
-		follow    portFollow
-		// relayout fits the dialog's height to what render just wrote; nil
-		// until the dialog is on screen.
-		relayout func()
-		showAll  bool
-	)
-	render := func() {
-		var b strings.Builder
-		dim := palette.textDim.CSS()
-		switch {
-		case loading:
-			fmt.Fprintf(&b, "[%s]looking up the container's ports…[-]", dim)
-		case len(suggested) == 0:
-			fmt.Fprintf(&b, "[%s]no ports found — type the port to forward[-]", dim)
-		default:
-			fmt.Fprintf(&b, "[%s]exposed[-] %s  [%s]↓ to pick[-]", dim, formatPorts(suggested), dim)
-		}
-		if !isLoopbackAddr(addr.GetText()) {
-			b.WriteString("\n[yellow]⚠ reachable from your network[-]")
-		}
-		if errMsg != "" {
-			fmt.Fprintf(&b, "\n[red]%s[-]", tview.Escape(errMsg))
-		}
-		status.SetText(b.String())
-		if relayout != nil {
-			relayout()
-		}
-	}
+// forwardForm is openForwardForm's state: the dialog, what the port lookup
+// found, and the message under the fields.
+//
+// It was one 190-line function whose render, submit, focus moves and key
+// handlers were closures over the same locals (review Q-01). As a type the
+// parts are separate methods — build (newForwardForm, show), view (render,
+// relayout), input (fieldKey, buttonKey) and apply (submit) — as in
+// listEditor and scheduleEditor.
+type forwardForm struct {
+	u     *ui
+	c     resolve.Candidate
+	start func(forwardSpec)
+	d     *fwdDialog
+	ov    *overlay
 
-	cport.marker = func() bool { return len(suggested) > 0 }
-	cport.SetAutocompleteFunc(func(text string) []string {
-		all := showAll
-		showAll = false
-		return portCompletions(suggested, text, all)
+	suggested []uint32
+	loading   bool   // the port lookup has not answered yet
+	showAll   bool   // ↓ was pressed: the next completion lists every port
+	errMsg    string // why the last submit was refused; cleared by any edit
+	follow    portFollow
+	// shownH is the height the dialog is on screen with; 0 until it is shown,
+	// which is also what keeps relayout off before then.
+	shownH int
+	closed bool
+}
+
+// newForwardForm builds the dialog and wires its fields and buttons; show
+// puts it on screen.
+func (u *ui) newForwardForm(c resolve.Candidate, start func(forwardSpec)) *forwardForm {
+	e := &forwardForm{u: u, c: c, start: start, d: newFwdDialog(c), loading: true}
+	d := e.d
+
+	d.cport.marker = func() bool { return len(e.suggested) > 0 }
+	d.cport.SetAutocompleteFunc(func(text string) []string {
+		all := e.showAll
+		e.showAll = false
+		return portCompletions(e.suggested, text, all)
 	})
-	cport.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+	d.cport.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyDown {
-			showAll = true // ↓ is "show me the list", whatever is typed
+			e.showAll = true // ↓ is "show me the list", whatever is typed
 		}
 		return ev
 	})
-	cport.SetChangedFunc(func(text string) {
-		if local, ok := follow.setContainer(text); ok && lport.GetText() != local {
-			lport.SetText(local)
+	d.cport.SetChangedFunc(func(text string) {
+		if local, ok := e.follow.setContainer(text); ok && d.lport.GetText() != local {
+			d.lport.SetText(local)
 		}
-		errMsg = ""
-		render()
+		e.edited()
 	})
-	lport.SetChangedFunc(func(text string) {
-		follow.setLocal(text)
-		errMsg = ""
-		render()
+	d.lport.SetChangedFunc(func(text string) {
+		e.follow.setLocal(text)
+		e.edited()
 	})
-	addr.SetChangedFunc(func(string) {
-		errMsg = ""
-		render()
-	})
-
-	ov := u.overlayFor(pageFwdPrompt, ctree,
-		footerKeys("Enter", "forward", "Tab", "next", "↓", "ports", "Esc", "cancel"))
-	closed := false
-	closeForm := func() {
-		closed = true
-		ov.Close()
-	}
-
-	// focusIn moves focus to one element of one of the two forms. It goes
-	// through the form, not straight to the element, because the form wires
-	// its elements' navigation handlers when it takes focus.
-	focusIn := func(form *tview.Form, index int) {
-		form.SetFocus(index)
-		app.SetFocus(form)
-	}
-
-	submit := func() {
-		spec, err := parseForwardForm(cport.GetText(), addr.GetText(), lport.GetText())
-		if err != nil {
-			// Keep the form open so the operator corrects the field instead
-			// of retyping all three.
-			errMsg = err.Error()
-			render()
-			return
-		}
-		// An occupied local port is a correctable mistake too, and the
-		// sentence names WHICH forward holds it — the part the operator
-		// cannot see from here. It wraps inside the dialog, so the cluster
-		// name at its end is never clipped away.
-		if msg, clash := u.portConflict(spec.local); clash {
-			errMsg = msg
-			render()
-			focusIn(d.fields, 1)
-			return
-		}
-		closeForm()
-		start(spec)
-	}
+	d.addr.SetChangedFunc(func(string) { e.edited() })
 
 	// Enter submits from any field; Tab and Shift-Tab run through the fields
 	// and on into the buttons, and back round.
-	fields := []*fwdField{cport, lport, addr}
-	for i, fld := range fields {
-		fld.finish = func(key tcell.Key) bool {
-			switch {
-			case key == tcell.KeyEnter:
-				submit()
-			case key == tcell.KeyTab && i == len(fields)-1:
-				focusIn(d.buttons, 0)
-			case key == tcell.KeyBacktab && i == 0:
-				focusIn(d.buttons, d.buttons.GetButtonCount()-1)
-			default:
-				return false
-			}
-			return true
-		}
+	for i, fld := range e.fields() {
+		fld.finish = func(key tcell.Key) bool { return e.fieldKey(i, key) }
 	}
-	d.buttons.GetButton(0).SetSelectedFunc(submit)
-	d.buttons.GetButton(1).SetSelectedFunc(closeForm)
-	d.buttons.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		_, btn := d.buttons.GetFocusedItemIndex()
-		last := d.buttons.GetButtonCount() - 1
-		// All of the navigation is done here rather than in the buttons' exit
-		// handlers: those are only wired once the form itself takes focus, and
-		// a button clicked with the mouse is focused without that.
-		switch ev.Key() {
-		case tcell.KeyTab:
-			if btn == last {
-				focusIn(d.fields, 0)
-			} else {
-				focusIn(d.buttons, btn+1)
-			}
-		case tcell.KeyBacktab:
-			if btn == 0 {
-				focusIn(d.fields, len(fields)-1)
-			} else {
-				focusIn(d.buttons, btn-1)
-			}
-		case tcell.KeyLeft, tcell.KeyRight:
-			// The buttons sit side by side; the arrows move between them.
-			focusIn(d.buttons, (btn+1)%(last+1))
-		case tcell.KeyEscape:
-			closeForm()
-		default:
-			return ev
-		}
-		return nil
-	})
-	d.fields.SetCancelFunc(closeForm)
-	d.buttons.SetCancelFunc(closeForm)
+	d.buttons.GetButton(0).SetSelectedFunc(e.submit)
+	d.buttons.GetButton(1).SetSelectedFunc(e.close)
+	d.buttons.SetInputCapture(e.buttonKey)
+	d.fields.SetCancelFunc(e.close)
+	d.buttons.SetCancelFunc(e.close)
+	return e
+}
 
-	render()
-	shownH := d.height()
-	ov.show(centered(d, fwdFormWidth, shownH), d.fields)
-	// The dialog is as tall as its content: a warning or an error grows it,
-	// and it shrinks again once the message clears. Re-showing replaces the
-	// page of the same name; focus stays where the operator has it (AddPage
-	// would otherwise hand it to the fields form).
-	relayout = func() {
-		if h := d.height(); h != shownH && !closed && u.pages.HasPage(pageFwdPrompt) {
-			shownH = h
-			ov.show(centered(d, fwdFormWidth, h), app.GetFocus())
-		}
+func (e *forwardForm) fields() []*fwdField { return []*fwdField{e.d.cport, e.d.lport, e.d.addr} }
+
+func (e *forwardForm) show() {
+	e.ov = e.u.overlayFor(pageFwdPrompt, e.u.ctree,
+		footerKeys("Enter", "forward", "Tab", "next", "↓", "ports", "Esc", "cancel"))
+	e.render()
+	e.shownH = e.d.height()
+	e.ov.show(centered(e.d, fwdFormWidth, e.shownH), e.d.fields)
+}
+
+// edited is what any change to a field does: the refusal it may have been
+// correcting no longer applies.
+func (e *forwardForm) edited() {
+	e.errMsg = ""
+	e.render()
+}
+
+// render writes the status lines — the port hint, the exposure warning and
+// the refusal — and fits the dialog to them.
+func (e *forwardForm) render() {
+	var b strings.Builder
+	dim := palette.textDim.CSS()
+	switch {
+	case e.loading:
+		fmt.Fprintf(&b, "[%s]looking up the container's ports…[-]", dim)
+	case len(e.suggested) == 0:
+		fmt.Fprintf(&b, "[%s]no ports found — type the port to forward[-]", dim)
+	default:
+		fmt.Fprintf(&b, "[%s]exposed[-] %s  [%s]↓ to pick[-]", dim, formatPorts(e.suggested), dim)
 	}
+	if !isLoopbackAddr(e.d.addr.GetText()) {
+		b.WriteString("\n[yellow]⚠ reachable from your network[-]")
+	}
+	if e.errMsg != "" {
+		fmt.Fprintf(&b, "\n[red]%s[-]", tview.Escape(e.errMsg))
+	}
+	e.d.status.SetText(b.String())
+	e.relayout()
+}
 
+// relayout keeps the dialog as tall as its content: a warning or an error
+// grows it, and it shrinks again once the message clears. Re-showing replaces
+// the page of the same name; focus stays where the operator has it (AddPage
+// would otherwise hand it to the fields form).
+func (e *forwardForm) relayout() {
+	if e.shownH == 0 || e.closed || !e.u.pages.HasPage(pageFwdPrompt) {
+		return
+	}
+	if h := e.d.height(); h != e.shownH {
+		e.shownH = h
+		e.ov.show(centered(e.d, fwdFormWidth, h), e.u.app.GetFocus())
+	}
+}
+
+// focusIn moves focus to one element of one of the two forms. It goes
+// through the form, not straight to the element, because the form wires its
+// elements' navigation handlers when it takes focus.
+func (e *forwardForm) focusIn(form *tview.Form, index int) {
+	form.SetFocus(index)
+	e.u.app.SetFocus(form)
+}
+
+// fieldKey handles the keys a field's form would otherwise act on, and
+// reports whether it did.
+func (e *forwardForm) fieldKey(i int, key tcell.Key) bool {
+	last := len(e.fields()) - 1
+	switch {
+	case key == tcell.KeyEnter:
+		e.submit()
+	case key == tcell.KeyTab && i == last:
+		e.focusIn(e.d.buttons, 0)
+	case key == tcell.KeyBacktab && i == 0:
+		e.focusIn(e.d.buttons, e.d.buttons.GetButtonCount()-1)
+	default:
+		return false
+	}
+	return true
+}
+
+// buttonKey is the buttons form's input capture. All of the navigation is
+// done here rather than in the buttons' exit handlers: those are only wired
+// once the form itself takes focus, and a button clicked with the mouse is
+// focused without that.
+func (e *forwardForm) buttonKey(ev *tcell.EventKey) *tcell.EventKey {
+	buttons := e.d.buttons
+	_, btn := buttons.GetFocusedItemIndex()
+	last := buttons.GetButtonCount() - 1
+	switch ev.Key() {
+	case tcell.KeyTab:
+		if btn == last {
+			e.focusIn(e.d.fields, 0)
+		} else {
+			e.focusIn(buttons, btn+1)
+		}
+	case tcell.KeyBacktab:
+		if btn == 0 {
+			e.focusIn(e.d.fields, len(e.fields())-1)
+		} else {
+			e.focusIn(buttons, btn-1)
+		}
+	case tcell.KeyLeft, tcell.KeyRight:
+		// The buttons sit side by side; the arrows move between them.
+		e.focusIn(buttons, (btn+1)%(last+1))
+	case tcell.KeyEscape:
+		e.close()
+	default:
+		return ev
+	}
+	return nil
+}
+
+// submit starts the forward the fields describe, or keeps the form open with
+// the reason it cannot.
+func (e *forwardForm) submit() {
+	d := e.d
+	spec, err := parseForwardForm(d.cport.GetText(), d.addr.GetText(), d.lport.GetText())
+	if err != nil {
+		// Keep the form open so the operator corrects the field instead of
+		// retyping all three.
+		e.errMsg = err.Error()
+		e.render()
+		return
+	}
+	// An occupied local port is a correctable mistake too, and the sentence
+	// names WHICH forward holds it — the part the operator cannot see from
+	// here. It wraps inside the dialog, so the cluster name at its end is
+	// never clipped away.
+	if msg, clash := e.u.portConflict(spec.local); clash {
+		e.errMsg = msg
+		e.render()
+		e.focusIn(d.fields, 1)
+		return
+	}
+	e.close()
+	e.start(spec)
+}
+
+func (e *forwardForm) close() {
+	e.closed = true
+	e.ov.Close()
+}
+
+// lookupPorts asks for the container's ports in the background; the form is
+// usable meanwhile.
+func (e *forwardForm) lookupPorts() {
+	u, c := e.u, e.c
+	ac, dcli, f := u.agents, u.dcli, u.f
 	async(u, "ui.forward.suggest", func(ctx context.Context) ([]uint32, error) {
 		// One budget for both lookups: a slow node must not keep the form
 		// saying "looking up" for longer than a connect would take.
 		tctx, cancel := context.WithTimeout(ctx, f.connectTimeout)
 		defer cancel()
 		return forwardPortSuggestions(tctx, dcli, ac, c), nil
-	}, func(ports []uint32, _ error) {
-		suggested, loading = ports, false
-		// Prefill only an untouched field: the operator may have typed
-		// a port while the lookup was running.
-		if cport.GetText() == "" && len(ports) > 0 {
-			cport.SetText(strconv.FormatUint(uint64(ports[0]), 10))
-		}
-		render()
-	})
+	}, func(ports []uint32, _ error) { e.portsFound(ports) })
+}
+
+func (e *forwardForm) portsFound(ports []uint32) {
+	e.suggested, e.loading = ports, false
+	// Prefill only an untouched field: the operator may have typed a port
+	// while the lookup was running.
+	if e.d.cport.GetText() == "" && len(ports) > 0 {
+		e.d.cport.SetText(strconv.FormatUint(uint64(ports[0]), 10))
+	}
+	e.render()
 }
