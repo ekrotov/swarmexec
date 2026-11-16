@@ -61,6 +61,22 @@ func TestEveryTabIsRegistered(t *testing.T) {
 	}
 }
 
+// The tree footer names the stack-file key, which used to be in the "?"
+// overlay only, and calls s what it does: grouping, not "stacks".
+func TestTreeFooterNamesGroupAndStackFile(t *testing.T) {
+	u := tabsUI()
+	newTabViews(u)
+	f := colorTags.ReplaceAllString(u.tab("containers").footer(), "")
+	for _, want := range []string{"s group", "E stack file"} {
+		if !strings.Contains(f, want) {
+			t.Errorf("tree footer %q lacks %q", f, want)
+		}
+	}
+	if strings.Contains(f, "s stacks") {
+		t.Errorf("tree footer still says \"s stacks\": %q", f)
+	}
+}
+
 // The "?" overlay lists the tabs in tab-bar order, each once.
 func TestHelpOverlayFollowsTheTabOrder(t *testing.T) {
 	u := tabsUI()
