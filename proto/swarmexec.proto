@@ -79,6 +79,14 @@ service Agent {
   // which stays for older clients. See CONTRACT.md §3.7.
   rpc Prune(PruneRequest) returns (PruneResponse);
 
+  // What THIS node's Docker daemon knows about the endpoints on its swarm-scope
+  // networks: the containers attached here, and the daemon's replicated
+  // (networkdb) view of every service's tasks and of the network's peers.
+  // Read-only, Docker API only. A client compares it with the manager's
+  // running tasks to spot stale IP/MAC entries a node kept from an old network
+  // state. See CONTRACT.md §3.9.
+  rpc NetworkEndpoints(NetworkEndpointsRequest) returns (NetworkEndpointsResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -456,4 +464,72 @@ message PruneCategoryResult {
 
 message PruneResponse {
   repeated PruneCategoryResult results = 1;
+}
+
+message NetworkEndpointsRequest {
+  // network_ids narrows the answer to these networks (ID or name). Empty means
+  // every swarm-scope network THIS node has joined. A requested network that
+  // is missing or not swarm-scope comes back with its error set, not as a
+  // failed RPC.
+  repeated string network_ids = 1;
+}
+
+message NetworkEndpointsResponse {
+  repeated NetworkEndpointsInfo networks = 1;  // sorted by name
+}
+
+// NetworkEndpointsInfo is one network as THIS node's daemon sees it.
+message NetworkEndpointsInfo {
+  string id = 1;
+  string name = 2;
+  string driver = 3;  // "overlay" for every swarm network today
+  bool ingress = 4;   // the routing-mesh network
+  // local_endpoints are the endpoints attached ON THIS NODE: task containers,
+  // attachable containers, and the node's load-balancer endpoint. Sorted by
+  // name.
+  repeated NetworkLocalEndpoint local_endpoints = 5;
+  // services is the daemon's networkdb view of the WHOLE network, every
+  // node's tasks included. Sorted by name.
+  repeated NetworkServiceEndpoints services = 6;
+  // peers are the nodes this daemon believes share the network, itself
+  // included. Sorted by IP.
+  repeated NetworkPeer peers = 7;
+  // error is set when this network could not be inspected, or was requested
+  // but is missing or not swarm-scope; the fields above (bar id) are then
+  // empty, and the other networks are still reported.
+  string error = 8;
+}
+
+message NetworkLocalEndpoint {
+  // container_id is the daemon's key for the endpoint: a container ID, or
+  // for the load-balancer endpoint "lb-<network>" ("ingress-sbox" on ingress).
+  string container_id = 1;
+  string name = 2;
+  string endpoint_id = 3;
+  string ipv4_address = 4;  // CIDR as the daemon reports it, "10.0.1.5/24"; empty if none
+  string ipv6_address = 5;  // CIDR; empty if none
+  string mac_address = 6;   // "02:42:0a:00:01:05"; empty if the daemon reported none
+  // load_balancer marks the node's load-balancer endpoint: not a task, but it
+  // holds an IP and a MAC on the network all the same.
+  bool load_balancer = 7;
+}
+
+message NetworkServiceEndpoints {
+  // name is the service name. The daemon files every node's load-balancer
+  // endpoint under the EMPTY name, so "" is a real entry, not a missing one.
+  string name = 1;
+  string vip = 2;  // the service's virtual IP; empty for dnsrr and for ""
+  repeated NetworkTaskEndpoint tasks = 3;  // sorted by name
+}
+
+message NetworkTaskEndpoint {
+  string name = 1;         // task container name; "<network>-endpoint" for a load balancer
+  string endpoint_id = 2;
+  string endpoint_ip = 3;  // bare address, no prefix length
+  string host_ip = 4;      // the node owning the endpoint (Info["Host IP"]); empty if not reported
+}
+
+message NetworkPeer {
+  string name = 1;  // the peer node's networkdb name
+  string ip = 2;
 }

@@ -18,7 +18,7 @@ type Request struct {
 	// removes images a stopped service still needs. The Prune RPC authorizes
 	// each category on its own: "container.prune", "image.prune",
 	// "image.prune.all", "buildcache.prune", "network.prune", "volume.prune";
-	// its stats are "reclaim.read".
+	// its stats are "reclaim.read". NetworkEndpoints is "network.inspect".
 	Action string
 	// Port is the target TCP port inside the container for "portforward".
 	// Forwarding is a distinct exposure class from exec — it lifts an internal

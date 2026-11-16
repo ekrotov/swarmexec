@@ -41,6 +41,7 @@ const (
 	Agent_PruneImages_FullMethodName          = "/swarmexec.Agent/PruneImages"
 	Agent_ReclaimStats_FullMethodName         = "/swarmexec.Agent/ReclaimStats"
 	Agent_Prune_FullMethodName                = "/swarmexec.Agent/Prune"
+	Agent_NetworkEndpoints_FullMethodName     = "/swarmexec.Agent/NetworkEndpoints"
 	Agent_Version_FullMethodName              = "/swarmexec.Agent/Version"
 )
 
@@ -103,6 +104,13 @@ type AgentClient interface {
 	// authorized and audited on its own. Destructive. Supersedes PruneImages,
 	// which stays for older clients. See CONTRACT.md §3.7.
 	Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error)
+	// What THIS node's Docker daemon knows about the endpoints on its swarm-scope
+	// networks: the containers attached here, and the daemon's replicated
+	// (networkdb) view of every service's tasks and of the network's peers.
+	// Read-only, Docker API only. A client compares it with the manager's
+	// running tasks to spot stale IP/MAC entries a node kept from an old network
+	// state. See CONTRACT.md §3.9.
+	NetworkEndpoints(ctx context.Context, in *NetworkEndpointsRequest, opts ...grpc.CallOption) (*NetworkEndpointsResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -272,6 +280,16 @@ func (c *agentClient) Prune(ctx context.Context, in *PruneRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *agentClient) NetworkEndpoints(ctx context.Context, in *NetworkEndpointsRequest, opts ...grpc.CallOption) (*NetworkEndpointsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NetworkEndpointsResponse)
+	err := c.cc.Invoke(ctx, Agent_NetworkEndpoints_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -341,6 +359,13 @@ type AgentServer interface {
 	// authorized and audited on its own. Destructive. Supersedes PruneImages,
 	// which stays for older clients. See CONTRACT.md §3.7.
 	Prune(context.Context, *PruneRequest) (*PruneResponse, error)
+	// What THIS node's Docker daemon knows about the endpoints on its swarm-scope
+	// networks: the containers attached here, and the daemon's replicated
+	// (networkdb) view of every service's tasks and of the network's peers.
+	// Read-only, Docker API only. A client compares it with the manager's
+	// running tasks to spot stale IP/MAC entries a node kept from an old network
+	// state. See CONTRACT.md §3.9.
+	NetworkEndpoints(context.Context, *NetworkEndpointsRequest) (*NetworkEndpointsResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -394,6 +419,9 @@ func (UnimplementedAgentServer) ReclaimStats(context.Context, *ReclaimStatsReque
 }
 func (UnimplementedAgentServer) Prune(context.Context, *PruneRequest) (*PruneResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Prune not implemented")
+}
+func (UnimplementedAgentServer) NetworkEndpoints(context.Context, *NetworkEndpointsRequest) (*NetworkEndpointsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NetworkEndpoints not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -617,6 +645,24 @@ func _Agent_Prune_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_NetworkEndpoints_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NetworkEndpointsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).NetworkEndpoints(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_NetworkEndpoints_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).NetworkEndpoints(ctx, req.(*NetworkEndpointsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -677,6 +723,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Prune",
 			Handler:    _Agent_Prune_Handler,
+		},
+		{
+			MethodName: "NetworkEndpoints",
+			Handler:    _Agent_NetworkEndpoints_Handler,
 		},
 		{
 			MethodName: "Version",

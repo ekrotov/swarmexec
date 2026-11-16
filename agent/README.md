@@ -35,6 +35,11 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
   category. Networks are vetted and removed one by one (never the Engine's
   `networks/prune`, which on a manager also removes unused swarm overlay
   networks); stopped containers are kept for 24h after they stop.
+- `NetworkEndpoints` — read-only: per swarm network the node has joined, the
+  endpoints attached here (IP, MAC, the load balancer flagged) and the daemon's
+  networkdb view (every service's tasks with their owning host, the peers).
+  Docker API only, no extra capabilities; a client compares it with the
+  manager's tasks to spot stale overlay entries (CONTRACT.md §3.9).
 - **Prune schedule** read from the agent's own container labels
   (`swarmexec.prune.*`, see below): the agent prunes at the scheduled times and
   keeps the last run's result.
@@ -277,7 +282,8 @@ docs, chapter "Authorization policy".
 
 The actions are `container.list`, `container.events`, `exec`, `logs`,
 `portforward`, `stats.read`, `image.list`, `image.prune`, `image.prune.all`,
-`volume.list`, `volume.create`, `volume.remove`, and for disk cleanup
+`volume.list`, `volume.create`, `volume.remove`, `network.inspect`
+(`NetworkEndpoints`), and for disk cleanup
 `reclaim.read` (the reclaimable figures), `container.prune`, `buildcache.prune`,
 `network.prune` and `volume.prune`. The `Prune` RPC authorizes every category
 on its own: "every unused image" is `image.prune.all`, "untagged images only" is

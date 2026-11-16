@@ -284,7 +284,7 @@ in-band `error` message first; the status that follows carries the same cause.
 | Code | When |
 | --- | --- |
 | `OK` | Success. A stream also ends `OK` when the client closed it, and when the target's output ended normally. |
-| `INVALID_ARGUMENT` | The request is malformed: the first stream message is not `StartExec` / `StartForward`, a required field is missing (`container_id`, `cmd`, volume `name`), `port` is outside 1–65535, a `PruneRequest` names no or an unknown category, `containers_until` or `label_filters` do not parse. Also the Engine refusing a parameter (HTTP 400 and any other unexpected 4xx). |
+| `INVALID_ARGUMENT` | The request is malformed: the first stream message is not `StartExec` / `StartForward`, a required field is missing (`container_id`, `cmd`, volume `name`), `port` is outside 1–65535, a `PruneRequest` names no or an unknown category, `containers_until` or `label_filters` do not parse, `network_ids` holds an empty id or more than 256. Also the Engine refusing a parameter (HTTP 400 and any other unexpected 4xx). |
 | `UNAUTHENTICATED` | Transport authentication failed — **who** the caller is could not be established. Only these causes produce it: in shared-secret mode (§2.1) `missing agent secret` (the client sent no credentials — typically one configured for mTLS only), `invalid agent secret` (the binding or legacy secret does not match), a raw secret while `-allow-legacy-secret` is off, and `connection-bound authentication is unavailable on this agent`; in mTLS mode `client identity unavailable: …` (no verified client chain, or a certificate with an empty CN). A client certificate the agent's CA does not trust never reaches a handler: the TLS handshake fails, and the client sees a transport error, not this code. |
 | `PERMISSION_DENIED` | The caller is known and the Authorizer (policy, §2) refused the action: `authorization denied: <reason>`. Also the Engine refusing the **agent** (HTTP 401/403) — deliberately not `UNAUTHENTICATED`, which would point the operator at a credential that is fine. |
 | `NOT_FOUND` | The Engine does not have the object: the container, volume or image is gone (HTTP 404). |
@@ -299,6 +299,45 @@ in-band `error` message first; the status that follows carries the same cause.
 Engine failures are classified from the Engine's HTTP status (via the
 `containerd/errdefs` classes the Docker client attaches), never from message
 text, and the message is `<verb>: <Engine message>`, e.g. `list volumes: …`.
+
+### 3.9 Network endpoints (normative)
+
+`NetworkEndpoints` reports what the agent's **own** Docker daemon knows about
+the endpoints on swarm-scope networks. Each daemon keeps its own replicated copy
+(networkdb) of a network's endpoints and programs the kernel's overlay tables
+from it; a node that missed a departure keeps stale IP/MAC entries the manager
+no longer knows about. The agent reads that copy through the Docker API only —
+the kernel FDB itself would need capabilities the agent does not have.
+
+- Authorized as `network.inspect`. Read-only.
+- Empty `network_ids`: every **swarm-scope** network this node has **joined**
+  — listed with `scope=swarm` and inspected with `verbose=true, scope=swarm`. A
+  network the daemon lists but has not instantiated (a manager lists every swarm
+  network in the cluster) has no peers, endpoints or services and is left out,
+  as is one removed between the listing and the inspect.
+- Explicit `network_ids` (IDs or names; at most 256, none empty, otherwise
+  `INVALID_ARGUMENT`): each is reported once, joined or not. One that is
+  missing, not swarm-scope or fails to inspect comes back with only `id` (as
+  requested) and `error` set; the RPC still succeeds.
+- `local_endpoints` is the daemon's `Containers` map: the endpoints attached ON
+  THIS NODE. `container_id` is the map key, which for the node's load-balancer
+  endpoint is `lb-<network>` (`ingress-sbox` on the ingress network); that
+  entry has `load_balancer=true`. Addresses are CIDR as the daemon reports
+  them; `mac_address` is the endpoint's MAC.
+- `services` is the daemon's verbose `Services` map: its networkdb view of the
+  WHOLE network, every node's tasks included. The daemon files every node's
+  load-balancer endpoint under the EMPTY service name, so a `name=""` entry is
+  real. `host_ip` is the task's `Info["Host IP"]` — the node the daemon believes
+  owns the endpoint. Tasks carry no MAC.
+- `peers` are the nodes the daemon believes share the network, itself
+  included.
+- Every list is sorted (networks by name, endpoints and tasks by name, peers
+  by IP), so two answers diff line by line.
+- What is stale is the client's judgement, not the agent's: an endpoint IP or
+  task here that no running task on the manager accounts for. The agent
+  reports; it never removes anything.
+- An agent that predates the RPC answers `UNIMPLEMENTED`; a client MUST treat
+  that as "unknown" for that node, never as "no endpoints".
 
 ## 4. Session Lifecycle (normative)
 
@@ -358,7 +397,7 @@ that send the live read buffer are non-conformant.
   an unreachable node. A client MAY remember the answer per agent and RPC
   instead of asking again; the reference client does so for 15 minutes for the
   RPCs it issues on its own (stats, image list, reclaim stats, volume list,
-  container events) and forgets it as soon as it opens a new connection to
+  container events, network endpoints) and forgets it as soon as it opens a new connection to
   that agent, since a redeployed agent is a new connection. An operator's
   explicit action is always sent.
 

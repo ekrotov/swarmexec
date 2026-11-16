@@ -95,6 +95,8 @@ type fakeDocker struct {
 	networks          []network.Summary
 	netInspect        map[string]network.Inspect
 	networkListOpts   []client.NetworkListOptions
+	netInspectOpts    []client.NetworkInspectOptions
+	netInspectErr     map[string]error
 	removedNetworks   []string
 	volumePruneOpts   []client.VolumePruneOptions
 	volumePruneReport volume.PruneReport
@@ -189,9 +191,13 @@ func (f *fakeDocker) NetworkList(_ context.Context, opts client.NetworkListOptio
 	return client.NetworkListResult{Items: out}, nil
 }
 
-func (f *fakeDocker) NetworkInspect(_ context.Context, id string, _ client.NetworkInspectOptions) (client.NetworkInspectResult, error) {
+func (f *fakeDocker) NetworkInspect(_ context.Context, id string, opts client.NetworkInspectOptions) (client.NetworkInspectResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.netInspectOpts = append(f.netInspectOpts, opts)
+	if err, ok := f.netInspectErr[id]; ok {
+		return client.NetworkInspectResult{}, err
+	}
 	if in, ok := f.netInspect[id]; ok {
 		return client.NetworkInspectResult{Network: in}, nil
 	}

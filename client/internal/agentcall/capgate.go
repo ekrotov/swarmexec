@@ -39,6 +39,8 @@ const (
 	rpcReclaimStats = "ReclaimStats"
 	rpcListVolumes  = "ListVolumes"
 	rpcEvents       = "WatchContainerEvents"
+
+	rpcNetworkEndpoints = "NetworkEndpoints"
 )
 
 // retryAfter is how long a non-Unimplemented failure benches an RPC: only the
@@ -49,6 +51,8 @@ var retryAfter = map[string]time.Duration{
 	rpcStats:        pollRetryAfter,
 	rpcListImages:   pollRetryAfter,
 	rpcReclaimStats: pollRetryAfter,
+
+	rpcNetworkEndpoints: pollRetryAfter,
 }
 
 // capGate remembers, per agent and RPC, an answer not worth asking for again

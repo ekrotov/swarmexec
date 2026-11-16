@@ -36,7 +36,7 @@ var Actions = []string{
 	"container.list", "container.events",
 	"exec", "logs", "portforward", "stats.read",
 	"image.list", "image.prune", "image.prune.all",
-	"volume.list", "volume.create", "volume.remove",
+	"volume.list", "volume.create", "volume.remove", "network.inspect",
 	"reclaim.read", "container.prune", "buildcache.prune", "network.prune", "volume.prune",
 }
 

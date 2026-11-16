@@ -270,6 +270,10 @@ func TestAuditTrail_UnaryDenied(t *testing.T) {
 			return err
 		}, "image.prune.all", ""},
 		{"ReclaimStats", func(s *Server) error { _, err := s.ReclaimStats(ctx, &pb.ReclaimStatsRequest{}); return err }, "reclaim.read", ""},
+		{"NetworkEndpoints", func(s *Server) error {
+			_, err := s.NetworkEndpoints(ctx, &pb.NetworkEndpointsRequest{})
+			return err
+		}, "network.inspect", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
