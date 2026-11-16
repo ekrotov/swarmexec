@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,10 +28,15 @@ const SlowThreshold = 300 * time.Millisecond
 // ringCap bounds the in-memory buffer feeding the TUI log viewer.
 const ringCap = 2000
 
+// std and ring are swapped by Init while other goroutines may be logging
+// (the tests re-Init between UIs whose background work is still finishing),
+// so they are atomic.
 var (
-	std  = slog.New(discardHandler{}) // until Init runs; a no-op so L() is always safe
-	ring *Ring
+	std  atomic.Pointer[slog.Logger]
+	ring atomic.Pointer[Ring]
 )
+
+func init() { std.Store(slog.New(discardHandler{})) } // until Init runs; a no-op so L() is always safe
 
 // Ring is a bounded, concurrency-safe buffer of the most recent formatted log
 // lines. It implements io.Writer so an slog text handler can feed it one line
@@ -82,17 +88,17 @@ func Init(level, filePath string) (*Ring, error) {
 		Level:       parseLevel(level),
 		ReplaceAttr: shortTime,
 	})
-	std = slog.New(h)
-	ring = r
+	std.Store(slog.New(h))
+	ring.Store(r)
 	return r, nil
 }
 
 // L returns the global logger — a no-op logger until Init runs, so callers never
 // need a nil check.
-func L() *slog.Logger { return std }
+func L() *slog.Logger { return std.Load() }
 
 // Ring returns the in-memory buffer (nil until Init runs).
-func RingBuffer() *Ring { return ring }
+func RingBuffer() *Ring { return ring.Load() }
 
 // DefaultLogPath mirrors the config file location: a swarmexec.log next to
 // config.yaml. Callers pass it as the default for --log-file.
