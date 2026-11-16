@@ -86,6 +86,13 @@ func fixtureTask(id, svcID, node, container string, slot int) swarm.Task {
 	return t
 }
 
+// onShopNet attaches t to shop_net with address ip.
+func onShopNet(t swarm.Task, ip string) swarm.Task {
+	t.NetworksAttachments = []swarm.NetworkAttachment{{Network: swarm.Network{ID: "net-shop"},
+		Addresses: []netip.Prefix{netip.MustParsePrefix(ip + "/24")}}}
+	return t
+}
+
 func newFixtureSwarm() *swarmfake.Swarm {
 	web := fixtureService("svc-web", "shop_web", "shop", map[string]string{lEnable: "true", lLogs: "true", lExec: "true"}, 2)
 	web.Spec.TaskTemplate.ContainerSpec.Secrets = []*swarm.SecretReference{{SecretID: "sec-shop", SecretName: "shop_db_pw"}}
@@ -152,10 +159,10 @@ func newFixtureSwarm() *swarmfake.Swarm {
 	return &swarmfake.Swarm{
 		Services: []swarm.Service{web, api, hidden, off, sock, ghost},
 		Tasks: []swarm.Task{
-			fixtureTask("t-web1", "svc-web", "node1", "c-web1", 1),
-			fixtureTask("t-web2", "svc-web", "node2", "c-web2", 2),
-			fixtureTask("t-api1", "svc-api", "node1", "c-api1", 1),
-			fixtureTask("t-hidden1", "svc-hidden", "node2", "c-hidden", 1),
+			onShopNet(fixtureTask("t-web1", "svc-web", "node1", "c-web1", 1), "10.0.0.11"),
+			onShopNet(fixtureTask("t-web2", "svc-web", "node2", "c-web2", 2), "10.0.0.12"),
+			onShopNet(fixtureTask("t-api1", "svc-api", "node1", "c-api1", 1), "10.0.0.13"),
+			onShopNet(fixtureTask("t-hidden1", "svc-hidden", "node2", "c-hidden", 1), hiddenTaskIP),
 			fixtureTask("t-off1", "svc-off", "node1", "c-off", 1),
 			fixtureTask("t-sock1", "svc-sock", "node1", "c-sock", 1),
 			fixtureTask("t-ghost1", "svc-ghost", "node2", "c-ghost", 1),
@@ -257,20 +264,40 @@ func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
 	return stream.Send(&pb.ServerMessage{Payload: &pb.ServerMessage_ExitCode{ExitCode: 3}})
 }
 
-// Stale networkdb entries on shop_net: one of the visible shop_web, one of
-// the hidden shop_hidden, both owned by node-b's address (10.0.0.2) — which
-// networks_list must never print.
+// shop_net as the nodes see it: the running tasks of shop_web, shop_api and
+// the hidden shop_hidden, and stale networkdb entries — one of the visible
+// shop_web, one of the hidden shop_hidden, one of shop_gone (removed: no live
+// service to attribute it to) — all owned by node-b's address (10.0.0.2),
+// which networks_list must never print. networks_list must count shop_web and
+// shop_api only, and show the stale entries of shop_web (by name) and
+// shop_gone (unnamed); shop_hidden is as absent as if it never ran.
 const (
 	staleWebTask    = "shop_web.3.0000000000000000000000001"
 	staleHiddenTask = "shop_hidden.2.0000000000000000000000002"
+	staleGoneTask   = "shop_gone.1.0000000000000000000000005"
+	hiddenTask      = "shop_hidden.1.0000000000000000000000003"
+	hiddenTaskIP    = "10.0.0.14"
 )
 
 // NetworkEndpoints answers for the requested networks only, as the agent does.
 func (a *fakeAgent) NetworkEndpoints(_ context.Context, req *pb.NetworkEndpointsRequest) (*pb.NetworkEndpointsResponse, error) {
 	all := map[string]*pb.NetworkEndpointsInfo{
 		"net-shop": {Id: "net-shop", Name: "shop_net", Services: []*pb.NetworkServiceEndpoints{
-			{Name: "shop_web", Tasks: []*pb.NetworkTaskEndpoint{{Name: staleWebTask, EndpointId: "e1", EndpointIp: "10.0.0.77", HostIp: "10.0.0.2"}}},
-			{Name: "shop_hidden", Tasks: []*pb.NetworkTaskEndpoint{{Name: staleHiddenTask, EndpointId: "e2", EndpointIp: "10.0.0.78", HostIp: "10.0.0.2"}}},
+			{Name: "shop_web", Tasks: []*pb.NetworkTaskEndpoint{
+				{Name: "shop_web.1.0000000000000000000000011", EndpointId: "w1", EndpointIp: "10.0.0.11", HostIp: "10.0.0.1"},
+				{Name: "shop_web.2.0000000000000000000000012", EndpointId: "w2", EndpointIp: "10.0.0.12", HostIp: "10.0.0.2"},
+				{Name: staleWebTask, EndpointId: "e1", EndpointIp: "10.0.0.77", HostIp: "10.0.0.2"}}},
+			{Name: "shop_api", Tasks: []*pb.NetworkTaskEndpoint{
+				{Name: "shop_api.1.0000000000000000000000013", EndpointId: "a1", EndpointIp: "10.0.0.13", HostIp: "10.0.0.1"}}},
+			{Name: "shop_hidden", Tasks: []*pb.NetworkTaskEndpoint{
+				{Name: hiddenTask, EndpointId: "h1", EndpointIp: hiddenTaskIP, HostIp: "10.0.0.2"},
+				{Name: staleHiddenTask, EndpointId: "e2", EndpointIp: "10.0.0.78", HostIp: "10.0.0.2"}}},
+			{Name: "shop_gone", Tasks: []*pb.NetworkTaskEndpoint{{Name: staleGoneTask, EndpointId: "e3", EndpointIp: "10.0.0.79", HostIp: "10.0.0.2"}}},
+		}, LocalEndpoints: []*pb.NetworkLocalEndpoint{
+			// The hidden task's endpoint, and an orphan holding its address
+			// (a duplicate only the hidden service explains).
+			{ContainerId: "c-hidden", Name: hiddenTask, EndpointId: "h1", Ipv4Address: hiddenTaskIP + "/24", MacAddress: "02:42:0a:00:00:0e"},
+			{ContainerId: "ep-0123456789ab", EndpointId: "h9", Ipv4Address: hiddenTaskIP + "/24", MacAddress: "02:42:0a:00:00:0e"},
 		}},
 		"net-hidden": {Id: "net-hidden", Name: "hidden_net"},
 	}

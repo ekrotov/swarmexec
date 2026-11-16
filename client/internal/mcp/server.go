@@ -361,6 +361,9 @@ type mcpService struct {
 type mcpView struct {
 	services []mcpService
 	byName   map[string]mcpService
+	// hidden names the services that exist but the caller may not see; only
+	// for filtering what would otherwise be attributed to them, never shown.
+	hidden map[string]bool
 }
 
 // view lists the services and keeps the visible ones.
@@ -369,10 +372,11 @@ func (s *Server) view(ctx context.Context, c *mcpCluster) (*mcpView, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := &mcpView{byName: map[string]mcpService{}}
+	v := &mcpView{byName: map[string]mcpService{}, hidden: map[string]bool{}}
 	for _, svc := range res.Items {
 		a := s.evaluate(svc)
 		if !a.Visible {
+			v.hidden[svc.Spec.Name] = true
 			continue
 		}
 		ms := mcpService{svc: svc, access: a}

@@ -115,8 +115,10 @@ a task starting/stopping during the check can show for one refresh, and
 leftovers already gone from the networkdb but still in the kernel are not
 seen. Fix: `docker network disconnect -f <network> <endpoint>` on a node that
 lists it, or restart Docker on the node that held it. MCP: `networks_list`
-with `endpoints: true` (hostnames only, never node IPs; hidden services'
-endpoint names redacted).
+with `endpoints: true`, computed over the visible services only (a hidden
+service's tasks and endpoints count nowhere and never show as stale or
+duplicate; a removed service's leftover stays, unnamed), hostnames only,
+never node IPs.
 
 ### TUI appearance
 

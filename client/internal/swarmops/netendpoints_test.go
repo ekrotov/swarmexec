@@ -400,3 +400,80 @@ func TestMembersToleratesTaskWithoutContainer(t *testing.T) {
 		t.Errorf("SecretMembers = %+v", ss)
 	}
 }
+
+// scopeFixture is network app with the visible web (two tasks, a departed
+// one still in a's networkdb), a leftover of the removed service old, and —
+// with db — the hidden service db: a running task, a starting one, a stale
+// entry named after it, a standalone-filed entry under its task name, an
+// orphaned endpoint holding its starting task's address and a task-named
+// endpoint on b that duplicates its running task's address.
+func scopeFixture(db bool) ([]TaskAddr, []agentcall.NodeNetworkEndpoints) {
+	webA, webB, gone, old := tname("web", 1, 1), tname("web", 2, 2), tname("web", 3, 3), tname("old", 1, 5)
+	tasks := []TaskAddr{taddr("app", "A", "web", true, "10.0.1.5"), taddr("app", "B", "web", true, "10.0.1.6")}
+	empty := &pb.NetworkServiceEndpoints{Name: "", Tasks: []*pb.NetworkTaskEndpoint{lbTask("app", "10.0.1.3", "h1")}}
+	svcs := []*pb.NetworkServiceEndpoints{empty,
+		{Name: "web", Vip: "10.0.1.2/24", Tasks: []*pb.NetworkTaskEndpoint{
+			dbTask(webA, "10.0.1.5", "h1"), dbTask(webB, "10.0.1.6", "h2"), dbTask(gone, "10.0.1.30", "h2")}},
+		{Name: "old", Tasks: []*pb.NetworkTaskEndpoint{dbTask(old, "10.0.1.33", "h2")}},
+	}
+	localsA := []*pb.NetworkLocalEndpoint{local(webA, "10.0.1.5", "m5"), lb("app", "10.0.1.3", "m3")}
+	localsB := []*pb.NetworkLocalEndpoint{local(webB, "10.0.1.6", "m6")}
+	if db {
+		dbA := tname("db", 1, 7)
+		tasks = append(tasks, taddr("app", "A", "db", true, "10.0.1.7"), taddr("app", "B", "db", false, "10.0.1.8"))
+		empty.Tasks = append(empty.Tasks, dbTask(tname("db", 4, 4), "10.0.1.32", "h1"))
+		svcs = append(svcs, &pb.NetworkServiceEndpoints{Name: "db", Vip: "10.0.1.9/24", Tasks: []*pb.NetworkTaskEndpoint{
+			dbTask(dbA, "10.0.1.7", "h1"), dbTask(tname("db", 3, 6), "10.0.1.31", "h2")}})
+		localsA = append(localsA, local(dbA, "10.0.1.7", "m7"),
+			&pb.NetworkLocalEndpoint{ContainerId: "ep-0123456789ab", EndpointId: "ep-orphan", Ipv4Address: "10.0.1.8/24", MacAddress: "m8"})
+		localsB = append(localsB, local(tname("web", 9, 9), "10.0.1.7", "m9"))
+	}
+	nodes := []agentcall.NodeNetworkEndpoints{
+		nodeAns("A", "a", "h1", &pb.NetworkEndpointsInfo{Id: "app", Services: svcs, LocalEndpoints: localsA}),
+		nodeAns("B", "b", "h2", &pb.NetworkEndpointsInfo{Id: "app", Services: svcs[:1], LocalEndpoints: localsB}),
+		nodeErr("C", "c", errors.New("dial tcp: refused")),
+	}
+	return tasks, nodes
+}
+
+// A hidden service on a visible network contributes nothing: the scoped
+// analysis is the one of a cluster where it never ran. With nothing hidden,
+// scoping changes nothing.
+func TestScopeEndpoints(t *testing.T) {
+	restricted := EndpointScope{
+		Visible: func(s string) bool { return s == "web" },
+		Hidden:  func(s string) bool { return s == "db" },
+	}
+	tasks, nodes := scopeFixture(true)
+	full := AnalyzeEndpoints(tasks, nodes)["app"]
+	if full.Running != 3 || len(full.DupIPs) == 0 {
+		t.Fatalf("fixture does not exercise db: running=%d dups=%v", full.Running, full.DupIPs)
+	}
+
+	st, sn := ScopeEndpoints(tasks, nodes, restricted)
+	got := AnalyzeEndpoints(st, sn)["app"]
+	wt, wn := scopeFixture(false)
+	want := AnalyzeEndpoints(wt, wn)["app"]
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("scoped analysis\n%+v\nwant (db never ran)\n%+v", got, want)
+	}
+	if fmt.Sprintf("%+v", got) == fmt.Sprintf("%+v", full) {
+		t.Error("scoping changed nothing")
+	}
+	var stale []string
+	for _, s := range got.Stale {
+		stale = append(stale, s.Name)
+	}
+	if !reflect.DeepEqual(stale, []string{tname("web", 3, 3), tname("old", 1, 5)}) {
+		t.Errorf("stale = %v: the visible and the removed service's leftovers stay", stale)
+	}
+	if n := len(nodes[0].Resp.GetNetworks()[0].GetLocalEndpoints()); n != 4 {
+		t.Errorf("the input was changed: %d local endpoints on a, want 4", n)
+	}
+
+	all := EndpointScope{Visible: func(string) bool { return true }, Hidden: func(string) bool { return false }}
+	at, an := ScopeEndpoints(tasks, nodes, all)
+	if !reflect.DeepEqual(AnalyzeEndpoints(at, an), AnalyzeEndpoints(tasks, nodes)) {
+		t.Error("with nothing hidden the analysis must not change")
+	}
+}

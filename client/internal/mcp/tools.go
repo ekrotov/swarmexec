@@ -127,7 +127,7 @@ func (s *Server) build() *sdk.Server {
 		"Names of the volumes mounted by services you have access to, and which of those services mount them.", true, s.toolVolumes)
 	mcpTool(srv, s, "networks_list", "List networks",
 		"Names of the networks used by services you have access to, which of those services use them, each network's subnets, and subnet overlap findings (node IPs inside a subnet, overlap with the configured underlay or another network) with the fix. "+
-			"With endpoints set, also each node's endpoint counts against the running tasks, and stale address candidates (addresses a node still holds that no live task has) and duplicates.", true, s.toolNetworks)
+			"With endpoints set, also each node's endpoint counts against the running tasks, and stale address candidates (addresses a node still holds that no live task has) and duplicates, all over the visible services only.", true, s.toolNetworks)
 	mcpTool(srv, s, "secrets_list", "List secrets",
 		"Names of the secrets used by services you have access to (never values), and which of those services use them.", true, s.toolSecrets)
 	mcpTool(srv, s, "configs_list", "List configs",
@@ -788,7 +788,7 @@ func (s *Server) toolNetworks(ctx context.Context, in mcpNetworksIn) (string, er
 				ids = append(ids, x.n.ID)
 			}
 		}
-		byNet, unavailable := s.networkEndpoints(ctx, c, ids)
+		byNet, unavailable := s.networkEndpoints(ctx, c, ids, v)
 		for i, x := range vis {
 			if x.n.Scope != "swarm" {
 				continue
@@ -805,9 +805,11 @@ func (s *Server) toolNetworks(ctx context.Context, in mcpNetworksIn) (string, er
 
 // networkEndpoints asks every node's agent for its view of the networks ids
 // (only those: the agent reports nothing else) and analyses it against the
-// manager's tasks. unavailable says why there is nothing, in words that name
-// no node address.
-func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []string) (map[string]*swarmops.NetEndpoints, string) {
+// manager's tasks — only what v may see: tasks of hidden services and the
+// endpoints attributable to them are dropped before the analysis, so they
+// count nowhere. unavailable says why there is nothing, in words that name no
+// node address.
+func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []string, v *mcpView) (map[string]*swarmops.NetEndpoints, string) {
 	if len(ids) == 0 {
 		return nil, ""
 	}
@@ -824,12 +826,25 @@ func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []stri
 	if err != nil {
 		return nil, "task list unavailable"
 	}
+	tasks, res = swarmops.ScopeEndpoints(tasks, res, v.endpointScope())
 	return swarmops.AnalyzeEndpoints(tasks, res), ""
 }
 
+// endpointScope is the endpoint analysis's view of v. A task counts only
+// when its service is visible (an unknown one, "", does not: fail closed); an
+// endpoint is dropped when it names a service that exists and is hidden.
+func (v *mcpView) endpointScope() swarmops.EndpointScope {
+	return swarmops.EndpointScope{
+		Visible: v.has,
+		Hidden:  func(svc string) bool { return v.hidden[svc] },
+	}
+}
+
 // mcpEndpoints is a network's endpoint analysis as a restricted caller may
-// read it: node hostnames (cluster_overview shows those) but never a node
-// address, and an endpoint's name only when it belongs to a visible service.
+// read it: computed over visible services only (see networkEndpoints), node
+// hostnames (cluster_overview shows those) but never a node address, and an
+// endpoint's name only when it belongs to a visible service — a leftover of a
+// removed service keeps its place but not its name.
 type mcpEndpoints struct {
 	Unavailable   string            `json:"unavailable,omitempty"`
 	Running       int               `json:"running_tasks"`

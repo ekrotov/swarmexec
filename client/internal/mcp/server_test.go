@@ -307,15 +307,21 @@ func TestMCPNeverRevealsLabelsOrHiddenServices(t *testing.T) {
 	expect("networks_list "+mustJSON(map[string]any{}), `"10.0.0.0/24 contains 2 host IPs"`)
 	expect("networks_list "+mustJSON(map[string]any{}), `"10.0.0.0/24 overlaps another network (not visible)"`)
 	expect("networks_list "+mustJSON(map[string]any{}), `"overlap_severity": "high"`)
-	// The endpoint view: counted per node, the visible stale task by name,
-	// the hidden one redacted, and no node address anywhere.
+	// The endpoint view: counted per node over the visible services only,
+	// the visible stale task by name, the removed service's redacted, the
+	// hidden service's task, stale entry and duplicate address nowhere, and
+	// no node address anywhere.
 	withEP := "networks_list " + mustJSON(map[string]any{"endpoints": true})
 	expect(withEP, staleWebTask)
 	expect(withEP, `"name": "(not visible)"`)
 	expect(withEP, `"node": "node-b"`)
-	expect(withEP, `"networkdb_entries": 2`)
+	expect(withEP, `"running_tasks": 3,`)
+	expect(withEP, `"addresses": 5,`)
+	expect(withEP, `"networkdb_entries": 5`)
+	expect(withEP, `"local_containers": 0,`)
 	expect(withEP, "docker network disconnect -f")
-	for _, leak := range []string{`10.0.0.2"`, `10.0.0.1"`, "hidden_net"} {
+	for _, leak := range []string{`10.0.0.2"`, `10.0.0.1"`, "hidden_net", hiddenTaskIP, "10.0.0.78", "02:42:0a:00:00:0e",
+		"duplicate_", `"running_tasks": 4`, `"stale": 3`} {
 		if strings.Contains(results[withEP].text, leak) {
 			t.Errorf("networks_list with endpoints reveals %q:\n%s", leak, results[withEP].text)
 		}
