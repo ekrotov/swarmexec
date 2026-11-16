@@ -172,7 +172,7 @@ func connectInitManager(ctx context.Context, out io.Writer, g *globalFlags) (*cl
 	if !info.Swarm.ControlAvailable {
 		return nil, &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
 	}
-	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
+	fmt.Fprintf(out, "manager: %s (%s)\n", info.Name, plural(info.Swarm.Nodes, "node"))
 	return dcli, nil
 }
 

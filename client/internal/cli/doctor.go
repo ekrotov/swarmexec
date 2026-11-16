@@ -118,7 +118,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	}
 
 	fmt.Fprintf(out, "client:  %s (proto %s)\n", g.version.Binary, g.version.Proto)
-	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
+	fmt.Fprintf(out, "manager: %s (%s)\n", info.Name, plural(info.Swarm.Nodes, "node"))
 	if agentDep {
 		fmt.Fprintf(out, "agent:   service deployed")
 		if image != "" {

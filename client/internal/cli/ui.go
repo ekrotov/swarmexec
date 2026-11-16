@@ -1560,10 +1560,19 @@ func (u *ui) refreshCluster() {
 		if err != nil {
 			u.clusterText = "[red]cluster: unreachable[white]"
 		} else {
-			u.clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", c.nodes, c.agents, c.nodes)
+			u.clusterText = clusterSummary(c.nodes, c.agents)
 		}
 		u.updateStatus()
 	})
+}
+
+// clusterSummary is the status line's cluster part: "3 nodes · 3/3 agents".
+func clusterSummary(nodes, agents int) string {
+	noun := "nodes"
+	if nodes == 1 {
+		noun = "node"
+	}
+	return fmt.Sprintf("[aqua]%d[white] %s · [aqua]%d[white]/%d agents", nodes, noun, agents, nodes)
 }
 
 // refreshForwardViews repaints everything a forward's state feeds: the
