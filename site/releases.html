@@ -23,92 +23,11 @@
   <meta name="twitter:title" content="swarmexec — release notes">
   <meta name="twitter:description" content="Every release of swarmexec, newest first — what changed and where to download it.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
   <link rel="stylesheet" href="/nav.css?v=__VERSION__">
-  <style>
-    :root {
-      --bg: #0d1117; --panel: #161b22; --border: #30363d;
-      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
-    }
-    * { box-sizing: border-box; }
-    /* A column: the top bar (nav.css) across the full width, the card centred below it. */
-    body {
-      margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      display: flex; flex-direction: column;
-      line-height: 1.6;
-    }
-    main { width: 100%; min-width: 0; max-width: calc(760px + 4rem); margin: auto; padding: 2rem; }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 2.5rem;
-    }
-    h1 { margin: 0 0 .25rem; font-size: 2rem; letter-spacing: -.02em; }
-    h1 .cursor { color: var(--aqua); }
-    .tagline { color: var(--aqua); margin: 0 0 1.5rem; font-size: 1.05rem; }
-    p { color: var(--fg); }
-    p.lead { color: var(--muted); }
-    .links { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; }
-    a.btn {
-      display: flex; flex-direction: column; gap: .15rem;
-      text-decoration: none; color: var(--fg);
-      background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
-      padding: .85rem 1rem; transition: border-color .15s, transform .05s;
-    }
-    a.btn:hover { border-color: var(--accent); }
-    a.btn:active { transform: translateY(1px); }
-    a.btn .t { font-weight: 600; }
-    a.btn .t::before { content: "→ "; color: var(--accent); }
-    a.btn .s { color: var(--muted); font-size: .8rem; }
-    footer { color: var(--muted); font-size: .8rem; margin-top: 1.75rem; }
-    footer a { color: var(--muted); }
-    /* Impressum/Datenschutz are legally required and must stay legible. */
-    .legal { margin-top: .6rem; }
-    .legal a { text-decoration: underline; }
-    .legal a:hover { color: var(--accent); }
-    @media (max-width: 560px) { .links { grid-template-columns: 1fr; } .card { padding: 1.5rem; } }
-    /* release notes */
-    #releases .loading { color: var(--muted); }
-    .release { padding: 1.5rem 0; border-top: 1px solid var(--border); }
-    .release:first-child { padding-top: .5rem; border-top: none; }
-    .rel-head { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
-    h2.ver {
-      margin: 0; font-size: 1.1rem; color: var(--aqua);
-      background: #010409; border: 1px solid var(--border); border-radius: 6px;
-      padding: .1rem .55rem; letter-spacing: -.01em;
-    }
-    .rel-date { color: var(--muted); font-size: .85rem; }
-    .rel-notes { margin-top: .5rem; }
-    .rel-notes h3.section {
-      font-size: .8rem; text-transform: uppercase; letter-spacing: .05em;
-      color: var(--muted); margin: 1rem 0 .35rem; font-weight: 600;
-    }
-    .rel-notes ul { margin: .25rem 0 .5rem; padding-left: 1.2rem; }
-    .rel-notes li { margin: .15rem 0; }
-    .rel-notes p.cont { margin: .2rem 0; color: var(--muted); }
-    .rel-notes p.text { margin: .45rem 0; }
-    .rel-notes pre.screen {
-      background: #010409; border: 1px solid var(--border); border-radius: 8px;
-      padding: .8rem 1rem; margin: .6rem 0; color: var(--muted);
-      overflow-x: auto; white-space: pre; font-size: .8rem; line-height: 1.6;
-    }
-    .rel-notes code {
-      background: #010409; border: 1px solid var(--border); border-radius: 4px;
-      padding: 0 .3em; font-size: .85em;
-    }
-    .dl-title {
-      font-size: .8rem; text-transform: uppercase; letter-spacing: .05em;
-      color: var(--muted); margin: 1.25rem 0 .35rem; font-weight: 600;
-    }
-    .rel-links { margin-top: .9rem; }
-    .gh-link { color: var(--accent); text-decoration: none; font-size: .85rem; }
-    .gh-link:hover { text-decoration: underline; }
-    .fallback { color: var(--muted); }
-    .fallback a { color: var(--accent); }
-    .dh-hint { color: var(--muted); font-size: .9rem; margin: -.5rem 0 0; }
-    .dh-hint a { color: var(--aqua); text-decoration: none; }
-    .dh-hint a:hover { text-decoration: underline; }
-  </style>
   <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>

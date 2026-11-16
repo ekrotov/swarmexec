@@ -374,7 +374,10 @@ main { display: block; }
 .vs-shot { margin-top: 2rem; max-width: 860px; }
 
 /* compare */
-.compare-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* position: relative, so the absolutely positioned .vh labels in the table are
+   clipped by this box. Without it they are placed against the page, and on a
+   phone they widened the whole page to 644px. */
+.compare-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .compare { width: 100%; min-width: 46rem; border-collapse: collapse; font-size: .92rem; }
 .compare th, .compare td { text-align: left; vertical-align: top; padding: .6rem .7rem; border-top: 1px solid var(--rule); }
 .compare thead th { font-size: .82rem; color: var(--muted); font-weight: 600; border-top: 0; }

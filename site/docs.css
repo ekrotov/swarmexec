@@ -1,4 +1,5 @@
-/* The docs (docs.html, docs/*.html), the recipes and the comparison in the landing page's look:
+/* The docs (docs.html, docs/*.html), the recipes, the comparison, the release
+   notes and the privacy pages in the landing page's look:
    the same paper and ink, light and dark, Archivo for text and headings,
    JetBrains Mono for code. The top bar is nav.css. Fonts come from fonts/fonts.css.
    This file is the only place the look lives. */
@@ -132,6 +133,10 @@ td code { white-space: nowrap; }
 td + td { border-left: 1px solid var(--rule); }
 th + th { border-left: 1px solid var(--rule); }
 
+/* A bare <pre> (an example file): wide content scrolls inside its own box,
+   never the page (phones). */
+pre { overflow-x: auto; max-width: 100%; }
+
 ul, ol { padding-left: 1.3rem; }
 li { margin: .3rem 0; }
 
@@ -196,6 +201,65 @@ footer code { font-size: .84em; }
 .prompt .tc-yellow, .cmd .tc-yellow { color: var(--t-yellow); }
 .prompt .tc-grey, .cmd .tc-grey { color: var(--t-dim); }
 
+/* releases.html: one .release per tag, rendered from releases.json by the
+   page's script. The version is the entry's h2, set as a small mono tag. */
+#releases .loading, .fallback { color: var(--muted); }
+.dh-hint { color: var(--muted); font-size: .92rem; margin: -.4rem 0 1.6rem; }
+.release { padding: 1.8rem 0; border-top: 1px solid var(--rule); }
+.release:first-child { padding-top: .4rem; border-top: 0; }
+.rel-head { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
+h2.ver {
+  margin: 0; padding: .1rem .55rem; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--card); color: var(--aqua);
+  font-family: var(--mono); font-variation-settings: normal; font-size: 1.05rem; font-weight: 700;
+  line-height: 1.5; letter-spacing: 0;
+}
+.rel-date { color: var(--muted); font-size: .88rem; }
+/* Tag messages carry long unbroken words (a/b/c/d option lists, paths): they
+   wrap rather than widen the page on a phone. */
+.rel-notes { margin-top: .5rem; color: var(--ink-2); overflow-wrap: anywhere; }
+.rel-notes h3.section, .dl-title {
+  font-family: var(--mono); font-size: .76rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em; margin: 1.2rem 0 .4rem;
+}
+.rel-notes ul { margin: .25rem 0 .5rem; }
+.rel-notes li { margin: .2rem 0; }
+.rel-notes p.text { margin: .45rem 0; }
+.rel-notes pre.screen {
+  background: var(--term); color: var(--t-ink); border-radius: 8px;
+  padding: .8rem 1rem; margin: .7rem 0; font-size: .8rem; line-height: 1.6;
+  overflow-x: auto; white-space: pre;
+}
+.links { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin-top: .6rem; }
+a.btn {
+  display: flex; flex-direction: column; gap: .1rem; min-width: 0;
+  text-decoration: none; color: var(--ink);
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: .75rem 1rem;
+}
+a.btn:hover { border-color: var(--aqua); }
+a.btn .t { font-weight: 700; }
+a.btn .t::before { content: "→ "; color: var(--aqua); }
+a.btn .s { font-family: var(--mono); color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
+.rel-links { margin-top: .9rem; }
+.gh-link { font-size: .9rem; text-decoration: none; }
+.gh-link:hover { text-decoration: underline; }
+
+/* The privacy pages (datenschutz.html, datenschutz.en.html): German and
+   English, switched by the language bar above the page. */
+.langbar {
+  display: flex; justify-content: flex-end; gap: .3rem;
+  max-width: 920px; margin: 0 auto; padding: .9rem var(--gutter) 0;
+  font-family: var(--mono); font-size: .76rem;
+}
+.langbar a {
+  color: var(--muted); text-decoration: none; padding: .15rem .5rem;
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--card);
+}
+.langbar a:hover { color: var(--ink); border-color: var(--aqua); }
+.langbar a[aria-current] { color: var(--ink); border-color: var(--aqua); font-weight: 700; }
+.langbar + main { padding-top: 1rem; }
+
 @media (max-width: 620px) {
   .toc ol { columns: 1; }
+  .links { grid-template-columns: 1fr; }
 }

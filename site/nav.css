@@ -2,9 +2,9 @@
    The markup is site/partials/nav.html, copied verbatim into each page
    (site/nav.sh keeps the copies identical); this file is the only place it is
    styled. It brings its own colours and fonts rather than the page's, so the
-   bar looks the same on the paper pages (landing, docs, examples, compare) and
-   on the older dark ones (releases, privacy). The values are the landing
-   page's paper and ink, light and dark. Fonts come from fonts/fonts.css. */
+   bar looks the same whichever stylesheet the page uses (landing.css or
+   docs.css). The values are the landing page's paper and ink, light and dark.
+   Fonts come from fonts/fonts.css. */
 
 .rail, .skip {
   --nav-paper: #eceee9;

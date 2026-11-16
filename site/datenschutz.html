@@ -22,56 +22,11 @@
   <link rel="alternate" hreflang="de" href="https://swarm-exec.cloud-surfers.net/datenschutz">
   <link rel="alternate" hreflang="en" href="https://swarm-exec.cloud-surfers.net/datenschutz.en.html">
   <link rel="alternate" hreflang="x-default" href="https://swarm-exec.cloud-surfers.net/datenschutz">
+  <meta name="color-scheme" content="light dark">
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
   <link rel="stylesheet" href="/nav.css?v=__VERSION__">
-  <style>
-    :root {
-      --bg: #0d1117; --panel: #161b22; --border: #30363d;
-      --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --aqua: #39c5cf;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--fg);
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      line-height: 1.6;
-    }
-    /* The padding sits on main, not body, so the top bar (nav.css) spans the full width. */
-    main { width: 100%; max-width: calc(760px + 3rem); margin: 0 auto; padding: 1rem 1.5rem 4rem; }
-    .card {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 2.5rem;
-    }
-    a { color: var(--accent); }
-    .home { color: var(--muted); text-decoration: none; font-size: .85rem; }
-    .home:hover { color: var(--accent); }
-    h1 { margin: .5rem 0 .25rem; font-size: 1.7rem; letter-spacing: -.02em; }
-    h1 .cursor { color: var(--aqua); }
-    .tagline { color: var(--aqua); margin: 0 0 1.5rem; font-size: 1rem; }
-    h2 {
-      margin: 2rem 0 .6rem; font-size: 1.1rem; letter-spacing: -.01em;
-      border-bottom: 1px solid var(--border); padding-bottom: .35rem;
-    }
-    p { color: var(--fg); }
-    p.lead { color: var(--muted); }
-    ul { padding-left: 1.3rem; }
-    li { margin: .3rem 0; }
-    code {
-      background: #010409; border: 1px solid var(--border); border-radius: 4px;
-      padding: .08em .35em; font-size: .85em;
-    }
-    footer { color: var(--muted); font-size: .8rem; margin-top: 2.25rem; border-top: 1px solid var(--border); padding-top: 1.25rem; }
-    footer a { color: var(--muted); }
-    .legal { margin-top: .6rem; }
-    .legal a { text-decoration: underline; }
-    .legal a:hover { color: var(--accent); }
-    @media (max-width: 560px) { .card { padding: 1.5rem; } main { padding: 1rem 1rem 3rem; } }
-    /* language switcher: right-aligned above the card, below the top bar */
-    .langbar { display: flex; justify-content: flex-end; gap: .25rem; font-size: .75rem; max-width: calc(760px + 3rem); margin: 0 auto; padding: .75rem 1.5rem 0; }
-    .langbar a { color: var(--muted); text-decoration: none; padding: .2rem .45rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
-    .langbar a:hover { border-color: var(--accent); color: var(--fg); }
-    .langbar a[aria-current] { color: var(--fg); border-color: var(--accent); background: #0d1117; }
-    @media (max-width: 560px) { .langbar { padding: .75rem 1rem 0; } }
-  </style>
   <script>
     // This privacy page's base language is German, with an English version;
     // redirect to the browser language on first visit; the switcher stores the choice.

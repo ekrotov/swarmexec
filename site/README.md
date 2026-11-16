@@ -137,7 +137,8 @@ and busybox `wget` tries `::1` without falling back.
 - `datenschutz.html`, `datenschutz.en.html` — the privacy policy.
 - `landing.css`, `landing.js` — the landing page's styles and its animated scenes
   (vanilla JS, no library).
-- `docs.css` — the look of the docs and the recipes, in the landing page's design:
+- `docs.css` — the look of every page but the landing page (docs, recipes, comparison,
+  release notes, privacy), in the landing page's design:
   same colours, fonts, light/dark and top bar. Colours the TUI uses are classes
   (`tc-red`, `tc-yellow`, …), not inline styles, so they stay readable on paper in
   both modes and switch to terminal colours inside a command block.
