@@ -76,80 +76,164 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "injected failure: "+r.Method+" "+path)
 		return
 	}
+	// Every POST is a write; any other method reads.
+	table := readRoutes
 	if r.Method == http.MethodPost {
-		f.write(w, r, path)
-		return
+		table = writeRoutes
 	}
+	c := &call{w: w, r: r}
+	for _, rt := range table {
+		if arg, ok := rt.match(path); ok {
+			rt.serve(f, c, arg)
+			return
+		}
+	}
+	f.unknown(w, r, path)
+}
+
+// call is one request being served.
+type call struct {
+	w http.ResponseWriter
+	r *http.Request
+}
+
+// reply answers v as JSON with 200.
+func (c *call) reply(v any) {
+	c.w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(c.w).Encode(v)
+}
+
+// filters is the request's list filters (name -> values), empty when none
+// or unparsable.
+func (c *call) filters() map[string]map[string]bool {
 	filters := map[string]map[string]bool{}
-	if raw := r.URL.Query().Get("filters"); raw != "" {
+	if raw := c.r.URL.Query().Get("filters"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &filters)
 	}
-	reply := func(v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
+	return filters
+}
+
+// created answers a create with the new object's id.
+func (c *call) created(id string) {
+	c.w.Header().Set("Content-Type", "application/json")
+	c.w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(c.w).Encode(map[string]string{"ID": id})
+}
+
+// taken is the manager's refusal of a name in use.
+func (c *call) taken(kind, name string) {
+	fail(c.w, http.StatusConflict, kind+" "+name+" already exists")
+}
+
+// route serves the paths match accepts; arg is what match extracted (an id).
+type route struct {
+	match func(path string) (arg string, ok bool)
+	serve func(f *Swarm, c *call, arg string)
+}
+
+// exact matches one path.
+func exact(p string) func(string) (string, bool) {
+	return func(path string) (string, bool) { return "", path == p }
+}
+
+// under matches prefix<arg>suffix and extracts arg.
+func under(prefix, suffix string) func(string) (string, bool) {
+	return func(path string) (string, bool) {
+		if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+			return "", false
+		}
+		return strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix), true
 	}
-	switch {
-	case path == "/_ping":
-		w.Header().Set("Api-Version", client.MaxAPIVersion)
-		w.Header().Set("Ostype", "linux")
-		_, _ = io.WriteString(w, "OK")
-	case path == "/info":
-		if f.Info != nil {
-			reply(f.Info)
+}
+
+// readRoutes and writeRoutes are tried in order; the first match serves.
+var readRoutes = []route{
+	{exact("/_ping"), (*Swarm).ping},
+	{exact("/info"), (*Swarm).info},
+	{exact("/swarm"), (*Swarm).swarmInfo},
+	{exact("/services"), (*Swarm).listServices},
+	{under("/services/", ""), (*Swarm).getService},
+	{exact("/tasks"), (*Swarm).listTasks},
+	{exact("/nodes"), func(f *Swarm, c *call, _ string) { c.reply(f.Nodes) }},
+	{under("/nodes/", ""), (*Swarm).getNode},
+	{exact("/networks"), func(f *Swarm, c *call, _ string) { c.reply(f.Networks) }},
+	{exact("/secrets"), func(f *Swarm, c *call, _ string) {
+		c.reply(filterNamed(f.Secrets, c.filters(), func(s swarm.Secret) string { return s.Spec.Name }))
+	}},
+	{exact("/configs"), func(f *Swarm, c *call, _ string) {
+		c.reply(filterNamed(f.Configs, c.filters(), func(cf swarm.Config) string { return cf.Spec.Name }))
+	}},
+}
+
+var writeRoutes = []route{
+	{exact("/secrets/create"), (*Swarm).createSecret},
+	{exact("/configs/create"), (*Swarm).createConfig},
+	{exact("/services/create"), (*Swarm).createService},
+	{under("/services/", "/update"), (*Swarm).updateService},
+}
+
+func (f *Swarm) ping(c *call, _ string) {
+	c.w.Header().Set("Api-Version", client.MaxAPIVersion)
+	c.w.Header().Set("Ostype", "linux")
+	_, _ = io.WriteString(c.w, "OK")
+}
+
+func (f *Swarm) info(c *call, _ string) {
+	if f.Info != nil {
+		c.reply(f.Info)
+		return
+	}
+	c.reply(system.Info{Name: "manager-1", ServerVersion: "28.0.0"})
+}
+
+func (f *Swarm) swarmInfo(c *call, _ string) {
+	if f.SwarmInfo != nil {
+		c.reply(f.SwarmInfo)
+		return
+	}
+	c.reply(swarm.Swarm{})
+}
+
+func (f *Swarm) listServices(c *call, _ string) {
+	filters := c.filters()
+	var out []swarm.Service
+	for _, s := range f.Services {
+		if MatchService(s, filters) {
+			out = append(out, s)
+		}
+	}
+	c.reply(out)
+}
+
+func (f *Swarm) getService(c *call, id string) {
+	for _, s := range f.Services {
+		if s.ID == id || s.Spec.Name == id {
+			c.reply(s)
 			return
 		}
-		reply(system.Info{Name: "manager-1", ServerVersion: "28.0.0"})
-	case path == "/swarm":
-		if f.SwarmInfo != nil {
-			reply(f.SwarmInfo)
+	}
+	notFound(c.w, "service "+id)
+}
+
+func (f *Swarm) listTasks(c *call, _ string) {
+	filters := c.filters()
+	var out []swarm.Task
+	for _, t := range f.Tasks {
+		if matchTask(t, filters) {
+			out = append(out, t)
+		}
+	}
+	c.reply(out)
+}
+
+func (f *Swarm) getNode(c *call, id string) {
+	for _, n := range f.Nodes {
+		if n.ID == id {
+			c.reply(n)
 			return
 		}
-		reply(swarm.Swarm{})
-	case path == "/services":
-		var out []swarm.Service
-		for _, s := range f.Services {
-			if MatchService(s, filters) {
-				out = append(out, s)
-			}
-		}
-		reply(out)
-	case strings.HasPrefix(path, "/services/"):
-		id := strings.TrimPrefix(path, "/services/")
-		for _, s := range f.Services {
-			if s.ID == id || s.Spec.Name == id {
-				reply(s)
-				return
-			}
-		}
-		notFound(w, "service "+id)
-	case path == "/tasks":
-		var out []swarm.Task
-		for _, t := range f.Tasks {
-			if matchTask(t, filters) {
-				out = append(out, t)
-			}
-		}
-		reply(out)
-	case path == "/nodes":
-		reply(f.Nodes)
-	case strings.HasPrefix(path, "/nodes/"):
-		id := strings.TrimPrefix(path, "/nodes/")
-		for _, n := range f.Nodes {
-			if n.ID == id {
-				reply(n)
-				return
-			}
-		}
-		notFound(w, "node "+id)
-	case path == "/networks":
-		reply(f.Networks)
-	case path == "/secrets":
-		reply(filterNamed(f.Secrets, filters, func(s swarm.Secret) string { return s.Spec.Name }))
-	case path == "/configs":
-		reply(filterNamed(f.Configs, filters, func(c swarm.Config) string { return c.Spec.Name }))
-	default:
-		f.unknown(w, r, path)
 	}
+	notFound(c.w, "node "+id)
 }
 
 func (f *Swarm) unknown(w http.ResponseWriter, r *http.Request, path string) {
@@ -157,89 +241,81 @@ func (f *Swarm) unknown(w http.ResponseWriter, r *http.Request, path string) {
 	notFound(w, path)
 }
 
-// write serves the creates and the service update. A new object's id is
+// The writes: the creates and the service update. A new object's id is
 // "<kind>-<name>", so a test can lay down tasks for a service init has yet to
 // create.
-func (f *Swarm) write(w http.ResponseWriter, r *http.Request, path string) {
-	created := func(id string) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{"ID": id})
+
+func (f *Swarm) createSecret(c *call, _ string) {
+	var spec swarm.SecretSpec
+	if !decode(c.w, c.r, &spec) {
+		return
 	}
-	taken := func(kind, name string) {
-		fail(w, http.StatusConflict, kind+" "+name+" already exists")
+	for _, s := range f.Secrets {
+		if s.Spec.Name == spec.Name {
+			c.taken("secret", spec.Name)
+			return
+		}
 	}
-	switch {
-	case path == "/secrets/create":
-		var spec swarm.SecretSpec
-		if !decode(w, r, &spec) {
-			return
-		}
-		for _, s := range f.Secrets {
-			if s.Spec.Name == spec.Name {
-				taken("secret", spec.Name)
-				return
-			}
-		}
-		f.Secrets = append(f.Secrets, swarm.Secret{ID: "secret-" + spec.Name, Spec: spec})
-		created("secret-" + spec.Name)
-	case path == "/configs/create":
-		var spec swarm.ConfigSpec
-		if !decode(w, r, &spec) {
-			return
-		}
-		for _, c := range f.Configs {
-			if c.Spec.Name == spec.Name {
-				taken("config", spec.Name)
-				return
-			}
-		}
-		f.Configs = append(f.Configs, swarm.Config{ID: "config-" + spec.Name, Spec: spec})
-		created("config-" + spec.Name)
-	case path == "/services/create":
-		var spec swarm.ServiceSpec
-		if !decode(w, r, &spec) {
-			return
-		}
-		for _, s := range f.Services {
-			if s.Spec.Name == spec.Name {
-				taken("service", spec.Name)
-				return
-			}
-		}
-		f.RegistryAuth = append(f.RegistryAuth, r.Header.Get("X-Registry-Auth"))
-		var s swarm.Service
-		s.ID, s.Version.Index, s.Spec = "service-"+spec.Name, 1, spec
-		f.Services = append(f.Services, s)
-		created(s.ID)
-	case strings.HasPrefix(path, "/services/") && strings.HasSuffix(path, "/update"):
-		id := strings.TrimSuffix(strings.TrimPrefix(path, "/services/"), "/update")
-		var spec swarm.ServiceSpec
-		if !decode(w, r, &spec) {
-			return
-		}
-		for i := range f.Services {
-			s := &f.Services[i]
-			if s.ID != id && s.Spec.Name != id {
-				continue
-			}
-			// The manager's optimistic lock: an update names the version it
-			// was computed from, and loses to any write since.
-			if r.URL.Query().Get("version") != fmt.Sprint(s.Version.Index) {
-				fail(w, http.StatusInternalServerError, "update out of sequence")
-				return
-			}
-			f.RegistryAuth = append(f.RegistryAuth, r.Header.Get("X-Registry-Auth"))
-			s.Spec = spec
-			s.Version.Index++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(swarm.ServiceUpdateResponse{})
-			return
-		}
-		notFound(w, "service "+id)
-	default:
-		f.unknown(w, r, path)
+	f.Secrets = append(f.Secrets, swarm.Secret{ID: "secret-" + spec.Name, Spec: spec})
+	c.created("secret-" + spec.Name)
+}
+
+func (f *Swarm) createConfig(c *call, _ string) {
+	var spec swarm.ConfigSpec
+	if !decode(c.w, c.r, &spec) {
+		return
 	}
+	for _, cf := range f.Configs {
+		if cf.Spec.Name == spec.Name {
+			c.taken("config", spec.Name)
+			return
+		}
+	}
+	f.Configs = append(f.Configs, swarm.Config{ID: "config-" + spec.Name, Spec: spec})
+	c.created("config-" + spec.Name)
+}
+
+func (f *Swarm) createService(c *call, _ string) {
+	var spec swarm.ServiceSpec
+	if !decode(c.w, c.r, &spec) {
+		return
+	}
+	for _, s := range f.Services {
+		if s.Spec.Name == spec.Name {
+			c.taken("service", spec.Name)
+			return
+		}
+	}
+	f.RegistryAuth = append(f.RegistryAuth, c.r.Header.Get("X-Registry-Auth"))
+	var s swarm.Service
+	s.ID, s.Version.Index, s.Spec = "service-"+spec.Name, 1, spec
+	f.Services = append(f.Services, s)
+	c.created(s.ID)
+}
+
+func (f *Swarm) updateService(c *call, id string) {
+	var spec swarm.ServiceSpec
+	if !decode(c.w, c.r, &spec) {
+		return
+	}
+	for i := range f.Services {
+		s := &f.Services[i]
+		if s.ID != id && s.Spec.Name != id {
+			continue
+		}
+		// The manager's optimistic lock: an update names the version it
+		// was computed from, and loses to any write since.
+		if c.r.URL.Query().Get("version") != fmt.Sprint(s.Version.Index) {
+			fail(c.w, http.StatusInternalServerError, "update out of sequence")
+			return
+		}
+		f.RegistryAuth = append(f.RegistryAuth, c.r.Header.Get("X-Registry-Auth"))
+		s.Spec = spec
+		s.Version.Index++
+		c.reply(swarm.ServiceUpdateResponse{})
+		return
+	}
+	notFound(c.w, "service "+id)
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
