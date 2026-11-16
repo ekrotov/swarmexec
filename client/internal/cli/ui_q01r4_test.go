@@ -245,7 +245,7 @@ func openNodeDetail(t *testing.T, u *ui) *tview.TextView {
 }
 
 // The node detail: the head and the reclaim block once the agent answers;
-// j/k scroll, m measures again, and the action keys close the detail and
+// j/k scroll, M measures again (m stays the mouse toggle), and the action keys close the detail and
 // open their dialog. Esc, q and i close it.
 func TestNodeDetailKeys(t *testing.T) {
 	u, _, _ := editUIWith(t, editSwarm(), map[string]pb.AgentServer{"node-a": &pruneAgent{stats: statsFixture()}})
@@ -263,10 +263,12 @@ func TestNodeDetailKeys(t *testing.T) {
 	if ev == nil || ev.Key() != tcell.KeyUp {
 		t.Error("k must scroll up")
 	}
-	other := rune_('Z')
-	onLoop(t, u, func() { ev = tv.GetInputCapture()(other) })
-	if ev != other {
-		t.Error("an unbound key must be passed on")
+	for _, r := range []rune{'Z', 'm', 'r'} {
+		other := rune_(r)
+		onLoop(t, u, func() { ev = tv.GetInputCapture()(other) })
+		if ev != other {
+			t.Errorf("%c must be passed on", r)
+		}
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for strings.Contains(text(), "asking the agent") {
@@ -278,11 +280,11 @@ func TestNodeDetailKeys(t *testing.T) {
 	if !strings.Contains(text(), "reclaimable") {
 		t.Errorf("no reclaim block:\n%s", text())
 	}
-	keyRune(t, u, 'm')
+	keyRune(t, u, 'M')
 	if !strings.Contains(text(), "reclaimable") {
-		t.Errorf("m must keep the reclaim block while it measures:\n%s", text())
+		t.Errorf("M must keep the reclaim block while it measures:\n%s", text())
 	}
-	keyRune(t, u, 'm') // while measuring: ignored
+	keyRune(t, u, 'M') // while measuring: ignored
 
 	for _, c := range []struct {
 		ev   *tcell.EventKey

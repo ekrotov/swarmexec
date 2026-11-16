@@ -119,7 +119,7 @@ var dialogRunes = map[rune]bool{
 	'?': true, '`': true, '/': true, ' ': true, '+': true, '-': true,
 	'a': true, 'd': true, 'e': true, 'f': true, 'i': true, 'l': true, 'm': true,
 	'n': true, 'p': true, 'r': true, 's': true, 't': true, 'u': true, 'v': true, 'w': true,
-	'A': true, 'D': true, 'F': true, 'P': true, 'Q': true, 'R': true, 'S': true, 'X': true,
+	'A': true, 'D': true, 'F': true, 'M': true, 'P': true, 'Q': true, 'R': true, 'S': true, 'X': true,
 	'Z': true,
 }
 

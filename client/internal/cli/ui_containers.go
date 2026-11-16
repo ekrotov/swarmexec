@@ -215,18 +215,16 @@ func (t *treeTab) helpSection(h *helpWriter) {
 	h.line(kl(km.Search), "search services / containers / nodes")
 
 	h.sec("Service inspect (" + kl(km.ContainerInspect) + ")")
-	h.line("a", "actions menu (all edits below, no Shift needed)")
+	h.line("a", "actions menu: every action below, by its letter or Enter")
 	h.line("Enter", "NETWORKS: expand a network → its containers")
 	h.line("1 2 3", "table · stats (cpu/memory) · raw JSON")
 	h.line("t", "cycle those three views")
-	h.line("d / D", "diff spec · why (placement)")
-	h.line("R", "roll back to the previous version")
-	h.line("s / f", "scale · force-update")
 	h.line("u", "set the image version (update / pin / revert)")
-	h.line("p l e", "edit ports · labels · env")
-	h.line("n S v", "edit networks · secrets · mounts")
-	h.line("r P", "edit resources · placement")
+	h.line("d · s · f · e", "diff spec · scale · force-update · edit env")
 	h.danger("X", "remove the service")
+	h.line("a D · a R", "why (placement) · roll back to the previous version")
+	h.line("a p l n", "edit ports · labels · networks")
+	h.line("a S v r P", "edit secrets · mounts · resources · placement")
 }
 
 // yank copies the tree as displayed, indenting by depth so a stack-grouped

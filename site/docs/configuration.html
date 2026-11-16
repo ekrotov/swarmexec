@@ -135,7 +135,7 @@
         file is fine, a malformed one is an error. It is written <code>0600</code>
         (it may hold the shared secret). The log file lives next to it by default —
         <code>~/.config/swarmexec/swarmexec.log</code> — unless you set
-        <code>--log-file</code>. Keys:
+        <code>--client-log-file</code>. Keys:
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Type</th><th>Meaning</th></tr></thead>
@@ -225,8 +225,8 @@
           <tr><td><code>--agent-secret-file</code></td><td>—</td><td>file to read the shared secret from</td></tr>
           <tr><td><code>--insecure</code></td><td><code>false</code></td><td>skip agent server-certificate verification</td></tr>
           <tr><td><code>--operator</code></td><td>OS username</td><td>operator identity reported for audit</td></tr>
-          <tr><td><code>--log-level</code></td><td><code>info</code></td><td>log verbosity: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> disables logging entirely)</td></tr>
-          <tr><td><code>--log-file</code></td><td>—</td><td>log file path (default <code>swarmexec.log</code> next to the config file)</td></tr>
+          <tr><td><code>--client-log-level</code></td><td><code>info</code></td><td>swarmexec's own log verbosity: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> disables logging entirely)</td></tr>
+          <tr><td><code>--client-log-file</code></td><td>—</td><td>swarmexec's own log file (default <code>swarmexec.log</code> next to the config file)</td></tr>
           <tr><td><code>--info</code></td><td>—</td><td>show version, license, and contact info</td></tr>
           <tr><td><code>--version</code></td><td>—</td><td>print the client and protocol version</td></tr>
         </tbody>
@@ -236,9 +236,12 @@
         <code>slog</code>, text format) to the log file <em>and</em> an in-memory ring
         buffer. In the TUI, logs are never written to the terminal (that would corrupt
         the screen) — the ring buffer feeds a live in-app viewer instead
-        (see <a href="/docs/tui#tui">The TUI</a>). <code>--log-level off</code> disables logging
+        (see <a href="/docs/tui#tui">The TUI</a>). <code>--client-log-level off</code> disables logging
         altogether; a log-file that can't be opened is non-fatal (it falls back to the
-        ring buffer only).
+        ring buffer only). These two flags are about swarmexec's <em>own</em> log, not the
+        container logs <code>swarmexec logs</code> streams — that output is filtered with
+        <code>logs --min-level</code>. They were called <code>--log-level</code> and
+        <code>--log-file</code> before; the old names still work.
       </div>
 
       <h2 id="config-show"><code>config show</code> — inspect config</h2>

@@ -83,3 +83,55 @@ func TestArgErrorPrintsTheUsageLine(t *testing.T) {
 		t.Errorf("no error: exit %d", code)
 	}
 }
+
+// The client's own logging flags are --client-log-level / --client-log-file
+// (review C-02); the old names still work, hidden and without a warning, and
+// share the value, so the last one given wins.
+func TestClientLogFlagsAndHiddenAliases(t *testing.T) {
+	for _, c := range []struct {
+		args        []string
+		level, file string
+	}{
+		{nil, "info", ""},
+		{[]string{"--client-log-level", "debug", "--client-log-file", "/tmp/a.log"}, "debug", "/tmp/a.log"},
+		{[]string{"--log-level=warn", "--log-file=/tmp/b.log"}, "warn", "/tmp/b.log"},
+		{[]string{"--log-level", "off", "--client-log-level", "error"}, "error", ""},
+		{[]string{"--client-log-level", "error", "--log-level", "off"}, "off", ""},
+	} {
+		g := &globalFlags{}
+		root := newRootCmd(g, Version{})
+		if err := root.PersistentFlags().Parse(c.args); err != nil {
+			t.Fatalf("%v: %v", c.args, err)
+		}
+		if g.logLevel != c.level || g.logFile != c.file {
+			t.Errorf("%v: level %q file %q, want %q %q", c.args, g.logLevel, g.logFile, c.level, c.file)
+		}
+	}
+
+	root := newRootCmd(&globalFlags{}, Version{})
+	pf := root.PersistentFlags()
+	for old, cur := range map[string]string{"log-level": "client-log-level", "log-file": "client-log-file"} {
+		f := pf.Lookup(old)
+		if f == nil || !f.Hidden || f.Deprecated != "" {
+			t.Errorf("--%s must be a hidden, undeprecated alias: %+v", old, f)
+			continue
+		}
+		if n := pf.Lookup(cur); n == nil || n.Hidden || f.DefValue != n.DefValue {
+			t.Errorf("--%s: %+v", cur, n)
+		}
+	}
+	var help bytes.Buffer
+	root.SetOut(&help)
+	root.SetArgs([]string{"--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if h := help.String(); !strings.Contains(h, "--client-log-level") || strings.Contains(h, " --log-level") || strings.Contains(h, " --log-file") {
+		t.Errorf("help:\n%s", h)
+	}
+
+	logs, _, _ := root.Find([]string{"logs"})
+	if !strings.Contains(logs.Long, "--min-level filters the log output") || !strings.Contains(logs.Long, "--client-log-level") {
+		t.Errorf("logs Long does not tell --min-level from --client-log-level:\n%s", logs.Long)
+	}
+}

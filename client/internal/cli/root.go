@@ -155,8 +155,9 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	pf.BoolVar(&g.insecure, "insecure", false, "skip agent server-certificate verification (self-signed agents)")
 	pf.StringVar(&g.operator, "operator", "", "operator identity reported for audit (default: OS username)")
 	pf.StringVar(&g.dockerContext, "context", "", "docker context for the manager API; supports ssh:// (also $DOCKER_CONTEXT)")
-	pf.StringVar(&g.logLevel, "log-level", "info", "log verbosity: debug|info|warn|error|off")
-	pf.StringVar(&g.logFile, "log-file", "", "log file path (default swarmexec.log next to config; the TUI also has a live viewer)")
+	pf.StringVar(&g.logLevel, "client-log-level", "info", "swarmexec's own log verbosity: debug|info|warn|error|off")
+	pf.StringVar(&g.logFile, "client-log-file", "", "swarmexec's own log file (default swarmexec.log next to config; the TUI also has a live viewer)")
+	addHiddenFlagAliases(root, map[string]string{"log-level": "client-log-level", "log-file": "client-log-file"})
 
 	root.AddCommand(newInitCmd(g))
 	root.AddCommand(newDownCmd(g))
@@ -180,8 +181,24 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	return root
 }
 
+// addHiddenFlagAliases registers each old flag name as a hidden flag sharing
+// the value of the flag it was renamed to, so scripts written for the old
+// name keep working, silently: --log-level and --log-file became
+// --client-log-level and --client-log-file (review C-02), because next to
+// logs --min-level they read as a filter on the log OUTPUT. Sharing the Value
+// (not a second variable) means the last one given wins when both are set.
+func addHiddenFlagAliases(cmd *cobra.Command, aliases map[string]string) {
+	fs := cmd.PersistentFlags()
+	for old, cur := range aliases {
+		f := fs.Lookup(cur)
+		alias := fs.VarPF(f.Value, old, "", f.Usage)
+		alias.DefValue = f.DefValue
+		alias.Hidden = true
+	}
+}
+
 // initLogging sets up the shared logger for every subcommand: an in-memory ring
-// (fed to the TUI viewer) and, unless disabled, a log file. "--log-level off"
+// (fed to the TUI viewer) and, unless disabled, a log file. "--client-log-level off"
 // leaves the no-op logger in place. A log-file open failure is non-fatal — it
 // falls back to ring-only so a command never fails just because it could not
 // write a log.

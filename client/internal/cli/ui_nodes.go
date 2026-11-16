@@ -97,7 +97,7 @@ func (t *nodesTab) helpSection(h *helpWriter) {
 	h.line(kl(km.NodeAvail), "availability: active / pause / drain")
 	h.danger(kl(km.NodePrune), "prune the node: containers, images, build cache, networks, volumes (choose + confirm)")
 	h.line(kl(km.NodePruneSched), "prune schedule for ALL nodes (restarts the agents on save)")
-	h.line("m", "in the details: measure reclaimable space now")
+	h.line("M", "in the details: measure reclaimable space now")
 }
 
 // yank copies the node list. Before the registry the Nodes tab fell into
@@ -452,7 +452,7 @@ func (t *nodesTab) showDetail(n swarmops.NodeInfo) {
 	d.render()
 	u.loadNodeReclaim(n.Hostname, false, d.apply)
 
-	d.ov = u.overlayFor(pageNodeDetail, d.back, footerKeys("m", "measure now", dangerKey(keyLabel(u.km.NodePrune)), "prune…",
+	d.ov = u.overlayFor(pageNodeDetail, d.back, footerKeys("M", "measure now", dangerKey(keyLabel(u.km.NodePrune)), "prune…",
 		keyLabel(u.km.NodePruneSched), "schedule (all nodes)", "l", "edit labels", "j/k", "scroll", "Esc", "back"))
 	d.tv.SetInputCapture(d.keys)
 	d.ov.show(centered(d.tv, 80, 40), d.tv)
@@ -526,7 +526,9 @@ func (d *nodeDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
 	switch ev.Rune() {
 	case u.km.Quit, 'i':
 		d.close()
-	case 'm':
+	case 'M':
+		// Capital M: m toggles the mouse on every tab, and an overlay does not
+		// give a global key a second meaning (review T-10).
 		d.measure()
 	case u.km.NodePrune:
 		d.close()

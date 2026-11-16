@@ -1750,7 +1750,7 @@ func (u *ui) openLogView() {
 		r := clientlog.RingBuffer()
 		var b strings.Builder
 		if r == nil {
-			b.WriteString("[gray]logging is disabled (--log-level off)[-]")
+			b.WriteString("[gray]logging is disabled (--client-log-level off)[-]")
 		} else if lines := r.Lines(); len(lines) == 0 {
 			b.WriteString("[gray](no log records yet)[-]")
 		} else {

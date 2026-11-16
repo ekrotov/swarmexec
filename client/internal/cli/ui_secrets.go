@@ -68,7 +68,7 @@ func (t *secretsTab) helpSection(h *helpWriter) {
 	h.sec("Secrets")
 	h.line("Enter / i", "details")
 	h.line("  a · d", "in details: attach to · detach from a service")
-	h.line("  r", "in details: rotate — new content, same name (services restart twice)")
+	h.line("  R", "in details: rotate — new content, same name (services restart twice)")
 	h.line(keyLabel(km.SecNew), "new (vim editor, :r file)")
 	h.danger(keyLabel(km.SecDelete), "delete")
 }
@@ -122,7 +122,7 @@ func (t *secretsTab) showDetail(s swarmops.Secret) {
 		init = append(init, swarmops.NetService{Name: name})
 	}
 	d.tv.SetText(secretDetailText(s, init, true))
-	d.ov = u.overlayFor(pageSecDetail, t.table, footerKeys("a", "attach", "d", "detach", "r", "rotate", "j/k", "scroll", "Esc", "back"))
+	d.ov = u.overlayFor(pageSecDetail, t.table, footerKeys("a", "attach", "d", "detach", "R", "rotate", "j/k", "scroll", "Esc", "back"))
 	d.tv.SetInputCapture(d.keys)
 	height := min(11+len(s.Labels)+len(s.Services), 24)
 	d.ov.show(centered(d.tv, 72, height), d.tv)
@@ -200,7 +200,10 @@ func (d *secretDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
 		d.attach()
 	case 'd':
 		d.detach()
-	case 'r':
+	case 'R':
+		// Capital R: r is refresh on every tab, and an overlay does not give a
+		// global key a second meaning (review T-10) — here it would have opened
+		// a rotation, not reloaded the view.
 		d.t.openRotate(d.s, d.tv, d.ov.Close)
 	case 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
@@ -253,7 +256,7 @@ func (d *secretDetail) detach() {
 // openRotate opens the rotate editor for s from its detail view. The stand-in
 // of an interrupted rotation (NAME_rotating, carrying the marker label)
 // rotates — that is, resumes — the secret it stands in for: after a failure in
-// step 4 that is the only row left to press r on.
+// step 4 that is the only row left to press R on.
 func (t *secretsTab) openRotate(s swarmops.Secret, back tview.Primitive, closeDetail func()) {
 	u := t.u
 	name, labels := s.Name, s.Labels
@@ -379,7 +382,7 @@ func (t *secretsTab) runRotation(name string, data []byte) {
 				msg := "rotation of " + name + where + " failed:\n\n" + err.Error()
 				if swarmops.RotateResumeHint(err, "") != "" {
 					msg += "\n\nThe services keep running on " + swarmops.RotateTempName(name) +
-						", which holds the new content.\nRe-run r on " + name + " to resume."
+						", which holds the new content.\nRe-run R on " + name + " to resume."
 				}
 				u.info(msg)
 				return

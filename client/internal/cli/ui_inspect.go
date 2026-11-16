@@ -580,10 +580,19 @@ func (iv *inspectView) explainNoVersionPicker() {
 // bug this structure exists to prevent was an action that simply was not in the
 // list, which no test of the list widget would have caught.
 type serviceAction struct {
-	key   rune // the inspect key that runs it directly
+	key   rune // its letter in the actions menu; a direct inspect key only if in inspectDirectKeys
 	label string
 	run   func()
 }
+
+// inspectDirectKeys are the action letters a service inspect still runs
+// straight from the table (review T-16): the lowercase ones that clash with
+// nothing — u version, d diff, s scale, f force-update, e env — and X remove,
+// which the footer advertises. Everything else (the Shift variants D S R P and
+// p l n v r) is reached through the a menu only: with the footer naming just
+// "a actions", a stray S opened the secrets editor unannounced and R (roll
+// back) sat next to r (resources).
+var inspectDirectKeys = map[rune]bool{'u': true, 'd': true, 's': true, 'f': true, 'e': true, 'X': true}
 
 // serviceActions is everything the actions menu offers, in order.
 func (iv *inspectView) serviceActions() []serviceAction {
@@ -633,8 +642,9 @@ func (iv *inspectView) serviceActions() []serviceAction {
 
 // showActions groups every service editor/action behind one menu (opened with
 // "a"), so the footer needn't spell out ~14 case-sensitive keys (d/D, s/S, p/P
-// …). The direct keys still work for power users and are listed under "?"; this
-// is the discoverable, no-Shift path. Service-only.
+// …). It is the one way to every action; a few (inspectDirectKeys) also run
+// straight from the table. Inside the menu each action's letter selects it, so
+// "a S" is the secrets editor. Service-only.
 func (iv *inspectView) showActions() {
 	u := iv.u
 	table := iv.table
@@ -642,9 +652,10 @@ func (iv *inspectView) showActions() {
 	list.SetBorder(true).SetTitle(fmt.Sprintf(" actions — %s ", iv.editSvc))
 	ov := u.overlayFor(pageInspectActions, table, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
 	closeActions := ov.Close
-	for _, a := range iv.serviceActions() {
+	actions := iv.serviceActions()
+	for _, a := range actions {
 		run := a.run
-		// The key in front: the menu is where an operator learns the shortcut.
+		// The key in front: the menu is where an operator learns the letter.
 		list.AddItem(fmt.Sprintf("[yellow]%s[white]  %s", keyLabel(a.key), a.label), "", 0, func() { closeActions(); run() })
 	}
 	list.AddItem("cancel", "", 0, closeActions)
@@ -653,7 +664,19 @@ func (iv *inspectView) showActions() {
 			closeActions()
 			return nil
 		}
-		return vimListKeys(ev)
+		ev = vimListKeys(ev)
+		if ev.Key() == tcell.KeyRune {
+			// The letters shown in front of each entry. Not tview's own item
+			// shortcuts: those would print the letter a second time.
+			for _, a := range actions {
+				if a.key == ev.Rune() {
+					closeActions()
+					a.run()
+					return nil
+				}
+			}
+		}
+		return ev
 	})
 	ov.show(centered(list, 54, 17), list)
 }
@@ -726,10 +749,11 @@ func (iv *inspectView) enter() {
 }
 
 // runAction runs the service action bound to r, if this is a service
-// inspect and one is. A service inspect's editor keys are the actions menu's
-// own list, so a key and its menu entry cannot drift apart.
+// inspect, r is one of the inspectDirectKeys, and an action has it. The
+// direct keys are looked up in the actions menu's own list, so a key and its
+// menu entry cannot drift apart.
 func (iv *inspectView) runAction(r rune) bool {
-	if iv.editSvc == "" {
+	if iv.editSvc == "" || !inspectDirectKeys[r] {
 		return false
 	}
 	for _, a := range iv.serviceActions() {

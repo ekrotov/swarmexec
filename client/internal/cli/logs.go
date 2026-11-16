@@ -49,7 +49,10 @@ each has its own format detection.
 
 A service (or service.slot) with no running container — crash-looping,
 failing its health check — shows the newest exited container of each slot
-instead, so the logs that say why it fails are one command away.`,
+instead, so the logs that say why it fails are one command away.
+
+--min-level filters the log output shown here; swarmexec's own logging is the
+global --client-log-level.`,
 		Example: "  swarmexec logs -f --tail 100 web\n" +
 			"  swarmexec logs --grep 'timeout|refused' -f web\n" +
 			"  swarmexec logs -f --tail 20 --stack shop",

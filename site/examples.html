@@ -281,7 +281,7 @@
 <span class="c">$</span> printf %s "$NEW_TOKEN" | swarmexec secret rotate api_token --from-stdin --yes --timeout 10m</div>
         <h3>In the TUI</h3>
         <p>
-          Tab <kbd>5</kbd> (Secrets), <kbd>Enter</kbd> on the secret, <kbd>r</kbd> to rotate. Type
+          Tab <kbd>5</kbd> (Secrets), <kbd>Enter</kbd> on the secret, <kbd>R</kbd> to rotate. Type
           the value or read a file with <kbd>:r</kbd>, then <kbd>:w</kbd>: the confirm lists the
           services that will restart and their target paths. A progress overlay follows the six
           steps; <kbd>Esc</kbd> hides it and the rotation carries on.
@@ -296,7 +296,7 @@
         <ul>
           <li><strong>Each service restarts twice</strong> — two rolling updates, one service at a time. Plan for it.</li>
           <li><strong>There is no rollback to the old content</strong>: the old secret is deleted half-way. Keep the old value yourself if you might need it.</li>
-          <li>A run that stops half-way is resumable: run the same command again (with the new value again) and it continues where the cluster says it stopped. In the TUI, <kbd>r</kbd> on the secret — or on its <code>_rotating</code> row — resumes.</li>
+          <li>A run that stops half-way is resumable: run the same command again (with the new value again) and it continues where the cluster says it stopped. In the TUI, <kbd>R</kbd> on the secret — or on its <code>_rotating</code> row — resumes.</li>
           <li>A secret created by <code>docker stack deploy</code> from a <code>file:</code> needs that file updated too, or the next deploy fails with <em>only updates to Labels are allowed</em>. An <code>external: true</code> secret has no such problem.</li>
           <li>Without a terminal, or with <code>--from-stdin</code>, the command refuses unless you pass <code>--yes</code>. <code>echo</code> adds a newline to the value; <code>printf %s</code> does not.</li>
         </ul>
@@ -418,7 +418,7 @@
         <h3>In the TUI</h3>
         <p>
           Tab <kbd>6</kbd> (Nodes), <kbd>Enter</kbd> on a node: the detail ends with
-          <em>reclaimable (measured on the node)</em> per category; <kbd>m</kbd> measures again.
+          <em>reclaimable (measured on the node)</em> per category; <kbd>M</kbd> measures again.
           <kbd>P</kbd> opens the prune dialog — one checkbox per category with its figure;
           <kbd>a</kbd> ticks everything except volumes. <kbd>S</kbd> on the Nodes tab edits the
           schedule for all nodes with a live preview of the next runs; <kbd>w</kbd> saves.
