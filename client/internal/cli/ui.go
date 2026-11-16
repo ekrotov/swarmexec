@@ -33,8 +33,19 @@ func newUICmd(g *globalFlags) *cobra.Command {
 	f := &uiFlags{}
 	cmd := &cobra.Command{
 		Use:   "ui [service]",
-		Short: "Interactive view of containers, volumes, networks, secrets and contexts",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Terminal UI: stacks/services, volumes, forwards, networks, secrets, nodes, configs — several clusters in one session",
+		Long: `A terminal UI over the swarm: stacks, services and their containers, volumes,
+port-forwards, networks, secrets, nodes and configs, one tab each, with exec,
+logs and port-forwarding built in. The docker contexts are a sidebar (c), and
+switching between them keeps your place in each cluster. Needs an interactive
+terminal; ? inside lists every key.
+
+With a service argument the UI opens with the Stacks/Services tree already
+filtered to it, as if you had typed it into the / search.`,
+		Example: "  swarmexec ui\n" +
+			"  swarmexec ui web\n" +
+			"  swarmexec --context prod ui",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUI(cmd, g, f, args)
 		},

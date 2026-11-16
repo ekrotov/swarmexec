@@ -124,7 +124,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	var showInfo bool
 	root := &cobra.Command{
 		Use:           "swarmexec",
-		Short:         "Cluster-wide docker exec for Docker Swarm",
+		Short:         "exec, logs, port-forward and a terminal UI for Docker Swarm — without SSH to the nodes",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       fmt.Sprintf("%s (proto %s)", v.Binary, v.Proto),

@@ -117,11 +117,18 @@
 
       <h2 id="ui"><code>ui</code> — interactive TUI</h2>
       <p>
-        An interactive view of containers and volumes, with exec, logs and
-        port-forwarding built in. Needs an interactive terminal. See
+        A terminal UI over the swarm: stacks, services and their containers, volumes,
+        port-forwards, networks, secrets, nodes and configs, one tab each, with exec,
+        logs and port-forwarding built in — and several clusters in one session, through
+        the context sidebar. Needs an interactive terminal. See
         <a href="#tui">The TUI</a> for keys.
       </p>
       <div class="cmd">swarmexec ui [service]</div>
+      <p>
+        With a <code>service</code> argument the UI opens with the Stacks/Services tree
+        already filtered to it, as if you had typed it into the <kbd>/</kbd> search
+        (<code>swarmexec ui web</code>).
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
