@@ -255,6 +255,10 @@ func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
 	}
 	start := msg.GetStart()
 	a.note(stream.Context(), &a.execs, start.GetContainerId())
+	if start.GetCmd()[0] == "hang" { // never finishes: the caller's timeout ends it
+		<-stream.Context().Done()
+		return stream.Context().Err()
+	}
 	if err := stream.Send(&pb.ServerMessage{Payload: &pb.ServerMessage_Stdout{Stdout: []byte("ran: " + strings.Join(start.GetCmd(), " ") + "\n")}}); err != nil {
 		return err
 	}
