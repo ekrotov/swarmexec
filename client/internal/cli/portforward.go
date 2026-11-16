@@ -42,6 +42,9 @@ func newPortForwardCmd(g *globalFlags) *cobra.Command {
 			"Targeting a service forwards to exactly ONE of its tasks (the one the\n" +
 			"target resolves to), not across all replicas — a forward that silently\n" +
 			"load-balanced would make debugging misleading.",
+		Example: "  swarmexec port-forward db 5432\n" +
+			"  swarmexec pf web 9090:8080\n" +
+			"  swarmexec port-forward web.2 8080",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPortForward(cmd, g, f, args)

@@ -20,6 +20,32 @@ func TestInfoText(t *testing.T) {
 	}
 }
 
+// The commands people reach for first carry examples, exec explains its four
+// target forms and what an ambiguous service does, and ui says what its
+// argument is for.
+func TestCoreCommandsHaveExamples(t *testing.T) {
+	root := newRootCmd(&globalFlags{}, Version{})
+	for _, name := range []string{"exec", "logs", "port-forward", "ps", "ui"} {
+		c, _, err := root.Find([]string{name})
+		if err != nil || c.Name() != name {
+			t.Fatalf("%s: not found (%v)", name, err)
+		}
+		if n := strings.Count(c.Example, "swarmexec "); n != 3 {
+			t.Errorf("%s: %d example lines, want 3:\n%s", name, n, c.Example)
+		}
+	}
+	exec, _, _ := root.Find([]string{"exec"})
+	for _, want := range []string{"service.slot", "task-id", "container-id", "pick one"} {
+		if !strings.Contains(exec.Long, want) {
+			t.Errorf("exec Long lacks %q", want)
+		}
+	}
+	ui, _, _ := root.Find([]string{"ui"})
+	if !strings.Contains(ui.Long, "With a service argument") {
+		t.Errorf("ui Long does not explain its argument:\n%s", ui.Long)
+	}
+}
+
 // A wrong argument count names what the command expects: cobra's message
 // alone ("requires at least 1 arg(s), only received 0") does not, and
 // SilenceUsage keeps cobra from printing the usage. Every command gets it,

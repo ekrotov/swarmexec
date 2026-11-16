@@ -19,7 +19,10 @@ func newPsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ps [service]",
 		Short: "List candidate tasks/containers and the node each runs on",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "  swarmexec ps\n" +
+			"  swarmexec ps web\n" +
+			"  swarmexec ps --json web",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPs(cmd, g, args, asJSON)
 		},
