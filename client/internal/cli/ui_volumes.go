@@ -411,7 +411,9 @@ func (t *volumesTab) showNodes(v swarmVolume) {
 			if sel[i] {
 				mark = "[x]"
 			}
-			list.AddItem(fmt.Sprintf("%s %s", mark, n.Name), "", 0, nil)
+			// Escaped: a List reads style tags, and "[x]" is one — the mark
+			// of a selected node vanished, so space seemed to do nothing.
+			list.AddItem(tview.Escape(fmt.Sprintf("%s %s", mark, n.Name)), "", 0, nil)
 		}
 		if cur < list.GetItemCount() {
 			list.SetCurrentItem(cur)
