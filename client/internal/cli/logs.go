@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
@@ -95,27 +96,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	ac := agentcall.New(cfg)
 	defer ac.Close()
 
-	// One target that is one container keeps the single-stream path and its
-	// unprefixed output. A service with several replicas used to stop here as
-	// "ambiguous"; it now follows all of them, like docker service logs.
-	var ep *resolve.Endpoint
-	var multi []logstream.Source
-	var notes []string
-	if len(args) == 1 && f.stack == "" {
-		ep, err = r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
-		if amb, ok := err.(*resolve.AmbiguousError); ok {
-			for _, c := range amb.Candidates {
-				multi = append(multi, logstream.SourceFromCandidate(c))
-			}
-			err = nil
-		}
-		var nr *resolve.NoRunningTaskError
-		if errors.As(err, &nr) {
-			ep, multi, err = lastExitedSources(ctx, r, nr)
-		}
-	} else {
-		multi, notes, err = logstream.ExpandSources(ctx, r, args, f.stack, f.node)
-	}
+	ep, multi, notes, err := logTargets(ctx, r, args, f)
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
 	}
@@ -130,7 +111,6 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	if ferr != nil {
 		return &cliError{code: usageExitCode, err: ferr}
 	}
-	auto := logstream.FormatAuto(formatName)
 	params := logstream.Params{
 		Follow:         f.follow,
 		Tail:           f.tail,
@@ -139,40 +119,18 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		ConnectTimeout: f.connectTimeout,
 	}
 
+	lf := logFiltering{format: format, filter: filter, auto: logstream.FormatAuto(formatName)}
 	if multi != nil {
 		for _, n := range notes {
 			fmt.Fprintln(os.Stderr, "── "+n+" ──")
 		}
-		wrap := func(dst io.Writer) (io.Writer, func()) {
-			if !auto && !logstream.FilteringActive(format, filter) {
-				return dst, func() {}
-			}
-			fw := logstream.NewFilterWriter(dst, format, filter, logstream.RenderPlain)
-			if auto {
-				fw.DetectFormat() // per source and per stream: services log differently
-			}
-			return fw, fw.Flush
-		}
-		if err := logstream.StreamMany(ctx, logstream.Run{Agents: ac, Resolver: r, Params: params, Stdout: os.Stdout, Stderr: os.Stderr}, multi, colorOutput(os.Stdout), wrap); err != nil {
+		if err := logstream.StreamMany(ctx, logstream.Run{Agents: ac, Resolver: r, Params: params, Stdout: os.Stdout, Stderr: os.Stderr}, multi, colorOutput(os.Stdout), lf.wrap); err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
 		}
 		return nil
 	}
 
-	var stdout, stderr io.Writer = os.Stdout, os.Stderr
-	var flushers []*logstream.FilterWriter
-	if auto || logstream.FilteringActive(format, filter) {
-		fo := logstream.NewFilterWriter(os.Stdout, format, filter, logstream.RenderPlain)
-		fe := logstream.NewFilterWriter(os.Stderr, format, filter, logstream.RenderPlain)
-		if auto {
-			// Each stream is sniffed on its own: an app that logs JSON on stdout
-			// and a runtime that prints plain panics on stderr is the normal
-			// case, not an exotic one.
-			fo.DetectFormat()
-			fe.DetectFormat()
-		}
-		stdout, stderr, flushers = fo, fe, []*logstream.FilterWriter{fo, fe}
-	}
+	stdout, stderr, flushers := lf.writers()
 
 	// Follow across container replacements (rolling update / restart / reschedule)
 	// so `logs -f <service>` keeps streaming after a swap, like `docker service
@@ -187,6 +145,75 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		return &cliError{code: session.TransportFailure, err: explainSession(ctx, cfg, dcli, err)}
 	}
 	return nil
+}
+
+// logTargets resolves what `logs` follows. One target that is one container
+// keeps the single-stream path (ep) and its unprefixed output. A service with
+// several replicas used to stop here as "ambiguous"; it now follows all of
+// them (multi), like docker service logs. Several targets or --stack expand to
+// sources, with notes on what they leave out.
+func logTargets(ctx context.Context, r *resolve.Resolver, args []string, f *logsFlags) (*resolve.Endpoint, []logstream.Source, []string, error) {
+	if len(args) != 1 || f.stack != "" {
+		multi, notes, err := logstream.ExpandSources(ctx, r, args, f.stack, f.node)
+		return nil, multi, notes, err
+	}
+	ep, err := r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
+	var multi []logstream.Source
+	if amb, ok := err.(*resolve.AmbiguousError); ok {
+		for _, c := range amb.Candidates {
+			multi = append(multi, logstream.SourceFromCandidate(c))
+		}
+		err = nil
+	}
+	var nr *resolve.NoRunningTaskError
+	if errors.As(err, &nr) {
+		ep, multi, err = lastExitedSources(ctx, r, nr)
+	}
+	return ep, multi, nil, err
+}
+
+// logFiltering is the format-aware parsing and filtering `logs` applies;
+// auto detects the format from the lines themselves.
+type logFiltering struct {
+	format logfmt.Format
+	filter logfmt.Filter
+	auto   bool
+}
+
+// active reports whether lines go through a filter at all.
+func (lf logFiltering) active() bool {
+	return lf.auto || logstream.FilteringActive(lf.format, lf.filter)
+}
+
+// wrap is StreamMany's per-source filter: each source and each stream detects
+// its own format, as services log differently.
+func (lf logFiltering) wrap(dst io.Writer) (io.Writer, func()) {
+	if !lf.active() {
+		return dst, func() {}
+	}
+	fw := logstream.NewFilterWriter(dst, lf.format, lf.filter, logstream.RenderPlain)
+	if lf.auto {
+		fw.DetectFormat() // per source and per stream: services log differently
+	}
+	return fw, fw.Flush
+}
+
+// writers are the single stream's stdout and stderr, filtered when filtering
+// is active, and the filters to flush at the end.
+func (lf logFiltering) writers() (stdout, stderr io.Writer, flushers []*logstream.FilterWriter) {
+	if !lf.active() {
+		return os.Stdout, os.Stderr, nil
+	}
+	fo := logstream.NewFilterWriter(os.Stdout, lf.format, lf.filter, logstream.RenderPlain)
+	fe := logstream.NewFilterWriter(os.Stderr, lf.format, lf.filter, logstream.RenderPlain)
+	if lf.auto {
+		// Each stream is sniffed on its own: an app that logs JSON on stdout
+		// and a runtime that prints plain panics on stderr is the normal
+		// case, not an exotic one.
+		fo.DetectFormat()
+		fe.DetectFormat()
+	}
+	return fo, fe, []*logstream.FilterWriter{fo, fe}
 }
 
 // lastExitedSources is the fallback for a service with no running container:

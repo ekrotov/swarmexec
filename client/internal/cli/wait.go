@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"sort"
 	"strings"
@@ -160,7 +161,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 	// Without --healthy nothing dials an agent, so the address mode is moot
 	// and no agent configuration is needed: wait works with Docker access alone.
 	r := resolve.New(dcli, resolve.AddrHostname)
-	var health func(context.Context, []string) (map[string]swarmops.ServiceHealth, map[string][]string, error)
+	var health waitHealthFunc
 	if f.healthy {
 		cfg, err := g.resolveConfig(cmd, dockerEP)
 		if err != nil {
@@ -182,55 +183,20 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 		return &cliError{code: usageExitCode, err: err}
 	}
 
-	out := cmd.ErrOrStderr()
-	since := time.Now()
-	deadline := since.Add(f.timeout)
-	settledSince := map[string]time.Time{}
-	last := map[string]string{}
+	w := &waitProgress{out: cmd.ErrOrStderr(), since: time.Now(), healthy: f.healthy,
+		settledSince: map[string]time.Time{}, last: map[string]string{}}
+	deadline := w.since.Add(f.timeout)
 	for {
 		snaps, err := waitPoll(ctx, dcli, r, names, health)
 		if err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
 		}
 		now := time.Now()
-		done := 0
-		for _, s := range snaps {
-			v, why := judge(s, since, f.healthy)
-			if v == waitFailed {
-				fmt.Fprintf(out, "✗ %s: %s\n", s.name, why)
-				return &cliError{code: 1, err: fmt.Errorf("%s did not converge: %s", s.name, why), silent: true}
-			}
-			if v == waitConverged {
-				if settledSince[s.name].IsZero() {
-					settledSince[s.name] = now
-				}
-				if now.Sub(settledSince[s.name]) >= waitSettle {
-					done++
-					why = "converged (" + why + ")"
-				}
-			} else {
-				delete(settledSince, s.name)
-			}
-			if last[s.name] != why {
-				fmt.Fprintf(out, "  %s: %s\n", s.name, why)
-				last[s.name] = why
-			}
-		}
-		if done == len(snaps) {
-			fmt.Fprintf(out, "✓ %d service(s) converged in %s\n", len(snaps), now.Sub(since).Round(time.Second))
-			return nil
+		if done, err := w.step(snaps, now); done || err != nil {
+			return err
 		}
 		if now.After(deadline) {
-			var stuck []string
-			for _, s := range snaps {
-				if v, why := judge(s, since, f.healthy); v != waitConverged {
-					stuck = append(stuck, s.name+": "+why)
-				}
-			}
-			for _, s := range stuck {
-				fmt.Fprintf(out, "✗ %s\n", s)
-			}
-			return &cliError{code: 1, err: fmt.Errorf("timed out after %s waiting for %d service(s)", f.timeout, len(stuck)), silent: true}
+			return w.timedOut(snaps, f.timeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -238,6 +204,69 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 		case <-time.After(waitPollInterval):
 		}
 	}
+}
+
+// waitHealthFunc reports per service its container health and the nodes whose
+// agent could not say (--healthy).
+type waitHealthFunc = func(context.Context, []string) (map[string]swarmops.ServiceHealth, map[string][]string, error)
+
+// waitProgress is what a wait carries from poll to poll: since when each
+// service has held a converged verdict, and the last line printed for it.
+type waitProgress struct {
+	out          io.Writer
+	since        time.Time
+	healthy      bool
+	settledSince map[string]time.Time
+	last         map[string]string
+}
+
+// step judges one poll's snapshots and prints what changed. It reports done
+// once every service has held its converged verdict for waitSettle, and the
+// error for the first service that failed.
+func (w *waitProgress) step(snaps []waitSnapshot, now time.Time) (bool, error) {
+	done := 0
+	for _, s := range snaps {
+		v, why := judge(s, w.since, w.healthy)
+		if v == waitFailed {
+			fmt.Fprintf(w.out, "✗ %s: %s\n", s.name, why)
+			return false, &cliError{code: 1, err: fmt.Errorf("%s did not converge: %s", s.name, why), silent: true}
+		}
+		if v == waitConverged {
+			if w.settledSince[s.name].IsZero() {
+				w.settledSince[s.name] = now
+			}
+			if now.Sub(w.settledSince[s.name]) >= waitSettle {
+				done++
+				why = "converged (" + why + ")"
+			}
+		} else {
+			delete(w.settledSince, s.name)
+		}
+		if w.last[s.name] != why {
+			fmt.Fprintf(w.out, "  %s: %s\n", s.name, why)
+			w.last[s.name] = why
+		}
+	}
+	if done == len(snaps) {
+		fmt.Fprintf(w.out, "✓ %d service(s) converged in %s\n", len(snaps), now.Sub(w.since).Round(time.Second))
+		return true, nil
+	}
+	return false, nil
+}
+
+// timedOut prints the services whose verdict is not converged and returns the
+// timeout error counting them.
+func (w *waitProgress) timedOut(snaps []waitSnapshot, timeout time.Duration) error {
+	var stuck []string
+	for _, s := range snaps {
+		if v, why := judge(s, w.since, w.healthy); v != waitConverged {
+			stuck = append(stuck, s.name+": "+why)
+		}
+	}
+	for _, s := range stuck {
+		fmt.Fprintf(w.out, "✗ %s\n", s)
+	}
+	return &cliError{code: 1, err: fmt.Errorf("timed out after %s waiting for %d service(s)", timeout, len(stuck)), silent: true}
 }
 
 // waitTargets resolves the named services and the stack into service names.

@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -112,71 +113,87 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 	sortVolumesBy(vols, f.sort, desc, usage, sizes)
 
-	filter := ""
-	if len(args) == 1 {
-		filter = args[0]
+	l := volumeListing{usage: usage, sizes: sizes, wantSize: wantSize}
+	for _, v := range vols {
+		if len(args) == 0 || strings.Contains(v.Name, args[0]) {
+			l.vols = append(l.vols, v)
+		}
 	}
-
 	if f.json {
-		type consumerRow struct {
-			Service   string `json:"service"`
-			Container string `json:"container"`
-			Node      string `json:"node"`
-		}
-		type volRow struct {
-			Name      string        `json:"name"`
-			Driver    string        `json:"driver"`
-			Nodes     []string      `json:"nodes"`
-			UsedBy    int           `json:"used_by"`
-			Consumers []consumerRow `json:"consumers"`
-			CreatedAt string        `json:"created_at,omitempty"`
-			SizeBytes *int64        `json:"size_bytes,omitempty"`
-		}
-		rows := make([]volRow, 0, len(vols))
-		for _, v := range vols {
-			if filter != "" && !strings.Contains(v.Name, filter) {
-				continue
-			}
-			cons := make([]consumerRow, 0, len(usage[v.Name]))
-			for _, c := range usage[v.Name] {
-				cons = append(cons, consumerRow(c))
-			}
-			row := volRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons}
-			if !v.Created.IsZero() {
-				row.CreatedAt = v.Created.UTC().Format(time.RFC3339)
-			}
-			if wantSize {
-				if sz, ok := sizes[v.Name]; ok {
-					row.SizeBytes = &sz
-				}
-			}
-			rows = append(rows, row)
-		}
-		if err := printJSON(os.Stdout, rows); err != nil {
+		if err := printJSON(os.Stdout, l.jsonRows()); err != nil {
 			return err
 		}
-		reportNodeErrors(errs)
-		return nil
+	} else {
+		l.writeTable(os.Stdout)
 	}
+	reportNodeErrors(errs)
+	return nil
+}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+// volumeListing is what `volume ls` prints: the (filtered, sorted) volumes,
+// who mounts them and, with wantSize, their sizes.
+type volumeListing struct {
+	vols     []swarmVolume
+	usage    map[string][]volumeConsumer
+	sizes    map[string]int64
+	wantSize bool
+}
+
+type volumeConsumerRow struct {
+	Service   string `json:"service"`
+	Container string `json:"container"`
+	Node      string `json:"node"`
+}
+
+type volumeRow struct {
+	Name      string              `json:"name"`
+	Driver    string              `json:"driver"`
+	Nodes     []string            `json:"nodes"`
+	UsedBy    int                 `json:"used_by"`
+	Consumers []volumeConsumerRow `json:"consumers"`
+	CreatedAt string              `json:"created_at,omitempty"`
+	SizeBytes *int64              `json:"size_bytes,omitempty"`
+}
+
+// jsonRows is the --json form: every consumer, the creation time when known,
+// the size when asked for and known.
+func (l volumeListing) jsonRows() []volumeRow {
+	rows := make([]volumeRow, 0, len(l.vols))
+	for _, v := range l.vols {
+		cons := make([]volumeConsumerRow, 0, len(l.usage[v.Name]))
+		for _, c := range l.usage[v.Name] {
+			cons = append(cons, volumeConsumerRow(c))
+		}
+		row := volumeRow{Name: v.Name, Driver: v.Driver, Nodes: nodeNames(v.Nodes), UsedBy: len(cons), Consumers: cons}
+		if !v.Created.IsZero() {
+			row.CreatedAt = v.Created.UTC().Format(time.RFC3339)
+		}
+		if sz, ok := l.sizes[v.Name]; ok && l.wantSize {
+			row.SizeBytes = &sz
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// writeTable prints the table form, with a SIZE column when asked for ("-"
+// where unknown).
+func (l volumeListing) writeTable(out io.Writer) {
+	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	header := "VOLUME\tDRIVER\tNODES\tUSED BY\tAGE"
-	if wantSize {
+	if l.wantSize {
 		header += "\tSIZE"
 	}
 	fmt.Fprintln(w, header)
-	for _, v := range vols {
-		if filter != "" && !strings.Contains(v.Name, filter) {
-			continue
-		}
+	for _, v := range l.vols {
 		usedBy := "-"
-		if n := len(usage[v.Name]); n > 0 {
+		if n := len(l.usage[v.Name]); n > 0 {
 			usedBy = strconv.Itoa(n)
 		}
 		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s", v.Name, v.Driver, strings.Join(nodeNames(v.Nodes), ","), usedBy, volumeAge(v.Created))
-		if wantSize {
+		if l.wantSize {
 			sz := int64(-1)
-			if s, ok := sizes[v.Name]; ok {
+			if s, ok := l.sizes[v.Name]; ok {
 				sz = s
 			}
 			row += "\t" + humanBytes(sz)
@@ -184,8 +201,6 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		fmt.Fprintln(w, row)
 	}
 	_ = w.Flush()
-	reportNodeErrors(errs)
-	return nil
 }
 
 func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []string) error {
