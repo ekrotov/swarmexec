@@ -81,96 +81,134 @@ func DiagnosePlacement(ctx context.Context, dcli swarmapi.Client, name string) (
 
 // buildPlaceReport is the pure core (no I/O), so it is unit-testable.
 func buildPlaceReport(svc swarm.Service, nodes []swarm.Node, tasks []swarm.Task) PlacementReport {
-	rep := PlacementReport{Service: svc.Spec.Name, Global: svc.Spec.Mode.Global != nil}
-	rep.Mode = "replicated"
+	rep := PlacementReport{Service: svc.Spec.Name, Global: svc.Spec.Mode.Global != nil, Mode: "replicated",
+		Running: countRunning(tasks)}
+	nodeByID := map[string]swarm.Node{}
+	for _, n := range nodes {
+		nodeByID[n.ID] = n
+	}
 	if rep.Global {
 		rep.Mode = "global"
+		rep.Rows, rep.Desired, rep.Unevaluated = globalPlaceRows(svc.Spec.TaskTemplate.Placement, nodes, tasks)
+	} else {
+		if r := svc.Spec.Mode.Replicated; r != nil && r.Replicas != nil {
+			rep.Desired = int(*r.Replicas)
+		}
+		rep.Rows = replicatedPlaceRows(tasks, nodeByID, rep.Desired-rep.Running)
 	}
-	var constraints []string
-	var platforms []swarm.Platform
-	if p := svc.Spec.TaskTemplate.Placement; p != nil {
-		constraints = p.Constraints
-		platforms = p.Platforms
-	}
+	rep.Tasks = buildTaskPS(svc.Spec.Name, tasks, nodeByID)
+	return rep
+}
+
+func countRunning(tasks []swarm.Task) int {
+	n := 0
 	for _, t := range tasks {
 		if t.Status.State == swarm.TaskStateRunning {
-			rep.Running++
+			n++
 		}
 	}
+	return n
+}
 
-	// The most relevant task per node: a running one wins, else the most recent
-	// one — INCLUDING those already retired to shutdown, because a repeatedly
-	// failing/rejected task (which the scheduler sets to desired-shutdown) is
-	// exactly the reason a node has "no running task", and its error is the
-	// answer the operator is looking for.
+// relevantTaskPerNode is the most relevant task per node: a running one
+// wins, else the most recent one — INCLUDING those already retired to
+// shutdown, because a repeatedly failing/rejected task (which the scheduler
+// sets to desired-shutdown) is exactly the reason a node has "no running
+// task", and its error is the answer the operator is looking for.
+func relevantTaskPerNode(tasks []swarm.Task) map[string]swarm.Task {
 	nodeTask := map[string]swarm.Task{}
 	for _, t := range tasks {
 		if cur, ok := nodeTask[t.NodeID]; !ok || taskMoreRelevant(t, cur) {
 			nodeTask[t.NodeID] = t
 		}
 	}
-	nodeByID := map[string]swarm.Node{}
-	for _, n := range nodes {
-		nodeByID[n.ID] = n
-	}
+	return nodeTask
+}
 
+// globalPlaceRows is one row per node (by hostname) for a global service,
+// how many of those nodes should run a task, and the constraints that could
+// not be checked client-side (sorted, nil when none).
+func globalPlaceRows(p *swarm.Placement, nodes []swarm.Node, tasks []swarm.Task) (rows []placeRow, desired int, unevaluated []string) {
+	var constraints []string
+	var platforms []swarm.Platform
+	if p != nil {
+		constraints, platforms = p.Constraints, p.Platforms
+	}
+	nodeTask := relevantTaskPerNode(tasks)
+	ordered := append([]swarm.Node{}, nodes...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Description.Hostname < ordered[j].Description.Hostname })
 	uneval := map[string]bool{}
-	if rep.Global {
-		ordered := append([]swarm.Node{}, nodes...)
-		sort.Slice(ordered, func(i, j int) bool { return ordered[i].Description.Hostname < ordered[j].Description.Hostname })
-		for _, n := range ordered {
-			host := n.Description.Hostname
-			t, has := nodeTask[n.ID]
-			switch {
-			case has && t.Status.State == swarm.TaskStateRunning:
-				rep.Rows = append(rep.Rows, placeRow{host, true, "running"})
-				rep.Desired++
-			case has:
-				detail := taskDetail(t)
-				if a := attemptsOnNode(tasks, n.ID); a > 1 {
-					detail += fmt.Sprintf(" (%d attempts)", a)
-				}
-				rep.Rows = append(rep.Rows, placeRow{host, false, detail})
-				rep.Desired++
-			default:
-				reason, excluded, un := nodeExclusionReason(n, constraints, platforms)
-				for _, c := range un {
-					uneval[c] = true
-				}
-				if excluded {
-					rep.Rows = append(rep.Rows, placeRow{host, false, "excluded — " + reason})
-				} else {
-					rep.Rows = append(rep.Rows, placeRow{host, false, "eligible but no task scheduled"})
-					rep.Desired++
-				}
+	for _, n := range ordered {
+		var row placeRow
+		var wanted bool
+		if t, has := nodeTask[n.ID]; has {
+			row, wanted = taskNodeRow(n, t, tasks), true
+		} else {
+			var un []string
+			row, wanted, un = idleNodeRow(n, constraints, platforms)
+			for _, c := range un {
+				uneval[c] = true
 			}
 		}
-	} else {
-		if r := svc.Spec.Mode.Replicated; r != nil && r.Replicas != nil {
-			rep.Desired = int(*r.Replicas)
-		}
-		ordered := append([]swarm.Task{}, tasks...)
-		sort.Slice(ordered, func(i, j int) bool { return ordered[i].Slot < ordered[j].Slot })
-		for _, t := range ordered {
-			if t.DesiredState == swarm.TaskStateShutdown || t.Status.State == swarm.TaskStateRunning {
-				continue // only surface the tasks that are NOT running
-			}
-			node := "—"
-			if n, ok := nodeByID[t.NodeID]; ok && n.Description.Hostname != "" {
-				node = n.Description.Hostname
-			}
-			rep.Rows = append(rep.Rows, placeRow{node, false, taskDetail(t)})
-		}
-		if len(rep.Rows) == 0 && rep.Running < rep.Desired {
-			rep.Rows = append(rep.Rows, placeRow{"—", false, fmt.Sprintf("%d task(s) not yet scheduled", rep.Desired-rep.Running)})
+		rows = append(rows, row)
+		if wanted {
+			desired++
 		}
 	}
 	for c := range uneval {
-		rep.Unevaluated = append(rep.Unevaluated, c)
+		unevaluated = append(unevaluated, c)
 	}
-	sort.Strings(rep.Unevaluated)
-	rep.Tasks = buildTaskPS(svc.Spec.Name, tasks, nodeByID)
-	return rep
+	sort.Strings(unevaluated)
+	return rows, desired, unevaluated
+}
+
+// taskNodeRow is the row of a node that has a task: running, or the task's
+// state/error with the attempt count when the node has seen more than one.
+func taskNodeRow(n swarm.Node, t swarm.Task, tasks []swarm.Task) placeRow {
+	host := n.Description.Hostname
+	if t.Status.State == swarm.TaskStateRunning {
+		return placeRow{host, true, "running"}
+	}
+	detail := taskDetail(t)
+	if a := attemptsOnNode(tasks, n.ID); a > 1 {
+		detail += fmt.Sprintf(" (%d attempts)", a)
+	}
+	return placeRow{host, false, detail}
+}
+
+// idleNodeRow is the row of a node without a task: excluded (and why), or
+// eligible — which counts toward desired. It also returns the constraints
+// that could not be evaluated for the node.
+func idleNodeRow(n swarm.Node, constraints []string, platforms []swarm.Platform) (placeRow, bool, []string) {
+	host := n.Description.Hostname
+	reason, excluded, un := nodeExclusionReason(n, constraints, platforms)
+	if excluded {
+		return placeRow{host, false, "excluded — " + reason}, false, un
+	}
+	return placeRow{host, false, "eligible but no task scheduled"}, true, un
+}
+
+// replicatedPlaceRows surfaces, by slot, the tasks that should run but do
+// not; with none to show and missing > 0, one row says how many are not yet
+// scheduled.
+func replicatedPlaceRows(tasks []swarm.Task, nodeByID map[string]swarm.Node, missing int) []placeRow {
+	var rows []placeRow
+	ordered := append([]swarm.Task{}, tasks...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Slot < ordered[j].Slot })
+	for _, t := range ordered {
+		if t.DesiredState == swarm.TaskStateShutdown || t.Status.State == swarm.TaskStateRunning {
+			continue // only surface the tasks that are NOT running
+		}
+		node := "—"
+		if n, ok := nodeByID[t.NodeID]; ok && n.Description.Hostname != "" {
+			node = n.Description.Hostname
+		}
+		rows = append(rows, placeRow{node, false, taskDetail(t)})
+	}
+	if len(rows) == 0 && missing > 0 {
+		rows = append(rows, placeRow{"—", false, fmt.Sprintf("%d task(s) not yet scheduled", missing)})
+	}
+	return rows
 }
 
 // buildTaskPS renders the tasks as the `docker service ps` equivalent: most
