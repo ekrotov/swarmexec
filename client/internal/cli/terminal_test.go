@@ -53,6 +53,19 @@ func TestEncodeKey(t *testing.T) {
 		{"pgup", tcell.NewEventKey(tcell.KeyPgUp, 0, tcell.ModNone), []byte("\x1b[5~")},
 		{"ctrl-c", tcell.NewEventKey(tcell.KeyCtrlC, 0, tcell.ModCtrl), []byte{0x03}},
 		{"ctrl-d", tcell.NewEventKey(tcell.KeyCtrlD, 0, tcell.ModCtrl), []byte{0x04}},
+		{"ctrl-rune", tcell.NewEventKey(tcell.KeyRune, 'w', tcell.ModCtrl), []byte{0x17}},
+		{"utf8-rune", tcell.NewEventKey(tcell.KeyRune, 'ü', tcell.ModNone), []byte("ü")},
+		{"backtab", tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone), []byte("\x1b[Z")},
+		{"backspace-ctrl-h", tcell.NewEventKey(tcell.KeyBackspace, 0, tcell.ModNone), []byte{0x7f}},
+		{"delete", tcell.NewEventKey(tcell.KeyDelete, 0, tcell.ModNone), []byte("\x1b[3~")},
+		{"insert", tcell.NewEventKey(tcell.KeyInsert, 0, tcell.ModNone), []byte("\x1b[2~")},
+		{"down", tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone), []byte("\x1b[B")},
+		{"right", tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone), []byte("\x1b[C")},
+		{"end", tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone), []byte("\x1b[F")},
+		{"pgdn", tcell.NewEventKey(tcell.KeyPgDn, 0, tcell.ModNone), []byte("\x1b[6~")},
+		{"ctrl-a", tcell.NewEventKey(tcell.KeyCtrlA, 0, tcell.ModCtrl), []byte{0x01}},
+		{"ctrl-underscore", tcell.NewEventKey(tcell.KeyCtrlUnderscore, 0, tcell.ModCtrl), []byte{0x1f}},
+		{"f1 unmapped", tcell.NewEventKey(tcell.KeyF1, 0, tcell.ModNone), nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

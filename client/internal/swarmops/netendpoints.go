@@ -693,25 +693,19 @@ type EndpointScope struct {
 // responses are copied, never changed in place. With nothing hidden, the
 // inputs come back with the same content.
 func ScopeEndpoints(tasks []TaskAddr, nodes []agentcall.NodeNetworkEndpoints, sc EndpointScope) ([]TaskAddr, []agentcall.NodeNetworkEndpoints) {
-	hiddenIPs := map[string]map[string]bool{} // network id -> ip
+	f := endpointFilter{hidden: sc.Hidden, hiddenIPs: map[string]map[string]bool{}}
 	var kept []TaskAddr
 	for _, t := range tasks {
 		if sc.Visible(t.Service) {
 			kept = append(kept, t)
 			continue
 		}
-		if hiddenIPs[t.NetworkID] == nil {
-			hiddenIPs[t.NetworkID] = map[string]bool{}
+		if f.hiddenIPs[t.NetworkID] == nil {
+			f.hiddenIPs[t.NetworkID] = map[string]bool{}
 		}
 		for _, ip := range t.IPs {
-			hiddenIPs[t.NetworkID][ip] = true
+			f.hiddenIPs[t.NetworkID][ip] = true
 		}
-	}
-	hiddenName := func(svc, name string) bool {
-		if svc == "" {
-			svc = TaskServiceName(name)
-		}
-		return svc != "" && sc.Hidden(svc)
 	}
 	out := make([]agentcall.NodeNetworkEndpoints, 0, len(nodes))
 	for _, n := range nodes {
@@ -721,28 +715,50 @@ func ScopeEndpoints(tasks []TaskAddr, nodes []agentcall.NodeNetworkEndpoints, sc
 		}
 		resp, _ := proto.Clone(n.Resp).(*pb.NetworkEndpointsResponse)
 		for _, ni := range resp.GetNetworks() {
-			hid := hiddenIPs[ni.GetId()]
-			var locals []*pb.NetworkLocalEndpoint
-			for _, l := range ni.GetLocalEndpoints() {
-				if !l.GetLoadBalancer() && (hiddenName("", l.GetName()) || hid[StripMask(l.GetIpv4Address())]) {
-					continue
-				}
-				locals = append(locals, l)
-			}
-			ni.LocalEndpoints = locals
-			for _, s := range ni.GetServices() {
-				var ts []*pb.NetworkTaskEndpoint
-				for _, t := range s.GetTasks() {
-					lb := s.GetName() == "" && lbTaskName(t.GetName())
-					if !lb && (hiddenName(s.GetName(), t.GetName()) || hid[StripMask(t.GetEndpointIp())]) {
-						continue
-					}
-					ts = append(ts, t)
-				}
-				s.Tasks = ts
-			}
+			f.scopeNetwork(ni)
 		}
 		out = append(out, agentcall.NodeNetworkEndpoints{Node: n.Node, Resp: resp})
 	}
 	return kept, out
+}
+
+// endpointFilter is ScopeEndpoints' rule for one node response: what a hidden
+// service is called, and the addresses its tasks hold per network.
+type endpointFilter struct {
+	hidden    func(service string) bool
+	hiddenIPs map[string]map[string]bool // network id -> ip
+}
+
+// hiddenName reports whether svc — or, when it is empty, the service in the
+// task container name — is a hidden service.
+func (f endpointFilter) hiddenName(svc, name string) bool {
+	if svc == "" {
+		svc = TaskServiceName(name)
+	}
+	return svc != "" && f.hidden(svc)
+}
+
+// scopeNetwork drops ni's local and task endpoints of hidden services, in
+// place (ni is a copy). Load balancers stay.
+func (f endpointFilter) scopeNetwork(ni *pb.NetworkEndpointsInfo) {
+	hid := f.hiddenIPs[ni.GetId()]
+	var locals []*pb.NetworkLocalEndpoint
+	for _, l := range ni.GetLocalEndpoints() {
+		if !l.GetLoadBalancer() && (f.hiddenName("", l.GetName()) || hid[StripMask(l.GetIpv4Address())]) {
+			continue
+		}
+		locals = append(locals, l)
+	}
+	ni.LocalEndpoints = locals
+	for _, s := range ni.GetServices() {
+		var ts []*pb.NetworkTaskEndpoint
+		for _, t := range s.GetTasks() {
+			lb := s.GetName() == "" && lbTaskName(t.GetName())
+			if !lb && (f.hiddenName(s.GetName(), t.GetName()) || hid[StripMask(t.GetEndpointIp())]) {
+				continue
+			}
+			ts = append(ts, t)
+		}
+		s.Tasks = ts
+	}
 }

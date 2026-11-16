@@ -1425,6 +1425,45 @@ func execRefusal(svc swarm.Service) error {
 	return nil
 }
 
+// checkExecCommand refuses a missing command and one with too many arguments.
+func checkExecCommand(cmd []string) error {
+	if len(cmd) == 0 || strings.TrimSpace(cmd[0]) == "" {
+		return errors.New("command is required")
+	}
+	if len(cmd) > mcpExecMaxArgs {
+		return fmt.Errorf("command has %d arguments; at most %d", len(cmd), mcpExecMaxArgs)
+	}
+	return nil
+}
+
+// execTarget picks the one running container of service that matches slot and
+// node (0 and "" match any). None, or several, is an error; several are named
+// so the assistant can choose.
+func execTarget(service string, cands []resolve.Candidate, slot int, node string) (resolve.Candidate, error) {
+	var pick []resolve.Candidate
+	for _, cd := range cands {
+		if (slot == 0 || cd.Slot == slot) && (node == "" || cd.NodeName == node) {
+			pick = append(pick, cd)
+		}
+	}
+	switch len(pick) {
+	case 0:
+		return resolve.Candidate{}, fmt.Errorf("service %q has no running container matching that slot/node", service)
+	case 1:
+		return pick[0], nil
+	}
+	var opts []string
+	for _, cd := range pick {
+		if cd.Slot > 0 {
+			opts = append(opts, fmt.Sprintf("slot %d on %s", cd.Slot, orDash(cd.NodeName)))
+		} else {
+			opts = append(opts, "node "+orDash(cd.NodeName))
+		}
+	}
+	return resolve.Candidate{}, fmt.Errorf("service %q has %d running containers; pass slot or node: %s",
+		service, len(pick), strings.Join(opts, ", "))
+}
+
 func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
@@ -1444,11 +1483,8 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 	if err := execRefusal(ms.svc); err != nil {
 		return "", err
 	}
-	if len(in.Command) == 0 || strings.TrimSpace(in.Command[0]) == "" {
-		return "", errors.New("command is required")
-	}
-	if len(in.Command) > mcpExecMaxArgs {
-		return "", fmt.Errorf("command has %d arguments; at most %d", len(in.Command), mcpExecMaxArgs)
+	if err := checkExecCommand(in.Command); err != nil {
+		return "", err
 	}
 	ac, err := c.agents()
 	if err != nil {
@@ -1463,29 +1499,10 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var pick []resolve.Candidate
-	for _, cd := range cands {
-		if (in.Slot == 0 || cd.Slot == in.Slot) && (in.Node == "" || cd.NodeName == in.Node) {
-			pick = append(pick, cd)
-		}
+	cd, err := execTarget(ms.svc.Spec.Name, cands, in.Slot, in.Node)
+	if err != nil {
+		return "", err
 	}
-	switch len(pick) {
-	case 0:
-		return "", fmt.Errorf("service %q has no running container matching that slot/node", ms.svc.Spec.Name)
-	case 1:
-	default:
-		var opts []string
-		for _, cd := range pick {
-			if cd.Slot > 0 {
-				opts = append(opts, fmt.Sprintf("slot %d on %s", cd.Slot, orDash(cd.NodeName)))
-			} else {
-				opts = append(opts, "node "+orDash(cd.NodeName))
-			}
-		}
-		return "", fmt.Errorf("service %q has %d running containers; pass slot or node: %s",
-			ms.svc.Spec.Name, len(pick), strings.Join(opts, ", "))
-	}
-	cd := pick[0]
 	ep := resolve.Endpoint{DialHost: cd.DialHost, ContainerID: cd.ContainerID, NodeID: cd.NodeID, NodeName: cd.NodeName}
 
 	stdout := &capWriter{max: mcpExecMaxOutput}

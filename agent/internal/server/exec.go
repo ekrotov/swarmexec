@@ -71,20 +71,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 	s.audit.SessionStart(identity, se.GetContainerId(), service, se.GetCmd(), se.GetTty(), clientAddr)
 
 	// (5) Create the exec.
-	execCfg := client.ExecCreateOptions{
-		User:         se.GetUser(),
-		TTY:          se.GetTty(),
-		AttachStdin:  true,
-		AttachStdout: true,
-		AttachStderr: true,
-		Env:          se.GetEnv(),
-		WorkingDir:   se.GetWorkingDir(),
-		Cmd:          se.GetCmd(),
-	}
-	if se.GetTty() && se.GetWidth() > 0 && se.GetHeight() > 0 {
-		execCfg.ConsoleSize = client.ConsoleSize{Height: uint(se.GetHeight()), Width: uint(se.GetWidth())}
-	}
-
+	execCfg := execCreateOptions(se)
 	idResp, err := s.docker.ExecCreate(stream.Context(), se.GetContainerId(), execCfg)
 	if err != nil {
 		return s.failSession(stream, identity, se.GetContainerId(), start, "exec create failed", err)
@@ -113,14 +100,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 		defer stop()
 	}
 
-	// Apply the initial TTY size explicitly after attach (REQUIREMENTS §3.1).
-	if se.GetTty() && se.GetWidth() > 0 && se.GetHeight() > 0 {
-		if _, err := s.docker.ExecResize(ctx, execID, client.ExecResizeOptions{
-			Height: uint(se.GetHeight()), Width: uint(se.GetWidth()),
-		}); err != nil {
-			s.log.Warn("initial exec resize failed", "exec_id", execID, "err", err)
-		}
-	}
+	s.initialResize(ctx, execID, se)
 
 	tally := tallyFrom(stream.Context())
 	bytesIn, bytesOut := &tally.in, &tally.out
@@ -150,14 +130,7 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 	go s.pumpInput(ctx, stream, &attach.HijackedResponse, execID, bytesIn, touch, cancel)
 
 	// Container -> client copy. Blocks until output ends or the conn is closed.
-	out := &msgWriter{stream: stream, count: bytesOut, touch: touch}
-	var copyErr error
-	if se.GetTty() {
-		_, copyErr = io.Copy(out, attach.Reader)
-	} else {
-		errOut := &msgWriter{stream: stream, stderr: true, count: bytesOut, touch: touch}
-		_, copyErr = stdcopy.StdCopy(out, errOut, attach.Reader)
-	}
+	copyErr := copyOutput(stream, se.GetTty(), attach.Reader, bytesOut, touch)
 
 	// Stop the input pump and monitors now that output has ended.
 	cancel()
@@ -167,18 +140,8 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 	bIn, bOut := bytesIn.Load(), bytesOut.Load()
 
 	clientGone := stream.Context().Err() != nil
-	switch {
-	case idleHit.Load():
-		_ = stream.Send(errorMsg("session idle timeout exceeded"))
-	case maxHit.Load():
-		_ = stream.Send(errorMsg("max session duration exceeded"))
-	case clientGone:
-		// Client disconnected; the stream is gone, nothing to send.
-	case copyErr != nil && !errors.Is(copyErr, io.EOF):
-		_ = stream.Send(errorMsg("output stream error: " + copyErr.Error()))
-	default:
-		// (7) Normal exit: one exit_code message, then end the stream.
-		_ = stream.Send(&pb.ServerMessage{Payload: &pb.ServerMessage_ExitCode{ExitCode: int32(exitCode)}})
+	if msg := sessionEndMessage(idleHit.Load(), maxHit.Load(), clientGone, copyErr, exitCode); msg != nil {
+		_ = stream.Send(msg)
 	}
 
 	s.audit.SessionEnd(identity, se.GetContainerId(), exitCode, dur, bIn, bOut)
@@ -188,6 +151,68 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identi
 		return status.FromContextError(stream.Context().Err()).Err()
 	}
 	return nil
+}
+
+// execCreateOptions is the exec runSession creates for se: attached on all
+// three streams, with the console size when a TTY with a size is asked for.
+func execCreateOptions(se *pb.StartExec) client.ExecCreateOptions {
+	execCfg := client.ExecCreateOptions{
+		User:         se.GetUser(),
+		TTY:          se.GetTty(),
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Env:          se.GetEnv(),
+		WorkingDir:   se.GetWorkingDir(),
+		Cmd:          se.GetCmd(),
+	}
+	if se.GetTty() && se.GetWidth() > 0 && se.GetHeight() > 0 {
+		execCfg.ConsoleSize = client.ConsoleSize{Height: uint(se.GetHeight()), Width: uint(se.GetWidth())}
+	}
+	return execCfg
+}
+
+// initialResize applies the initial TTY size explicitly after attach
+// (REQUIREMENTS §3.1). A failure is only logged.
+func (s *Server) initialResize(ctx context.Context, execID string, se *pb.StartExec) {
+	if se.GetTty() && se.GetWidth() > 0 && se.GetHeight() > 0 {
+		if _, err := s.docker.ExecResize(ctx, execID, client.ExecResizeOptions{
+			Height: uint(se.GetHeight()), Width: uint(se.GetWidth()),
+		}); err != nil {
+			s.log.Warn("initial exec resize failed", "exec_id", execID, "err", err)
+		}
+	}
+}
+
+// copyOutput copies the exec's output to the client until it ends or the
+// connection is closed: raw as stdout for a TTY, demultiplexed otherwise.
+func copyOutput(stream pb.Agent_ExecServer, tty bool, r io.Reader, bytesOut *atomic.Int64, touch func()) error {
+	out := &msgWriter{stream: stream, count: bytesOut, touch: touch}
+	if tty {
+		_, err := io.Copy(out, r)
+		return err
+	}
+	errOut := &msgWriter{stream: stream, stderr: true, count: bytesOut, touch: touch}
+	_, err := stdcopy.StdCopy(out, errOut, r)
+	return err
+}
+
+// sessionEndMessage is the last message of a session, by why it ended: a
+// limit, an output error, or the normal exit code. Nil when the client is
+// gone — the stream is gone, nothing to send.
+func sessionEndMessage(idleHit, maxHit, clientGone bool, copyErr error, exitCode int) *pb.ServerMessage {
+	switch {
+	case idleHit:
+		return errorMsg("session idle timeout exceeded")
+	case maxHit:
+		return errorMsg("max session duration exceeded")
+	case clientGone:
+		return nil
+	case copyErr != nil && !errors.Is(copyErr, io.EOF):
+		return errorMsg("output stream error: " + copyErr.Error())
+	}
+	// (7) Normal exit: one exit_code message, then end the stream.
+	return &pb.ServerMessage{Payload: &pb.ServerMessage_ExitCode{ExitCode: int32(exitCode)}}
 }
 
 // pumpInput forwards client stdin to the exec and applies resize events. On

@@ -5,6 +5,7 @@ package stackfile
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -273,5 +274,40 @@ func TestDiffJSONIsTheMachineForm(t *testing.T) {
 	b, _ = same.JSON()
 	if !strings.Contains(string(b), `"differs": false`) || !strings.Contains(string(b), `"hunks": []`) {
 		t.Errorf("an empty diff must still be well-formed:\n%s", b)
+	}
+}
+
+// unified's hunk bounds: changes further apart than 2*ctx split into hunks
+// whose line numbers count the earlier changes on each side; closer ones merge.
+func TestUnifiedHunkBounds(t *testing.T) {
+	render := func(hs []Hunk) string {
+		var b strings.Builder
+		for _, h := range hs {
+			fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@", h.DeployStart, h.DeployCount, h.FileStart, h.FileCount)
+			for _, l := range h.Lines {
+				b.WriteString(" " + string(l.Op) + l.Text)
+			}
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+	split := func(s string) []string { return strings.Fields(s) }
+	cases := []struct {
+		name, a, b string
+		ctx        int
+		want       string
+	}{
+		{"both empty", "", "", 1, ""},
+		{"identical", "1 2 3", "1 2 3", 1, ""},
+		{"apart", "1 2 3 4 5 6 7 8 9", "1 2 N 4 5 6 7 8 E 9", 1,
+			"@@ -2,3 +2,3 @@  2 -3 +N  4\n@@ -8,2 +8,3 @@  8 +E  9\n"},
+		{"close", "1 2 3 4 5", "1 X 3 4 Y", 1,
+			"@@ -1,5 +1,5 @@  1 -2 +X  3  4 -5 +Y\n"},
+		{"no context", "x 1", "1", 0, "@@ -1,1 +1,0 @@ -x\n"},
+	}
+	for _, c := range cases {
+		if got := render(unified(split(c.a), split(c.b), c.ctx)); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
 	}
 }

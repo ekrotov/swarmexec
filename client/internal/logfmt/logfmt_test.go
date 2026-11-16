@@ -158,3 +158,37 @@ func TestByNameAndStaticResolver(t *testing.T) {
 		t.Error("static resolver should always return its format")
 	}
 }
+
+func TestParseLogfmtPairs(t *testing.T) {
+	cases := []struct {
+		in   string
+		want map[string]string
+	}{
+		{"", map[string]string{}},
+		{"   ", map[string]string{}},
+		{"a=1 b=two", map[string]string{"a": "1", "b": "two"}},
+		{"  a=1   b=2  ", map[string]string{"a": "1", "b": "2"}},
+		{`msg="hello world" lvl=info`, map[string]string{"msg": "hello world", "lvl": "info"}},
+		{`msg="say \"hi\" \\ ok"`, map[string]string{"msg": `say "hi" \ ok`}},
+		{`msg="unterminated`, map[string]string{"msg": "unterminated"}},
+		{`msg="ends in \`, map[string]string{"msg": `ends in \`}},
+		{"bare a=1 other", map[string]string{"a": "1"}},
+		{"=orphan a=", map[string]string{"a": ""}},
+		{`a="" b=x=y`, map[string]string{"a": "", "b": "x=y"}},
+		{"bare", map[string]string{}},
+		{"a=1 a=2", map[string]string{"a": "2"}},
+	}
+	for _, c := range cases {
+		got := parseLogfmtPairs(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("parseLogfmtPairs(%q) = %q, want %q", c.in, got, c.want)
+			continue
+		}
+		for k, v := range c.want {
+			if g, ok := got[k]; !ok || g != v {
+				t.Errorf("parseLogfmtPairs(%q) = %q, want %q", c.in, got, c.want)
+				break
+			}
+		}
+	}
+}

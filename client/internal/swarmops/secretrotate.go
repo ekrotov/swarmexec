@@ -560,57 +560,25 @@ func (r *rotation) waitConverged(ctx context.Context, u RotateUser, secretID, se
 	deadline := time.Now().Add(r.opt.Timeout)
 	last := ""
 	for {
-		res, err := r.api.ServiceInspect(ctx, u.ID, client.ServiceInspectOptions{})
+		c, err := r.convergeState(ctx, u, secretID)
 		if err != nil {
-			return fmt.Errorf("inspect service %s: %w", u.Name, err)
+			return err
 		}
-		updating := false
-		if us := res.Service.UpdateStatus; us != nil {
-			switch us.State {
-			case swarm.UpdateStatePaused, swarm.UpdateStateRollbackStarted,
-				swarm.UpdateStateRollbackPaused, swarm.UpdateStateRollbackCompleted:
-				msg := us.Message
-				if msg == "" {
-					msg = "no reason given"
-				}
-				return fmt.Errorf("rolling update of %s %s: %s", u.Name, us.State, msg)
-			case swarm.UpdateStateUpdating:
-				updating = true
-			}
-		}
-		tasks, err := r.api.TaskList(ctx, client.TaskListOptions{Filters: make(client.Filters).Add("service", u.ID)})
-		if err != nil {
-			return fmt.Errorf("list tasks of %s: %w", u.Name, err)
-		}
-		var stale, pending, running int
-		for _, t := range tasks.Items {
-			if t.DesiredState != swarm.TaskStateRunning {
-				continue
-			}
-			switch {
-			case !taskUsesSecret(t, secretID):
-				stale++
-			case t.Status.State == swarm.TaskStateRunning:
-				running++
-			default:
-				pending++
-			}
-		}
-		if !updating && stale == 0 && pending == 0 {
-			if running == 0 {
+		if !c.updating && c.stale == 0 && c.pending == 0 {
+			if c.running == 0 {
 				r.progress(u.Name, "%s updated (no running tasks)", u.Name)
 			} else {
-				r.progress(u.Name, "%s converged: %d task(s) running", u.Name, running)
+				r.progress(u.Name, "%s converged: %d task(s) running", u.Name, c.running)
 			}
 			return nil
 		}
-		if line := fmt.Sprintf("%s converging: %d/%d task(s) running on %s", u.Name, running, running+pending+stale, secretName); line != last {
+		if line := fmt.Sprintf("%s converging: %d/%d task(s) running on %s", u.Name, c.running, c.running+c.pending+c.stale, secretName); line != last {
 			r.progress(u.Name, "%s", line)
 			last = line
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("%s did not converge within %s (%d running, %d starting, %d still on the old secret)",
-				u.Name, r.opt.Timeout, running, pending, stale)
+				u.Name, r.opt.Timeout, c.running, c.pending, c.stale)
 		}
 		select {
 		case <-ctx.Done():
@@ -618,6 +586,55 @@ func (r *rotation) waitConverged(ctx context.Context, u RotateUser, secretID, se
 		case <-time.After(r.opt.Poll):
 		}
 	}
+}
+
+// convergence is one poll of a service's rolling update: whether swarm still
+// reports it in progress, and its tasks meant to run — still on the old
+// secret, on the new one but not yet running, and running on the new one.
+type convergence struct {
+	updating                bool
+	stale, pending, running int
+}
+
+// convergeState reads the service's update status and tasks. A paused or
+// rolled-back update is an error.
+func (r *rotation) convergeState(ctx context.Context, u RotateUser, secretID string) (convergence, error) {
+	var c convergence
+	res, err := r.api.ServiceInspect(ctx, u.ID, client.ServiceInspectOptions{})
+	if err != nil {
+		return c, fmt.Errorf("inspect service %s: %w", u.Name, err)
+	}
+	if us := res.Service.UpdateStatus; us != nil {
+		switch us.State {
+		case swarm.UpdateStatePaused, swarm.UpdateStateRollbackStarted,
+			swarm.UpdateStateRollbackPaused, swarm.UpdateStateRollbackCompleted:
+			msg := us.Message
+			if msg == "" {
+				msg = "no reason given"
+			}
+			return c, fmt.Errorf("rolling update of %s %s: %s", u.Name, us.State, msg)
+		case swarm.UpdateStateUpdating:
+			c.updating = true
+		}
+	}
+	tasks, err := r.api.TaskList(ctx, client.TaskListOptions{Filters: make(client.Filters).Add("service", u.ID)})
+	if err != nil {
+		return c, fmt.Errorf("list tasks of %s: %w", u.Name, err)
+	}
+	for _, t := range tasks.Items {
+		if t.DesiredState != swarm.TaskStateRunning {
+			continue
+		}
+		switch {
+		case !taskUsesSecret(t, secretID):
+			c.stale++
+		case t.Status.State == swarm.TaskStateRunning:
+			c.running++
+		default:
+			c.pending++
+		}
+	}
+	return c, nil
 }
 
 // taskUsesSecret reports whether a task was created from a spec that mounts

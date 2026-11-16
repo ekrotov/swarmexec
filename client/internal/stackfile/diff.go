@@ -178,9 +178,6 @@ func (d *Diff) writeNotes(b *strings.Builder) {
 // files this size.
 func unified(a, b []string, ctx int) []Hunk {
 	ops := lcsOps(a, b)
-	if len(ops) == 0 {
-		return nil
-	}
 
 	// Which positions in the op list are changes, so context can be measured
 	// around them.
@@ -204,55 +201,63 @@ func unified(a, b []string, ctx int) []Hunk {
 			continue
 		}
 		start := max(0, i-ctx)
-		end := i
-		// Extend while another change is within 2*ctx — closer than that and two
-		// hunks would share context lines, which reads worse than one hunk.
-		for end < len(ops) {
-			next := -1
-			for j := end; j < len(ops) && j <= end+2*ctx; j++ {
-				if changed[j] {
-					next = j
-				}
-			}
-			if next < 0 {
-				break
-			}
-			end = next + 1
-		}
-		stop := min(len(ops), end+ctx)
-
-		h := Hunk{DeployStart: 0, FileStart: 0}
-		// Line numbers are 1-based and count only the lines each side has.
-		aLine, bLine := 1, 1
-		for k := 0; k < start; k++ {
-			switch ops[k].Op {
-			case ' ':
-				aLine++
-				bLine++
-			case '-':
-				aLine++
-			case '+':
-				bLine++
-			}
-		}
-		h.DeployStart, h.FileStart = aLine, bLine
-		for k := start; k < stop; k++ {
-			o := ops[k]
-			h.Lines = append(h.Lines, DiffLine{Op: o.Op, Text: o.Text})
-			switch o.Op {
-			case ' ':
-				h.DeployCount++
-				h.FileCount++
-			case '-':
-				h.DeployCount++
-			case '+':
-				h.FileCount++
-			}
-		}
-		hunks = append(hunks, h)
+		stop := min(len(ops), changeRunEnd(changed, i, ctx)+ctx)
+		hunks = append(hunks, hunkOf(ops, start, stop))
 		i = stop
 	}
 	return hunks
+}
+
+// changeRunEnd is the end (exclusive) of the run of changes starting at i:
+// it extends while another change is within 2*ctx — closer than that and two
+// hunks would share context lines, which reads worse than one hunk.
+func changeRunEnd(changed []bool, i, ctx int) int {
+	end := i
+	for end < len(changed) {
+		next := -1
+		for j := end; j < len(changed) && j <= end+2*ctx; j++ {
+			if changed[j] {
+				next = j
+			}
+		}
+		if next < 0 {
+			break
+		}
+		end = next + 1
+	}
+	return end
+}
+
+// hunkOf is the hunk over ops[start:stop].
+func hunkOf(ops []DiffLine, start, stop int) Hunk {
+	var h Hunk
+	// Line numbers are 1-based and count only the lines each side has.
+	h.DeployStart, h.FileStart = 1, 1
+	for _, o := range ops[:start] {
+		da, db := opSides(o.Op)
+		h.DeployStart += da
+		h.FileStart += db
+	}
+	for _, o := range ops[start:stop] {
+		h.Lines = append(h.Lines, DiffLine{Op: o.Op, Text: o.Text})
+		da, db := opSides(o.Op)
+		h.DeployCount += da
+		h.FileCount += db
+	}
+	return h
+}
+
+// opSides is how many lines an op takes on the deployed and the file side.
+func opSides(op byte) (deploy, file int) {
+	switch op {
+	case ' ':
+		return 1, 1
+	case '-':
+		return 1, 0
+	case '+':
+		return 0, 1
+	}
+	return 0, 0
 }
 
 // lcsOps turns two sequences into a single op list: ' ' common, '-' only in a,
