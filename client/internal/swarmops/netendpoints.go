@@ -267,180 +267,288 @@ func endpointKey(id, ip, name string) string {
 // lbTaskName: the daemon names a load-balancer endpoint "<network>-endpoint".
 func lbTaskName(name string) bool { return strings.HasSuffix(name, "-endpoint") }
 
+// analyzeNetwork is one network's analysis: the manager's live addresses,
+// then every node's view scanned against them, then the totals.
 func analyzeNetwork(id string, tasks []TaskAddr, nodes []agentcall.NodeNetworkEndpoints, owners ownerIndex) *NetEndpoints {
-	e := &NetEndpoints{NetworkID: id}
-	live := map[string]bool{}
-	expected := map[string]int{}
+	live := collectLive(id, tasks)
+	s := newNetScan(id, live, collectVIPs(id, nodes), owners)
+	e := &NetEndpoints{NetworkID: id, Running: live.running}
+	for _, n := range nodes {
+		e.Nodes = append(e.Nodes, s.scanNode(n))
+	}
+	e.Answered, e.Unknown, e.TooOld = tallyStates(e.Nodes)
+	e.Addrs, e.LB = s.addrCounts()
+	e.Stale = s.stale.sorted()
+	e.DupIPs, e.DupMACs = duplicates(s.ipOwners), duplicates(s.macOwners)
+	return e
+}
+
+// liveTasks is the manager's side of one network.
+type liveTasks struct {
+	ips      map[string]bool // addresses held by live tasks
+	expected map[string]int  // running tasks per node ID
+	running  int             // running tasks in all
+}
+
+// collectLive gathers the live task addresses and running counts on network id.
+func collectLive(id string, tasks []TaskAddr) liveTasks {
+	l := liveTasks{ips: map[string]bool{}, expected: map[string]int{}}
 	for _, t := range tasks {
 		if t.NetworkID != id {
 			continue
 		}
 		for _, ip := range t.IPs {
-			live[ip] = true
+			l.ips[ip] = true
 		}
 		if t.Running {
-			e.Running++
-			expected[t.NodeID]++
+			l.running++
+			l.expected[t.NodeID]++
 		}
 	}
+	return l
+}
+
+// collectVIPs is every service VIP on network id that an answering node
+// reports.
+func collectVIPs(id string, nodes []agentcall.NodeNetworkEndpoints) map[string]bool {
 	vips := map[string]bool{}
 	for _, n := range nodes {
-		if ni := netFind(n.Resp, id); n.Err == nil && ni != nil {
-			for _, s := range ni.GetServices() {
-				if v := StripMask(s.GetVip()); v != "" {
-					vips[v] = true
-				}
-			}
-		}
-	}
-
-	stale := map[string]*StaleEndpoint{}
-	ipOwners := map[string]map[string]string{}  // ip -> endpoint key -> name
-	macOwners := map[string]map[string]string{} // mac -> endpoint key -> name
-	taskIPs, lbIPs := map[string]bool{}, map[string]bool{}
-	note := func(m map[string]map[string]string, addr, key, name string) {
-		if addr == "" {
-			return
-		}
-		if m[addr] == nil {
-			m[addr] = map[string]string{}
-		}
-		if name == "" {
-			name = shortID(key)
-		}
-		m[addr][key] = name
-	}
-	addStale := func(key string, s StaleEndpoint, seenBy string) {
-		cur := stale[key]
-		if cur == nil {
-			cur = &StaleEndpoint{IP: s.IP, Name: s.Name, Service: s.Service, EndpointID: s.EndpointID}
-			stale[key] = cur
-		}
-		if s.MAC != "" {
-			cur.MAC = s.MAC
-		}
-		if cur.Name == "" {
-			cur.Name = s.Name
-		}
-		if s.OwnerIP != "" && cur.OwnerIP == "" {
-			cur.OwnerIP = s.OwnerIP
-		}
-		if s.Owner != "" {
-			cur.Owner = s.Owner
-		}
-		cur.Local = cur.Local || s.Local
-		cur.Orphan = cur.Orphan || s.Orphan
-		if !contains(cur.SeenBy, seenBy) {
-			cur.SeenBy = append(cur.SeenBy, seenBy)
-		}
-	}
-
-	for _, n := range nodes {
-		ne := NodeEndpoints{NodeID: n.Node.ID, Node: n.Node.Name, Expected: expected[n.Node.ID]}
-		if n.Err != nil {
-			ne.State, ne.Err = nodeState(n.Err), n.Err.Error()
-			e.Unknown++
-			if ne.State == NodeAgentTooOld {
-				e.TooOld++
-			}
-			e.Nodes = append(e.Nodes, ne)
-			continue
-		}
 		ni := netFind(n.Resp, id)
-		switch {
-		case ni == nil:
-			ne.State = NodeNotOnNetwork
-			e.Answered++
-			e.Nodes = append(e.Nodes, ne)
-			continue
-		case ni.GetError() != "":
-			ne.State, ne.Err = NodeNetworkError, ni.GetError()
-			e.Unknown++
-			e.Nodes = append(e.Nodes, ne)
+		if n.Err != nil || ni == nil {
 			continue
 		}
-		e.Answered++
-		ne.State = NodeEndpointsOK
-		peerName := map[string]string{}
-		for _, p := range ni.GetPeers() {
-			peerName[p.GetIp()] = p.GetName()
-		}
-		macs, nodeStale := map[string]bool{}, map[string]bool{}
-		for _, l := range ni.GetLocalEndpoints() {
-			ip := StripMask(l.GetIpv4Address())
-			key := endpointKey(l.GetEndpointId(), ip, l.GetName())
-			if mac := strings.ToLower(l.GetMacAddress()); mac != "" {
-				macs[mac] = true
-				note(macOwners, mac, key, l.GetName())
-			}
-			note(ipOwners, ip, key, l.GetName())
-			if l.GetLoadBalancer() {
-				ne.LB++
-				if ip != "" {
-					lbIPs[ip] = true
-				}
-				continue
-			}
-			ne.Containers++
-			if ip == "" {
-				continue
-			}
-			taskIPs[ip] = true
-			orphan := strings.HasPrefix(l.GetContainerId(), "ep-")
-			if live[ip] || vips[ip] || (!orphan && !taskContainerName(l.GetName())) {
-				// Alive, or a standalone container on an attachable network
-				// (the manager knows only tasks).
-				continue
-			}
-			nodeStale[key] = true
-			addStale(key, StaleEndpoint{IP: ip, MAC: strings.ToLower(l.GetMacAddress()), Name: l.GetName(),
-				EndpointID: l.GetEndpointId(), Owner: n.Node.Name, Local: true, Orphan: orphan}, n.Node.Name)
-		}
-		ne.MACs = len(macs)
 		for _, s := range ni.GetServices() {
-			for _, t := range s.GetTasks() {
-				ne.Known++
-				ip := StripMask(t.GetEndpointIp())
-				key := endpointKey(t.GetEndpointId(), ip, t.GetName())
-				note(ipOwners, ip, key, t.GetName())
-				if s.GetName() == "" {
-					// The daemon files load balancers (and standalone
-					// containers) under the empty service: never stale here.
-					if lbTaskName(t.GetName()) && ip != "" {
-						lbIPs[ip] = true
-					}
-					continue
-				}
-				if ip == "" {
-					continue
-				}
-				taskIPs[ip] = true
-				if live[ip] || vips[ip] {
-					continue
-				}
-				nodeStale[key] = true
-				ownerIP := t.GetHostIp()
-				addStale(key, StaleEndpoint{IP: ip, Name: t.GetName(), Service: s.GetName(), EndpointID: t.GetEndpointId(),
-					OwnerIP: ownerIP, Owner: owners.name(ownerIP, peerName[ownerIP])}, n.Node.Name)
+			if v := StripMask(s.GetVip()); v != "" {
+				vips[v] = true
 			}
 		}
-		ne.Stale = len(nodeStale)
-		e.Nodes = append(e.Nodes, ne)
 	}
-	for ip := range lbIPs {
-		delete(taskIPs, ip)
+	return vips
+}
+
+// tallyStates counts the nodes whose view is known, the rest, and of the
+// rest the agents too old for the RPC.
+func tallyStates(nodes []NodeEndpoints) (answered, unknown, tooOld int) {
+	for _, n := range nodes {
+		switch {
+		case n.State.Known():
+			answered++
+		case n.State == NodeAgentTooOld:
+			unknown++
+			tooOld++
+		default:
+			unknown++
+		}
 	}
-	e.Addrs, e.LB = len(taskIPs), len(lbIPs)
-	for _, s := range stale {
+	return answered, unknown, tooOld
+}
+
+// addrBook records, per address (IP or MAC), the endpoints holding it:
+// endpoint key -> display name.
+type addrBook map[string]map[string]string
+
+// note records that endpoint key (named name) holds addr; an empty address
+// is ignored, an unnamed endpoint is shown by its short key.
+func (b addrBook) note(addr, key, name string) {
+	if addr == "" {
+		return
+	}
+	if b[addr] == nil {
+		b[addr] = map[string]string{}
+	}
+	if name == "" {
+		name = shortID(key)
+	}
+	b[addr][key] = name
+}
+
+// staleSet merges the stale candidates the nodes report, by endpoint key.
+type staleSet map[string]*StaleEndpoint
+
+// add merges one node's sighting of a stale endpoint: the first sighting
+// fixes IP, service and endpoint ID; later ones fill in what was missing
+// (a later owner or MAC wins).
+func (m staleSet) add(key string, s StaleEndpoint, seenBy string) {
+	cur := m[key]
+	if cur == nil {
+		cur = &StaleEndpoint{IP: s.IP, Name: s.Name, Service: s.Service, EndpointID: s.EndpointID}
+		m[key] = cur
+	}
+	if s.MAC != "" {
+		cur.MAC = s.MAC
+	}
+	if cur.Name == "" {
+		cur.Name = s.Name
+	}
+	if s.OwnerIP != "" && cur.OwnerIP == "" {
+		cur.OwnerIP = s.OwnerIP
+	}
+	if s.Owner != "" {
+		cur.Owner = s.Owner
+	}
+	cur.Local = cur.Local || s.Local
+	cur.Orphan = cur.Orphan || s.Orphan
+	if !contains(cur.SeenBy, seenBy) {
+		cur.SeenBy = append(cur.SeenBy, seenBy)
+	}
+}
+
+// sorted is the merged list ordered by IP (then name), each with SeenBy
+// sorted and the owner falling back to the host IP; nil when empty.
+func (m staleSet) sorted() []StaleEndpoint {
+	var out []StaleEndpoint
+	for _, s := range m {
 		sort.Strings(s.SeenBy)
 		if s.Owner == "" {
 			s.Owner = s.OwnerIP
 		}
-		e.Stale = append(e.Stale, *s)
+		out = append(out, *s)
 	}
-	sort.Slice(e.Stale, func(i, j int) bool { return lessIP(e.Stale[i].IP, e.Stale[j].IP, e.Stale[i].Name, e.Stale[j].Name) })
-	e.DupIPs, e.DupMACs = duplicates(ipOwners), duplicates(macOwners)
-	return e
+	sort.Slice(out, func(i, j int) bool { return lessIP(out[i].IP, out[j].IP, out[i].Name, out[j].Name) })
+	return out
+}
+
+// netScan accumulates one network's state while the nodes are scanned.
+type netScan struct {
+	id     string
+	live   liveTasks
+	vips   map[string]bool
+	owners ownerIndex
+
+	stale               staleSet
+	ipOwners, macOwners addrBook
+	taskIPs, lbIPs      map[string]bool // distinct task / load-balancer IPs seen
+}
+
+func newNetScan(id string, live liveTasks, vips map[string]bool, owners ownerIndex) *netScan {
+	return &netScan{id: id, live: live, vips: vips, owners: owners, stale: staleSet{},
+		ipOwners: addrBook{}, macOwners: addrBook{}, taskIPs: map[string]bool{}, lbIPs: map[string]bool{}}
+}
+
+// alive: a live task or a service VIP holds ip.
+func (s *netScan) alive(ip string) bool { return s.live.ips[ip] || s.vips[ip] }
+
+func (s *netScan) addLB(ip string) {
+	if ip != "" {
+		s.lbIPs[ip] = true
+	}
+}
+
+// addrCounts is the number of distinct task endpoint IPs (load-balancer
+// addresses excluded) and of distinct load-balancer IPs.
+func (s *netScan) addrCounts() (tasks, lbs int) {
+	tasks = len(s.taskIPs)
+	for ip := range s.lbIPs {
+		if s.taskIPs[ip] {
+			tasks--
+		}
+	}
+	return tasks, len(s.lbIPs)
+}
+
+// scanNode is one node's numbers for the network; the node's endpoints are
+// recorded in the scan along the way.
+func (s *netScan) scanNode(n agentcall.NodeNetworkEndpoints) NodeEndpoints {
+	ne := NodeEndpoints{NodeID: n.Node.ID, Node: n.Node.Name, Expected: s.live.expected[n.Node.ID]}
+	if n.Err != nil {
+		ne.State, ne.Err = nodeState(n.Err), n.Err.Error()
+		return ne
+	}
+	ni := netFind(n.Resp, s.id)
+	switch {
+	case ni == nil:
+		ne.State = NodeNotOnNetwork
+		return ne
+	case ni.GetError() != "":
+		ne.State, ne.Err = NodeNetworkError, ni.GetError()
+		return ne
+	}
+	ne.State = NodeEndpointsOK
+	nodeStale := map[string]bool{}
+	s.scanLocal(&ne, ni, n.Node.Name, nodeStale)
+	s.scanNetworkDB(&ne, ni, n.Node.Name, nodeStale)
+	ne.Stale = len(nodeStale)
+	return ne
+}
+
+// scanLocal counts the endpoints attached on the node itself and records
+// the stale ones (their keys into nodeStale).
+func (s *netScan) scanLocal(ne *NodeEndpoints, ni *pb.NetworkEndpointsInfo, node string, nodeStale map[string]bool) {
+	macs := map[string]bool{}
+	for _, l := range ni.GetLocalEndpoints() {
+		ip := StripMask(l.GetIpv4Address())
+		key := endpointKey(l.GetEndpointId(), ip, l.GetName())
+		mac := strings.ToLower(l.GetMacAddress())
+		if mac != "" {
+			macs[mac] = true
+			s.macOwners.note(mac, key, l.GetName())
+		}
+		s.ipOwners.note(ip, key, l.GetName())
+		if l.GetLoadBalancer() {
+			ne.LB++
+			s.addLB(ip)
+			continue
+		}
+		ne.Containers++
+		if ip == "" {
+			continue
+		}
+		s.taskIPs[ip] = true
+		orphan := strings.HasPrefix(l.GetContainerId(), "ep-")
+		if s.alive(ip) || (!orphan && !taskContainerName(l.GetName())) {
+			// Alive, or a standalone container on an attachable network
+			// (the manager knows only tasks).
+			continue
+		}
+		nodeStale[key] = true
+		s.stale.add(key, StaleEndpoint{IP: ip, MAC: mac, Name: l.GetName(),
+			EndpointID: l.GetEndpointId(), Owner: node, Local: true, Orphan: orphan}, node)
+	}
+	ne.MACs = len(macs)
+}
+
+// scanNetworkDB walks the node's networkdb copy of the whole network and
+// records the stale task entries (their keys into nodeStale).
+func (s *netScan) scanNetworkDB(ne *NodeEndpoints, ni *pb.NetworkEndpointsInfo, node string, nodeStale map[string]bool) {
+	peerName := map[string]string{}
+	for _, p := range ni.GetPeers() {
+		peerName[p.GetIp()] = p.GetName()
+	}
+	for _, svc := range ni.GetServices() {
+		for _, t := range svc.GetTasks() {
+			ne.Known++
+			if key, stale := s.dbTask(svc.GetName(), t, peerName, node); stale {
+				nodeStale[key] = true
+			}
+		}
+	}
+}
+
+// dbTask records one networkdb task entry filed under service, as seen by
+// node; it returns the entry's key and whether it is a stale candidate.
+func (s *netScan) dbTask(service string, t *pb.NetworkTaskEndpoint, peerName map[string]string, node string) (string, bool) {
+	ip := StripMask(t.GetEndpointIp())
+	key := endpointKey(t.GetEndpointId(), ip, t.GetName())
+	s.ipOwners.note(ip, key, t.GetName())
+	if service == "" {
+		// The daemon files load balancers (and standalone containers)
+		// under the empty service: never stale here.
+		if lbTaskName(t.GetName()) {
+			s.addLB(ip)
+		}
+		return key, false
+	}
+	if ip == "" {
+		return key, false
+	}
+	s.taskIPs[ip] = true
+	if s.alive(ip) {
+		return key, false
+	}
+	ownerIP := t.GetHostIp()
+	s.stale.add(key, StaleEndpoint{IP: ip, Name: t.GetName(), Service: service, EndpointID: t.GetEndpointId(),
+		OwnerIP: ownerIP, Owner: s.owners.name(ownerIP, peerName[ownerIP])}, node)
+	return key, true
 }
 
 // duplicates are the addresses held by more than one endpoint.
