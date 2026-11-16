@@ -733,61 +733,89 @@ func (v *netMembersView) curSvc() string {
 
 // handleKey is the list's input capture — the input half of the overlay.
 func (v *netMembersView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
-	u, n, list, dcli := v.u, v.n, v.list, v.u.dcli
-	switch {
-	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
+	switch ev.Key() {
+	case tcell.KeyEscape:
 		v.close()
 		return nil
-	case ev.Key() == tcell.KeyEnter:
-		// Toggle the current row's service, so Enter anywhere in a service's
-		// block expands/collapses its aliases.
-		if svc := v.curSvc(); svc != "" {
-			v.expanded[svc] = !v.expanded[svc]
-			v.render()
-		}
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'A':
-		svc := v.curSvc()
-		if svc == "" {
-			return nil
-		}
-		if !v.loaded {
-			u.info("still loading — try again in a moment")
-			return nil
-		}
-		// Same staged alias editor as the inspect view; applies via
-		// swarmops.SetNetworkAliases, then reloads this view to show the new aliases.
-		u.openAliasEditorForNet(svc, n.Name, n.ID, list, v.reload)
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-		suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), n.Services)
-		u.servicePrompt(
-			fmt.Sprintf("attach a service to network %q", n.Name),
-			fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
-			suggestions, list,
-			func(ctx context.Context, svc string) error {
-				return swarmops.AttachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
-			},
-			func() { v.close(); u.netTab().reload() },
-		)
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
-		if len(n.Services) == 0 {
-			u.info("no services are attached to this network")
-			return nil
-		}
-		u.servicePrompt(
-			fmt.Sprintf("detach a service from network %q", n.Name),
-			fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
-			n.Services, list,
-			func(ctx context.Context, svc string) error {
-				return swarmops.DetachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
-			},
-			func() { v.close(); u.netTab().reload() },
-		)
+	case tcell.KeyEnter:
+		v.toggleAliases()
 		return nil
 	}
-	return vimListKeys(ev)
+	if ev.Key() != tcell.KeyRune {
+		return vimListKeys(ev)
+	}
+	switch ev.Rune() {
+	case v.u.km.Quit, 'i':
+		v.close()
+	case 'A':
+		v.editAliases()
+	case 'a':
+		v.attach()
+	case 'd':
+		v.detach()
+	default:
+		return vimListKeys(ev)
+	}
+	return nil
+}
+
+// toggleAliases folds or unfolds the current row's service, so Enter
+// anywhere in a service's block expands/collapses its aliases.
+func (v *netMembersView) toggleAliases() {
+	if svc := v.curSvc(); svc != "" {
+		v.expanded[svc] = !v.expanded[svc]
+		v.render()
+	}
+}
+
+// editAliases opens the current row's service's aliases on this network.
+func (v *netMembersView) editAliases() {
+	u, n := v.u, v.n
+	svc := v.curSvc()
+	if svc == "" {
+		return
+	}
+	if !v.loaded {
+		u.info("still loading — try again in a moment")
+		return
+	}
+	// Same staged alias editor as the inspect view; applies via
+	// swarmops.SetNetworkAliases, then reloads this view to show the new aliases.
+	u.openAliasEditorForNet(svc, n.Name, n.ID, v.list, v.reload)
+}
+
+// attach asks for a service (those not on the network are suggested) and
+// attaches the network to it.
+func (v *netMembersView) attach() {
+	u, n, dcli := v.u, v.n, v.u.dcli
+	suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), n.Services)
+	u.servicePrompt(
+		fmt.Sprintf("attach a service to network %q", n.Name),
+		fmt.Sprintf("Attach network %q to service", n.Name), "Attach",
+		suggestions, v.list,
+		func(ctx context.Context, svc string) error {
+			return swarmops.AttachServiceToNetwork(ctx, dcli, svc, n.ID, n.Name)
+		},
+		func() { v.close(); u.netTab().reload() },
+	)
+}
+
+// detach asks which attached service to take off the network.
+func (v *netMembersView) detach() {
+	u, n, dcli := v.u, v.n, v.u.dcli
+	if len(n.Services) == 0 {
+		u.info("no services are attached to this network")
+		return
+	}
+	u.servicePrompt(
+		fmt.Sprintf("detach a service from network %q", n.Name),
+		fmt.Sprintf("Detach network %q from service", n.Name), "Detach",
+		n.Services, v.list,
+		func(ctx context.Context, svc string) error {
+			return swarmops.DetachServiceFromNetwork(ctx, dcli, svc, n.ID, n.Name)
+		},
+		func() { v.close(); u.netTab().reload() },
+	)
 }
 
 // open wires the list to its input/footer and kicks off the initial fetch.
