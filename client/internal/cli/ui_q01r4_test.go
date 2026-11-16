@@ -374,3 +374,81 @@ func TestNetMembersRender(t *testing.T) {
 		t.Errorf("endpoint block: %q / %q", got, v.rowSvc)
 	}
 }
+
+// openMembers opens the members overlay of the fake swarm's "front" network
+// (services attached, one label) and waits for the member lookup.
+func openMembers(t *testing.T, u *ui, services ...string) *netMembersView {
+	t.Helper()
+	n := swarmops.Network{ID: "net-front", Name: "front", Scope: "local", Services: services, Labels: map[string]string{"team": "x"}}
+	onLoop(t, u, func() { u.netTab().showMembers(n) })
+	waitFront(t, u, pageNetMembers)
+	var v *netMembersView
+	onLoop(t, u, func() { v = u.netTab().members })
+	deadline := time.Now().Add(10 * time.Second)
+	for loaded := false; !loaded; {
+		onLoop(t, u, func() { loaded = v.loaded })
+		if time.Now().After(deadline) {
+			t.Fatal("the member lookup never landed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return v
+}
+
+// The members overlay's keys: Enter folds a service's aliases, A edits them
+// (not on a row outside a service, not before the lookup), a and d prompt
+// for a service (d only when one is attached), j moves, and Esc / q / i
+// close.
+func TestNetMembersKeys(t *testing.T) {
+	u, _, _ := editUI(t, editSwarm())
+	v := openMembers(t, u, "web")
+	at := func(row int) { onLoop(t, u, func() { v.list.SetCurrentItem(row) }) }
+	svcRow := 3 // labels header, label, blank, then web
+
+	at(svcRow)
+	keyCode(t, u, tcell.KeyEnter)
+	var expanded bool
+	onLoop(t, u, func() { expanded = v.expanded["web"] })
+	if !expanded {
+		t.Error("Enter on a service must unfold its aliases")
+	}
+	at(0)
+	keyCode(t, u, tcell.KeyEnter) // the labels header: no service to fold
+	keyRune(t, u, 'A')
+	if frontPage(t, u) != pageNetMembers {
+		t.Errorf("A outside a service opened %q", frontPage(t, u))
+	}
+
+	at(svcRow)
+	onLoop(t, u, func() { v.loaded = false })
+	keyRune(t, u, 'A')
+	waitFront(t, u, pageInfo)
+	onLoop(t, u, func() { u.pages.RemovePage(pageInfo); v.loaded = true; u.app.SetFocus(v.list) })
+	keyRune(t, u, 'A')
+	waitFront(t, u, pageListEdit)
+	onLoop(t, u, func() { u.pages.RemovePage(pageListEdit); u.app.SetFocus(v.list) })
+
+	for _, r := range []rune{'a', 'd'} {
+		keyRune(t, u, r)
+		waitFront(t, u, pageSvcPrompt)
+		keyCode(t, u, tcell.KeyEscape)
+		waitFront(t, u, pageNetMembers)
+	}
+
+	var ev *tcell.EventKey
+	onLoop(t, u, func() { ev = v.handleKey(rune_('j')) })
+	if ev == nil || ev.Key() != tcell.KeyDown {
+		t.Error("j must move down")
+	}
+	keyCode(t, u, tcell.KeyEscape)
+	waitPageGone(t, u, pageNetMembers)
+
+	for _, r := range []rune{u.km.Quit, 'i'} {
+		w := openMembers(t, u)
+		keyRune(t, u, 'd') // nothing attached: says so
+		waitFront(t, u, pageInfo)
+		onLoop(t, u, func() { u.pages.RemovePage(pageInfo); u.app.SetFocus(w.list) })
+		keyRune(t, u, r)
+		waitPageGone(t, u, pageNetMembers)
+	}
+}
