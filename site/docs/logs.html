@@ -114,7 +114,7 @@
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
           <tr><td><code>--since</code></td><td><code>0</code></td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
           <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decides from the lines themselves (default from config, else <code>classic</code>)</td></tr>
-          <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code></td></tr>
+          <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code>. It filters the streamed output; swarmexec's own logging is the global <a href="/docs/configuration#global"><code>--client-log-level</code></a></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
           <tr><td><code>--stack</code></td><td>—</td><td>follow every service of this stack (in addition to any targets)</td></tr>
           <tr><td><code>--node</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>

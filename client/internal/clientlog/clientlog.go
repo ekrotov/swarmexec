@@ -101,7 +101,7 @@ func L() *slog.Logger { return std.Load() }
 func RingBuffer() *Ring { return ring.Load() }
 
 // DefaultLogPath mirrors the config file location: a swarmexec.log next to
-// config.yaml. Callers pass it as the default for --log-file.
+// config.yaml. Callers pass it as the default for --client-log-file.
 func DefaultLogPath(configPath string) string {
 	if configPath == "" {
 		return ""
