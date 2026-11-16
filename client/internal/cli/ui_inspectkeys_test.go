@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/swarmops"
 )
@@ -231,5 +232,65 @@ func TestInspectKeysOnATaskInspect(t *testing.T) {
 	}
 	if h := textOf(t, u, u.help); !strings.Contains(h, "copied") {
 		t.Errorf("Enter on a task's upgrade row: footer %q", h)
+	}
+}
+
+// Only the collision-free lowercase letters and X run straight from a
+// service inspect (review T-16); every other action letter is passed on and
+// opens nothing — it is reached through the a menu.
+func TestInspectKeysOnlyDirectKeysRunDirectly(t *testing.T) {
+	u := inspectUI(t)
+	iv := openInspectView(t, u, "web")
+	for _, a := range iv.serviceActions() {
+		if inspectDirectKeys[a.key] {
+			continue
+		}
+		ev := rune_(a.key)
+		if out := inspectKey(t, u, iv, ev); out != ev {
+			t.Errorf("%c (%s) ran directly", a.key, a.label)
+		}
+		if p := frontPage(t, u); p != pageInspect {
+			t.Fatalf("%c (%s) opened %s", a.key, a.label, p)
+		}
+	}
+	if out := inspectKey(t, u, iv, rune_('X')); out != nil {
+		t.Error("X was passed on")
+	}
+	waitFront(t, u, pageConfirm)
+}
+
+// The menu shows every action with its letter, and the letter selects it
+// there — Shift variants included.
+func TestInspectActionsMenuLetters(t *testing.T) {
+	u := inspectUI(t)
+	iv := openInspectView(t, u, "web")
+	inspectKey(t, u, iv, rune_('a'))
+	waitFront(t, u, pageInspectActions)
+	var items []string
+	onLoop(t, u, func() {
+		list, _ := u.app.GetFocus().(*tview.List)
+		for i := 0; list != nil && i < list.GetItemCount(); i++ {
+			main, _ := list.GetItemText(i)
+			items = append(items, main)
+		}
+	})
+	actions := iv.serviceActions()
+	if len(items) != len(actions)+1 {
+		t.Fatalf("menu has %d items, want %d actions + cancel: %q", len(items), len(actions), items)
+	}
+	for i, a := range actions {
+		if !strings.HasPrefix(items[i], "[yellow]"+keyLabel(a.key)+"[white]") {
+			t.Errorf("item %d %q does not lead with %c", i, items[i], a.key)
+		}
+	}
+
+	// j/k still move rather than select.
+	keyRune(t, u, 'j')
+	waitFront(t, u, pageInspectActions)
+
+	keyRune(t, u, 'P')
+	waitFront(t, u, pagePlacementMenu)
+	if pageOpen(t, u, pageInspectActions) {
+		t.Error("the menu stayed open under the placement menu")
 	}
 }
