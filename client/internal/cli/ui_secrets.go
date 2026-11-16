@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
@@ -95,123 +96,158 @@ func (t *secretsTab) renderRow(r int, s swarmops.Secret) {
 	t.table.SetCell(r, 4, labels)
 }
 
+// secretDetail is one open secret detail overlay. Its text is
+// secretDetailText; its keys attach, detach and rotate (review Q-01 split
+// it out of one closure-heavy showDetail).
+type secretDetail struct {
+	t    *secretsTab
+	dcli swarmapi.Client // the cluster the detail was opened on
+	s    swarmops.Secret
+	tv   *tview.TextView
+	ov   *overlay
+}
+
 // showDetail shows a secret's metadata and the services/containers that use
 // it. The value is deliberately absent: the Docker API never returns it, and
 // the overlay says so. Usage (services with their running containers) needs a
 // task lookup, so it fills in lazily after the overlay is up.
 func (t *secretsTab) showDetail(s swarmops.Secret) {
 	u := t.u
-	pages, dcli, sectable := u.pages, u.dcli, t.table
+	pages, dcli := u.pages, u.dcli
+	d := &secretDetail{t: t, dcli: dcli, s: s, tv: tview.NewTextView().SetDynamicColors(true)}
+	d.tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s ", s.Name))
+	// Seed with the service names already known from the list; containers pending.
+	init := make([]swarmops.NetService, 0, len(s.Services))
+	for _, name := range s.Services {
+		init = append(init, swarmops.NetService{Name: name})
+	}
+	d.tv.SetText(secretDetailText(s, init, true))
+	d.ov = u.overlayFor(pageSecDetail, t.table, footerKeys("a", "attach", "d", "detach", "r", "rotate", "j/k", "scroll", "Esc", "back"))
+	d.tv.SetInputCapture(d.keys)
+	height := min(11+len(s.Labels)+len(s.Services), 24)
+	d.ov.show(centered(d.tv, 72, height), d.tv)
+	async(u, "ui.secrets.members", func(ctx context.Context) ([]swarmops.NetService, error) {
+		return swarmops.SecretMembers(ctx, dcli, s), nil
+	}, func(members []swarmops.NetService, _ error) {
+		if pages.HasPage(pageSecDetail) {
+			d.tv.SetText(secretDetailText(s, members, false))
+		}
+	})
+}
+
+// secretDetailText renders the detail: metadata, labels, and the services
+// using the secret with their containers — names only, "…", while loading.
+func secretDetailText(s swarmops.Secret, members []swarmops.NetService, loading bool) string {
 	ts := func(tm time.Time) string {
 		if tm.IsZero() {
 			return "-"
 		}
 		return tm.Local().Format("2006-01-02 15:04:05")
 	}
-	tv := tview.NewTextView().SetDynamicColors(true)
-	tv.SetBorder(true).SetTitle(fmt.Sprintf(" secret %s ", s.Name))
-	render := func(members []swarmops.NetService, loading bool) {
-		var b strings.Builder
-		fmt.Fprintf(&b, "Name:     %s\n", s.Name)
-		fmt.Fprintf(&b, "ID:       %s\n", s.ID)
-		fmt.Fprintf(&b, "Created:  %s\n", ts(s.Created))
-		fmt.Fprintf(&b, "Updated:  %s\n", ts(s.Updated))
-		if len(s.Labels) == 0 {
-			fmt.Fprintf(&b, "Labels:   -\n")
+	var b strings.Builder
+	fmt.Fprintf(&b, "Name:     %s\n", s.Name)
+	fmt.Fprintf(&b, "ID:       %s\n", s.ID)
+	fmt.Fprintf(&b, "Created:  %s\n", ts(s.Created))
+	fmt.Fprintf(&b, "Updated:  %s\n", ts(s.Updated))
+	if len(s.Labels) == 0 {
+		fmt.Fprintf(&b, "Labels:   -\n")
+	} else {
+		fmt.Fprintf(&b, "Labels:\n")
+		keys := make([]string, 0, len(s.Labels))
+		for k := range s.Labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&b, "  %s=%s\n", k, s.Labels[k])
+		}
+	}
+	fmt.Fprintf(&b, "\nused by:\n")
+	if len(members) == 0 {
+		if loading {
+			fmt.Fprintf(&b, "  …\n")
 		} else {
-			fmt.Fprintf(&b, "Labels:\n")
-			keys := make([]string, 0, len(s.Labels))
-			for k := range s.Labels {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				fmt.Fprintf(&b, "  %s=%s\n", k, s.Labels[k])
-			}
+			fmt.Fprintf(&b, "  (no services)\n")
 		}
-		fmt.Fprintf(&b, "\nused by:\n")
-		if len(members) == 0 {
-			if loading {
-				fmt.Fprintf(&b, "  …\n")
-			} else {
-				fmt.Fprintf(&b, "  (no services)\n")
-			}
-		}
-		for _, m := range members {
-			head := m.Name + " …"
-			if !loading {
-				head = fmt.Sprintf("%s (%d)", m.Name, len(m.Containers))
-			}
-			fmt.Fprintf(&b, "  %s\n", head)
-			for _, c := range m.Containers {
-				fmt.Fprintf(&b, "      %s  %s\n", c.ID, orDash(c.Node))
-			}
-		}
-		fmt.Fprintf(&b, "\n[gray]the secret value is not retrievable via the Docker API[white]")
-		tv.SetText(b.String())
 	}
-	// Seed with the service names already known from the list; containers pending.
-	init := make([]swarmops.NetService, 0, len(s.Services))
-	for _, name := range s.Services {
-		init = append(init, swarmops.NetService{Name: name})
-	}
-	render(init, true)
-	ov := u.overlayFor(pageSecDetail, sectable, footerKeys("a", "attach", "d", "detach", "r", "rotate", "j/k", "scroll", "Esc", "back"))
-	closeSecret := ov.Close
-	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
-			closeSecret()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-			suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), s.Services)
-			u.servicePrompt(
-				fmt.Sprintf("attach secret %q to a service", s.Name),
-				fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
-				suggestions, tv,
-				func(ctx context.Context, svc string) error {
-					return swarmops.AttachSecretToService(ctx, dcli, svc, s.ID, s.Name)
-				},
-				func() { closeSecret(); t.reload() },
-			)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
-			if len(s.Services) == 0 {
-				u.info("no services use this secret")
-				return nil
-			}
-			u.servicePrompt(
-				fmt.Sprintf("detach secret %q from a service", s.Name),
-				fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
-				s.Services, tv,
-				func(ctx context.Context, svc string) error {
-					return swarmops.DetachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
-				},
-				func() { closeSecret(); t.reload() },
-			)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'r':
-			t.openRotate(s, tv, closeSecret)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	for _, m := range members {
+		head := m.Name + " …"
+		if !loading {
+			head = fmt.Sprintf("%s (%d)", m.Name, len(m.Containers))
 		}
+		fmt.Fprintf(&b, "  %s\n", head)
+		for _, c := range m.Containers {
+			fmt.Fprintf(&b, "      %s  %s\n", c.ID, orDash(c.Node))
+		}
+	}
+	fmt.Fprintf(&b, "\n[gray]the secret value is not retrievable via the Docker API[white]")
+	return b.String()
+}
+
+// keys is the detail's input capture.
+func (d *secretDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
+	if ev.Key() == tcell.KeyEscape {
+		d.ov.Close()
+		return nil
+	}
+	if ev.Key() != tcell.KeyRune {
 		return ev
-	})
-	height := 11 + len(s.Labels) + len(s.Services)
-	if height > 24 {
-		height = 24
 	}
-	ov.show(centered(tv, 72, height), tv)
-	async(u, "ui.secrets.members", func(ctx context.Context) ([]swarmops.NetService, error) {
-		return swarmops.SecretMembers(ctx, dcli, s), nil
-	}, func(members []swarmops.NetService, _ error) {
-		if pages.HasPage(pageSecDetail) {
-			render(members, false)
-		}
-	})
+	switch ev.Rune() {
+	case d.t.u.km.Quit, 'i':
+		d.ov.Close()
+	case 'a':
+		d.attach()
+	case 'd':
+		d.detach()
+	case 'r':
+		d.t.openRotate(d.s, d.tv, d.ov.Close)
+	case 'j':
+		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	case 'k':
+		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	default:
+		return ev
+	}
+	return nil
+}
+
+// done closes the detail and reloads the list: an attach or detach went
+// through.
+func (d *secretDetail) done() { d.ov.Close(); d.t.reload() }
+
+// attach asks for a service (those not using the secret are suggested) and
+// adds the secret to it.
+func (d *secretDetail) attach() {
+	u, s, dcli := d.t.u, d.s, d.dcli
+	suggestions := swarmops.ServicesExcluding(u.serviceNamesFromCache(), s.Services)
+	u.servicePrompt(
+		fmt.Sprintf("attach secret %q to a service", s.Name),
+		fmt.Sprintf("Attach secret %q to service", s.Name), "Attach",
+		suggestions, d.tv,
+		func(ctx context.Context, svc string) error {
+			return swarmops.AttachSecretToService(ctx, dcli, svc, s.ID, s.Name)
+		},
+		d.done,
+	)
+}
+
+// detach asks which of the services using the secret to remove it from.
+func (d *secretDetail) detach() {
+	u, s, dcli := d.t.u, d.s, d.dcli
+	if len(s.Services) == 0 {
+		u.info("no services use this secret")
+		return
+	}
+	u.servicePrompt(
+		fmt.Sprintf("detach secret %q from a service", s.Name),
+		fmt.Sprintf("Detach secret %q from service", s.Name), "Detach",
+		s.Services, d.tv,
+		func(ctx context.Context, svc string) error {
+			return swarmops.DetachSecretFromService(ctx, dcli, svc, s.ID, s.Name)
+		},
+		d.done,
+	)
 }
 
 // openRotate opens the rotate editor for s from its detail view. The stand-in

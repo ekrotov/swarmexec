@@ -1016,112 +1016,137 @@ func (t *treeTab) remarkUsage() {
 // collapse/expand the service under the cursor; j/k stay down/up via the
 // shared keys.
 func (t *treeTab) keys(ev *tcell.EventKey) *tcell.EventKey {
-	u := t.u
-	km, ctree, croot := u.km, t.tree, t.root
 	// g / G (and Home / End) jump the SELECTION to the first / last row. tview's
 	// tree only scrolls on them and leaves the cursor where it was — off screen,
 	// so the next j or Enter acts on a row the operator can no longer see.
 	if top, ok := treeEdgeKey(ev); ok {
-		if n := treeEdgeNode(croot, top); n != nil {
-			ctree.SetCurrentNode(n)
+		if n := treeEdgeNode(t.root, top); n != nil {
+			t.tree.SetCurrentNode(n)
 		}
 		return nil
 	}
 	if ev.Key() == tcell.KeyRune {
-		switch ev.Rune() {
-		case km.Search:
-			u.startSearch("containers")
-			return nil
-		case km.ContainerInspect:
-			u.inspectCurrent()
-			return nil
-		case km.Logs:
-			if n := ctree.GetCurrentNode(); n != nil {
-				u.showLogsForNode(n)
-			}
-			return nil
-		case km.SecurityRisks:
-			u.showSecurityRisks()
-			return nil
-		case 'X':
-			// Remove the service under the cursor, without the detour through
-			// the inspect overlay. Destructive, so it is a fixed capital key
-			// (like X in the inspect) and always behind a confirm.
-			t.removeUnderCursor()
-			return nil
-		case km.Fold:
-			// Collapse. tview's TreeView has no fold key — Left/Right only
-			// move the cursor — so fold explicitly. On a node that cannot
-			// fold (a container leaf, or an already-closed service inside a
-			// stack), step out to the parent instead, so repeated presses
-			// walk up: container → service → stack.
-			if n := ctree.GetCurrentNode(); n != nil {
-				switch {
-				case isStackNode(n):
-					n.SetExpanded(false)
-					t.markStack(n)
-				case isServiceNode(n) && n.IsExpanded():
-					n.SetExpanded(false)
-					t.markService(n)
-				default:
-					if p := parentOf(croot, n); p != nil && p != croot {
-						ctree.SetCurrentNode(p)
-					}
-				}
-			}
-			return nil
-		case km.Unfold:
-			// Expand the node under the cursor; if it is already open,
-			// descend into it.
-			if n := ctree.GetCurrentNode(); n != nil && (isServiceNode(n) || isStackNode(n)) {
-				if n.IsExpanded() && len(n.GetChildren()) > 0 {
-					ctree.SetCurrentNode(n.GetChildren()[0])
-				} else {
-					n.SetExpanded(true)
-					if isStackNode(n) {
-						t.markStack(n)
-					} else {
-						t.markService(n)
-					}
-				}
-			}
-			return nil
-		case km.StackFile:
-			u.openStackFileMenu()
-			return nil
-		case km.StackGroup:
-			// Toggle stack grouping. Only meaningful once something carries a
-			// stack label; say so rather than redrawing an identical tree.
-			if !anyStacked(t.st().svcs) {
-				u.flash(" [gray]no service carries a stack label[white]")
+		for _, b := range t.runeBindings() {
+			if b.key == ev.Rune() {
+				b.run()
 				return nil
 			}
-			t.groupByStack = !t.groupByStack
-			t.render()
-			if t.groupByStack {
-				u.flash(" [green]grouped by stack[white]")
-			} else {
-				u.flash(" [green]flat service list[white]")
-			}
-			return nil
-		case km.Forward:
-			// On a service node, forward to the task under the cursor —
-			// exactly one, like kubectl does with a pod. Forwarding "the
-			// service" would have to load-balance, which makes debugging
-			// misleading.
-			if n := ctree.GetCurrentNode(); n != nil {
-				if c, ok := n.GetReference().(resolve.Candidate); ok {
-					u.portPrompt(c)
-				} else if kids := n.GetChildren(); len(kids) > 0 {
-					if c, ok := kids[0].GetReference().(resolve.Candidate); ok {
-						u.portPrompt(c)
-					}
-				}
-			}
-			return nil
 		}
 	}
-	return u.tabKeys(ev)
+	return t.u.tabKeys(ev)
+}
+
+// treeBinding is one key of the tree: the rune and what it does.
+type treeBinding struct {
+	key rune
+	run func()
+}
+
+// runeBindings is the tree's own keys, from the live keymap — add a tree key
+// here. Order matters only when keys.yaml binds two actions to one key: the
+// first one wins, as the switch this replaced did.
+func (t *treeTab) runeBindings() []treeBinding {
+	u, km := t.u, t.u.km
+	return []treeBinding{
+		{km.Search, func() { u.startSearch("containers") }},
+		{km.ContainerInspect, u.inspectCurrent},
+		{km.Logs, t.logsUnderCursor},
+		{km.SecurityRisks, u.showSecurityRisks},
+		// Remove the service under the cursor, without the detour through the
+		// inspect overlay. Destructive, so it is a fixed capital key (like X in
+		// the inspect) and always behind a confirm.
+		{'X', t.removeUnderCursor},
+		{km.Fold, t.fold},
+		{km.Unfold, t.unfold},
+		{km.StackFile, u.openStackFileMenu},
+		{km.StackGroup, t.toggleStackGroup},
+		{km.Forward, t.forwardUnderCursor},
+	}
+}
+
+// logsUnderCursor opens the logs of the row under the cursor.
+func (t *treeTab) logsUnderCursor() {
+	if n := t.tree.GetCurrentNode(); n != nil {
+		t.u.showLogsForNode(n)
+	}
+}
+
+// fold collapses the node under the cursor. tview's TreeView has no fold key
+// — Left/Right only move the cursor — so fold explicitly. On a node that
+// cannot fold (a container leaf, or an already-closed service inside a
+// stack), step out to the parent instead, so repeated presses walk up:
+// container → service → stack.
+func (t *treeTab) fold() {
+	n := t.tree.GetCurrentNode()
+	if n == nil {
+		return
+	}
+	switch {
+	case isStackNode(n):
+		n.SetExpanded(false)
+		t.markStack(n)
+	case isServiceNode(n) && n.IsExpanded():
+		n.SetExpanded(false)
+		t.markService(n)
+	default:
+		if p := parentOf(t.root, n); p != nil && p != t.root {
+			t.tree.SetCurrentNode(p)
+		}
+	}
+}
+
+// unfold expands the node under the cursor; if it is already open, it
+// descends into it.
+func (t *treeTab) unfold() {
+	n := t.tree.GetCurrentNode()
+	if n == nil || !(isServiceNode(n) || isStackNode(n)) {
+		return
+	}
+	if n.IsExpanded() && len(n.GetChildren()) > 0 {
+		t.tree.SetCurrentNode(n.GetChildren()[0])
+		return
+	}
+	n.SetExpanded(true)
+	if isStackNode(n) {
+		t.markStack(n)
+	} else {
+		t.markService(n)
+	}
+}
+
+// toggleStackGroup toggles stack grouping. Only meaningful once something
+// carries a stack label; say so rather than redrawing an identical tree.
+func (t *treeTab) toggleStackGroup() {
+	u := t.u
+	if !anyStacked(t.st().svcs) {
+		u.flash(" [gray]no service carries a stack label[white]")
+		return
+	}
+	t.groupByStack = !t.groupByStack
+	t.render()
+	if t.groupByStack {
+		u.flash(" [green]grouped by stack[white]")
+	} else {
+		u.flash(" [green]flat service list[white]")
+	}
+}
+
+// forwardUnderCursor opens the port-forward form. On a service node it
+// forwards to the task under the cursor — exactly one, like kubectl does with
+// a pod. Forwarding "the service" would have to load-balance, which makes
+// debugging misleading.
+func (t *treeTab) forwardUnderCursor() {
+	n := t.tree.GetCurrentNode()
+	if n == nil {
+		return
+	}
+	if c, ok := n.GetReference().(resolve.Candidate); ok {
+		t.u.portPrompt(c)
+	} else if kids := n.GetChildren(); len(kids) > 0 {
+		if c, ok := kids[0].GetReference().(resolve.Candidate); ok {
+			t.u.portPrompt(c)
+		}
+	}
 }
 
 // treeEdgeKey reports whether ev asks for the first (top) or last row: g / Home

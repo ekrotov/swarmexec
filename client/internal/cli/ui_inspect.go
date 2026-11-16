@@ -660,61 +660,85 @@ func (iv *inspectView) showActions() {
 
 // handleKey is the table's input capture — the input half of the overlay.
 func (iv *inspectView) handleKey(ev *tcell.EventKey) *tcell.EventKey {
-	u := iv.u
-	editSvc, table := iv.editSvc, iv.table
-	switch {
-	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == iv.u.km.Quit || ev.Rune() == 'i')):
+	switch ev.Key() {
+	case tcell.KeyEscape:
 		iv.close()
 		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == '?':
+	case tcell.KeyEnter:
+		iv.enter()
+		return nil
+	case tcell.KeyRune:
+		return iv.runeKey(ev)
+	}
+	return ev
+}
+
+// runeKey handles a typed key: the overlay's own keys first, then — on a
+// service inspect — the editor keys.
+func (iv *inspectView) runeKey(ev *tcell.EventKey) *tcell.EventKey {
+	u := iv.u
+	switch r := ev.Rune(); {
+	case r == u.km.Quit || r == 'i':
+		iv.close()
+	case r == '?':
 		u.showHelp() // overlays don't route through tabKeys, so wire "?" directly
-		return nil
-	case editSvc != "" && ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+	case r == 'a' && iv.editSvc != "":
 		iv.showActions()
-		return nil
-	case ev.Key() == tcell.KeyEnter:
-		// Enter toggles a collapsible network row, triggers an upgrade row,
-		// otherwise copies the line.
-		r, _ := table.GetSelection()
-		if net, ok := iv.rowNet[r]; ok {
-			iv.expanded[net] = !iv.expanded[net]
-			iv.populate()
-		} else if _, ok := iv.rowUpgrade[r]; ok && editSvc != "" && iv.upInfo != nil {
-			iv.openVersionPicker()
-		} else {
-			iv.copyLine()
-		}
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == iv.u.km.Copy:
+	case r == u.km.Copy:
 		iv.copyLine()
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
-		iv.mode = iv.mode.next()
-		iv.populate()
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() >= '1' && ev.Rune() <= '3':
+	case r == 't':
+		iv.setMode(iv.mode.next())
+	case r >= '1' && r <= '3':
 		// The digits the strip shows, selecting a view directly — the same
 		// bargain the main window's tabs offer. No other key in this overlay
 		// takes a digit.
-		iv.mode = inspModes[ev.Rune()-'1']
-		iv.populate()
-		return nil
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+		iv.setMode(inspModes[r-'1'])
+	case r == 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+	case r == 'k':
 		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-	}
-	// A service inspect's editor keys are the actions menu's own list, so a
-	// key and its menu entry cannot drift apart.
-	if editSvc != "" && ev.Key() == tcell.KeyRune {
-		for _, a := range iv.serviceActions() {
-			if a.key == ev.Rune() {
-				a.run()
-				return nil
-			}
+	default:
+		if !iv.runAction(r) {
+			return ev
 		}
 	}
-	return ev
+	return nil
+}
+
+// setMode switches the view and redraws.
+func (iv *inspectView) setMode(m inspMode) {
+	iv.mode = m
+	iv.populate()
+}
+
+// enter toggles a collapsible network row, triggers an upgrade row, and
+// otherwise copies the line.
+func (iv *inspectView) enter() {
+	r, _ := iv.table.GetSelection()
+	if net, ok := iv.rowNet[r]; ok {
+		iv.expanded[net] = !iv.expanded[net]
+		iv.populate()
+	} else if _, ok := iv.rowUpgrade[r]; ok && iv.editSvc != "" && iv.upInfo != nil {
+		iv.openVersionPicker()
+	} else {
+		iv.copyLine()
+	}
+}
+
+// runAction runs the service action bound to r, if this is a service
+// inspect and one is. A service inspect's editor keys are the actions menu's
+// own list, so a key and its menu entry cannot drift apart.
+func (iv *inspectView) runAction(r rune) bool {
+	if iv.editSvc == "" {
+		return false
+	}
+	for _, a := range iv.serviceActions() {
+		if a.key == r {
+			a.run()
+			return true
+		}
+	}
+	return false
 }
 
 // open wires the widget to its input/footer and kicks off the initial fetch.
