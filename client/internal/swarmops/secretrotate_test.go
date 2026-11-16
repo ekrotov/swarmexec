@@ -662,3 +662,115 @@ func TestSwitchSecretRefs_LeavesInputAlone(t *testing.T) {
 		t.Errorf("other ref changed: %+v", *b)
 	}
 }
+
+// convergePoll is what one poll of waitConverged sees.
+type convergePoll struct {
+	status     *swarm.UpdateStatus
+	tasks      []swarm.Task
+	inspectErr error
+	listErr    error
+}
+
+// scriptedConverge answers waitConverged's polls from a script; the last poll
+// repeats.
+type scriptedConverge struct {
+	*fakeRotateAPI
+	polls []convergePoll
+	i     int
+}
+
+func (s *scriptedConverge) poll() convergePoll { return s.polls[min(s.i, len(s.polls)-1)] }
+
+func (s *scriptedConverge) ServiceInspect(context.Context, string, client.ServiceInspectOptions) (client.ServiceInspectResult, error) {
+	p := s.poll()
+	return client.ServiceInspectResult{Service: swarm.Service{UpdateStatus: p.status}}, p.inspectErr
+}
+
+func (s *scriptedConverge) TaskList(context.Context, client.TaskListOptions) (client.TaskListResult, error) {
+	p := s.poll()
+	s.i++
+	return client.TaskListResult{Items: p.tasks}, p.listErr
+}
+
+// convergeTask is a task meant to be in desired, now in state, mounting secretID
+// ("" = a task without a container spec).
+func convergeTask(desired, state swarm.TaskState, secretID string) swarm.Task {
+	t := swarm.Task{DesiredState: desired, Status: swarm.TaskStatus{State: state}}
+	if secretID != "" {
+		t.Spec.ContainerSpec = &swarm.ContainerSpec{Secrets: []*swarm.SecretReference{nil, {SecretID: secretID}}}
+	}
+	return t
+}
+
+// waitConverged, poll by poll: failed update states, read errors, the counts
+// it reports while converging, both success lines, the timeout and a cancel.
+func TestWaitConvergedPolls(t *testing.T) {
+	run, shut, pend := swarm.TaskStateRunning, swarm.TaskStateShutdown, swarm.TaskStatePending
+	upd := &swarm.UpdateStatus{State: swarm.UpdateStateUpdating}
+	cases := []struct {
+		name    string
+		polls   []convergePoll
+		timeout time.Duration
+		wantErr string
+		want    []string
+	}{
+		{name: "inspect fails", polls: []convergePoll{{inspectErr: errors.New("boom")}},
+			wantErr: "inspect service web: boom"},
+		{name: "paused without reason", polls: []convergePoll{{status: &swarm.UpdateStatus{State: swarm.UpdateStatePaused}}},
+			wantErr: "rolling update of web paused: no reason given"},
+		{name: "rolled back", polls: []convergePoll{{status: &swarm.UpdateStatus{State: swarm.UpdateStateRollbackCompleted, Message: "task failed"}}},
+			wantErr: "rolling update of web rollback_completed: task failed"},
+		{name: "list fails", polls: []convergePoll{{listErr: errors.New("gone")}},
+			wantErr: "list tasks of web: gone"},
+		{name: "no tasks", polls: []convergePoll{{status: &swarm.UpdateStatus{State: swarm.UpdateStateCompleted}}},
+			want: []string{"web updated (no running tasks)"}},
+		{name: "converges", polls: []convergePoll{
+			{status: upd, tasks: []swarm.Task{convergeTask(run, run, "old"), convergeTask(run, run, ""), convergeTask(shut, run, "new")}},
+			{status: upd, tasks: []swarm.Task{convergeTask(run, run, "old"), convergeTask(run, run, ""), convergeTask(shut, run, "new")}},
+			{tasks: []swarm.Task{convergeTask(run, run, "new"), convergeTask(run, pend, "new")}},
+			{tasks: []swarm.Task{convergeTask(run, run, "new"), convergeTask(run, run, "new")}},
+		}, want: []string{
+			"web converging: 0/2 task(s) running on db_rotating",
+			"web converging: 1/2 task(s) running on db_rotating",
+			"web converged: 2 task(s) running",
+		}},
+		{name: "updating with nothing left", polls: []convergePoll{{status: upd}}, timeout: time.Millisecond,
+			wantErr: "web did not converge within 1ms (0 running, 0 starting, 0 still on the old secret)",
+			want:    []string{"web converging: 0/0 task(s) running on db_rotating"}},
+		{name: "times out", polls: []convergePoll{{tasks: []swarm.Task{convergeTask(run, run, "old"), convergeTask(run, pend, "new"), convergeTask(run, run, "new")}}},
+			timeout: time.Millisecond,
+			wantErr: "web did not converge within 1ms (1 running, 1 starting, 1 still on the old secret)",
+			want:    []string{"web converging: 1/3 task(s) running on db_rotating"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var events []RotateEvent
+			opt := fastRotate(&events)
+			if c.timeout > 0 {
+				opt.Timeout = c.timeout
+			}
+			r := &rotation{api: &scriptedConverge{polls: c.polls}, opt: opt}
+			err := r.waitConverged(context.Background(), RotateUser{ID: "s1", Name: "web"}, "new", "db_rotating")
+			if got := fmt.Sprint(err); (c.wantErr == "" && err != nil) || (c.wantErr != "" && got != c.wantErr) {
+				t.Errorf("err = %v, want %q", err, c.wantErr)
+			}
+			var msgs []string
+			for _, e := range events {
+				if e.Service != "web" {
+					t.Errorf("event for %q", e.Service)
+				}
+				msgs = append(msgs, e.Msg)
+			}
+			if strings.Join(msgs, "\n") != strings.Join(c.want, "\n") {
+				t.Errorf("progress:\n%s\nwant:\n%s", strings.Join(msgs, "\n"), strings.Join(c.want, "\n"))
+			}
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := &rotation{api: &scriptedConverge{polls: []convergePoll{{status: upd}}}, opt: RotateOptions{Timeout: time.Hour, Poll: time.Hour}}
+	if err := r.waitConverged(ctx, RotateUser{ID: "s1", Name: "web"}, "new", "db_rotating"); !errors.Is(err, context.Canceled) {
+		t.Errorf("cancelled: err = %v", err)
+	}
+}
