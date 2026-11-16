@@ -696,26 +696,42 @@ func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, err
 	if err != nil {
 		return "", err
 	}
-	// Only the nodes that run something visible: there is nothing to report
-	// from the others, and asking them costs a round trip each.
-	want := map[string]bool{}
-	var mine []resolve.Candidate
+	mine, ask := statsTargets(cands, nodes, func(svc string) bool {
+		return v.has(svc) && (in.Service == "" || svc == in.Service)
+	})
+	usage, answered, err := s.pollUsage(ctx, ac, ask, mine)
+	if err != nil {
+		return "", err
+	}
+	return jsonText(statsRows(mine, usage, answered))
+}
+
+// statsTargets is the containers of the services wanted, and only the nodes
+// that run one of them: there is nothing to report from the others, and
+// asking them costs a round trip each.
+func statsTargets(cands []resolve.Candidate, nodes []resolve.Node, wanted func(svc string) bool) (mine []resolve.Candidate, ask []resolve.Node) {
+	onNode := map[string]bool{}
 	for _, cd := range cands {
-		if v.has(cd.Service) && (in.Service == "" || cd.Service == in.Service) {
+		if wanted(cd.Service) {
 			mine = append(mine, cd)
-			want[cd.NodeID] = true
+			onNode[cd.NodeID] = true
 		}
 	}
-	var ask []resolve.Node
 	for _, n := range nodes {
-		if want[n.ID] {
+		if onNode[n.ID] {
 			ask = append(ask, n)
 		}
 	}
-	// Ask, and while a node's sampler is still warming up, ask again — within a
-	// bound, so a node that never gets there costs seconds, not the session.
-	usage := map[string]agentcall.ContainerUsage{}
-	answered := map[string]bool{}
+	return mine, ask
+}
+
+// pollUsage asks the nodes for usage, and while a node's sampler is still
+// warming up, asks again — within s.statsWait, so a node that never gets
+// there costs seconds, not the session. answered holds the node names that
+// replied at all.
+func (s *Server) pollUsage(ctx context.Context, ac *agentcall.Client, ask []resolve.Node, mine []resolve.Candidate) (usage map[string]agentcall.ContainerUsage, answered map[string]bool, err error) {
+	usage = map[string]agentcall.ContainerUsage{}
+	answered = map[string]bool{}
 	deadline := time.Now().Add(s.statsWait)
 	for {
 		u, byNode := ac.Usage(ctx, ask, s.connectTimeout)
@@ -726,14 +742,18 @@ func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, err
 			answered[n] = true
 		}
 		if len(byNode) == 0 || statsComplete(mine, usage, answered) || !time.Now().Add(s.statsPoll).Before(deadline) {
-			break
+			return usage, answered, nil
 		}
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return nil, nil, ctx.Err()
 		case <-time.After(s.statsPoll):
 		}
 	}
+}
+
+// statsRows is one row per container: its reading, or why there is none.
+func statsRows(mine []resolve.Candidate, usage map[string]agentcall.ContainerUsage, answered map[string]bool) []mcpStatsRow {
 	rows := []mcpStatsRow{}
 	for _, cd := range mine {
 		row := mcpStatsRow{Service: cd.Service, Slot: cd.Slot, Node: orDash(cd.NodeName), Container: shortID(cd.ContainerID)}
@@ -751,7 +771,7 @@ func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, err
 		}
 		rows = append(rows, row)
 	}
-	return jsonText(rows)
+	return rows
 }
 
 // --- volumes / networks / secrets / configs ----------------------------------
