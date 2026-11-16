@@ -1584,65 +1584,81 @@ func (u *ui) yankContexts(b *strings.Builder) {
 	}
 }
 
+// tabKeys is the keys every tab shares, the last stop of each tab's own
+// input capture. The order is the one the keys were always matched in (help
+// and log viewer, Tab, tab numbers, the keymap's keys, j/k): a keys.yaml
+// binding over a key earlier in it never fires.
 func (u *ui) tabKeys(ev *tcell.EventKey) *tcell.EventKey {
-	app, km := u.app, u.km
-	active := u.active
-	if ev.Key() == tcell.KeyRune && ev.Rune() == '?' {
+	if ev.Key() == tcell.KeyTab {
+		u.nextTab()
+		return nil
+	}
+	if ev.Key() != tcell.KeyRune {
+		return ev
+	}
+	r := ev.Rune()
+	switch r {
+	case '?':
 		u.showHelp()
 		return nil
-	}
-	if ev.Key() == tcell.KeyRune && ev.Rune() == '`' {
+	case '`':
 		u.toggleLogView()
-		return nil
-	}
-	if ev.Key() == tcell.KeyTab {
-		for i, t := range uiTabList {
-			if t.key == active {
-				u.setTab(uiTabList[(i+1)%len(uiTabList)].key)
-				break
-			}
-		}
 		return nil
 	}
 	// Tab-number keys, derived from the tab list rather than hardcoded — the tab
 	// bar labels its tabs from the same positions, so the two cannot drift.
-	if ev.Key() == tcell.KeyRune && ev.Rune() >= '1' && ev.Rune() <= '9' {
-		if i := int(ev.Rune() - '1'); i < len(uiTabList) {
-			u.setTab(uiTabList[i].key)
-			return nil
-		}
+	if r >= '1' && r <= '9' && int(r-'1') < len(uiTabList) {
+		u.setTab(uiTabList[r-'1'].key)
+		return nil
 	}
-	if ev.Key() == tcell.KeyRune {
-		switch ev.Rune() {
-		case km.Quit:
-			app.Stop()
-			return nil
-		case km.Refresh:
-			if t := u.activeTab(); t != nil {
-				t.refresh()
-			}
-			// The context list comes from docker's local store, so it costs
-			// nothing and is refreshed whatever tab you are on — it is always
-			// on screen now.
-			u.loadContexts()
-			u.refreshCluster()
-			return nil
-		case km.Copy:
-			u.yankCurrent()
-			return nil
-		case km.ToggleMouse:
-			u.toggleMouse()
-			return nil
-		case km.CtxFocus:
-			u.focusSidebar()
-			return nil
-		case 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-		}
+	if u.globalKey(r) {
+		return nil
+	}
+	switch r {
+	case 'j':
+		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	case 'k':
+		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 	}
 	return ev
+}
+
+// nextTab is Tab: the next tab in the tab bar, wrapping to the first.
+func (u *ui) nextTab() {
+	for i, t := range uiTabList {
+		if t.key == u.active {
+			u.setTab(uiTabList[(i+1)%len(uiTabList)].key)
+			return
+		}
+	}
+}
+
+// globalKey runs the keymap action bound to r, if any, and says whether
+// there was one.
+func (u *ui) globalKey(r rune) bool {
+	km := u.km
+	switch r {
+	case km.Quit:
+		u.app.Stop()
+	case km.Refresh:
+		if t := u.activeTab(); t != nil {
+			t.refresh()
+		}
+		// The context list comes from docker's local store, so it costs
+		// nothing and is refreshed whatever tab you are on — it is always
+		// on screen now.
+		u.loadContexts()
+		u.refreshCluster()
+	case km.Copy:
+		u.yankCurrent()
+	case km.ToggleMouse:
+		u.toggleMouse()
+	case km.CtxFocus:
+		u.focusSidebar()
+	default:
+		return false
+	}
+	return true
 }
 
 // closeLogView closes the log viewer. The viewer (closeLogView / openLogView /
