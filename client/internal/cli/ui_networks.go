@@ -453,79 +453,95 @@ func (t *networksTab) showMembers(n swarmops.Network) {
 // render rebuilds the list from the current members/expanded state and the
 // row→service map — the view half of the overlay.
 func (v *netMembersView) render() {
-	list, n := v.list, v.n
+	list := v.list
 	cur := list.GetCurrentItem()
 	list.Clear()
 	v.rowSvc = v.rowSvc[:0]
-	meta := func(svc string) { v.rowSvc = append(v.rowSvc, svc) }
-	// The network's own labels (read-only) at the top — Docker has no
-	// network-update API, so they can't be edited here.
-	if lbls := swarmops.KVPairs(n.Labels); len(lbls) > 0 {
-		list.AddItem("[gray]labels[-]", "", 0, nil)
-		meta("")
-		for _, l := range lbls {
-			list.AddItem("    "+tview.Escape(l), "", 0, nil)
-			meta("")
-		}
-		list.AddItem("", "", 0, nil)
-		meta("")
-	}
-	if len(v.members) == 0 {
-		if v.loaded {
-			list.AddItem("(no services attached)", "", 0, nil)
-		} else {
-			list.AddItem(loadingText, "", 0, nil)
-		}
-		meta("")
-	}
-	// Pad the id/node columns to the widest across every service so the
-	// node and IP columns line up down the whole list, not just per row.
-	idW, nodeW := 0, 0
-	for _, s := range v.members {
-		for _, c := range s.Containers {
-			if w := len(c.ID); w > idW {
-				idW = w
-			}
-			if w := len(orDash(c.Node)); w > nodeW {
-				nodeW = w
-			}
-		}
-	}
-	for _, s := range v.members {
-		head := tview.Escape(s.Name) + " …"
-		if v.loaded {
-			head = fmt.Sprintf("%s (%d)", tview.Escape(s.Name), len(s.Containers))
-			switch {
-			case len(s.Aliases) == 0:
-				head += "  [gray]no aliases[-]"
-			case v.expanded[s.Name]:
-				head += fmt.Sprintf("  [aqua]- %d aliases[-]", len(s.Aliases))
-			default:
-				head += fmt.Sprintf("  [aqua]+ %d aliases[-]", len(s.Aliases))
-			}
-		}
-		list.AddItem(head, "", 0, nil)
-		meta(s.Name)
-		if v.loaded && v.expanded[s.Name] {
-			for _, a := range s.Aliases {
-				list.AddItem("        [gray]alias:[-] "+tview.Escape(a), "", 0, nil)
-				meta(s.Name)
-			}
-		}
-		for _, c := range s.Containers {
-			list.AddItem(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), "", 0, nil)
-			meta(s.Name)
-		}
-	}
+	v.addLabelRows()
+	v.addServiceRows()
 	if v.swarmNet {
-		for _, l := range endpointBlock(v.u.netTab().endpoints().byNet[n.ID], n.Name, netMembersWidth-2) {
-			list.AddItem(l, "", 0, nil)
-			meta("")
+		for _, l := range endpointBlock(v.u.netTab().endpoints().byNet[v.n.ID], v.n.Name, netMembersWidth-2) {
+			v.addRow(l, "")
 		}
 	}
 	if cur < list.GetItemCount() {
 		list.SetCurrentItem(cur)
 	}
+}
+
+// addRow adds one list row and the service it belongs to ("" for none).
+func (v *netMembersView) addRow(text, svc string) {
+	v.list.AddItem(text, "", 0, nil)
+	v.rowSvc = append(v.rowSvc, svc)
+}
+
+// addLabelRows puts the network's own labels (read-only) at the top —
+// Docker has no network-update API, so they can't be edited here.
+func (v *netMembersView) addLabelRows() {
+	lbls := swarmops.KVPairs(v.n.Labels)
+	if len(lbls) == 0 {
+		return
+	}
+	v.addRow("[gray]labels[-]", "")
+	for _, l := range lbls {
+		v.addRow("    "+tview.Escape(l), "")
+	}
+	v.addRow("", "")
+}
+
+// addServiceRows lists each service: its head, its aliases when unfolded,
+// and its containers.
+func (v *netMembersView) addServiceRows() {
+	if len(v.members) == 0 {
+		if v.loaded {
+			v.addRow("(no services attached)", "")
+		} else {
+			v.addRow(loadingText, "")
+		}
+	}
+	idW, nodeW := memberColumns(v.members)
+	for _, s := range v.members {
+		v.addRow(v.serviceHead(s), s.Name)
+		if v.loaded && v.expanded[s.Name] {
+			for _, a := range s.Aliases {
+				v.addRow("        [gray]alias:[-] "+tview.Escape(a), s.Name)
+			}
+		}
+		for _, c := range s.Containers {
+			v.addRow(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), s.Name)
+		}
+	}
+}
+
+// memberColumns is the id and node column widths: the widest across every
+// service, so the node and IP columns line up down the whole list, not just
+// per row.
+func memberColumns(members []swarmops.NetService) (idW, nodeW int) {
+	for _, s := range members {
+		for _, c := range s.Containers {
+			idW = max(idW, len(c.ID))
+			nodeW = max(nodeW, len(orDash(c.Node)))
+		}
+	}
+	return idW, nodeW
+}
+
+// serviceHead is a service's row: its name, and once the lookup is in, its
+// container count and whether its aliases are folded (+) or shown (-).
+func (v *netMembersView) serviceHead(s swarmops.NetService) string {
+	if !v.loaded {
+		return tview.Escape(s.Name) + " …"
+	}
+	head := fmt.Sprintf("%s (%d)", tview.Escape(s.Name), len(s.Containers))
+	switch {
+	case len(s.Aliases) == 0:
+		head += "  [gray]no aliases[-]"
+	case v.expanded[s.Name]:
+		head += fmt.Sprintf("  [aqua]- %d aliases[-]", len(s.Aliases))
+	default:
+		head += fmt.Sprintf("  [aqua]+ %d aliases[-]", len(s.Aliases))
+	}
+	return head
 }
 
 func (v *netMembersView) close() { v.ov.Close() }
@@ -602,69 +618,94 @@ func endpointBlock(e *swarmops.NetEndpoints, netName string, width int) []string
 		nodeW = max(nodeW, len(n.Node))
 	}
 	for _, n := range e.Nodes {
-		name := fmt.Sprintf("    %-*s  ", nodeW, tview.Escape(n.Node))
-		switch n.State {
-		case swarmops.NodeEndpointsOK:
-			line := fmt.Sprintf("%srunning %d · local %d + %d LB · MACs %d · networkdb %d",
-				name, n.Expected, n.Containers, n.LB, n.MACs, n.Known)
-			if n.Stale > 0 {
-				line += fmt.Sprintf("  [yellow]⚠ %d stale[-]", n.Stale)
-			}
-			if n.Containers != n.Expected {
-				line += "  [gray](local ≠ running)[-]"
-			}
+		if line, ok := endpointNodeRow(n, nodeW); ok {
 			rows = append(rows, line)
-		case swarmops.NodeNotOnNetwork:
-			if n.Expected > 0 {
-				rows = append(rows, fmt.Sprintf("%s[yellow]running %d, but the node reports no such network[-]", name, n.Expected))
-			}
-		case swarmops.NodeNetworkError, swarmops.NodeUnreachable:
-			rows = append(rows, fmt.Sprintf("%s[gray]%s: %s[-]", name, n.State, tview.Escape(n.Err)))
-		default:
-			rows = append(rows, fmt.Sprintf("%s[gray]%s[-]", name, n.State))
 		}
 	}
 	if len(e.Stale) > 0 {
 		rows = append(rows, "", fmt.Sprintf("[yellow]stale candidates (%d) — no live task has the address[-]", len(e.Stale)))
 		for _, s := range e.Stale {
-			line := fmt.Sprintf("    %-15s %-17s %s", s.IP, orDash(s.MAC), tview.Escape(orDash(s.Name)))
-			var where []string
-			if s.Owner != "" {
-				where = append(where, "on "+tview.Escape(s.Owner))
-			}
-			if s.Orphan {
-				where = append(where, "endpoint without container")
-			} else if s.Local {
-				where = append(where, "still attached")
-			}
-			if len(s.SeenBy) > 0 {
-				where = append(where, "seen by "+tview.Escape(strings.Join(s.SeenBy, ",")))
-			}
-			if len(where) > 0 {
-				line += "  [gray]" + strings.Join(where, " · ") + "[-]"
-			}
-			rows = append(rows, line)
+			rows = append(rows, staleEndpointRow(s))
 		}
 	}
-	dups := func(title string, ds []swarmops.Duplicate) {
-		if len(ds) == 0 {
-			return
-		}
-		rows = append(rows, "", fmt.Sprintf("[yellow]%s (%d)[-]", title, len(ds)))
-		for _, d := range ds {
-			rows = append(rows, fmt.Sprintf("    %-17s %s", d.Addr, tview.Escape(strings.Join(d.Endpoints, ", "))))
-		}
-	}
-	dups("duplicate IPs — one address on several endpoints", e.DupIPs)
-	dups("duplicate MACs", e.DupMACs)
+	rows = append(rows, duplicateRows("duplicate IPs — one address on several endpoints", e.DupIPs)...)
+	rows = append(rows, duplicateRows("duplicate MACs", e.DupMACs)...)
 	if e.Warn() {
-		rows = append(rows, "",
-			"[gray]fix:[-] on a node that lists the entry, remove the leftover endpoint:",
-			"       docker network disconnect -f "+tview.Escape(orDash(netName))+" <endpoint name>")
-		for _, l := range tview.WordWrap("or restart Docker on the node that held it. Refresh first: a task that "+
-			"just started or stopped shows here for a moment.", width-6) {
-			rows = append(rows, "     [gray]"+tview.Escape(l)+"[-]")
+		rows = append(rows, endpointFixRows(netName, width)...)
+	}
+	return rows
+}
+
+// endpointNodeRow is one node's row of the endpoint block, its name padded
+// to nodeW; false for a node off the network that expects nothing there.
+func endpointNodeRow(n swarmops.NodeEndpoints, nodeW int) (string, bool) {
+	name := fmt.Sprintf("    %-*s  ", nodeW, tview.Escape(n.Node))
+	switch n.State {
+	case swarmops.NodeEndpointsOK:
+		line := fmt.Sprintf("%srunning %d · local %d + %d LB · MACs %d · networkdb %d",
+			name, n.Expected, n.Containers, n.LB, n.MACs, n.Known)
+		if n.Stale > 0 {
+			line += fmt.Sprintf("  [yellow]⚠ %d stale[-]", n.Stale)
 		}
+		if n.Containers != n.Expected {
+			line += "  [gray](local ≠ running)[-]"
+		}
+		return line, true
+	case swarmops.NodeNotOnNetwork:
+		if n.Expected > 0 {
+			return fmt.Sprintf("%s[yellow]running %d, but the node reports no such network[-]", name, n.Expected), true
+		}
+		return "", false
+	case swarmops.NodeNetworkError, swarmops.NodeUnreachable:
+		return fmt.Sprintf("%s[gray]%s: %s[-]", name, n.State, tview.Escape(n.Err)), true
+	default:
+		return fmt.Sprintf("%s[gray]%s[-]", name, n.State), true
+	}
+}
+
+// staleEndpointRow is one stale candidate: address, MAC, endpoint name, and
+// where it was found.
+func staleEndpointRow(s swarmops.StaleEndpoint) string {
+	line := fmt.Sprintf("    %-15s %-17s %s", s.IP, orDash(s.MAC), tview.Escape(orDash(s.Name)))
+	var where []string
+	if s.Owner != "" {
+		where = append(where, "on "+tview.Escape(s.Owner))
+	}
+	if s.Orphan {
+		where = append(where, "endpoint without container")
+	} else if s.Local {
+		where = append(where, "still attached")
+	}
+	if len(s.SeenBy) > 0 {
+		where = append(where, "seen by "+tview.Escape(strings.Join(s.SeenBy, ",")))
+	}
+	if len(where) > 0 {
+		line += "  [gray]" + strings.Join(where, " · ") + "[-]"
+	}
+	return line
+}
+
+// duplicateRows is a titled list of addresses held by several endpoints;
+// nothing when there are none.
+func duplicateRows(title string, ds []swarmops.Duplicate) []string {
+	if len(ds) == 0 {
+		return nil
+	}
+	rows := []string{"", fmt.Sprintf("[yellow]%s (%d)[-]", title, len(ds))}
+	for _, d := range ds {
+		rows = append(rows, fmt.Sprintf("    %-17s %s", d.Addr, tview.Escape(strings.Join(d.Endpoints, ", "))))
+	}
+	return rows
+}
+
+// endpointFixRows is the remedy under a block that found something.
+func endpointFixRows(netName string, width int) []string {
+	rows := []string{"",
+		"[gray]fix:[-] on a node that lists the entry, remove the leftover endpoint:",
+		"       docker network disconnect -f " + tview.Escape(orDash(netName)) + " <endpoint name>"}
+	for _, l := range tview.WordWrap("or restart Docker on the node that held it. Refresh first: a task that "+
+		"just started or stopped shows here for a moment.", width-6) {
+		rows = append(rows, "     [gray]"+tview.Escape(l)+"[-]")
 	}
 	return rows
 }
