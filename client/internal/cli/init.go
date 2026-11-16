@@ -107,52 +107,112 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
+// runInit deploys the agent: connect to a manager, plan (every check that can
+// refuse, before anything is written), then apply the plan step by step.
+//
+// It was one 190-line function holding all of that (review Q-01). The order
+// of the writes is unchanged and is part of the behaviour: the secret is
+// created before the registry credentials are read, so a re-run after a
+// failed step 2 reuses the secret step 1 made.
 func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
+	dcli, err := connectInitManager(ctx, out, g)
+	if err != nil {
+		return err
+	}
+	plan, err := planInit(ctx, dcli, f)
+	if err != nil {
+		return err
+	}
+	d := &initDeploy{ctx: ctx, dcli: dcli, out: out, f: f, plan: plan}
+
+	secret, err := d.sharedSecret() // [1/3]
+	if err != nil {
+		return err
+	}
+	serviceID, err := d.agentService(secret.id) // [2/3]
+	if err != nil {
+		return err
+	}
+	if img := inspectServiceImage(ctx, dcli, serviceID); img != "" {
+		fmt.Fprintf(out, "        image: %s\n", img)
+	}
+	if f.wait { // [3/3]
+		d.step(3, "starting agents")
+		fmt.Fprintln(out)
+		waitRollout(ctx, dcli, serviceID, out, f.rolloutTimeout)
+	}
+	if f.saveConfig {
+		d.saveClientConfig(g.configPath, secret)
+	}
+
+	fmt.Fprintf(out, "\n✓ ready — try:\n  swarmexec ps\n  swarmexec ui\n")
+	return nil
+}
+
+// connectInitManager picks the Docker context, connects to it and makes sure
+// it is a Swarm manager, saying which as it goes.
+func connectInitManager(ctx context.Context, out io.Writer, g *globalFlags) (*client.Client, error) {
 	tctx, cerr := resolveContext(out, g)
 	if cerr != nil {
-		return cerr
+		return nil, cerr
 	}
 	dcli, err := newDockerClient(ctx, tctx.Name)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return nil, &cliError{code: usageExitCode, err: err}
 	}
 	fmt.Fprintf(out, "deploying agents into Docker context %q (%s)\n", tctx.Name, hostOrDefault(tctx.Host))
 
 	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
 	info := infoRes.Info
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
+		return nil, &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
 	}
 	if !info.Swarm.ControlAvailable {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
+		return nil, &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
 	}
-
-	steps := 3 // secret, service, rollout/config
-	step := func(n int, label string) {
-		fmt.Fprintf(out, "[%d/%d] %s … ", n, steps, label)
-	}
-
 	fmt.Fprintf(out, "manager: %s (%d nodes)\n", info.Name, info.Swarm.Nodes)
+	return dcli, nil
+}
 
+// initPlan is what init settles before it writes anything. Everything that
+// can refuse the flags is checked while planning, so a refusal leaves the
+// cluster as it was.
+type initPlan struct {
+	policy    []byte // the --policy-file contents, already checked; nil without one
+	newSecret string // the value the shared secret gets if init has to create it
+}
+
+func planInit(ctx context.Context, dcli swarmops.ServiceLister, f *initFlags) (initPlan, error) {
+	var p initPlan
 	// Pre-flight: a policy that the agents would refuse must fail HERE, on this
 	// machine, not as an agent that will not start on every node. The agents
 	// init deploys use a shared secret and no client CA, so they cannot verify
 	// identities — checked exactly as they will check it.
-	var policyData []byte
 	if f.policyFile != "" {
 		b, err := os.ReadFile(f.policyFile)
 		if err != nil {
-			return &cliError{code: usageExitCode, err: fmt.Errorf("read --policy-file: %w", err)}
+			return p, &cliError{code: usageExitCode, err: fmt.Errorf("read --policy-file: %w", err)}
 		}
 		if _, err := policy.Parse(b, false); err != nil {
-			return &cliError{code: usageExitCode, err: fmt.Errorf("--policy-file %s: %w", f.policyFile, err)}
+			return p, &cliError{code: usageExitCode, err: fmt.Errorf("--policy-file %s: %w", f.policyFile, err)}
 		}
-		policyData = b
+		p.policy = b
 	}
+	if err := checkInitPorts(ctx, dcli, f); err != nil {
+		return p, err
+	}
+	p.newSecret = f.secret
+	if p.newSecret == "" {
+		p.newSecret = generateSecret()
+	}
+	return p, nil
+}
 
-	// Pre-flight: fail fast on a host-port conflict before creating anything.
+// checkInitPorts fails fast on a host-port conflict before anything is
+// created: the global agent could not bind a port another service publishes.
+func checkInitPorts(ctx context.Context, dcli swarmops.ServiceLister, f *initFlags) error {
 	if f.metricsPort == f.port {
 		return &cliError{code: usageExitCode, err: fmt.Errorf("--metrics-port %d is the agent port; pick another", f.metricsPort)}
 	}
@@ -167,133 +227,147 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 				"host port %d is already published by service %q — pick another --metrics-port", f.metricsPort, other)}
 		}
 	}
+	return nil
+}
 
-	// [1/3] shared secret --------------------------------------------------------
-	step(1, "shared secret")
-	createWith := f.secret
-	if createWith == "" {
-		createWith = generateSecret()
-	}
-	secretID, created, err := ensureSecret(ctx, dcli, agentSecretName, createWith)
+// initDeploy applies an initPlan to the cluster, one numbered step at a time.
+type initDeploy struct {
+	ctx  context.Context
+	dcli *client.Client
+	out  io.Writer
+	f    *initFlags
+	plan initPlan
+}
+
+const initSteps = 3 // secret, service, rollout/config
+
+// step opens a step's line; its outcome is printed at the end of it.
+func (d *initDeploy) step(n int, label string) {
+	fmt.Fprintf(d.out, "[%d/%d] %s … ", n, initSteps, label)
+}
+
+// failed ends the current step's line and makes err init's result.
+func (d *initDeploy) failed(code int, err error) error {
+	fmt.Fprintln(d.out, "failed")
+	return &cliError{code: code, err: err}
+}
+
+// initSecret is the shared secret the agents are deployed with.
+type initSecret struct {
+	id    string
+	value string
+	// known: value is the cluster's secret. Only if init just created it, or
+	// the operator passed it explicitly (Docker secrets are write-only, so an
+	// existing one's value cannot be read back).
+	known bool
+}
+
+// sharedSecret is step 1: create the shared secret, or reuse the one there.
+func (d *initDeploy) sharedSecret() (initSecret, error) {
+	d.step(1, "shared secret")
+	id, created, err := ensureSecret(d.ctx, d.dcli, agentSecretName, d.plan.newSecret)
 	if err != nil {
-		fmt.Fprintln(out, "failed")
-		return &cliError{code: session.TransportFailure, err: err}
+		return initSecret{}, d.failed(session.TransportFailure, err)
 	}
-	// We know the value to write into the client config only if we just created
-	// the secret, or the operator passed it explicitly (Docker secrets are
-	// write-only, so an existing one's value cannot be read back).
-	knownSecret := created || f.secret != ""
-	secretVal := createWith
+	s := initSecret{id: id, value: d.plan.newSecret, known: created || d.f.secret != ""}
 	if created {
-		fmt.Fprintln(out, "created")
-	} else {
-		fmt.Fprintln(out, "reusing existing")
-		if f.secret != "" {
-			// The existing secret is kept (Docker secrets are immutable), so the
-			// --secret value is NOT applied to the cluster — yet it IS written to the
-			// client config below. If it isn't the existing secret's actual value the
-			// agent will reject the client, so warn loudly.
-			fmt.Fprintf(out, "warning: secret %q already exists and is kept as-is — your --secret value was NOT applied to the cluster.\n"+
-				"         It will be written to the client config, so it must equal the existing secret's value or the agent will reject you.\n"+
-				"         To change the cluster secret, remove it first (no service may reference it) and re-run init.\n", agentSecretName)
-		}
+		fmt.Fprintln(d.out, "created")
+		return s, nil
 	}
+	fmt.Fprintln(d.out, "reusing existing")
+	if d.f.secret != "" {
+		// The existing secret is kept (Docker secrets are immutable), so the
+		// --secret value is NOT applied to the cluster — yet it IS written to the
+		// client config below. If it isn't the existing secret's actual value the
+		// agent will reject the client, so warn loudly.
+		fmt.Fprintf(d.out, "warning: secret %q already exists and is kept as-is — your --secret value was NOT applied to the cluster.\n"+
+			"         It will be written to the client config, so it must equal the existing secret's value or the agent will reject you.\n"+
+			"         To change the cluster secret, remove it first (no service may reference it) and re-run init.\n", agentSecretName)
+	}
+	return s, nil
+}
 
-	// [2/3] agent service --------------------------------------------------------
-	step(2, fmt.Sprintf("agent service on port %d", f.port))
-	var policyRef *swarm.ConfigReference
-	if policyData != nil {
-		ref, err := ensurePolicyConfig(ctx, dcli, policyData)
+// agentService is step 2: create the agent service, or with --force replace
+// the existing one's spec. Returns the service's id.
+func (d *initDeploy) agentService(secretID string) (string, error) {
+	d.step(2, fmt.Sprintf("agent service on port %d", d.f.port))
+	spec := agentServiceSpec(d.f, secretID)
+	if d.plan.policy != nil {
+		ref, err := ensurePolicyConfig(d.ctx, d.dcli, d.plan.policy)
 		if err != nil {
-			fmt.Fprintln(out, "failed")
-			return &cliError{code: session.TransportFailure, err: err}
+			return "", d.failed(session.TransportFailure, err)
 		}
-		policyRef = ref
+		spec.TaskTemplate.ContainerSpec.Configs = []*swarm.ConfigReference{ref}
 	}
-	spec := agentServiceSpec(f, secretID)
-	if policyRef != nil {
-		spec.TaskTemplate.ContainerSpec.Configs = []*swarm.ConfigReference{policyRef}
-	}
-	var encodedAuth string
-	if f.registryAuth {
-		auth, aerr := encodedRegistryAuth(f.image)
-		host := registryHost(f.image)
-		switch {
-		case aerr != nil:
-			// Don't deploy blind: without distributed credentials the manager may
-			// pull fine (image cached / logged in) while every worker reports the
-			// image as unavailable.
-			fmt.Fprintln(out, "failed")
-			return &cliError{code: usageExitCode, err: fmt.Errorf("read local registry credentials for %s: %w — run `docker login %s` on THIS machine (where you run swarmexec, not the manager); init distributes them to the swarm nodes. Or pass --registry-auth=false for a public image", host, aerr, host)}
-		case auth == "" && host != "docker.io":
-			fmt.Fprintln(out, "failed")
-			return &cliError{code: usageExitCode, err: fmt.Errorf("no registry credentials for %s found in this machine's Docker config — init reads your LOCAL `docker login` (not the manager's) and distributes it to the swarm nodes so they can pull the private image %q. Run `docker login %s` here, or pass --registry-auth=false for a public image", host, f.image, host)}
-		default:
-			encodedAuth = auth
-		}
-	}
-
-	existing, err := swarmops.ServiceByName(ctx, dcli, f.serviceName)
+	auth, err := d.registryAuth()
 	if err != nil {
-		fmt.Fprintln(out, "failed")
-		return &cliError{code: session.TransportFailure, err: err}
+		return "", err
 	}
-	var serviceID string
+	existing, err := swarmops.ServiceByName(d.ctx, d.dcli, d.f.serviceName)
+	if err != nil {
+		return "", d.failed(session.TransportFailure, err)
+	}
 	switch {
 	case existing == nil:
-		resp, cerr := dcli.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: spec, EncodedRegistryAuth: encodedAuth, QueryRegistry: true})
-		if cerr != nil {
-			fmt.Fprintln(out, "failed")
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("create agent service: %w", cerr)}
+		resp, err := d.dcli.ServiceCreate(d.ctx, client.ServiceCreateOptions{Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true})
+		if err != nil {
+			return "", d.failed(session.TransportFailure, fmt.Errorf("create agent service: %w", err))
 		}
-		serviceID = resp.ID
-		fmt.Fprintf(out, "created (%q, global)\n", f.serviceName)
-	case f.force:
+		fmt.Fprintf(d.out, "created (%q, global)\n", d.f.serviceName)
+		return resp.ID, nil
+	case d.f.force:
 		if carryPruneSchedule(&spec, existing) {
-			fmt.Fprint(out, "(keeping the prune schedule) ")
+			fmt.Fprint(d.out, "(keeping the prune schedule) ")
 		}
-		if _, uerr := dcli.ServiceUpdate(ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec, EncodedRegistryAuth: encodedAuth, QueryRegistry: true}); uerr != nil {
-			fmt.Fprintln(out, "failed")
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("update agent service: %w", uerr)}
+		if _, err := d.dcli.ServiceUpdate(d.ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true}); err != nil {
+			return "", d.failed(session.TransportFailure, fmt.Errorf("update agent service: %w", err))
 		}
-		serviceID = existing.ID
-		fmt.Fprintf(out, "updated (%q)\n", f.serviceName)
+		fmt.Fprintf(d.out, "updated (%q)\n", d.f.serviceName)
+		return existing.ID, nil
 	default:
-		fmt.Fprintln(out, "already exists")
-		return &cliError{code: usageExitCode, err: fmt.Errorf("service %q already exists; re-run with --force to update it", f.serviceName)}
+		fmt.Fprintln(d.out, "already exists")
+		return "", &cliError{code: usageExitCode, err: fmt.Errorf("service %q already exists; re-run with --force to update it", d.f.serviceName)}
 	}
+}
 
-	if img := inspectServiceImage(ctx, dcli, serviceID); img != "" {
-		fmt.Fprintf(out, "        image: %s\n", img)
+// registryAuth is the encoded credentials the nodes pull the image with: this
+// machine's `docker login` for the image's registry, or "" with
+// --registry-auth=false and for a public Docker Hub image.
+func (d *initDeploy) registryAuth() (string, error) {
+	if !d.f.registryAuth {
+		return "", nil
 	}
-
-	// [3/3] wait for rollout -----------------------------------------------------
-	if f.wait {
-		step(3, "starting agents")
-		fmt.Fprintln(out)
-		waitRollout(ctx, dcli, serviceID, out, f.rolloutTimeout)
+	auth, err := encodedRegistryAuth(d.f.image)
+	host := registryHost(d.f.image)
+	switch {
+	case err != nil:
+		// Don't deploy blind: without distributed credentials the manager may
+		// pull fine (image cached / logged in) while every worker reports the
+		// image as unavailable.
+		return "", d.failed(usageExitCode, fmt.Errorf("read local registry credentials for %s: %w — run `docker login %s` on THIS machine (where you run swarmexec, not the manager); init distributes them to the swarm nodes. Or pass --registry-auth=false for a public image", host, err, host))
+	case auth == "" && host != "docker.io":
+		return "", d.failed(usageExitCode, fmt.Errorf("no registry credentials for %s found in this machine's Docker config — init reads your LOCAL `docker login` (not the manager's) and distributes it to the swarm nodes so they can pull the private image %q. Run `docker login %s` here, or pass --registry-auth=false for a public image", host, d.f.image, host))
 	}
+	return auth, nil
+}
 
-	// client config --------------------------------------------------------------
-	if f.saveConfig {
-		if !knownSecret {
-			fmt.Fprintln(out, "note: reused an existing secret whose value is unknown — set `agent_secret` in your config manually, or re-run with --secret")
-		} else {
-			cfg, _ := config.Load(g.configPath)
-			cfg.AgentSecret = secretVal
-			cfg.Insecure = true
-			cfg.AddrMode = config.AddrModeIP
-			cfg.Port = f.port
-			if path, serr := cfg.Save(g.configPath); serr != nil {
-				fmt.Fprintf(out, "warning: could not write client config: %v\n", serr)
-			} else {
-				fmt.Fprintf(out, "client config: %s\n", path)
-			}
-		}
+// saveClientConfig writes the client config the deployed agents accept — if
+// init knows the secret's value.
+func (d *initDeploy) saveClientConfig(path string, s initSecret) {
+	if !s.known {
+		fmt.Fprintln(d.out, "note: reused an existing secret whose value is unknown — set `agent_secret` in your config manually, or re-run with --secret")
+		return
 	}
-
-	fmt.Fprintf(out, "\n✓ ready — try:\n  swarmexec ps\n  swarmexec ui\n")
-	return nil
+	cfg, _ := config.Load(path)
+	cfg.AgentSecret = s.value
+	cfg.Insecure = true
+	cfg.AddrMode = config.AddrModeIP
+	cfg.Port = d.f.port
+	if written, err := cfg.Save(path); err != nil {
+		fmt.Fprintf(d.out, "warning: could not write client config: %v\n", err)
+	} else {
+		fmt.Fprintf(d.out, "client config: %s\n", written)
+	}
 }
 
 // resolveContext decides which Docker context to act on, informing the user and
