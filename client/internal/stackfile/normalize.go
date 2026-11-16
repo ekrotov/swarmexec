@@ -378,8 +378,15 @@ func logging(d *swarm.Driver) *Logging {
 // deploySection renders everything compose puts under "deploy:". Daemon
 // defaults are elided here; see swarmDefaults for why.
 func deploySection(spec swarm.ServiceSpec) *Deploy {
-	d := &Deploy{Labels: stackLabels(spec.Labels)}
-
+	d := &Deploy{
+		Labels:        stackLabels(spec.Labels),
+		EndpointMode:  endpointMode(spec.EndpointSpec),
+		Placement:     placementSection(spec.TaskTemplate.Placement),
+		Resources:     resourcesSection(spec.TaskTemplate.Resources),
+		RestartPolicy: restartPolicy(spec.TaskTemplate.RestartPolicy),
+		UpdateConfig:  updateConfig(spec.UpdateConfig),
+		Rollback:      updateConfig(spec.RollbackConfig),
+	}
 	switch {
 	case spec.Mode.Global != nil:
 		d.Mode = "global"
@@ -387,54 +394,63 @@ func deploySection(spec swarm.ServiceSpec) *Deploy {
 		n := *spec.Mode.Replicated.Replicas
 		d.Replicas = &n
 	}
-
-	if spec.EndpointSpec != nil && string(spec.EndpointSpec.Mode) != "" &&
-		string(spec.EndpointSpec.Mode) != defaultEndpointMode {
-		d.EndpointMode = string(spec.EndpointSpec.Mode)
-	}
-
-	if p := spec.TaskTemplate.Placement; p != nil {
-		pl := &Placement{Constraints: sortedCopy(p.Constraints), MaxReplicas: p.MaxReplicas}
-		for _, pref := range p.Preferences {
-			if pref.Spread != nil {
-				pl.Preferences = append(pl.Preferences, &PlacementPreference{Spread: pref.Spread.SpreadDescriptor})
-			}
-		}
-		// Order is significant for preferences — swarm applies them in turn — so
-		// this one list is deliberately NOT sorted.
-
-		if len(pl.Constraints) > 0 || len(pl.Preferences) > 0 || pl.MaxReplicas > 0 {
-			d.Placement = pl
-		}
-	}
-
-	if r := spec.TaskTemplate.Resources; r != nil {
-		res := &Resources{}
-		if l := r.Limits; l != nil {
-			if set := resourceSet(l.NanoCPUs, l.MemoryBytes, l.Pids); set != nil {
-				res.Limits = set
-			}
-		}
-		if rr := r.Reservations; rr != nil {
-			if set := resourceSet(rr.NanoCPUs, rr.MemoryBytes, 0); set != nil {
-				res.Reservations = set
-			}
-		}
-		if res.Limits != nil || res.Reservations != nil {
-			d.Resources = res
-		}
-	}
-
-	d.RestartPolicy = restartPolicy(spec.TaskTemplate.RestartPolicy)
-	d.UpdateConfig = updateConfig(spec.UpdateConfig)
-	d.Rollback = updateConfig(spec.RollbackConfig)
-
-	if d.Mode == "" && d.Replicas == nil && d.Labels == nil && d.EndpointMode == "" &&
-		d.Placement == nil && d.Resources == nil && d.RestartPolicy == nil &&
-		d.UpdateConfig == nil && d.Rollback == nil {
+	if d.empty() {
 		return nil
 	}
 	return d
+}
+
+// empty: nothing under "deploy:" differs from the daemon's defaults.
+func (d *Deploy) empty() bool {
+	return d.Mode == "" && d.Replicas == nil && d.Labels == nil && d.EndpointMode == "" &&
+		d.Placement == nil && d.Resources == nil && d.RestartPolicy == nil &&
+		d.UpdateConfig == nil && d.Rollback == nil
+}
+
+// endpointMode is the endpoint mode when set and not the default (vip).
+func endpointMode(e *swarm.EndpointSpec) string {
+	if e == nil || string(e.Mode) == defaultEndpointMode {
+		return ""
+	}
+	return string(e.Mode)
+}
+
+// placementSection is constraints (sorted), spread preferences and the
+// per-node replica cap; nil when none is set.
+func placementSection(p *swarm.Placement) *Placement {
+	if p == nil {
+		return nil
+	}
+	pl := &Placement{Constraints: sortedCopy(p.Constraints), MaxReplicas: p.MaxReplicas}
+	for _, pref := range p.Preferences {
+		if pref.Spread != nil {
+			pl.Preferences = append(pl.Preferences, &PlacementPreference{Spread: pref.Spread.SpreadDescriptor})
+		}
+	}
+	// Order is significant for preferences — swarm applies them in turn — so
+	// this one list is deliberately NOT sorted.
+	if len(pl.Constraints) == 0 && len(pl.Preferences) == 0 && pl.MaxReplicas == 0 {
+		return nil
+	}
+	return pl
+}
+
+// resourcesSection is the non-zero limits and reservations; nil when neither.
+func resourcesSection(r *swarm.ResourceRequirements) *Resources {
+	if r == nil {
+		return nil
+	}
+	res := &Resources{}
+	if l := r.Limits; l != nil {
+		res.Limits = resourceSet(l.NanoCPUs, l.MemoryBytes, l.Pids)
+	}
+	if rr := r.Reservations; rr != nil {
+		res.Reservations = resourceSet(rr.NanoCPUs, rr.MemoryBytes, 0)
+	}
+	if res.Limits == nil && res.Reservations == nil {
+		return nil
+	}
+	return res
 }
 
 func resourceSet(cpus, mem, pids int64) *ResourceSet {
