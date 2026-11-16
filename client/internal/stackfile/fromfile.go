@@ -56,30 +56,7 @@ func FromFile(ctx context.Context, cli SwarmReader, path, stackName string) (*St
 		Configs:  map[string]*Resource{},
 		Volumes:  map[string]*Resource{},
 	}
-	// What the FILE owns: everything it declares without "external: true". The
-	// converter has already prefixed exactly those with the stack namespace, so
-	// this is the same rule the deployed side applies via the stack label.
-	owned := map[string]bool{}
-	for n, v := range cfg.Networks {
-		if !v.External.External {
-			owned[stackName+"_"+n] = true
-		}
-	}
-	for n, v := range cfg.Secrets {
-		if !v.External.External {
-			owned[ownedName(stackName, n, v.Name)] = true
-		}
-	}
-	for n, v := range cfg.Configs {
-		if !v.External.External {
-			owned[ownedName(stackName, n, v.Name)] = true
-		}
-	}
-	for n, v := range cfg.Volumes {
-		if !v.External.External {
-			owned[ownedName(stackName, n, v.Name)] = true
-		}
-	}
+	owned := fileOwned(cfg, stackName)
 	// Compose invents a "default" network for services that name none, and the
 	// deploy creates it as "<stack>_default" with the overlay driver. The file
 	// never declares it, so without this the deployed side (which sees a real,
@@ -101,6 +78,46 @@ func FromFile(ctx context.Context, cli SwarmReader, path, stackName string) (*St
 			gaps[u] = true
 		}
 	}
+	addFileDeclarations(st, cfg, stackName)
+	if len(gaps) > 0 {
+		st.Notes = append(st.Notes,
+			"Not carried by this rendering, and therefore NOT compared: "+strings.Join(sortedKeys(gaps), ", ")+".")
+	}
+	return st, nil
+}
+
+// fileOwned is what the FILE owns: everything it declares without "external:
+// true". The converter has already prefixed exactly those with the stack
+// namespace, so this is the same rule the deployed side applies via the stack
+// label.
+func fileOwned(cfg *composetypes.Config, stackName string) map[string]bool {
+	owned := map[string]bool{}
+	for n, v := range cfg.Networks {
+		if !v.External.External {
+			owned[stackName+"_"+n] = true
+		}
+	}
+	for n, v := range cfg.Secrets {
+		if !v.External.External {
+			owned[ownedName(stackName, n, v.Name)] = true
+		}
+	}
+	for n, v := range cfg.Configs {
+		if !v.External.External {
+			owned[ownedName(stackName, n, v.Name)] = true
+		}
+	}
+	for n, v := range cfg.Volumes {
+		if !v.External.External {
+			owned[ownedName(stackName, n, v.Name)] = true
+		}
+	}
+	return owned
+}
+
+// addFileDeclarations renders the file's networks, secrets, configs and
+// volumes into st.
+func addFileDeclarations(st *Stack, cfg *composetypes.Config, stackName string) {
 	for name, n := range cfg.Networks {
 		st.Networks[name] = &Network{
 			Driver:     n.Driver,
@@ -131,11 +148,6 @@ func FromFile(ctx context.Context, cli SwarmReader, path, stackName string) (*St
 		}
 		st.Volumes[name] = r
 	}
-	if len(gaps) > 0 {
-		st.Notes = append(st.Notes,
-			"Not carried by this rendering, and therefore NOT compared: "+strings.Join(sortedKeys(gaps), ", ")+".")
-	}
-	return st, nil
 }
 
 // loadComposeFile reads and parses one stack file.

@@ -95,3 +95,127 @@ secrets:
 		t.Fatalf("an existing external secret was refused: %v", err)
 	}
 }
+
+// FromFile over a file with every kind of declaration, owned and external:
+// what it owns renders by its short name, what it does not stays external,
+// the implicit default network appears, and an unmodelled field is noted.
+func TestFromFileRendersOwnedAndExternal(t *testing.T) {
+	path := writeStack(t, `version: "3.8"
+services:
+  web:
+    image: nginx:alpine
+    tty: true
+    networks: [front, ext]
+    secrets: [pass, dbpass]
+    configs: [greeting]
+    volumes: [data:/data, shared:/shared, named:/named]
+  worker:
+    image: busybox
+networks:
+  front:
+    driver: overlay
+    attachable: true
+    labels: {tier: web}
+  ext:
+    external: true
+secrets:
+  pass:
+    file: ./pass.txt
+  dbpass:
+    external: true
+configs:
+  greeting:
+    name: hello_v1
+    file: ./greeting.txt
+volumes:
+  data: {}
+  shared:
+    external: true
+  named:
+    name: fixed_name
+`)
+	var cluster emptyCluster
+	cluster.secrets = []swarm.Secret{{ID: "sec1", Spec: swarm.SecretSpec{Annotations: swarm.Annotations{Name: "dbpass"}}}}
+	st, err := FromFile(context.Background(), cluster, path, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.YAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `services:
+  web:
+    image: nginx:alpine
+    volumes:
+      - data:/data
+      - fixed_name:/named
+      - shared:/shared
+    networks:
+      ext: {}
+      front: {}
+    secrets:
+      - source: dbpass
+        target: dbpass
+        uid: "0"
+        gid: "0"
+        mode: 292
+      - source: pass
+        target: pass
+        uid: "0"
+        gid: "0"
+        mode: 292
+    configs:
+      - source: hello_v1
+        target: greeting
+        uid: "0"
+        gid: "0"
+        mode: 292
+  worker:
+    image: busybox
+    networks:
+      default: {}
+networks:
+  default:
+    driver: overlay
+  ext:
+    external: true
+    name: ext
+  front:
+    driver: overlay
+    attachable: true
+    labels:
+      tier: web
+volumes:
+  data:
+    external: true
+    name: shop_data
+  named:
+    external: true
+  shared:
+    external: true
+secrets:
+  dbpass:
+    external: true
+  pass:
+    external: true
+    name: shop_pass
+configs:
+  greeting:
+    external: true
+    name: hello_v1
+`
+	if got != want {
+		t.Errorf("rendered:\n%s\nwant:\n%s", got, want)
+	}
+	if len(st.Notes) != 1 || !strings.Contains(st.Notes[0], "NOT compared: tty.") {
+		t.Errorf("notes = %q, want the tty gap", st.Notes)
+	}
+
+	if _, err := FromFile(context.Background(), emptyCluster{}, path, "shop"); err == nil || !strings.Contains(err.Error(), "convert stack.yml") {
+		t.Errorf("missing external secret: got %v", err)
+	}
+	if _, err := FromFile(context.Background(), emptyCluster{}, filepath.Join(t.TempDir(), "none.yml"), "shop"); err == nil {
+		t.Error("a missing file must fail")
+	}
+}
