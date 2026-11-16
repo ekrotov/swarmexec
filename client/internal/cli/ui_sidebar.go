@@ -127,7 +127,23 @@ func (u *ui) focusSidebar() {
 	u.sidebarHasFocus = true
 	u.setFooter(u.helpFor("contexts"))
 	u.sidebar.SetBorderColor(palette.accent)
+	u.selectActiveContext()
 	u.app.SetFocus(u.cxtable)
+}
+
+// selectActiveContext puts the cursor on the ▶ row, the cluster this session is
+// on. Pressing the context key is first of all "show me where I am"; landing on
+// row 0 instead made c, Enter connect to whichever cluster happened to sort
+// first — production, as it was observed. With the cursor here the same two keys
+// are a no-op ("already on"), and every other cluster is one deliberate move
+// away.
+func (u *ui) selectActiveContext() {
+	for i, c := range u.ctxs {
+		if c.Name == u.activeCtx {
+			u.cxtable.Select(i, 0)
+			return
+		}
+	}
 }
 
 // blurSidebar hands the keyboard back to the visible tab.

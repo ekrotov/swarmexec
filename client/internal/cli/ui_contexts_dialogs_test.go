@@ -135,6 +135,38 @@ func TestContextSidebarListAndDetail(t *testing.T) {
 	sendRune(t, u, '?')
 }
 
+// Focusing the sidebar puts the cursor on the cluster this session is on, not
+// on row 0: c is "where am I", and c, Enter used to connect to whichever
+// context sorted first. Enter there is then the harmless no-op.
+func TestFocusSidebarSelectsTheActiveContext(t *testing.T) {
+	isolatedDockerConfig(t)
+	for _, name := range []string{"prod", "staging"} {
+		if err := dockerctx.Create(dockerctx.CreateOptions{Name: name, Host: "tcp://" + name + ".example:2376"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u := contextsUI(t)
+	var sel string
+	onLoop(t, u, func() {
+		u.activeCtx = "staging"
+		u.sidebar = tview.NewFlex().AddItem(u.cxtable, 0, 1, true)
+		u.wireContexts()
+		u.renderContexts()
+		u.cxtable.Select(0, 0) // where a fresh list starts: "default"
+		u.focusSidebar()
+		if c, ok := u.selectedContext(); ok {
+			sel = c.Name
+		}
+	})
+	if sel != "staging" {
+		t.Fatalf("focusing the sidebar selected %q, want the active staging", sel)
+	}
+	sendSpecial(t, u, tcell.KeyEnter)
+	waitFooter(t, u, "already on context staging")
+	sendRune(t, u, u.km.CtxUse)
+	waitFooter(t, u, "already on context staging")
+}
+
 // Remove: "default" is protected; the current context asks with a warning
 // and resets the selection.
 func TestContextSidebarDelete(t *testing.T) {
