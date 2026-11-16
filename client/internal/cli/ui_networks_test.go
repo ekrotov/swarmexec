@@ -115,12 +115,15 @@ func TestNetworksTabShowsSubnetOverlapAndContainers(t *testing.T) {
 		}
 	}
 
-	// The endpoint seam: a later per-node count lands next to CONTAINERS.
+	// The nodes' endpoint analysis lands next to CONTAINERS, yellow when
+	// something looks stale.
 	onLoop(t, u, func() {
-		nt.endpointNote = func(swarmops.Network) string { return "(3 ep)" }
+		st := nt.endpoints()
+		st.loaded = true
+		st.byNet = map[string]*swarmops.NetEndpoints{"id-dbnet": {Answered: 1, Addrs: 3, Stale: []swarmops.StaleEndpoint{{IP: "10.0.1.9"}}}}
 		nt.render()
 	})
-	waitForTable(t, u, nt.table, "2 (3 ep)")
+	waitForTable(t, u, nt.table, "2 · 3 addr ⚠1 stale")
 }
 
 // Without an underlay only node IPs count: webnet is clean then.

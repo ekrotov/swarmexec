@@ -129,6 +129,17 @@ func (a *volumeAgent) ListContainers(context.Context, *pb.ListRequest) (*pb.List
 // config whose dialer reaches each host's own agent.
 func startVolumeAgents(t *testing.T, byHost map[string]*volumeAgent) config.Config {
 	t.Helper()
+	agents := make(map[string]pb.AgentServer, len(byHost))
+	for host, a := range byHost {
+		agents[host] = a
+	}
+	return startAgents(t, agents)
+}
+
+// startAgents serves the given fake agent per node host and returns a client
+// config whose dialer reaches each host's own agent.
+func startAgents(t *testing.T, byHost map[string]pb.AgentServer) config.Config {
+	t.Helper()
 	addrs := map[string]string{}
 	for host, a := range byHost {
 		lis, err := net.Listen("tcp", "127.0.0.1:0")

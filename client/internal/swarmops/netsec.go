@@ -489,7 +489,7 @@ func NetworkMembers(ctx context.Context, dcli swarmapi.Client, net Network) []Ne
 				name = shortID(t.ServiceID)
 			}
 			byService[name] = append(byService[name], netContainer{
-				ID:   shortID(t.Status.ContainerStatus.ContainerID),
+				ID:   shortID(taskContainerID(t)),
 				Node: nodeName[t.NodeID],
 				IPv4: taskIPv4(t, net.ID),
 			})
@@ -536,6 +536,15 @@ func nodeHostnames(ctx context.Context, dcli swarmapi.Client) map[string]string 
 		m[n.ID] = n.Description.Hostname
 	}
 	return m
+}
+
+// taskContainerID is the task's container ID, "" while the task has no
+// container yet (ContainerStatus is a pointer the API leaves out until then).
+func taskContainerID(t swarm.Task) string {
+	if t.Status.ContainerStatus == nil {
+		return ""
+	}
+	return t.Status.ContainerStatus.ContainerID
 }
 
 // taskOnNetwork reports whether a task is attached to the given network. Task
@@ -766,7 +775,7 @@ func SecretMembers(ctx context.Context, dcli swarmapi.Client, secret Secret) []N
 				name = shortID(t.ServiceID)
 			}
 			byService[name] = append(byService[name], netContainer{
-				ID:   shortID(t.Status.ContainerStatus.ContainerID),
+				ID:   shortID(taskContainerID(t)),
 				Node: nodeName[t.NodeID],
 			})
 		}
