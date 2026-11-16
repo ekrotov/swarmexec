@@ -36,6 +36,10 @@ versions live in [`tools.mk`](tools.mk); each tool is installed into
 repeated `make tools` / `make lint` runs do not rebuild it. CI's
 coverage minimum (`COVER_MIN`, generated `internal/pb` excluded) sits just
 below the measured total: raise it when coverage grows, never lower it.
+GitLab reads the total from the `test` job log (`coverage:` regex), shows
+it as the coverage badge on the project page and charts it over time under
+*Analyze > Repository analytics*; both are visible to project members only,
+like the pipelines.
 
 Regenerating the gRPC code (only needed after editing the contract):
 
