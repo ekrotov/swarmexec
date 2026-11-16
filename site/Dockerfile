@@ -39,7 +39,7 @@ COPY site/index.html site/docs.html site/examples.html site/compare.html site/da
      site/robots.txt site/sitemap.xml site/install.sh \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png site/og-image.png \
      site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif \
-     site/landing.css site/landing.js site/docs.css /usr/share/nginx/html/
+     site/landing.css site/landing.js site/docs.css site/nav.css /usr/share/nginx/html/
 # Fonts are served from here, not from Google (no third-party request, nothing
 # for the privacy page to declare); the OFL texts travel with them.
 COPY site/fonts /usr/share/nginx/html/fonts
@@ -47,16 +47,16 @@ COPY site/fonts /usr/share/nginx/html/fonts
 COPY site/docs /usr/share/nginx/html/docs
 # Build-time-generated release data (same-origin fetch target for releases.html).
 COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
-# index.html, docs.html, docs/*.html, examples.html and compare.html carry the
-# __VERSION__ placeholder;
-# datenschutz*.html and releases.html do not. The sitemap's <lastmod> is the
+# Every page carries the __VERSION__ placeholder (at least as ?v= on its
+# stylesheets: all of them load nav.css, the shared top bar). The sitemap's <lastmod> is the
 # build date (UTC): CI builds this image when site/ changes on main and on a
 # release, which is when the pages change. BUILD_DATE (YYYY-MM-DD) overrides it
 # for a reproducible build.
 ARG BUILD_DATE=
 RUN sed -i "s/__VERSION__/${VERSION}/g" /usr/share/nginx/html/index.html /usr/share/nginx/html/docs.html \
       /usr/share/nginx/html/examples.html /usr/share/nginx/html/compare.html \
-      /usr/share/nginx/html/docs/*.html \
+      /usr/share/nginx/html/releases.html /usr/share/nginx/html/datenschutz.html \
+      /usr/share/nginx/html/datenschutz.en.html /usr/share/nginx/html/docs/*.html \
  && LASTMOD="${BUILD_DATE:-$(date -u +%Y-%m-%d)}" \
  && sed -i "s/__LASTMOD__/${LASTMOD}/g" /usr/share/nginx/html/sitemap.xml \
  && chown -R nginx:nginx /usr/share/nginx/html \

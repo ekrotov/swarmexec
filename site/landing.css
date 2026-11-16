@@ -87,31 +87,9 @@ code { overflow-wrap: anywhere; }
 kbd { border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: var(--card); }
 em { font-style: italic; }
 
-.skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: var(--paper); padding: .5rem .8rem; z-index: 99; }
-.skip:focus { left: 8px; }
 .nb { white-space: nowrap; }
 
-/* ---------- rail ---------- */
-.rail {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .6rem var(--gutter);
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--rule);
-}
-.mark { display: inline-flex; align-items: center; gap: .5rem; color: var(--ink); text-decoration: none; font-family: var(--mono); font-weight: 700; font-size: .95rem; }
-.mark svg { color: var(--aqua); }
-.rail-nav { display: flex; gap: 1.2rem; align-items: center; font-size: .92rem; }
-.rail-nav a { color: var(--ink-2); text-decoration: none; }
-.rail-nav a:hover { color: var(--ink); text-decoration: underline; }
-.rail-nav .rail-cta { color: var(--paper); background: var(--ink); padding: .3rem .75rem; border-radius: 999px; }
-.rail-nav .rail-cta:hover { color: var(--paper); background: var(--aqua); text-decoration: none; }
-/* On a phone only the section links go; Examples and Docs stay, they are where people look first. */
-@media (max-width: 600px) { .rail-nav a:not(.rail-cta):not(.rail-docs):not(.rail-ex) { display: none; } }
-/* GitHub mark (Octicons mark-github, MIT) beside the "GitHub" link text; follows the link colour. */
-.gh { white-space: nowrap; }
-.gh-icon { width: 1em; height: 1em; vertical-align: -.125em; margin-right: .35em; fill: currentColor; }
+/* ---------- rail: the top bar and the skip link are styled by nav.css (every page) ---------- */
 
 main { display: block; }
 

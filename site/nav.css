@@ -1,0 +1,98 @@
+/* The top bar (header.rail) and the skip link, on every page of the site.
+   The markup is site/partials/nav.html, copied verbatim into each page
+   (site/nav.sh keeps the copies identical); this file is the only place it is
+   styled. It brings its own colours and fonts rather than the page's, so the
+   bar looks the same on the paper pages (landing, docs, examples, compare) and
+   on the older dark ones (releases, privacy). The values are the landing
+   page's paper and ink, light and dark. Fonts come from fonts/fonts.css. */
+
+.rail, .skip {
+  --nav-paper: #eceee9;
+  --nav-ink:   #14201e;
+  --nav-ink-2: #3f4d4a;
+  --nav-rule:  #c4ccc7;
+  --nav-aqua:  #0a7680;
+  --nav-gutter: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  .rail, .skip {
+    --nav-paper: #0e1a1c;
+    --nav-ink:   #dde7e4;
+    --nav-ink-2: #b4c4c0;
+    --nav-rule:  #29403f;
+    --nav-aqua:  #52cfd8;
+  }
+}
+@media (min-width: 720px) { .rail { --nav-gutter: 32px; } }
+
+.rail {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem var(--nav-gutter);
+  background: color-mix(in srgb, var(--nav-paper) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--nav-rule);
+  color: var(--nav-ink);
+  font-family: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+  font-variation-settings: "wdth" 96;
+}
+
+.rail a { text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.rail a:focus-visible { outline: 2px solid var(--nav-aqua); outline-offset: 3px; border-radius: 3px; }
+
+.mark {
+  display: inline-flex; align-items: center; gap: .5rem; flex: none;
+  color: var(--nav-ink); text-decoration: none;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700; font-size: .95rem;
+}
+.mark svg { color: var(--nav-aqua); flex: none; }
+
+.rail-nav { display: flex; gap: 1.1rem; align-items: center; font-size: .92rem; min-width: 0; }
+.rail-nav > a { color: var(--nav-ink-2); text-decoration: none; white-space: nowrap; }
+.rail-nav > a:hover { color: var(--nav-ink); text-decoration: underline; text-decoration-thickness: 2px; }
+/* The page you are on (aria-current="page"), or its section (docs topic pages: "true"). */
+.rail-nav > a[aria-current] {
+  color: var(--nav-ink);
+  text-decoration: underline; text-decoration-color: var(--nav-aqua);
+  text-decoration-thickness: 2px; text-underline-offset: 6px;
+}
+.rail-nav > .rail-cta { color: var(--nav-paper); background: var(--nav-ink); padding: .3rem .75rem; border-radius: 999px; }
+.rail-nav > .rail-cta:hover { color: var(--nav-paper); background: var(--nav-aqua); text-decoration: none; }
+
+/* GitHub mark (Octicons mark-github, MIT) beside the "GitHub" link text; follows the link colour. */
+.gh-icon { width: 1em; height: 1em; vertical-align: -.125em; margin-right: .35em; fill: currentColor; }
+
+/* Narrow screens, in steps, so the bar never scrolls sideways and keeps its
+   16px gutter: first Compare and Releases go (both are linked from the page
+   footers and the docs), then the GitHub link keeps only its mark, and on the
+   narrowest phones the logo keeps only its glyph. The hidden labels stay for
+   screen readers (the logo link also has its aria-label). */
+@media (max-width: 719px) {
+  .rail-nav { gap: .8rem; }
+  .rail-nav > .rail-opt { display: none; }
+}
+@media (max-width: 479px) {
+  .rail { gap: .6rem; }
+  .rail-nav { gap: .55rem; }
+  .rail-nav > .rail-cta { padding: .3rem .6rem; }
+  .gh-icon { margin-right: 0; }
+  .gh-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+}
+@media (max-width: 359px) {
+  .mark span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
+.skip {
+  position: absolute; left: -9999px; top: 8px; z-index: 99;
+  background: var(--nav-ink); color: var(--nav-paper); padding: .5rem .8rem;
+}
+.skip:focus { left: 8px; }
