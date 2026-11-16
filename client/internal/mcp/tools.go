@@ -20,6 +20,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
@@ -512,47 +513,22 @@ func (s *Server) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	tail := in.Tail
-	switch {
-	case tail <= 0:
-		tail = mcpLogTailDefault
-	case tail > mcpLogTailMax:
-		tail = mcpLogTailMax
-	}
-	var since time.Duration
-	if in.Since != "" {
-		if since, err = time.ParseDuration(in.Since); err != nil || since < 0 {
-			return "", fmt.Errorf("since: want a duration such as 10m or 2h, got %q", in.Since)
-		}
+	since, err := logSince(in.Since)
+	if err != nil {
+		return "", err
 	}
 	formatName := firstNonEmpty(in.Format, "auto")
 	format, filter, err := logstream.BuildFilter(formatName, in.MinLevel, in.Grep)
 	if err != nil {
 		return "", err
 	}
-	auto := logstream.FormatAuto(formatName)
-
 	cands, err := c.r.Candidates(ctx, ms.svc.Spec.Name)
 	if err != nil {
 		return "", err
 	}
-	var sources []logstream.Source
-	for _, cd := range cands {
-		if in.Slot == 0 || cd.Slot == in.Slot {
-			sources = append(sources, logstream.SourceFromCandidate(cd))
-		}
-	}
-	if len(sources) == 0 {
-		if in.Slot != 0 {
-			return "", fmt.Errorf("service %q has no running container in slot %d", ms.svc.Spec.Name, in.Slot)
-		}
-		return "", fmt.Errorf("service %q has no running container", ms.svc.Spec.Name)
-	}
-	note := ""
-	if len(sources) > mcpLogMaxSources {
-		note = fmt.Sprintf("[showing %d of %d replicas — pass slot to read another]\n", mcpLogMaxSources, len(sources))
-		sources = sources[:mcpLogMaxSources]
+	sources, note, err := logSources(cands, ms.svc.Spec.Name, in.Slot)
+	if err != nil {
+		return "", err
 	}
 
 	lctx, cancel := context.WithTimeout(ctx, mcpLogTimeout)
@@ -560,7 +536,60 @@ func (s *Server) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
 	// Once the cap is reached the rest would be read only to be dropped, so
 	// the streams stop there.
 	buf := &capWriter{max: mcpLogMaxBytes, onFull: cancel}
-	wrap := func(dst io.Writer) (io.Writer, func()) {
+	params := logstream.Params{Tail: uint32(logTail(in.Tail)), Since: since, ConnectTimeout: s.connectTimeout}
+	serr := logstream.StreamMany(lctx, logstream.Run{Agents: ac, Resolver: c.r, Params: params, Stdout: buf, Stderr: buf},
+		sources, false, logFilterWrap(format, filter, logstream.FormatAuto(formatName)))
+	return logOutput(note, buf, lctx.Err() != nil && ctx.Err() == nil, serr), nil
+}
+
+// logTail is the requested tail, defaulted and capped.
+func logTail(tail int) int {
+	switch {
+	case tail <= 0:
+		return mcpLogTailDefault
+	case tail > mcpLogTailMax:
+		return mcpLogTailMax
+	}
+	return tail
+}
+
+// logSince parses the since argument ("" is no limit).
+func logSince(in string) (time.Duration, error) {
+	if in == "" {
+		return 0, nil
+	}
+	since, err := time.ParseDuration(in)
+	if err != nil || since < 0 {
+		return 0, fmt.Errorf("since: want a duration such as 10m or 2h, got %q", in)
+	}
+	return since, nil
+}
+
+// logSources picks the containers to read (one slot, or all), at most
+// mcpLogMaxSources of them; note says when some were left out.
+func logSources(cands []resolve.Candidate, svc string, slot int) (sources []logstream.Source, note string, err error) {
+	for _, cd := range cands {
+		if slot == 0 || cd.Slot == slot {
+			sources = append(sources, logstream.SourceFromCandidate(cd))
+		}
+	}
+	if len(sources) == 0 {
+		if slot != 0 {
+			return nil, "", fmt.Errorf("service %q has no running container in slot %d", svc, slot)
+		}
+		return nil, "", fmt.Errorf("service %q has no running container", svc)
+	}
+	if len(sources) > mcpLogMaxSources {
+		note = fmt.Sprintf("[showing %d of %d replicas — pass slot to read another]\n", mcpLogMaxSources, len(sources))
+		sources = sources[:mcpLogMaxSources]
+	}
+	return sources, note, nil
+}
+
+// logFilterWrap is the per-stream writer wrap: a format/level/grep filter
+// (with format detection for auto), or the writer itself when nothing filters.
+func logFilterWrap(format logfmt.Format, filter logfmt.Filter, auto bool) func(io.Writer) (io.Writer, func()) {
+	return func(dst io.Writer) (io.Writer, func()) {
 		if !auto && !logstream.FilteringActive(format, filter) {
 			return dst, func() {}
 		}
@@ -570,14 +599,16 @@ func (s *Server) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
 		}
 		return fw, fw.Flush
 	}
-	params := logstream.Params{Tail: uint32(tail), Since: since, ConnectTimeout: s.connectTimeout}
-	serr := logstream.StreamMany(lctx, logstream.Run{Agents: ac, Resolver: c.r, Params: params, Stdout: buf, Stderr: buf}, sources, false, wrap)
+}
 
+// logOutput is the tool's answer: note, the lines, then why it stopped
+// (truncated, or timed out) and any stream error the truncation did not cause.
+func logOutput(note string, buf *capWriter, timedOut bool, serr error) string {
 	out := note + buf.String()
 	switch {
 	case buf.Truncated():
 		out += truncationNote(mcpLogMaxBytes)
-	case lctx.Err() != nil && ctx.Err() == nil:
+	case timedOut:
 		out += fmt.Sprintf("\n[stopped after %s — narrow with tail, since or grep]\n", mcpLogTimeout)
 	}
 	if strings.TrimSpace(out) == "" {
@@ -586,7 +617,7 @@ func (s *Server) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
 	if serr != nil && !buf.Truncated() {
 		out += "\n[" + serr.Error() + "]\n"
 	}
-	return out, nil
+	return out
 }
 
 // --- stats -------------------------------------------------------------------
