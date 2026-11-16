@@ -100,8 +100,19 @@ func TestSecretDetailKeys(t *testing.T) {
 	keyCode(t, u, tcell.KeyEscape)
 	waitFront(t, u, pageSecDetail)
 
-	// r: the rotate editor.
-	send(rune_('r'))
+	// r and m keep their global meaning (refresh, mouse): the detail passes
+	// them on instead of rotating (review T-10).
+	for _, r := range []rune{'r', 'm'} {
+		if ev := rune_(r); send(ev) != ev {
+			t.Errorf("%c was not passed on", r)
+		}
+	}
+	if pageOpen(t, u, pageSecRotate) {
+		t.Fatal("r opened the rotate editor")
+	}
+
+	// R: the rotate editor.
+	send(rune_('R'))
 	waitFront(t, u, pageSecRotate)
 	onLoop(t, u, func() { u.pages.RemovePage(pageSecRotate); u.app.SetFocus(tv) })
 
