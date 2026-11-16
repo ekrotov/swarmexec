@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,8 @@ type fakeDocker struct {
 	nodes    map[string]swarm.Node
 	peers    []swarm.Peer // raft peer list returned by Info
 	infoErr  error
-	infoCals int // how many times Info was called
+	infoCals int   // how many times Info was called
+	svcErr   error // returned by ServiceList when set
 }
 
 func (f *fakeDocker) Info(_ context.Context, _ client.InfoOptions) (client.SystemInfoResult, error) {
@@ -37,6 +39,9 @@ func (f *fakeDocker) Info(_ context.Context, _ client.InfoOptions) (client.Syste
 }
 
 func (f *fakeDocker) ServiceList(_ context.Context, opts client.ServiceListOptions) (client.ServiceListResult, error) {
+	if f.svcErr != nil {
+		return client.ServiceListResult{}, f.svcErr
+	}
 	name := first(filterValues(opts.Filters, "name"))
 	var out []swarm.Service
 	for _, s := range f.services {
@@ -393,8 +398,37 @@ func TestResolveContainerIDNeedsNode(t *testing.T) {
 	f := newFake()
 	r := New(f, AddrHostname)
 	_, err := r.Resolve(context.Background(), Request{Target: "deadbeefcafe"})
-	if err == nil {
-		t.Fatal("want error asking for --node")
+	if err == nil || !strings.Contains(err.Error(), "pass --node") {
+		t.Fatalf("err = %v, want one asking for --node", err)
+	}
+}
+
+// A name that can't be a container ID is reported as unknown, with ps as the
+// way on — not as a container whose node is missing.
+func TestResolveUnknownNameNoNodeHint(t *testing.T) {
+	r := New(newFake(), AddrHostname)
+	for _, target := range []string{"wbe", "wbe.2", "Deadbeef"} {
+		_, err := r.Resolve(context.Background(), Request{Target: target})
+		if err == nil {
+			t.Fatalf("%s: want error", target)
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "no such service, task or container") || !strings.Contains(msg, "swarmexec ps") || strings.Contains(msg, "--node") {
+			t.Errorf("%s: err = %q", target, msg)
+		}
+	}
+}
+
+// A manager error while looking up the service is returned, not taken for "no
+// such service" and passed on to the container lookup.
+func TestResolveServiceListErrorReturned(t *testing.T) {
+	f := newFake()
+	f.svcErr = errors.New("manager unavailable")
+	r := New(f, AddrHostname)
+	for _, target := range []string{"web", "web.1"} {
+		if _, err := r.Resolve(context.Background(), Request{Target: target}); err == nil || !strings.Contains(err.Error(), "manager unavailable") {
+			t.Errorf("%s: err = %v, want the manager error", target, err)
+		}
 	}
 }
 

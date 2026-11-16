@@ -239,16 +239,25 @@ func (r *Resolver) Resolve(ctx context.Context, req Request) (*Endpoint, error) 
 		return nil, fmt.Errorf("empty target")
 	}
 
-	// service.slot — only when the base name actually names a service.
+	// service.slot — only when the base name actually names a service. A
+	// manager error is returned as is, not taken for "no such service".
 	if m := slotRe.FindStringSubmatch(target); m != nil {
-		if svc, err := r.findService(ctx, m[1]); err == nil && svc != nil {
+		svc, err := r.findService(ctx, m[1])
+		if err != nil {
+			return nil, err
+		}
+		if svc != nil {
 			slot, _ := strconv.Atoi(m[2])
 			return r.resolveServiceSlot(ctx, svc, slot)
 		}
 	}
 
 	// bare service name
-	if svc, err := r.findService(ctx, target); err == nil && svc != nil {
+	svc, err := r.findService(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if svc != nil {
 		return r.resolveService(ctx, svc)
 	}
 
@@ -378,7 +387,7 @@ func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) 
 				}
 			}
 		}
-		return nil, fmt.Errorf("cannot resolve node for container %s: pass --node <hostname|ip|nodeID>", id)
+		return nil, unknownTarget(id)
 	}
 
 	// With a hint, derive the dial host from the node if it resolves, else dial
@@ -388,6 +397,30 @@ func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) 
 		host = r.dialHost(ctx, res.Node)
 	}
 	return &Endpoint{DialHost: host, ContainerID: id}, nil
+}
+
+// unknownTarget is the error for a target that names no service, task or
+// running container the manager knows. Only a hex string can be a container
+// the manager has no task for (a plain docker run), so only then is --node
+// the way out; for anything else, a typo is far likelier.
+func unknownTarget(id string) error {
+	if isHexID(id) {
+		return fmt.Errorf("no service, task or swarm container %q — for a container started outside swarm, pass --node <hostname|ip|nodeID>", id)
+	}
+	return fmt.Errorf("no such service, task or container %q — `swarmexec ps` lists what is running", id)
+}
+
+// isHexID says whether s could be a (prefix of a) container ID.
+func isHexID(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Resolver) candidatesForService(ctx context.Context, svc *swarm.Service) ([]Candidate, error) {
