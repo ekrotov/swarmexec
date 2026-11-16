@@ -284,38 +284,66 @@ func serviceSpecDiff(svc swarm.Service, netNames map[string]string) (lines []str
 // comparable "field: value" lines (sorted-friendly prefixes) for diffing.
 func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 	var out []string
-	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
-		out = append(out, "image: "+cs.Image)
-		if len(cs.Command) > 0 {
-			out = append(out, "command: "+strings.Join(cs.Command, " "))
-		}
-		if len(cs.Args) > 0 {
-			out = append(out, "args: "+strings.Join(cs.Args, " "))
-		}
-		for _, e := range cs.Env {
-			out = append(out, "env: "+e)
-		}
-		for _, s := range cs.Secrets {
-			out = append(out, "secret: "+s.SecretName)
-		}
-		for _, m := range cs.Mounts {
-			out = append(out, "mount: "+FormatServiceMount(m))
-		}
-	}
-	switch {
-	case spec.Mode.Replicated != nil && spec.Mode.Replicated.Replicas != nil:
-		out = append(out, fmt.Sprintf("mode: replicated %d", *spec.Mode.Replicated.Replicas))
-	case spec.Mode.Global != nil:
-		out = append(out, "mode: global")
-	case spec.Mode.ReplicatedJob != nil:
-		out = append(out, fmt.Sprintf("mode: replicated-job %d", jobCompletions(spec.Mode.ReplicatedJob)))
-	case spec.Mode.GlobalJob != nil:
-		out = append(out, "mode: global-job")
+	out = append(out, containerSpecLines(spec.TaskTemplate.ContainerSpec)...)
+	if m := modeLine(spec.Mode); m != "" {
+		out = append(out, m)
 	}
 	for k, v := range spec.Labels {
 		out = append(out, "label: "+k+"="+v)
 	}
-	for _, n := range spec.TaskTemplate.Networks {
+	out = append(out, networkSpecLines(spec.TaskTemplate.Networks, netNames)...)
+	out = append(out, placementSpecLines(spec.TaskTemplate.Placement)...)
+	if spec.EndpointSpec != nil {
+		for _, port := range spec.EndpointSpec.Ports {
+			out = append(out, "port: "+FormatServicePort(port))
+		}
+	}
+	return append(out, resourceSpecLines(spec.TaskTemplate.Resources)...)
+}
+
+// containerSpecLines: image, command, args, env, secrets, mounts.
+func containerSpecLines(cs *swarm.ContainerSpec) []string {
+	if cs == nil {
+		return nil
+	}
+	out := []string{"image: " + cs.Image}
+	if len(cs.Command) > 0 {
+		out = append(out, "command: "+strings.Join(cs.Command, " "))
+	}
+	if len(cs.Args) > 0 {
+		out = append(out, "args: "+strings.Join(cs.Args, " "))
+	}
+	for _, e := range cs.Env {
+		out = append(out, "env: "+e)
+	}
+	for _, s := range cs.Secrets {
+		out = append(out, "secret: "+s.SecretName)
+	}
+	for _, m := range cs.Mounts {
+		out = append(out, "mount: "+FormatServiceMount(m))
+	}
+	return out
+}
+
+// modeLine is the "mode: …" line, "" when the mode is not set.
+func modeLine(m swarm.ServiceMode) string {
+	switch {
+	case m.Replicated != nil && m.Replicated.Replicas != nil:
+		return fmt.Sprintf("mode: replicated %d", *m.Replicated.Replicas)
+	case m.Global != nil:
+		return "mode: global"
+	case m.ReplicatedJob != nil:
+		return fmt.Sprintf("mode: replicated-job %d", jobCompletions(m.ReplicatedJob))
+	case m.GlobalJob != nil:
+		return "mode: global-job"
+	}
+	return ""
+}
+
+// networkSpecLines: each attached network (by name when known) and its aliases.
+func networkSpecLines(nets []swarm.NetworkAttachmentConfig, netNames map[string]string) []string {
+	var out []string
+	for _, n := range nets {
 		name := netNames[n.Target]
 		if name == "" {
 			name = n.Target
@@ -325,38 +353,49 @@ func specLines(spec swarm.ServiceSpec, netNames map[string]string) []string {
 			out = append(out, "alias: "+name+"/"+a)
 		}
 	}
-	if p := spec.TaskTemplate.Placement; p != nil {
-		for _, c := range p.Constraints {
-			out = append(out, "constraint: "+c)
-		}
-		for _, pr := range p.Preferences {
-			if pr.Spread != nil {
-				out = append(out, "spread: "+pr.Spread.SpreadDescriptor)
-			}
+	return out
+}
+
+// placementSpecLines: constraints, then spread preferences.
+func placementSpecLines(p *swarm.Placement) []string {
+	if p == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range p.Constraints {
+		out = append(out, "constraint: "+c)
+	}
+	for _, pr := range p.Preferences {
+		if pr.Spread != nil {
+			out = append(out, "spread: "+pr.Spread.SpreadDescriptor)
 		}
 	}
-	if spec.EndpointSpec != nil {
-		for _, port := range spec.EndpointSpec.Ports {
-			out = append(out, "port: "+FormatServicePort(port))
-		}
+	return out
+}
+
+// resourceSpecLines: the non-zero CPU/memory limits, then reservations.
+func resourceSpecLines(r *swarm.ResourceRequirements) []string {
+	if r == nil {
+		return nil
 	}
-	if r := spec.TaskTemplate.Resources; r != nil {
-		if l := r.Limits; l != nil {
-			if l.NanoCPUs > 0 {
-				out = append(out, fmt.Sprintf("cpu-limit: %.2f", float64(l.NanoCPUs)/1e9))
-			}
-			if l.MemoryBytes > 0 {
-				out = append(out, fmt.Sprintf("mem-limit: %d", l.MemoryBytes))
-			}
-		}
-		if rv := r.Reservations; rv != nil {
-			if rv.NanoCPUs > 0 {
-				out = append(out, fmt.Sprintf("cpu-reservation: %.2f", float64(rv.NanoCPUs)/1e9))
-			}
-			if rv.MemoryBytes > 0 {
-				out = append(out, fmt.Sprintf("mem-reservation: %d", rv.MemoryBytes))
-			}
-		}
+	var out []string
+	if l := r.Limits; l != nil {
+		out = append(out, cpuMemLines("limit", l.NanoCPUs, l.MemoryBytes)...)
+	}
+	if rv := r.Reservations; rv != nil {
+		out = append(out, cpuMemLines("reservation", rv.NanoCPUs, rv.MemoryBytes)...)
+	}
+	return out
+}
+
+// cpuMemLines is "cpu-<kind>: cores" and "mem-<kind>: bytes", each only when set.
+func cpuMemLines(kind string, nanoCPUs, memBytes int64) []string {
+	var out []string
+	if nanoCPUs > 0 {
+		out = append(out, fmt.Sprintf("cpu-%s: %.2f", kind, float64(nanoCPUs)/1e9))
+	}
+	if memBytes > 0 {
+		out = append(out, fmt.Sprintf("mem-%s: %d", kind, memBytes))
 	}
 	return out
 }
