@@ -109,7 +109,7 @@ func reclaimSection(resp *pb.ReclaimStatsResponse, err error, loading bool, now 
 		b.WriteString("    [gray]agent too old for prune stats — update the agent image[-]\n")
 		return b.String()
 	case err != nil && resp == nil:
-		fmt.Fprintf(&b, "    [gray]unavailable: %s[-]\n", escapeTags(err.Error()))
+		fmt.Fprintf(&b, "    [gray]unavailable: %s[-]\n", escapeTags(shortAgentError(err)))
 		return b.String()
 	}
 	if resp.GetMeasuredAt() == "" {

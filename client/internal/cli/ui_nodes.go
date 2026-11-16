@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,21 @@ type nodesExtra struct {
 	volCounts  map[string]int
 	volsLoaded bool // VOLS shows "…" until the counts arrive
 	imgs       map[string]nodeImages
+}
+
+// volumes is a node's volume count as the Nodes tab shows it: "…" while the
+// counts load, "–" when the node's agent did not answer. That used to be "0",
+// which read as "this node has no volumes" when the truth was "no agent could
+// tell".
+func (ex *nodesExtra) volumes(host string) string {
+	if !ex.volsLoaded {
+		return "…"
+	}
+	n, ok := ex.volCounts[host]
+	if !ok {
+		return "–"
+	}
+	return strconv.Itoa(n)
 }
 
 func newNodesTab(u *ui) *nodesTab {
@@ -107,10 +123,7 @@ func (t *nodesTab) renderRow(r int, n swarmops.NodeInfo) {
 	if n.Leader {
 		name = "★ " + name
 	}
-	volStr := "…"
-	if ex.volsLoaded {
-		volStr = fmt.Sprintf("%d", ex.volCounts[n.Hostname])
-	}
+	volStr := ex.volumes(n.Hostname)
 	t.table.SetCell(r, 0, tview.NewTableCell(name).SetTextColor(nameColor).SetExpansion(2))
 	t.table.SetCell(r, 1, tview.NewTableCell(orDash(n.Role)).SetExpansion(1))
 	t.table.SetCell(r, 2, tview.NewTableCell(orDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
@@ -155,12 +168,20 @@ func (t *nodesTab) reload() {
 	async(u, "ui.loadNodes.volumes", func(ctx context.Context) (map[string]int, error) {
 		counts := map[string]int{}
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
-			vs, _ := ac.Volumes(ctx, ns, f.connectTimeout)
+			vs, errs := ac.Volumes(ctx, ns, f.connectTimeout)
 			counts = swarmops.VolumeCountsByNode(vs)
+			// A node whose agent answered with no volumes has 0; one whose
+			// agent did not answer has no entry at all, and shows "–".
+			for _, n := range ns {
+				_, failed := errs[n.Name]
+				if _, counted := counts[n.Name]; !failed && !counted {
+					counts[n.Name] = 0
+				}
+			}
 		}
 		return counts, nil
 	}, func(counts map[string]int, _ error) {
-		// Mark loaded even on failure so VOLS shows a number, not "…" forever.
+		// Mark loaded even on failure so VOLS shows a result, not "…" forever.
 		ex.volCounts, ex.volsLoaded = counts, true
 		if t.shownFor == u.clusterState {
 			t.render() // only over rows; a loading or error state stays
@@ -551,11 +572,7 @@ func (t *nodesTab) detailHead(n swarmops.NodeInfo) string {
 	b.WriteString(nodeUsageSection(n, use, known))
 	imgs, imgsKnown := ex.imgs[n.Hostname]
 	b.WriteString(imageSection(imgs, imgsKnown))
-	vol := "…"
-	if ex.volsLoaded {
-		vol = fmt.Sprintf("%d", ex.volCounts[n.Hostname])
-	}
-	kv("volumes", vol)
+	kv("volumes", ex.volumes(n.Hostname))
 	b.WriteString("\n  [gray]labels[-]\n")
 	if lbls := swarmops.KVPairs(n.Labels); len(lbls) > 0 {
 		for _, l := range lbls {

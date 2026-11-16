@@ -1567,12 +1567,24 @@ func (u *ui) refreshCluster() {
 }
 
 // clusterSummary is the status line's cluster part: "3 nodes · 3/3 agents".
+//
+// The agent count is coloured by what it means, not always aqua: "2/3" in the
+// same colour as "3/3" hid a half-finished rollout, and "0/3" — no agent at
+// all, so no health, usage, exec or logs — looked like a healthy number. Short
+// of agents is yellow; none at all is red and says what fixes it.
 func clusterSummary(nodes, agents int) string {
 	noun := "nodes"
 	if nodes == 1 {
 		noun = "node"
 	}
-	return fmt.Sprintf("[aqua]%d[white] %s · [aqua]%d[white]/%d agents", nodes, noun, agents, nodes)
+	color, hint := "aqua", ""
+	switch {
+	case agents == 0 && nodes > 0:
+		color, hint = "red", " [red]— swarmexec init[white]"
+	case agents < nodes:
+		color = "yellow"
+	}
+	return fmt.Sprintf("[aqua]%d[white] %s · [%s]%d/%d[white] agents%s", nodes, noun, color, agents, nodes, hint)
 }
 
 // refreshForwardViews repaints everything a forward's state feeds: the
