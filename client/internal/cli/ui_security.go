@@ -49,7 +49,7 @@ func (u *ui) showSecurityRisks() {
 	}
 
 	prev := app.GetFocus()
-	overlayKeys := footerKeys("j/k", "scroll", "w", "write report", "Esc", "close")
+	overlayKeys := footerKeys("j/k", "scroll", "w", "write report", "Esc", "back")
 	ov := u.overlayFor(pageSecurity, prev, overlayKeys)
 	closeIt := ov.Close
 	setHelp := ov.setHelp

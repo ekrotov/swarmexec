@@ -126,7 +126,7 @@ func (t *configsTab) showDetail(c swarmops.Config) {
 	tv.SetText(head)
 
 	prev := u.app.GetFocus()
-	ov := u.overlayFor(pageConfigDetail, prev, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
+	ov := u.overlayFor(pageConfigDetail, prev, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "back"))
 	closeIt := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {

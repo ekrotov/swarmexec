@@ -432,7 +432,7 @@ func (t *nodesTab) showDetail(n swarmops.NodeInfo) {
 	u.loadNodeReclaim(n.Hostname, false, d.apply)
 
 	d.ov = u.overlayFor(pageNodeDetail, d.back, footerKeys("m", "measure now", dangerKey(keyLabel(u.km.NodePrune)), "prune…",
-		keyLabel(u.km.NodePruneSched), "schedule (all nodes)", "l", "edit labels", "j/k", "scroll", "Esc", "close"))
+		keyLabel(u.km.NodePruneSched), "schedule (all nodes)", "l", "edit labels", "j/k", "scroll", "Esc", "back"))
 	d.tv.SetInputCapture(d.keys)
 	d.ov.show(centered(d.tv, 80, 40), d.tv)
 }

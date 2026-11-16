@@ -24,7 +24,8 @@ const logBufferCap = 5000
 // logViewHelp is the footer key hint shown under every log view. It lives in the
 // footer (not the border title) so the log shortcuts are discoverable in the
 // same place as every other tab's shortcuts, and each key spells out what it
-// does rather than using a one-word label.
+// does rather than using a one-word label. The way out comes first, as in
+// every overlay footer (see footerKeys): a long line is clipped from the right.
 //
 // The follow hint names which of the two states is in force. A fixed "follow
 // on/off" is ambiguous in the one situation that matters: a view that has
@@ -33,8 +34,8 @@ const logBufferCap = 5000
 // way. The mouse hint one field along already spells out its current mode for
 // the same reason.
 func logViewHelp(following bool) string {
-	return " [yellow]f[white] follow " + followHint(following) +
-		"  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]a[white] auto-detect format  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll  [yellow]Esc/q[white] close"
+	return " [yellow]Esc/q[white] close  [yellow]f[white] follow " + followHint(following) +
+		"  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]a[white] auto-detect format  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll"
 }
 
 // followHint marks the active half of the on/off pair. Both halves stay visible

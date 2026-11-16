@@ -199,7 +199,7 @@ func (u *ui) showStackDiff(stack, path string, d *stackfile.Diff) {
 	}
 	tv.SetText(b.String())
 
-	ov := u.overlayFor(pageStackDiff, ctree, footerKeys("j/k", "scroll", "Esc", "close"))
+	ov := u.overlayFor(pageStackDiff, ctree, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeIt := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {

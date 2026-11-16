@@ -255,7 +255,7 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 	}
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" context %s ", c.Name))
-	ov := u.overlayFor(pageCtxDetail, cxtable, footerKeys(keyLabel(km.CtxUse), "use", "Esc", "close"))
+	ov := u.overlayFor(pageCtxDetail, cxtable, footerKeys(keyLabel(km.CtxUse), "use", "Esc", "back"))
 	closeDetail := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {

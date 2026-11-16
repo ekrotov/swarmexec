@@ -1165,12 +1165,34 @@ func (s *scrim) PasteHandler() func(string, func(p tview.Primitive)) {
 // (dynamic-colour tags, as the footer is a TextView). Overlays hand it to
 // overlayFor so the single bottom footer describes the active view's keys.
 // A key passed through dangerKey renders red instead of yellow.
+//
+// The Esc pair always comes first, wherever the caller listed it. A footer
+// that overflows a narrow terminal is clipped from the right, and the way out
+// is the one key that must never be the part that goes — the tabs put "? help
+// q quit" in front for the same reason. Doing it here rather than at each call
+// site keeps a new overlay from getting it wrong. The verb is the caller's:
+// "back" for a detail view, "cancel" for a form or editor, "close" for a
+// stream.
 func footerKeys(pairs ...string) string {
 	var b strings.Builder
+	write := func(key, desc string) { fmt.Fprintf(&b, " %s %s ", keyTag(key), desc) }
 	for i := 0; i+1 < len(pairs); i += 2 {
-		fmt.Fprintf(&b, " %s %s ", keyTag(pairs[i]), pairs[i+1])
+		if isEscLabel(pairs[i]) {
+			write(pairs[i], pairs[i+1])
+		}
+	}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if !isEscLabel(pairs[i]) {
+			write(pairs[i], pairs[i+1])
+		}
 	}
 	return b.String()
+}
+
+// isEscLabel reports whether a footer key label is the Esc key, alone or
+// shared with the quit key ("Esc/q").
+func isEscLabel(label string) bool {
+	return label == "Esc" || strings.HasPrefix(label, "Esc/")
 }
 
 // dangerMark prefixes a key label that names a destructive action (delete,
@@ -1424,7 +1446,7 @@ func (u *ui) showHelp() {
 	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
 	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
 	h.line("`", "toggle the client log view")
-	h.line("Esc", "close the current overlay / dialog")
+	h.line("Esc", "leave the current overlay / dialog (back, cancel or close — always the first key in its footer)")
 
 	// Every tab's own section, in tab order, from the registry.
 	for _, t := range uiTabList {
@@ -1452,7 +1474,7 @@ func (u *ui) showHelp() {
 	tv.SetText(strings.TrimLeft(b.String(), "\n"))
 	tv.SetBorder(true).SetTitle(" keybindings ")
 	prev := app.GetFocus()
-	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "close"))
+	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeHelp := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {

@@ -315,7 +315,7 @@ func (t *forwardsTab) showDetail() {
 	if e.connErr != nil {
 		fmt.Fprintf(&b, "\n\n[yellow]last connection failed:[-]\n%s", esc(e.connErr.Error()))
 	}
-	b.WriteString("\n\n" + keyTag(dangerKey(keyLabel(u.km.FwdStop))) + " stop   [gray]Esc[-] close")
+	b.WriteString("\n\n[gray]Esc[-] back   " + keyTag(dangerKey(keyLabel(u.km.FwdStop))) + " stop")
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
