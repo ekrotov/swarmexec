@@ -33,8 +33,19 @@ func newUICmd(g *globalFlags) *cobra.Command {
 	f := &uiFlags{}
 	cmd := &cobra.Command{
 		Use:   "ui [service]",
-		Short: "Interactive view of containers, volumes, networks, secrets and contexts",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Terminal UI: stacks/services, volumes, forwards, networks, secrets, nodes, configs — several clusters in one session",
+		Long: `A terminal UI over the swarm: stacks, services and their containers, volumes,
+port-forwards, networks, secrets, nodes and configs, one tab each, with exec,
+logs and port-forwarding built in. The docker contexts are a sidebar (c), and
+switching between them keeps your place in each cluster. Needs an interactive
+terminal; ? inside lists every key.
+
+With a service argument the UI opens with the Stacks/Services tree already
+filtered to it, as if you had typed it into the / search.`,
+		Example: "  swarmexec ui\n" +
+			"  swarmexec ui web\n" +
+			"  swarmexec --context prod ui",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUI(cmd, g, f, args)
 		},
@@ -1165,12 +1176,34 @@ func (s *scrim) PasteHandler() func(string, func(p tview.Primitive)) {
 // (dynamic-colour tags, as the footer is a TextView). Overlays hand it to
 // overlayFor so the single bottom footer describes the active view's keys.
 // A key passed through dangerKey renders red instead of yellow.
+//
+// The Esc pair always comes first, wherever the caller listed it. A footer
+// that overflows a narrow terminal is clipped from the right, and the way out
+// is the one key that must never be the part that goes — the tabs put "? help
+// q quit" in front for the same reason. Doing it here rather than at each call
+// site keeps a new overlay from getting it wrong. The verb is the caller's:
+// "back" for a detail view, "cancel" for a form or editor, "close" for a
+// stream.
 func footerKeys(pairs ...string) string {
 	var b strings.Builder
+	write := func(key, desc string) { fmt.Fprintf(&b, " %s %s ", keyTag(key), desc) }
 	for i := 0; i+1 < len(pairs); i += 2 {
-		fmt.Fprintf(&b, " %s %s ", keyTag(pairs[i]), pairs[i+1])
+		if isEscLabel(pairs[i]) {
+			write(pairs[i], pairs[i+1])
+		}
+	}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if !isEscLabel(pairs[i]) {
+			write(pairs[i], pairs[i+1])
+		}
 	}
 	return b.String()
+}
+
+// isEscLabel reports whether a footer key label is the Esc key, alone or
+// shared with the quit key ("Esc/q").
+func isEscLabel(label string) bool {
+	return label == "Esc" || strings.HasPrefix(label, "Esc/")
 }
 
 // dangerMark prefixes a key label that names a destructive action (delete,
@@ -1423,8 +1456,8 @@ func (u *ui) showHelp() {
 	h.line("Tab", "next tab")
 	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
 	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
-	h.line("`", "toggle the client log view")
-	h.line("Esc", "close the current overlay / dialog")
+	h.line("`", "toggle the client log view (w wraps long lines)")
+	h.line("Esc", "leave the current overlay / dialog (back, cancel or close — always the first key in its footer)")
 
 	// Every tab's own section, in tab order, from the registry.
 	for _, t := range uiTabList {
@@ -1452,7 +1485,7 @@ func (u *ui) showHelp() {
 	tv.SetText(strings.TrimLeft(b.String(), "\n"))
 	tv.SetBorder(true).SetTitle(" keybindings ")
 	prev := app.GetFocus()
-	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "close"))
+	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeHelp := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
@@ -1538,10 +1571,31 @@ func (u *ui) refreshCluster() {
 		if err != nil {
 			u.clusterText = "[red]cluster: unreachable[white]"
 		} else {
-			u.clusterText = fmt.Sprintf("[aqua]%d[white] nodes · [aqua]%d[white]/%d agents", c.nodes, c.agents, c.nodes)
+			u.clusterText = clusterSummary(c.nodes, c.agents)
 		}
 		u.updateStatus()
 	})
+}
+
+// clusterSummary is the status line's cluster part: "3 nodes · 3/3 agents".
+//
+// The agent count is coloured by what it means, not always aqua: "2/3" in the
+// same colour as "3/3" hid a half-finished rollout, and "0/3" — no agent at
+// all, so no health, usage, exec or logs — looked like a healthy number. Short
+// of agents is yellow; none at all is red and says what fixes it.
+func clusterSummary(nodes, agents int) string {
+	noun := "nodes"
+	if nodes == 1 {
+		noun = "node"
+	}
+	color, hint := "aqua", ""
+	switch {
+	case agents == 0 && nodes > 0:
+		color, hint = "red", " [red]— swarmexec init[white]"
+	case agents < nodes:
+		color = "yellow"
+	}
+	return fmt.Sprintf("[aqua]%d[white] %s · [%s]%d/%d[white] agents%s", nodes, noun, color, agents, nodes, hint)
 }
 
 // refreshForwardViews repaints everything a forward's state feeds: the
@@ -1685,9 +1739,13 @@ func (u *ui) openLogView() {
 	app, ctx := u.app, u.runCtx
 	u.logViewPrev = app.GetFocus()
 	u.logViewOverlay = u.overlayFor(pageLogView, u.logViewPrev,
-		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll"))
-	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
+		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll", "w", "wrap"))
+	// Wrapped by default: the end of an error line — the gRPC cause, the
+	// reason the viewer was opened — is exactly the part a cut line loses.
+	// w turns it off for the rare wide line worth reading unbroken.
+	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
+	wrap := true
 	refresh := func() {
 		r := clientlog.RingBuffer()
 		var b strings.Builder
@@ -1710,11 +1768,18 @@ func (u *ui) openLogView() {
 			u.closeLogView()
 			return nil
 		}
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'w' {
+			wrap = !wrap
+			tv.SetWrap(wrap)
+			return nil
+		}
 		return ev
 	})
 	stop := make(chan struct{})
 	u.logViewStop = stop
-	u.logViewOverlay.show(tv, tv)
+	// centeredGrow, not tv on its own: a full-screen page covered the footer,
+	// so the keys it names were never on screen.
+	u.logViewOverlay.show(centeredGrow(tv, 100, 20, 0.92), tv)
 	go func() {
 		tk := time.NewTicker(700 * time.Millisecond)
 		defer tk.Stop()

@@ -449,7 +449,7 @@ func sectionHelp(title string, pairs ...string) string {
 
 // showVimHelp shows the vim editor's help over it; Esc, the quit key or ? close it.
 func (u *ui) showVimHelp(back tview.Primitive, extra string) {
-	hov := u.overlayFor(pageVimHelp, back, footerKeys("j/k", "scroll", "Esc", "close"))
+	hov := u.overlayFor(pageVimHelp, back, footerKeys("j/k", "scroll", "Esc", "back"))
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(vimHelpText(extra))
 	tv.SetBorder(true).SetTitle(" editor keys ")
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -1081,7 +1081,7 @@ func (u *ui) showPlacementDiagnosis(svcName string, back tview.Primitive) {
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" placement of %s ", svcName))
 	tv.SetText("  [gray]diagnosing…[-]")
-	ov := u.overlayFor(pagePlaceDiag, back, footerKeys("j/k", "scroll", "Esc", "close"))
+	ov := u.overlayFor(pagePlaceDiag, back, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeDiag := ov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {

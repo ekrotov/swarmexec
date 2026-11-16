@@ -37,7 +37,26 @@ func newExecCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "exec [flags] <service|service.slot|task-id|container-id> [-- <cmd> [args...]]",
 		Short: "Exec into a container running anywhere in the swarm",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Open a shell, or run a command, in a container on whatever node of the swarm
+it runs — the docker exec experience, without ssh to that node.
+
+The target is one of:
+  service        the service's running task, e.g. web
+  service.slot   one replica, e.g. web.2
+  task-id        a Swarm task ID
+  container-id   a container ID prefix (--node names its node, or the running
+                 tasks are scanned for it)
+
+A service with several running replicas is ambiguous: on a terminal you are
+asked to pick one from a numbered list; without one the candidates are
+printed and nothing runs. Name a slot to skip the question.
+
+With no command it opens /bin/sh, with a TTY when stdin is a terminal. The
+remote command's exit code is passed through.`,
+		Example: "  swarmexec exec web -- sh\n" +
+			"  swarmexec exec web.2 -- cat /etc/hostname\n" +
+			"  swarmexec exec -u root -w /app web -- ls -la",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runExec(cmd, g, f, args)
 		},

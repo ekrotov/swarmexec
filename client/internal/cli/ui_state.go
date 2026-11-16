@@ -29,7 +29,7 @@ var uiTabList = []uiTab{
 	// The label names what the tree shows (stacks → services → containers); the
 	// key stays "containers" because it addresses the tab internally — keymap
 	// scopes, the search mode and the content page all key off it.
-	{"containers", "Stacks/Services", "St/Sv"},
+	{"containers", "Stacks/Services", "Stacks"},
 	{"volumes", "Volumes", "Vol"},
 	{"forwards", "Forwards", "Fwd"},
 	{"networks", "Networks", "Net"},

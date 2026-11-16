@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -78,19 +79,28 @@ func Execute(v Version) int {
 	g := &globalFlags{version: v}
 	root := newRootCmd(g, v)
 
-	err := root.Execute()
+	return reportError(os.Stderr, root.Execute(), g)
+}
+
+// reportError prints a command's failure to w and returns the exit code.
+func reportError(w io.Writer, err error, g *globalFlags) int {
 	if err == nil {
 		return 0
 	}
 	var ce *cliError
 	if errors.As(err, &ce) {
 		if !ce.silent && ce.err != nil {
-			fmt.Fprintln(os.Stderr, "swarmexec: "+ce.err.Error()+sshAuthHintFor(ce.err, g))
+			fmt.Fprintln(w, "swarmexec: "+ce.err.Error()+sshAuthHintFor(ce.err, g))
 		}
 		return ce.code
 	}
 	// cobra usage / flag-parse errors.
-	fmt.Fprintln(os.Stderr, "swarmexec: "+err.Error())
+	fmt.Fprintln(w, "swarmexec: "+err.Error())
+	// A wrong argument count also says what the command expects.
+	var ae *argError
+	if errors.As(err, &ae) {
+		fmt.Fprintln(w, "usage: "+ae.usage)
+	}
 	return usageExitCode
 }
 
@@ -114,7 +124,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	var showInfo bool
 	root := &cobra.Command{
 		Use:           "swarmexec",
-		Short:         "Cluster-wide docker exec for Docker Swarm",
+		Short:         "exec, logs, port-forward and a terminal UI for Docker Swarm — without SSH to the nodes",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       fmt.Sprintf("%s (proto %s)", v.Binary, v.Proto),
@@ -166,6 +176,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newUICmd(g))
 	root.AddCommand(newMCPCmd(g))
 	registerCompletions(root, g)
+	usageOnArgErrors(root)
 	return root
 }
 

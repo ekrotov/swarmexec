@@ -233,7 +233,8 @@ swarmexec exec -u 1000:1000 -w /srv -e DEBUG=1 web -- env
 - Exit codes: a remote command's exit code is propagated **exactly**.
   Client/transport/agent failures (unreachable node, bad mTLS, denied exec) exit
   with **125** (mirroring docker), so scripts can distinguish a transport failure
-  from a remote non-zero exit. Usage/flag errors exit with **2**.
+  from a remote non-zero exit. Usage/flag errors exit with **2**; a wrong number
+  of arguments also prints the command's usage line.
 
 ## Non-goals (v1)
 

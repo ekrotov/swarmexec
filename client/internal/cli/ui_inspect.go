@@ -153,7 +153,7 @@ type statsSubject struct {
 
 // keysText builds the footer key hints for the current mode.
 func (iv *inspectView) keysText() string {
-	// Front-load the escape hatches ("? help" and "Esc/<quit> close") so that,
+	// Front-load the escape hatches ("Esc/<quit> back" and "? help") so that,
 	// when this dense line overflows a narrow terminal, it is the tail of
 	// actions that clips — never the way out or the pointer to the full key
 	// list. "?" opens the complete reference (showHelp).
@@ -163,7 +163,7 @@ func (iv *inspectView) keysText() string {
 	// which was the only place they were named at all — and it could never show
 	// more than one of the three.
 	km := iv.u.km
-	parts := []string{"[yellow]?[white] help", "[yellow]Esc/" + keyLabel(km.Quit) + "[white] close", "[yellow]j/k[white] move",
+	parts := []string{"[yellow]Esc/" + keyLabel(km.Quit) + "[white] back", "[yellow]?[white] help", "[yellow]j/k[white] move",
 		"[yellow]" + keyLabel(km.Copy) + "/Enter[white] copy line", "[yellow]1-3/t[white] view"}
 	if iv.editSvc != "" {
 		// The ~14 editor actions live behind the "a" menu (showActions);
@@ -427,7 +427,7 @@ func (iv *inspectView) openDiff() {
 	pages, dcli, svc := u.pages, u.dcli, iv.editSvc
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" diff %s — previous → current ", iv.editSvc))
-	dov := u.overlayFor(pageInspectDiff, iv.table, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "close"))
+	dov := u.overlayFor(pageInspectDiff, iv.table, footerKeys("j/k", "scroll", "g/G", "top/bottom", "Esc", "back"))
 	closeDiff := dov.Close
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == iv.u.km.Quit || ev.Rune() == 'd')) {

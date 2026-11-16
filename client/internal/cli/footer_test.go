@@ -124,3 +124,21 @@ func TestLogFooterNamesTheFollowState(t *testing.T) {
 		t.Errorf("not following, yet %q still highlights \"on\"", off)
 	}
 }
+
+// The way out leads every overlay footer, whatever order the call site listed
+// it in: a footer too long for the terminal is clipped from the right, and
+// "Esc" used to be the first thing to go (observed at 80 columns on the node
+// detail). The rest keep their order.
+func TestOverlayFooterPutsEscFirst(t *testing.T) {
+	got := colorTags.ReplaceAllString(footerKeys("j/k", "scroll", "w", "write", "Esc", "back"), "")
+	if want := " Esc back  j/k scroll  w write "; got != want {
+		t.Errorf("footerKeys = %q, want %q", got, want)
+	}
+	shared := colorTags.ReplaceAllString(footerKeys("t", "toggle", "Esc/q", "close"), "")
+	if !strings.HasPrefix(shared, " Esc/q close") {
+		t.Errorf("an Esc shared with quit must lead too: %q", shared)
+	}
+	if lv := colorTags.ReplaceAllString(logViewHelp(true), ""); !strings.HasPrefix(lv, " Esc/q close") {
+		t.Errorf("log view footer must lead with its way out: %q", lv)
+	}
+}

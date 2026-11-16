@@ -117,11 +117,18 @@
 
       <h2 id="ui"><code>ui</code> — interactive TUI</h2>
       <p>
-        An interactive view of containers and volumes, with exec, logs and
-        port-forwarding built in. Needs an interactive terminal. See
+        A terminal UI over the swarm: stacks, services and their containers, volumes,
+        port-forwards, networks, secrets, nodes and configs, one tab each, with exec,
+        logs and port-forwarding built in — and several clusters in one session, through
+        the context sidebar. Needs an interactive terminal. See
         <a href="#tui">The TUI</a> for keys.
       </p>
       <div class="cmd">swarmexec ui [service]</div>
+      <p>
+        With a <code>service</code> argument the UI opens with the Stacks/Services tree
+        already filtered to it, as if you had typed it into the <kbd>/</kbd> search
+        (<code>swarmexec ui web</code>).
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
@@ -138,7 +145,9 @@
         <strong>context sidebar</strong> down the right-hand side, and a two-line
         footer: the per-tab key hints on top, then a status line with the active docker
         context (<code>ctx&nbsp;&lt;name&gt;</code>, so it's always clear which cluster
-        you're on), a live cluster summary, the forward count and — on the Volumes tab —
+        you're on), a live cluster summary (<code>3 nodes · 3/3 agents</code> — the agent
+        count turns yellow when some nodes have no answering agent, and red with a
+        <code>— swarmexec init</code> hint when none does), the forward count and — on the Volumes tab —
         how many volumes you have selected; at its far right it shows the client's own version. These keys work on every tab:
       </p>
       <div class="note">
@@ -148,7 +157,7 @@
       </div>
       <p>
         The tab bar is <strong>responsive</strong>: on a narrow terminal it switches to
-        short labels — <strong>St/Sv</strong>, <strong>Vol</strong>,
+        short labels — <strong>Stacks</strong>, <strong>Vol</strong>,
         <strong>Fwd</strong>, <strong>Net</strong>, <strong>Sec</strong>,
         <strong>Node</strong>, <strong>Cfg</strong> — so all seven tabs stay visible
         instead of the last ones being clipped. (<strong>Cfg</strong> is Configs.) The
@@ -165,6 +174,7 @@
           <tr><td><kbd>y</kbd></td><td>copy the current list to the clipboard (OSC52)</td></tr>
           <tr><td><kbd>m</kbd></td><td>toggle mouse capture (off = your terminal's own select/copy)</td></tr>
           <tr><td><kbd>`</kbd></td><td>open / close the live log viewer (see below)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>leave the open overlay — <em>back</em> from a detail view, <em>cancel</em> a form or editor, <em>close</em> a log stream. It is always the first key in an overlay's footer, so a narrow terminal clips the other hints before the way out</td></tr>
           <tr><td><kbd>q</kbd></td><td>quit</td></tr>
         </tbody>
       </table></div>
@@ -178,8 +188,10 @@
       </p>
       <p>
         <kbd>c</kbd> gives it the keyboard from any tab; <kbd>c</kbd> again or
-        <kbd>Esc</kbd> hands it back to the tab you were on. The active cluster is
-        marked <code>▶</code> — the same name the footer shows. A cluster you have
+        <kbd>Esc</kbd> hands it back to the tab you were on. The cursor starts on the
+        active cluster, marked <code>▶</code> — the same name the footer shows — so
+        <kbd>c</kbd> <kbd>Enter</kbd> only says “already on” and never switches by
+        accident. A cluster you have
         already visited this session is marked <code>·</code> in green: it is still
         connected, so switching to it is instant. One that refused a connection is
         marked <code>✗</code> in red. The built-in <code>default</code> context is
@@ -260,8 +272,10 @@
         Press <kbd>`</kbd> (backtick) from any tab to toggle a live log overlay. It
         shows the most recent records from the in-memory ring buffer — newest at the
         bottom — refreshing while open and colour-coded by level (red = error, yellow =
-        warn, gray = debug). <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
-        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. This is the TUI's window
+        warn, gray = debug). Long lines wrap, so the cause at the end of an error
+        stays readable; <kbd>w</kbd> turns wrapping off and on. <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
+        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. It floats over the tab
+        like every other overlay, so the footer with these keys stays visible. This is the TUI's window
         onto the same logs that go to the log file, since the terminal itself can't show
         them while the UI is drawing.
       </p>
@@ -287,7 +301,7 @@
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
-stack_group: s
+stack_group: s   stack_file: E
 volume_select: space               volume_select_all: a
 volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n

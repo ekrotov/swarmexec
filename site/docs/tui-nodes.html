@@ -110,7 +110,9 @@
         (manager / worker), <code>AVAIL</code> (active / pause / drain, colour-coded),
         <code>STATE</code> (ready / down), <code>ENGINE</code> version, <code>TASKS</code>
         (running tasks scheduled on the node), <code>VOLS</code> (volumes the node holds —
-        node-local, so it fills in a moment after the rest) and <code>LABELS</code> (count).
+        node-local, so it fills in a moment after the rest; <code>–</code> when the node's
+        agent did not answer, rather than a <code>0</code> that would read as “no volumes”)
+        and <code>LABELS</code> (count).
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
@@ -248,6 +250,9 @@
         <kbd>P</kbd> falls back to the two-entry image menu (untagged leftovers / every
         unused image) such an agent still understands. Update the agent image — the
         agent service spec did not change, so <code>init --force</code> is not needed.
+        A node whose agent does not answer at all shows the first cause on one line —
+        <em>agent not reachable on 10.0.1.5:9443: connection refused — swarmexec
+        doctor</em> — and the full error goes to the client log (<kbd>`</kbd>).
       </p>
       <p id="pruneschedule">
         <strong>Prune schedule (all nodes).</strong> <kbd>S</kbd> on the Nodes tab opens
