@@ -581,160 +581,28 @@ func (u *ui) openPlacementMenu(svcName string, back tview.Primitive, after func(
 // read-only flag). For bind mounts it can't verify the host path (no host
 // access), so on apply it warns which nodes the service could run on and that
 // each bind source must already exist on all of them.
+//
+// Review Q-01 split the former 175-line function: the load (mountsLoad, whose
+// bindNote is the confirm warning), the volume-name autocomplete
+// (mountVolumes) and the add/edit form (mountForm) are pieces of their own.
 func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()) {
-	r, ac, dcli, f := u.r, u.agents, u.dcli, u.f
-	type loaded struct {
-		items, nodes, uneval []string
-		nerr                 error
-	}
-	async(u, "ui.serviceedit.mounts.load", func(ctx context.Context) (loaded, error) {
-		var l loaded
+	dcli := u.dcli
+	async(u, "ui.serviceedit.mounts.load", func(ctx context.Context) (mountsLoad, error) {
+		var l mountsLoad
 		var err error
 		l.items, err = swarmops.CurrentServiceMountSpecs(ctx, dcli, svcName)
 		l.nodes, l.uneval, l.nerr = swarmops.CandidateNodesForService(ctx, dcli, svcName)
 		return l, err
-	}, func(l loaded, err error) {
-		items, nodes, uneval, nerr := l.items, l.nodes, l.uneval, l.nerr
+	}, func(l mountsLoad, err error) {
 		if err != nil {
 			u.info("cannot load mounts: " + err.Error())
 			return
 		}
-		confirmNote := func(list []string) string {
-			var binds []string
-			for _, it := range list {
-				if m, e := swarmops.ParseServiceMount(it); e == nil && m.Type == mount.TypeBind {
-					binds = append(binds, m.Source)
-				}
-			}
-			if len(binds) == 0 {
-				return ""
-			}
-			where := "(could not determine nodes)"
-			if nerr == nil {
-				where = fmt.Sprintf("%d node(s): %s", len(nodes), strings.Join(nodes, ", "))
-			}
-			msg := fmt.Sprintf("⚠ bind sources must ALREADY exist on every node this service can run on — swarmexec cannot verify this.\nnodes: %s\nbinds: %s", where, strings.Join(binds, ", "))
-			if nerr == nil && len(uneval) > 0 {
-				msg += fmt.Sprintf("\n(unevaluated constraints: %s — the real node set may be narrower)", strings.Join(uneval, ", "))
-			}
-			return msg
-		}
-		// volNames feeds the volume-mode autocomplete. Seed from whatever the
-		// Volumes tab already loaded, then refresh in the background (volume
-		// listing is a per-node agent fan-out, so we don't block opening).
-		known := u.volTab().st().vols
-		volNames := make([]string, 0, len(known))
-		for _, v := range known {
-			volNames = append(volNames, v.Name)
-		}
-		async(u, "ui.serviceedit.mounts.volumes", func(ctx context.Context) ([]string, error) {
-			vnodes, e := r.Nodes(ctx)
-			if e != nil {
-				return nil, e
-			}
-			vs, _ := ac.Volumes(ctx, vnodes, f.connectTimeout)
-			names := make([]string, 0, len(vs))
-			for _, v := range vs {
-				names = append(names, v.Name)
-			}
-			sort.Strings(names)
-			return names, nil
-		}, func(names []string, e error) {
-			if e == nil {
-				volNames = names
-			}
-		})
-		// mountForm splits a mount into separate inputs: a "bind mount" toggle,
-		// a source (host path when bind, else a volume name with autocomplete),
-		// the container path, and a read-only toggle. It replaces the old single
-		// "type:source:target[:ro]" text entry.
-		mountForm := func(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
-			isBind, src, tgt, ro := false, "", "", false
-			if m, e := swarmops.ParseServiceMount(initial); e == nil {
-				isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
-			}
-			form := tview.NewForm()
-			// Volume names are short and want autocomplete, so they keep an
-			// InputField; host and container paths get a wrapping field so a
-			// long path is visible whole. The bind toggle swaps which source
-			// field the form shows.
-			volField := tview.NewInputField().SetLabel("volume").SetPlaceholder("volume name").SetFieldWidth(0)
-			hostField := wrapField("host path", "", "/opt/app/config", 3)
-			tgtField := wrapField("container path", tgt, "/data", 3)
-			roCheck := tview.NewCheckbox().SetLabel("read-only").SetChecked(ro)
-			volSuggest := func(text string) []string {
-				text = strings.ToLower(strings.TrimSpace(text))
-				var out []string
-				for _, n := range volNames {
-					if text == "" || strings.Contains(strings.ToLower(n), text) {
-						out = append(out, n)
-					}
-				}
-				return out
-			}
-			volField.SetAutocompleteFunc(volSuggest)
-			if isBind {
-				hostField.SetText(src, true)
-			} else {
-				volField.SetText(src)
-			}
-			var bindCheck *tview.Checkbox
-			layout := func(bind bool) {
-				form.Clear(false)
-				form.AddFormItem(bindCheck)
-				if bind {
-					form.AddFormItem(hostField)
-				} else {
-					form.AddFormItem(volField)
-				}
-				form.AddFormItem(tgtField)
-				form.AddFormItem(roCheck)
-			}
-			bindCheck = tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).
-				SetChangedFunc(func(checked bool) {
-					// Carry what was typed over to the other field.
-					if checked {
-						hostField.SetText(strings.TrimSpace(volField.GetText()), true)
-					} else {
-						volField.SetText(fieldText(hostField))
-					}
-					layout(checked)
-				})
-			layout(isBind)
-			setTitle := func(t string) { form.SetTitle(tview.Escape(t)) }
-			save := func() {
-				typ, s := "volume", strings.TrimSpace(volField.GetText())
-				if bindCheck.IsChecked() {
-					typ, s = "bind", fieldText(hostField)
-				}
-				t := fieldText(tgtField)
-				if s == "" || t == "" {
-					setTitle(" ⚠ source and container path are required ")
-					return
-				}
-				raw := typ + ":" + s + ":" + t
-				if roCheck.IsChecked() {
-					raw += ":ro"
-				}
-				if e := submit(raw); e != nil {
-					setTitle(" ⚠ " + e.Error() + " ")
-				}
-			}
-			form.AddButton("Save", save)
-			form.AddButton("Cancel", cancel)
-			form.SetCancelFunc(cancel)
-			form.SetBorder(true)
-			if initial == "" {
-				setTitle(" add mount · Tab moves · Enter on Save ")
-			} else {
-				setTitle(" edit mount · Tab moves · Enter on Save ")
-			}
-			return form
-		}
+		vols := u.loadMountVolumes()
 		u.editList(editListConfig{
 			title:     "mounts of " + svcName,
 			applyVerb: "Update the mounts",
-			items:     items,
+			items:     l.items,
 			validate: func(s string) (string, error) {
 				m, e := swarmops.ParseServiceMount(s)
 				if e != nil {
@@ -750,12 +618,187 @@ func (u *ui) openMountsEditor(svcName string, back tview.Primitive, after func()
 				return swarmops.SetServiceMounts(ctx, dcli, svcName, ms)
 			},
 			allowEdit:   true,
-			confirmNote: confirmNote,
-			formPrompt:  mountForm,
-			back:        back,
-			after:       after,
+			confirmNote: l.bindNote,
+			formPrompt: func(initial string, submit func(raw string) error, cancel func()) tview.Primitive {
+				return newMountForm(initial, vols, submit, cancel)
+			},
+			back:  back,
+			after: after,
 		})
 	})
+}
+
+// mountsLoad is what the mounts editor opens with: the current mounts, and
+// the nodes the service can run on (with the constraints that could not be
+// evaluated, or why the nodes could not be read).
+type mountsLoad struct {
+	items, nodes, uneval []string
+	nerr                 error
+}
+
+// bindNote is the confirm's warning for a list with bind mounts: every bind
+// source must already exist on every node the service can run on.
+func (l mountsLoad) bindNote(list []string) string {
+	var binds []string
+	for _, it := range list {
+		if m, e := swarmops.ParseServiceMount(it); e == nil && m.Type == mount.TypeBind {
+			binds = append(binds, m.Source)
+		}
+	}
+	if len(binds) == 0 {
+		return ""
+	}
+	where := "(could not determine nodes)"
+	if l.nerr == nil {
+		where = fmt.Sprintf("%d node(s): %s", len(l.nodes), strings.Join(l.nodes, ", "))
+	}
+	msg := fmt.Sprintf("⚠ bind sources must ALREADY exist on every node this service can run on — swarmexec cannot verify this.\nnodes: %s\nbinds: %s", where, strings.Join(binds, ", "))
+	if l.nerr == nil && len(l.uneval) > 0 {
+		msg += fmt.Sprintf("\n(unevaluated constraints: %s — the real node set may be narrower)", strings.Join(l.uneval, ", "))
+	}
+	return msg
+}
+
+// mountVolumes is the volume names the mount form autocompletes. Touched
+// only on the UI goroutine.
+type mountVolumes struct{ names []string }
+
+// suggest is the autocomplete: every known volume containing text.
+func (v *mountVolumes) suggest(text string) []string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	var out []string
+	for _, n := range v.names {
+		if text == "" || strings.Contains(strings.ToLower(n), text) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// loadMountVolumes seeds the volume names from whatever the Volumes tab already
+// loaded, then refreshes them in the background (volume listing is a
+// per-node agent fan-out, so opening the editor does not wait for it).
+func (u *ui) loadMountVolumes() *mountVolumes {
+	r, ac, f := u.r, u.agents, u.f
+	known := u.volTab().st().vols
+	v := &mountVolumes{names: make([]string, 0, len(known))}
+	for _, vol := range known {
+		v.names = append(v.names, vol.Name)
+	}
+	async(u, "ui.serviceedit.mounts.volumes", func(ctx context.Context) ([]string, error) {
+		vnodes, e := r.Nodes(ctx)
+		if e != nil {
+			return nil, e
+		}
+		vs, _ := ac.Volumes(ctx, vnodes, f.connectTimeout)
+		names := make([]string, 0, len(vs))
+		for _, vol := range vs {
+			names = append(names, vol.Name)
+		}
+		sort.Strings(names)
+		return names, nil
+	}, func(names []string, e error) {
+		if e == nil {
+			v.names = names
+		}
+	})
+	return v
+}
+
+// mountForm splits a mount into separate inputs: a "bind mount" toggle, a
+// source (host path when bind, else a volume name with autocomplete), the
+// container path, and a read-only toggle. It replaces the old single
+// "type:source:target[:ro]" text entry.
+type mountForm struct {
+	form *tview.Form
+	// Volume names are short and want autocomplete, so they keep an
+	// InputField; host and container paths get a wrapping field so a long
+	// path is visible whole. The bind toggle swaps which source field the
+	// form shows.
+	volField            *tview.InputField
+	hostField, tgtField *tview.TextArea
+	bindCheck, roCheck  *tview.Checkbox
+	submit              func(raw string) error
+}
+
+func newMountForm(initial string, vols *mountVolumes, submit func(raw string) error, cancel func()) tview.Primitive {
+	isBind, src, tgt, ro := false, "", "", false
+	if m, e := swarmops.ParseServiceMount(initial); e == nil {
+		isBind, src, tgt, ro = m.Type == mount.TypeBind, m.Source, m.Target, m.ReadOnly
+	}
+	f := &mountForm{
+		form:      tview.NewForm(),
+		volField:  tview.NewInputField().SetLabel("volume").SetPlaceholder("volume name").SetFieldWidth(0),
+		hostField: wrapField("host path", "", "/opt/app/config", 3),
+		tgtField:  wrapField("container path", tgt, "/data", 3),
+		roCheck:   tview.NewCheckbox().SetLabel("read-only").SetChecked(ro),
+		submit:    submit,
+	}
+	f.volField.SetAutocompleteFunc(vols.suggest)
+	if isBind {
+		f.hostField.SetText(src, true)
+	} else {
+		f.volField.SetText(src)
+	}
+	f.bindCheck = tview.NewCheckbox().SetLabel("bind mount").SetChecked(isBind).SetChangedFunc(f.toggleBind)
+	f.layout(isBind)
+	f.form.AddButton("Save", f.save)
+	f.form.AddButton("Cancel", cancel)
+	f.form.SetCancelFunc(cancel)
+	f.form.SetBorder(true)
+	if initial == "" {
+		f.setTitle(" add mount · Tab moves · Enter on Save ")
+	} else {
+		f.setTitle(" edit mount · Tab moves · Enter on Save ")
+	}
+	return f.form
+}
+
+func (f *mountForm) setTitle(t string) { f.form.SetTitle(tview.Escape(t)) }
+
+// layout shows the source field that fits the mount type.
+func (f *mountForm) layout(bind bool) {
+	f.form.Clear(false)
+	f.form.AddFormItem(f.bindCheck)
+	if bind {
+		f.form.AddFormItem(f.hostField)
+	} else {
+		f.form.AddFormItem(f.volField)
+	}
+	f.form.AddFormItem(f.tgtField)
+	f.form.AddFormItem(f.roCheck)
+}
+
+// toggleBind swaps the source field, carrying what was typed over to the
+// other one.
+func (f *mountForm) toggleBind(checked bool) {
+	if checked {
+		f.hostField.SetText(strings.TrimSpace(f.volField.GetText()), true)
+	} else {
+		f.volField.SetText(fieldText(f.hostField))
+	}
+	f.layout(checked)
+}
+
+// save hands the mount to the list editor as "type:source:target[:ro]"; a
+// refusal stays in the form's title.
+func (f *mountForm) save() {
+	typ, s := "volume", strings.TrimSpace(f.volField.GetText())
+	if f.bindCheck.IsChecked() {
+		typ, s = "bind", fieldText(f.hostField)
+	}
+	t := fieldText(f.tgtField)
+	if s == "" || t == "" {
+		f.setTitle(" ⚠ source and container path are required ")
+		return
+	}
+	raw := typ + ":" + s + ":" + t
+	if f.roCheck.IsChecked() {
+		raw += ":ro"
+	}
+	if e := f.submit(raw); e != nil {
+		f.setTitle(" ⚠ " + e.Error() + " ")
+	}
 }
 
 // openScalePrompt asks for a new replica count and scales the service.

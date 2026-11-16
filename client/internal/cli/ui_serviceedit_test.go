@@ -180,6 +180,9 @@ func TestEnvEditorWritesTheEnvironment(t *testing.T) {
 	if v := ls.version("web"); v != 1 {
 		t.Errorf("an unchanged :w updated the service (version %d)", v)
 	}
+	if n := afterCount(t, u, afters); n != 0 {
+		t.Errorf("an unchanged :w ran after %d times", n)
+	}
 
 	afters = openEditor(t, u, pageEnvEdit, func(b tview.Primitive, a func()) { u.openEnvEditor("web", b, a) })
 	ta = focusedAs[*tview.TextArea](t, u)
@@ -566,4 +569,25 @@ func TestEditorLoadFailuresSayWhy(t *testing.T) {
 		onLoop(t, u, tc.open)
 		waitForLog(t, ring, "ui notice", tc.want)
 	}
+}
+
+// The mount form's volume autocomplete starts from what the Volumes tab knows
+// and is refreshed from the agents.
+func TestMountVolumesComeFromTheAgents(t *testing.T) {
+	u, _, _ := editUI(t, editSwarm())
+	var v *mountVolumes
+	onLoop(t, u, func() { v = u.loadMountVolumes() })
+	waitFor(t, "the agents' volumes", func() bool {
+		var n int
+		onLoop(t, u, func() { n = len(v.names) })
+		return n == 2
+	})
+	onLoop(t, u, func() {
+		if got := v.suggest(""); !slices.Equal(got, []string{"cache", "data"}) {
+			t.Errorf("suggest(\"\") = %q", got)
+		}
+		if got := v.suggest(" CA "); !slices.Equal(got, []string{"cache"}) {
+			t.Errorf("suggest(CA) = %q", got)
+		}
+	})
 }

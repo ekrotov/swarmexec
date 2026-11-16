@@ -64,6 +64,18 @@ func TestSecretDetailWithoutLabelsOrUsers(t *testing.T) {
 	}
 }
 
+// Before the lookup answers, the services known from the list show with a
+// pending marker. Rendered directly: the lookup is too quick to catch.
+func TestSecretDetailTextWhileLoading(t *testing.T) {
+	got := secretDetailText(apiKeySecret, []swarmops.NetService{{Name: "web"}}, true)
+	if !strings.Contains(got, "used by:\n  web …\n") {
+		t.Errorf("loading:\n%s", got)
+	}
+	if got := secretDetailText(swarmops.Secret{Name: "x"}, nil, true); !strings.Contains(got, "used by:\n  …\n") {
+		t.Errorf("loading, no services:\n%s", got)
+	}
+}
+
 func TestSecretDetailKeys(t *testing.T) {
 	u, ls, ring := editUI(t, editSwarm())
 	tv := openSecretDetail(t, u, apiKeySecret)

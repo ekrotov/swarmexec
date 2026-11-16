@@ -57,9 +57,9 @@ func (a *pruneAgent) requests() []*pb.PruneRequest {
 	return slices.Clone(a.got)
 }
 
-// pruneDialog opens the dialog for node-a (whose agent is a) through
+// openPruneDialog opens the dialog for node-a (whose agent is a) through
 // openNodePrune, as the Nodes tab does, and returns its table and summary.
-func pruneDialog(t *testing.T, a *pruneAgent) (*ui, *tview.Table, *tview.TextView, *int) {
+func openPruneDialog(t *testing.T, a *pruneAgent) (*ui, *tview.Table, *tview.TextView, *int) {
 	t.Helper()
 	u, _, _ := editUIWith(t, editSwarm(), map[string]pb.AgentServer{"node-a": a})
 	afters := new(int)
@@ -100,7 +100,7 @@ func selectRow(t *testing.T, u *ui, table *tview.Table, row int) {
 }
 
 func TestPruneDialogShowsRowsAndSummary(t *testing.T) {
-	u, table, summary, _ := pruneDialog(t, &pruneAgent{stats: statsFixture()})
+	u, table, summary, _ := openPruneDialog(t, &pruneAgent{stats: statsFixture()})
 	rows := pruneRows(t, u, table)
 	want := []string{
 		"[x[] stopped containers (> 24h) |",
@@ -129,7 +129,7 @@ func TestPruneDialogShowsRowsAndSummary(t *testing.T) {
 }
 
 func TestPruneDialogKeys(t *testing.T) {
-	u, table, summary, _ := pruneDialog(t, &pruneAgent{stats: statsFixture()})
+	u, table, summary, _ := openPruneDialog(t, &pruneAgent{stats: statsFixture()})
 
 	// Space ticks the row under the cursor: images, then volumes.
 	selectRow(t, u, table, 1)
@@ -192,7 +192,7 @@ func TestPruneDialogKeys(t *testing.T) {
 
 func TestPruneDialogPrunesAfterTheConfirm(t *testing.T) {
 	a := &pruneAgent{stats: statsFixture()}
-	u, _, _, afters := pruneDialog(t, a)
+	u, _, _, afters := openPruneDialog(t, a)
 	keyRune(t, u, 'w')
 	waitFront(t, u, pageConfirm)
 	if text := drawFront(t, u, 240, 60); !hasAll(text, `Prune on "node-a"`, "build cache") {
@@ -225,7 +225,7 @@ func TestPruneDialogPrunesAfterTheConfirm(t *testing.T) {
 }
 
 func TestPruneDialogNothingTickedAndNotMeasured(t *testing.T) {
-	u, table, summary, _ := pruneDialog(t, &pruneAgent{stats: &pb.ReclaimStatsResponse{}})
+	u, table, summary, _ := openPruneDialog(t, &pruneAgent{stats: &pb.ReclaimStatsResponse{}})
 	if s := textOf(t, u, summary); !strings.Contains(s, "not measured yet") {
 		t.Errorf("summary without a measurement:\n%s", s)
 	}

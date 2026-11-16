@@ -40,140 +40,178 @@ func (u *ui) openNodePrune(n swarmops.NodeInfo, back tview.Primitive, after func
 	})
 }
 
+// pruneDialog is the per-node prune overlay: the category checklist, a
+// summary of what the ticked ones free, the age prompt, and the prune behind a
+// confirm.
+//
+// It was one 140-line function whose render, prompt, run and key handler were
+// closures over the same locals (review Q-01). As a type the halves are
+// separate methods — build (showPruneDialog), view (render), input (keys) and
+// apply (run) — the same split scheduleEditor has.
+type pruneDialog struct {
+	u      *ui
+	node   swarmops.NodeInfo
+	stats  *pb.ReclaimStatsResponse
+	after  func()
+	choice pruneChoice
+
+	table   *tview.Table
+	summary *tview.TextView
+	ov      *overlay
+}
+
 // showPruneDialog is the category checklist. Volumes sit last, unticked and
 // red, and "all" (a) leaves them alone: they are data, and the only way to
 // prune them is to tick them on purpose.
 func (u *ui) showPruneDialog(n swarmops.NodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
-	r, ac, f := u.r, u.agents, u.f
-	choice := defaultPruneChoice()
+	d := &pruneDialog{u: u, node: n, stats: stats, after: after, choice: defaultPruneChoice()}
+	d.table = tview.NewTable().SetSelectable(true, false)
+	d.table.SetBorder(true).SetTitle(fmt.Sprintf(" prune — %s ", n.Hostname))
+	d.summary = tview.NewTextView().SetDynamicColors(true).SetWrap(true)
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(d.table, len(pruneCats)+2, 0, true).AddItem(d.summary, 0, 1, false)
+	d.ov = u.overlayFor(pageNodePrune, back, footerKeys("j/k", "move", "space", "tick", "a", "all but volumes", "t", "keep stopped for", dangerKey("Enter"), "prune…", "Esc", "cancel"))
+	d.render()
+	d.table.SetInputCapture(d.keys)
+	d.ov.show(centered(layout, 78, len(pruneCats)+8), d.table)
+}
 
-	table := tview.NewTable().SetSelectable(true, false)
-	table.SetBorder(true).SetTitle(fmt.Sprintf(" prune — %s ", n.Hostname))
-	summary := tview.NewTextView().SetDynamicColors(true).SetWrap(true)
-	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(table, len(pruneCats)+2, 0, true).AddItem(summary, 0, 1, false)
-
-	ov := u.overlayFor(pageNodePrune, back, footerKeys("j/k", "move", "space", "tick", "a", "all but volumes", "t", "keep stopped for", dangerKey("Enter"), "prune…", "Esc", "cancel"))
-
-	render := func() {
-		row, _ := table.GetSelection()
-		table.Clear()
-		for i, pc := range pruneCats {
-			box := "[ ]"
-			if choice.ticked[pc.cat] {
-				box = "[x]"
-			}
-			label := pc.label
-			switch pc.cat {
-			case pb.PruneCategory_PRUNE_CATEGORY_CONTAINERS:
-				label = fmt.Sprintf("stopped containers (> %s)", choice.untilLabel())
-			case pb.PruneCategory_PRUNE_CATEGORY_VOLUMES:
-				label = "VOLUMES — data, never in all"
-			}
-			color := tcell.ColorWhite
-			if pc.danger {
-				color = tcell.ColorRed
-			}
-			rc, _ := reclaimFigure(stats, pc.cat)
-			table.SetCell(i, 0, tview.NewTableCell(tview.Escape(box)).SetTextColor(color))
-			table.SetCell(i, 1, tview.NewTableCell(label).SetTextColor(color).SetExpansion(1))
-			table.SetCell(i, 2, tview.NewTableCell(figureText(rc)).SetAlign(tview.AlignRight))
-		}
-		table.Select(row, 0)
-
-		var b strings.Builder
-		if stats.GetMeasuredAt() != "" {
-			fmt.Fprintf(&b, " expected: frees about [green]%s[white]  [gray](measured %s)[-]\n",
-				diskSize(choice.expected(stats)), ago(stats.GetMeasuredAt(), time.Now()))
-			if mu := untilText(stats.GetContainersUntil()); mu != "" && mu != choice.untilLabel() {
-				fmt.Fprintf(&b, " [gray]the containers figure was measured for stopped > %s[-]\n", mu)
-			}
-		} else {
-			b.WriteString(" [gray]not measured yet — no estimate[-]\n")
-		}
-		if choice.ticked[pb.PruneCategory_PRUNE_CATEGORY_IMAGES] {
-			b.WriteString(" [red]every unused image[white] also removes images of services scaled to zero.\n")
-		}
-		if choice.ticked[pb.PruneCategory_PRUNE_CATEGORY_VOLUMES] {
-			b.WriteString(" [red]VOLUMES ticked: unused volumes are deleted WITH THEIR DATA.[white]\n")
-		}
-		summary.SetText(b.String())
+// render repaints the rows and the summary from the choice, keeping the
+// cursor row.
+func (d *pruneDialog) render() {
+	row, _ := d.table.GetSelection()
+	d.table.Clear()
+	for i, pc := range pruneCats {
+		d.renderRow(i, pc)
 	}
-	render()
+	d.table.Select(row, 0)
+	d.summary.SetText(d.summaryText(time.Now()))
+}
 
-	untilPrompt := func() {
-		in := tview.NewInputField().SetLabel("keep stopped containers for (e.g. 24h, 2h, 0): ").SetText(choice.untilLabel()).SetFieldWidth(10)
-		pov := u.overlayFor(pageNodePrunePrompt, table, "")
-		in.SetDoneFunc(func(k tcell.Key) {
-			pov.Close()
-			if k != tcell.KeyEnter {
-				return
-			}
-			txt := strings.TrimSpace(in.GetText())
-			if _, err := prunesched.ParseUntil(txt); err != nil {
-				u.info(err.Error())
-				return
-			}
-			choice.until = txt
-			render()
-		})
-		in.SetBorder(true)
-		pov.show(centeredPrompt(in, 66), in)
+// renderRow writes one category row: tick box, label (red when dangerous),
+// and the figure the agent measured.
+func (d *pruneDialog) renderRow(i int, pc pruneCat) {
+	box := "[ ]"
+	if d.choice.ticked[pc.cat] {
+		box = "[x]"
 	}
+	label := pc.label
+	switch pc.cat {
+	case pb.PruneCategory_PRUNE_CATEGORY_CONTAINERS:
+		label = fmt.Sprintf("stopped containers (> %s)", d.choice.untilLabel())
+	case pb.PruneCategory_PRUNE_CATEGORY_VOLUMES:
+		label = "VOLUMES — data, never in all"
+	}
+	color := tcell.ColorWhite
+	if pc.danger {
+		color = tcell.ColorRed
+	}
+	rc, _ := reclaimFigure(d.stats, pc.cat)
+	d.table.SetCell(i, 0, tview.NewTableCell(tview.Escape(box)).SetTextColor(color))
+	d.table.SetCell(i, 1, tview.NewTableCell(label).SetTextColor(color).SetExpansion(1))
+	d.table.SetCell(i, 2, tview.NewTableCell(figureText(rc)).SetAlign(tview.AlignRight))
+}
 
-	run := func() {
-		if len(choice.categories()) == 0 {
-			u.info("Nothing ticked.")
+// summaryText is the block under the table: the expected gain, and a warning
+// for each dangerous category ticked.
+func (d *pruneDialog) summaryText(now time.Time) string {
+	stats, choice := d.stats, d.choice
+	var b strings.Builder
+	if stats.GetMeasuredAt() != "" {
+		fmt.Fprintf(&b, " expected: frees about [green]%s[white]  [gray](measured %s)[-]\n",
+			diskSize(choice.expected(stats)), ago(stats.GetMeasuredAt(), now))
+		if mu := untilText(stats.GetContainersUntil()); mu != "" && mu != choice.untilLabel() {
+			fmt.Fprintf(&b, " [gray]the containers figure was measured for stopped > %s[-]\n", mu)
+		}
+	} else {
+		b.WriteString(" [gray]not measured yet — no estimate[-]\n")
+	}
+	if choice.ticked[pb.PruneCategory_PRUNE_CATEGORY_IMAGES] {
+		b.WriteString(" [red]every unused image[white] also removes images of services scaled to zero.\n")
+	}
+	if choice.ticked[pb.PruneCategory_PRUNE_CATEGORY_VOLUMES] {
+		b.WriteString(" [red]VOLUMES ticked: unused volumes are deleted WITH THEIR DATA.[white]\n")
+	}
+	return b.String()
+}
+
+// untilPrompt asks how long stopped containers are kept (t).
+func (d *pruneDialog) untilPrompt() {
+	u := d.u
+	in := tview.NewInputField().SetLabel("keep stopped containers for (e.g. 24h, 2h, 0): ").SetText(d.choice.untilLabel()).SetFieldWidth(10)
+	pov := u.overlayFor(pageNodePrunePrompt, d.table, "")
+	in.SetDoneFunc(func(k tcell.Key) {
+		pov.Close()
+		if k != tcell.KeyEnter {
 			return
 		}
-		u.confirm(pruneConfirmBody(n.Hostname, choice, stats), "Prune", table, func() {
-			ov.Close()
-			req := choice.request()
-			u.flash(fmt.Sprintf(" [gray]pruning on %s…[white]", n.Hostname))
-			async(u, "ui.nodes.prune", func(ctx context.Context) (*pb.PruneResponse, error) {
-				target, err := nodeByHostname(ctx, r, n.Hostname)
-				if err != nil {
-					return nil, err
-				}
-				return ac.Prune(ctx, target, req, f.connectTimeout)
-			}, func(resp *pb.PruneResponse, err error) {
-				if err != nil {
-					u.info("prune: " + err.Error())
-					return
-				}
-				u.info(pruneResultText(n.Hostname, resp))
-				if after != nil {
-					after()
-				}
-			})
-		})
-	}
-
-	table.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		row, _ := table.GetSelection()
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
-			ov.Close()
-			return nil
-		case ev.Key() == tcell.KeyEnter || (ev.Key() == tcell.KeyRune && ev.Rune() == 'w'):
-			run()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == ' ':
-			if row >= 0 && row < len(pruneCats) {
-				choice.toggle(pruneCats[row].cat)
-				render()
-			}
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-			choice.selectAll()
-			render()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 't':
-			untilPrompt()
-			return nil
+		txt := strings.TrimSpace(in.GetText())
+		if _, err := prunesched.ParseUntil(txt); err != nil {
+			u.info(err.Error())
+			return
 		}
-		return ev
+		d.choice.until = txt
+		d.render()
 	})
-	ov.show(centered(layout, 78, len(pruneCats)+8), table)
+	in.SetBorder(true)
+	pov.show(centeredPrompt(in, 66), in)
+}
+
+// run prunes the ticked categories on the node, behind a confirm.
+func (d *pruneDialog) run() {
+	u := d.u
+	if len(d.choice.categories()) == 0 {
+		u.info("Nothing ticked.")
+		return
+	}
+	r, ac, f := u.r, u.agents, u.f
+	host, after := d.node.Hostname, d.after
+	u.confirm(pruneConfirmBody(host, d.choice, d.stats), "Prune", d.table, func() {
+		d.ov.Close()
+		req := d.choice.request()
+		u.flash(fmt.Sprintf(" [gray]pruning on %s…[white]", host))
+		async(u, "ui.nodes.prune", func(ctx context.Context) (*pb.PruneResponse, error) {
+			target, err := nodeByHostname(ctx, r, host)
+			if err != nil {
+				return nil, err
+			}
+			return ac.Prune(ctx, target, req, f.connectTimeout)
+		}, func(resp *pb.PruneResponse, err error) {
+			if err != nil {
+				u.info("prune: " + err.Error())
+				return
+			}
+			u.info(pruneResultText(host, resp))
+			if after != nil {
+				after()
+			}
+		})
+	})
+}
+
+// keys is the table's input capture.
+func (d *pruneDialog) keys(ev *tcell.EventKey) *tcell.EventKey {
+	row, _ := d.table.GetSelection()
+	switch {
+	case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == d.u.km.Quit):
+		d.ov.Close()
+	case ev.Key() == tcell.KeyEnter || (ev.Key() == tcell.KeyRune && ev.Rune() == 'w'):
+		d.run()
+	case ev.Key() != tcell.KeyRune:
+		return ev
+	case ev.Rune() == ' ':
+		if row >= 0 && row < len(pruneCats) {
+			d.choice.toggle(pruneCats[row].cat)
+			d.render()
+		}
+	case ev.Rune() == 'a':
+		d.choice.selectAll()
+		d.render()
+	case ev.Rune() == 't':
+		d.untilPrompt()
+	default:
+		return ev
+	}
+	return nil
 }
 
 // --- node detail: reclaimable block ------------------------------------------

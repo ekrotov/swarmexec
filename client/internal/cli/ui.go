@@ -298,19 +298,12 @@ func (u *ui) connectCluster(c *clusterState) error {
 	return nil
 }
 
-// run drives one UI session over the infrastructure runUI prepared on u: it
-// builds the per-tab widgets, wires their callbacks to the *ui methods that
-// implement them, and starts the session-wide loops. The aliases below keep the
-// remaining inline bodies referring to app/pages/… unchanged.
+// run drives one UI session over the infrastructure runUI prepared on u, in
+// steps (review Q-01 split the former 190-line body): build the window
+// (buildChrome), wire the search bar and the context list, load the first
+// cluster and start the session-wide loops (startSession), then hand the
+// terminal to tview (runScreen).
 func (u *ui) run(keyWarnings []string) error {
-	app, pages, content := u.app, u.pages, u.content
-	g := u.g
-	selStyle := u.selStyle
-	// The session context, NOT the cluster's: the loops below outlive a cluster
-	// switch. The tree ticker refreshes whichever cluster is visible at the time,
-	// and the watchdog is measuring this process, not a cluster.
-	ctx := u.runCtx
-
 	// forwards is the UI's only persistent background resource: a port forward
 	// outlives the overlay that started it, unlike every stream here.
 	forwards := newForwardRegistry()
@@ -321,88 +314,105 @@ func (u *ui) run(keyWarnings []string) error {
 
 	// Every tab builds its own widget: the tree in newTreeTab (ui_containers.go),
 	// the tables in newVolumesTab, newNetworksTab and the rest.
+	u.buildChrome()
+	u.wireSearch()
+	u.active = "containers"
+	u.mouseEnabled = true
+	u.wireContexts()
+	u.startSession(keyWarnings)
+	return u.runScreen()
+}
 
-	// ------------------------------------------------------------------ contexts
+// buildChrome builds the window around the tabs — tab bar, content beside the
+// context sidebar, the hidden search bar, the two-line footer — as page
+// "main", and promotes the shared widgets onto u so the infra methods
+// (updateStatus, setTab, refreshForwardViews, …) can reach them.
+func (u *ui) buildChrome() {
 	// activeCtx (the name in the footer, and the row marked here) is set with the
 	// cluster it belongs to — runUI for the first one, activateCluster for every
 	// switch — so the name and the connection can never disagree.
 	// No fixed header row: in the sidebar the first row is already a context
 	// (see renderContexts), and SetFixed(1,0) would pin it out of reach of the
 	// cursor.
-	cxtable := tview.NewTable().SetBorders(false).SetSelectable(true, false)
-	cxtable.SetSelectedStyle(selStyle)
+	u.cxtable = tview.NewTable().SetBorders(false).SetSelectable(true, false)
+	u.cxtable.SetSelectedStyle(u.selStyle)
 
-	// ---------------------------------------------------------------- tabs/chrome
-	u.cxtable = cxtable
 	for i, t := range uiTabList {
-		content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
+		u.content.AddPage(t.key, u.tab(t.key).widget(), true, i == 0)
 	}
 	// `swarmexec ui web` opens pre-narrowed. The first cluster only: the
 	// argument named a service there, not on whatever cluster comes next.
 	u.treeTab().st().filter = u.service
 
-	tabBar := newTabStrip(uiTabList, func(key string) { u.setTab(key) })
-	// Two-line footer: the per-tab key hints on top, then one consolidated status
-	// line — active context · live cluster summary · forward count · (on the
-	// volumes tab) selection count. u.updateStatus() composes the status line; the
-	// async cluster/forward refreshers feed it. clusterText holds the last cluster
-	// probe result so a forward or selection change can recompose without re-probing.
-	help := tview.NewTextView().SetDynamicColors(true)
-	status := tview.NewTextView().SetDynamicColors(true)
-	u.clusterText = "[gray]cluster: …[white]"
-	// The status line shares its row with a right-aligned part: the version of
-	// this client, and — while the context list is hidden for lack of width —
-	// the key that brings it up. Its width follows its text (statusRightText).
-	statusRight := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
-	statusRow := tview.NewFlex().
-		AddItem(status, 0, 1, false).
-		AddItem(statusRight, 0, 0, false)
-	footer := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(help, 1, 0, false).
-		AddItem(statusRow, 1, 0, false)
+	u.tabBar = newTabStrip(uiTabList, func(key string) { u.setTab(key) })
+	u.buildFooter()
 	// "/" search bar: hidden (height 0) until activated; filters the container
 	// tree live by service / container id / node.
-	search := tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
+	u.search = tview.NewInputField().SetLabel("/ ").SetFieldWidth(0).
 		SetPlaceholder("filter services / containers / nodes")
-	// The context list is a column beside the content, not a tab (see
-	// ui_sidebar.go). It is framed so it reads as chrome rather than as a second
-	// table competing with the one in the middle.
-	sidebar := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(cxtable, 0, 1, true)
-	sidebar.SetBorder(true).SetTitle(" contexts ").SetBorderColor(palette.border)
-	body := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(content, 0, 1, true).
-		// One blank column so the content's rightmost characters do not run
-		// into the sidebar's border; tview clips rather than wraps, and without
-		// it a long image or port list ends flush against the frame.
-		AddItem(nil, 0, 0, false).
-		AddItem(sidebar, 0, 0, false)
-	u.body, u.sidebar = body, sidebar
-	root := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(tabBar, 2, 0, false). // labels row + active-tab underline indicator
-		AddItem(body, 0, 1, true).
-		AddItem(search, 0, 0, false).
-		AddItem(footer, 2, 0, false)
+	u.buildBody()
+	u.root = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(u.tabBar, 2, 0, false). // labels row + active-tab underline indicator
+		AddItem(u.body, 0, 1, true).
+		AddItem(u.search, 0, 0, false).
+		AddItem(u.footer, 2, 0, false)
 	// The sidebar width is decided at draw time from the space we actually have
 	// — no resize events to listen for, no stale width after a resize. It is
 	// decided in ROOT's draw func, which tview runs before root draws any child:
 	// a Flex draws its focused item LAST, and the body nearly always has focus,
 	// so a decision made in the body's own draw would reach the footer (the
 	// context-list hint) only one frame later. Body and root share the width.
-	root.SetDrawFunc(func(_ tcell.Screen, x, y, w, h int) (int, int, int, int) {
+	u.root.SetDrawFunc(func(_ tcell.Screen, x, y, w, h int) (int, int, int, int) {
 		u.resizeSidebar(w)
 		return x, y, w, h
 	})
-	pages.AddPage(pageMain, root, true, true)
-
-	// Promote the shared widgets onto u so the infra methods (updateStatus,
-	// setTab, refreshForwardViews, …) can reach them. All exist by now.
-	u.tabBar, u.help, u.status = tabBar, help, status
-	u.footer, u.root, u.search = footer, root, search
-	u.statusRow, u.statusRight = statusRow, statusRight
+	u.pages.AddPage(pageMain, u.root, true, true)
 	u.updateStatusRight()
+}
 
-	// u.savedHelp holds the footer help to restore when search closes; u.searchMode
-	// names the tab the shared "/" bar filters (see startSearch).
+// buildFooter builds the two-line footer: the per-tab key hints on top, then
+// one consolidated status line — active context · live cluster summary ·
+// forward count · (on the volumes tab) selection count. u.updateStatus()
+// composes the status line; the async cluster/forward refreshers feed it.
+// clusterText holds the last cluster probe result so a forward or selection
+// change can recompose without re-probing.
+func (u *ui) buildFooter() {
+	u.help = tview.NewTextView().SetDynamicColors(true)
+	u.status = tview.NewTextView().SetDynamicColors(true)
+	u.clusterText = "[gray]cluster: …[white]"
+	// The status line shares its row with a right-aligned part: the version of
+	// this client, and — while the context list is hidden for lack of width —
+	// the key that brings it up. Its width follows its text (statusRightText).
+	u.statusRight = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	u.statusRow = tview.NewFlex().
+		AddItem(u.status, 0, 1, false).
+		AddItem(u.statusRight, 0, 0, false)
+	u.footer = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(u.help, 1, 0, false).
+		AddItem(u.statusRow, 1, 0, false)
+}
+
+// buildBody puts the tab content and the context sidebar side by side. The
+// context list is a column beside the content, not a tab (see
+// ui_sidebar.go). It is framed so it reads as chrome rather than as a second
+// table competing with the one in the middle.
+func (u *ui) buildBody() {
+	u.sidebar = tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.cxtable, 0, 1, true)
+	u.sidebar.SetBorder(true).SetTitle(" contexts ").SetBorderColor(palette.border)
+	u.body = tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(u.content, 0, 1, true).
+		// One blank column so the content's rightmost characters do not run
+		// into the sidebar's border; tview clips rather than wraps, and without
+		// it a long image or port list ends flush against the frame.
+		AddItem(nil, 0, 0, false).
+		AddItem(u.sidebar, 0, 0, false)
+}
+
+// wireSearch makes the "/" bar filter the tab it was opened on. u.savedHelp
+// holds the footer help to restore when search closes; u.searchMode names the
+// tab the shared bar filters (see startSearch).
+func (u *ui) wireSearch() {
+	search := u.search
 	search.SetChangedFunc(func(text string) {
 		// Filter locally against the cached data — no docker call per keystroke.
 		if s := u.searchTab(); s != nil {
@@ -415,23 +425,32 @@ func (u *ui) run(keyWarnings []string) error {
 		}
 		s := u.searchTab()
 		if s == nil || s.searchText() == "" {
-			root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
+			u.root.ResizeItem(search, 0, 0) // nothing active — collapse the bar away
 		}
 		u.setFooter(u.savedHelp) // restore the tab help
 		// Enter keeps the filter; the bar stays as an indicator.
-		app.SetFocus(u.tab(u.searchMode).widget())
+		u.app.SetFocus(u.tab(u.searchMode).widget())
 	})
+}
 
-	u.active = "containers"
-	u.mouseEnabled = true
-	var screen tcell.Screen // set just before Run; used for clipboard (OSC52)
-
-	cxtable.SetInputCapture(u.contextKeys)
-	cxtable.SetSelectedFunc(func(int, int) {
+// wireContexts gives the context list its keys: Enter activates the context
+// under the cursor.
+func (u *ui) wireContexts() {
+	u.cxtable.SetInputCapture(u.contextKeys)
+	u.cxtable.SetSelectedFunc(func(int, int) {
 		if c, ok := u.selectedContext(); ok {
 			u.activateContext(c)
 		}
 	})
+}
+
+// startSession loads what the first frame shows and starts the session-wide
+// loops: the topology event stream and poll, and the watchdog.
+func (u *ui) startSession(keyWarnings []string) {
+	// The session context, NOT the cluster's: the loops below outlive a cluster
+	// switch. The tree ticker refreshes whichever cluster is visible at the time,
+	// and the watchdog is measuring this process, not a cluster.
+	ctx := u.runCtx
 
 	// The sidebar is visible from the first frame, so its content is loaded
 	// before it: it comes from docker's local store, no network involved.
@@ -462,15 +481,18 @@ func (u *ui) run(keyWarnings []string) error {
 	}
 
 	// Responsiveness watchdog: a stall means something is blocking the loop.
-	clientlog.L().Info("ui started", "log_level", g.logLevel)
+	clientlog.L().Info("ui started", "log_level", u.g.logLevel)
 	go u.watchdog(ctx)
+}
 
+// runScreen takes the terminal and runs the event loop until the UI quits.
+func (u *ui) runScreen() error {
+	app := u.app
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
-	scr, serr := tcell.NewScreen()
+	screen, serr := tcell.NewScreen()
 	if serr != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
 	}
-	screen = scr
 	u.screen = screen
 	app.SetScreen(screen)
 
@@ -487,7 +509,7 @@ func (u *ui) run(keyWarnings []string) error {
 	setAskpassPrompter(u.askpassPrompt)
 	defer setAskpassPrompter(nil)
 
-	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
+	if err := app.SetRoot(u.pages, true).EnableMouse(true).Run(); err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
 	}
 	return nil
