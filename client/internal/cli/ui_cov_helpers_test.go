@@ -23,10 +23,10 @@ import (
 // the chrome the dialogs touch, keys sent the way the event loop sends them,
 // and an overlay read back as the text it draws.
 
-// chromeUI is runningUI plus the pieces of runUI's chrome that the dialogs
+// covChromeUI is runningUI plus the pieces of runUI's chrome that the dialogs
 // reach for: the keymap, the status line, the search bar, the forwards
 // registry and the cluster map.
-func chromeUI(t *testing.T) *ui {
+func covChromeUI(t *testing.T) *ui {
 	t.Helper()
 	u := runningUI(t)
 	onLoop(t, u, func() {

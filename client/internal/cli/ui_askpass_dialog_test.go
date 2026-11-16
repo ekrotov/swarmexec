@@ -46,7 +46,7 @@ func answerOf(t *testing.T, ch <-chan askAnswer) askAnswer {
 
 func askpassUI(t *testing.T) (*ui, context.CancelFunc) {
 	t.Helper()
-	u := chromeUI(t)
+	u := covChromeUI(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	onLoop(t, u, func() { u.runCtx = ctx })

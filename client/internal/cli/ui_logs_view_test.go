@@ -337,7 +337,7 @@ func TestStackLogsRefusals(t *testing.T) {
 // logs.format: auto in the config arms detection in a new view; an invalid
 // config falls back to the defaults.
 func TestLogDefaultsFromConfig(t *testing.T) {
-	u := chromeUI(t)
+	u := covChromeUI(t)
 	onLoop(t, u, func() {
 		u.cfg.Logs.Format = "auto"
 		if _, _, auto := u.logDefaults(); !auto {

@@ -47,7 +47,7 @@ func volumeCluster() (*fakeManager, map[string]*fakeAgent) {
 	return mgr, agents
 }
 
-// volumeDialogUI is chromeUI wired to mgr and the agents, on the Volumes tab,
+// volumeDialogUI is covChromeUI wired to mgr and the agents, on the Volumes tab,
 // loaded and settled.
 func volumeDialogUI(t *testing.T, mgr *fakeManager, agents map[string]*fakeAgent) *ui {
 	t.Helper()
@@ -56,7 +56,7 @@ func volumeDialogUI(t *testing.T, mgr *fakeManager, agents map[string]*fakeAgent
 		byHost[h] = a
 	}
 	cfg := startAgents(t, byHost)
-	u := chromeUI(t)
+	u := covChromeUI(t)
 	wireVolumes(t, u, mgr, cfg)
 	onLoop(t, u, func() {
 		u.active = "volumes"
@@ -304,7 +304,7 @@ func pressFormButton(t *testing.T, u *ui, page, label string) {
 	sendSpecial(t, u, tcell.KeyEnter)
 }
 
-func setField(t *testing.T, u *ui, page, label, text string) {
+func covSetField(t *testing.T, u *ui, page, label, text string) {
 	t.Helper()
 	in := formInput(t, u, page, label)
 	onLoop(t, u, func() { in.SetText(text) })
@@ -329,28 +329,28 @@ func TestVolumesTabCreateForm(t *testing.T) {
 		})
 		return strings.Contains(pageText(t, u, pageVolForm), "node-b")
 	})
-	setField(t, u, pageVolForm, "Node (blank = all nodes)", "")
+	covSetField(t, u, pageVolForm, "Node (blank = all nodes)", "")
 
-	setField(t, u, pageVolForm, "Name", "fresh")
-	setField(t, u, pageVolForm, "Labels (k=v,k=v)", "broken")
+	covSetField(t, u, pageVolForm, "Name", "fresh")
+	covSetField(t, u, pageVolForm, "Labels (k=v,k=v)", "broken")
 	pressFormButton(t, u, pageVolForm, "Create")
 	waitPageText(t, u, pageInfo, "invalid labels")
 	closeInfo(t, u)
 
-	setField(t, u, pageVolForm, "Labels (k=v,k=v)", "team=shop")
-	setField(t, u, pageVolForm, "Node (blank = all nodes)", "node-z")
+	covSetField(t, u, pageVolForm, "Labels (k=v,k=v)", "team=shop")
+	covSetField(t, u, pageVolForm, "Node (blank = all nodes)", "node-z")
 	pressFormButton(t, u, pageVolForm, "Create")
 	waitPageText(t, u, pageInfo, `no node named "node-z"`)
 	closeInfo(t, u)
 
-	setField(t, u, pageVolForm, "Name", "")
-	setField(t, u, pageVolForm, "Node (blank = all nodes)", "")
+	covSetField(t, u, pageVolForm, "Name", "")
+	covSetField(t, u, pageVolForm, "Node (blank = all nodes)", "")
 	pressFormButton(t, u, pageVolForm, "Create")
 	waitPageText(t, u, pageInfo)
 	closeInfo(t, u)
 
-	setField(t, u, pageVolForm, "Name", "fresh")
-	setField(t, u, pageVolForm, "Node (blank = all nodes)", "node-a")
+	covSetField(t, u, pageVolForm, "Name", "fresh")
+	covSetField(t, u, pageVolForm, "Node (blank = all nodes)", "node-a")
 	pressFormButton(t, u, pageVolForm, "Create")
 	waitPageGone(t, u, pageVolForm)
 	waitFooter(t, u, "created volume fresh on 1 node(s)")
@@ -368,7 +368,7 @@ func TestVolumesTabCreateForm(t *testing.T) {
 	// Blank node = every node; node-b refuses.
 	volKey(t, u, u.km.VolNew)
 	waitPageText(t, u, pageVolForm, "new volume")
-	setField(t, u, pageVolForm, "Name", "everywhere")
+	covSetField(t, u, pageVolForm, "Name", "everywhere")
 	// The form fetches the nodes as it opens; until they are in, Create says
 	// there are none.
 	waitUntil(t, "the create to go out", func() bool {
@@ -475,7 +475,7 @@ func TestVolumesTabPruneWithNothingUnused(t *testing.T) {
 
 // Many targets: the confirm lists twelve and counts the rest.
 func TestVolumesDeleteConfirmTruncates(t *testing.T) {
-	u := chromeUI(t)
+	u := covChromeUI(t)
 	var targets []swarmVolume
 	for i := 0; i < 15; i++ {
 		targets = append(targets, swarmVolume{Name: "v" + string(rune('a'+i))})
@@ -570,7 +570,7 @@ func TestVolumesTabAttachToService(t *testing.T) {
 // empty list.
 func TestVolumesTabSaysWhenNoAgentIsDeployed(t *testing.T) {
 	mgr, _ := volumeCluster()
-	u := chromeUI(t)
+	u := covChromeUI(t)
 	wireVolumes(t, u, mgr, startAgents(t, map[string]pb.AgentServer{}))
 	onLoop(t, u, func() { u.volTab().enter() })
 	waitForTable(t, u, u.volTab().table, errNoAgent.Error())

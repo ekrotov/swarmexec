@@ -32,10 +32,10 @@ func isolatedDockerConfig(t *testing.T) string {
 	return dir
 }
 
-// contextsUI is chromeUI with the sidebar table as its screen, on "default".
+// contextsUI is covChromeUI with the sidebar table as its screen, on "default".
 func contextsUI(t *testing.T) *ui {
 	t.Helper()
-	u := chromeUI(t)
+	u := covChromeUI(t)
 	onLoop(t, u, func() {
 		u.cxtable = tview.NewTable().SetBorders(false).SetSelectable(true, false)
 		u.cxtable.SetInputCapture(u.contextKeys)
@@ -220,12 +220,12 @@ func TestNewContextForm(t *testing.T) {
 	waitPageText(t, u, pageCtxForm, "new context", "SSH user", "SSH host", "Use a jump host")
 	toggleCheckbox(t, u, "Use a jump host (bastion)")
 	waitPageText(t, u, pageCtxForm, "Jump host(s)")
-	setField(t, u, pageCtxForm, "Name", "edge")
-	setField(t, u, pageCtxForm, "SSH user", "deploy")
-	setField(t, u, pageCtxForm, "SSH host", "manager1")
-	setField(t, u, pageCtxForm, "SSH port (22)", "2222")
-	setField(t, u, pageCtxForm, "Jump host(s)", "bastion")
-	setField(t, u, pageCtxForm, "Description", "edge cluster")
+	covSetField(t, u, pageCtxForm, "Name", "edge")
+	covSetField(t, u, pageCtxForm, "SSH user", "deploy")
+	covSetField(t, u, pageCtxForm, "SSH host", "manager1")
+	covSetField(t, u, pageCtxForm, "SSH port (22)", "2222")
+	covSetField(t, u, pageCtxForm, "Jump host(s)", "bastion")
+	covSetField(t, u, pageCtxForm, "Description", "edge cluster")
 	pressFormButton(t, u, pageCtxForm, "Create")
 	waitPageGone(t, u, pageCtxForm)
 	waitFooter(t, u, "created context edge")
@@ -261,16 +261,16 @@ func TestNewContextForm(t *testing.T) {
 	waitPageText(t, u, pageInfo, "docker host is required")
 	closeInfo(t, u)
 
-	setField(t, u, pageCtxForm, "Docker host", "tcp://"+strings.TrimPrefix(api.URL, "http://"))
+	covSetField(t, u, pageCtxForm, "Docker host", "tcp://"+strings.TrimPrefix(api.URL, "http://"))
 	pressFormButton(t, u, pageCtxForm, "Test")
 	waitFooter(t, u, "connection ok")
 
-	setField(t, u, pageCtxForm, "Docker host", "tcp://127.0.0.1:1")
+	covSetField(t, u, pageCtxForm, "Docker host", "tcp://127.0.0.1:1")
 	pressFormButton(t, u, pageCtxForm, "Test")
 	waitPageText(t, u, pageInfo, "test failed")
 	closeInfo(t, u)
 
-	setField(t, u, pageCtxForm, "Name", "edge")
+	covSetField(t, u, pageCtxForm, "Name", "edge")
 	pressFormButton(t, u, pageCtxForm, "Create")
 	waitPageText(t, u, pageInfo, "create failed", "already exists")
 	closeInfo(t, u)
