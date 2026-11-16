@@ -172,99 +172,130 @@ func (t *nodesTab) reload() {
 // node's labels, applied via NodeUpdate. Dedicated (not the service editList)
 // because a node update is immediate — there is no rolling update.
 func (u *ui) editNodeLabels(n swarmops.NodeInfo, back tview.Primitive, after func()) {
-	app, dcli, notable := u.app, u.dcli, back
-	cur := swarmops.KVPairs(n.Labels)
-	list := tview.NewList().ShowSecondaryText(false)
-	list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
-	render := func() {
-		i := list.GetCurrentItem()
-		list.Clear()
-		if len(cur) == 0 {
-			list.AddItem("[gray](no labels)[-]", "", 0, nil)
-		}
-		for _, it := range cur {
-			list.AddItem(tview.Escape(it), "", 0, nil)
-		}
-		if i < list.GetItemCount() {
-			list.SetCurrentItem(i)
-		}
+	e := &nodeLabelEditor{u: u, n: n, cur: swarmops.KVPairs(n.Labels), after: after,
+		list: tview.NewList().ShowSecondaryText(false)}
+	e.list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
+	e.render()
+	e.ov = u.overlayFor(pageNodeLabels, back, footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
+	e.list.SetInputCapture(e.keys)
+	e.ov.show(centered(e.list, 70, 16), e.list)
+}
+
+// nodeLabelEditor is one open node label editor (review Q-01 split
+// editNodeLabels): the staged labels, the list showing them, and its keys.
+type nodeLabelEditor struct {
+	u     *ui
+	n     swarmops.NodeInfo
+	cur   []string // the staged key=value labels, applied together by w
+	list  *tview.List
+	ov    *overlay
+	after func()
+}
+
+// render rebuilds the list from the staged labels, keeping the cursor.
+func (e *nodeLabelEditor) render() {
+	list := e.list
+	i := list.GetCurrentItem()
+	list.Clear()
+	if len(e.cur) == 0 {
+		list.AddItem("[gray](no labels)[-]", "", 0, nil)
 	}
-	render()
-	ov := u.overlayFor(pageNodeLabels, notable, footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
-	closeEd := ov.Close
-	promptLabel := func(initial string, done func(string)) {
-		in := tview.NewInputField().SetLabel("key=value: ").SetText(initial).SetFieldWidth(44)
-		// Nested inside the label editor: it goes back to the list, not to the
-		// table the editor itself returns to.
-		pov := u.overlayFor(pageNodeLabelPrompt, list, "")
-		in.SetDoneFunc(func(k tcell.Key) {
-			pov.Close()
-			if k != tcell.KeyEnter {
-				return
-			}
-			txt := strings.TrimSpace(in.GetText())
-			if txt == "" {
-				return
-			}
-			if _, _, err := swarmops.ParseLabel(txt); err != nil {
-				u.info(err.Error())
-				return
-			}
-			done(txt)
-			render()
-		})
-		in.SetBorder(true)
-		pov.show(centeredPrompt(in, 60), in)
+	for _, it := range e.cur {
+		list.AddItem(tview.Escape(it), "", 0, nil)
 	}
-	apply := func() {
-		lbls, err := swarmops.LabelsFromStrings(cur)
-		if err != nil {
+	if i < list.GetItemCount() {
+		list.SetCurrentItem(i)
+	}
+}
+
+// keys is the list's input capture.
+func (e *nodeLabelEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
+	if ev.Key() == tcell.KeyEscape {
+		e.ov.Close()
+		return nil
+	}
+	if ev.Key() != tcell.KeyRune {
+		return vimListKeys(ev)
+	}
+	switch ev.Rune() {
+	case 'a':
+		e.prompt("", func(v string) { e.cur = append(e.cur, v) })
+	case 'e':
+		if i, ok := e.current(); ok {
+			e.prompt(e.cur[i], func(v string) { e.cur[i] = v })
+		}
+	case 'd':
+		if i, ok := e.current(); ok {
+			e.cur = append(e.cur[:i], e.cur[i+1:]...)
+			e.render()
+		}
+	case 'w':
+		e.apply()
+	default:
+		return vimListKeys(ev)
+	}
+	return nil
+}
+
+// current is the row under the cursor; false on the "(no labels)" row.
+func (e *nodeLabelEditor) current() (int, bool) {
+	i := e.list.GetCurrentItem()
+	return i, i >= 0 && i < len(e.cur)
+}
+
+// prompt asks for one key=value label, prefilled with initial, and hands a
+// well-formed answer to done.
+func (e *nodeLabelEditor) prompt(initial string, done func(string)) {
+	u := e.u
+	in := tview.NewInputField().SetLabel("key=value: ").SetText(initial).SetFieldWidth(44)
+	// Nested inside the label editor: it goes back to the list, not to the
+	// table the editor itself returns to.
+	pov := u.overlayFor(pageNodeLabelPrompt, e.list, "")
+	in.SetDoneFunc(func(k tcell.Key) {
+		pov.Close()
+		if k != tcell.KeyEnter {
+			return
+		}
+		txt := strings.TrimSpace(in.GetText())
+		if txt == "" {
+			return
+		}
+		if _, _, err := swarmops.ParseLabel(txt); err != nil {
 			u.info(err.Error())
 			return
 		}
-		u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
-			asyncDo(u, "ui.nodes.labels", func(ctx context.Context) error {
-				return swarmops.SetNodeLabels(ctx, dcli, n.ID, lbls)
-			}, func(err error) {
-				if err != nil {
-					u.info("update failed: " + err.Error())
-					app.SetFocus(list)
-					return
-				}
-				closeEd()
-				u.info(fmt.Sprintf("node %s labels updated", n.Hostname))
-				if after != nil {
-					after()
-				}
-			})
-		})
-	}
-	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape:
-			closeEd()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
-			promptLabel("", func(v string) { cur = append(cur, v) })
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'e':
-			if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
-				promptLabel(cur[i], func(v string) { cur[i] = v })
-			}
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'd':
-			if i := list.GetCurrentItem(); i >= 0 && i < len(cur) {
-				cur = append(cur[:i], cur[i+1:]...)
-				render()
-			}
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
-			apply()
-			return nil
-		}
-		return vimListKeys(ev)
+		done(txt)
+		e.render()
 	})
-	ov.show(centered(list, 70, 16), list)
+	in.SetBorder(true)
+	pov.show(centeredPrompt(in, 60), in)
+}
+
+// apply writes the staged labels to the node, behind a confirm.
+func (e *nodeLabelEditor) apply() {
+	u, n, list := e.u, e.n, e.list
+	app, dcli := u.app, u.dcli
+	lbls, err := swarmops.LabelsFromStrings(e.cur)
+	if err != nil {
+		u.info(err.Error())
+		return
+	}
+	u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
+		asyncDo(u, "ui.nodes.labels", func(ctx context.Context) error {
+			return swarmops.SetNodeLabels(ctx, dcli, n.ID, lbls)
+		}, func(err error) {
+			if err != nil {
+				u.info("update failed: " + err.Error())
+				app.SetFocus(list)
+				return
+			}
+			e.ov.Close()
+			u.info(fmt.Sprintf("node %s labels updated", n.Hostname))
+			if e.after != nil {
+				e.after()
+			}
+		})
+	})
 }
 
 // openNodeAvailability offers the three availability states. One menu rather
@@ -392,73 +423,107 @@ func resourceBar(booked, capacity int64) string {
 }
 
 func (t *nodesTab) showDetail(n swarmops.NodeInfo) {
-	u, notable := t.u, t.table
-	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
-	head := t.detailHead(n)
-	// The reclaim block arrives from the agent after the detail is open. It is
-	// re-rendered in place; `closed` (UI goroutine only) stops a late answer
-	// from writing into a detail the operator already left.
-	rec := &nodeReclaimView{loading: true}
-	closed := false
-	render := func() {
-		row, col := tv.GetScrollOffset()
-		tv.SetText(head + rec.text(time.Now()))
-		tv.ScrollTo(row, col)
-	}
-	apply := func(resp *pb.ReclaimStatsResponse, err error) {
-		if closed {
-			return
-		}
-		rec.loading, rec.err = false, err
-		if resp != nil {
-			rec.resp = resp
-		}
-		render()
-	}
-	render()
-	u.loadNodeReclaim(n.Hostname, false, apply)
+	u := t.u
+	d := &nodeDetail{t: t, n: n, back: t.table, rec: &nodeReclaimView{loading: true},
+		tv: tview.NewTextView().SetDynamicColors(true).SetScrollable(true)}
+	d.tv.SetBorder(true).SetTitle(fmt.Sprintf(" node %s ", n.Hostname))
+	d.head = t.detailHead(n)
+	d.render()
+	u.loadNodeReclaim(n.Hostname, false, d.apply)
 
-	ov := u.overlayFor(pageNodeDetail, notable, footerKeys("m", "measure now", dangerKey(keyLabel(u.km.NodePrune)), "prune…",
+	d.ov = u.overlayFor(pageNodeDetail, d.back, footerKeys("m", "measure now", dangerKey(keyLabel(u.km.NodePrune)), "prune…",
 		keyLabel(u.km.NodePruneSched), "schedule (all nodes)", "l", "edit labels", "j/k", "scroll", "Esc", "close"))
-	closeDetail := func() {
-		closed = true
-		ov.Close()
+	d.tv.SetInputCapture(d.keys)
+	d.ov.show(centered(d.tv, 80, 40), d.tv)
+}
+
+// nodeDetail is one open node detail overlay (review Q-01 split showDetail):
+// the head, the reclaim block under it, and the keys that measure or leave
+// for the node's dialogs.
+type nodeDetail struct {
+	t    *nodesTab
+	n    swarmops.NodeInfo
+	back tview.Primitive // the nodes table, which every dialog opened from here returns to
+	tv   *tview.TextView
+	head string // everything above the reclaim block
+	ov   *overlay
+
+	// The reclaim block arrives from the agent after the detail is open. It is
+	// re-rendered in place; closed (UI goroutine only) stops a late answer
+	// from writing into a detail the operator already left.
+	rec    *nodeReclaimView
+	closed bool
+}
+
+// render repaints the detail, keeping the scroll position.
+func (d *nodeDetail) render() {
+	row, col := d.tv.GetScrollOffset()
+	d.tv.SetText(d.head + d.rec.text(time.Now()))
+	d.tv.ScrollTo(row, col)
+}
+
+// apply takes a reclaim answer (on the UI goroutine).
+func (d *nodeDetail) apply(resp *pb.ReclaimStatsResponse, err error) {
+	if d.closed {
+		return
 	}
-	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
-			closeDetail()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'm':
-			// Rule: never QueueUpdateDraw from here (the UI goroutine) — the
-			// "measuring" state is written straight into the widget.
-			if !rec.loading {
-				rec.loading = true
-				render()
-				u.loadNodeReclaim(n.Hostname, true, apply)
-			}
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.NodePrune:
-			closeDetail()
-			u.openNodePrune(n, notable, t.reload)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.NodePruneSched:
-			closeDetail()
-			u.openPruneSchedule(notable)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
-			closeDetail()
-			u.editNodeLabels(n, notable, t.reload)
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-		}
+	d.rec.loading, d.rec.err = false, err
+	if resp != nil {
+		d.rec.resp = resp
+	}
+	d.render()
+}
+
+func (d *nodeDetail) close() {
+	d.closed = true
+	d.ov.Close()
+}
+
+// measure asks the agent to measure now, unless an answer is still pending.
+// Rule: never QueueUpdateDraw from here (the UI goroutine) — the "measuring"
+// state is written straight into the widget.
+func (d *nodeDetail) measure() {
+	if d.rec.loading {
+		return
+	}
+	d.rec.loading = true
+	d.render()
+	d.t.u.loadNodeReclaim(d.n.Hostname, true, d.apply)
+}
+
+// keys is the detail's input capture. The dialog keys close the detail first:
+// the dialog takes its place over the nodes table.
+func (d *nodeDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
+	u, t := d.t.u, d.t
+	if ev.Key() == tcell.KeyEscape {
+		d.close()
+		return nil
+	}
+	if ev.Key() != tcell.KeyRune {
 		return ev
-	})
-	ov.show(centered(tv, 80, 40), tv)
+	}
+	switch ev.Rune() {
+	case u.km.Quit, 'i':
+		d.close()
+	case 'm':
+		d.measure()
+	case u.km.NodePrune:
+		d.close()
+		u.openNodePrune(d.n, d.back, t.reload)
+	case u.km.NodePruneSched:
+		d.close()
+		u.openPruneSchedule(d.back)
+	case 'l':
+		d.close()
+		u.editNodeLabels(d.n, d.back, t.reload)
+	case 'j':
+		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	case 'k':
+		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	default:
+		return ev
+	}
+	return nil
 }
 
 // detailHead is everything in the node detail above the reclaim block.
