@@ -119,73 +119,86 @@ func HasLabels(labels map[string]string) bool {
 func Parse(labels map[string]string) (Schedule, error) {
 	s := Default()
 	var errs []error
-	get := func(k string) (string, bool) {
-		v, ok := labels[k]
-		return strings.TrimSpace(v), ok
-	}
-	if v, ok := get(LabelEnabled); ok {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s=%q: want true or false", LabelEnabled, v))
+	for _, p := range labelParsers {
+		v, ok := labels[p.label]
+		if !ok {
+			continue
 		}
-		s.Enabled = b
-	}
-	if v, ok := get(LabelDays); ok {
-		d, err := ParseDays(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", LabelDays, err))
+		if err := p.parse(&s, strings.TrimSpace(v)); err != nil {
+			errs = append(errs, err)
 		}
-		s.Days = d
-	}
-	if v, ok := get(LabelStart); ok {
-		m, err := ParseClock(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", LabelStart, err))
-		}
-		s.Start = m
-	}
-	if v, ok := get(LabelTimes); ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > MaxTimesPerDay {
-			errs = append(errs, fmt.Errorf("%s=%q: want a number from 1 to %d", LabelTimes, v, MaxTimesPerDay))
-		}
-		s.Times = n
-	}
-	if v, ok := get(LabelTZ); ok {
-		if v == "" {
-			v = "UTC"
-		}
-		if _, err := time.LoadLocation(v); err != nil {
-			errs = append(errs, fmt.Errorf("%s=%q: unknown time zone", LabelTZ, v))
-		}
-		s.TZ = v
-	}
-	if v, ok := get(LabelCategories); ok {
-		c, err := ParseCategories(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", LabelCategories, err))
-		}
-		s.Categories = c
-	}
-	if v, ok := get(LabelContainersUntil); ok {
-		d, err := ParseUntil(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", LabelContainersUntil, err))
-		}
-		s.ContainersUntil = d
-	}
-	if v, ok := get(LabelFilterLabel); ok && v != "" {
-		f, err := ParseLabelFilters(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", LabelFilterLabel, err))
-		}
-		s.LabelFilters = f
 	}
 	if err := errors.Join(errs...); err != nil {
 		s.Enabled = false
 		return s, err
 	}
 	return s, nil
+}
+
+// labelParsers reads each schedule label into a Schedule, in the order Parse
+// reports errors. A parser sets its field even when the value is bad, and its
+// error names the label.
+var labelParsers = []struct {
+	label string
+	parse func(s *Schedule, v string) error
+}{
+	{LabelEnabled, func(s *Schedule, v string) error {
+		b, err := strconv.ParseBool(v)
+		s.Enabled = b
+		if err != nil {
+			return fmt.Errorf("%s=%q: want true or false", LabelEnabled, v)
+		}
+		return nil
+	}},
+	{LabelDays, func(s *Schedule, v string) (err error) {
+		s.Days, err = ParseDays(v)
+		return labelErr(LabelDays, err)
+	}},
+	{LabelStart, func(s *Schedule, v string) (err error) {
+		s.Start, err = ParseClock(v)
+		return labelErr(LabelStart, err)
+	}},
+	{LabelTimes, func(s *Schedule, v string) error {
+		n, err := strconv.Atoi(v)
+		s.Times = n
+		if err != nil || n < 1 || n > MaxTimesPerDay {
+			return fmt.Errorf("%s=%q: want a number from 1 to %d", LabelTimes, v, MaxTimesPerDay)
+		}
+		return nil
+	}},
+	{LabelTZ, func(s *Schedule, v string) error {
+		if v == "" {
+			v = "UTC"
+		}
+		s.TZ = v
+		if _, err := time.LoadLocation(v); err != nil {
+			return fmt.Errorf("%s=%q: unknown time zone", LabelTZ, v)
+		}
+		return nil
+	}},
+	{LabelCategories, func(s *Schedule, v string) (err error) {
+		s.Categories, err = ParseCategories(v)
+		return labelErr(LabelCategories, err)
+	}},
+	{LabelContainersUntil, func(s *Schedule, v string) (err error) {
+		s.ContainersUntil, err = ParseUntil(v)
+		return labelErr(LabelContainersUntil, err)
+	}},
+	{LabelFilterLabel, func(s *Schedule, v string) (err error) {
+		if v == "" {
+			return nil // a blank filter is no filter
+		}
+		s.LabelFilters, err = ParseLabelFilters(v)
+		return labelErr(LabelFilterLabel, err)
+	}},
+}
+
+// labelErr prefixes a value parser's error with the label it came from.
+func labelErr(label string, err error) error {
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
 }
 
 // Validate checks a schedule built in code (the editor) by the same rules

@@ -113,6 +113,43 @@ func TestInvalidLabelsDisable(t *testing.T) {
 	}
 }
 
+// A blank time zone means UTC and a blank label filter means none; every bad
+// label is reported, in label order, with the values still set as parsed.
+func TestParseBlankLabelsAndErrorOrder(t *testing.T) {
+	s, err := Parse(map[string]string{LabelEnabled: " true ", LabelTZ: "  ", LabelFilterLabel: " "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Enabled || s.TZ != "UTC" || s.LabelFilters != nil {
+		t.Errorf("parsed %+v", s)
+	}
+
+	s, err = Parse(map[string]string{
+		LabelEnabled:         "true",
+		LabelDays:            "mon,funday",
+		LabelStart:           "24:00",
+		LabelTimes:           "30",
+		LabelTZ:              "Mars/Olympus",
+		LabelCategories:      "containers,everything",
+		LabelContainersUntil: "a day",
+		LabelFilterLabel:     "=x",
+	})
+	if err == nil {
+		t.Fatal("no error")
+	}
+	var labels []string
+	for _, line := range strings.Split(err.Error(), "\n") {
+		labels = append(labels, strings.SplitN(line, ":", 2)[0])
+	}
+	want := []string{LabelDays, LabelStart, LabelTimes + `="30"`, LabelTZ + `="Mars/Olympus"`, LabelCategories, LabelContainersUntil, LabelFilterLabel}
+	if !slices.Equal(labels, want) {
+		t.Errorf("error order:\n%s", err)
+	}
+	if s.Enabled || s.Times != 30 || s.TZ != "Mars/Olympus" {
+		t.Errorf("parsed %+v", s)
+	}
+}
+
 func TestTimesOfDaySplitsTheDayFromStart(t *testing.T) {
 	cases := []struct {
 		start, times int
