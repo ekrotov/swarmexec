@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
@@ -557,4 +558,83 @@ func (o ownerIndex) name(hostIP, peer string) string {
 		}
 	}
 	return ""
+}
+
+// EndpointScope narrows the endpoint analysis to the part of the cluster a
+// restricted caller may see (the MCP server); the TUI analyses everything.
+// The analysis itself stays the same: ScopeEndpoints filters its inputs, so a
+// hidden service is as absent from the counts, the stale candidates and the
+// duplicates as if it did not run at all.
+type EndpointScope struct {
+	// Visible reports whether a task's service may be counted ("" when the
+	// service is unknown). Tasks of other services are dropped, and their
+	// addresses count as a hidden service's.
+	Visible func(service string) bool
+	// Hidden reports whether a service name an endpoint carries (its
+	// networkdb service, or the service in its task container name) is a
+	// service that exists and is hidden. A name that is neither visible nor
+	// hidden (a service since removed) keeps its endpoint: a leftover no live
+	// task explains is exactly what a stale candidate is.
+	Hidden func(service string) bool
+}
+
+// ScopeEndpoints drops from both views what belongs to a hidden service:
+// manager tasks whose service is not visible, and node endpoints filed under
+// or named after a hidden service or holding one of its task addresses (per
+// network). Load balancers and unattributable endpoints stay. The node
+// responses are copied, never changed in place. With nothing hidden, the
+// inputs come back with the same content.
+func ScopeEndpoints(tasks []TaskAddr, nodes []agentcall.NodeNetworkEndpoints, sc EndpointScope) ([]TaskAddr, []agentcall.NodeNetworkEndpoints) {
+	hiddenIPs := map[string]map[string]bool{} // network id -> ip
+	var kept []TaskAddr
+	for _, t := range tasks {
+		if sc.Visible(t.Service) {
+			kept = append(kept, t)
+			continue
+		}
+		if hiddenIPs[t.NetworkID] == nil {
+			hiddenIPs[t.NetworkID] = map[string]bool{}
+		}
+		for _, ip := range t.IPs {
+			hiddenIPs[t.NetworkID][ip] = true
+		}
+	}
+	hiddenName := func(svc, name string) bool {
+		if svc == "" {
+			svc = TaskServiceName(name)
+		}
+		return svc != "" && sc.Hidden(svc)
+	}
+	out := make([]agentcall.NodeNetworkEndpoints, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Err != nil || n.Resp == nil {
+			out = append(out, n)
+			continue
+		}
+		resp, _ := proto.Clone(n.Resp).(*pb.NetworkEndpointsResponse)
+		for _, ni := range resp.GetNetworks() {
+			hid := hiddenIPs[ni.GetId()]
+			var locals []*pb.NetworkLocalEndpoint
+			for _, l := range ni.GetLocalEndpoints() {
+				if !l.GetLoadBalancer() && (hiddenName("", l.GetName()) || hid[StripMask(l.GetIpv4Address())]) {
+					continue
+				}
+				locals = append(locals, l)
+			}
+			ni.LocalEndpoints = locals
+			for _, s := range ni.GetServices() {
+				var ts []*pb.NetworkTaskEndpoint
+				for _, t := range s.GetTasks() {
+					lb := s.GetName() == "" && lbTaskName(t.GetName())
+					if !lb && (hiddenName(s.GetName(), t.GetName()) || hid[StripMask(t.GetEndpointIp())]) {
+						continue
+					}
+					ts = append(ts, t)
+				}
+				s.Tasks = ts
+			}
+		}
+		out = append(out, agentcall.NodeNetworkEndpoints{Node: n.Node, Resp: resp})
+	}
+	return kept, out
 }
