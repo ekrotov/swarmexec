@@ -352,45 +352,47 @@ func parseLogfmtPairs(s string) map[string]string {
 		for i < n && s[i] == ' ' {
 			i++
 		}
-		if i >= n {
-			break
-		}
 		ks := i
 		for i < n && s[i] != '=' && s[i] != ' ' {
 			i++
 		}
 		key := s[ks:i]
 		if i >= n || s[i] == ' ' {
-			continue // bare token, no value
+			continue // bare token (or trailing blanks), no value
 		}
-		i++ // consume '='
 		var val string
-		if i < n && s[i] == '"' {
-			i++
-			var b strings.Builder
-			for i < n && s[i] != '"' {
-				if s[i] == '\\' && i+1 < n {
-					i++
-				}
-				b.WriteByte(s[i])
-				i++
-			}
-			if i < n {
-				i++ // closing quote
-			}
-			val = b.String()
-		} else {
-			vs := i
-			for i < n && s[i] != ' ' {
-				i++
-			}
-			val = s[vs:i]
-		}
+		val, i = logfmtValue(s, i+1) // past the '='
 		if key != "" {
 			out[key] = val
 		}
 	}
 	return out
+}
+
+// logfmtValue reads the value starting at s[i] — quoted or up to the next
+// blank — and returns it with the index just past it.
+func logfmtValue(s string, i int) (string, int) {
+	n := len(s)
+	if i >= n || s[i] != '"' {
+		vs := i
+		for i < n && s[i] != ' ' {
+			i++
+		}
+		return s[vs:i], i
+	}
+	i++
+	var b strings.Builder
+	for i < n && s[i] != '"' {
+		if s[i] == '\\' && i+1 < n {
+			i++
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	if i < n {
+		i++ // closing quote
+	}
+	return b.String(), i
 }
 
 // firstKV returns the first non-empty value among keys.
