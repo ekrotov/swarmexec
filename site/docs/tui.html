@@ -263,8 +263,10 @@
         Press <kbd>`</kbd> (backtick) from any tab to toggle a live log overlay. It
         shows the most recent records from the in-memory ring buffer — newest at the
         bottom — refreshing while open and colour-coded by level (red = error, yellow =
-        warn, gray = debug). <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
-        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. This is the TUI's window
+        warn, gray = debug). Long lines wrap, so the cause at the end of an error
+        stays readable; <kbd>w</kbd> turns wrapping off and on. <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
+        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. It floats over the tab
+        like every other overlay, so the footer with these keys stays visible. This is the TUI's window
         onto the same logs that go to the log file, since the terminal itself can't show
         them while the UI is drawing.
       </p>

@@ -1445,7 +1445,7 @@ func (u *ui) showHelp() {
 	h.line("Tab", "next tab")
 	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
 	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
-	h.line("`", "toggle the client log view")
+	h.line("`", "toggle the client log view (w wraps long lines)")
 	h.line("Esc", "leave the current overlay / dialog (back, cancel or close — always the first key in its footer)")
 
 	// Every tab's own section, in tab order, from the registry.
@@ -1707,9 +1707,13 @@ func (u *ui) openLogView() {
 	app, ctx := u.app, u.runCtx
 	u.logViewPrev = app.GetFocus()
 	u.logViewOverlay = u.overlayFor(pageLogView, u.logViewPrev,
-		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll"))
-	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(false)
+		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll", "w", "wrap"))
+	// Wrapped by default: the end of an error line — the gRPC cause, the
+	// reason the viewer was opened — is exactly the part a cut line loses.
+	// w turns it off for the rare wide line worth reading unbroken.
+	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
+	wrap := true
 	refresh := func() {
 		r := clientlog.RingBuffer()
 		var b strings.Builder
@@ -1732,11 +1736,18 @@ func (u *ui) openLogView() {
 			u.closeLogView()
 			return nil
 		}
+		if ev.Key() == tcell.KeyRune && ev.Rune() == 'w' {
+			wrap = !wrap
+			tv.SetWrap(wrap)
+			return nil
+		}
 		return ev
 	})
 	stop := make(chan struct{})
 	u.logViewStop = stop
-	u.logViewOverlay.show(tv, tv)
+	// centeredGrow, not tv on its own: a full-screen page covered the footer,
+	// so the keys it names were never on screen.
+	u.logViewOverlay.show(centeredGrow(tv, 100, 20, 0.92), tv)
 	go func() {
 		tk := time.NewTicker(700 * time.Millisecond)
 		defer tk.Stop()
