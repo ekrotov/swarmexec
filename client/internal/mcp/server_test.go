@@ -158,6 +158,7 @@ func TestMCPNeverRevealsLabelsOrHiddenServices(t *testing.T) {
 		add(tool, map[string]any{})
 		add(tool, map[string]any{"context": "nope"})
 	}
+	add("networks_list", map[string]any{"endpoints": true})
 	for _, svc := range services {
 		add("services_list", map[string]any{"service": svc})
 		add("service_inspect", map[string]any{"service": svc})
@@ -306,6 +307,22 @@ func TestMCPNeverRevealsLabelsOrHiddenServices(t *testing.T) {
 	expect("networks_list "+mustJSON(map[string]any{}), `"10.0.0.0/24 contains 2 host IPs"`)
 	expect("networks_list "+mustJSON(map[string]any{}), `"10.0.0.0/24 overlaps another network (not visible)"`)
 	expect("networks_list "+mustJSON(map[string]any{}), `"overlap_severity": "high"`)
+	// The endpoint view: counted per node, the visible stale task by name,
+	// the hidden one redacted, and no node address anywhere.
+	withEP := "networks_list " + mustJSON(map[string]any{"endpoints": true})
+	expect(withEP, staleWebTask)
+	expect(withEP, `"name": "(not visible)"`)
+	expect(withEP, `"node": "node-b"`)
+	expect(withEP, `"networkdb_entries": 2`)
+	expect(withEP, "docker network disconnect -f")
+	for _, leak := range []string{`10.0.0.2"`, `10.0.0.1"`, "hidden_net"} {
+		if strings.Contains(results[withEP].text, leak) {
+			t.Errorf("networks_list with endpoints reveals %q:\n%s", leak, results[withEP].text)
+		}
+	}
+	if strings.Contains(results["networks_list "+mustJSON(map[string]any{})].text, `"endpoints"`) {
+		t.Error("networks_list asked the agents without being asked to")
+	}
 	expect("volumes_list "+mustJSON(map[string]any{}), "shop_data")
 	expect("configs_list "+mustJSON(map[string]any{}), "shop_cfg")
 	expect("stats "+mustJSON(map[string]any{}), "64MiB / 256MiB")

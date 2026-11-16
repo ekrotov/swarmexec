@@ -36,6 +36,11 @@ type mcpCtxIn struct {
 	Context string `json:"context,omitempty" jsonschema:"Docker context to use (see contexts_list); empty means the one the server was started with"`
 }
 
+type mcpNetworksIn struct {
+	Context   string `json:"context,omitempty" jsonschema:"Docker context to use (see contexts_list); empty means the one the server was started with"`
+	Endpoints bool   `json:"endpoints,omitempty" jsonschema:"also ask every node's agent for its view of each network's endpoints: running tasks vs addresses and MACs per node, stale address candidates and duplicates (slower: one agent call per node)"`
+}
+
 type mcpServiceIn struct {
 	Context string `json:"context,omitempty" jsonschema:"Docker context to use (see contexts_list); empty means the one the server was started with"`
 	Service string `json:"service" jsonschema:"service name"`
@@ -121,7 +126,8 @@ func (s *Server) build() *sdk.Server {
 	mcpTool(srv, s, "volumes_list", "List volumes",
 		"Names of the volumes mounted by services you have access to, and which of those services mount them.", true, s.toolVolumes)
 	mcpTool(srv, s, "networks_list", "List networks",
-		"Names of the networks used by services you have access to, which of those services use them, each network's subnets, and subnet overlap findings (node IPs inside a subnet, overlap with the configured underlay or another network) with the fix.", true, s.toolNetworks)
+		"Names of the networks used by services you have access to, which of those services use them, each network's subnets, and subnet overlap findings (node IPs inside a subnet, overlap with the configured underlay or another network) with the fix. "+
+			"With endpoints set, also each node's endpoint counts against the running tasks, and stale address candidates (addresses a node still holds that no live task has) and duplicates.", true, s.toolNetworks)
 	mcpTool(srv, s, "secrets_list", "List secrets",
 		"Names of the secrets used by services you have access to (never values), and which of those services use them.", true, s.toolSecrets)
 	mcpTool(srv, s, "configs_list", "List configs",
@@ -746,7 +752,7 @@ func (s *Server) toolVolumes(ctx context.Context, in mcpCtxIn) (string, error) {
 	return jsonText(namedRows(users))
 }
 
-func (s *Server) toolNetworks(ctx context.Context, in mcpCtxIn) (string, error) {
+func (s *Server) toolNetworks(ctx context.Context, in mcpNetworksIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
 	if err != nil {
 		return "", err
@@ -775,7 +781,144 @@ func (s *Server) toolNetworks(ctx context.Context, in mcpCtxIn) (string, error) 
 	for _, s := range vis {
 		rows = append(rows, networkRow(s.n, s.usedBy, visible))
 	}
+	if in.Endpoints {
+		ids := make([]string, 0, len(vis))
+		for _, x := range vis {
+			if x.n.Scope == "swarm" {
+				ids = append(ids, x.n.ID)
+			}
+		}
+		byNet, unavailable := s.networkEndpoints(ctx, c, ids)
+		for i, x := range vis {
+			if x.n.Scope != "swarm" {
+				continue
+			}
+			if unavailable != "" {
+				rows[i].Endpoints = &mcpEndpoints{Unavailable: unavailable}
+				continue
+			}
+			rows[i].Endpoints = endpointsRow(byNet[x.n.ID], v)
+		}
+	}
 	return jsonText(rows)
+}
+
+// networkEndpoints asks every node's agent for its view of the networks ids
+// (only those: the agent reports nothing else) and analyses it against the
+// manager's tasks. unavailable says why there is nothing, in words that name
+// no node address.
+func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []string) (map[string]*swarmops.NetEndpoints, string) {
+	if len(ids) == 0 {
+		return nil, ""
+	}
+	ac, err := c.agents()
+	if err != nil {
+		return nil, "agents not configured"
+	}
+	nodes, err := c.r.Nodes(ctx)
+	if err != nil {
+		return nil, "node list unavailable"
+	}
+	res := ac.NodesNetworkEndpoints(ctx, nodes, ids, s.connectTimeout)
+	tasks, err := swarmops.NetworkTaskAddrs(ctx, c.dcli)
+	if err != nil {
+		return nil, "task list unavailable"
+	}
+	return swarmops.AnalyzeEndpoints(tasks, res), ""
+}
+
+// mcpEndpoints is a network's endpoint analysis as a restricted caller may
+// read it: node hostnames (cluster_overview shows those) but never a node
+// address, and an endpoint's name only when it belongs to a visible service.
+type mcpEndpoints struct {
+	Unavailable   string            `json:"unavailable,omitempty"`
+	Running       int               `json:"running_tasks"`
+	Addresses     int               `json:"addresses"`
+	LoadBalancers int               `json:"load_balancers"`
+	Nodes         []mcpEndpointNode `json:"nodes,omitempty"`
+	Stale         []mcpStale        `json:"stale_candidates,omitempty"`
+	DuplicateIPs  []mcpDuplicate    `json:"duplicate_ips,omitempty"`
+	DuplicateMACs []mcpDuplicate    `json:"duplicate_macs,omitempty"`
+	Note          string            `json:"note,omitempty"`
+	Remedy        string            `json:"remedy,omitempty"`
+}
+
+type mcpEndpointNode struct {
+	Node          string `json:"node"`
+	State         string `json:"state"`
+	RunningTasks  int    `json:"running_tasks"`
+	Containers    int    `json:"local_containers"`
+	LoadBalancers int    `json:"local_load_balancers"`
+	MACs          int    `json:"local_macs"`
+	NetworkDB     int    `json:"networkdb_entries"`
+	Stale         int    `json:"stale,omitempty"`
+}
+
+type mcpStale struct {
+	IP     string   `json:"ip"`
+	MAC    string   `json:"mac,omitempty"`
+	Name   string   `json:"name"`
+	Owner  string   `json:"owner_node,omitempty"`
+	SeenBy []string `json:"seen_by,omitempty"`
+	Orphan bool     `json:"endpoint_without_container,omitempty"`
+}
+
+type mcpDuplicate struct {
+	Addr      string   `json:"address"`
+	Endpoints []string `json:"endpoints"`
+}
+
+// mcpStaleNote is the heuristic's caveat, so an assistant does not report a
+// candidate as a certainty.
+const mcpStaleNote = "stale candidates are a heuristic: an address a node still holds that no live task has. " +
+	"A task that started or stopped during the check can show for a moment; call again to confirm."
+
+// endpointsRow redacts one network's analysis for the caller.
+func endpointsRow(e *swarmops.NetEndpoints, v *mcpView) *mcpEndpoints {
+	if e == nil {
+		return &mcpEndpoints{}
+	}
+	name := func(n, svc string) string {
+		if svc == "" {
+			svc = swarmops.TaskServiceName(n)
+		}
+		if svc != "" && v.has(svc) {
+			return n
+		}
+		return "(not visible)"
+	}
+	r := &mcpEndpoints{Running: e.Running, Addresses: e.Addrs, LoadBalancers: e.LB}
+	for _, n := range e.Nodes {
+		if n.State == swarmops.NodeNotOnNetwork && n.Expected == 0 {
+			continue
+		}
+		r.Nodes = append(r.Nodes, mcpEndpointNode{Node: n.Node, State: n.State.String(), RunningTasks: n.Expected,
+			Containers: n.Containers, LoadBalancers: n.LB, MACs: n.MACs, NetworkDB: n.Known, Stale: n.Stale})
+	}
+	for _, st := range e.Stale {
+		owner := st.Owner
+		if owner == st.OwnerIP {
+			owner = "" // only an address is known: no MCP tool reveals node addresses
+		}
+		r.Stale = append(r.Stale, mcpStale{IP: st.IP, MAC: st.MAC, Name: name(st.Name, st.Service), Owner: owner,
+			SeenBy: st.SeenBy, Orphan: st.Orphan})
+	}
+	dups := func(ds []swarmops.Duplicate) []mcpDuplicate {
+		var out []mcpDuplicate
+		for _, d := range ds {
+			md := mcpDuplicate{Addr: d.Addr}
+			for _, n := range d.Endpoints {
+				md.Endpoints = append(md.Endpoints, name(n, ""))
+			}
+			out = append(out, md)
+		}
+		return out
+	}
+	r.DuplicateIPs, r.DuplicateMACs = dups(e.DupIPs), dups(e.DupMACs)
+	if e.Warn() {
+		r.Note, r.Remedy = mcpStaleNote, swarmops.StaleRemedy
+	}
+	return r
 }
 
 // mcpOverlapMessage is a finding as a restricted caller may read it.
@@ -802,6 +945,8 @@ type mcpNetworkRow struct {
 	OverlapSeverity string   `json:"overlap_severity,omitempty"`
 	Overlaps        []string `json:"overlaps,omitempty"`
 	Remedy          string   `json:"remedy,omitempty"`
+	// Endpoints is the nodes' endpoint view, only when asked for (endpoints).
+	Endpoints *mcpEndpoints `json:"endpoints,omitempty"`
 }
 
 // networkRow builds the row. The overlap findings were computed against the

@@ -97,6 +97,27 @@ address pool (`10.0.0.0/8` unless set at `swarm init`) holds the hosts; both
 ask "create anyway?" instead of creating directly. The MCP `networks_list`
 tool reports the same subnets and findings.
 
+### Network endpoints and stale addresses
+
+Each node's daemon keeps its own copy of an overlay network's endpoints (IP +
+MAC); a node that missed a departure keeps the leftover. On entering the
+Networks tab (and on `r`) the `ui` asks every agent once, in the background,
+for its view (`NetworkEndpoints`, policy action `network.inspect`) and sets it
+against the manager's tasks: `CONTAINERS` reads e.g. `12 · 14 addr ⚠2 stale`
+(running tasks · task addresses the nodes know, LB excluded · stale
+candidates), yellow when something is stale or duplicated, `?` when agents
+could not answer. A stale candidate is a task endpoint whose address no live
+task has (not an LB endpoint or VIP), or an endpoint without a container. The
+members view lists per node running tasks vs local containers, LB, MACs and
+networkdb entries, then each stale candidate and duplicate IP/MAC; an agent
+predating the RPC shows "agent too old — update the agent image". Heuristic:
+a task starting/stopping during the check can show for one refresh, and
+leftovers already gone from the networkdb but still in the kernel are not
+seen. Fix: `docker network disconnect -f <network> <endpoint>` on a node that
+lists it, or restart Docker on the node that held it. MCP: `networks_list`
+with `endpoints: true` (hostnames only, never node IPs; hidden services'
+endpoint names redacted).
+
 ### TUI appearance
 
 When an overlay is open (inspect, an editor, a confirm dialog), the `ui` view

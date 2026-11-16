@@ -257,6 +257,32 @@ func (a *fakeAgent) Exec(stream pb.Agent_ExecServer) error {
 	return stream.Send(&pb.ServerMessage{Payload: &pb.ServerMessage_ExitCode{ExitCode: 3}})
 }
 
+// Stale networkdb entries on shop_net: one of the visible shop_web, one of
+// the hidden shop_hidden, both owned by node-b's address (10.0.0.2) — which
+// networks_list must never print.
+const (
+	staleWebTask    = "shop_web.3.0000000000000000000000001"
+	staleHiddenTask = "shop_hidden.2.0000000000000000000000002"
+)
+
+// NetworkEndpoints answers for the requested networks only, as the agent does.
+func (a *fakeAgent) NetworkEndpoints(_ context.Context, req *pb.NetworkEndpointsRequest) (*pb.NetworkEndpointsResponse, error) {
+	all := map[string]*pb.NetworkEndpointsInfo{
+		"net-shop": {Id: "net-shop", Name: "shop_net", Services: []*pb.NetworkServiceEndpoints{
+			{Name: "shop_web", Tasks: []*pb.NetworkTaskEndpoint{{Name: staleWebTask, EndpointId: "e1", EndpointIp: "10.0.0.77", HostIp: "10.0.0.2"}}},
+			{Name: "shop_hidden", Tasks: []*pb.NetworkTaskEndpoint{{Name: staleHiddenTask, EndpointId: "e2", EndpointIp: "10.0.0.78", HostIp: "10.0.0.2"}}},
+		}},
+		"net-hidden": {Id: "net-hidden", Name: "hidden_net"},
+	}
+	out := &pb.NetworkEndpointsResponse{}
+	for _, id := range req.GetNetworkIds() {
+		if n, ok := all[id]; ok {
+			out.Networks = append(out.Networks, n)
+		}
+	}
+	return out, nil
+}
+
 func (a *fakeAgent) snapshot() (execs, logs, operators []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

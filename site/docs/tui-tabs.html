@@ -108,7 +108,7 @@
         <ol>
           <li><a href="#tui-volumes">Volumes tab</a></li>
           <li><a href="#tui-forwards">Forwards tab</a></li>
-          <li><a href="#tui-networks">Networks tab</a> · <a href="#tui-network-overlap">subnet overlap check</a></li>
+          <li><a href="#tui-networks">Networks tab</a> · <a href="#tui-network-overlap">subnet overlap check</a> · <a href="#tui-network-endpoints">endpoints and stale addresses</a></li>
           <li><a href="#tui-secrets">Secrets tab</a></li>
           <li><a href="#tui-configs">Configs tab</a></li>
         </ol>
@@ -190,7 +190,8 @@
         A list of the swarm's networks — name, driver, scope, type
         (ingress / internal / attachable), its <strong>subnet</strong>, whether the network is <strong>encrypted</strong>,
         how many services attach to each and how many <strong>containers</strong> (running
-        tasks, from one cluster-wide task list) are attached right now. The
+        tasks, from one cluster-wide task list) are attached right now, followed by the
+        addresses the nodes know (<a href="#tui-network-endpoints">endpoints and stale addresses</a>). The
         <code>TYPE</code> column shows <code>overlay</code> or the driver name (e.g.
         <code>bridge</code>) for plain networks rather than a dash. The <code>ENC</code>
         column shows <span class="tc-green">🔒&nbsp;yes</span> when the overlay network
@@ -238,6 +239,44 @@
         addresses or the underlay lie inside it, it warns that Docker will pick a /24 from
         that pool which may overlap the hosts, and suggests an explicit subnet — you can
         still create after confirming.
+      </p>
+      <h3 id="tui-network-endpoints">Endpoints and stale addresses</h3>
+      <p>
+        Every node's daemon keeps its own copy (networkdb) of an overlay network's
+        endpoints — each one an IP and a MAC. A node that missed a departure keeps the
+        departed endpoint, and its traffic to that address goes nowhere; the manager has
+        long forgotten it. On entering the tab (and on <kbd>r</kbd>) swarmexec asks every
+        node's agent once, in the background, for its view of all overlay networks
+        (the <code>NetworkEndpoints</code> RPC, policy action <code>network.inspect</code>)
+        and compares it with the manager's tasks. The <code>CONTAINERS</code> cell then reads
+        e.g. <code>12 · 14 addr ⚠2 stale</code>: 12 running tasks, 14 task addresses the
+        nodes know (load-balancer endpoints not counted), 2 of them stale candidates — the
+        cell turns <span class="tc-yellow">yellow</span>. <code>⚠1 dup</code> counts an IP or
+        MAC held by two endpoints; a trailing <code>?</code> means some nodes could not
+        answer, and a gray <code>?</code> alone that none could.
+      </p>
+      <p>
+        A <strong>stale candidate</strong> is a task endpoint (networkdb entry, or an endpoint
+        attached on the node) whose address no live task has, that is not a load-balancer
+        endpoint or a service VIP. An endpoint without a container (<code>ep-…</code>) counts
+        too. The members view (<kbd>Enter</kbd>) shows the summary in its header and, below
+        the services, one row per node — running tasks the manager places there, the node's
+        local containers + load-balancer endpoint, its MACs and its networkdb entries — then
+        every stale candidate (IP, MAC when still attached, task name, owning node, which
+        nodes still list it) and every duplicate. A node whose agent predates the RPC shows
+        <em>agent too old — update the agent image</em> (an image update is enough, no
+        <code>init --force</code>).
+      </p>
+      <p>
+        It is a heuristic. A task that started or stopped between the two reads can show as
+        stale for one refresh; a standalone container on an attachable network whose name
+        looks like a task's is flagged too. It misses a leftover whose address has since
+        gone to a new task (the duplicate check may still catch it), and leftovers the
+        daemon has already dropped from its networkdb while the kernel still holds them
+        (the agent reads the Docker API only, not the kernel's forwarding table). Stale
+        entries usually clear once the leftover endpoint is removed on a node that lists
+        it — <code>docker network disconnect -f &lt;network&gt; &lt;endpoint name&gt;</code> —
+        or after restarting Docker on the node that held it.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>

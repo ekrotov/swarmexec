@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+	"time"
 
 	"swarmexec/client/internal/swarmops"
 
@@ -20,15 +21,32 @@ import (
 type networksTab struct {
 	*listTab[swarmops.Network]
 
-	// endpointNote is the seam for a per-node endpoint count (endpoints the
-	// nodes still know for the network, incl. stale ones — needs an agent
-	// RPC). When set, its text is appended to the CONTAINERS cell and the
-	// yank; nil (today) shows the manager's running-task count alone.
-	endpointNote func(swarmops.Network) string
+	// ep is each cluster's endpoint analysis: the nodes' own view of every
+	// overlay network (agent NetworkEndpoints) set against the manager's
+	// tasks. It loads in the background next to the list and only adds to
+	// the CONTAINERS cell and the detail overlay.
+	ep perCluster[netEndpointsState]
+	// members is the detail overlay while it is open, so an endpoint load
+	// that finishes later can fill it in.
+	members *netMembersView
 }
+
+// netEndpointsState is one cluster's endpoint analysis as last loaded.
+type netEndpointsState struct {
+	loading time.Time // when the load in flight started; zero when none is
+	loaded  bool
+	byNet   map[string]*swarmops.NetEndpoints // by network ID
+	failed  int                               // nodes that could not answer
+	err     error                             // the whole load failed (node or task list)
+}
+
+// endpointsStuck is how long a load may be in flight before another one is
+// allowed: one dropped by a cluster switch never reports back.
+const endpointsStuck = time.Minute
 
 func newNetworksTab(u *ui) *networksTab {
 	t := &networksTab{listTab: newListTab(u, nHeaders, func(n swarmops.Network) string { return n.Name })}
+	t.ep.init = func() *netEndpointsState { return &netEndpointsState{} }
 	t.row = t.renderRow
 	t.empty = func() string { return emptyText("networks", keyHint(u.km.NetNew, "to create one")) }
 	t.table.SetSelectedFunc(func(int, int) {
@@ -47,12 +65,118 @@ func (t *networksTab) enter()   { t.reload() }
 func (t *networksTab) refresh() { t.reload() }
 
 // reload fetches the network list, with the overlap analysis against the
-// nodes' addresses and this context's configured underlay.
+// nodes' addresses and this context's configured underlay, and — on its own,
+// as an agent fan-out — the nodes' endpoint views.
 func (t *networksTab) reload() {
 	dcli, underlay := t.u.dcli, t.u.underlay()
 	t.load("ui.loadNetworks", func(ctx context.Context) ([]swarmops.Network, error) {
 		return swarmops.ListNetworks(ctx, dcli, underlay)
 	})
+	t.loadEndpoints()
+}
+
+// endpoints is the visible cluster's endpoint analysis.
+func (t *networksTab) endpoints() *netEndpointsState { return t.ep.of(t.u.clusterState) }
+
+// netEndpointsResult is what one endpoint load hands to the UI goroutine.
+type netEndpointsResult struct {
+	byNet  map[string]*swarmops.NetEndpoints
+	failed int
+}
+
+// loadEndpoints asks every node's agent for its view of the overlay networks
+// (one NetworkEndpoints call per node, all networks at once) and compares it
+// with the manager's tasks. One load at a time per cluster; the table and an
+// open detail overlay repaint when it lands.
+func (t *networksTab) loadEndpoints() {
+	u := t.u
+	if u.r == nil || u.agents == nil || u.f == nil || u.dcli == nil {
+		return // no agents to ask (a cluster not connected yet)
+	}
+	st := t.endpoints()
+	if !st.loading.IsZero() && time.Since(st.loading) < endpointsStuck {
+		return
+	}
+	st.loading = time.Now()
+	r, ac, dcli, timeout := u.r, u.agents, u.dcli, u.f.connectTimeout
+	async(u, "ui.networks.endpoints", func(ctx context.Context) (netEndpointsResult, error) {
+		nodes, err := r.Nodes(ctx)
+		if err != nil {
+			return netEndpointsResult{}, err
+		}
+		res := ac.NodesNetworkEndpoints(ctx, nodes, nil, timeout)
+		// The manager's tasks are read after the nodes answered: a task
+		// that started meanwhile is then known (no false stale); only one
+		// that stopped meanwhile can still show, until the next refresh.
+		tasks, err := swarmops.NetworkTaskAddrs(ctx, dcli)
+		if err != nil {
+			return netEndpointsResult{}, err
+		}
+		out := netEndpointsResult{byNet: swarmops.AnalyzeEndpoints(tasks, res)}
+		for _, n := range res {
+			if n.Err != nil {
+				out.failed++
+			}
+		}
+		return out, nil
+	}, func(res netEndpointsResult, err error) {
+		st.loading = time.Time{}
+		st.loaded, st.err = true, err
+		if err == nil {
+			st.byNet, st.failed = res.byNet, res.failed
+		}
+		if t.shownFor == u.clusterState {
+			t.render()
+		}
+		if v := t.members; v != nil && u.pages.HasPage(pageNetMembers) {
+			v.endpointsArrived()
+		}
+	})
+}
+
+// endpointNote is what the endpoint analysis adds to the CONTAINERS cell —
+// "· 14 addr", "⚠2 stale", "⚠1 dup", "?" for nodes that could not answer —
+// and the colour the cell should take (0: keep its own). Only swarm-scope
+// networks have one: the agents report overlay networks only.
+func (t *networksTab) endpointNote(n swarmops.Network) (string, tcell.Color) {
+	if n.Scope != "swarm" {
+		return "", 0
+	}
+	st := t.endpoints()
+	switch {
+	case !st.loaded && !st.loading.IsZero():
+		return "· …", 0
+	case !st.loaded:
+		return "", 0
+	case st.err != nil:
+		return "· ?", tcell.ColorGray
+	}
+	e := st.byNet[n.ID]
+	if e == nil {
+		// No live task and no node has joined it — unless some nodes could
+		// not say.
+		if st.failed > 0 {
+			return "· ?", tcell.ColorGray
+		}
+		return "· 0 addr", 0
+	}
+	if e.Answered == 0 {
+		return "· ?", tcell.ColorGray
+	}
+	s := fmt.Sprintf("· %d addr", e.Addrs)
+	if len(e.Stale) > 0 {
+		s += fmt.Sprintf(" ⚠%d stale", len(e.Stale))
+	}
+	if d := len(e.DupIPs) + len(e.DupMACs); d > 0 {
+		s += fmt.Sprintf(" ⚠%d dup", d)
+	}
+	if e.Unknown > 0 {
+		s += " ?"
+	}
+	if e.Warn() {
+		return s, tcell.ColorYellow
+	}
+	return s, 0
 }
 
 // underlay is the visible cluster's configured underlay CIDRs (config
@@ -83,14 +207,12 @@ func overlapColor(s swarmops.OverlapSeverity) (tcell.Color, string) {
 	return tcell.ColorWhite, "white"
 }
 
-// containersText is the CONTAINERS cell: running tasks attached, plus the
-// endpointNote seam when one is wired.
+// containersText is the CONTAINERS cell: running tasks attached, plus what
+// the nodes' endpoint views add (endpointNote).
 func (t *networksTab) containersText(n swarmops.Network) string {
 	s := fmt.Sprintf("%d", n.Containers)
-	if t.endpointNote != nil {
-		if note := t.endpointNote(n); note != "" {
-			s += " " + note
-		}
+	if note, _ := t.endpointNote(n); note != "" {
+		s += " " + note
 	}
 	return s
 }
@@ -106,6 +228,7 @@ func (t *networksTab) helpSection(h *helpWriter) {
 	h.line("Enter/"+keyLabel(km.NetAttached), "attached services")
 	h.line(keyLabel(km.NetNew), "new network")
 	h.line("⚠ SUBNET", "red: node IPs inside the subnet; yellow: overlaps the underlay or another network (details: Enter)")
+	h.line("CONTAINERS", "running tasks · addresses the nodes know; ⚠ stale/dup: an address no live task has, or one held twice (details: Enter)")
 }
 
 func (t *networksTab) yank(b *strings.Builder) {
@@ -130,6 +253,9 @@ func (t *networksTab) renderRow(r int, n swarmops.Network) {
 	ctrCell := tview.NewTableCell(t.containersText(n)).SetTextColor(tcell.ColorGray).SetExpansion(1)
 	if n.Containers > 0 {
 		ctrCell.SetTextColor(tcell.ColorGreen)
+	}
+	if _, c := t.endpointNote(n); c != 0 {
+		ctrCell.SetTextColor(c)
 	}
 	svcCell := tview.NewTableCell("-").SetTextColor(tcell.ColorGray).SetExpansion(1)
 	if len(n.Services) > 0 {
@@ -229,6 +355,10 @@ type netMembersView struct {
 	frame       *tview.Flex
 	headerText  string
 	headerLines int
+	header      *tview.TextView
+	// swarmNet: the network is swarm-scope, so the header carries the
+	// endpoint summary line and the list the per-node endpoint block.
+	swarmNet bool
 
 	ov *overlay
 }
@@ -299,10 +429,16 @@ func (t *networksTab) showMembers(n swarmops.Network) {
 	v.frame = tview.NewFlex().SetDirection(tview.FlexRow)
 	v.frame.SetBorder(true).SetTitle(fmt.Sprintf(" %s%s — attached services ", n.Name, badge))
 	v.headerText, v.headerLines = netHeader(n, netMembersWidth-2)
+	v.swarmNet = n.Scope == "swarm"
+	if v.swarmNet {
+		// One more header line, the endpoint summary (kept short enough not
+		// to wrap); a header that had nothing else gets its blank line too.
+		v.headerLines = max(v.headerLines, 1) + 1
+	}
 	if v.headerLines > 0 {
-		header := tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetWordWrap(true)
-		header.SetText(v.headerText)
-		v.frame.AddItem(header, v.headerLines, 0, false)
+		v.header = tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetWordWrap(true)
+		v.header.SetText(v.headerContent())
+		v.frame.AddItem(v.header, v.headerLines, 0, false)
 	}
 	v.frame.AddItem(list, 0, 1, true)
 	// Seed with the services already known from the list; containers/aliases
@@ -381,12 +517,157 @@ func (v *netMembersView) render() {
 			meta(s.Name)
 		}
 	}
+	if v.swarmNet {
+		for _, l := range endpointBlock(v.u.netTab().endpoints().byNet[n.ID], n.Name, netMembersWidth-2) {
+			list.AddItem(l, "", 0, nil)
+			meta("")
+		}
+	}
 	if cur < list.GetItemCount() {
 		list.SetCurrentItem(cur)
 	}
 }
 
 func (v *netMembersView) close() { v.ov.Close() }
+
+// headerContent is the addressing header plus, for a swarm network, the
+// endpoint summary line.
+func (v *netMembersView) headerContent() string {
+	text := v.headerText
+	if v.swarmNet {
+		text += endpointSummary(v.u.netTab().endpoints(), v.n) + "\n"
+	}
+	return text
+}
+
+// endpointsArrived repaints what the endpoint analysis feeds: the header
+// line and the per-node block in the list.
+func (v *netMembersView) endpointsArrived() {
+	if v.header != nil {
+		v.header.SetText(v.headerContent())
+	}
+	v.render()
+}
+
+// endpointSummary is the detail header's endpoint line: addresses the nodes
+// know, and whether any look stale (listed below the services).
+func endpointSummary(st *netEndpointsState, n swarmops.Network) string {
+	const lead = "[gray]endpoints[-] "
+	switch {
+	case !st.loaded && !st.loading.IsZero():
+		return lead + loadingText
+	case !st.loaded:
+		return lead + "[gray]not loaded (agents not reachable from here)[-]"
+	case st.err != nil:
+		return lead + "[gray]? " + tview.Escape(st.err.Error()) + "[-]"
+	}
+	e := st.byNet[n.ID]
+	if e == nil {
+		if st.failed > 0 {
+			return lead + "[gray]? some agents could not answer — see below[-]"
+		}
+		return lead + "none — no node has joined this network"
+	}
+	if e.Answered == 0 {
+		return lead + "[gray]? no agent could answer — see below[-]"
+	}
+	s := lead + fmt.Sprintf("%d running · %d addresses · %d LB", e.Running, e.Addrs, e.LB)
+	var warn []string
+	if len(e.Stale) > 0 {
+		warn = append(warn, fmt.Sprintf("%d stale", len(e.Stale)))
+	}
+	if d := len(e.DupIPs) + len(e.DupMACs); d > 0 {
+		warn = append(warn, fmt.Sprintf("%d duplicate", d))
+	}
+	if len(warn) > 0 {
+		s += "  [yellow]⚠ " + strings.Join(warn, ", ") + " — listed below[-]"
+	}
+	if e.Unknown > 0 {
+		s += fmt.Sprintf("  [gray]? %d node(s) unknown[-]", e.Unknown)
+	}
+	return s
+}
+
+// endpointBlock is the per-node endpoint view the detail list ends with: one
+// row per node (running tasks the manager places there against the node's
+// own endpoints), then every stale candidate and duplicate, then the fix.
+// Nodes that have not joined the network and expect nothing are left out.
+func endpointBlock(e *swarmops.NetEndpoints, netName string, width int) []string {
+	if e == nil {
+		return nil
+	}
+	rows := []string{"", "[gray]endpoints per node — running (manager) · local containers + LB · MACs · networkdb entries[-]"}
+	nodeW := 0
+	for _, n := range e.Nodes {
+		nodeW = max(nodeW, len(n.Node))
+	}
+	for _, n := range e.Nodes {
+		name := fmt.Sprintf("    %-*s  ", nodeW, tview.Escape(n.Node))
+		switch n.State {
+		case swarmops.NodeEndpointsOK:
+			line := fmt.Sprintf("%srunning %d · local %d + %d LB · MACs %d · networkdb %d",
+				name, n.Expected, n.Containers, n.LB, n.MACs, n.Known)
+			if n.Stale > 0 {
+				line += fmt.Sprintf("  [yellow]⚠ %d stale[-]", n.Stale)
+			}
+			if n.Containers != n.Expected {
+				line += "  [gray](local ≠ running)[-]"
+			}
+			rows = append(rows, line)
+		case swarmops.NodeNotOnNetwork:
+			if n.Expected > 0 {
+				rows = append(rows, fmt.Sprintf("%s[yellow]running %d, but the node reports no such network[-]", name, n.Expected))
+			}
+		case swarmops.NodeNetworkError, swarmops.NodeUnreachable:
+			rows = append(rows, fmt.Sprintf("%s[gray]%s: %s[-]", name, n.State, tview.Escape(n.Err)))
+		default:
+			rows = append(rows, fmt.Sprintf("%s[gray]%s[-]", name, n.State))
+		}
+	}
+	if len(e.Stale) > 0 {
+		rows = append(rows, "", fmt.Sprintf("[yellow]stale candidates (%d) — no live task has the address[-]", len(e.Stale)))
+		for _, s := range e.Stale {
+			line := fmt.Sprintf("    %-15s %-17s %s", s.IP, orDash(s.MAC), tview.Escape(orDash(s.Name)))
+			var where []string
+			if s.Owner != "" {
+				where = append(where, "on "+tview.Escape(s.Owner))
+			}
+			if s.Orphan {
+				where = append(where, "endpoint without container")
+			} else if s.Local {
+				where = append(where, "still attached")
+			}
+			if len(s.SeenBy) > 0 {
+				where = append(where, "seen by "+tview.Escape(strings.Join(s.SeenBy, ",")))
+			}
+			if len(where) > 0 {
+				line += "  [gray]" + strings.Join(where, " · ") + "[-]"
+			}
+			rows = append(rows, line)
+		}
+	}
+	dups := func(title string, ds []swarmops.Duplicate) {
+		if len(ds) == 0 {
+			return
+		}
+		rows = append(rows, "", fmt.Sprintf("[yellow]%s (%d)[-]", title, len(ds)))
+		for _, d := range ds {
+			rows = append(rows, fmt.Sprintf("    %-17s %s", d.Addr, tview.Escape(strings.Join(d.Endpoints, ", "))))
+		}
+	}
+	dups("duplicate IPs — one address on several endpoints", e.DupIPs)
+	dups("duplicate MACs", e.DupMACs)
+	if e.Warn() {
+		rows = append(rows, "",
+			"[gray]fix:[-] on a node that lists the entry, remove the leftover endpoint:",
+			"       docker network disconnect -f "+tview.Escape(orDash(netName))+" <endpoint name>")
+		for _, l := range tview.WordWrap("or restart Docker on the node that held it. Refresh first: a task that "+
+			"just started or stopped shows here for a moment.", width-6) {
+			rows = append(rows, "     [gray]"+tview.Escape(l)+"[-]")
+		}
+	}
+	return rows
+}
 
 func (v *netMembersView) reload() {
 	u, dcli, n := v.u, v.u.dcli, v.n
@@ -475,11 +756,15 @@ func (v *netMembersView) open() {
 	v.ov = u.overlayFor(pageNetMembers, u.netTab().table, footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
 	list.SetInputCapture(v.handleKey)
 	height := len(n.Services) + 6
+	if v.swarmNet {
+		height += 8 // the per-node endpoint block
+	}
 	if height > 22 {
 		height = 22
 	}
 	height += v.headerLines
 	v.ov.show(centered(v.frame, netMembersWidth, height), list)
+	u.netTab().members = v
 	v.reload()
 }
 
