@@ -46,6 +46,9 @@ type Swarm struct {
 	Networks []network.Summary
 	Secrets  []swarm.Secret
 	Configs  []swarm.Config
+	// SwarmInfo answers GET /swarm (nil = an empty swarm.Swarm: no default
+	// address pool set, i.e. swarm's built-in 10.0.0.0/8).
+	SwarmInfo *swarm.Swarm
 
 	// Info is what /info answers; nil answers a bare "manager-1", which is
 	// not a manager as far as init can tell (no ControlAvailable).
@@ -97,6 +100,10 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		reply(system.Info{Name: "manager-1", ServerVersion: "28.0.0"})
 	case path == "/swarm":
+		if f.SwarmInfo != nil {
+			reply(f.SwarmInfo)
+			return
+		}
 		reply(swarm.Swarm{})
 	case path == "/services":
 		var out []swarm.Service

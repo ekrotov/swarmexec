@@ -108,7 +108,7 @@
         <ol>
           <li><a href="#tui-volumes">Volumes tab</a></li>
           <li><a href="#tui-forwards">Forwards tab</a></li>
-          <li><a href="#tui-networks">Networks tab</a></li>
+          <li><a href="#tui-networks">Networks tab</a> · <a href="#tui-network-overlap">subnet overlap check</a></li>
           <li><a href="#tui-secrets">Secrets tab</a></li>
           <li><a href="#tui-configs">Configs tab</a></li>
         </ol>
@@ -188,8 +188,9 @@
       <h2 id="tui-networks">Networks tab</h2>
       <p>
         A list of the swarm's networks — name, driver, scope, type
-        (ingress / internal / attachable), whether the network is <strong>encrypted</strong>
-        and how many services attach to each. The
+        (ingress / internal / attachable), its <strong>subnet</strong>, whether the network is <strong>encrypted</strong>,
+        how many services attach to each and how many <strong>containers</strong> (running
+        tasks, from one cluster-wide task list) are attached right now. The
         <code>TYPE</code> column shows <code>overlay</code> or the driver name (e.g.
         <code>bridge</code>) for plain networks rather than a dash. The <code>ENC</code>
         column shows <span class="tc-green">🔒&nbsp;yes</span> when the overlay network
@@ -204,6 +205,40 @@
         <li>other overlay / swarm-scoped — aqua</li>
         <li>local (<code>bridge</code>, <code>host</code>, …) — dimmed gray</li>
       </ul>
+      <h3 id="tui-network-overlap">Subnet overlap check</h3>
+      <p>
+        Overlay subnets must not overlap the network the hosts themselves sit on (the
+        <em>underlay</em>). If a subnet contains a node's address, containers on that
+        network cannot reach that host, and IPAM may even hand a container the host's
+        IP. Docker does not check this, and the swarm's default address pool is
+        <code>10.0.0.0/8</code> — exactly where many cloud private networks live. The
+        <code>SUBNET</code> cell gets a <code>⚠</code> marker:
+      </p>
+      <ul>
+        <li><span class="tc-red">red</span> — node addresses (each node's address, plus a manager's advertised address) lie <strong>inside</strong> the subnet</li>
+        <li><span class="tc-yellow">yellow</span> — the subnet overlaps the configured underlay, or another network's subnet</li>
+      </ul>
+      <p>
+        The underlay is optional, per Docker context, in the config file
+        (<a href="/docs/configuration"><code>contexts.&lt;name&gt;.underlay</code></a>, e.g.
+        <code>[10.0.0.0/16]</code>); without it only node addresses count. The members
+        view (<kbd>Enter</kbd>) shows the subnet, gateway and container count at the top,
+        each finding in full, and the fix: an existing network <strong>cannot be
+        renumbered</strong> — detach its services, remove it and recreate it with an
+        explicit subnet outside the hosts' network (e.g. <code>--subnet 10.100.1.0/24</code>),
+        then re-attach. The default address pool can only be set at
+        <code>docker swarm init --default-addr-pool</code>.
+      </p>
+      <p>
+        Creating a network (<kbd>n</kbd>) runs the same check first. If the entered subnet
+        contains node addresses or overlaps the underlay or an existing network, a
+        <em>Create anyway?</em> dialog lists the findings instead of creating directly.
+        With the subnet left empty on an overlay network, swarmexec reads the swarm's
+        default address pool (<code>10.0.0.0/8</code> when none was set at init); if node
+        addresses or the underlay lie inside it, it warns that Docker will pick a /24 from
+        that pool which may overlap the hosts, and suggests an explicit subnet — you can
+        still create after confirming.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>

@@ -47,7 +47,7 @@ var uiTabList = []uiTab{
 var (
 	vHeaders  = []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
 	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "CLUSTER", "AGE", "STATE"}
-	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "ENC", "SERVICES", "AGE"}
+	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "SUBNET", "ENC", "SERVICES", "CONTAINERS", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
 	cfHeaders = []string{"CONFIG", "USED BY", "SIZE", "AGE", "UPDATED", "LABELS"}
 	// The context sidebar is narrow and its rows are self-explanatory, so it

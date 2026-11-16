@@ -42,7 +42,21 @@ type Network struct {
 	Labels     map[string]string
 	Created    time.Time
 	Services   []string // service names attached, from service specs
+
+	// Subnets and Gateways are the network's IPAM config (empty for host/none
+	// and anything without an address config).
+	Subnets  []netip.Prefix
+	Gateways []netip.Addr
+	// Containers is the number of running tasks attached to the network, from
+	// one cluster-wide TaskList.
+	Containers int
+	// Overlaps are the addressing problems AnalyzeOverlaps found: node IPs
+	// inside a subnet, overlap with the configured underlay or another network.
+	Overlaps []OverlapFinding
 }
+
+// OverlapSeverity is the worst of the network's overlap findings.
+func (n Network) OverlapSeverity() OverlapSeverity { return WorstSeverity(n.Overlaps) }
 
 // netContainer is a container (running task) attached to a network.
 type netContainer struct {
@@ -73,14 +87,19 @@ type Secret struct {
 }
 
 // ListNetworks returns every network on the manager with attached-service
-// membership resolved from service specs.
-func ListNetworks(ctx context.Context, dcli swarmapi.Client) ([]Network, error) {
+// membership resolved from service specs, the running-container count per
+// network (one TaskList) and the overlap analysis against the nodes' addresses
+// (one NodeList) and the given underlay CIDRs (nil = node addresses only).
+// The counts and the analysis are best effort: a failed lookup leaves them
+// empty rather than failing the list.
+func ListNetworks(ctx context.Context, dcli swarmapi.Client, underlay []netip.Prefix) ([]Network, error) {
 	netsRes, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
 	nets := netsRes.Items
 	if err != nil {
 		return nil, err
 	}
 	members := networkServiceMembers(ctx, dcli)
+	running := runningTasksPerNetwork(ctx, dcli)
 	out := make([]Network, 0, len(nets))
 	for _, n := range nets {
 		// A service references a network by either ID or name (Target), so pull
@@ -94,7 +113,11 @@ func ListNetworks(ctx context.Context, dcli swarmapi.Client) ([]Network, error) 
 			}
 		}
 		sort.Strings(svcs)
+		subs, gws := ipamSubnets(n.IPAM)
 		out = append(out, Network{
+			Subnets:    subs,
+			Gateways:   gws,
+			Containers: running[n.ID],
 			ID:         n.ID,
 			Name:       n.Name,
 			Driver:     n.Driver,
@@ -110,7 +133,40 @@ func ListNetworks(ctx context.Context, dcli swarmapi.Client) ([]Network, error) 
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	var nodes []NodeAddr
+	if res, err := dcli.NodeList(ctx, client.NodeListOptions{}); err == nil {
+		nodes = NodeAddrs(res.Items)
+	}
+	AnalyzeOverlaps(out, nodes, underlay)
 	return out, nil
+}
+
+// runningTasksPerNetwork counts running tasks per attached network ID from a
+// single cluster-wide TaskList. Best effort: an error yields an empty map.
+func runningTasksPerNetwork(ctx context.Context, dcli swarmapi.Client) map[string]int {
+	res, err := dcli.TaskList(ctx, client.TaskListOptions{})
+	if err != nil {
+		return map[string]int{}
+	}
+	return countRunningPerNetwork(res.Items)
+}
+
+// countRunningPerNetwork is the pure core of runningTasksPerNetwork.
+func countRunningPerNetwork(tasks []swarm.Task) map[string]int {
+	m := map[string]int{}
+	for _, t := range tasks {
+		if t.Status.State != swarm.TaskStateRunning {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, a := range t.NetworksAttachments {
+			if id := a.Network.ID; id != "" && !seen[id] {
+				seen[id] = true
+				m[id]++
+			}
+		}
+	}
+	return m
 }
 
 // networkEncrypted reports whether an overlay network has data-plane encryption

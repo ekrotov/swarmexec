@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -169,6 +170,9 @@ type mcpCluster struct {
 	// tools still work without the agents, so it fails only the tools that need
 	// them, and says why.
 	cfgErr error
+	// underlay is the context's configured underlay CIDRs (config
+	// contexts.<name>.underlay), for the networks' overlap analysis.
+	underlay []netip.Prefix
 }
 
 func New(o Options) *Server {
@@ -311,6 +315,8 @@ func (s *Server) connectContext(ctx context.Context, name string) (*mcpCluster, 
 		r:      resolve.New(dcli, agentcall.AddrMode(cfg)),
 		agent:  agentcall.New(cfg),
 		cfgErr: cfg.Validate(),
+		// The config is keyed by the context name the requests go to.
+		underlay: cfg.Underlay(label),
 	}, nil
 }
 

@@ -60,6 +60,7 @@ flags**.
 | Address mode| `--addr-mode` | `SWARMEXEC_ADDR_MODE`  | `addr_mode`   |
 | TLS server name | `--server-name` | `SWARMEXEC_SERVER_NAME` | `server_name` |
 | Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
+| Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
 
 Config file (default `~/.config/swarmexec/config.yaml`, override with `--config`
 or `SWARMEXEC_CONFIG`):
@@ -73,7 +74,28 @@ addr_mode: hostname
 
 ui:
   dim: 0.6   # fade behind an open overlay: 0 = off, 1 = flat background
+
+contexts:            # optional, per Docker context name
+  prod:
+    underlay: [10.0.0.0/16]   # the hosts' own network
 ```
+
+### Network subnet overlap
+
+Overlay subnets must not overlap the hosts' own (underlay) network: a subnet
+that contains a node's address makes that host unreachable from the network's
+containers, and IPAM may hand the host's IP to a container. The `ui` Networks
+tab shows each network's `SUBNET` and running `CONTAINERS`, and marks the subnet
+with a red `⚠` when node addresses lie inside it, a yellow one when it overlaps
+the underlay or another network. `contexts.<name>.underlay` (optional, CIDRs,
+keyed by the Docker context name; validated at load) adds the underlay check —
+without it only node addresses count. The members view (`Enter`) explains each
+finding and the fix (an existing network cannot be renumbered: detach, remove,
+recreate with e.g. `--subnet 10.100.1.0/24`, re-attach). Creating a network
+runs the same check, and with no subnet given warns when the swarm's default
+address pool (`10.0.0.0/8` unless set at `swarm init`) holds the hosts; both
+ask "create anyway?" instead of creating directly. The MCP `networks_list`
+tool reports the same subnets and findings.
 
 ### TUI appearance
 

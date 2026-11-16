@@ -52,7 +52,7 @@ func listServicesForScan(ctx context.Context, dcli swarmapi.Client) ([]secscan.S
 // not read" and "autolock is off" are different statements and only one of them
 // is true.
 func GatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, error) {
-	nets, err := ListNetworks(ctx, dcli)
+	nets, err := ListNetworks(ctx, dcli, nil)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list networks: %w", err)
 	}

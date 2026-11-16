@@ -5,7 +5,9 @@ package cli
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -37,6 +39,8 @@ type configView struct {
 	Insecure      bool   `json:"insecure"`
 	AgentSecret   string `json:"agent_secret"`
 	Operator      string `json:"operator"`
+	// Underlay is the resolved context's contexts.<name>.underlay.
+	Underlay []string `json:"underlay,omitempty"`
 }
 
 func newConfigShowCmd(g *globalFlags) *cobra.Command {
@@ -70,6 +74,9 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			fmt.Fprintf(w, "insecure:\t%v\n", v.Insecure)
 			fmt.Fprintf(w, "agent secret:\t%s\n", v.AgentSecret)
 			fmt.Fprintf(w, "operator:\t%s\n", orDash(v.Operator))
+			if len(v.Underlay) > 0 {
+				fmt.Fprintf(w, "underlay:\t%s\n", strings.Join(v.Underlay, ", "))
+			}
 			return w.Flush()
 		},
 	}
@@ -108,5 +115,15 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 		AgentPort: cfg.Port, AddrMode: cfg.AddrMode, AuthMode: authMode,
 		CA: cfg.CA, Cert: cfg.Cert, Key: cfg.Key, ServerName: cfg.ServerName,
 		Insecure: cfg.Insecure, AgentSecret: secret, Operator: cfg.Operator,
+		Underlay: underlayStrings(cfg.Underlay(ctxName)),
 	}
+}
+
+// underlayStrings renders parsed underlay CIDRs for display.
+func underlayStrings(ps []netip.Prefix) []string {
+	var out []string
+	for _, p := range ps {
+		out = append(out, p.String())
+	}
+	return out
 }

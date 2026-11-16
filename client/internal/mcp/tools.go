@@ -121,7 +121,7 @@ func (s *Server) build() *sdk.Server {
 	mcpTool(srv, s, "volumes_list", "List volumes",
 		"Names of the volumes mounted by services you have access to, and which of those services mount them.", true, s.toolVolumes)
 	mcpTool(srv, s, "networks_list", "List networks",
-		"Names of the networks used by services you have access to, and which of those services use them.", true, s.toolNetworks)
+		"Names of the networks used by services you have access to, which of those services use them, each network's subnets, and subnet overlap findings (node IPs inside a subnet, overlap with the configured underlay or another network) with the fix.", true, s.toolNetworks)
 	mcpTool(srv, s, "secrets_list", "List secrets",
 		"Names of the secrets used by services you have access to (never values), and which of those services use them.", true, s.toolSecrets)
 	mcpTool(srv, s, "configs_list", "List configs",
@@ -755,17 +755,73 @@ func (s *Server) toolNetworks(ctx context.Context, in mcpCtxIn) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	nets, err := swarmops.ListNetworks(ctx, c.dcli)
+	nets, err := swarmops.ListNetworks(ctx, c.dcli, c.underlay)
 	if err != nil {
 		return "", err
 	}
-	users := map[string][]string{}
+	type shown struct {
+		n      swarmops.Network
+		usedBy []string
+	}
+	var vis []shown
+	visible := map[string]bool{}
 	for _, n := range nets {
 		if u := v.visibleOnly(n.Services); len(u) > 0 {
-			users[n.Name] = u
+			vis = append(vis, shown{n, u})
+			visible[n.Name] = true
 		}
 	}
-	return jsonText(namedRows(users))
+	rows := []mcpNetworkRow{}
+	for _, s := range vis {
+		rows = append(rows, networkRow(s.n, s.usedBy, visible))
+	}
+	return jsonText(rows)
+}
+
+// mcpOverlapMessage is a finding as a restricted caller may read it.
+func mcpOverlapMessage(f swarmops.OverlapFinding, visible map[string]bool) string {
+	switch f.Kind {
+	case swarmops.OverlapHostIPs:
+		return fmt.Sprintf("%s contains %d host IPs", f.Subnet, f.Hosts)
+	case swarmops.OverlapNetwork:
+		if !visible[f.Network] {
+			return fmt.Sprintf("%s overlaps another network (not visible)", f.Subnet)
+		}
+	}
+	return f.Message
+}
+
+// mcpNetworkRow is a networks_list row: the shared name/used_by pair plus the
+// network's subnets and the overlap analysis (node IPs inside a subnet,
+// overlap with the configured underlay or another network) — the addressing
+// mistakes an assistant should point out, with the fix.
+type mcpNetworkRow struct {
+	Name            string   `json:"name"`
+	UsedBy          []string `json:"used_by"`
+	Subnets         []string `json:"subnets,omitempty"`
+	OverlapSeverity string   `json:"overlap_severity,omitempty"`
+	Overlaps        []string `json:"overlaps,omitempty"`
+	Remedy          string   `json:"remedy,omitempty"`
+}
+
+// networkRow builds the row. The overlap findings were computed against the
+// whole cluster, so they are re-worded here to say no more than the caller may
+// see: another network's name only when that network is visible, and node
+// addresses only as a count (no MCP tool reveals node IPs).
+func networkRow(n swarmops.Network, usedBy []string, visible map[string]bool) mcpNetworkRow {
+	sort.Strings(usedBy)
+	r := mcpNetworkRow{Name: n.Name, UsedBy: usedBy}
+	for _, p := range n.Subnets {
+		r.Subnets = append(r.Subnets, p.String())
+	}
+	if len(n.Overlaps) > 0 {
+		r.OverlapSeverity = n.OverlapSeverity().String()
+		for _, f := range n.Overlaps {
+			r.Overlaps = append(r.Overlaps, mcpOverlapMessage(f, visible))
+		}
+		r.Remedy = swarmops.OverlapRemedy
+	}
+	return r
 }
 
 func (s *Server) toolSecrets(ctx context.Context, in mcpCtxIn) (string, error) {
