@@ -264,8 +264,7 @@ func ctrlCCapture(ev *tcell.EventKey, focused tview.Primitive) *tcell.EventKey {
 
 // encodeKey turns a tcell key event into the bytes a terminal would send.
 func encodeKey(ev *tcell.EventKey) []byte {
-	switch ev.Key() {
-	case tcell.KeyRune:
+	if ev.Key() == tcell.KeyRune {
 		if ev.Modifiers()&tcell.ModCtrl != 0 {
 			return []byte{byte(ev.Rune()) & 0x1f}
 		}
@@ -274,36 +273,11 @@ func encodeKey(ev *tcell.EventKey) []byte {
 			return append([]byte{0x1b}, r...)
 		}
 		return r
-	case tcell.KeyEnter:
-		return []byte{'\r'}
-	case tcell.KeyTab:
-		return []byte{'\t'}
-	case tcell.KeyBacktab:
-		return []byte("\x1b[Z")
-	case tcell.KeyEsc:
-		return []byte{0x1b}
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		return []byte{0x7f}
-	case tcell.KeyDelete:
-		return []byte("\x1b[3~")
-	case tcell.KeyInsert:
-		return []byte("\x1b[2~")
-	case tcell.KeyUp:
-		return []byte("\x1b[A")
-	case tcell.KeyDown:
-		return []byte("\x1b[B")
-	case tcell.KeyRight:
-		return []byte("\x1b[C")
-	case tcell.KeyLeft:
-		return []byte("\x1b[D")
-	case tcell.KeyHome:
-		return []byte("\x1b[H")
-	case tcell.KeyEnd:
-		return []byte("\x1b[F")
-	case tcell.KeyPgUp:
-		return []byte("\x1b[5~")
-	case tcell.KeyPgDn:
-		return []byte("\x1b[6~")
+	}
+	// The named keys come first: Enter, Tab, Esc and Backspace share their
+	// codes with Ctrl-M, Ctrl-I, Ctrl-[ and Ctrl-H.
+	if seq, ok := keySequences[ev.Key()]; ok {
+		return []byte(seq)
 	}
 	// Control combinations: tcell maps Ctrl-A..Ctrl-_ to a contiguous range of
 	// key codes; the control byte is the offset from KeyCtrlA plus one (^A = 1).
@@ -311,4 +285,24 @@ func encodeKey(ev *tcell.EventKey) []byte {
 		return []byte{byte(k-tcell.KeyCtrlA) + 1}
 	}
 	return nil
+}
+
+// keySequences is what a terminal sends for each named key.
+var keySequences = map[tcell.Key]string{
+	tcell.KeyEnter:      "\r",
+	tcell.KeyTab:        "\t",
+	tcell.KeyBacktab:    "\x1b[Z",
+	tcell.KeyEsc:        "\x1b",
+	tcell.KeyBackspace:  "\x7f",
+	tcell.KeyBackspace2: "\x7f",
+	tcell.KeyDelete:     "\x1b[3~",
+	tcell.KeyInsert:     "\x1b[2~",
+	tcell.KeyUp:         "\x1b[A",
+	tcell.KeyDown:       "\x1b[B",
+	tcell.KeyRight:      "\x1b[C",
+	tcell.KeyLeft:       "\x1b[D",
+	tcell.KeyHome:       "\x1b[H",
+	tcell.KeyEnd:        "\x1b[F",
+	tcell.KeyPgUp:       "\x1b[5~",
+	tcell.KeyPgDn:       "\x1b[6~",
 }
