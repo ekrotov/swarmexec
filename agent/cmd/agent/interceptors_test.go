@@ -35,7 +35,7 @@ func TestInterceptorChain_SecretBeforeStreamGate(t *testing.T) {
 	secretAuth := &server.SecretAuth{Secret: "s3cret", AllowLegacy: true}
 
 	lis := bufconn.Listen(1 << 16)
-	gs := grpc.NewServer(interceptors(log, secretAuth, srv)...)
+	gs := grpc.NewServer(server.Interceptors(log, secretAuth, srv)...)
 	pb.RegisterAgentServer(gs, srv)
 	go func() { _ = gs.Serve(lis) }()
 	defer gs.Stop()
