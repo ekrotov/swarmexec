@@ -8,7 +8,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -42,8 +41,7 @@ func testRunSwarm(t *testing.T, p Params, sw *swarmfake.Swarm, out, errOut io.Wr
 	}
 	agent := agenttest.Start(t, agenttest.Options{Secret: "s3cret", Docker: d})
 
-	api := httptest.NewServer(sw)
-	t.Cleanup(api.Close)
+	api := swarmfake.Serve(t, sw)
 	dcli, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
 	if err != nil {
 		t.Fatal(err)

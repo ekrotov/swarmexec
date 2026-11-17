@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +21,6 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
-	cterm "swarmexec/client/internal/term"
 	pb "swarmexec/internal/pb"
 )
 
@@ -111,7 +109,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 	if len(nodes) > 0 && len(errs) == len(nodes) {
 		// Nothing answered: an empty list here would read as "no volumes".
-		reportNodeErrors(errs)
+		reportNodeErrors(cmd.ErrOrStderr(), errs)
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("no node answered (%d of %d unreachable): the volume list is unknown, not empty", len(errs), len(nodes))}
 	}
 	usage := ac.VolumeUsage(ctx, nodes, f.connectTimeout)
@@ -133,16 +131,16 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		}
 	}
 	if f.json {
-		if err := printJSON(os.Stdout, l.jsonRows()); err != nil {
+		if err := printJSON(cmd.OutOrStdout(), l.jsonRows()); err != nil {
 			return err
 		}
 	} else {
-		l.writeTable(os.Stdout)
+		l.writeTable(cmd.OutOrStdout())
 		if len(l.vols) == 0 {
-			fmt.Fprintln(os.Stderr, noVolumesNote(args))
+			fmt.Fprintln(cmd.ErrOrStderr(), noVolumesNote(args))
 		}
 	}
-	reportNodeErrors(errs)
+	reportNodeErrors(cmd.ErrOrStderr(), errs)
 	return nil
 }
 
@@ -233,7 +231,7 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
 		return e
 	}
-	reportNodeErrors(errs)
+	reportNodeErrors(cmd.ErrOrStderr(), errs)
 
 	var target *swarmVolume
 	for i := range vols {
@@ -256,7 +254,7 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 
 	if !f.yes {
 		if !confirm(fmt.Sprintf("Remove volume %q on %d node(s) [%s]?", name, len(rmNodes), strings.Join(nodeNames(rmNodes), ","))) {
-			fmt.Fprintln(os.Stderr, "aborted")
+			fmt.Fprintln(cmd.ErrOrStderr(), "aborted")
 			return &cliError{code: session.TransportFailure, silent: true}
 		}
 	}
@@ -265,9 +263,9 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	for _, res := range ac.RemoveVolume(ctx, rmNodes, name, f.force, f.connectTimeout) {
 		if res.Err != nil {
 			failed = true
-			fmt.Printf("%s: error: %v\n", res.Node.Name, res.Err)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: error: %v\n", res.Node.Name, res.Err)
 		} else {
-			fmt.Printf("%s: removed\n", res.Node.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: removed\n", res.Node.Name)
 		}
 	}
 	if failed {
@@ -467,7 +465,7 @@ func filterNodes(have []resolve.Node, want []string) []resolve.Node {
 	return out
 }
 
-func reportNodeErrors(errs map[string]error) {
+func reportNodeErrors(w io.Writer, errs map[string]error) {
 	if len(errs) == 0 {
 		return
 	}
@@ -477,12 +475,12 @@ func reportNodeErrors(errs map[string]error) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		fmt.Fprintf(os.Stderr, "warning: node %s unreachable: %v\n", n, errs[n])
+		fmt.Fprintf(w, "warning: node %s unreachable: %v\n", n, errs[n])
 	}
 }
 
 func confirm(prompt string) bool {
-	if !cterm.IsTerminal(os.Stdin.Fd()) {
+	if !stdinIsTerminal() {
 		return false // non-interactive: refuse without --yes
 	}
 	line, ok := promptLine(fmt.Sprintf("%s [y/N]: ", prompt))

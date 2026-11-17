@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
-	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"sync"
@@ -339,8 +338,7 @@ type mcpFixture struct {
 func newMCPFixture(t *testing.T, policyDefault string, allowReport bool) *mcpFixture {
 	t.Helper()
 	fs := newFixtureSwarm()
-	api := httptest.NewServer(fs)
-	t.Cleanup(api.Close)
+	api := swarmfake.Serve(t, fs)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

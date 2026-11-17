@@ -41,7 +41,7 @@ endef
 
 # Minimum total test coverage in percent (generated internal/pb excluded).
 # Set just below the measured value; raise it as coverage grows, never lower it.
-COVER_MIN  ?= 78.1
+COVER_MIN  ?= 81.2
 
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
@@ -136,7 +136,7 @@ test:
 vet:
 	go vet ./...
 
-## cover: race tests with a coverage profile; fails below COVER_MIN percent (CI: test)
+## cover: race tests with a coverage profile; fails below COVER_MIN percent or a per-file floor in ci/cover-floors.txt (CI: test)
 # -count=1: always run the tests. CI keeps GOCACHE between pipelines, and a
 # gate that reports "(cached)" results did not test this commit.
 cover:
@@ -145,6 +145,7 @@ cover:
 	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
 		sub("%", "", $$3); printf "total coverage %s%% (minimum %s%%)\n", $$3, min; \
 		if ($$3 + 0 < min + 0) { print "coverage is below the minimum"; exit 1 } }'
+	@sh ci/cover-floors.sh coverage.out
 
 ## lint: staticcheck at the pinned version, plus the complexity gate (CI: lint)
 lint: tool-staticcheck cyclo

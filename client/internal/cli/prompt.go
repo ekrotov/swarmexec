@@ -6,9 +6,12 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
+
+	cterm "swarmexec/client/internal/term"
 )
 
 // A single shared reader over os.Stdin. Using one reader avoids the classic bug
@@ -20,18 +23,47 @@ var (
 	stdinBuf  *bufio.Reader
 )
 
-func stdinReader() *bufio.Reader {
+// promptSeam is where prompts read their answers and write their questions.
+// The zero value is the process: os.Stdin, os.Stderr, and "interactive" meaning
+// stdin is a terminal. Tests set it (usePrompts) to play the operator.
+type promptSeam struct {
+	in          *bufio.Reader // nil: the shared reader over os.Stdin
+	out         io.Writer     // nil: os.Stderr
+	interactive func() bool   // nil: stdin is a terminal
+}
+
+var prompts promptSeam
+
+func (p promptSeam) reader() *bufio.Reader {
+	if p.in != nil {
+		return p.in
+	}
 	stdinOnce.Do(func() { stdinBuf = bufio.NewReader(os.Stdin) })
 	return stdinBuf
+}
+
+func (p promptSeam) writer() io.Writer {
+	if p.out != nil {
+		return p.out
+	}
+	return os.Stderr
+}
+
+// stdinIsTerminal reports whether prompts may ask: stdin is a terminal.
+func stdinIsTerminal() bool {
+	if prompts.interactive != nil {
+		return prompts.interactive()
+	}
+	return cterm.IsTerminal(os.Stdin.Fd())
 }
 
 // promptLine writes prompt (if any) to stderr and reads one line from stdin,
 // returning it trimmed of the trailing newline. ok is false on EOF with no data.
 func promptLine(prompt string) (line string, ok bool) {
 	if prompt != "" {
-		fmt.Fprint(os.Stderr, prompt)
+		fmt.Fprint(prompts.writer(), prompt)
 	}
-	s, err := stdinReader().ReadString('\n')
+	s, err := prompts.reader().ReadString('\n')
 	s = strings.TrimRight(s, "\r\n")
 	if err != nil && s == "" {
 		return "", false

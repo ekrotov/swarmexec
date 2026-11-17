@@ -24,7 +24,7 @@ make build           # cli only      -> ./bin/swarmexec
 make agent           # agent only    -> ./bin/agent
 make agent-image     # agent container image (swarmexec-agent:<version>)
 make test            # unit tests for the whole module
-make cover           # race + shuffled tests + coverage; fails below COVER_MIN (CI job `test`)
+make cover           # race + shuffled tests + coverage; fails below COVER_MIN or a per-file floor (CI job `test`)
 make mod-check       # go.mod/go.sum must be tidy: `go mod tidy -diff` (CI job `test`)
 make lint            # staticcheck at the pinned STATICCHECK_VERSION + `make cyclo` (no function over complexity 15) (CI job `lint`)
 make ci-tools        # every pinned tool: buf + plugins, staticcheck, gocyclo, govulncheck, scip-go
@@ -37,6 +37,11 @@ versions live in [`tools.mk`](tools.mk); each tool is installed into
 repeated `make tools` / `make lint` runs do not rebuild it. CI's
 coverage minimum (`COVER_MIN`, generated `internal/pb` excluded) sits just
 below the measured total: raise it when coverage grows, never lower it.
+The total averages risk away, so `make cover` also holds the files listed in
+[`ci/cover-floors.txt`](ci/cover-floors.txt) (exec, port-forward, the destructive
+commands, secret rotation, stack deploy and the agent handlers behind them) to a
+per-file floor, checked by `ci/cover-floors.sh`; `ci/cover-floors.sh --report`
+prints every file's figure.
 GitLab reads the total from the `test` job log (`coverage:` regex), shows
 it as the coverage badge on the project page and charts it over time under
 *Analyze > Repository analytics*; both are visible to project members only,

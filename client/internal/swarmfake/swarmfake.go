@@ -28,7 +28,9 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -91,7 +93,7 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		table = deleteRoutes
 	}
-	c := &call{w: w, r: r}
+	c := &call{f: f, w: w, r: r}
 	for _, rt := range table {
 		if arg, ok := rt.match(path); ok {
 			rt.serve(f, c, arg)
@@ -103,6 +105,7 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // call is one request being served.
 type call struct {
+	f *Swarm
 	w http.ResponseWriter
 	r *http.Request
 }
@@ -113,14 +116,30 @@ func (c *call) reply(v any) {
 	_ = json.NewEncoder(c.w).Encode(v)
 }
 
-// filters is the request's list filters (name -> values), empty when none
-// or unparsable.
-func (c *call) filters() map[string]map[string]bool {
-	filters := map[string]map[string]bool{}
-	if raw := c.r.URL.Query().Get("filters"); raw != "" {
-		_ = json.Unmarshal([]byte(raw), &filters)
+// filters is the request's list filters (name -> values). Only the names in
+// allowed are served; any other filter, or a filters parameter that is not the
+// engine's JSON, is refused with 400 as the engine does, and recorded in
+// Unknown so a test that swallows the error still fails. ok is false after
+// such a refusal: the caller must return without answering.
+func (c *call) filters(allowed ...string) (filters map[string]map[string]bool, ok bool) {
+	filters = map[string]map[string]bool{}
+	raw := c.r.URL.Query().Get("filters")
+	if raw == "" {
+		return filters, true
 	}
-	return filters
+	if err := json.Unmarshal([]byte(raw), &filters); err != nil {
+		c.f.Unknown = append(c.f.Unknown, c.r.Method+" "+c.r.URL.Path+" (unparsable filters)")
+		fail(c.w, http.StatusBadRequest, "invalid filter: "+err.Error())
+		return nil, false
+	}
+	for name := range filters {
+		if !slices.Contains(allowed, name) {
+			c.f.Unknown = append(c.f.Unknown, c.r.Method+" "+c.r.URL.Path+" (filter "+name+")")
+			fail(c.w, http.StatusBadRequest, fmt.Sprintf("Invalid filter '%s'", name))
+			return nil, false
+		}
+	}
+	return filters, true
 }
 
 // created answers a create with the new object's id.
@@ -165,20 +184,15 @@ var readRoutes = []route{
 	{exact("/services"), (*Swarm).listServices},
 	{under("/services/", ""), (*Swarm).getService},
 	{exact("/tasks"), (*Swarm).listTasks},
-	{exact("/nodes"), func(f *Swarm, c *call, _ string) { c.reply(f.Nodes) }},
+	{exact("/nodes"), (*Swarm).listNodes},
 	{under("/nodes/", ""), (*Swarm).getNode},
 	{under("/networks/", ""), (*Swarm).getNetwork},
-	{exact("/networks"), func(f *Swarm, c *call, _ string) {
-		c.reply(filterLabelled(f.Networks, c.filters(), func(n network.Summary) map[string]string { return n.Labels }))
-	}},
-	{exact("/secrets"), func(f *Swarm, c *call, _ string) {
-		c.reply(filterLabelled(filterNamed(f.Secrets, c.filters(), func(s swarm.Secret) string { return s.Spec.Name }),
-			c.filters(), func(s swarm.Secret) map[string]string { return s.Spec.Labels }))
-	}},
-	{exact("/configs"), func(f *Swarm, c *call, _ string) {
-		c.reply(filterLabelled(filterNamed(f.Configs, c.filters(), func(cf swarm.Config) string { return cf.Spec.Name }),
-			c.filters(), func(cf swarm.Config) map[string]string { return cf.Spec.Labels }))
-	}},
+	// Digest resolution of an image reference: the fake has no registry, so
+	// the answer is the engine's "not found" and the caller keeps the tag.
+	{under("/distribution/", "/json"), func(_ *Swarm, c *call, ref string) { notFound(c.w, "image "+ref) }},
+	{exact("/networks"), (*Swarm).listNetworks},
+	{exact("/secrets"), (*Swarm).listSecrets},
+	{exact("/configs"), (*Swarm).listConfigs},
 }
 
 var writeRoutes = []route{
@@ -238,7 +252,10 @@ func (f *Swarm) swarmInfo(c *call, _ string) {
 }
 
 func (f *Swarm) listServices(c *call, _ string) {
-	filters := c.filters()
+	filters, ok := c.filters("id", "name", "label")
+	if !ok {
+		return
+	}
 	var out []swarm.Service
 	for _, s := range f.Services {
 		if MatchService(s, filters) {
@@ -259,11 +276,69 @@ func (f *Swarm) getService(c *call, id string) {
 }
 
 func (f *Swarm) listTasks(c *call, _ string) {
-	filters := c.filters()
+	filters, ok := c.filters("id", "service", "desired-state")
+	if !ok {
+		return
+	}
 	var out []swarm.Task
 	for _, t := range f.Tasks {
 		if matchTask(t, filters) {
 			out = append(out, t)
+		}
+	}
+	c.reply(out)
+}
+
+// The lists. Each serves the filters the engine documents for it that
+// swarmexec uses; the others are refused (see call.filters), because a filter
+// the fake drops makes every lookup "find" its target. As the manager does, id
+// and name match as prefixes.
+
+func (f *Swarm) listNodes(c *call, _ string) {
+	if _, ok := c.filters(); ok {
+		c.reply(f.Nodes)
+	}
+}
+
+func (f *Swarm) listNetworks(c *call, _ string) {
+	filters, ok := c.filters("id", "name", "label")
+	if !ok {
+		return
+	}
+	var out []network.Summary
+	for _, n := range f.Networks {
+		if hasPrefix(filters["id"], n.ID) && hasPrefix(filters["name"], n.Name) && hasLabels(n.Labels, filters["label"]) {
+			out = append(out, n)
+		}
+	}
+	c.reply(out)
+}
+
+func (f *Swarm) listSecrets(c *call, _ string) {
+	filters, ok := c.filters("id", "name", "names", "label")
+	if !ok {
+		return
+	}
+	var out []swarm.Secret
+	for _, s := range f.Secrets {
+		if hasPrefix(filters["id"], s.ID) && hasPrefix(filters["name"], s.Spec.Name) &&
+			isOneOf(filters["names"], s.Spec.Name) && hasLabels(s.Spec.Labels, filters["label"]) {
+			out = append(out, s)
+		}
+	}
+	c.reply(out)
+}
+
+func (f *Swarm) listConfigs(c *call, _ string) {
+	filters, ok := c.filters("id", "name", "names", "label")
+	if !ok {
+		return
+	}
+	var out []swarm.Config
+	for _, cf := range f.Configs {
+		if hasPrefix(filters["id"], cf.ID) && hasPrefix(filters["name"], cf.Spec.Name) &&
+			isOneOf(filters["names"], cf.Spec.Name) && hasLabels(cf.Spec.Labels, filters["label"]) {
+			out = append(out, cf)
 		}
 	}
 	c.reply(out)
@@ -484,47 +559,25 @@ func fail(w http.ResponseWriter, code int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": msg})
 }
 
-func MatchService(s swarm.Service, f map[string]map[string]bool) bool {
-	for name := range f["name"] {
-		if !strings.Contains(s.Spec.Name, name) {
-			return false
+// hasPrefix: no filter values, or one is a prefix of have.
+func hasPrefix(want map[string]bool, have string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	for w := range want {
+		if strings.HasPrefix(have, w) {
+			return true
 		}
 	}
-	for l := range f["label"] {
-		k, v, hasV := strings.Cut(l, "=")
-		got, ok := s.Spec.Labels[k]
-		if !ok || (hasV && got != v) {
-			return false
-		}
-	}
-	return true
+	return false
 }
 
-func matchTask(t swarm.Task, f map[string]map[string]bool) bool {
-	if want := f["service"]; len(want) > 0 && !want[t.ServiceID] {
-		return false
-	}
-	if want := f["desired-state"]; len(want) > 0 && !want[string(t.DesiredState)] {
-		return false
-	}
-	return true
+// isOneOf: no filter values, or have is one of them.
+func isOneOf(want map[string]bool, have string) bool {
+	return len(want) == 0 || want[have]
 }
 
-// filterLabelled keeps the items carrying every "label" filter (key or
-// key=value), as the manager filters.
-func filterLabelled[T any](items []T, f map[string]map[string]bool, labels func(T) map[string]string) []T {
-	if len(f["label"]) == 0 {
-		return items
-	}
-	var out []T
-	for _, it := range items {
-		if hasLabels(labels(it), f["label"]) {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
+// hasLabels: have carries every label filter (key or key=value).
 func hasLabels(have map[string]string, want map[string]bool) bool {
 	for l := range want {
 		k, v, hasV := strings.Cut(l, "=")
@@ -536,20 +589,24 @@ func hasLabels(have map[string]string, want map[string]bool) bool {
 	return true
 }
 
-func filterNamed[T any](items []T, f map[string]map[string]bool, name func(T) string) []T {
-	if len(f["name"]) == 0 {
-		return items
+// MatchService reports whether s passes the service filters id, name (both
+// prefixes) and label.
+func MatchService(s swarm.Service, f map[string]map[string]bool) bool {
+	return hasPrefix(f["id"], s.ID) && hasPrefix(f["name"], s.Spec.Name) && hasLabels(s.Spec.Labels, f["label"])
+}
+
+// matchTask applies the task filters: id (prefix), service (id), desired-state.
+func matchTask(t swarm.Task, f map[string]map[string]bool) bool {
+	if !hasPrefix(f["id"], t.ID) {
+		return false
 	}
-	var out []T
-	for _, it := range items {
-		for n := range f["name"] {
-			if strings.Contains(name(it), n) {
-				out = append(out, it)
-				break
-			}
-		}
+	if want := f["service"]; len(want) > 0 && !want[t.ServiceID] {
+		return false
 	}
-	return out
+	if want := f["desired-state"]; len(want) > 0 && !want[string(t.DesiredState)] {
+		return false
+	}
+	return true
 }
 
 // selfSignedPair makes a throwaway server certificate for the fake agent.
@@ -573,4 +630,22 @@ func SelfSignedPair(t *testing.T) tls.Certificate {
 		t.Fatal(err)
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// Serve starts f as an HTTP server for the test and, at cleanup, fails the
+// test if f was asked for something it does not serve: an unknown path or a
+// refused filter (see Swarm.Unknown). It returns the server; close is
+// registered.
+func Serve(t testing.TB, f *Swarm) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(f)
+	t.Cleanup(func() {
+		srv.Close()
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if len(f.Unknown) > 0 {
+			t.Errorf("swarmfake was asked for what it does not serve: %q", f.Unknown)
+		}
+	})
+	return srv
 }
