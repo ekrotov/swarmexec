@@ -40,6 +40,10 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
   networkdb view (every service's tasks with their owning host, the peers).
   Docker API only, no extra capabilities; a client compares it with the
   manager's tasks to spot stale overlay entries (CONTRACT.md §3.9).
+- `KillContainer` / `InspectContainer` — SIGKILL one swarm task container
+  (Swarm reschedules the task; action `kill`) and the node-local
+  `docker container inspect` of one (action `inspect`). Both refuse
+  containers that are not swarm tasks and are audited (CONTRACT.md §3.10).
 - **Prune schedule** read from the agent's own container labels
   (`swarmexec.prune.*`, see below): the agent prunes at the scheduled times and
   keeps the last run's result.
@@ -280,7 +284,11 @@ services, secrets and stacks goes to the manager with the operator's own Docker
 credentials and never passes an agent. The format and its limits are in the
 docs, chapter "Authorization policy".
 
-The actions are `container.list`, `container.events`, `exec`, `logs`,
+The actions are `container.list`, `container.events`, `kill`
+(`KillContainer`), `inspect` (`InspectContainer`, which includes the
+container's environment) — the last two deliberately not under `container.*`,
+so an older `allow: [container.*]` grants neither; only `*` covers them —
+`exec`, `logs`,
 `portforward`, `stats.read`, `image.list`, `image.prune`, `image.prune.all`,
 `volume.list`, `volume.create`, `volume.remove`, `network.inspect`
 (`NetworkEndpoints`), and for disk cleanup

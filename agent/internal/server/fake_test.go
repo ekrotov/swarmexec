@@ -106,6 +106,13 @@ type fakeDocker struct {
 	containerRemErr   map[string]error
 	ignoreLabels      bool // play a daemon that ignores label filters
 
+	// kill / inspect (container.go)
+	inspectErr map[string]error
+	inspectRaw map[string][]byte
+	killed     []string
+	killOpts   []client.ContainerKillOptions
+	killErr    error
+
 	// port-forward sidecar state
 	createContainerErr error
 	startErr           error
@@ -233,9 +240,13 @@ func (f *fakeDocker) BuildCachePrune(_ context.Context, opts client.BuildCachePr
 func (f *fakeDocker) ContainerInspect(_ context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	f.mu.Lock()
 	f.inspects++
+	err, raw := f.inspectErr[id], f.inspectRaw[id]
 	f.mu.Unlock()
+	if err != nil {
+		return client.ContainerInspectResult{}, err
+	}
 	if c, ok := f.inspect[id]; ok {
-		return client.ContainerInspectResult{Container: c}, nil
+		return client.ContainerInspectResult{Container: c, Raw: raw}, nil
 	}
 	return client.ContainerInspectResult{Container: container.InspectResponse{ID: id, Config: &container.Config{}}}, nil
 }
@@ -294,6 +305,17 @@ func (f *fakeDocker) ContainerAttach(_ context.Context, _ string, _ client.Conta
 	f.containerConn = containerSide
 	f.attachedCh <- containerSide
 	return client.ContainerAttachResult{HijackedResponse: client.HijackedResponse{Conn: agentSide, Reader: bufio.NewReader(agentSide)}}, nil
+}
+
+func (f *fakeDocker) ContainerKill(_ context.Context, id string, opts client.ContainerKillOptions) (client.ContainerKillResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.killErr != nil {
+		return client.ContainerKillResult{}, f.killErr
+	}
+	f.killed = append(f.killed, id)
+	f.killOpts = append(f.killOpts, opts)
+	return client.ContainerKillResult{}, nil
 }
 
 func (f *fakeDocker) ContainerRemove(_ context.Context, id string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {

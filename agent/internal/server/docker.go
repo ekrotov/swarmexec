@@ -28,6 +28,9 @@ type DockerClient interface {
 	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
 	ContainerAttach(ctx context.Context, containerID string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
 	ContainerRemove(ctx context.Context, containerID string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	// ContainerKill backs KillContainer: SIGKILL to one swarm task container,
+	// after which swarm replaces the task. Never used on anything else.
+	ContainerKill(ctx context.Context, containerID string, options client.ContainerKillOptions) (client.ContainerKillResult, error)
 	VolumeList(ctx context.Context, options client.VolumeListOptions) (client.VolumeListResult, error)
 	VolumeCreate(ctx context.Context, options client.VolumeCreateOptions) (client.VolumeCreateResult, error)
 	VolumeRemove(ctx context.Context, volumeID string, options client.VolumeRemoveOptions) (client.VolumeRemoveResult, error)
@@ -66,3 +69,7 @@ var _ DockerClient = (*client.Client)(nil)
 // swarmServiceLabel is the container label Docker sets on swarm task containers
 // carrying the owning service's name.
 const swarmServiceLabel = "com.docker.swarm.service.name"
+
+// swarmTaskLabel is the label Docker sets on every swarm task container, with
+// the task's id. Its presence is what makes a container a swarm task.
+const swarmTaskLabel = "com.docker.swarm.task.id"

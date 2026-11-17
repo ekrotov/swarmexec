@@ -105,6 +105,8 @@ var eventTable = map[string]func(*Logger){
 	"event_watch_end":   func(l *Logger) { l.EventWatchEnd("a", "c", time.Second, 4) },
 	"container_list":    func(l *Logger) { l.ContainerList("a", "web", 1) },
 	"auth_decision":     func(l *Logger) { l.AuthDecision("a", "c", "s", false, "no") },
+	"container_kill":    func(l *Logger) { l.ContainerKill("a", "c", "s", true, "") },
+	"container_inspect": func(l *Logger) { l.ContainerInspect("a", "c", "s", true, "") },
 }
 
 func TestEveryRecordNamesItsEvent(t *testing.T) {

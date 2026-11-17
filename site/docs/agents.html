@@ -239,6 +239,13 @@
         <code>init</code> against an existing service is a usage error telling you to add
         <code>--force</code> — nothing is changed.
       </p>
+      <p>
+        The &ldquo;missing RPC&rdquo; message is what a feature newer than the agent reports:
+        the container menu's <a href="/docs/tui-services#tui-action-menu"><em>inspect
+        container (node-local)</em> and <em>kill task</em></a>, for instance, need an agent
+        from the release that introduced them (RPCs <code>InspectContainer</code> and
+        <code>KillContainer</code>). Everything else keeps working against the old agent.
+      </p>
       <div class="prompt"><span class="c">$</span> swarmexec init --force</div>
       <p>
         This redeploys the agent on every node and <strong>leaves the shared secret
