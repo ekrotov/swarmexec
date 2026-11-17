@@ -158,6 +158,9 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	pf.StringVar(&g.logLevel, "client-log-level", "info", "swarmexec's own log verbosity: debug|info|warn|error|off")
 	pf.StringVar(&g.logFile, "client-log-file", "", "swarmexec's own log file (default swarmexec.log next to config; the TUI also has a live viewer)")
 	addHiddenFlagAliases(root, map[string]string{"log-level": "client-log-level", "log-file": "client-log-file"})
+	markConnectionFlags(pf, "ca", "cert", "key", "port", "addr-mode", "server-name",
+		"agent-secret", "agent-secret-file", "insecure", "operator")
+	root.SetUsageFunc(groupedUsage)
 
 	root.AddCommand(newInitCmd(g))
 	root.AddCommand(newDownCmd(g))
@@ -176,6 +179,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newSecretCmd(g))
 	root.AddCommand(newUICmd(g))
 	root.AddCommand(newMCPCmd(g))
+	root.AddCommand(newConnectionHelpTopic(root))
 	registerCompletions(root, g)
 	usageOnArgErrors(root)
 	return root

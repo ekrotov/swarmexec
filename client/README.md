@@ -62,6 +62,11 @@ flags**.
 | Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
 | Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
 
+The flags in this table (plus `--agent-secret`, `--agent-secret-file`,
+`--insecure` and `--operator`) are the **connection flags**. Every command
+accepts them, but a command's `--help` only points at them; `swarmexec --help`
+and `swarmexec help connection` print the full list.
+
 Config file (default `~/.config/swarmexec/config.yaml`, override with `--config`
 or `SWARMEXEC_CONFIG`):
 

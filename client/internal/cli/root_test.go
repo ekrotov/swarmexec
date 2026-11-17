@@ -9,6 +9,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func TestInfoText(t *testing.T) {
@@ -133,5 +136,92 @@ func TestClientLogFlagsAndHiddenAliases(t *testing.T) {
 	logs, _, _ := root.Find([]string{"logs"})
 	if !strings.Contains(logs.Long, "--min-level filters the log output") || !strings.Contains(logs.Long, "--client-log-level") {
 		t.Errorf("logs Long does not tell --min-level from --client-log-level:\n%s", logs.Long)
+	}
+}
+
+// helpOf runs the root command with args and returns what it printed.
+func helpOf(t *testing.T, args ...string) string {
+	t.Helper()
+	root := newRootCmd(&globalFlags{}, Version{})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("%v: %v", args, err)
+	}
+	return out.String()
+}
+
+// Connection flags are written out once — in the root's help and in `help
+// connection` — and every other command's help lists only the everyday global
+// flags plus a pointer to the topic (review C-03).
+func TestHelpGroupsConnectionFlags(t *testing.T) {
+	conn := []string{"--ca", "--cert", "--key", "--port", "--addr-mode", "--server-name",
+		"--agent-secret", "--agent-secret-file", "--insecure", "--operator"}
+	everyday := []string{"--context", "--config", "--client-log-level", "--client-log-file"}
+	listed := func(help, flag string) bool { return strings.Contains(help, "      "+flag+" ") }
+
+	// The group is the annotation, so a new connection flag only needs marking.
+	root := newRootCmd(&globalFlags{}, Version{})
+	var marked []string
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if isConnectionFlag(f) {
+			marked = append(marked, "--"+f.Name)
+		}
+	})
+	if len(marked) != len(conn) {
+		t.Errorf("connection group %v, want %v", marked, conn)
+	}
+
+	top := helpOf(t, "--help")
+	topic := helpOf(t, "help", "connection")
+	for _, f := range conn {
+		if !listed(top, f) || !listed(topic, f) {
+			t.Errorf("%s missing from the root help or the connection topic", f)
+		}
+	}
+	if !strings.Contains(top, "Connection Flags:") || !strings.Contains(top, "swarmexec connection") {
+		t.Errorf("root help:\n%s", top)
+	}
+	for _, f := range everyday {
+		if listed(topic, f) {
+			t.Errorf("connection topic lists %s:\n%s", f, topic)
+		}
+	}
+
+	// Every other command: the everyday flags, the pointer, no connection flag.
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+		if !c.HasParent() || c.IsAdditionalHelpTopicCommand() {
+			return
+		}
+		h := helpOf(t, append(strings.Fields(c.CommandPath())[1:], "--help")...)
+		for _, f := range conn {
+			// init has its own --port (the published one): that one stays.
+			if c.LocalNonPersistentFlags().Lookup(f[2:]) == nil && listed(h, f) {
+				t.Errorf("%s --help lists %s", c.CommandPath(), f)
+			}
+		}
+		for _, f := range everyday {
+			if !listed(h, f) {
+				t.Errorf("%s --help lacks %s", c.CommandPath(), f)
+			}
+		}
+		if !strings.Contains(h, `see "swarmexec help connection"`) {
+			t.Errorf("%s --help has no pointer to the connection topic:\n%s", c.CommandPath(), h)
+		}
+	}
+	walk(root)
+
+	// help and completion still work around the topic.
+	if h := helpOf(t, "help", "wait"); !strings.Contains(h, "Global Flags:") {
+		t.Errorf("help wait:\n%s", h)
+	}
+	if s := helpOf(t, "completion", "bash"); !strings.Contains(s, "__start_swarmexec") {
+		t.Errorf("completion bash printed no script")
 	}
 }

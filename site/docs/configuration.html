@@ -209,12 +209,30 @@
       </table></div>
 
       <h2 id="global">Global flags</h2>
-      <p>These persistent flags apply to every command:</p>
+      <p>These persistent flags apply to every command. Each command's
+        <code>--help</code> lists the everyday ones; the connection flags (TLS, the
+        agent secret, node addressing) are printed in full only by
+        <code>swarmexec --help</code> and <code>swarmexec help connection</code>, and
+        every other help ends with a pointer there.</p>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>--config</code></td><td>—</td><td>config file path (default <code>~/.config/swarmexec/config.yaml</code>)</td></tr>
           <tr><td><code>--context</code></td><td>—</td><td>docker context for the manager API; supports <code>ssh://</code> (also <code>$DOCKER_CONTEXT</code>)</td></tr>
+          <tr><td><code>--client-log-level</code></td><td><code>info</code></td><td>swarmexec's own log verbosity: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> disables logging entirely)</td></tr>
+          <tr><td><code>--client-log-file</code></td><td>—</td><td>swarmexec's own log file (default <code>swarmexec.log</code> next to the config file)</td></tr>
+          <tr><td><code>--info</code></td><td>—</td><td>show version, license, and contact info</td></tr>
+          <tr><td><code>--version</code></td><td>—</td><td>print the client and protocol version</td></tr>
+        </tbody>
+      </table></div>
+      <h3 id="connection">Connection flags</h3>
+      <p>How the client reaches the agents. They override the matching config file
+        keys and <code>SWARMEXEC_*</code> variables above, so most setups set them
+        once in the config file. <code>swarmexec help connection</code> prints this
+        list.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
           <tr><td><code>--port</code></td><td><code>9443</code></td><td>agent port</td></tr>
           <tr><td><code>--addr-mode</code></td><td><code>hostname</code></td><td>node dial address: <code>hostname</code> | <code>ip</code></td></tr>
           <tr><td><code>--ca</code></td><td>—</td><td>CA certificate to verify the agent (mTLS)</td></tr>
@@ -225,10 +243,6 @@
           <tr><td><code>--agent-secret-file</code></td><td>—</td><td>file to read the shared secret from</td></tr>
           <tr><td><code>--insecure</code></td><td><code>false</code></td><td>skip agent server-certificate verification</td></tr>
           <tr><td><code>--operator</code></td><td>OS username</td><td>operator identity reported for audit</td></tr>
-          <tr><td><code>--client-log-level</code></td><td><code>info</code></td><td>swarmexec's own log verbosity: <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>off</code> (<code>off</code> disables logging entirely)</td></tr>
-          <tr><td><code>--client-log-file</code></td><td>—</td><td>swarmexec's own log file (default <code>swarmexec.log</code> next to the config file)</td></tr>
-          <tr><td><code>--info</code></td><td>—</td><td>show version, license, and contact info</td></tr>
-          <tr><td><code>--version</code></td><td>—</td><td>print the client and protocol version</td></tr>
         </tbody>
       </table></div>
       <div class="note">
