@@ -92,8 +92,22 @@ func TestLoadKeybinds_GlobalConflictAcrossTabs(t *testing.T) {
 // per-tab switch would silently shadow a binding.
 func TestDefaultKeybinds_NoPerTabCollision(t *testing.T) {
 	k := defaultKeybinds()
-	tabs := []string{"containers", "volumes", "networks", "secrets", "contexts", "forwards"}
-	for _, tab := range tabs {
+	// Every scope an action names, so a new tab's actions are checked the
+	// moment they are added (nodes and configs were missing from a fixed list).
+	scopes := map[string]bool{}
+	for _, a := range keyActions {
+		for _, s := range a.tabs {
+			if s != "*" {
+				scopes[s] = true
+			}
+		}
+	}
+	for _, want := range []string{"containers", "volumes", "networks", "secrets", "contexts", "forwards", "nodes", "configs"} {
+		if !scopes[want] {
+			t.Errorf("no action is scoped to %s", want)
+		}
+	}
+	for tab := range scopes {
 		seen := map[rune]string{}
 		for _, a := range keyActions {
 			if !sharesTab(a, keyAction{tabs: []string{tab}}) {

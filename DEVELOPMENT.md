@@ -67,6 +67,13 @@ generated from the command tree: after adding or changing a command or flag,
 run `make cli-docs` and commit the page. CI's `test` job runs
 `make cli-docs-check`, which regenerates it and fails on any difference.
 
+### TUI keys
+
+Before adding a key, a tab or an overlay to `swarmexec ui`, read
+[`KEYMAP.md`](KEYMAP.md): the global keys, the detail verb, the `Ctrl-S`
+commit idiom, red and uppercase danger keys, Esc-first footers, and the
+tables in `keymap.go` whose tests keep tabs and overlays conflict-free.
+
 ### Releases (CI/CD)
 
 [`.gitlab-ci.yml`](.gitlab-ci.yml) builds and versions automatically:
