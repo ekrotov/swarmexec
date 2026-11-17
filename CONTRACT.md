@@ -339,6 +339,36 @@ the kernel FDB itself would need capabilities the agent does not have.
 - An agent that predates the RPC answers `UNIMPLEMENTED`; a client MUST treat
   that as "unknown" for that node, never as "no endpoints".
 
+### 3.10 Container kill and inspect (normative)
+
+`KillContainer` and `InspectContainer` act on ONE container on the agent's own
+node — the two things the manager cannot do for a container on another node:
+signal it, and read its runtime state (health probe output, network settings,
+real mounts).
+
+- **Swarm task containers only.** The agent inspects the container first and
+  refuses one without the `com.docker.swarm.task.id` label with
+  `FAILED_PRECONDITION` (`container <id> is not a swarm task; …`). A node may
+  run other containers beside the swarm; neither RPC reaches them.
+- **Authorization.** `KillContainer` is the action `kill`; `InspectContainer`
+  is `container.inspect`. The request's service is resolved from the container
+  as for exec, so a rule may name `services`. `kill` is deliberately outside
+  the `container.*` namespace: a policy that allowed `container.*` before kill
+  existed does not start allowing it — only `*` or `kill` itself does.
+- **Kill** sends `SIGKILL` (no other signal; the request has no field for one).
+  The agent does not restart, remove or replace anything: Swarm sees the task
+  fail and schedules a replacement per the service's restart policy. A
+  container that is not running fails with `FAILED_PRECONDITION` (the Engine's
+  409). Audited as `container_kill` with `ok`/`error` — refusals because the
+  container is not a swarm task included.
+- **Inspect** returns the Engine's inspect document as JSON bytes, verbatim when
+  the agent's Docker client kept them. It carries `Config.Env`, exactly as
+  `docker container inspect` on the node would, so a client SHOULD NOT log it.
+  Audited as `container_inspect`; the audit record never contains the document.
+- A missing container is `NOT_FOUND`. An agent that predates either RPC answers
+  `UNIMPLEMENTED` (§7); these are explicit operator actions, so a client sends
+  them every time and reports "agent too old" rather than remembering it.
+
 ## 4. Session Lifecycle (normative)
 
 1. Client opens the `Exec` stream.

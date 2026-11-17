@@ -109,3 +109,22 @@ func TestIdentityRulesNeedVerifiedIdentities(t *testing.T) {
 		t.Errorf("verified identities may be matched: %v", err)
 	}
 }
+
+// "kill" stops workloads, so an older "container.*" grant (written for the
+// listing and the event watch) must not start covering it; "*" does.
+func TestKillIsNotUnderTheContainerGlob(t *testing.T) {
+	p := mustParse(t, "default: deny\nrules:\n  - allow: [\"container.*\"]\n", false)
+	if ok, _ := p.Decide(Request{Action: "kill"}); ok {
+		t.Error(`"container.*" must not allow kill`)
+	}
+	if ok, _ := p.Decide(Request{Action: "container.inspect"}); !ok {
+		t.Error(`"container.*" should cover the read-only container.inspect`)
+	}
+	p = mustParse(t, "default: deny\nrules:\n  - allow: [\"*\"]\n", false)
+	if ok, _ := p.Decide(Request{Action: "kill"}); !ok {
+		t.Error(`"*" must cover kill`)
+	}
+	if _, err := Parse([]byte("default: allow\nrules:\n  - deny: [kill]\n"), false); err != nil {
+		t.Errorf("kill must be a known action: %v", err)
+	}
+}

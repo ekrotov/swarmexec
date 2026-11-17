@@ -238,3 +238,31 @@ func (l *Logger) AuthDecision(identity, containerID, service string, allow bool,
 		"reason", reason,
 	)
 }
+
+// ContainerKill records a kill of a swarm task container — the one RPC that
+// stops a workload — whatever its outcome, including a refusal because the
+// container was not a swarm task.
+func (l *Logger) ContainerKill(identity, containerID, service string, ok bool, errMsg string) {
+	l.log.Info("container_kill",
+		"event", "container_kill",
+		"identity", identity,
+		"container_id", containerID,
+		"service", service,
+		"ok", ok,
+		"error", errMsg,
+	)
+}
+
+// ContainerInspect records a node-local inspect of one container. The document
+// itself is never recorded: it carries the container's environment, which
+// routinely holds credentials.
+func (l *Logger) ContainerInspect(identity, containerID, service string, ok bool, errMsg string) {
+	l.log.Info("container_inspect",
+		"event", "container_inspect",
+		"identity", identity,
+		"container_id", containerID,
+		"service", service,
+		"ok", ok,
+		"error", errMsg,
+	)
+}

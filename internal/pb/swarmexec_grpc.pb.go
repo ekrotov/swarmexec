@@ -42,6 +42,8 @@ const (
 	Agent_ReclaimStats_FullMethodName         = "/swarmexec.Agent/ReclaimStats"
 	Agent_Prune_FullMethodName                = "/swarmexec.Agent/Prune"
 	Agent_NetworkEndpoints_FullMethodName     = "/swarmexec.Agent/NetworkEndpoints"
+	Agent_KillContainer_FullMethodName        = "/swarmexec.Agent/KillContainer"
+	Agent_InspectContainer_FullMethodName     = "/swarmexec.Agent/InspectContainer"
 	Agent_Version_FullMethodName              = "/swarmexec.Agent/Version"
 )
 
@@ -111,6 +113,18 @@ type AgentClient interface {
 	// running tasks to spot stale IP/MAC entries a node kept from an old network
 	// state. See CONTRACT.md §3.9.
 	NetworkEndpoints(ctx context.Context, in *NetworkEndpointsRequest, opts ...grpc.CallOption) (*NetworkEndpointsResponse, error)
+	// Kill one swarm task container on THIS node with SIGKILL (authorized as
+	// "kill" + audited). Swarm notices the task failed and schedules a
+	// replacement per the service's restart policy; the agent never restarts
+	// anything itself. Refused for containers that are not swarm tasks. See
+	// CONTRACT.md §3.10.
+	KillContainer(ctx context.Context, in *KillContainerRequest, opts ...grpc.CallOption) (*KillContainerResponse, error)
+	// The node-local `docker container inspect` of one swarm task container on
+	// THIS node, as the Engine's JSON (authorized as "container.inspect" +
+	// audited). The manager's task inspect cannot show runtime state — health
+	// probe output, the container's network settings, its real mounts — because
+	// only the node's daemon has them. See CONTRACT.md §3.10.
+	InspectContainer(ctx context.Context, in *InspectContainerRequest, opts ...grpc.CallOption) (*InspectContainerResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -290,6 +304,26 @@ func (c *agentClient) NetworkEndpoints(ctx context.Context, in *NetworkEndpoints
 	return out, nil
 }
 
+func (c *agentClient) KillContainer(ctx context.Context, in *KillContainerRequest, opts ...grpc.CallOption) (*KillContainerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KillContainerResponse)
+	err := c.cc.Invoke(ctx, Agent_KillContainer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentClient) InspectContainer(ctx context.Context, in *InspectContainerRequest, opts ...grpc.CallOption) (*InspectContainerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectContainerResponse)
+	err := c.cc.Invoke(ctx, Agent_InspectContainer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -366,6 +400,18 @@ type AgentServer interface {
 	// running tasks to spot stale IP/MAC entries a node kept from an old network
 	// state. See CONTRACT.md §3.9.
 	NetworkEndpoints(context.Context, *NetworkEndpointsRequest) (*NetworkEndpointsResponse, error)
+	// Kill one swarm task container on THIS node with SIGKILL (authorized as
+	// "kill" + audited). Swarm notices the task failed and schedules a
+	// replacement per the service's restart policy; the agent never restarts
+	// anything itself. Refused for containers that are not swarm tasks. See
+	// CONTRACT.md §3.10.
+	KillContainer(context.Context, *KillContainerRequest) (*KillContainerResponse, error)
+	// The node-local `docker container inspect` of one swarm task container on
+	// THIS node, as the Engine's JSON (authorized as "container.inspect" +
+	// audited). The manager's task inspect cannot show runtime state — health
+	// probe output, the container's network settings, its real mounts — because
+	// only the node's daemon has them. See CONTRACT.md §3.10.
+	InspectContainer(context.Context, *InspectContainerRequest) (*InspectContainerResponse, error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -422,6 +468,12 @@ func (UnimplementedAgentServer) Prune(context.Context, *PruneRequest) (*PruneRes
 }
 func (UnimplementedAgentServer) NetworkEndpoints(context.Context, *NetworkEndpointsRequest) (*NetworkEndpointsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NetworkEndpoints not implemented")
+}
+func (UnimplementedAgentServer) KillContainer(context.Context, *KillContainerRequest) (*KillContainerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method KillContainer not implemented")
+}
+func (UnimplementedAgentServer) InspectContainer(context.Context, *InspectContainerRequest) (*InspectContainerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InspectContainer not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -663,6 +715,42 @@ func _Agent_NetworkEndpoints_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_KillContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KillContainerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).KillContainer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_KillContainer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).KillContainer(ctx, req.(*KillContainerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Agent_InspectContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectContainerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).InspectContainer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_InspectContainer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).InspectContainer(ctx, req.(*InspectContainerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -727,6 +815,14 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NetworkEndpoints",
 			Handler:    _Agent_NetworkEndpoints_Handler,
+		},
+		{
+			MethodName: "KillContainer",
+			Handler:    _Agent_KillContainer_Handler,
+		},
+		{
+			MethodName: "InspectContainer",
+			Handler:    _Agent_InspectContainer_Handler,
 		},
 		{
 			MethodName: "Version",

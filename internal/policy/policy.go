@@ -32,8 +32,13 @@ import (
 
 // Actions are every action an agent authorizes. A rule may name them exactly
 // or with a glob ("volume.*", "*").
+//
+// "kill" is deliberately not "container.kill": a policy written before it
+// existed that allows "container.*" (meaning the listing and the event watch)
+// must not silently start allowing an operator to stop workloads. Only "*"
+// covers it — a rule that says "everything" means it.
 var Actions = []string{
-	"container.list", "container.events",
+	"container.list", "container.events", "container.inspect", "kill",
 	"exec", "logs", "portforward", "stats.read",
 	"image.list", "image.prune", "image.prune.all",
 	"volume.list", "volume.create", "volume.remove", "network.inspect",

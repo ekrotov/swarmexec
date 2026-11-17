@@ -87,6 +87,20 @@ service Agent {
   // state. See CONTRACT.md §3.9.
   rpc NetworkEndpoints(NetworkEndpointsRequest) returns (NetworkEndpointsResponse);
 
+  // Kill one swarm task container on THIS node with SIGKILL (authorized as
+  // "kill" + audited). Swarm notices the task failed and schedules a
+  // replacement per the service's restart policy; the agent never restarts
+  // anything itself. Refused for containers that are not swarm tasks. See
+  // CONTRACT.md §3.10.
+  rpc KillContainer(KillContainerRequest) returns (KillContainerResponse);
+
+  // The node-local `docker container inspect` of one swarm task container on
+  // THIS node, as the Engine's JSON (authorized as "container.inspect" +
+  // audited). The manager's task inspect cannot show runtime state — health
+  // probe output, the container's network settings, its real mounts — because
+  // only the node's daemon has them. See CONTRACT.md §3.10.
+  rpc InspectContainer(InspectContainerRequest) returns (InspectContainerResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -532,4 +546,20 @@ message NetworkTaskEndpoint {
 message NetworkPeer {
   string name = 1;  // the peer node's networkdb name
   string ip = 2;
+}
+
+message KillContainerRequest {
+  string container_id = 1; // full (or unique prefix) container ID; must be a swarm task
+}
+
+message KillContainerResponse {}
+
+message InspectContainerRequest {
+  string container_id = 1; // full (or unique prefix) container ID; must be a swarm task
+}
+
+message InspectContainerResponse {
+  // The Engine's container inspect document, verbatim (JSON). It includes
+  // Config.Env, exactly as `docker container inspect` on the node would.
+  bytes inspect_json = 1;
 }

@@ -19,6 +19,7 @@ type Request struct {
 	// each category on its own: "container.prune", "image.prune",
 	// "image.prune.all", "buildcache.prune", "network.prune", "volume.prune";
 	// its stats are "reclaim.read". NetworkEndpoints is "network.inspect".
+	// KillContainer is "kill", InspectContainer "container.inspect".
 	Action string
 	// Port is the target TCP port inside the container for "portforward".
 	// Forwarding is a distinct exposure class from exec — it lifts an internal
