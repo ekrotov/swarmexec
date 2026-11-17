@@ -157,6 +157,9 @@ type ui struct {
 	// status line takes: the status line fits its parts into what is left.
 	screenWidth      int
 	statusRightWidth int
+	// newerRelease is a swarmexec release newer than this client, once the
+	// background check (updatenotice.go) found one; "" until then or never.
+	newerRelease string
 
 	// tabs is the tab registry, by uiTabList key (see newTabViews). A tab
 	// with a type of its own keeps its widget, its preferences and its

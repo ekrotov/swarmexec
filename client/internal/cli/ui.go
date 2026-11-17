@@ -496,6 +496,10 @@ func (u *ui) startSession(keyWarnings []string) {
 	// Responsiveness watchdog: a stall means something is blocking the loop.
 	clientlog.L().Info("ui started", "log_level", u.g.logLevel)
 	go u.watchdog(ctx)
+
+	// Is there a newer release? Asked in the background (at most once a day,
+	// cached; off with ui.check_updates: false), never holding up the start.
+	u.startReleaseCheck(ctx)
 }
 
 // runScreen takes the terminal and runs the event loop until the UI quits.
@@ -1277,11 +1281,14 @@ func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm f
 //
 // The restore is still guarded on the text: if anything changed the footer
 // meanwhile, that owner keeps it.
-func (u *ui) flash(msg string) {
+func (u *ui) flash(msg string) { u.flashFor(msg, 1500*time.Millisecond) }
+
+// flashFor is flash with its own duration, for a message worth reading.
+func (u *ui) flashFor(msg string, d time.Duration) {
 	help, app := u.help, u.app
 	help.SetText(msg)
 	go func() {
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(d)
 		app.QueueUpdateDraw(func() {
 			if help.GetText(false) == msg {
 				help.SetText(u.footerBase)
@@ -1355,19 +1362,43 @@ const statusVersionMinWidth = 100
 const statusGap = 2
 
 // statusRightText is the right end of the status line: the key that shows the
-// context list while it is hidden, then the client version ("" leaves it out).
+// context list while it is hidden, then the version part (markup, see
+// statusVersionText; "" leaves it out).
 func statusRightText(version string, ctxKey rune, sidebarHidden bool, contexts int) string {
 	var parts []string
 	if sidebarHidden && contexts > 0 {
 		parts = append(parts, fmt.Sprintf("[yellow]%s[white] contexts", keyLabel(ctxKey)))
 	}
 	if version != "" {
-		parts = append(parts, "[gray]"+tview.Escape(version)+"[white]")
+		parts = append(parts, version)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return strings.Join(parts, "  ·  ") + " "
+}
+
+// statusUpdateMinWidth is the narrowest terminal whose status line still
+// names a newer release ("↑ v1.27.0"); below it only the ? title does.
+const statusUpdateMinWidth = 60
+
+// statusVersionText is the version part of the status line at width (0:
+// not drawn yet, counts as wide): this client's version in gray, or in
+// yellow with the newer release beside it. Below statusVersionMinWidth the
+// version goes (T-17) and only a newer release stays, short.
+func statusVersionText(version, newer string, width int) string {
+	narrow := width > 0 && width < statusVersionMinWidth
+	switch {
+	case newer == "" && narrow:
+		return ""
+	case newer == "":
+		return "[gray]" + tview.Escape(version) + "[white]"
+	case width > 0 && width < statusUpdateMinWidth:
+		return ""
+	case narrow:
+		return "[yellow]↑ " + tview.Escape(newer) + "[white]"
+	}
+	return "[yellow]" + tview.Escape(version) + " → " + tview.Escape(newer) + "[white]"
 }
 
 // updateStatusRight redraws the right end of the status line and sizes it to
@@ -1376,10 +1407,7 @@ func (u *ui) updateStatusRight() {
 	if u.statusRight == nil || u.statusRow == nil {
 		return
 	}
-	version := u.binaryVersion()
-	if u.screenWidth > 0 && u.screenWidth < statusVersionMinWidth {
-		version = ""
-	}
+	version := statusVersionText(u.binaryVersion(), u.newerRelease, u.screenWidth)
 	txt := statusRightText(version, u.km.CtxFocus, u.sidebarHidden, len(u.ctxs))
 	u.statusRight.SetText(txt)
 	u.statusRightWidth = tview.TaggedStringWidth(txt)
@@ -1497,7 +1525,7 @@ func (u *ui) showHelp() {
 
 	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
 	// The version rides in the title: a narrow status line leaves it out.
-	hv.SetBorder(true).SetTitle(" keybindings — swarmexec " + tview.Escape(u.binaryVersion()) + " ")
+	hv.SetBorder(true).SetTitle(u.helpTitle())
 	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeHelp := ov.Close
 	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
