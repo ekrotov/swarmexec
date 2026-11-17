@@ -187,6 +187,29 @@ footer code { font-size: .84em; }
 .pager .lbl { display: block; font-family: var(--mono); font-weight: 400; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .docnav a[aria-current="page"] { color: var(--aqua); font-weight: 700; }
 
+/* The docs list (<aside class="docside">, partials/docnav.html) closes every
+   docs page. From 980px it is a left sidebar instead: fixed beside the text,
+   scrolling on its own when it is taller than the window, and the page makes
+   room for it. Positioned, not a grid, so the page's flow — and its collapsing
+   margins — stay exactly as on a phone. Browsers without :has() keep the list
+   at the foot. */
+@media (min-width: 980px) {
+  main:has(> .card > .docside) {
+    max-width: calc(920px + 16rem);
+    padding-left: calc(var(--gutter) + 16rem);
+  }
+  main:has(> .card > .docside) .docside {
+    position: fixed; top: 3rem; bottom: 0;
+    left: max(var(--gutter), calc((100vw - 920px - 16rem) / 2 + var(--gutter)));
+    width: 14rem; overflow-y: auto; overscroll-behavior: contain;
+    padding: 1.6rem 1rem 2rem 0;
+    border-right: 1px solid var(--rule);
+  }
+  main:has(> .card > .docside) .docnav { background: none; border: 0; border-radius: 0; padding: 0; margin: 0; }
+  main:has(> .card > .docside) .docnav ol { columns: 1; }
+  main:has(> .card > .docside) .docnav li { font-size: .86rem; line-height: 1.35; margin: .4rem 0; }
+}
+
 /* docs/cli.html, the generated CLI reference (make cli-docs): one section per
    command; subcommands are indented in the contents. */
 .clitoc { font-family: var(--mono); font-size: .84rem; }
