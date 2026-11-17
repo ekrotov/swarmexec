@@ -96,9 +96,11 @@ func (u *ui) resizeSidebar(width int) {
 	// Hidden for lack of width: the footer says which key shows it. This runs
 	// in root's draw, before any child is drawn, so the hint appears and goes
 	// in the same frame as the list.
-	if hidden := w == 0; hidden != u.sidebarHidden {
-		u.sidebarHidden = hidden
+	hidden := w == 0
+	if hidden != u.sidebarHidden || width != u.screenWidth {
+		u.sidebarHidden, u.screenWidth = hidden, width
 		u.updateStatusRight()
+		u.updateStatus()
 	}
 	// The gap goes away with the sidebar; a stray blank column on a terminal
 	// too narrow to show the list at all is exactly the column that terminal

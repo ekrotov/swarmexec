@@ -148,7 +148,11 @@
         you're on), a live cluster summary (<code>3 nodes · 3/3 agents</code> — the agent
         count turns yellow when some nodes have no answering agent, and red with a
         <code>— swarmexec init</code> hint when none does), the forward count and — on the Volumes tab —
-        how many volumes you have selected; at its far right it shows the client's own version. These keys work on every tab:
+        how many volumes you have selected; at its far right it shows the client's own version.
+        On a terminal narrower than 100 columns the version gives way (the <kbd>?</kbd>
+        overlay's title still names it), and if the line still does not fit the cluster
+        summary shortens to <code>3n · 3/3 ag</code>; anything beyond that is left out
+        as a whole, never cut mid-value. These keys work on every tab:
       </p>
       <div class="note">
         <strong>Changed:</strong> the contexts used to be tab&nbsp;6, and are now the

@@ -391,7 +391,7 @@ func (u *ui) buildChrome() {
 func (u *ui) buildFooter() {
 	u.help = tview.NewTextView().SetDynamicColors(true)
 	u.status = tview.NewTextView().SetDynamicColors(true)
-	u.clusterText = "[gray]cluster: …[white]"
+	u.clusterText, u.clusterShort = "[gray]cluster: …[white]", "[gray]…[white]"
 	// The status line shares its row with a right-aligned part: the version of
 	// this client, and — while the context list is hidden for lack of width —
 	// the key that brings it up. Its width follows its text (statusRightText).
@@ -1302,14 +1302,35 @@ func (u *ui) setFooter(markup string) {
 // of selected volumes. Assigned here — after `active` exists — and called by
 // the refreshers, setTab and the volume-selection toggle.
 func (u *ui) updateStatus() {
-	activeCtx, clusterText := u.activeCtx, u.clusterText
-	forwards := u.forwards
-	status := u.status
-	parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", ctxStatusLabel(activeCtx))}
-	if clusterText != "" {
-		parts = append(parts, clusterText)
+	parts := u.statusParts(u.clusterText)
+	if u.screenWidth > 0 {
+		// Narrow: the compact cluster summary, then whole parts dropped from
+		// the end — tview would otherwise cut the line mid-value.
+		budget := u.screenWidth - u.statusRightWidth - statusGap
+		if statusWidth(parts) > budget && u.clusterShort != "" {
+			parts = u.statusParts(u.clusterShort)
+		}
+		for len(parts) > 1 && statusWidth(parts) > budget {
+			parts = parts[:len(parts)-1]
+		}
 	}
-	if total, act := forwards.counts(); total > 0 {
+	u.status.SetText(statusLine(parts))
+}
+
+// statusLine joins the status parts as the line shows them.
+func statusLine(parts []string) string { return " " + strings.Join(parts, "  ·  ") }
+
+// statusWidth is the columns statusLine(parts) takes on screen.
+func statusWidth(parts []string) int { return tview.TaggedStringWidth(statusLine(parts)) }
+
+// statusParts is the status line's parts, most important first, with cluster
+// as the cluster summary.
+func (u *ui) statusParts(cluster string) []string {
+	parts := []string{fmt.Sprintf("[aqua]ctx[white] %s", ctxStatusLabel(u.activeCtx))}
+	if cluster != "" {
+		parts = append(parts, cluster)
+	}
+	if total, act := u.forwards.counts(); total > 0 {
 		if act == total {
 			parts = append(parts, fmt.Sprintf("[aqua]%d[white] fwd", total))
 		} else {
@@ -1321,18 +1342,31 @@ func (u *ui) updateStatus() {
 			parts = append(parts, note)
 		}
 	}
-	status.SetText(" " + strings.Join(parts, "  ·  "))
+	return parts
 }
 
+// statusVersionMinWidth is the narrowest terminal whose status line still
+// carries the client version; below it the version gives its columns to the
+// cluster summary (the ? overlay's title and --version still name it).
+const statusVersionMinWidth = 100
+
+// statusGap is the blank columns kept between the two ends of the status line.
+const statusGap = 2
+
 // statusRightText is the right end of the status line: the key that shows the
-// context list while it is hidden, then the client version.
+// context list while it is hidden, then the client version ("" leaves it out).
 func statusRightText(version string, ctxKey rune, sidebarHidden bool, contexts int) string {
-	var b strings.Builder
+	var parts []string
 	if sidebarHidden && contexts > 0 {
-		fmt.Fprintf(&b, "[yellow]%s[white] contexts  ·  ", keyLabel(ctxKey))
+		parts = append(parts, fmt.Sprintf("[yellow]%s[white] contexts", keyLabel(ctxKey)))
 	}
-	b.WriteString("[gray]" + tview.Escape(version) + "[white] ")
-	return b.String()
+	if version != "" {
+		parts = append(parts, "[gray]"+tview.Escape(version)+"[white]")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "  ·  ") + " "
 }
 
 // updateStatusRight redraws the right end of the status line and sizes it to
@@ -1341,9 +1375,14 @@ func (u *ui) updateStatusRight() {
 	if u.statusRight == nil || u.statusRow == nil {
 		return
 	}
-	txt := statusRightText(u.binaryVersion(), u.km.CtxFocus, u.sidebarHidden, len(u.ctxs))
+	version := u.binaryVersion()
+	if u.screenWidth > 0 && u.screenWidth < statusVersionMinWidth {
+		version = ""
+	}
+	txt := statusRightText(version, u.km.CtxFocus, u.sidebarHidden, len(u.ctxs))
 	u.statusRight.SetText(txt)
-	u.statusRow.ResizeItem(u.statusRight, tview.TaggedStringWidth(txt), 0)
+	u.statusRightWidth = tview.TaggedStringWidth(txt)
+	u.statusRow.ResizeItem(u.statusRight, u.statusRightWidth, 0)
 }
 
 // binaryVersion is this client's release as `swarmexec --version` reports it.
@@ -1456,7 +1495,8 @@ func (u *ui) showHelp() {
 	u.writeHelpSections(h, prev)
 
 	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
-	hv.SetBorder(true).SetTitle(" keybindings ")
+	// The version rides in the title: a narrow status line leaves it out.
+	hv.SetBorder(true).SetTitle(" keybindings — swarmexec " + tview.Escape(u.binaryVersion()) + " ")
 	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeHelp := ov.Close
 	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
@@ -1731,9 +1771,9 @@ func (u *ui) refreshCluster() {
 		return census{len(nodes), agents}, nil
 	}, func(c census, err error) {
 		if err != nil {
-			u.clusterText = "[red]cluster: unreachable[white]"
+			u.clusterText, u.clusterShort = "[red]cluster: unreachable[white]", "[red]unreachable[white]"
 		} else {
-			u.clusterText = clusterSummary(c.nodes, c.agents)
+			u.clusterText, u.clusterShort = clusterSummary(c.nodes, c.agents), clusterSummaryShort(c.nodes, c.agents)
 		}
 		u.updateStatus()
 	})
@@ -1758,6 +1798,19 @@ func clusterSummary(nodes, agents int) string {
 		color = "yellow"
 	}
 	return fmt.Sprintf("[aqua]%d[white] %s · [%s]%d/%d[white] agents%s", nodes, noun, color, agents, nodes, hint)
+}
+
+// clusterSummaryShort is clusterSummary for a narrow status line: "3n · 2/3
+// ag", the same colours, no init hint.
+func clusterSummaryShort(nodes, agents int) string {
+	color := "aqua"
+	switch {
+	case agents == 0 && nodes > 0:
+		color = "red"
+	case agents < nodes:
+		color = "yellow"
+	}
+	return fmt.Sprintf("[aqua]%d[white]n · [%s]%d/%d[white] ag", nodes, color, agents, nodes)
 }
 
 // refreshForwardViews repaints everything a forward's state feeds: the

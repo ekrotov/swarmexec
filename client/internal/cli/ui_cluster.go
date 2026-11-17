@@ -100,6 +100,9 @@ type clusterState struct {
 	usageBusy atomic.Bool
 
 	clusterText string // last cluster-probe summary for the footer
+	// clusterShort is the same summary, compact ("3n · 2/3 ag"), for a
+	// status line too narrow for clusterText.
+	clusterShort string
 
 	// Every tab keeps its per-cluster state itself (see perCluster): a tab
 	// owns what it shows, and this struct does not know it exists. Where the

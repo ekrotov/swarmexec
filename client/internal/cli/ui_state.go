@@ -150,6 +150,11 @@ type ui struct {
 	// sidebarHidden is true while the terminal is too narrow to show the
 	// context list unasked; the footer then says which key brings it up.
 	sidebarHidden bool
+	// screenWidth is the terminal width the root last drew at (0 before the
+	// first frame), and statusRightWidth the columns the right end of the
+	// status line takes: the status line fits its parts into what is left.
+	screenWidth      int
+	statusRightWidth int
 
 	// tabs is the tab registry, by uiTabList key (see newTabViews). A tab
 	// with a type of its own keeps its widget, its preferences and its

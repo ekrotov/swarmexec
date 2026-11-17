@@ -10,6 +10,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/resolve"
 )
 
 // What the tabs show on a small terminal (review T-13, T-17): the columns and
@@ -80,5 +83,74 @@ func TestVolumesTabKeepsSizeVisibleAt80Columns(t *testing.T) {
 	}
 	if strings.Contains(body, long.Name) {
 		t.Errorf("the long name was not capped:\n%s", body)
+	}
+}
+
+// statusUI is a UI with just the status row wired: context "default" over
+// $DOCKER_HOST, one node and no agent, as review T-17 observed it.
+func statusUI(t *testing.T) *ui {
+	t.Helper()
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
+	u := treeUI("default", nil, nil)
+	u.km = defaultKeybinds()
+	u.g = &globalFlags{version: Version{Binary: "review-e87d42c"}}
+	u.ctxs = []dockerctx.Context{{Name: "default"}, {Name: "staging"}}
+	u.sidebar = tview.NewFlex()
+	u.body = tview.NewFlex().AddItem(tview.NewBox(), 0, 1, true).AddItem(nil, 0, 0, false).AddItem(u.sidebar, 0, 0, false)
+	u.status = tview.NewTextView().SetDynamicColors(true)
+	u.statusRight = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignRight)
+	u.statusRow = tview.NewFlex().AddItem(u.status, 0, 1, false).AddItem(u.statusRight, 0, 0, false)
+	u.clusterText, u.clusterShort = clusterSummary(1, 0), clusterSummaryShort(1, 0)
+	return u
+}
+
+// T-17: at 80 columns the version goes and the cluster part shortens, every
+// value whole and a gap before the right end; at 120 the long form and the
+// version are back.
+func TestStatusLineFitsAt80And120Columns(t *testing.T) {
+	u := statusUI(t)
+	line := func(w int) string {
+		u.resizeSidebar(w)
+		return drawPrimitive(t, u.statusRow, w, 1)[0]
+	}
+
+	narrow := line(80)
+	for _, want := range []string{"ctx default ($DOCKER_HOST)", "1n · 0/1 ag  ", "c contexts"} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("80 columns lack %q: %q", want, narrow)
+		}
+	}
+	if strings.Contains(narrow, "review-e87d42c") || strings.Contains(narrow, "agents") {
+		t.Errorf("80 columns still carry the version or the long cluster part: %q", narrow)
+	}
+
+	wide := line(120)
+	for _, want := range []string{"ctx default ($DOCKER_HOST)", "1 node · 0/1 agents — swarmexec init", "review-e87d42c"} {
+		if !strings.Contains(wide, want) {
+			t.Errorf("120 columns lack %q: %q", want, wide)
+		}
+	}
+}
+
+// Whatever does not fit is dropped as a whole part, never cut mid-value:
+// with forwards and a long context name, the left text plus the right end
+// still fit the screen.
+func TestStatusLineDropsWholePartsWhenNarrow(t *testing.T) {
+	u := statusUI(t)
+	u.activeCtx = "a-rather-long-context-name-for-production"
+	for i := 0; i < 3; i++ {
+		u.forwards.add("default", resolve.Candidate{}, uint32(8080+i), 80, func() {})
+	}
+	u.resizeSidebar(80)
+	got := strings.TrimSpace(u.status.GetText(true))
+	if left := tview.TaggedStringWidth(u.status.GetText(false)); left+u.statusRightWidth > 80 {
+		t.Errorf("status %q (%d) + right %d overflow 80 columns", got, left, u.statusRightWidth)
+	}
+	if !strings.HasSuffix(got, " ag") && !strings.HasSuffix(got, " fwd") && !strings.HasSuffix(got, "production") {
+		t.Errorf("the line does not end on a whole part: %q", got)
+	}
+	u.resizeSidebar(160)
+	if got := u.status.GetText(true); !strings.Contains(got, "fwd") || !strings.Contains(got, "agents") {
+		t.Errorf("160 columns must show every part in full: %q", got)
 	}
 }
