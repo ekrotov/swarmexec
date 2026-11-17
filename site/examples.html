@@ -331,7 +331,7 @@
           <li>Treat <strong>125</strong> as a broken job, not as drift.</li>
           <li><code>--ignore</code> takes a field path, <code>*</code> for any service name, repeatable. Every ignored path is listed under <em>Not compared</em>, and a path that matched nothing is called out — a typo otherwise ignores nothing, silently.</li>
           <li><code>${VARS}</code> in the file are interpolated from the job's environment, exactly as <code>docker stack deploy</code> does — set them as the deploy would.</li>
-          <li><code>--format json</code> is the machine form (<code>differs</code>, hunks, <code>ignored</code>, <code>not_compared</code>).</li>
+          <li><code>--json</code> is the machine form (<code>differs</code>, hunks, <code>ignored</code>, <code>not_compared</code>).</li>
         </ul>
         <p class="more">More in the docs: <a href="/docs/stack"><code>stack diff</code></a> · <a href="/docs/security-scan"><code>stack deploy</code></a> · <a href="/docs/configuration#exit">exit codes</a></p>
       </article>
@@ -353,12 +353,12 @@
         <p>
           <code>wait</code> exits <strong>0</strong> with
           <code>✓ N service(s) converged in …</code>, or <strong>1</strong> with a
-          <code>✗ service: reason</code> line — on timeout, typically the scheduler's own message
+          <code>swarmexec: service: reason</code> line — on timeout, a <code>✗ service: reason</code> line per service still waited for, typically the scheduler's own message
           for a task that is not running.
         </p>
         <h3>Pitfalls</h3>
         <ul>
-          <li><code>--yes</code> means “do not ask”, not “ignore the findings”: a file with findings above informational is refused and the step fails before <code>wait</code> runs. Only <code>--force</code> deploys despite findings.</li>
+          <li><code>--yes</code> means “do not ask”, not “ignore the findings”: a file with findings above informational is refused and the step fails before <code>wait</code> runs. Only <code>--despite-findings</code> deploys despite findings.</li>
           <li>A paused update and a rollback during the wait count as <strong>failures</strong>, even though the service looks settled.</li>
           <li>Without <code>--healthy</code>, running is enough. With it, a node whose agent cannot report health counts as <em>not yet</em>, never as healthy.</li>
           <li>swarmexec only observes: it never rolls back or retries.</li>

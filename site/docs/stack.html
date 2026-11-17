@@ -179,11 +179,11 @@ swarmexec stack diff postgres.yml postgres</div>
         is listed under <em>Not compared</em>, so a green result still says what it did not
         look at, and a path that matched nothing on either side is called out, because a
         typo in an ignore list otherwise ignores nothing, silently.
-        <code>--format json</code> prints the machine form: <code>differs</code>, the hunks,
+        <code>--json</code> prints the machine form: <code>differs</code>, the hunks,
         <code>ignored</code> and <code>not_compared</code>.
       </p>
       <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
-swarmexec stack diff shop.yml --format json | jq .differs</div>
+swarmexec stack diff shop.yml --json | jq .differs</div>
       <p class="recipe-link">See the recipe: <a href="/examples#drift-ci">catch drift in CI</a>.</p>
 
       <h2 id="wait"><code>wait</code> — until a deploy has actually converged</h2>

@@ -18,6 +18,13 @@ import (
 	"swarmexec/client/internal/swarmfake"
 )
 
+// reported is what reportError prints for err.
+func reported(err error) string {
+	var b strings.Builder
+	reportError(&b, err, &globalFlags{})
+	return b.String()
+}
+
 // waitSwarm has shop_web (1/1 running, settled), shop_db (0/1, its task
 // failed) and shop_api (its update paused), all in stack shop, on one node.
 func waitSwarm() *swarmfake.Swarm {
@@ -52,20 +59,22 @@ func TestWaitRun(t *testing.T) {
 		return ce.code
 	}
 
+	// A failure is the command's error, printed with the swarmexec: prefix
+	// like any other, not a progress line of its own.
 	out, err := run("nope")
-	if exit(err) != 1 || out != "✗ nope: no such service\n" {
+	if exit(err) != 1 || out != "" || reported(err) != "swarmexec: no such service \"nope\"\n" {
 		t.Errorf("missing: %q, %v", out, err)
 	}
 
 	out, err = run("shop_api")
-	if exit(err) != 1 || out != "✗ shop_api: its update paused (task failed) — it runs a mix of old and new tasks; `docker service update shop_api` resumes it\n" {
+	if exit(err) != 1 || out != "" || reported(err) != "swarmexec: shop_api: its update paused (task failed) — it runs a mix of old and new tasks; `docker service update shop_api` resumes it\n" {
 		t.Errorf("paused: %q, %v", out, err)
 	}
 
 	// shop_web converged but has not held it for the settle time: the wait is
 	// still waiting for it too, and says so.
 	out, err = run("--timeout", "1ms", "shop_db", "shop_web")
-	if exit(err) != 1 || err.Error() != "timed out after 1ms waiting for 2 service(s)" ||
+	if exit(err) != 1 || reported(err) != "swarmexec: timed out after 1ms waiting for 2 service(s)\n" ||
 		out != "  shop_db: 0/1 running — no suitable node\n  shop_web: 1/1 running\n"+
 			"✗ shop_db: 0/1 running — no suitable node\n✗ shop_web: converged, settling (1/1 running)\n" {
 		t.Errorf("timeout: %q, %v", out, err)
@@ -107,7 +116,7 @@ func TestWaitRunConverges(t *testing.T) {
 	g := cliCluster(t, waitSwarm(), nil)
 	_, out, err := runCmd(t, newWaitCmd(g), "--stack", "shop", "shop_web", "--timeout", "1m")
 	// shop_api is in the stack, and paused: the stack fails on it.
-	if err == nil || out != "✗ shop_api: its update paused (task failed) — it runs a mix of old and new tasks; `docker service update shop_api` resumes it\n" {
+	if err == nil || out != "" || err.Error() != "shop_api: its update paused (task failed) — it runs a mix of old and new tasks; `docker service update shop_api` resumes it" {
 		t.Errorf("stack: %q, %v", out, err)
 	}
 
