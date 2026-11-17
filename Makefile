@@ -126,8 +126,8 @@ cli-docs:
 
 ## cli-docs-check: fail when site/docs/cli.html is not what the command tree renders (CI: test)
 cli-docs-check: cli-docs
-	@git diff --exit-code -- site/docs/cli.html || { \
-		echo "site/docs/cli.html is out of date with the commands: run 'make cli-docs' and commit it"; exit 1; }
+	@git diff --exit-code -- site/docs/cli.html site/docs/configuration.html || { \
+		echo "site/docs/cli.html or configuration.html is out of date with the commands / exit-code table: run 'make cli-docs' and commit it"; exit 1; }
 
 ## test / vet
 test:

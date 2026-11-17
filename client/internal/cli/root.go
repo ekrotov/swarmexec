@@ -103,7 +103,7 @@ func reportError(w io.Writer, err error, g *globalFlags) int {
 	if errors.As(err, &ae) {
 		fmt.Fprintln(w, "usage: "+ae.usage)
 	}
-	return usageExitCode
+	return exitUsage
 }
 
 // sshAuthHintFor names the way past an ssh sign-in failure on the endpoint
@@ -187,6 +187,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newConnectionHelpTopic(root))
 	registerCompletions(root, g)
 	usageOnArgErrors(root)
+	runtimeErrors(root)
 	return root
 }
 

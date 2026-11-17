@@ -62,7 +62,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := g.resolveConfig(cmd, resolveEndpoint(g.dockerContext))
 			if err != nil {
-				return &cliError{code: usageExitCode, err: err}
+				return &cliError{code: exitUsage, err: err}
 			}
 			v := buildConfigView(g, cfg)
 			if asJSON {

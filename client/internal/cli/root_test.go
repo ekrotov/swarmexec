@@ -68,8 +68,8 @@ func TestArgErrorPrintsTheUsageLine(t *testing.T) {
 		root.SetOut(io.Discard)
 		var out bytes.Buffer
 		code := reportError(&out, root.Execute(), g)
-		if code != usageExitCode {
-			t.Errorf("%v: exit %d, want %d", c.args, code, usageExitCode)
+		if code != exitUsage {
+			t.Errorf("%v: exit %d, want %d", c.args, code, exitUsage)
 		}
 		lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 		if len(lines) != 2 || !strings.HasPrefix(lines[0], "swarmexec: ") || !strings.HasPrefix(lines[1], c.usage) {
@@ -79,7 +79,7 @@ func TestArgErrorPrintsTheUsageLine(t *testing.T) {
 
 	// Any other error keeps to its one line.
 	var out bytes.Buffer
-	if code := reportError(&out, errors.New("unknown flag: --nope"), &globalFlags{}); code != usageExitCode || strings.Contains(out.String(), "usage:") {
+	if code := reportError(&out, errors.New("unknown flag: --nope"), &globalFlags{}); code != exitUsage || strings.Contains(out.String(), "usage:") {
 		t.Errorf("a flag error printed %q (exit %d)", out.String(), code)
 	}
 	if code := reportError(&out, nil, &globalFlags{}); code != 0 {

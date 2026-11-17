@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/stackfile"
 )
 
@@ -35,11 +34,11 @@ func newStackLsCmd(g *globalFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
+				return &cliError{code: exitTransport, err: err}
 			}
 			names, err := stackfile.StackNames(cmdContext(cmd), dcli)
 			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
+				return &cliError{code: exitTransport, err: err}
 			}
 			// stdout stays one name per line for scripts; an empty cluster
 			// says so on stderr, as ps does (review C-08).
@@ -69,11 +68,11 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
+				return &cliError{code: exitTransport, err: err}
 			}
 			st, err := stackfile.FromSwarm(cmdContext(cmd), dcli, args[0])
 			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
+				return &cliError{code: exitTransport, err: err}
 			}
 			doc, err := st.Document()
 			if err != nil {
@@ -84,7 +83,7 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 				return err
 			}
 			if err := writeReportFile(output, doc); err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
+				return &cliError{code: exitTransport, err: err}
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "wrote %s — %d service(s)\n", output, len(st.Services))
 			return nil
@@ -142,20 +141,20 @@ func runStackDiff(cmd *cobra.Command, g *globalFlags, f *stackDiffFlags, args []
 	}
 	dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	ctx := cmdContext(cmd)
 
 	deployed, err := stackfile.FromSwarm(ctx, dcli, name)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	file, err := stackfile.FromFile(ctx, dcli, path, name)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if f.format != "" && f.format != "text" && f.format != "json" {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("--format must be text or json, not %q", f.format)}
+		return &cliError{code: exitUsage, err: fmt.Errorf("--format must be text or json, not %q", f.format)}
 	}
 	d, err := stackfile.Compare(deployed, file, path, f.ignore...)
 	if err != nil {
@@ -173,7 +172,7 @@ func runStackDiff(cmd *cobra.Command, g *globalFlags, f *stackDiffFlags, args []
 	if !d.Empty() {
 		// Same convention as `diff` and `git diff --exit-code`: a
 		// difference is a non-zero exit, so this is usable in CI.
-		return &cliError{code: 1, silent: true}
+		return &cliError{code: exitNo, silent: true}
 	}
 	return nil
 }

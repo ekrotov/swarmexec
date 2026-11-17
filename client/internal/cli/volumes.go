@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -19,7 +20,6 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 	pb "swarmexec/internal/pb"
 )
@@ -101,7 +101,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	}
 	defer ac.Close()
 	if !validVolumeSort(f.sort) {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("invalid --sort %q (want name|nodes|used|age|size)", f.sort)}
+		return &cliError{code: exitUsage, err: fmt.Errorf("invalid --sort %q (want name|nodes|used|age|size)", f.sort)}
 	}
 	vols, errs := ac.Volumes(ctx, nodes, f.connectTimeout)
 	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
@@ -110,7 +110,7 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	if len(nodes) > 0 && len(errs) == len(nodes) {
 		// Nothing answered: an empty list here would read as "no volumes".
 		reportNodeErrors(cmd.ErrOrStderr(), errs)
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("no node answered (%d of %d unreachable): the volume list is unknown, not empty", len(errs), len(nodes))}
+		return &cliError{code: exitTransport, err: fmt.Errorf("no node answered (%d of %d unreachable): the volume list is unknown, not empty", len(errs), len(nodes))}
 	}
 	usage := ac.VolumeUsage(ctx, nodes, f.connectTimeout)
 	wantSize := f.size || f.sort == "size"
@@ -219,7 +219,7 @@ func (l volumeListing) writeTable(out io.Writer) {
 
 func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []string) error {
 	if !f.all && len(f.nodes) == 0 {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("specify --all or one/more --node")}
+		return &cliError{code: exitUsage, err: fmt.Errorf("specify --all or one/more --node")}
 	}
 	name := args[0]
 	ac, ctx, dcli, nodes, err := volumeSetup(cmd, g)
@@ -241,21 +241,20 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		}
 	}
 	if target == nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("volume %q not found on any node", name)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("volume %q not found on any node", name)}
 	}
 
 	rmNodes := target.Nodes
 	if len(f.nodes) > 0 {
 		rmNodes = filterNodes(target.Nodes, f.nodes)
 		if len(rmNodes) == 0 {
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("volume %q is not on any of the requested nodes", name)}
+			return &cliError{code: exitTransport, err: fmt.Errorf("volume %q is not on any of the requested nodes", name)}
 		}
 	}
 
 	if !f.yes {
 		if !confirm(fmt.Sprintf("Remove volume %q on %d node(s) [%s]?", name, len(rmNodes), strings.Join(nodeNames(rmNodes), ","))) {
-			fmt.Fprintln(cmd.ErrOrStderr(), "aborted")
-			return &cliError{code: session.TransportFailure, silent: true}
+			return &cliError{code: exitNo, err: errors.New("aborted")}
 		}
 	}
 
@@ -269,7 +268,7 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		}
 	}
 	if failed {
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitTransport, silent: true}
 	}
 	return nil
 }
@@ -280,19 +279,19 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (*agentcall.Client, context
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return nil, nil, nil, nil, &cliError{code: usageExitCode, err: err}
+		return nil, nil, nil, nil, &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return nil, nil, nil, nil, &cliError{code: usageExitCode, err: err}
+		return nil, nil, nil, nil, &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return nil, ctx, nil, nil, &cliError{code: session.TransportFailure, err: err}
+		return nil, ctx, nil, nil, &cliError{code: exitTransport, err: err}
 	}
 	nodes, err := resolve.New(dcli, addrModeOf(cfg)).Nodes(ctx)
 	if err != nil {
-		return nil, ctx, dcli, nil, &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
+		return nil, ctx, dcli, nil, &cliError{code: exitTransport, err: fmt.Errorf("list swarm nodes: %w", err)}
 	}
 	return agentcall.New(cfg), ctx, dcli, nodes, nil
 }
@@ -301,7 +300,7 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (*agentcall.Client, context
 // and no agent service is deployed (the most likely cause).
 func noAgentIfAllDown(ctx context.Context, dcli *client.Client, nodes []resolve.Node, errs map[string]error) error {
 	if len(nodes) > 0 && len(errs) == len(nodes) && !swarmops.AgentDeployed(ctx, dcli) {
-		return &cliError{code: session.TransportFailure, err: errNoAgent}
+		return &cliError{code: exitTransport, err: errNoAgent}
 	}
 	return nil
 }

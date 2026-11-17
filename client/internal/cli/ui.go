@@ -21,7 +21,6 @@ import (
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
 )
@@ -189,7 +188,7 @@ const (
 
 func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error {
 	if !cterm.IsTerminal(os.Stdout.Fd()) || !cterm.IsTerminal(os.Stdin.Fd()) {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
+		return &cliError{code: exitUsage, err: fmt.Errorf("ui needs an interactive terminal (use plain `ps`/`volume ls` when piping)")}
 	}
 
 	// Per-run context. It bounds what belongs to the SESSION — the forwards, the
@@ -281,14 +280,14 @@ func (u *ui) connectCluster(c *clusterState) error {
 	ep := resolveEndpoint(c.ctxOverride)
 	cfg, err := u.g.resolveConfig(u.cmd, ep)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	dcli, err := ep.connect(u.runCtx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	c.cfg = cfg
 	c.agents = agentcall.New(cfg)
@@ -508,7 +507,7 @@ func (u *ui) runScreen() error {
 	// Own the screen so we can post to the system clipboard (OSC52) on yank.
 	screen, serr := tcell.NewScreen()
 	if serr != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: init screen: %w", serr)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("ui: init screen: %w", serr)}
 	}
 	u.screen = screen
 	app.SetScreen(screen)
@@ -526,7 +525,7 @@ func (u *ui) runScreen() error {
 	defer setAskpassPrompter(nil)
 
 	if err := app.SetRoot(u.pages, true).EnableMouse(true).Run(); err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("ui: %w", err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("ui: %w", err)}
 	}
 	return nil
 }

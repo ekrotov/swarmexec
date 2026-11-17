@@ -134,7 +134,7 @@ func TestLogsRun(t *testing.T) {
 		}
 		return ce.code
 	}
-	if _, _, err := runCmd(t, newLogsCmd(g), "--min-level", "loud", "shop_web"); exit(err) != usageExitCode {
+	if _, _, err := runCmd(t, newLogsCmd(g), "--min-level", "loud", "shop_web"); exit(err) != exitUsage {
 		t.Errorf("bad level: %v", err)
 	}
 	if _, _, err := runCmd(t, newLogsCmd(g), "shop_web.9"); exit(err) != session.TransportFailure {

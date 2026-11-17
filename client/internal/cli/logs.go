@@ -17,7 +17,6 @@ import (
 	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
 )
 
@@ -86,17 +85,17 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	ctx := cmdContext(cmd)
 
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
 	ac := agentcall.New(cfg)
@@ -104,7 +103,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 
 	ep, multi, notes, err := logTargets(ctx, r, args, f)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 
 	// Optional format-aware parsing + filtering (flags override config defaults).
@@ -115,7 +114,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		f.grep,
 	)
 	if ferr != nil {
-		return &cliError{code: usageExitCode, err: ferr}
+		return &cliError{code: exitUsage, err: ferr}
 	}
 	params := logstream.Params{
 		Follow:         f.follow,
@@ -131,7 +130,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 			fmt.Fprintln(os.Stderr, "── "+n+" ──")
 		}
 		if err := logstream.StreamMany(ctx, logstream.Run{Agents: ac, Resolver: r, Params: params, Stdout: os.Stdout, Stderr: os.Stderr}, multi, colorOutput(os.Stdout), lf.wrap); err != nil {
-			return &cliError{code: session.TransportFailure, err: err}
+			return &cliError{code: exitTransport, err: err}
 		}
 		return nil
 	}
@@ -148,7 +147,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 		w.Flush()
 	}
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: explainSession(ctx, cfg, dcli, err)}
+		return &cliError{code: exitTransport, err: explainSession(ctx, cfg, dcli, err)}
 	}
 	return nil
 }

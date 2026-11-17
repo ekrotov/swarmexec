@@ -19,7 +19,6 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -46,12 +45,12 @@ func connectCluster(cmd *cobra.Command, g *globalFlags) (*clusterConn, error) {
 	ep := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, ep)
 	if err != nil {
-		return nil, &cliError{code: usageExitCode, err: err}
+		return nil, &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
 	dcli, err := ep.connect(ctx)
 	if err != nil {
-		return nil, &cliError{code: session.TransportFailure, err: err}
+		return nil, &cliError{code: exitTransport, err: err}
 	}
 	return &clusterConn{ctx: ctx, label: dockerctx.ResolveName(g.dockerContext), dcli: dcli,
 		r: resolve.New(dcli, addrModeOf(cfg)), cfg: cfg, cfgErr: cfg.Validate()}, nil
@@ -60,7 +59,7 @@ func connectCluster(cmd *cobra.Command, g *globalFlags) (*clusterConn, error) {
 // agents is the cluster's agent client; the caller closes it.
 func (c *clusterConn) agents() (*agentcall.Client, error) {
 	if c.cfgErr != nil {
-		return nil, &cliError{code: usageExitCode, err: c.cfgErr}
+		return nil, &cliError{code: exitUsage, err: c.cfgErr}
 	}
 	return agentcall.New(c.cfg), nil
 }
@@ -122,11 +121,11 @@ func runStats(cmd *cobra.Command, g *globalFlags, f *statsFlags, args []string) 
 	rows, err := swarmops.GatherStats(c.ctx, c.r, ac, func(svc string) bool { return len(wanted) == 0 || wanted[svc] },
 		swarmops.StatsPoll{ConnectTimeout: f.connectTimeout, Wait: f.wait, Interval: swarmops.StatsPollDefault})
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	if swarmops.NoAgentAnswered(rows) {
 		// Every row says "unavailable": an empty reading is not a measurement.
-		return &cliError{code: session.TransportFailure, err: errors.New("no node agent answered the stats request: the usage is unknown (swarmexec doctor shows why)")}
+		return &cliError{code: exitTransport, err: errors.New("no node agent answered the stats request: the usage is unknown (swarmexec doctor shows why)")}
 	}
 	if f.json {
 		return printJSON(cmd.OutOrStdout(), rows)
@@ -146,7 +145,7 @@ func checkServicesExist(ctx context.Context, dcli *client.Client, names []string
 	}
 	res, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	known := map[string]bool{}
 	for _, s := range res.Items {
@@ -154,7 +153,7 @@ func checkServicesExist(ctx context.Context, dcli *client.Client, names []string
 	}
 	for _, n := range names {
 		if !known[n] {
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("no service %q", n)}
+			return &cliError{code: exitTransport, err: fmt.Errorf("no service %q", n)}
 		}
 	}
 	return nil
@@ -228,7 +227,7 @@ func runStatus(cmd *cobra.Command, g *globalFlags, f *statusFlags) error {
 	}
 	ov, err := swarmops.GatherOverview(c.ctx, c.dcli, c.r, c.label, usage, nil)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	if f.json {
 		return printJSON(cmd.OutOrStdout(), ov)

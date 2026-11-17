@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -43,22 +42,22 @@ func runStackRm(cmd *cobra.Command, g *globalFlags, stack string, yes bool) erro
 	ctx := cmdContext(cmd)
 	dcli, err := newDockerClient(ctx, g.dockerContext)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	defer dcli.Close()
 	contents, err := swarmops.StackContentsOf(ctx, dcli, stack)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("read stack %s: %w", stack, err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("read stack %s: %w", stack, err)}
 	}
 	if contents.Empty() {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("nothing labelled for stack %q — nothing to remove", stack)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("nothing labelled for stack %q — nothing to remove", stack)}
 	}
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	fmt.Fprintf(out, "stack %q holds %s:\n", stack, contents.Counts())
 	writeStackContents(out, contents)
 	if !yes && !confirm(fmt.Sprintf("Remove stack %q? All its tasks stop; this cannot be undone.", stack)) {
 		fmt.Fprintln(errOut, "aborted — nothing was removed (non-interactive runs need --yes)")
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitTransport, silent: true}
 	}
 	errs := swarmops.RemoveStack(ctx, dcli, contents)
 	if len(errs) == 0 {
@@ -70,7 +69,7 @@ func runStackRm(cmd *cobra.Command, g *globalFlags, stack string, yes bool) erro
 	for _, e := range errs {
 		fmt.Fprintf(errOut, "  %s\n", e)
 	}
-	return &cliError{code: session.TransportFailure, silent: true}
+	return &cliError{code: exitTransport, silent: true}
 }
 
 // writeStackContents lists a stack's objects, one per line, in removal order.

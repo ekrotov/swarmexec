@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
 )
@@ -52,13 +52,13 @@ func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
 	}
 	dcli, err := newDockerClient(ctx, tctx.Name)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	fmt.Fprintf(out, "removing agents from Docker context %q (%s)\n", tctx.Name, hostOrDefault(tctx.Host))
 
 	svc, err := findRemovableAgent(ctx, dcli, f.serviceName)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	if svc == nil {
 		fmt.Fprintf(out, "no agent service found (looked for %q and the %s=%s label) — nothing to do\n", f.serviceName, agentRoleLabel, agentRoleValue)
@@ -70,12 +70,11 @@ func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
 		what += fmt.Sprintf(" and secret %q", agentSecretName)
 	}
 	if !f.yes && !confirm(fmt.Sprintf("Remove %s on context %q? This stops remote exec/logs/volume.", what, tctx.Name)) {
-		fmt.Fprintln(out, "aborted")
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitNo, err: errors.New("aborted")}
 	}
 
 	if _, err := dcli.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("remove service %q: %w", svc.Spec.Name, err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("remove service %q: %w", svc.Spec.Name, err)}
 	}
 	fmt.Fprintf(out, "service %q: removed\n", svc.Spec.Name)
 

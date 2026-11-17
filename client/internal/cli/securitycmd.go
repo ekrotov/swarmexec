@@ -13,7 +13,6 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -77,23 +76,23 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
 
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 
 	ac := agentcall.New(cfg)
 	defer ac.Close()
 	report, err := swarmops.GatherSecurityReport(ctx, dcli, ac, f.reportOptions(g, cfg, dockerEP.Context))
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 
 	md := report.Markdown()
@@ -102,7 +101,7 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 		return err
 	}
 	if err := writeReportFile(f.output, md); err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	// To stderr, so `-o` plus a redirect of stdout stays clean.
 	fmt.Fprintf(cmd.ErrOrStderr(), "wrote %s — %s\n", f.output, reportSummaryLine(report))

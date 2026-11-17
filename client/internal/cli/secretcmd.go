@@ -13,7 +13,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -160,35 +159,40 @@ func secretTargetPath(t string) string {
 
 func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, name string) error {
 	if err := swarmops.ValidateRotateName(name); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if f.timeout <= 0 {
-		return &cliError{code: usageExitCode, err: errors.New("--timeout must be positive")}
+		return &cliError{code: exitUsage, err: errors.New("--timeout must be positive")}
 	}
 	data, err := readRotateValue(f, cmd.InOrStdin())
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if err := swarmops.ValidateRotateValue(data); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
 	dcli, err := newDockerClient(ctx, g.dockerContext)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	plan, err := swarmops.PlanRotation(ctx, dcli, name)
 	if err != nil {
-		return &cliError{code: 1, err: err}
+		code := exitNo
+		var me *swarmops.ManagerError
+		if errors.As(err, &me) {
+			code = exitTransport // the manager did not answer, not a "no"
+		}
+		return &cliError{code: code, err: err}
 	}
 	stderr := cmd.ErrOrStderr()
 	if !f.yes {
 		if f.fromStdin || !stdinIsTerminal() {
-			return &cliError{code: usageExitCode, err: errors.New("not asking for confirmation without a terminal (stdin is the value or not a TTY) — pass --yes")}
+			return &cliError{code: exitUsage, err: errors.New("not asking for confirmation without a terminal (stdin is the value or not a TTY) — pass --yes")}
 		}
 		fmt.Fprint(stderr, rotateConfirmText(plan))
 		if !confirm(fmt.Sprintf("Rotate secret %s?", name)) {
-			return &cliError{code: 1, err: errors.New("aborted")}
+			return &cliError{code: exitNo, err: errors.New("aborted")}
 		}
 	}
 	err = swarmops.RotateSecret(ctx, dcli, name, data, swarmops.RotateOptions{
@@ -199,7 +203,7 @@ func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, n
 		if hint := swarmops.RotateResumeHint(err, "re-run `swarmexec secret rotate "+name+"`"); hint != "" {
 			err = fmt.Errorf("%w\n%s", err, hint)
 		}
-		return &cliError{code: 1, err: err}
+		return &cliError{code: exitNo, err: err}
 	}
 	fmt.Fprintf(stderr, "rotated secret %s\n", name)
 	return nil
