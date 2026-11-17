@@ -25,7 +25,12 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # Runs as root so the bind-mounted /var/run/docker.sock is writable (exec needs
 # write). Mounting the socket already grants host-root-equivalent power, so this
 # does not widen the trust boundary; the socket is never exposed to the network.
-FROM gcr.io/distroless/static-debian12
+# Pinned by digest (the multi-arch index, so any platform resolves), like the
+# Go image above is pinned by patch version: a floating base is the one thing
+# in the release path that could change between two builds of the same tag.
+# Digest as of 2026-11-17. To bump: look up the new digest of
+# gcr.io/distroless/static-debian12:latest and replace it here.
+FROM gcr.io/distroless/static-debian12:latest@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2
 COPY --from=build /agent /agent
 # Apache-2.0 §4(a)/(d): the license and attribution notice travel with the image.
 COPY LICENSE NOTICE /licenses/
