@@ -30,11 +30,11 @@ import (
 type swarmVolume = agentcall.Volume
 
 func newVolumeCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:     "volume",
 		Aliases: []string{"volumes"},
 		Short:   "List and remove volumes across the swarm",
-	}
+	})
 	cmd.AddCommand(newVolumeLsCmd(g), newVolumeRmCmd(g))
 	return cmd
 }
@@ -108,6 +108,11 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	vols, errs := ac.Volumes(ctx, nodes, f.connectTimeout)
 	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
 		return e
+	}
+	if len(nodes) > 0 && len(errs) == len(nodes) {
+		// Nothing answered: an empty list here would read as "no volumes".
+		reportNodeErrors(errs)
+		return &cliError{code: session.TransportFailure, err: fmt.Errorf("no node answered (%d of %d unreachable): the volume list is unknown, not empty", len(errs), len(nodes))}
 	}
 	usage := ac.VolumeUsage(ctx, nodes, f.connectTimeout)
 	wantSize := f.size || f.sort == "size"

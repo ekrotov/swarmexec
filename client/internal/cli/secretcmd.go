@@ -19,11 +19,11 @@ import (
 )
 
 func newSecretCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:     "secret",
 		Aliases: []string{"secrets"},
 		Short:   "Work with swarm secrets",
-	}
+	})
 	cmd.AddCommand(newSecretRotateCmd(g))
 	return cmd
 }

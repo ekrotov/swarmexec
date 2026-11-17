@@ -170,6 +170,13 @@
         non-zero if the manager is unreachable or any agent is unhealthy. A node reported
         as <code>too old (init --force)</code> runs an agent older than your client —
         see <a href="#reroll">re-rolling the agents without changing the secret</a>.
+        A node that does not answer is <code>unreachable</code>, and an
+        <code>ERROR</code> column (<code>error</code> in <code>--json</code>) says why: a
+        rejected secret, a TLS failure and a refused connection read differently there.
+        <code>doctor</code> also runs without a complete agent configuration, as on a
+        machine that has not run <code>init</code>: it reports the manager and whether the
+        agent is deployed, adds a <code>config:</code> line (<code>config_error</code>) naming
+        what is missing, skips the per-node probe and exits non-zero.
         When a newer swarmexec release exists, an <code>update:</code> line under the
         client line says so (<code>latest_release</code> in <code>--json</code>) — information
         only, it does not change the exit code; see

@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -51,6 +52,8 @@ func doctorCluster(t *testing.T, deployed, deadNode bool) *globalFlags {
 
 // `doctor` end to end: the healthy table, the unhealthy table and JSON, and
 // an unreachable manager in both forms.
+var portRE = regexp.MustCompile(`:\d{4,5}\b`)
+
 func TestDoctorOutput(t *testing.T) {
 	cases := []struct {
 		name            string
@@ -71,9 +74,9 @@ func TestDoctorOutput(t *testing.T) {
 			"client:  1.2.3 (proto 7)\n" +
 				"manager: manager-1 (2 nodes)\n" +
 				"agent:   NOT DEPLOYED — run `swarmexec init`\n\n" +
-				"NODE       AGENT        VERSION  PROTO\n" +
-				"127.0.0.1  ok           1.2.3    7\n" +
-				"127.0.0.2  unreachable  -        -\n\n" +
+				"NODE       AGENT        VERSION  PROTO  ERROR\n" +
+				"127.0.0.1  ok           1.2.3    7      -\n" +
+				"127.0.0.2  unreachable  -        -      cannot reach agent on 127.0.0.2:PORT (mTLS/connection error: connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.2:PORT: connect: connection refused\")\n\n" +
 				"⚠ some checks need attention (see above)\n", true, false},
 		{"json, node down", true, true, []string{"--json", "--connect-timeout", "2s"},
 			`{
@@ -94,7 +97,8 @@ func TestDoctorOutput(t *testing.T) {
       "node": "127.0.0.2",
       "status": "unreachable",
       "version": "-",
-      "proto": "-"
+      "proto": "-",
+      "error": "cannot reach agent on 127.0.0.2:PORT (mTLS/connection error: connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.2:PORT: connect: connection refused\")"
     }
   ]
 }
@@ -135,11 +139,12 @@ func TestDoctorOutput(t *testing.T) {
 				t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
 			}
 			out, _, err := runCmd(t, newDoctorCmd(g), c.args...)
-			got := out
+			got := portRE.ReplaceAllString(out, ":PORT")
 			if c.unreachableHost && len(got) > len(c.want) && c.want[len(c.want)-1] == ' ' {
 				got = got[:len(c.want)] // the rest is the dial error
 			}
 			if got != c.want {
+				out = got
 				t.Errorf("stdout:\n%s\nwant:\n%s", out, c.want)
 			}
 			ce, isCLI := err.(*cliError)

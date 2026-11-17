@@ -26,15 +26,14 @@ type pruneScheduleSetFlags struct {
 // examples are written with. The top-level `prune-schedule` it used to be is
 // the same command, hidden (review P-02), so scripts keep working.
 func newPruneScheduleCmd(g *globalFlags, path string) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:   "prune-schedule",
 		Short: "Show or set the cluster-wide prune schedule the agents run",
 		Long: "The agents can prune their node on a schedule: stopped containers, unused\n" +
 			"images, build cache and unused local networks by default; volumes only when\n" +
 			"added explicitly. The schedule is stored as container labels on the agent\n" +
 			"service (swarmexec.prune.*), so setting it restarts the agents one by one.",
-		Args: cobra.NoArgs,
-	}
+	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "show",
 		Short: "Show the schedule as the agent service carries it",

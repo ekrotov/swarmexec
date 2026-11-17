@@ -22,6 +22,9 @@ import (
 // many positional arguments the command accepts; a command missing from the
 // table fails the test, so a new one cannot quietly skip the question.
 var argContract = map[string][]int{
+	// Groups: runnable only to print help; a stray word is an unknown command (CLI-01).
+	"swarmexec config": {0}, "swarmexec context": {0}, "swarmexec node": {0}, "swarmexec secret": {0},
+	"swarmexec security": {0}, "swarmexec stack": {0}, "swarmexec volume": {0},
 	"swarmexec config show":              {0},
 	"swarmexec context create":           {1},
 	"swarmexec context ls":               {0},

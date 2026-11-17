@@ -19,10 +19,10 @@ import (
 // of whether the rendering is faithful, and one worth being able to run.
 
 func newStackCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:   "stack",
 		Short: "Work with deployed stacks",
-	}
+	})
 	cmd.AddCommand(newStackExportCmd(g), newStackDiffCmd(g), newStackDeployCmd(g), newStackCheckCmd(g), newStackLsCmd(g), newStackRmCmd(g))
 	return cmd
 }

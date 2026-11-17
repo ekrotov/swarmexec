@@ -160,3 +160,15 @@ func StatsRows(mine []resolve.Candidate, usage map[string]agentcall.ContainerUsa
 	}
 	return rows
 }
+
+// NoAgentAnswered reports whether rows are a reading no agent contributed to:
+// there are containers, and every one is "unavailable". Distinct from a
+// cluster that simply runs nothing, which has no rows.
+func NoAgentAnswered(rows []StatsRow) bool {
+	for _, r := range rows {
+		if r.CPU != StatsNoAgent {
+			return false
+		}
+	}
+	return len(rows) > 0
+}

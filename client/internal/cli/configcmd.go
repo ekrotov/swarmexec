@@ -17,10 +17,10 @@ import (
 )
 
 func newConfigCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:   "config",
 		Short: "Inspect the resolved client configuration",
-	}
+	})
 	cmd.AddCommand(newConfigShowCmd(g))
 	return cmd
 }

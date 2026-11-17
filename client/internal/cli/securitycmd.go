@@ -31,10 +31,10 @@ type securityFlags struct {
 }
 
 func newSecurityCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:   "security",
 		Short: "Security report of the cluster, and checks of stack files before deploying",
-	}
+	})
 	// check is stack check under the security heading (review P-02b): the one
 	// place an operator looking for "scan this file" will look.
 	cmd.AddCommand(newSecurityReportCmd(g), newStackCheckCmd(g))

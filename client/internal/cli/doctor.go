@@ -4,8 +4,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -50,6 +52,10 @@ type doctorReport struct {
 	Image         string       `json:"image,omitempty"`
 	Healthy       bool         `json:"healthy"`
 	Nodes         []doctorNode `json:"nodes,omitempty"`
+	// ConfigError is why the agents were not probed: the agent configuration
+	// is incomplete (no secret, no certificates). The rest of the report,
+	// manager and whether the agent is deployed, is still the answer.
+	ConfigError string `json:"config_error,omitempty"`
 }
 
 type doctorNode struct {
@@ -57,6 +63,10 @@ type doctorNode struct {
 	Status  string `json:"status"`
 	Version string `json:"version,omitempty"`
 	Proto   string `json:"proto,omitempty"`
+	// Error is why the node is not ok, as the agent error explanation reads:
+	// a rejected secret, a TLS failure and a refused connection all share the
+	// status "unreachable" and differ only here.
+	Error string `json:"error,omitempty"`
 }
 
 func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
@@ -65,9 +75,10 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	if err != nil {
 		return &cliError{code: usageExitCode, err: err}
 	}
-	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
-	}
+	// An incomplete agent config does not stop doctor: it is the command for
+	// exactly that situation, and "agent: NOT DEPLOYED" is the answer on a
+	// machine that has not run init yet.
+	cfgErr := cfg.Validate()
 	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
 	// Asked alongside the cluster probes; at most a 3 s wait, usually a
@@ -93,14 +104,18 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
 	}
-	ac := agentcall.New(cfg)
-	defer ac.Close()
-	results := ac.Versions(ctx, nodes, f.connectTimeout)
-
-	rows, nodesOK := doctorRows(results, g.version)
+	var rows []doctorNode
+	nodesOK, configError := true, ""
+	if cfgErr != nil {
+		nodesOK, configError = false, cfgErr.Error()
+	} else {
+		ac := agentcall.New(cfg)
+		defer ac.Close()
+		rows, nodesOK = doctorRows(ctx, ac.Versions(ctx, nodes, f.connectTimeout), g.version, ac.Explain)
+	}
 	report := doctorReport{
 		Client: g.version.Binary, Proto: g.version.Proto, LatestRelease: latest(), Manager: info.Name,
-		AgentDeployed: agentDep, Image: image, Healthy: agentDep && nodesOK, Nodes: rows,
+		AgentDeployed: agentDep, Image: image, Healthy: agentDep && nodesOK, Nodes: rows, ConfigError: configError,
 	}
 	if f.json {
 		if err := printJSON(out, report); err != nil {
@@ -136,7 +151,8 @@ func printDoctorClient(out io.Writer, binary, proto, latest string) {
 
 // doctorRows classifies each node's agent against this client; ok is false
 // when any of them needs attention.
-func doctorRows(results []agentcall.NodeVersion, v Version) (rows []doctorNode, ok bool) {
+// explain turns a node's error into the sentence the operator reads.
+func doctorRows(ctx context.Context, results []agentcall.NodeVersion, v Version, explain func(context.Context, error) error) (rows []doctorNode, ok bool) {
 	ok = true
 	rows = make([]doctorNode, 0, len(results))
 	for _, r := range results {
@@ -144,7 +160,11 @@ func doctorRows(results []agentcall.NodeVersion, v Version) (rows []doctorNode, 
 		if !nodeOK {
 			ok = false
 		}
-		rows = append(rows, doctorNode{Node: r.Node.Name, Status: st, Version: ver, Proto: proto})
+		row := doctorNode{Node: r.Node.Name, Status: st, Version: ver, Proto: proto}
+		if r.Err != nil {
+			row.Error = oneLine(explain(ctx, r.Err).Error())
+		}
+		rows = append(rows, row)
 	}
 	return rows, ok
 }
@@ -164,11 +184,29 @@ func printDoctorTable(out io.Writer, r doctorReport, swarmNodes int) {
 		fmt.Fprintln(out, "agent:   NOT DEPLOYED — run `swarmexec init`")
 	}
 
+	if r.ConfigError != "" {
+		fmt.Fprintf(out, "config:  agent configuration incomplete, agents not probed: %s\n", r.ConfigError)
+	}
+
 	fmt.Fprintln(out)
 	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "NODE\tAGENT\tVERSION\tPROTO")
+	// The ERROR column appears only when some node has one, so a healthy
+	// table stays as narrow as it was.
+	withErr := false
 	for _, row := range r.Nodes {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", row.Node, row.Status, orDash(row.Version), orDash(row.Proto))
+		withErr = withErr || row.Error != ""
+	}
+	head := "NODE\tAGENT\tVERSION\tPROTO"
+	if withErr {
+		head += "\tERROR"
+	}
+	fmt.Fprintln(w, head)
+	for _, row := range r.Nodes {
+		line := fmt.Sprintf("%s\t%s\t%s\t%s", row.Node, row.Status, orDash(row.Version), orDash(row.Proto))
+		if withErr {
+			line += "\t" + orDash(row.Error)
+		}
+		fmt.Fprintln(w, line)
 	}
 	_ = w.Flush()
 
@@ -178,4 +216,13 @@ func printDoctorTable(out io.Writer, r doctorReport, swarmNodes int) {
 		return
 	}
 	fmt.Fprintln(out, "⚠ some checks need attention (see above)")
+}
+
+// oneLine keeps a table cell to one line: the first line of an explanation
+// that may carry a hint on the next.
+func oneLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }

@@ -17,11 +17,11 @@ import (
 // on-disk format, so contexts created here are interchangeable with the docker
 // CLI's. This lets an operator manage contexts without docker installed at all.
 func newContextCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:     "context",
 		Aliases: []string{"ctx"},
 		Short:   "Manage Docker contexts used for the manager API",
-	}
+	})
 	cmd.AddCommand(
 		newContextCreateCmd(),
 		newContextLsCmd(),
