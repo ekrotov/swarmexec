@@ -258,6 +258,17 @@
         autocomplete (networks, secrets, placement) a single-line input — <kbd>Enter</kbd>
         confirms in both.
       </p>
+      <p>
+        <strong>If the service changed while the editor was open.</strong> Each editor
+        remembers the service's version from the moment it loaded. If a CI deploy or
+        another operator changed the service meanwhile, applying is <strong>refused</strong>
+        — nothing is written — with
+        <em>service “NAME” was changed by someone else since you opened this editor
+        (version 5, now 9) — nothing was written</em>. Your staged entries stay on
+        screen, so you can copy them (<kbd>y</kbd>), close the editor and reopen it to
+        load the current values, then apply again. Without this check the apply would
+        have rolled the other change back unnoticed.
+      </p>
 
       <h2 id="env-editor">The env editor</h2>
       <p>
