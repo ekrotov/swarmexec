@@ -143,7 +143,7 @@
           <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>what deploying a stack file would change / what the deploy check finds — nothing is deployed</td><td><code>enable</code> on every service of the file</td></tr>
           <tr><td><code>security_report</code></td><td>the <a href="/docs/security-scan#securityreport">security report</a>, limited to the visible services and what they use</td><td><code>--allow report</code></td></tr>
           <tr><td><code>doctor</code></td><td>manager and agent health, as <code>doctor</code></td><td>—</td></tr>
-          <tr><td><code>exec_run</code></td><td>one command, no TTY, no stdin, with a timeout and an output cap</td><td><code>exec</code></td></tr>
+          <tr><td><code>exec_run</code></td><td>one command, no TTY, no stdin, with a timeout (<code>timeout_seconds</code>, default 30, at most 300; a command still running then comes back as “the command did not finish within …”) and an output cap</td><td><code>exec</code></td></tr>
         </tbody>
       </table></div>
 
