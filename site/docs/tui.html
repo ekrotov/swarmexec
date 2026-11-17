@@ -166,7 +166,7 @@
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the key-hint line of the footer only has room for the most used keys</td></tr>
+          <tr><td><kbd>?</kbd></td><td>open the keybindings overlay — the complete, live key reference (it is generated from your keymap, so remapped keys show correctly); the key-hint line of the footer only has room for the most used keys. It works in every overlay too — a detail view, a list editor, the prune dialog, a log view — and opens there on <em>that</em> overlay's own keys, read off its footer, before everything else. On a tab it opens on that tab's section, then the other tabs, with Global last; the box grows with the terminal, and long descriptions wrap under themselves, so the key column stays readable. Where you are typing (an input field, the vim editors, a shell) <kbd>?</kbd> is just a character; the vim editors' <kbd>?</kbd> opens their own editor help</td></tr>
           <tr><td><kbd>Tab</kbd></td><td>cycle to the next tab</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>jump to Stacks/Services / Volumes / Forwards / Networks / Secrets / Nodes / Configs</td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move down / up (also <kbd>↓</kbd> <kbd>↑</kbd>)</td></tr>
@@ -180,8 +180,9 @@
       </table></div>
       <p>
         An overlay never gives <kbd>r</kbd> or <kbd>m</kbd> a different meaning: in a
-        detail view they do nothing (the log viewer toggles the mouse with <kbd>m</kbd>,
-        like the tabs). The detail actions that used to sit on them moved to capitals —
+        detail view they do nothing (both log viewers toggle the mouse with <kbd>m</kbd>,
+        like the tabs — with whatever key <code>toggle_mouse</code> is bound to, which their
+        footers name). The detail actions that used to sit on them moved to capitals —
         <kbd>R</kbd> rotates in the secret detail, <kbd>M</kbd> measures in the node
         detail. The vim editors are the exception, as for every letter.
       </p>
@@ -281,7 +282,8 @@
         bottom — refreshing while open and colour-coded by level (red = error, yellow =
         warn, gray = debug). Long lines wrap, so the cause at the end of an error
         stays readable; <kbd>w</kbd> turns wrapping off and on. <kbd>↑</kbd>/<kbd>↓</kbd> scroll;
-        <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. It floats over the tab
+        <kbd>m</kbd> toggles the mouse, as on the tabs, so your terminal can select a
+        line to paste into a bug report; <kbd>Esc</kbd>, <kbd>q</kbd> or <kbd>`</kbd> close it. It floats over the tab
         like every other overlay, so the footer with these keys stays visible. This is the TUI's window
         onto the same logs that go to the log file, since the terminal itself can't show
         them while the UI is drawing.
@@ -318,12 +320,18 @@ node_edit_labels: l    node_availability: a    node_prune: P    node_prune_sched
 secret_delete: X secret_new: n
 forward_stop: X  forward_copy_url: o</div>
       <p>
-        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. They used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
+        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. The fixed <kbd>d</kbd> that <em>detaches</em> a network
+        or secret from a service (members view, secret detail) is red too: it reads like
+        bookkeeping and is a rolling update. The four delete keys used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
       </p>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two
         actions bound to the same key on one tab each fall back to the default, and the
-        UI shows the warnings once on startup.
+        UI shows the warnings once on startup. The same goes for an action bound to a key
+        a detail view that also answers to it keeps for itself — <code>node_prune: M</code>
+        would prune from the Nodes tab but measure in the node detail, so it is refused
+        (the node detail's <kbd>M</kbd>, <kbd>l</kbd> and <kbd>i</kbd>; the <kbd>i</kbd> that
+        closes the context and forward details).
       </p>
       <p>
         <code>quit</code> and <code>copy</code> also apply inside every dialog — the

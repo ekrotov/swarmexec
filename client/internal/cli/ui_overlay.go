@@ -33,6 +33,7 @@ type overlay struct {
 	focus   tview.Primitive // what show focused, to give it back after a switch
 	release func()          // the refresh entry
 	restore func()          // the footer, if this overlay took it
+	help    string          // its footer keys as last set, which ? lists first
 	once    sync.Once
 }
 
@@ -61,7 +62,7 @@ var sessionPages = map[string]bool{
 // to another one that takes focus itself, so Close does not yank focus back for
 // an instant on the way.
 func (u *ui) overlayFor(name string, back tview.Primitive, help string) *overlay {
-	o := &overlay{u: u, name: name, back: back, release: u.markOverlay(name)}
+	o := &overlay{u: u, name: name, back: back, help: help, release: u.markOverlay(name)}
 	if help != "" {
 		_, o.restore = u.footerTakeover(help)
 	}
@@ -141,7 +142,10 @@ func (u *ui) refocusTopOverlay() {
 
 // setHelp updates the footer keys while the overlay is open — for the few whose
 // keys change with what is selected.
-func (o *overlay) setHelp(markup string) { o.u.setFooter(markup) }
+func (o *overlay) setHelp(markup string) {
+	o.help = markup
+	o.u.setFooter(markup)
+}
 
 // Close undoes the four steps in the order that keeps the screen honest: give
 // the footer back before the page goes, take the page away before moving focus

@@ -207,7 +207,7 @@ func (t *treeTab) helpSection(h *helpWriter) {
 	h.line(kl(km.Logs), "logs (container, service, or a whole stack)")
 	h.line(kl(km.ContainerInspect), "inspect: service/task detail + editors")
 	h.line(kl(km.Fold)+"/"+kl(km.Unfold), "fold / unfold")
-	h.line(kl(km.Forward), "port-forward the task under the cursor (form: container port, local port, address; Enter forwards from any field)")
+	h.line(kl(km.Forward), "port-forward the task under the cursor")
 	h.line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	h.line(kl(km.StackGroup), "group services by stack / flat list")
 	h.line(kl(km.StackFile), "stack file: export the stack, or compare one against it")

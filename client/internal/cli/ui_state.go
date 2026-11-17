@@ -153,7 +153,7 @@ type ui struct {
 	footerBase   string       // what the footer's owner wants shown; a flash returns to THIS
 	savedHelp    string       // footer help saved while search is open
 	searchMode   string       // the tab the "/" bar filters (a tabSearcher)
-	mouseEnabled bool         // mirrors app.EnableMouse; toggled by 'm'
+	mouseEnabled bool         // mirrors app.EnableMouse; toggled by the toggle_mouse key
 	screen       tcell.Screen // owned screen, for OSC52 clipboard on yank
 
 	// overlays names every overlay currently open — by its page name, which is

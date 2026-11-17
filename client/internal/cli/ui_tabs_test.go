@@ -52,7 +52,7 @@ func TestEveryTabIsRegistered(t *testing.T) {
 		}
 		h := &helpWriter{}
 		v.helpSection(h)
-		if !strings.Contains(h.b.String(), "[aqua]") {
+		if !strings.Contains(h.String(), "[aqua]") {
 			t.Errorf("%s: no section in the help overlay", tab.key)
 		}
 	}
@@ -77,27 +77,27 @@ func TestTreeFooterNamesGroupAndStackFile(t *testing.T) {
 	}
 }
 
-// The "?" overlay lists the tabs in tab-bar order, each once.
+// The "?" overlay starts with the active tab's section, lists the other tabs
+// in tab-bar order, each once, and ends with Global.
 func TestHelpOverlayFollowsTheTabOrder(t *testing.T) {
 	u := tabsUI()
+	u.active = "nodes"
 	u.showHelp()
 	_, front := u.pages.GetFrontPage()
 	var text string
-	var find func(p tview.Primitive)
-	find = func(p tview.Primitive) {
-		switch w := p.(type) {
-		case *tview.TextView:
-			text = w.GetText(false)
-		case *centeredBox:
-			find(w.inner)
+	if box, ok := front.(*centeredBox); ok {
+		if hv, ok := box.inner.(*helpView); ok {
+			text = hv.h.String()
 		}
 	}
-	find(front)
 	if text == "" {
 		t.Fatal("no help text found")
 	}
+	if strings.Count(text, "[aqua]Nodes") != 1 {
+		t.Error("the active tab's section must appear once")
+	}
 	last := -1
-	for _, title := range []string{"Global", "Stacks/Services", "Service inspect", "Volumes", "Forwards", "Networks", "Secrets", "Nodes", "Configs", "Contexts (sidebar", "Log view"} {
+	for _, title := range []string{"Nodes", "Stacks/Services", "Service inspect", "Volumes", "Forwards", "Networks", "Secrets", "Configs", "Contexts (sidebar", "Log view", "Client log", "Global"} {
 		i := strings.Index(text, "[aqua]"+title)
 		if i < 0 {
 			t.Fatalf("help lacks section %q", title)

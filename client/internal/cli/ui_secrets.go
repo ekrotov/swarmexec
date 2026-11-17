@@ -67,7 +67,8 @@ func (t *secretsTab) helpSection(h *helpWriter) {
 	km := t.u.km
 	h.sec("Secrets")
 	h.line("Enter / i", "details")
-	h.line("  a · d", "in details: attach to · detach from a service")
+	h.line("  a", "in details: attach to a service")
+	h.danger("  d", "in details: detach from a service (rolling update)")
 	h.line("  R", "in details: rotate — new content, same name (services restart twice)")
 	h.line(keyLabel(km.SecNew), "new (vim editor, :r file)")
 	h.danger(keyLabel(km.SecDelete), "delete")
@@ -122,7 +123,7 @@ func (t *secretsTab) showDetail(s swarmops.Secret) {
 		init = append(init, swarmops.NetService{Name: name})
 	}
 	d.tv.SetText(secretDetailText(s, init, true))
-	d.ov = u.overlayFor(pageSecDetail, t.table, footerKeys("a", "attach", "d", "detach", "R", "rotate", "j/k", "scroll", "Esc", "back"))
+	d.ov = u.overlayFor(pageSecDetail, t.table, footerKeys("a", "attach", dangerKey("d"), "detach", "R", "rotate", "j/k", "scroll", "Esc", "back"))
 	d.tv.SetInputCapture(d.keys)
 	height := min(11+len(s.Labels)+len(s.Services), 24)
 	d.ov.show(centered(d.tv, 72, height), d.tv)
