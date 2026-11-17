@@ -89,6 +89,15 @@ func execSwarm() *swarmfake.Swarm {
 	}
 }
 
+// agentService is the global agent service `init` deploys (named, and labelled
+// with its role).
+func agentService() swarm.Service {
+	s := swarm.Service{ID: "svc-agent"}
+	s.Spec.Name = defaultServiceNm
+	s.Spec.Labels = map[string]string{agentRoleLabel: agentRoleValue}
+	return s
+}
+
 // `exec` end to end: the target is resolved on the manager, the command and
 // its options reach the agent, stdin goes through, the remote exit code is
 // the command's.
