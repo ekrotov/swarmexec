@@ -135,16 +135,38 @@ func taskHoldsResources(t swarm.Task) bool {
 // SetNodeAvailability moves a node between active / pause / drain. Read-modify-
 // write on the node spec like SetNodeLabels; applies immediately (nodes have no
 // rolling update). Draining reschedules the node's tasks elsewhere.
-func SetNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID string, availability swarm.NodeAvailability) error {
-	nodeRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
-	node := nodeRes.Node
+//
+// loaded is the node's Version from when the caller read it (NodeInfo.Version);
+// the write is refused with a *ConflictError if the node changed since (KOR-05).
+func SetNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID string, loaded swarm.Version, availability swarm.NodeAvailability) error {
+	return updateNode(ctx, dcli, nodeID, loaded, func(spec *swarm.NodeSpec) { spec.Availability = availability })
+}
+
+// updateNode is the node read-modify-write: inspect, refuse when the version
+// moved since the caller's read, mutate the spec, update with the loaded
+// version.
+func updateNode(ctx context.Context, dcli swarmapi.Client, nodeID string, loaded swarm.Version, mutate func(spec *swarm.NodeSpec)) error {
+	res, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	if err != nil {
 		return err
 	}
+	node := res.Node
+	name := node.Description.Hostname
+	if name == "" {
+		name = nodeID
+	}
+	if node.Version.Index != loaded.Index {
+		return &ConflictError{Kind: "node", Name: name, Loaded: loaded.Index, Current: node.Version.Index}
+	}
 	spec := node.Spec
-	spec.Availability = availability
-	_, err = dcli.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{Version: node.Version, Spec: spec})
-	return err
+	mutate(&spec)
+	if _, err := dcli.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{Version: loaded, Spec: spec}); err != nil {
+		if c := asConflict("node", name, err); c != err {
+			return c
+		}
+		return fmt.Errorf("update node %s: %w", nodeID, err)
+	}
+	return nil
 }
 
 // ListNodes returns the cluster's nodes with their running-task counts.
@@ -172,17 +194,8 @@ func VolumeCountsByNode(vols []agentcall.Volume) map[string]int {
 }
 
 // SetNodeLabels replaces a node's labels via NodeUpdate (read-modify-write on the
-// node spec). Applies immediately — nodes have no rolling update.
-func SetNodeLabels(ctx context.Context, dcli swarmapi.Client, nodeID string, labels map[string]string) error {
-	nRes, err := dcli.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
-	n := nRes.Node
-	if err != nil {
-		return err
-	}
-	spec := n.Spec
-	spec.Annotations.Labels = labels
-	if _, err := dcli.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{Version: n.Version, Spec: spec}); err != nil {
-		return fmt.Errorf("update node %s: %w", nodeID, err)
-	}
-	return nil
+// node spec). Applies immediately — nodes have no rolling update. loaded is the
+// node's Version from when the caller read it, as for SetNodeAvailability.
+func SetNodeLabels(ctx context.Context, dcli swarmapi.Client, nodeID string, loaded swarm.Version, labels map[string]string) error {
+	return updateNode(ctx, dcli, nodeID, loaded, func(spec *swarm.NodeSpec) { spec.Annotations.Labels = labels })
 }

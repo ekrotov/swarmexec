@@ -418,7 +418,7 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 		}
 	}
 	if len(f.labelAdd) > 0 || len(f.labelRm) > 0 {
-		if err := swarmops.SetNodeLabels(c.ctx, c.dcli, n.ID, labels); err != nil {
+		if err := swarmops.SetNodeLabels(c.ctx, c.dcli, n.ID, n.Version, labels); err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
 		}
 		fmt.Fprintf(out, "%s: labels %s\n", n.Hostname, labelsText(labels))
@@ -436,7 +436,7 @@ func (c *clusterConn) setAvailability(out, errOut io.Writer, n swarmops.NodeInfo
 			return &cliError{code: session.TransportFailure, silent: true}
 		}
 	}
-	if err := swarmops.SetNodeAvailability(c.ctx, c.dcli, n.ID, to); err != nil {
+	if err := swarmops.SetNodeAvailability(c.ctx, c.dcli, n.ID, n.Version, to); err != nil {
 		return &cliError{code: session.TransportFailure, err: fmt.Errorf("set %s to %s: %w", n.Hostname, to, err)}
 	}
 	fmt.Fprintf(out, "%s: availability %s\n", n.Hostname, to)
