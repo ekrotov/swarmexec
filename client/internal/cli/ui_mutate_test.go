@@ -110,9 +110,17 @@ func TestQuitAsksWhileAWriteRuns(t *testing.T) {
 	if !strings.Contains(text, "midway") {
 		t.Errorf("the dialog must say what quitting does:\n%s", text)
 	}
-	sendSpecial(t, u, tcell.KeyEscape)
+	// Enter must not quit: the cursor sits on Cancel, because this question
+	// abandons work in flight rather than undoing something visible (NEB-05).
+	sendSpecial(t, u, tcell.KeyEnter)
 	waitPageGone(t, u, pageConfirm)
 	onLoop(t, u, func() {}) // the loop is still running: nothing quit
+
+	onLoop(t, u, func() { u.quit() })
+	waitPageText(t, u, pageConfirm, "Quit anyway")
+	sendSpecial(t, u, tcell.KeyEscape)
+	waitPageGone(t, u, pageConfirm)
+	onLoop(t, u, func() {})
 	close(p.release)
 }
 
