@@ -388,7 +388,7 @@ func (r *Resolver) resolveTaskID(ctx context.Context, id string) (*Endpoint, boo
 	if err != nil {
 		return nil, false, err
 	}
-	c, err := r.taskToCandidate(ctx, task)
+	c, err := r.taskToCandidate(ctx, task, nil)
 	if err != nil {
 		return nil, false, err
 	}
@@ -455,7 +455,7 @@ func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) 
 			switch len(match) {
 			case 0:
 			case 1:
-				c, err := r.taskToCandidate(ctx, match[0])
+				c, err := r.taskToCandidate(ctx, match[0], nil)
 				if err != nil {
 					return nil, err
 				}
@@ -510,12 +510,16 @@ func (r *Resolver) candidatesForService(ctx context.Context, svc *swarm.Service)
 	if err != nil {
 		return nil, err
 	}
+	nodes, err := r.nodeIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cands []Candidate
 	for _, t := range tasks {
 		if containerID(t) == "" {
 			continue // task scheduled but container not up yet
 		}
-		c, err := r.taskToCandidate(ctx, t)
+		c, err := r.taskToCandidate(ctx, t, nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -553,6 +557,10 @@ func (r *Resolver) LastExited(ctx context.Context, service string, slot int) (ca
 	if len(tasks) > 0 {
 		reason = taskReason(tasks[0])
 	}
+	nodes, err := r.nodeIndex(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	seen := map[string]bool{}
 	for _, t := range tasks {
 		if slot > 0 && t.Slot != slot {
@@ -566,7 +574,7 @@ func (r *Resolver) LastExited(ctx context.Context, service string, slot int) (ca
 			continue
 		}
 		seen[key] = true
-		c, err := r.taskToCandidate(ctx, t)
+		c, err := r.taskToCandidate(ctx, t, nodes)
 		if err != nil {
 			return nil, "", err
 		}
@@ -671,12 +679,16 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 	if err != nil {
 		return nil, err
 	}
+	nodes, err := r.nodeIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cands []Candidate
 	for _, t := range tasks {
 		if containerID(t) == "" {
 			continue
 		}
-		c, err := r.taskToCandidate(ctx, t)
+		c, err := r.taskToCandidate(ctx, t, nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -890,11 +902,33 @@ func servicePorts(ports []swarm.PortConfig) string {
 	return strings.Join(out, ", ")
 }
 
-func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidate, error) {
-	nodeRes, err := r.cli.NodeInspect(ctx, t.NodeID, client.NodeInspectOptions{})
-	node := nodeRes.Node
+// nodeIndex lists every node once, by ID. A read that turns many tasks into
+// candidates takes this single request instead of inspecting each task's node:
+// 300 containers on 5 nodes were 300 requests per topology refresh.
+func (r *Resolver) nodeIndex(ctx context.Context) (map[string]swarm.Node, error) {
+	res, err := r.cli.NodeList(ctx, client.NodeListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("inspect node %s: %w", t.NodeID, err)
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	idx := make(map[string]swarm.Node, len(res.Items))
+	for _, n := range res.Items {
+		idx[n.ID] = n
+	}
+	return idx, nil
+}
+
+// taskToCandidate describes a task's container and node. nodes is the
+// nodeIndex of a caller converting several tasks; nil (a single task) inspects
+// just that node. A node the index lacks falls back to an inspect, which
+// reports it as the manager does.
+func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task, nodes map[string]swarm.Node) (*Candidate, error) {
+	node, ok := nodes[t.NodeID]
+	if !ok {
+		nodeRes, err := r.cli.NodeInspect(ctx, t.NodeID, client.NodeInspectOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("inspect node %s: %w", t.NodeID, err)
+		}
+		node = nodeRes.Node
 	}
 	c := &Candidate{
 		Slot:        t.Slot,
