@@ -1,0 +1,39 @@
+# Per-file coverage floors, enforced by ci/cover-floors.sh in `make cover`
+# (TST-02). "<path in the repo> <minimum statement coverage in percent>".
+#
+# These are the files where a silent drop to 0 % hurts: the commands that
+# reach into a container or delete things (exec, port-forward, down, volume
+# rm, stack rm, node prune/drain, secret rotate, stack deploy), the code
+# they stand on, and the agent handlers on the other end. The overall gate
+# (COVER_MIN) averages them away.
+#
+# Each floor sits a few points below what the file measured when it was set.
+# Raise it when the tests grow; never lower it to get a change through. A
+# listed file that is renamed or deleted fails the check until this list
+# follows.
+
+# Commands that exec, forward or delete.
+client/internal/cli/exec.go            70
+client/internal/cli/portforward.go     85
+client/internal/cli/down.go            85
+client/internal/cli/volumes.go         85
+client/internal/cli/stackrm.go         90
+client/internal/cli/nodecmd.go         85
+client/internal/cli/secretcmd.go       90
+client/internal/cli/prompt.go          70
+client/internal/cli/init.go            78
+client/internal/cli/logs.go            80
+client/internal/cli/endpoint.go        75
+client/internal/cli/terminal.go        65
+
+# What they stand on.
+client/internal/resolve/resolve.go     80
+client/internal/session/session.go     70
+client/internal/swarmops/secretrotate.go  85
+client/internal/swarmops/stackremove.go   75
+client/internal/stackfile/deploy.go    70
+
+# The agent's side of exec, port-forward and volumes.
+agent/internal/server/exec.go          85
+agent/internal/server/forward.go       80
+agent/internal/server/volumes.go       85
