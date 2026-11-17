@@ -212,15 +212,25 @@ type Resolver struct {
 	cli      DockerClient
 	addrMode AddrMode
 
-	// Raft peer addresses by node ID, fetched once per Resolver and used to
-	// recover the address of a node whose Status.Addr is unusable. See peerAddr.
-	peersOnce sync.Once
-	peers     map[string]string
+	// Raft peer addresses by node ID, used to recover the address of a node
+	// whose Status.Addr is unusable. See peerAddr.
+	peersMu     sync.Mutex
+	peers       map[string]string
+	peersAt     time.Time // when peers was fetched
+	peersFailAt time.Time // last failed fetch; zero after a success
+	peersRetry  time.Duration
 }
+
+// How long a fetched raft peer list is trusted, and how long a failed fetch
+// is left alone before the next attempt.
+const (
+	peersTTL   = 5 * time.Minute
+	peersRetry = 5 * time.Second
+)
 
 // New builds a Resolver.
 func New(cli DockerClient, mode AddrMode) *Resolver {
-	return &Resolver{cli: cli, addrMode: mode}
+	return &Resolver{cli: cli, addrMode: mode, peersRetry: peersRetry}
 }
 
 var slotRe = regexp.MustCompile(`^(.+)\.(\d+)$`)
@@ -886,23 +896,36 @@ func (r *Resolver) dialHost(ctx context.Context, node swarm.Node) string {
 // there — which covers every node that can report "0.0.0.0", since that is a
 // property of the leader and leaders are always managers.
 //
-// The list is fetched at most once per Resolver: it costs one Info call, and a
-// Resolver is short-lived (one command), so this never serves a stale address
-// across invocations.
+// The list costs one Info call, so it is cached — but only a success is: a
+// failed lookup (the caller's context was cancelled by a view switch, the
+// manager hiccuped) is retried after peersRetry rather than blanking the
+// addresses for the whole session, which the TUI and MCP keep one Resolver
+// for. A cached list is refreshed after peersTTL so a long session notices
+// changed manager addresses. The call runs on its own bounded context so it
+// does not die with the request that happened to trigger it.
 func (r *Resolver) peerAddr(ctx context.Context, nodeID string) string {
-	r.peersOnce.Do(func() {
-		res, err := r.cli.Info(ctx, client.InfoOptions{})
-		info := res.Info
+	r.peersMu.Lock()
+	defer r.peersMu.Unlock()
+	now := time.Now()
+	switch {
+	case r.peers != nil && now.Sub(r.peersAt) < peersTTL:
+	case !r.peersFailAt.IsZero() && now.Sub(r.peersFailAt) < r.peersRetry:
+	default:
+		ictx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		res, err := r.cli.Info(ictx, client.InfoOptions{})
+		cancel()
 		if err != nil {
-			return // leaves r.peers nil; lookups below return ""
+			r.peersFailAt = now // keep any older list; lookups below use it
+			break
 		}
-		r.peers = make(map[string]string, len(info.Swarm.RemoteManagers))
-		for _, p := range info.Swarm.RemoteManagers {
+		peers := make(map[string]string, len(res.Info.Swarm.RemoteManagers))
+		for _, p := range res.Info.Swarm.RemoteManagers {
 			if h := hostOnly(p.Addr); usableAddr(h) {
-				r.peers[p.NodeID] = h
+				peers[p.NodeID] = h
 			}
 		}
-	})
+		r.peers, r.peersAt, r.peersFailAt = peers, now, time.Time{}
+	}
 	return r.peers[nodeID]
 }
 
