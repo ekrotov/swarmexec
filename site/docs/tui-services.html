@@ -163,8 +163,32 @@
         The action menu offers <strong>logs</strong>, <strong>bash</strong>,
         <strong>sh</strong>, <strong>shell as user…</strong> (prompts for a user/UID,
         like <code>docker exec -u</code>, for images whose default user lacks the tools
-        or permissions you need) and <strong>port forward</strong> (unavailable shells are
-        greyed out after a probe). In the search bar, <kbd>Enter</kbd> keeps the filter
+        or permissions you need), <strong>port forward</strong> (unavailable shells are
+        greyed out after a probe), and three container actions:
+      </p>
+      <ul>
+        <li><strong>inspect container (node-local)</strong> &mdash; the real
+          <code>docker container inspect</code> of the running container, fetched from
+          its node's agent: state, exit code, OOM kill, restart count, the last
+          <strong>health probes with their output</strong>, the container's own
+          network endpoints (IP, MAC, aliases) and mounts, in the same overlay as
+          <kbd>i</kbd> (table / stats / raw JSON). <kbd>i</kbd> on the tree shows the
+          manager's task inspect, which cannot see any of that. The raw JSON includes the
+          container's environment; the summary does not.</li>
+        <li><strong>copy container id</strong> &mdash; the full id to the clipboard (OSC52,
+          like <kbd>y</kbd>).</li>
+        <li><span class="tc-red"><strong>kill task (swarm reschedules it)</strong></span>
+          &mdash; after a confirm, the agent sends the container <code>SIGKILL</code>; Swarm
+          sees the task fail and starts a replacement per the service's restart policy.
+          The answer to &ldquo;replica 2 hangs&rdquo; without a force-update of the whole
+          service. Only swarm task containers can be killed.</li>
+      </ul>
+      <p>
+        Inspect and kill need an agent from the release that introduced them; an older
+        agent answers with <em>agent is older than this client</em> &mdash; update it from
+        the Nodes tab or with <code>swarmexec init --force</code>. A
+        <a href="/docs/authentication#policy">policy</a> can refuse them separately
+        (actions <code>inspect</code> and <code>kill</code>). In the search bar, <kbd>Enter</kbd> keeps the filter
         and returns to the list; <kbd>Esc</kbd> clears the filter and closes the bar.
       </p>
 
