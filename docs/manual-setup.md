@@ -467,7 +467,7 @@ and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),
   structured JSON line (no stdin/stdout payloads). Ship `audit-dest` somewhere
   durable.
 - **Certs are external.** Rotate by issuing new certs and redeploying with
-  versioned secrets (`update_config: start-first` keeps a task serving). See the
+  versioned secrets (`update_config: stop-first` — the host-mode port allows one task per node — so each node's agent is briefly down while it rolls). See the
   rotation section in [`agent/README.md`](../agent/README.md).
 
 ---
