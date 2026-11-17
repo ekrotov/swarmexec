@@ -27,6 +27,9 @@ scene: health, exec, port-forward and `logs -f`.
 - **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarm-exec.cloud-surfers.net/docs/authentication)
 
 Apache-2.0, self-hosted, no telemetry, no node limit. Docker Engine 19.03 or newer.
+The client asks swarm-exec.cloud-surfers.net/latest.json at most once a day
+whether a newer release exists, sending nothing about you or your cluster;
+`ui.check_updates: false` turns it off.
 
 Whole workflows — debugging a crash-looping service, shelling into one replica,
 gating a deploy in CI — are in the [recipes](https://swarm-exec.cloud-surfers.net/examples),

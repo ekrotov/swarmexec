@@ -152,6 +152,14 @@
         The agent image is public on Docker Hub as
         <a href="https://hub.docker.com/r/logleio/swarmexec-agent" data-umami-event="dockerhub"><code>logleio/swarmexec-agent</code></a>.
       </p>
+      <p id="updates">
+        <strong>Updates:</strong> when a newer release is out, the TUI's status line and
+        <code>swarmexec doctor</code> say so; update the way you installed (the script,
+        <code>brew upgrade</code>, <code>scoop update</code> or a new download). The
+        client learns of it from this site at most once a day, sending nothing about you
+        or your cluster; <a href="/docs/configuration#check-updates"><code>ui.check_updates: false</code></a>
+        turns that off.
+      </p>
 
       <h3 id="completion">Shell completion</h3>
       <p>
