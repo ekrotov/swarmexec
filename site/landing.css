@@ -117,6 +117,11 @@ main { display: block; }
 }
 .lead { font-size: 1.18rem; line-height: 1.5; margin: 0; max-width: 38em; }
 .lead-sub { margin: 0; color: var(--muted); max-width: 30em; }
+/* The install one-liner, right under the claim: the same .sh block as "Setting it up". */
+.hero-install { grid-column: 1 / -1; max-width: 38em; min-width: 0; }
+.hero-install .sh { margin: 0 0 .45rem; }
+.hero-install p { margin: 0; color: var(--muted); font-size: .88rem; }
+.hero-install a { white-space: nowrap; }
 
 /* ---------- stage ---------- */
 .stage {
