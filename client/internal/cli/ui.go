@@ -1362,7 +1362,7 @@ func (u *ui) toggleMouse() {
 	if u.mouseEnabled {
 		u.flash(" [green]mouse ON[white] — app handles the mouse")
 	} else {
-		u.flash(" [green]mouse OFF[white] — select & copy with your terminal (m to re-enable)")
+		u.flash(" [green]mouse OFF[white] — select & copy with your terminal (" + keyLabel(u.km.ToggleMouse) + " to re-enable)")
 	}
 }
 
@@ -1741,7 +1741,8 @@ func (u *ui) openLogView() {
 	app, ctx := u.app, u.runCtx
 	u.logViewPrev = app.GetFocus()
 	u.logViewOverlay = u.overlayFor(pageLogView, u.logViewPrev,
-		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll", "w", "wrap"))
+		footerKeys("`", "toggle/close", "Esc/"+keyLabel(u.km.Quit), "close", "↑/↓", "scroll", "w", "wrap",
+			keyLabel(u.km.ToggleMouse), "mouse"))
 	// Wrapped by default: the end of an error line — the gRPC cause, the
 	// reason the viewer was opened — is exactly the part a cut line loses.
 	// w turns it off for the rare wide line worth reading unbroken.
@@ -1773,6 +1774,13 @@ func (u *ui) openLogView() {
 		if ev.Key() == tcell.KeyRune && ev.Rune() == 'w' {
 			wrap = !wrap
 			tv.SetWrap(wrap)
+			return nil
+		}
+		// The configured mouse key, as on the tabs: with the mouse handed back
+		// the terminal can select a log line to paste into a bug report. Its
+		// flash lands on the footer, which this floating overlay leaves visible.
+		if ev.Key() == tcell.KeyRune && ev.Rune() == u.km.ToggleMouse {
+			u.toggleMouse()
 			return nil
 		}
 		return ev

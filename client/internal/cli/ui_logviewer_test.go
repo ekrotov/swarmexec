@@ -65,3 +65,62 @@ func TestClientLogViewerKeepsFooterAndWraps(t *testing.T) {
 	sendSpecial(t, u, tcell.KeyEscape)
 	waitPageGone(t, u, pageLogView)
 }
+
+// Both log views toggle the mouse with the CONFIGURED key, not a literal m,
+// and their footers name that key: with toggle_mouse remapped to z, z
+// toggles, m does nothing, and the footer says z.
+func TestLogViewsUseTheConfiguredMouseKey(t *testing.T) {
+	mouse := func(u *ui) (on bool) { onLoop(t, u, func() { on = u.mouseEnabled }); return }
+
+	u := covChromeUI(t)
+	onLoop(t, u, func() {
+		u.km.ToggleMouse = 'z'
+		u.runCtx = t.Context()
+		u.openLogView()
+	})
+	t.Cleanup(func() { onLoop(t, u, func() { u.closeLogView() }) })
+	if footer := helpLine(t, u); !strings.Contains(footer, "z mouse") {
+		t.Errorf("client log footer %q does not name the mouse key", footer)
+	}
+	before := mouse(u)
+	sendRune(t, u, 'm')
+	if mouse(u) != before {
+		t.Error("m must not toggle the mouse once toggle_mouse is z")
+	}
+	sendRune(t, u, 'z')
+	if mouse(u) == before {
+		t.Error("z did not toggle the mouse in the client log viewer")
+	}
+	if mouse(u) {
+		sendRune(t, u, 'z') // the hint comes with turning it off
+	}
+	waitFooter(t, u, "z to re-enable")
+
+	a := &fakeAgent{logs: []string{"hello"}}
+	lu := logsUI(t, a, &fakeAgent{})
+	onLoop(t, lu, func() {
+		lu.km.ToggleMouse = 'z'
+		lu.showLogs(webCandidate())
+	})
+	waitLogText(t, lu, "hello")
+	if page := pageText(t, lu, pageLogs); !strings.Contains(page, "z mouse:") {
+		t.Errorf("log view footer does not name the mouse key:\n%s", page)
+	}
+	focusLog(t, lu)
+	before = mouse(lu)
+	sendRune(t, lu, 'm')
+	if mouse(lu) != before {
+		t.Error("m must not toggle the mouse in the log view once toggle_mouse is z")
+	}
+	sendRune(t, lu, 'z')
+	if mouse(lu) == before {
+		t.Error("z did not toggle the mouse in the log view")
+	}
+	want := "z mouse: off"
+	if mouse(lu) {
+		want = "z mouse: app"
+	}
+	if page := pageText(t, lu, pageLogs); !strings.Contains(page, want) {
+		t.Errorf("log view footer does not follow the toggle:\n%s", page)
+	}
+}

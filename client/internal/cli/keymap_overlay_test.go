@@ -112,7 +112,8 @@ func TestOverlayKeysetsMatchTheSource(t *testing.T) {
 				if x.Kind != token.CHAR {
 					break
 				}
-				if s, err := strconv.Unquote(x.Value); err == nil && !reservedRunes[[]rune(s)[0]] {
+				// Control runes are text ('\n'), not keys.
+				if s, err := strconv.Unquote(x.Value); err == nil && []rune(s)[0] >= ' ' && !reservedRunes[[]rune(s)[0]] {
 					runes[[]rune(s)[0]] = true
 				}
 			case *ast.SelectorExpr:

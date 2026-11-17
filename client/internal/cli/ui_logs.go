@@ -75,19 +75,20 @@ func (u *ui) logGrepPrompt(lv *logViewer, back tview.Primitive, after func()) {
 // logFooterText is the log view's footer hint. It appends the mouse state
 // because that is what decides whether terminal text-selection works: while
 // the app captures the mouse (the default), tview grabs drags for scrolling
-// and the terminal cannot select/copy — press m to hand the mouse back.
+// and the terminal cannot select/copy — press the mouse key (m unless
+// keys.yaml says otherwise) to hand the mouse back.
 func (u *ui) logFooterText(following bool) string {
-	mouseEnabled := u.mouseEnabled
-	m := " [yellow]m[white] mouse: app — press to select/copy in terminal"
-	if !mouseEnabled {
-		m = " [yellow]m[white] mouse: off — select & copy with your terminal"
+	key := tview.Escape(keyLabel(u.km.ToggleMouse))
+	m := " [yellow]" + key + "[white] mouse: app — press to select/copy in terminal"
+	if !u.mouseEnabled {
+		m = " [yellow]" + key + "[white] mouse: off — select & copy with your terminal"
 	}
 	return logViewHelp(following) + "  " + m
 }
 
 // logViewKeys is the shared input capture for a log view: close, follow,
 // cycle format (F) / auto-detect it (a) / min-level (l), grep (/) and mouse
-// capture (m).
+// capture (the configured toggle_mouse key).
 func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
 	return func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
@@ -113,7 +114,7 @@ func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView,
 			setTitle()
 		case ev.Key() == tcell.KeyRune && ev.Rune() == '/':
 			u.logGrepPrompt(lv, tv, setTitle)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'm':
+		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.ToggleMouse:
 			// Same mouse toggle as the tabs, but the tabs' flash lands on the
 			// footer hidden behind this overlay, so reflect the state in the
 			// log footer instead.

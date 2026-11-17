@@ -120,7 +120,7 @@ var dialogActions = map[string]bool{"quit": true, "copy": true}
 // TestDialogRunesMatchTheSource keeps this list equal to what the code checks.
 var dialogRunes = map[rune]bool{
 	'?': true, '`': true, '/': true, ' ': true, '+': true, '-': true,
-	'a': true, 'd': true, 'e': true, 'f': true, 'i': true, 'l': true, 'm': true,
+	'a': true, 'd': true, 'e': true, 'f': true, 'i': true, 'l': true,
 	'n': true, 'p': true, 'r': true, 's': true, 't': true, 'u': true, 'v': true, 'w': true,
 	'A': true, 'D': true, 'F': true, 'M': true, 'P': true, 'Q': true, 'R': true, 'S': true, 'X': true,
 	'Z': true,
@@ -144,6 +144,8 @@ var overlayKeysets = []overlayKeyset{
 	{"node detail", "nodeDetail.keys", "Mil", []string{"node_prune", "node_prune_schedule"}},
 	{"context detail", "ui.showContextDetail", "i", []string{"context_use"}},
 	{"forward detail", "forwardsTab.showDetail", "i", []string{"forward_stop"}},
+	{"log view", "ui.logViewKeys", "fFal/", []string{"toggle_mouse"}},
+	{"client log viewer", "ui.openLogView", "`w", []string{"toggle_mouse"}},
 }
 
 // overlayClash names the overlay in which r is a fixed key, if action is one
