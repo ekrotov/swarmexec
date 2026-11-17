@@ -21,7 +21,7 @@ func newCapture() (*Logger, *bytes.Buffer) {
 
 func TestSessionStart_NoPayload(t *testing.T) {
 	l, buf := newCapture()
-	l.SessionStart("alice", "c123", "web", []string{"bash", "-l"}, true, "10.0.0.5:5000")
+	l.SessionStart("alice", "c123", "web", "root", []string{"bash", "-l"}, true, "10.0.0.5:5000")
 
 	var rec map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
@@ -66,7 +66,7 @@ func TestNew_TagsIdentityVerification(t *testing.T) {
 	for _, verified := range []bool{true, false} {
 		var buf bytes.Buffer
 		New(slog.New(slog.NewJSONHandler(&buf, nil)), verified).
-			SessionStart("alice", "c1", "svc", []string{"sh"}, true, "1.2.3.4")
+			SessionStart("alice", "c1", "svc", "root", []string{"sh"}, true, "1.2.3.4")
 
 		var rec map[string]any
 		if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec); err != nil {
@@ -89,7 +89,7 @@ func TestNew_TagsIdentityVerification(t *testing.T) {
 // The table lists every Logger method; a method missing from it is a record
 // nobody checked, which is why TestEveryMethodIsInTheEventTable exists.
 var eventTable = map[string]func(*Logger){
-	"session_start": func(l *Logger) { l.SessionStart("a", "c", "s", []string{"sh"}, true, "addr") },
+	"session_start": func(l *Logger) { l.SessionStart("a", "c", "s", "u", []string{"sh"}, true, "addr") },
 	"session_end":   func(l *Logger) { l.SessionEnd("a", "c", 0, time.Second, 1, 2) },
 	"logs_start":    func(l *Logger) { l.LogsStart("a", "c", "s", true, "addr") },
 	"logs_end":      func(l *Logger) { l.LogsEnd("a", "c", time.Second, 3) },
@@ -104,7 +104,9 @@ var eventTable = map[string]func(*Logger){
 	"event_watch_start": func(l *Logger) { l.EventWatchStart("a", "c", "s", "addr") },
 	"event_watch_end":   func(l *Logger) { l.EventWatchEnd("a", "c", time.Second, 4) },
 	"container_list":    func(l *Logger) { l.ContainerList("a", "web", 1) },
-	"auth_decision":     func(l *Logger) { l.AuthDecision("a", "c", "s", false, "no") },
+	"auth_decision": func(l *Logger) {
+		l.AuthDecision(AuthRecord{Identity: "a", Action: "exec", ContainerID: "c", Service: "s", Reason: "no"})
+	},
 	"container_kill":    func(l *Logger) { l.ContainerKill("a", "c", "s", true, "") },
 	"container_inspect": func(l *Logger) { l.ContainerInspect("a", "c", "s", true, "") },
 }

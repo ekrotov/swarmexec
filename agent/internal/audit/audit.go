@@ -7,6 +7,7 @@ package audit
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -14,6 +15,27 @@ import (
 // (JSON or logfmt) and routable to a dedicated destination.
 type Logger struct {
 	log *slog.Logger
+
+	// pollMu guards polled: for each (identity, action) of a polled read the
+	// time of the last allow-record written and how many were held back since.
+	pollMu sync.Mutex
+	polled map[pollKey]*pollState
+	now    func() time.Time
+}
+
+// pollInterval is how often an allowed, polled read is recorded per identity
+// and action. A denial is never throttled.
+const pollInterval = time.Minute
+
+// maxPolled bounds the throttle table; identities are client-supplied in
+// shared-secret mode.
+const maxPolled = 4096
+
+type pollKey struct{ identity, action string }
+
+type pollState struct {
+	last       time.Time
+	suppressed int
 }
 
 // New returns an audit Logger writing through the given slog.Logger. Every
@@ -28,17 +50,21 @@ type Logger struct {
 // worse than one that admits it cannot tell: it invites an accountability claim
 // it cannot support. Per-operator attribution needs client certs (-ca-cert).
 func New(l *slog.Logger, identityVerified bool) *Logger {
-	return &Logger{log: l.With("component", "audit", "identity_verified", identityVerified)}
+	return &Logger{log: l.With("component", "audit", "identity_verified", identityVerified), now: time.Now}
 }
 
 // SessionStart records the beginning of an exec session. Payload bytes are
 // never logged — only metadata.
-func (l *Logger) SessionStart(identity, containerID, service string, cmd []string, tty bool, clientAddr string) {
+//
+// user is the account the command runs as — the requested one, else the
+// container's, else root — so a root shell is visible in the trail.
+func (l *Logger) SessionStart(identity, containerID, service, user string, cmd []string, tty bool, clientAddr string) {
 	l.log.Info("session_start",
 		"event", "session_start",
 		"identity", identity,
 		"container_id", containerID,
 		"service", service,
+		"user", user,
 		"cmd", cmd,
 		"tty", tty,
 		"client_addr", clientAddr,
@@ -227,16 +253,81 @@ func (l *Logger) ContainerList(identity, filter string, matched int) {
 	)
 }
 
-// AuthDecision records an authorization allow/deny along with the reason.
-func (l *Logger) AuthDecision(identity, containerID, service string, allow bool, reason string) {
-	l.log.Info("auth_decision",
+// AuthRecord is one authorization decision: who asked for what, on which
+// object, from where, and what the policy answered. Only the fields the action
+// carries are set. The command line and environment are deliberately absent.
+type AuthRecord struct {
+	Identity    string
+	Action      string
+	ContainerID string
+	Service     string
+	Port        uint32
+	User        string // effective user for an exec
+	Volume      string
+	ClientAddr  string
+	Allow       bool
+	Reason      string
+	// Polled marks a read a client repeats on a timer (the TUI asks for stats
+	// at every tick). Its allow-records are written once per identity and
+	// action per minute, carrying how many were held back; a denial is always
+	// written.
+	Polled bool
+}
+
+// AuthDecision records an authorization allow/deny along with the reason, the
+// requested action and the object it targeted.
+func (l *Logger) AuthDecision(r AuthRecord) {
+	attrs := []any{
 		"event", "auth_decision",
-		"identity", identity,
-		"container_id", containerID,
-		"service", service,
-		"allow", allow,
-		"reason", reason,
-	)
+		"identity", r.Identity,
+		"action", r.Action,
+		"container_id", r.ContainerID,
+		"service", r.Service,
+		"allow", r.Allow,
+		"reason", r.Reason,
+	}
+	if r.Allow && r.Polled {
+		held, ok := l.throttle(r.Identity, r.Action)
+		if !ok {
+			return
+		}
+		if held > 0 {
+			attrs = append(attrs, "suppressed", held)
+		}
+	}
+	for _, f := range []struct{ k, v string }{
+		{"user", r.User}, {"volume", r.Volume}, {"client_addr", r.ClientAddr},
+	} {
+		if f.v != "" {
+			attrs = append(attrs, f.k, f.v)
+		}
+	}
+	if r.Port != 0 {
+		attrs = append(attrs, "port", r.Port)
+	}
+	l.log.Info("auth_decision", attrs...)
+}
+
+// throttle reports whether a polled allow-record is due, and how many were
+// held back since the last one written. The first one is always due.
+func (l *Logger) throttle(identity, action string) (held int, write bool) {
+	l.pollMu.Lock()
+	defer l.pollMu.Unlock()
+	now := l.now()
+	k := pollKey{identity, action}
+	st := l.polled[k]
+	if st != nil && now.Sub(st.last) < pollInterval {
+		st.suppressed++
+		return 0, false
+	}
+	if st != nil {
+		held = st.suppressed
+	}
+	if l.polled == nil || len(l.polled) >= maxPolled {
+		l.polled = map[pollKey]*pollState{}
+	}
+	l.polled[k] = &pollState{last: now}
+	return held, true
 }
 
 // ContainerKill records a kill of a swarm task container — the one RPC that
