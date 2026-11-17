@@ -92,3 +92,40 @@ func TestConfigShowCheckUpdates(t *testing.T) {
 		t.Errorf("with SWARMEXEC_NO_UPDATE_CHECK=1: %q", got)
 	}
 }
+
+// `config show` reports the values in effect for the resolved context and
+// where each came from: the context block, the global key, or the environment.
+func TestConfigShowPerContextCredentialsAndSources(t *testing.T) {
+	isolatedDockerConfig(t)
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1") // context "default"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "insecure: true\nagent_secret: global-made-up\nport: 9000\ncontexts:\n  default:\n    agent_secret: ctx-made-up\n    port: 9555\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g := &globalFlags{configPath: path}
+	out, _, err := runCmd(t, newConfigCmd(g), "show", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v configView
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if v.AgentPort != 9555 || v.Sources["port"] != "contexts.default.port" ||
+		v.Sources["agent_secret"] != "contexts.default.agent_secret" || v.Sources["insecure"] != "config file" {
+		t.Errorf("view = %+v", v)
+	}
+	if strings.Contains(out, "made-up") {
+		t.Error("config show printed a secret")
+	}
+
+	t.Setenv("SWARMEXEC_PORT", "7777")
+	out, _, err = runCmd(t, newConfigCmd(g), "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAll(out, "7777  (env SWARMEXEC_PORT)", "set (hidden)  (contexts.default.agent_secret)") {
+		t.Errorf("config show:\n%s", out)
+	}
+}

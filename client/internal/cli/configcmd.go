@@ -39,6 +39,10 @@ type configView struct {
 	Insecure      bool   `json:"insecure"`
 	AgentSecret   string `json:"agent_secret"`
 	Operator      string `json:"operator"`
+	// Sources says where each credential/dial value in effect came from: a
+	// flag, an environment variable, contexts.<name>.<key>, the global file
+	// key, or the built-in default.
+	Sources map[string]string `json:"sources"`
 	// Underlay is the resolved context's contexts.<name>.underlay.
 	Underlay []string `json:"underlay,omitempty"`
 	// ConfirmSwitch is the resolved context's contexts.<name>.confirm_switch.
@@ -68,17 +72,19 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			fmt.Fprintf(w, "config file:\t%s\n", orDash(v.ConfigFile))
 			fmt.Fprintf(w, "docker context:\t%s\n", v.DockerContext)
 			fmt.Fprintf(w, "manager host:\t%s\n", hostOrDefault(v.ManagerHost))
-			fmt.Fprintf(w, "agent port:\t%d\n", v.AgentPort)
-			fmt.Fprintf(w, "addr mode:\t%s\n", v.AddrMode)
+			from := func(key string) string { return "  (" + v.Sources[key] + ")" }
+			fmt.Fprintf(w, "agent port:\t%d%s\n", v.AgentPort, from(config.KeyPort))
+			fmt.Fprintf(w, "addr mode:\t%s%s\n", v.AddrMode, from(config.KeyAddrMode))
 			fmt.Fprintf(w, "auth mode:\t%s\n", v.AuthMode)
 			if v.CA != "" {
-				fmt.Fprintf(w, "ca / cert / key:\t%s / %s / %s\n", v.CA, orDash(v.Cert), orDash(v.Key))
+				fmt.Fprintf(w, "ca / cert / key:\t%s / %s / %s  (%s / %s / %s)\n", v.CA, orDash(v.Cert), orDash(v.Key),
+					v.Sources[config.KeyCA], v.Sources[config.KeyCert], v.Sources[config.KeyKey])
 			}
 			if v.ServerName != "" {
-				fmt.Fprintf(w, "server name:\t%s\n", v.ServerName)
+				fmt.Fprintf(w, "server name:\t%s%s\n", v.ServerName, from(config.KeyServerName))
 			}
-			fmt.Fprintf(w, "insecure:\t%v\n", v.Insecure)
-			fmt.Fprintf(w, "agent secret:\t%s\n", v.AgentSecret)
+			fmt.Fprintf(w, "insecure:\t%v%s\n", v.Insecure, from(config.KeyInsecure))
+			fmt.Fprintf(w, "agent secret:\t%s%s\n", v.AgentSecret, from(config.KeyAgentSecret))
 			fmt.Fprintf(w, "operator:\t%s\n", orDash(v.Operator))
 			if len(v.Underlay) > 0 {
 				fmt.Fprintf(w, "underlay:\t%s\n", strings.Join(v.Underlay, ", "))
@@ -121,7 +127,13 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 		authMode = "self-signed + shared secret"
 	}
 
+	sources := map[string]string{}
+	for _, k := range []string{config.KeyCA, config.KeyCert, config.KeyKey, config.KeyPort,
+		config.KeyAddrMode, config.KeyServerName, config.KeyAgentSecret, config.KeyInsecure} {
+		sources[k] = cfg.Source(k)
+	}
 	return configView{
+		Sources:    sources,
 		ConfigFile: cfgFile, DockerContext: ctxName, ManagerHost: host,
 		AgentPort: cfg.Port, AddrMode: cfg.AddrMode, AuthMode: authMode,
 		CA: cfg.CA, Cert: cfg.Cert, Key: cfg.Key, ServerName: cfg.ServerName,
