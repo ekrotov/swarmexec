@@ -793,13 +793,22 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 	}
 	tv.detach = closeTerm
 	tv.run(tctx, ac, terminalSession{ep: ep, command: command, tty: tty, user: user}, f.connectTimeout, func(code int, rerr error) {
+		// This runs on the session goroutine. Explaining the error can ask the
+		// manager (is the agent deployed?), so it happens here, bounded, and
+		// only the finished text goes to the UI loop.
+		explained := ""
+		if rerr != nil && tctx.Err() == nil {
+			ectx, ecancel := context.WithTimeout(ctx, f.connectTimeout)
+			explained = explainSession(ectx, ac.Config(), dcli, rerr).Error()
+			ecancel()
+		}
 		app.QueueUpdateDraw(func() {
 			switch {
 			case tctx.Err() != nil:
 				closeTerm() // user detached (Ctrl-]) — just close
 			case rerr != nil:
 				closeTerm()
-				u.info(explainSession(ctx, ac.Config(), dcli, rerr).Error())
+				u.info(explained)
 			case code == 126 || code == 127:
 				// The shell could not start (127 = not found, 126 = not
 				// executable — e.g. no bash in the image). Keep the pane up so
