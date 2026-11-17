@@ -277,7 +277,7 @@ contexts:
         <tbody>
           <tr><td><code>0</code></td><td>success</td></tr>
           <tr><td><code>1</code></td><td>stack diff found a difference (and <code>--json</code> still printed it)</td></tr>
-          <tr><td><code>2</code></td><td>usage / flag / configuration error, or an aborted interactive selection. A wrong number of arguments also prints the command's usage line (<code>usage: swarmexec exec [flags] &lt;service|…&gt; …</code>)</td></tr>
+          <tr><td><code>2</code></td><td>usage / flag / configuration error, a mistyped subcommand under a group (<code>swarmexec stack chekc</code>: <code>unknown command "chekc" for "swarmexec stack"</code>), or an aborted interactive selection. A wrong number of arguments also prints the command's usage line (<code>usage: swarmexec exec [flags] &lt;service|…&gt; …</code>)</td></tr>
           <tr><td><code>125</code></td><td>transport failure — unreachable manager or agent, dial/TLS error, stream error, aborted confirmation (mirrors Docker's <code>125</code>)</td></tr>
           <tr><td><code>N</code></td><td>for <code>exec</code>, the remote command's own non-zero exit code, propagated verbatim</td></tr>
         </tbody>

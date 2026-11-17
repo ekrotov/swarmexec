@@ -294,7 +294,8 @@ swarmexec [command]</div>
 
       <h2 id="config" class="clicmd"><code>swarmexec config</code></h2>
       <p class="clishort">Inspect the resolved client configuration</p>
-      <div class="cmd">swarmexec config [command]</div>
+      <div class="cmd">swarmexec config [flags]
+swarmexec config [command]</div>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
         <li><a href="#config-show"><code>swarmexec config show</code></a> — Print the effective client configuration (secret masked)</li>
@@ -329,7 +330,8 @@ swarmexec [command]</div>
 
       <h2 id="context" class="clicmd"><code>swarmexec context</code></h2>
       <p class="clishort">Manage Docker contexts used for the manager API</p>
-      <div class="cmd">swarmexec context [command]</div>
+      <div class="cmd">swarmexec context [flags]
+swarmexec context [command]</div>
       <p class="climeta">Aliases: <code>ctx</code></p>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
@@ -514,7 +516,8 @@ swarmexec logs -f --tail 20 --stack shop</div>
 
       <h2 id="node" class="clicmd"><code>swarmexec node</code></h2>
       <p class="clishort">List the swarm&#39;s nodes, prune them, set availability and labels, schedule prunes</p>
-      <div class="cmd">swarmexec node [command]</div>
+      <div class="cmd">swarmexec node [flags]
+swarmexec node [command]</div>
       <p class="climeta">Aliases: <code>nodes</code></p>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
@@ -561,7 +564,8 @@ swarmexec node prune worker-1 --containers-until 2h</div>
 
       <h3 id="node-prune-schedule" class="clicmd"><code>swarmexec node prune-schedule</code></h3>
       <p class="clishort">Show or set the cluster-wide prune schedule the agents run</p>
-      <div class="cmd">swarmexec node prune-schedule [command]</div>
+      <div class="cmd">swarmexec node prune-schedule [flags]
+swarmexec node prune-schedule [command]</div>
       <p>The agents can prune their node on a schedule: stopped containers, unused images, build cache and unused local networks by default; volumes only when added explicitly. The schedule is stored as container labels on the agent service (swarmexec.prune.*), so setting it restarts the agents one by one.</p>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
@@ -654,7 +658,8 @@ swarmexec ps --json web</div>
 
       <h2 id="secret" class="clicmd"><code>swarmexec secret</code></h2>
       <p class="clishort">Work with swarm secrets</p>
-      <div class="cmd">swarmexec secret [command]</div>
+      <div class="cmd">swarmexec secret [flags]
+swarmexec secret [command]</div>
       <p class="climeta">Aliases: <code>secrets</code></p>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
@@ -694,7 +699,8 @@ printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes<
 
       <h2 id="security" class="clicmd"><code>swarmexec security</code></h2>
       <p class="clishort">Security report of the cluster, and checks of stack files before deploying</p>
-      <div class="cmd">swarmexec security [command]</div>
+      <div class="cmd">swarmexec security [flags]
+swarmexec security [command]</div>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
         <li><a href="#security-check"><code>swarmexec security check</code></a> — Check a stack file for security antipatterns without deploying it</li>
@@ -725,7 +731,8 @@ printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes<
 
       <h2 id="stack" class="clicmd"><code>swarmexec stack</code></h2>
       <p class="clishort">Work with deployed stacks</p>
-      <div class="cmd">swarmexec stack [command]</div>
+      <div class="cmd">swarmexec stack [flags]
+swarmexec stack [command]</div>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
         <li><a href="#stack-check"><code>swarmexec stack check</code></a> — Check a stack file for security antipatterns without deploying it</li>
@@ -858,7 +865,8 @@ swarmexec --context prod ui</div>
 
       <h2 id="volume" class="clicmd"><code>swarmexec volume</code></h2>
       <p class="clishort">List and remove volumes across the swarm</p>
-      <div class="cmd">swarmexec volume [command]</div>
+      <div class="cmd">swarmexec volume [flags]
+swarmexec volume [command]</div>
       <p class="climeta">Aliases: <code>volumes</code></p>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">

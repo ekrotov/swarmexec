@@ -30,11 +30,11 @@ import (
 // for the node side — with the same confirms, as prompts with --yes.
 
 func newNodeCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:     "node",
 		Aliases: []string{"nodes"},
 		Short:   "List the swarm's nodes, prune them, set availability and labels, schedule prunes",
-	}
+	})
 	cmd.AddCommand(newNodeLsCmd(g), newNodePruneCmd(g), newNodeUpdateCmd(g), newPruneScheduleCmd(g, "swarmexec node prune-schedule"))
 	return cmd
 }

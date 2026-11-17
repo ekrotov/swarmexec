@@ -30,11 +30,11 @@ import (
 type swarmVolume = agentcall.Volume
 
 func newVolumeCmd(g *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{
+	cmd := group(&cobra.Command{
 		Use:     "volume",
 		Aliases: []string{"volumes"},
 		Short:   "List and remove volumes across the swarm",
-	}
+	})
 	cmd.AddCommand(newVolumeLsCmd(g), newVolumeRmCmd(g))
 	return cmd
 }

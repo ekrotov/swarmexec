@@ -291,3 +291,15 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 }
 
 func addrModeOf(cfg config.Config) resolve.AddrMode { return agentcall.AddrMode(cfg) }
+
+// group makes c a command group: it has subcommands and nothing of its own to
+// run. NoArgs is what turns a mistyped subcommand into `unknown command
+// "chekc" for "swarmexec stack"` and exit 2. Without it cobra treats the word
+// as a stray argument and prints help with exit 0, which a pipeline
+// (`swarmexec stack chekc f.yml && deploy`) reads as success. Bare
+// `swarmexec stack` still shows the help.
+func group(c *cobra.Command) *cobra.Command {
+	c.Args = cobra.NoArgs
+	c.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+	return c
+}
