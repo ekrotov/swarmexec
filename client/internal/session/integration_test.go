@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package session
+package session_test
 
 import (
 	"bytes"
@@ -12,11 +12,15 @@ import (
 	"time"
 
 	"swarmexec/agent/agenttest"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
-	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/session"
 	pb "swarmexec/internal/pb"
 )
 
+// An external test package: agentcall (which agent connections go through)
+// imports session, so an internal test could not import it.
+//
 // These run Run against the real agent's Exec handler (agenttest): real TLS,
 // the real interceptor chain and bridge, a fake Docker process behind it.
 
@@ -31,17 +35,20 @@ func execOn(t *testing.T, a *agenttest.Agent, start *pb.StartExec, stdin string)
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := dial.Dial(ctx, a.Host, a.Port, config.Config{CA: a.CAFile, ServerName: "localhost", AgentSecret: a.Secret})
+	// Through agentcall, the one place agent connections are made.
+	ac := agentcall.New(config.Config{Port: 7000, Insecure: true, AgentSecret: a.Secret, ProxyDialer: a.Dial})
+	defer ac.Close()
+	conn, err := ac.Conn(ctx, "node-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	stream, err := pb.NewAgentClient(conn).Exec(ctx)
+	stream, err := conn.Agent().Exec(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out, errb bytes.Buffer
-	code, runErr := Run(ctx, stream, Options{Start: start, Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &errb})
+	code, runErr := session.Run(ctx, stream, session.Options{Start: start, Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &errb})
 	return execResult{code: code, out: out.String(), errOut: errb.String(), err: runErr}
 }
 
