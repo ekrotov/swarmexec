@@ -66,6 +66,7 @@ flags**.
 | Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
 | Ask before a TUI switch (per context) | — | —         | `contexts.<name>.confirm_switch` |
 | TUI switch also sets docker's context | — | —         | `ui.sync_docker_context` |
+| Daily check for a newer release | — | `SWARMEXEC_NO_UPDATE_CHECK=1` (off) | `ui.check_updates` |
 
 The flags in this table (plus `--agent-secret`, `--agent-secret-file`,
 `--insecure` and `--operator`) are the **connection flags**. Every command
@@ -85,6 +86,7 @@ addr_mode: hostname
 ui:
   dim: 0.6   # fade behind an open overlay: 0 = off, 1 = flat background
   sync_docker_context: false   # true: a TUI cluster switch also runs `docker context use`
+  check_updates: true          # false: never ask the site for a newer release
 
 contexts:            # optional, per Docker context name
   prod:
@@ -96,6 +98,14 @@ A cluster switch in the `ui` contexts sidebar is the TUI's own: docker's stored
 current context — what `docker` in your other terminals talks to, and where the
 next `swarmexec ui` starts — is left alone unless `ui.sync_docker_context: true`.
 `swarmexec context use` is an explicit command and always sets it.
+
+`ui.check_updates` (default `true`): the TUI and `swarmexec doctor` ask
+`https://swarm-exec.cloud-surfers.net/latest.json` at most once a day whether
+a newer release exists, and say so (the TUI in the status line). The request
+is a plain GET that carries nothing about you or your cluster; the answer is
+cached in `update-check.json` next to the config. Builds that are not a
+release (`dev`, `review-…`) never ask. `ui.check_updates: false` or
+`SWARMEXEC_NO_UPDATE_CHECK=1` turns it off.
 
 ### Network subnet overlap
 

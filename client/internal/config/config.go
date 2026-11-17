@@ -187,6 +187,22 @@ type UIConfig struct {
 	// follow the TUI. Off by default: looking at another cluster in the TUI
 	// must not change where `docker stack deploy` in the next terminal goes.
 	SyncDockerContext bool `yaml:"sync_docker_context,omitempty"`
+
+	// CheckUpdates lets the client ask the project site, at most once a day,
+	// whether a newer release exists (client/internal/updatecheck). Unset
+	// means on; a pointer so that Save never writes the default into a file
+	// and a written false survives. Read it through UpdateChecks.
+	CheckUpdates *bool `yaml:"check_updates,omitempty"`
+}
+
+// EnvNoUpdateCheck switches the release check off whatever the file says.
+const EnvNoUpdateCheck = "SWARMEXEC_NO_UPDATE_CHECK"
+
+// UpdateChecks reports whether the client may look for a newer release:
+// on unless ui.check_updates is false or SWARMEXEC_NO_UPDATE_CHECK is set
+// (overlayEnv folds the variable into CheckUpdates).
+func (u UIConfig) UpdateChecks() bool {
+	return u.CheckUpdates == nil || *u.CheckUpdates
 }
 
 // Default returns the built-in defaults.
@@ -310,11 +326,25 @@ func overlayEnv(cfg *Config) {
 			cfg.Insecure = false
 		}
 	}
+	if noUpdateCheck(os.Getenv(EnvNoUpdateCheck)) {
+		off := false
+		cfg.UI.CheckUpdates = &off
+	}
 	if v := os.Getenv("SWARMEXEC_UI_DIM"); v != "" {
 		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
 			cfg.UI.Dim = f
 		}
 	}
+}
+
+// noUpdateCheck reads SWARMEXEC_NO_UPDATE_CHECK: any value but empty or an
+// explicit no ("0", "false", "no", "off") switches the check off.
+func noUpdateCheck(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 // AgentSecretValue resolves the shared secret: AgentSecretFile contents

@@ -45,6 +45,8 @@ type configView struct {
 	ConfirmSwitch bool `json:"confirm_switch"`
 	// SyncDockerContext is ui.sync_docker_context.
 	SyncDockerContext bool `json:"sync_docker_context"`
+	// CheckUpdates is ui.check_updates after SWARMEXEC_NO_UPDATE_CHECK.
+	CheckUpdates bool `json:"check_updates"`
 }
 
 func newConfigShowCmd(g *globalFlags) *cobra.Command {
@@ -85,6 +87,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 				fmt.Fprintf(w, "confirm switch:\t%v (the TUI asks before switching to %s)\n", v.ConfirmSwitch, v.DockerContext)
 			}
 			fmt.Fprintf(w, "sync docker context:\t%v\n", v.SyncDockerContext)
+			fmt.Fprintf(w, "check updates:\t%v\n", v.CheckUpdates)
 			return w.Flush()
 		},
 	}
@@ -126,6 +129,7 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 		Underlay:          underlayStrings(cfg.Underlay(ctxName)),
 		ConfirmSwitch:     cfg.ConfirmSwitch(ctxName),
 		SyncDockerContext: cfg.UI.SyncDockerContext,
+		CheckUpdates:      cfg.UI.UpdateChecks(),
 	}
 }
 
