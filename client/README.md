@@ -64,6 +64,8 @@ flags**.
 | TLS server name | `--server-name` | `SWARMEXEC_SERVER_NAME` | `server_name` |
 | Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
 | Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
+| Ask before a TUI switch (per context) | — | —         | `contexts.<name>.confirm_switch` |
+| TUI switch also sets docker's context | — | —         | `ui.sync_docker_context` |
 
 The flags in this table (plus `--agent-secret`, `--agent-secret-file`,
 `--insecure` and `--operator`) are the **connection flags**. Every command
@@ -82,18 +84,28 @@ addr_mode: hostname
 
 ui:
   dim: 0.6   # fade behind an open overlay: 0 = off, 1 = flat background
+  sync_docker_context: false   # true: a TUI cluster switch also runs `docker context use`
 
 contexts:            # optional, per Docker context name
   prod:
     underlay: [10.0.0.0/16]   # the hosts' own network
+    confirm_switch: true      # the TUI asks before switching to prod
 ```
+
+A cluster switch in the `ui` contexts sidebar is the TUI's own: docker's stored
+current context — what `docker` in your other terminals talks to, and where the
+next `swarmexec ui` starts — is left alone unless `ui.sync_docker_context: true`.
+`swarmexec context use` is an explicit command and always sets it.
 
 ### Network subnet overlap
 
 Overlay subnets must not overlap the hosts' own (underlay) network: a subnet
 that contains a node's address makes that host unreachable from the network's
 containers, and IPAM may hand the host's IP to a container. The `ui` Networks
-tab shows each network's `SUBNET` and running `CONTAINERS`, and marks the subnet
+tab lists the swarm-scope networks (`a` adds the manager node's own local
+networks — `bridge`, `host`, compose networks — which exist on that node only,
+and the status line says so while they are shown). It shows each network's
+`SUBNET` and running `CONTAINERS`, and marks the subnet
 with a red `⚠` when node addresses lie inside it, a yellow one when it overlaps
 the underlay or another network. `contexts.<name>.underlay` (optional, CIDRs,
 keyed by the Docker context name; validated at load) adds the underlay check —
@@ -113,8 +125,8 @@ Networks tab (and on `r`) the `ui` asks every agent once, in the background,
 for its view (`NetworkEndpoints`, policy action `network.inspect`) and sets it
 against the manager's tasks: `CONTAINERS` reads e.g. `12 · 14 addr ⚠2 stale`
 (running tasks · task addresses the nodes know, LB excluded · stale
-candidates), yellow when something is stale or duplicated, `?` when agents
-could not answer. A stale candidate is a task endpoint whose address no live
+candidates), yellow when something is stale or duplicated, `n/a` (or
+`+2 n/a`) when node agents could not answer — the status line explains it. A stale candidate is a task endpoint whose address no live
 task has (not an LB endpoint or VIP), or an endpoint without a container. The
 members view lists per node running tasks vs local containers, LB, MACs and
 networkdb entries, then each stale candidate and duplicate IP/MAC; an agent

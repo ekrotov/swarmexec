@@ -41,6 +41,10 @@ type configView struct {
 	Operator      string `json:"operator"`
 	// Underlay is the resolved context's contexts.<name>.underlay.
 	Underlay []string `json:"underlay,omitempty"`
+	// ConfirmSwitch is the resolved context's contexts.<name>.confirm_switch.
+	ConfirmSwitch bool `json:"confirm_switch"`
+	// SyncDockerContext is ui.sync_docker_context.
+	SyncDockerContext bool `json:"sync_docker_context"`
 }
 
 func newConfigShowCmd(g *globalFlags) *cobra.Command {
@@ -77,6 +81,10 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			if len(v.Underlay) > 0 {
 				fmt.Fprintf(w, "underlay:\t%s\n", strings.Join(v.Underlay, ", "))
 			}
+			if v.ConfirmSwitch {
+				fmt.Fprintf(w, "confirm switch:\t%v (the TUI asks before switching to %s)\n", v.ConfirmSwitch, v.DockerContext)
+			}
+			fmt.Fprintf(w, "sync docker context:\t%v\n", v.SyncDockerContext)
 			return w.Flush()
 		},
 	}
@@ -115,7 +123,9 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 		AgentPort: cfg.Port, AddrMode: cfg.AddrMode, AuthMode: authMode,
 		CA: cfg.CA, Cert: cfg.Cert, Key: cfg.Key, ServerName: cfg.ServerName,
 		Insecure: cfg.Insecure, AgentSecret: secret, Operator: cfg.Operator,
-		Underlay: underlayStrings(cfg.Underlay(ctxName)),
+		Underlay:          underlayStrings(cfg.Underlay(ctxName)),
+		ConfirmSwitch:     cfg.ConfirmSwitch(ctxName),
+		SyncDockerContext: cfg.UI.SyncDockerContext,
 	}
 }
 

@@ -117,7 +117,8 @@
         Lists volumes across all nodes and which nodes hold each. Swarm volumes are
         node-local, so the client queries every node and aggregates. Optional substring
         name filter. Columns: <code>VOLUME&nbsp;&nbsp;DRIVER&nbsp;&nbsp;NODES&nbsp;&nbsp;USED&nbsp;BY&nbsp;&nbsp;AGE</code>
-        (plus <code>SIZE</code> with <code>--size</code>).
+        (plus <code>SIZE</code> with <code>--size</code>). <code>AGE</code> is compact:
+        <code>3d4h</code> up to 30 days, then <code>3mo</code> / <code>4y</code>.
       </p>
       <div class="cmd">swarmexec volume ls [name-filter]</div>
       <div class="tablewrap"><table>

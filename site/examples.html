@@ -491,7 +491,7 @@
         </p>
         <h3>Pitfalls</h3>
         <ul>
-          <li>Contexts live in docker's own store: <code>context use</code> changes the current context for the <code>docker</code> CLI too. Prefer <code>--context</code> for one-off commands against production.</li>
+          <li>Contexts live in docker's own store: <code>context use</code> changes the current context for the <code>docker</code> CLI too. Prefer <code>--context</code> for one-off commands against production. A switch in the TUI sidebar does <em>not</em> change it (unless <code>ui.sync_docker_context: true</code>); put <code>contexts.prod.confirm_switch: true</code> in the config to be asked before the TUI switches to production.</li>
           <li>The first switch to a cluster takes as long as connecting to it; if it fails you stay where you were.</li>
           <li>Each cluster needs its own agents, but there is <strong>one client config</strong> for all contexts, so every cluster's agents must accept the same credentials. With the shared secret, provision the next cluster with the one you already have — <code>swarmexec --context staging init --secret "$SECRET"</code>. Without <code>--secret</code>, <code>init</code> generates a new secret and writes it to your client config, which the first cluster's agents do not accept. With mTLS, one CA covers them all.</li>
         </ul>

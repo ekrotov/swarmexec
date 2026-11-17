@@ -223,20 +223,24 @@ func (u *ui) deleteContext(c dockerctx.Context) {
 	})
 }
 
-// activateContext makes c the current docker context and restarts the UI so
-// it reconnects to that cluster. Restarting (rather than swapping the client
-// live) avoids racing the in-flight background loads.
+// activateContext switches the UI to c's cluster, behind a confirm when the
+// config marks c as one to ask about (contexts.<name>.confirm_switch) — a
+// production cluster, typically, where a stray Enter in the sidebar should not
+// be enough to put every following keystroke on it.
 func (u *ui) activateContext(c dockerctx.Context) {
 	if c.Name == u.activeCtx {
 		u.flash(" [gray]already on[white] context " + c.Name)
 		return
 	}
-	// Docker's stored current context is updated by the switch, once it has
-	// actually happened — not here. It used to be written first, which was
-	// harmless only because a failure then took the whole UI down with it. Now
-	// that a refused switch leaves the operator where they were, writing it
-	// first would leave `docker` pointed at a cluster the UI just declined to
-	// go to, and the footer and the shell would disagree.
+	// Docker's stored current context is written (with ui.sync_docker_context
+	// only) by the switch, once it has actually happened — not here. Writing it
+	// first would leave `docker` pointed at a cluster the UI just declined to go
+	// to, and the footer and the shell would disagree.
+	if !u.switching && u.cfg.ConfirmSwitch(c.Name) {
+		msg := fmt.Sprintf("Switch to context %q?\n%s\n\n(contexts.%s.confirm_switch is set)", c.Name, orDash(c.Host), c.Name)
+		u.confirm(msg, "Switch", u.cxtable, func() { u.switchCluster(c.Name) })
+		return
+	}
 	u.switchCluster(c.Name)
 }
 

@@ -118,6 +118,17 @@ type ContextConfig struct {
 	// network. Optional: the Networks tab then also flags overlay subnets that
 	// overlap it. Without it only the nodes' own addresses are checked.
 	Underlay []string `yaml:"underlay,omitempty"`
+
+	// ConfirmSwitch makes the TUI ask before switching TO this context — for
+	// production clusters, where a stray Enter in the contexts sidebar should
+	// not be enough to put every following keystroke on them.
+	ConfirmSwitch bool `yaml:"confirm_switch,omitempty"`
+}
+
+// ConfirmSwitch reports whether switching to contextName in the TUI asks
+// first (contexts.<name>.confirm_switch).
+func (c Config) ConfirmSwitch(contextName string) bool {
+	return c.Contexts[contextName].ConfirmSwitch
 }
 
 // Underlay returns the parsed underlay CIDRs configured for a context (nil if
@@ -170,6 +181,12 @@ type UIConfig struct {
 	// higher values make windows behind the focused dialog recede further.
 	// Out-of-range values are clamped when the theme is applied.
 	Dim float64 `yaml:"dim"`
+
+	// SyncDockerContext makes a cluster switch in the TUI also write docker's
+	// stored current context (`docker context use`), so the operator's shells
+	// follow the TUI. Off by default: looking at another cluster in the TUI
+	// must not change where `docker stack deploy` in the next terminal goes.
+	SyncDockerContext bool `yaml:"sync_docker_context,omitempty"`
 }
 
 // Default returns the built-in defaults.

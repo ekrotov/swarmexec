@@ -81,12 +81,12 @@ func endpointsUI(t *testing.T) (*ui, *listManager) {
 }
 
 // Entering the tab fills CONTAINERS from the agents: running tasks, the
-// addresses the nodes know, the stale one, and "?" for the old agent.
+// addresses the nodes know, the stale one, and "+1 n/a" for the old agent.
 func TestNetworksTabShowsEndpointCountsAndStale(t *testing.T) {
 	u, _ := endpointsUI(t)
 	nt := u.netTab()
 	onLoop(t, u, func() { nt.enter() })
-	waitForTable(t, u, nt.table, "1 · 2 addr ⚠1 stale ?")
+	waitForTable(t, u, nt.table, "1 · 2 addr ⚠1 stale +1 n/a")
 	var fg tcell.Color
 	onLoop(t, u, func() { fg, _, _ = nt.table.GetCell(1, 7).Style.Decompose() })
 	if fg != tcell.ColorYellow {
@@ -149,11 +149,12 @@ func TestEndpointNoteStates(t *testing.T) {
 		{"local network", netEndpointsState{loaded: true}, swarmops.Network{ID: "id", Scope: "local"}, "", 0},
 		{"never loaded", netEndpointsState{}, swarmNet, "", 0},
 		{"loading", netEndpointsState{loading: time.Now()}, swarmNet, "· …", 0},
-		{"load failed", netEndpointsState{loaded: true, err: errors.New("x")}, swarmNet, "· ?", tcell.ColorGray},
+		{"load failed", netEndpointsState{loaded: true, err: errors.New("x")}, swarmNet, "· n/a", tcell.ColorGray},
 		{"unknown network, all answered", netEndpointsState{loaded: true}, swarmNet, "· 0 addr", 0},
-		{"unknown network, some failed", netEndpointsState{loaded: true, failed: 1}, swarmNet, "· ?", tcell.ColorGray},
-		{"nobody answered", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Unknown: 2}}}, swarmNet, "· ?", tcell.ColorGray},
+		{"unknown network, some failed", netEndpointsState{loaded: true, failed: 1}, swarmNet, "· n/a", tcell.ColorGray},
+		{"nobody answered", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Unknown: 2}}}, swarmNet, "· n/a", tcell.ColorGray},
 		{"clean", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 2, Addrs: 4}}}, swarmNet, "· 4 addr", 0},
+		{"some nodes unknown", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 1, Unknown: 2, Addrs: 4}}}, swarmNet, "· 4 addr +2 n/a", 0},
 		{"duplicates", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 2, Addrs: 4, DupIPs: []swarmops.Duplicate{{}}, DupMACs: []swarmops.Duplicate{{}}}}}, swarmNet, "· 4 addr ⚠2 dup", tcell.ColorYellow},
 	}
 	for _, c := range cases {

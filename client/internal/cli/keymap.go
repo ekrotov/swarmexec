@@ -27,7 +27,7 @@ type keybinds struct {
 	// volumes
 	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach, VolNew rune
 	// networks
-	NetAttached, NetNew rune
+	NetAttached, NetNew, NetAll rune
 	// nodes
 	NodeLabels, NodeAvail, NodePrune, NodePruneSched rune
 	// secrets
@@ -80,6 +80,8 @@ var keyActions = []keyAction{
 	{"volume_new", []string{"volumes"}, 'n', func(k *keybinds) *rune { return &k.VolNew }},
 	{"network_attached", []string{"networks"}, 'i', func(k *keybinds) *rune { return &k.NetAttached }},
 	{"network_new", []string{"networks"}, 'n', func(k *keybinds) *rune { return &k.NetNew }},
+	// a = all, as volume_select_all: the manager's node-local networks too.
+	{"network_all", []string{"networks"}, 'a', func(k *keybinds) *rune { return &k.NetAll }},
 	{"node_edit_labels", []string{"nodes"}, 'l', func(k *keybinds) *rune { return &k.NodeLabels }},
 	{"node_availability", []string{"nodes"}, 'a', func(k *keybinds) *rune { return &k.NodeAvail }},
 	// Capital P, the same gesture the volumes tab uses for its prune — same verb,

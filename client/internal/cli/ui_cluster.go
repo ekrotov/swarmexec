@@ -217,10 +217,16 @@ func (u *ui) activateCluster(c *clusterState) {
 	go u.watchTopology(c.ctx, c)
 	u.activeCtx = c.name
 
-	// Now that the UI is actually on this cluster, make it docker's current
-	// context too, so a `docker` command in the next terminal agrees with what
-	// the footer says. A failure here is worth saying but not worth undoing the
-	// switch over: the operator asked for this cluster and is now on it.
+	// The switch is the TUI's own business: docker's stored current context —
+	// what `docker` in every other terminal talks to — is left alone. It used
+	// to be written here, and a glance at another cluster in the TUI then
+	// changed where `docker stack deploy` in the next terminal went; no other
+	// terminal UI has that side effect, and nobody expects it from one.
+	//
+	// ui.sync_docker_context opts back in, for operators who want the shell to
+	// follow. It is written only now that the UI is actually on this cluster,
+	// and a failure is worth saying but not worth undoing the switch over: the
+	// operator asked for this cluster and is now on it.
 	//
 	// $DOCKER_HOST does not undo an explicit switch: the cluster is dialled by
 	// its NAME from here on (ctxOverride == name), and a named stored context
@@ -229,7 +235,11 @@ func (u *ui) activateCluster(c *clusterState) {
 	// rest of the session: it is what "default" dials. A shell that still
 	// exports it ignores the stored current context, though, so the flash says
 	// so instead of promising agreement it cannot deliver.
-	useErr := dockerctx.Use(c.name)
+	sync := c.cfg.UI.SyncDockerContext
+	var useErr error
+	if sync {
+		useErr = dockerctx.Use(c.name)
+	}
 
 	// From cache first: if this cluster has been visited, the operator is back
 	// where they were before the network is touched at all.
@@ -244,7 +254,7 @@ func (u *ui) activateCluster(c *clusterState) {
 
 	u.refocusTopOverlay() // a session overlay the switch kept (askpass, client log) keeps the keyboard
 
-	msg := switchedFlash(c.name, u.treeTab().st().loaded, useErr, os.Getenv("DOCKER_HOST") != "")
+	msg := switchedFlash(c.name, u.treeTab().st().loaded, sync, useErr, os.Getenv("DOCKER_HOST") != "")
 	if closed > 0 {
 		msg += fmt.Sprintf(" [gray]— closed %d dialog(s) of the previous cluster[white]", closed)
 	}
@@ -345,13 +355,15 @@ func (u *ui) generation() uint64 { return u.gen.Load() }
 // — through async (ui_async.go) for new code, which captures gen itself.
 func (u *ui) onCluster(gen uint64, fn func()) { u.deliver(gen, "", fn) }
 
-// switchedFlash is the message a completed switch leaves in the footer. A
-// failed `docker context use` is reported here rather than in a flash of its
-// own, which the "switched to" flash would have overwritten at once. With
-// $DOCKER_HOST set, a stored context is now docker's current one but a shell
-// exporting DOCKER_HOST still goes to that host — worth one line, since the
-// comment above Use promises the two agree.
-func switchedFlash(name string, loaded bool, useErr error, dockerHostSet bool) string {
+// switchedFlash is the message a completed switch leaves in the footer, and it
+// says what happened to the shell either way: "TUI only" by default, "docker
+// context is now X (shell too)" with ui.sync_docker_context. A failed `docker
+// context use` is reported here rather than in a flash of its own, which the
+// "switched to" flash would have overwritten at once. With $DOCKER_HOST set, a
+// stored context is now docker's current one but a shell exporting DOCKER_HOST
+// still goes to that host — worth one line, since the sync promises the two
+// agree.
+func switchedFlash(name string, loaded, synced bool, useErr error, dockerHostSet bool) string {
 	if useErr != nil {
 		return " [green]switched to[white] " + name + " [yellow]— docker's current context was not updated:[white] " + useErr.Error()
 	}
@@ -359,6 +371,10 @@ func switchedFlash(name string, loaded bool, useErr error, dockerHostSet bool) s
 	if !loaded {
 		msg += " [gray]— loading[white]"
 	}
+	if !synced {
+		return msg + " [gray](TUI only — your shell's docker context is unchanged)[white]"
+	}
+	msg += " [gray]— docker context is now " + name + " (shell too)[white]"
 	if dockerHostSet && name != "default" {
 		msg += " [gray]($DOCKER_HOST still wins for docker in your shell)[white]"
 	}
