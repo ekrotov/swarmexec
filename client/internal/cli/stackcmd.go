@@ -41,6 +41,12 @@ func newStackLsCmd(g *globalFlags) *cobra.Command {
 			if err != nil {
 				return &cliError{code: session.TransportFailure, err: err}
 			}
+			// stdout stays one name per line for scripts; an empty cluster
+			// says so on stderr, as ps does (review C-08).
+			if len(names) == 0 {
+				fmt.Fprintln(cmd.ErrOrStderr(), "no stacks")
+				return nil
+			}
 			for _, n := range names {
 				fmt.Fprintln(cmd.OutOrStdout(), n)
 			}
@@ -90,6 +96,7 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 
 func newStackDiffCmd(g *globalFlags) *cobra.Command {
 	var stackName, format string
+	var asJSON bool
 	var ignore []string
 	cmd := &cobra.Command{
 		Use:   "diff <file> [stack]",
@@ -103,7 +110,7 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 			"Exit code 0 means no difference, 1 a difference, 2 a usage error and 125 an\n" +
 			"unreachable manager — so it can gate a pipeline. --ignore leaves a field out\n" +
 			"of both sides (\"services.*.deploy.replicas\" for an autoscaled count) and\n" +
-			"is reported under \"Not compared\"; --format json is the machine form.",
+			"is reported under \"Not compared\"; --json is the machine form.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
@@ -141,7 +148,7 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(),
 					"note: swarm ignores these keys in %s: %v\n", path, un)
 			}
-			if format == "json" {
+			if asJSON || format == "json" {
 				b, jerr := d.JSON()
 				if jerr != nil {
 					return jerr
@@ -159,7 +166,11 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&stackName, "stack", "", "stack name to compare against (default: the file's base name)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON instead of text")
+	// --format text|json predates --json, which every other command uses
+	// (review C-06); it stays for scripts, out of the help.
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text | json")
+	_ = cmd.Flags().MarkHidden("format")
 	cmd.Flags().StringSliceVar(&ignore, "ignore", nil, "leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)")
 	return cmd
 }

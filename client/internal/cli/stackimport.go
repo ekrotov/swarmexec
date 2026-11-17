@@ -23,10 +23,10 @@ import (
 // past while the deploy proceeds is a warning nobody reads.
 
 type stackDeployFlags struct {
-	prune bool
-	force bool
-	yes   bool
-	check bool
+	prune           bool
+	despiteFindings bool
+	yes             bool
+	check           bool
 }
 
 func newStackDeployCmd(g *globalFlags) *cobra.Command {
@@ -38,16 +38,19 @@ func newStackDeployCmd(g *globalFlags) *cobra.Command {
 			"deploy, and apply it. The stack name defaults to the file's base name.\n\n" +
 			"If anything above informational is found the deploy STOPS and asks. Use\n" +
 			"--yes to answer in advance (for CI), or --check to look without deploying.\n" +
-			"--force deploys despite findings without asking — say it deliberately.",
+			"--despite-findings deploys anyway without asking — say it deliberately.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStackDeploy(cmd, g, f, args)
 		},
 	}
 	cmd.Flags().BoolVar(&f.prune, "prune", false, "remove services of the stack the file no longer declares")
-	cmd.Flags().BoolVar(&f.force, "force", false, "deploy even though the check found something, without asking")
+	cmd.Flags().BoolVar(&f.despiteFindings, "despite-findings", false, "deploy even though the check found something, without asking")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "do not ask; deploy if the check found nothing actionable")
 	cmd.Flags().BoolVar(&f.check, "check", false, "only run the checks, never deploy")
+	// Was --force (review C-07): elsewhere --force mirrors docker's own
+	// force, here it lifts the security gate, so it says what it overrides.
+	addHiddenFlagAliases(cmd.Flags(), map[string]string{"force": "despite-findings"})
 	return cmd
 }
 
@@ -78,7 +81,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 		return nil
 	}
 
-	if plan.Actionable() && !f.force {
+	if plan.Actionable() && !f.despiteFindings {
 		if !f.yes && !confirmDeploy(cmd, plan) {
 			fmt.Fprintln(errOut, "aborted — nothing was deployed")
 			return &cliError{code: 1, silent: true}
@@ -88,7 +91,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 			// otherwise would turn a security gate into a formality the first
 			// time someone put it in CI.
 			fmt.Fprintln(errOut, "refusing to deploy: the check found something above informational.")
-			fmt.Fprintln(errOut, "Fix the file, or deploy deliberately with --force.")
+			fmt.Fprintln(errOut, "Fix the file, or deploy deliberately with --despite-findings.")
 			return &cliError{code: 1, silent: true}
 		}
 	}

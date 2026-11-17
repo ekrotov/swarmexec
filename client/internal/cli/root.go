@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
@@ -157,7 +158,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	pf.StringVar(&g.dockerContext, "context", "", "docker context for the manager API; supports ssh:// (also $DOCKER_CONTEXT)")
 	pf.StringVar(&g.logLevel, "client-log-level", "info", "swarmexec's own log verbosity: debug|info|warn|error|off")
 	pf.StringVar(&g.logFile, "client-log-file", "", "swarmexec's own log file (default swarmexec.log next to config; the TUI also has a live viewer)")
-	addHiddenFlagAliases(root, map[string]string{"log-level": "client-log-level", "log-file": "client-log-file"})
+	addHiddenFlagAliases(pf, map[string]string{"log-level": "client-log-level", "log-file": "client-log-file"})
 	markConnectionFlags(pf, "ca", "cert", "key", "port", "addr-mode", "server-name",
 		"agent-secret", "agent-secret-file", "insecure", "operator")
 	root.SetUsageFunc(groupedUsage)
@@ -191,12 +192,13 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 // --client-log-level and --client-log-file (review C-02), because next to
 // logs --min-level they read as a filter on the log OUTPUT. Sharing the Value
 // (not a second variable) means the last one given wins when both are set.
-func addHiddenFlagAliases(cmd *cobra.Command, aliases map[string]string) {
-	fs := cmd.PersistentFlags()
+// NoOptDefVal is shared too, so a renamed bool flag still needs no value.
+func addHiddenFlagAliases(fs *pflag.FlagSet, aliases map[string]string) {
 	for old, cur := range aliases {
 		f := fs.Lookup(cur)
 		alias := fs.VarPF(f.Value, old, "", f.Usage)
 		alias.DefValue = f.DefValue
+		alias.NoOptDefVal = f.NoOptDefVal
 		alias.Hidden = true
 	}
 }
