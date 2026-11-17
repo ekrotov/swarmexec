@@ -33,7 +33,17 @@ type terminalView struct {
 
 	mu         sync.Mutex
 	cols, rows int
-	stdin      io.Writer // exec stdin; nil until the session starts
+
+	// keys is the only way input reaches the session. The UI goroutine (key
+	// events) and the emulator's reply writer (which runs under the emulator
+	// lock) only ever enqueue, never block; one writer goroutine started by
+	// run drains it into the exec stdin pipe. A blocking write from either
+	// would freeze the UI whenever the session is not (yet, or any more)
+	// reading: during the dial, after a failed dial, after the shell exited.
+	keys chan []byte
+
+	// dial opens the agent connection; nil means agentcall's (a seam for tests).
+	dial func(ctx context.Context, host string) (*agentcall.Conn, error)
 
 	resizeCh chan os.Signal
 	detach   func()      // close the modal (set by the caller)
@@ -55,11 +65,44 @@ func newTerminalView(app *tview.Application) *terminalView {
 		cols:     80,
 		rows:     24,
 		resizeCh: make(chan os.Signal, 1),
+		keys:     make(chan []byte, inputQueueSize),
 	}
 	v.Box.SetBorder(true)
 	// The emulator's reply writer (cursor-position reports etc.) goes to stdin.
 	v.vt = vt10x.New(vt10x.WithSize(v.cols, v.rows), vt10x.WithWriter(replyWriter{v}))
 	return v
+}
+
+// inputQueueSize is how many pending input chunks the pane holds before it
+// drops further keys (a stalled session must not stall the UI).
+const inputQueueSize = 256
+
+// sendInput queues b for the session without ever blocking; when the queue is
+// full the input is dropped.
+func (v *terminalView) sendInput(b []byte) {
+	select {
+	case v.keys <- b:
+	default:
+	}
+}
+
+// pumpInput is the single writer to the exec stdin pipe: it drains keys until
+// ctx ends or the pipe is closed, then closes the pipe.
+func (v *terminalView) pumpInput(ctx context.Context, pw *io.PipeWriter) {
+	defer pw.Close()
+	// A Write blocked on a pipe nobody reads yet cannot see ctx; closing the
+	// pipe is what wakes it.
+	defer context.AfterFunc(ctx, func() { _ = pw.Close() })()
+	for {
+		select {
+		case b := <-v.keys:
+			if _, err := pw.Write(b); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // terminalSession is what one exec session in the pane runs: the container,
@@ -77,23 +120,37 @@ type terminalSession struct {
 func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, s terminalSession, connectTimeout time.Duration, onDone func(int, error)) {
 	pr, pw := io.Pipe()
 	v.mu.Lock()
-	v.stdin = pw
 	cols, rows := v.cols, v.rows
 	v.mu.Unlock()
 
 	go func() {
+		// Keys typed before the session is up wait in the queue (or in the
+		// pipe writer, on this goroutine's side); they never reach the UI loop.
+		ictx, icancel := context.WithCancel(ctx)
+		go v.pumpInput(ictx, pw)
+		// fail ends input and unblocks a writer stuck on the pipe BEFORE
+		// onDone runs, so nothing is left waiting for a reader that is gone.
+		fail := func(code int, err error) {
+			icancel()
+			_ = pr.CloseWithError(err)
+			onDone(code, err)
+		}
 		dctx, dcancel := context.WithTimeout(ctx, connectTimeout)
-		conn, err := ac.Conn(dctx, s.ep.DialHost)
+		dial := v.dial
+		if dial == nil {
+			dial = ac.Conn
+		}
+		conn, err := dial(dctx, s.ep.DialHost)
 		dcancel()
 		if err != nil {
-			onDone(session.TransportFailure, err)
+			fail(session.TransportFailure, err)
 			return
 		}
 		defer conn.Close()
 
 		stream, err := conn.Agent().Exec(ctx)
 		if err != nil {
-			onDone(session.TransportFailure, fmt.Errorf("open exec stream: %w", err))
+			fail(session.TransportFailure, fmt.Errorf("open exec stream: %w", err))
 			return
 		}
 
@@ -112,6 +169,8 @@ func (v *terminalView) run(ctx context.Context, ac *agentcall.Client, s terminal
 			ResizeEvents: v.resizeCh,
 			SizeFn:       v.size,
 		})
+		icancel()
+		_ = pr.Close()
 		onDone(code, runErr)
 	}()
 }
@@ -131,16 +190,22 @@ func (v *terminalView) Draw(screen tcell.Screen) {
 		return
 	}
 
+	// Only decide under v.mu; Resize takes the emulator lock, which vt.Write
+	// holds while its reply writer wants v.mu — taking them in that order
+	// here would be the inverse of the parse path.
 	v.mu.Lock()
-	if w != v.cols || h != v.rows {
+	changed := w != v.cols || h != v.rows
+	if changed {
 		v.cols, v.rows = w, h
+	}
+	v.mu.Unlock()
+	if changed {
 		v.vt.Resize(w, h)
 		select {
 		case v.resizeCh <- resizeSignal{}:
 		default:
 		}
 	}
-	v.mu.Unlock()
 
 	v.vt.Lock()
 	defer v.vt.Unlock()
@@ -166,7 +231,7 @@ func (v *terminalView) Draw(screen tcell.Screen) {
 }
 
 // InputHandler encodes key events into terminal input bytes and writes them to
-// the exec stdin. Ctrl-] detaches (closes the modal) without ending the shell.
+// the input queue. Ctrl-] detaches (closes the modal) without ending the shell.
 func (v *terminalView) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return v.WrapInputHandler(func(ev *tcell.EventKey, _ func(tview.Primitive)) {
 		// After the session ended (e.g. the command failed), the pane is frozen
@@ -183,14 +248,8 @@ func (v *terminalView) InputHandler() func(event *tcell.EventKey, setFocus func(
 			}
 			return
 		}
-		v.mu.Lock()
-		w := v.stdin
-		v.mu.Unlock()
-		if w == nil {
-			return
-		}
 		if b := encodeKey(ev); b != nil {
-			_, _ = w.Write(b)
+			v.sendInput(b)
 		}
 	})
 }
@@ -216,13 +275,9 @@ func (s vtSink) Write(p []byte) (int, error) {
 type replyWriter struct{ v *terminalView }
 
 func (r replyWriter) Write(p []byte) (int, error) {
-	r.v.mu.Lock()
-	w := r.v.stdin
-	r.v.mu.Unlock()
-	if w == nil {
-		return len(p), nil
-	}
-	return w.Write(p)
+	// Called under the emulator lock: must not block, and p is reused.
+	r.v.sendInput(append([]byte(nil), p...))
+	return len(p), nil
 }
 
 // vtColor maps a vt10x color to a tcell color (default, 256-palette, or 24-bit).
