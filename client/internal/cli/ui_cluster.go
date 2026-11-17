@@ -213,6 +213,8 @@ func (u *ui) activateCluster(c *clusterState) {
 	u.clusterState = c
 	if c.ctx == nil || c.ctx.Err() != nil {
 		c.ctx, c.cancel = context.WithCancel(u.runCtx)
+		// Editors record the version they loaded in here; see swarmops.Baseline.
+		c.ctx = swarmops.WithBaseline(c.ctx)
 	}
 	c.agents.Resume() // pool agent connections again (see leaveCluster)
 	// One topology watcher per activation, on this cluster's context — so it

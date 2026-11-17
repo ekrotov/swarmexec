@@ -366,7 +366,7 @@ func (e *nodeLabelEditor) apply() {
 	}
 	u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
 		asyncDo(u, "ui.nodes.labels", func(ctx context.Context) error {
-			return swarmops.SetNodeLabels(ctx, dcli, n.ID, lbls)
+			return swarmops.SetNodeLabels(ctx, dcli, n.ID, n.Version, lbls)
 		}, func(err error) {
 			if err != nil {
 				u.info("update failed: " + err.Error())
@@ -397,7 +397,7 @@ func (u *ui) openNodeAvailability(n swarmops.NodeInfo, back tview.Primitive, aft
 
 	apply := func(to swarm.NodeAvailability) {
 		asyncDo(u, "ui.nodes.availability", func(ctx context.Context) error {
-			return swarmops.SetNodeAvailability(ctx, dcli, n.ID, to)
+			return swarmops.SetNodeAvailability(ctx, dcli, n.ID, n.Version, to)
 		}, func(err error) {
 			if err != nil {
 				u.info(fmt.Sprintf("could not set %s to %s: %v", n.Hostname, to, err))
