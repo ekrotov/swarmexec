@@ -48,6 +48,7 @@ func TestScrapeCarriesInfoAndRefusals(t *testing.T) {
 	p := New("v1.2.3", "swarmexec/v1")
 	p.LimitRefused("streams")
 	p.LimitRefused("streams")
+	p.AuthFailed("invalid")
 
 	rec := httptest.NewRecorder()
 	p.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
@@ -57,6 +58,9 @@ func TestScrapeCarriesInfoAndRefusals(t *testing.T) {
 		`swarmexec_limit_refusals_total{limit="streams"} 2`,
 		`swarmexec_limit_refusals_total{limit="forward_sidecars"} 0`,
 		`swarmexec_auth_denials_total 0`,
+		`swarmexec_auth_failures_total{reason="invalid"} 1`,
+		`swarmexec_auth_failures_total{reason="missing"} 0`,
+		`swarmexec_auth_failures_total{reason="legacy_refused"} 0`,
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("scrape is missing %q:\n%s", want, body)

@@ -270,6 +270,7 @@ func buildServer(cfg *config.Config, d deps) (*agent, error) {
 			CertDER:     certDER,
 			AllowLegacy: cfg.AllowLegacySecret,
 			Log:         log,
+			Metrics:     sink,
 		}
 		log.Info("shared-secret authentication enabled",
 			"connection_bound", len(certDER) > 0, "legacy_raw_secret_accepted", cfg.AllowLegacySecret)
