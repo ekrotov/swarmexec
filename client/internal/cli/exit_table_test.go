@@ -43,13 +43,24 @@ func TestExitTableMatchesSitePage(t *testing.T) {
 // bare number: a command cannot invent a code the table does not document.
 func TestCommandsUseOnlyTableCodes(t *testing.T) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
+	var files []*ast.File
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, e.Name(), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, f)
+	}
 	checked := 0
-	for _, pkg := range pkgs {
-		for _, f := range pkg.Files {
+	{
+		for _, f := range files {
 			ast.Inspect(f, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.KeyValueExpr:

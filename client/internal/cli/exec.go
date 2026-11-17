@@ -209,9 +209,9 @@ func execInto(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p 
 		defer close(done)
 		go func() {
 			select {
-			case <-sigCh:
+			case s := <-sigCh:
 				restorer.Restore()
-				os.Exit(session.TransportFailure)
+				os.Exit(exitCodeForSignal(s))
 			case <-done:
 			}
 		}()

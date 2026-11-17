@@ -524,6 +524,17 @@ func (u *ui) runScreen() error {
 	setAskpassPrompter(u.askpassPrompt)
 	defer setAskpassPrompter(nil)
 
+	// SIGTERM / SIGHUP cancel the command's context: leave the screen properly
+	// (the terminal restored) instead of being cut off by the grace timer.
+	// Ctrl-C does not get here, the terminal is raw and delivers it as a key.
+	go func() {
+		select {
+		case <-cmdContext(u.cmd).Done():
+			app.QueueUpdate(app.Stop)
+		case <-u.runCtx.Done():
+		}
+	}()
+
 	if err := app.SetRoot(u.pages, true).EnableMouse(true).Run(); err != nil {
 		return &cliError{code: exitTransport, err: fmt.Errorf("ui: %w", err)}
 	}
