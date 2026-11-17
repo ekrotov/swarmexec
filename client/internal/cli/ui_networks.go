@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
@@ -178,41 +181,54 @@ func (t *networksTab) loadEndpoints() {
 	st.loading = time.Now()
 	r, ac, dcli, timeout := u.r, u.agents, u.dcli, u.f.connectTimeout
 	async(u, "ui.networks.endpoints", func(ctx context.Context) (netEndpointsResult, error) {
-		nodes, err := r.Nodes(ctx)
-		if err != nil {
-			return netEndpointsResult{}, err
-		}
-		res := ac.NodesNetworkEndpoints(ctx, nodes, nil, timeout)
-		// The manager's tasks are read after the nodes answered: a task
-		// that started meanwhile is then known (no false stale); only one
-		// that stopped meanwhile can still show, until the next refresh.
-		tasks, err := swarmops.NetworkTaskAddrs(ctx, dcli)
-		if err != nil {
-			return netEndpointsResult{}, err
-		}
-		out := netEndpointsResult{byNet: swarmops.AnalyzeEndpoints(tasks, res)}
-		for _, n := range res {
-			if n.Err != nil {
-				out.failed++
-			}
-		}
-		return out, nil
+		return fetchNetEndpoints(ctx, r, ac, dcli, timeout)
 	}, func(res netEndpointsResult, err error) {
-		st.loading = time.Time{}
-		st.loaded, st.err = true, err
-		if err == nil {
-			st.byNet, st.failed = res.byNet, res.failed
-		}
-		if t.shownFor == u.clusterState {
-			t.render()
-		}
-		if u.activeTab() == tabView(t) {
-			u.updateStatus() // the "n/a" legend
-		}
-		if v := t.members; v != nil && u.pages.HasPage(pageNetMembers) {
-			v.endpointsArrived()
-		}
+		t.endpointsLoaded(st, res, err)
 	})
+}
+
+// fetchNetEndpoints is the load's off-loop half: every node's endpoint view,
+// then the manager's tasks, analysed together.
+func fetchNetEndpoints(ctx context.Context, r *resolve.Resolver, ac *agentcall.Client, dcli swarmapi.Client, timeout time.Duration) (netEndpointsResult, error) {
+	nodes, err := r.Nodes(ctx)
+	if err != nil {
+		return netEndpointsResult{}, err
+	}
+	res := ac.NodesNetworkEndpoints(ctx, nodes, nil, timeout)
+	// The manager's tasks are read after the nodes answered: a task
+	// that started meanwhile is then known (no false stale); only one
+	// that stopped meanwhile can still show, until the next refresh.
+	tasks, err := swarmops.NetworkTaskAddrs(ctx, dcli)
+	if err != nil {
+		return netEndpointsResult{}, err
+	}
+	out := netEndpointsResult{byNet: swarmops.AnalyzeEndpoints(tasks, res)}
+	for _, n := range res {
+		if n.Err != nil {
+			out.failed++
+		}
+	}
+	return out, nil
+}
+
+// endpointsLoaded is the load's UI-goroutine half: store the result on st
+// (the cluster it was started for) and repaint what shows it.
+func (t *networksTab) endpointsLoaded(st *netEndpointsState, res netEndpointsResult, err error) {
+	u := t.u
+	st.loading = time.Time{}
+	st.loaded, st.err = true, err
+	if err == nil {
+		st.byNet, st.failed = res.byNet, res.failed
+	}
+	if t.shownFor == u.clusterState {
+		t.render()
+	}
+	if u.activeTab() == tabView(t) {
+		u.updateStatus() // the "n/a" legend
+	}
+	if v := t.members; v != nil && u.pages.HasPage(pageNetMembers) {
+		v.endpointsArrived()
+	}
 }
 
 // endpointNote is what the endpoint analysis adds to the CONTAINERS cell —

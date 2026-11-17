@@ -1013,19 +1013,7 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 	if len(suggestFrom) == 0 {
 		suggestFrom = info.all
 	}
-	in.SetAutocompleteFunc(func(cur string) []string {
-		cur = strings.TrimSpace(cur)
-		var out []string
-		for _, v := range suggestFrom {
-			if cur == "" || strings.Contains(v, cur) {
-				out = append(out, v)
-			}
-			if len(out) >= versionSuggestionLimit {
-				break // a big repo can list hundreds of tags
-			}
-		}
-		return out
-	})
+	in.SetAutocompleteFunc(func(cur string) []string { return versionSuggestions(suggestFrom, cur) })
 	iov := u.overlayFor(pageImageVersion, back, "")
 	in.SetDoneFunc(func(k tcell.Key) {
 		iov.Close()
@@ -1046,6 +1034,22 @@ func (u *ui) openImageVersionPicker(svcName string, info upgradeInfo, back tview
 	})
 	in.SetBorder(true).SetTitle(fmt.Sprintf(" update %s — running %s ", svcName, info.current))
 	iov.show(centeredPrompt(in, 60), in)
+}
+
+// versionSuggestions are the versions containing what is typed (all of them
+// for nothing typed), in order, at most versionSuggestionLimit.
+func versionSuggestions(from []string, cur string) []string {
+	cur = strings.TrimSpace(cur)
+	var out []string
+	for _, v := range from {
+		if cur == "" || strings.Contains(v, cur) {
+			out = append(out, v)
+		}
+		if len(out) >= versionSuggestionLimit {
+			break // a big repo can list hundreds of tags
+		}
+	}
+	return out
 }
 
 // confirmImageUpdate confirms and applies an image change (rolling update). When
