@@ -56,6 +56,50 @@ strict `FILE` rules: a removed or renumbered field fails the pipeline, as
 CONTRACT.md §7 asks. The lint exceptions in `buf.yaml` are wire names that
 cannot change without breaking deployed agents.
 
+### Testing the client against the real agent (`agenttest`)
+
+`client/` and `agent/` do not import each other, and Go's `internal` rule keeps
+a test in one from reaching the other, so a hand-written fake agent in a client
+test only ever proves the author's idea of the agent. `agent/agenttest` is the
+one sanctioned door: it starts the **real** agent (`server.New`, the real
+interceptor chain `server.Interceptors`, `tlsconf`, the policy loader, every RPC
+handler and `dockerStatus`) on a 127.0.0.1 listener with a fake Docker daemon
+behind it. Client tests import it:
+
+```go
+d := agenttest.NewDocker().
+    AddContainer(agenttest.Container{ID: "c1", Service: "web"}).
+    SetLogs("c1", "hello\nERR oops\n")           // "ERR " lines go to stderr
+a := agenttest.Start(t, agenttest.Options{
+    Secret: "s3cret",   // shared-secret mode (self-signed server certificate)
+    // MTLS: true,      // or: require client certificates from a test CA
+    // Policy: "...",   // contents of a -policy-file
+    Docker: d,
+})
+ac := agentcall.New(config.Config{Port: 7000, Insecure: true,
+    AgentSecret: "s3cret", ProxyDialer: a.Dial}) // a.Dial ignores the node name
+```
+
+What the handle gives you: `Host`/`Port`/`Addr()`, `CAFile` (verifies the
+server certificate; use `ServerName: "localhost"`), `Dial` (a `ProxyDialer`),
+`IssueClient(t, cn)` / `IssueForeignClient(t, cn)` for mTLS client
+certificates (`ClientCert{Cert, Key}`), `Audit()` / `AuditEvents(name)` for the
+decoded audit log, and `Docker`, the fake daemon: `Fail("ContainerList", err)`
+injects an Engine error (wrap a `cerrdefs` class to see the status mapping),
+`Calls()` / `Called()` / `LogCalls()` record what the agent asked of Docker,
+`SetExec(fn)` scripts the exec process. Unimplemented Engine methods (images,
+prune, stats, sidecars) panic, which the recovery interceptor reports as
+`Internal`; add them to `agenttest/docker.go` when a test needs one. The
+background caches (volume sizes, stats, reclaim, prune schedule) are not
+started.
+
+Use `agenttest` whenever a test's value is in what the *agent* does with the
+request (credentials, identity, policy, status codes, audit, translation into
+Docker calls). Keep a hand-written fake only for what a real agent cannot
+produce: a node that predates an RPC, a dead link, scripted slowness, counting
+TLS handshakes or dials (`agentcall/fake_test.go`). `agenttest` mirrors
+`buildServer`'s wiring in `cmd/agent/main.go`; change the two together.
+
 ### Documentation site
 
 `site/` is the website (landing page, docs, release notes) and is English
