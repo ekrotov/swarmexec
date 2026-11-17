@@ -41,7 +41,7 @@ endef
 
 # Minimum total test coverage in percent (generated internal/pb excluded).
 # Set just below the measured value; raise it as coverage grows, never lower it.
-COVER_MIN  ?= 73.2
+COVER_MIN  ?= 78.1
 
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
