@@ -58,19 +58,14 @@ func (s *Server) NetworkEndpoints(ctx context.Context, req *pb.NetworkEndpointsR
 			return nil, dockerStatus(err, "inspect networks")
 		}
 		res, err := s.docker.NetworkInspect(ctx, id, client.NetworkInspectOptions{Verbose: true, Scope: "swarm"})
-		switch {
-		case err != nil && ctx.Err() != nil:
-			return nil, dockerStatus(err, "inspect networks")
-		case err != nil && !explicit && cerrdefs.IsNotFound(err):
-			// Removed between the listing and the inspect: nothing to report.
-			continue
-		case err != nil:
-			msg := "inspect network: " + err.Error()
-			if cerrdefs.IsNotFound(err) {
-				msg = "network not found on this node"
+		if err != nil {
+			entry, ferr := s.inspectFailure(ctx, id, explicit, err)
+			if ferr != nil {
+				return nil, ferr
 			}
-			s.log.Warn("NetworkInspect failed", "network", id, "err", err)
-			out.Networks = append(out.Networks, &pb.NetworkEndpointsInfo{Id: id, Error: msg})
+			if entry != nil {
+				out.Networks = append(out.Networks, entry)
+			}
 			continue
 		}
 		in := res.Network
@@ -78,24 +73,52 @@ func (s *Server) NetworkEndpoints(ctx context.Context, req *pb.NetworkEndpointsR
 			continue // asked by ID and by name, or listed twice
 		}
 		seen[in.ID] = true
-		switch {
-		case in.Scope != "swarm":
-			// The daemon was asked for swarm scope; this guards one that ignores it.
-			if explicit {
-				out.Networks = append(out.Networks, &pb.NetworkEndpointsInfo{Id: id, Error: "not a swarm-scope network"})
-			}
-			continue
-		case !explicit && !networkJoined(in):
-			// A manager lists every swarm network in the cluster, and inspecting one
-			// this node never instantiated returns the bare cluster object.
-			continue
+		if entry := endpointsEntry(id, in, explicit); entry != nil {
+			out.Networks = append(out.Networks, entry)
 		}
-		out.Networks = append(out.Networks, networkEndpointsInfo(in))
 	}
 	slices.SortStableFunc(out.Networks, func(a, b *pb.NetworkEndpointsInfo) int {
 		return cmp.Or(cmp.Compare(a.GetName(), b.GetName()), cmp.Compare(a.GetId(), b.GetId()))
 	})
 	return out, nil
+}
+
+// inspectFailure decides what a failed inspect of target id means: a fatal
+// error when the call was cancelled, nothing when a listed network vanished
+// before the inspect, otherwise an error entry for that network.
+func (s *Server) inspectFailure(ctx context.Context, id string, explicit bool, err error) (*pb.NetworkEndpointsInfo, error) {
+	switch {
+	case ctx.Err() != nil:
+		return nil, dockerStatus(err, "inspect networks")
+	case !explicit && cerrdefs.IsNotFound(err):
+		// Removed between the listing and the inspect: nothing to report.
+		return nil, nil
+	}
+	msg := "inspect network: " + err.Error()
+	if cerrdefs.IsNotFound(err) {
+		msg = "network not found on this node"
+	}
+	s.log.Warn("NetworkInspect failed", "network", id, "err", err)
+	return &pb.NetworkEndpointsInfo{Id: id, Error: msg}, nil
+}
+
+// endpointsEntry is the entry for one inspected network, or nil when it is
+// skipped: not swarm scope, or (when listed rather than asked for) not joined
+// by this node.
+func endpointsEntry(id string, in network.Inspect, explicit bool) *pb.NetworkEndpointsInfo {
+	switch {
+	case in.Scope != "swarm":
+		// The daemon was asked for swarm scope; this guards one that ignores it.
+		if explicit {
+			return &pb.NetworkEndpointsInfo{Id: id, Error: "not a swarm-scope network"}
+		}
+		return nil
+	case !explicit && !networkJoined(in):
+		// A manager lists every swarm network in the cluster, and inspecting one
+		// this node never instantiated returns the bare cluster object.
+		return nil
+	}
+	return networkEndpointsInfo(in)
 }
 
 // networkEndpointTargets is what to inspect: the requested networks
