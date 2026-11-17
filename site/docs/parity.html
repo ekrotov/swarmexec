@@ -145,7 +145,7 @@
           <tr><td>Live CPU and memory per container</td><td><code>stats</code></td><td>markers in the tree; <kbd>i</kbd> → stats view</td><td><code>stats</code></td></tr>
           <tr><td>Inspect a service: spec and recent tasks</td><td><span class="pm-no">—</span></td><td><kbd>i</kbd> on a service</td><td><code>service_inspect</code></td></tr>
           <tr><td>Inspect a container on its node<br><span class="pm-why"><span class="pm-only">TUI only</span> for now: it reads the container from its node's agent, picked from the tree; a CLI form can follow.</span></td><td><span class="pm-no">—</span></td><td>container menu → inspect</td><td><span class="pm-no">—</span></td></tr>
-          <tr><td>Security risks of the deployed services</td><td><code>security check</code></td><td><kbd>!</kbd> overlay</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Security risks of the deployed services</td><td><code>security report</code> (whole cluster)</td><td><kbd>!</kbd> overlay</td><td><span class="pm-no">—</span></td></tr>
           <tr><td>Security report of the whole cluster (Markdown)</td><td><code>security report</code></td><td><kbd>!</kbd> then <kbd>w</kbd></td><td><code>security_report</code> (with <code>--allow report</code>)</td></tr>
           <tr><td>Placement diagnosis — why a task is missing<br><span class="pm-why"><span class="pm-only">TUI only</span> for now: it is one view over nodes, constraints and task errors; there is no CLI or MCP form of it yet.</span></td><td><span class="pm-no">—</span></td><td><kbd>i</kbd> → <kbd>a</kbd> → <kbd>D</kbd></td><td><span class="pm-no">—</span></td></tr>
         </tbody>
@@ -171,7 +171,7 @@
           <tr><td>List stacks</td><td><code>stack ls</code></td><td><kbd>s</kbd> groups the tree by stack</td><td>in <code>services_list</code></td></tr>
           <tr><td>Export a deployed stack as a file</td><td><code>stack export</code></td><td><kbd>E</kbd> → export</td><td><span class="pm-no">—</span></td></tr>
           <tr><td>Diff a stack file against the cluster</td><td><code>stack diff</code></td><td><kbd>E</kbd> → compare</td><td><code>stack_diff</code></td></tr>
-          <tr><td>Security-check a stack file before deploying</td><td><code>stack check</code></td><td><kbd>E</kbd> → deploy checks first</td><td><code>stack_check</code></td></tr>
+          <tr><td>Security-check a stack file before deploying</td><td><code>stack check</code> = <code>security check</code></td><td><kbd>E</kbd> → deploy checks first</td><td><code>stack_check</code></td></tr>
           <tr><td>Deploy a stack file</td><td><code>stack deploy</code></td><td><kbd>E</kbd> → deploy</td><td><span class="pm-no">—</span></td></tr>
           <tr><td>Remove a stack</td><td><code>stack rm</code></td><td><kbd>X</kbd> on a stack row</td><td><span class="pm-no">—</span></td></tr>
           <tr><td>Wait until a deploy has converged<br><span class="pm-why">CLI only: a gate for scripts and CI; the TUI shows the same state live.</span></td><td><code>wait</code></td><td><span class="pm-no">—</span> (watch the tree)</td><td><span class="pm-no">—</span></td></tr>

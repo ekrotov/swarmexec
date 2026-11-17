@@ -135,20 +135,29 @@
           <li class="d1"><a href="#init">swarmexec init</a></li>
           <li class="d1"><a href="#logs">swarmexec logs</a></li>
           <li class="d1"><a href="#mcp">swarmexec mcp</a></li>
+          <li class="d1"><a href="#node">swarmexec node</a></li>
+          <li class="d2"><a href="#node-ls">swarmexec node ls</a></li>
+          <li class="d2"><a href="#node-prune">swarmexec node prune</a></li>
+          <li class="d2"><a href="#node-prune-schedule">swarmexec node prune-schedule</a></li>
+          <li class="d3"><a href="#node-prune-schedule-set">swarmexec node prune-schedule set</a></li>
+          <li class="d3"><a href="#node-prune-schedule-show">swarmexec node prune-schedule show</a></li>
+          <li class="d2"><a href="#node-update">swarmexec node update</a></li>
           <li class="d1"><a href="#port-forward">swarmexec port-forward</a></li>
-          <li class="d1"><a href="#prune-schedule">swarmexec prune-schedule</a></li>
-          <li class="d2"><a href="#prune-schedule-set">swarmexec prune-schedule set</a></li>
-          <li class="d2"><a href="#prune-schedule-show">swarmexec prune-schedule show</a></li>
           <li class="d1"><a href="#ps">swarmexec ps</a></li>
           <li class="d1"><a href="#secret">swarmexec secret</a></li>
           <li class="d2"><a href="#secret-rotate">swarmexec secret rotate</a></li>
           <li class="d1"><a href="#security">swarmexec security</a></li>
+          <li class="d2"><a href="#security-check">swarmexec security check</a></li>
           <li class="d2"><a href="#security-report">swarmexec security report</a></li>
           <li class="d1"><a href="#stack">swarmexec stack</a></li>
+          <li class="d2"><a href="#stack-check">swarmexec stack check</a></li>
           <li class="d2"><a href="#stack-deploy">swarmexec stack deploy</a></li>
           <li class="d2"><a href="#stack-diff">swarmexec stack diff</a></li>
           <li class="d2"><a href="#stack-export">swarmexec stack export</a></li>
           <li class="d2"><a href="#stack-ls">swarmexec stack ls</a></li>
+          <li class="d2"><a href="#stack-rm">swarmexec stack rm</a></li>
+          <li class="d1"><a href="#stats">swarmexec stats</a></li>
+          <li class="d1"><a href="#status">swarmexec status</a></li>
           <li class="d1"><a href="#ui">swarmexec ui</a></li>
           <li class="d1"><a href="#volume">swarmexec volume</a></li>
           <li class="d2"><a href="#volume-ls">swarmexec volume ls</a></li>
@@ -182,12 +191,14 @@ swarmexec [command]</div>
         <li><a href="#init"><code>swarmexec init</code></a> — Provision the agent on every node of the swarm (self-signed &#43; shared secret)</li>
         <li><a href="#logs"><code>swarmexec logs</code></a> — Stream logs of one or more containers, services or a stack from anywhere in the swarm</li>
         <li><a href="#mcp"><code>swarmexec mcp</code></a> — Serve the swarm to an AI assistant over MCP (stdio)</li>
+        <li><a href="#node"><code>swarmexec node</code></a> — List the swarm&#39;s nodes, prune them, set availability and labels, schedule prunes</li>
         <li><a href="#port-forward"><code>swarmexec port-forward</code></a> — Forward a local port to a port inside a container in the swarm</li>
-        <li><a href="#prune-schedule"><code>swarmexec prune-schedule</code></a> — Show or set the cluster-wide prune schedule the agents run</li>
         <li><a href="#ps"><code>swarmexec ps</code></a> — List candidate tasks/containers and the node each runs on</li>
         <li><a href="#secret"><code>swarmexec secret</code></a> — Work with swarm secrets</li>
-        <li><a href="#security"><code>swarmexec security</code></a> — Security scan of the swarm</li>
+        <li><a href="#security"><code>swarmexec security</code></a> — Security report of the cluster, and checks of stack files before deploying</li>
         <li><a href="#stack"><code>swarmexec stack</code></a> — Work with deployed stacks</li>
+        <li><a href="#stats"><code>swarmexec stats</code></a> — Show live CPU and memory of each container, measured by the node agents</li>
+        <li><a href="#status"><code>swarmexec status</code></a> — Show the cluster at a glance: nodes, services, replicas and health</li>
         <li><a href="#ui"><code>swarmexec ui</code></a> — Terminal UI: stacks/services, volumes, forwards, networks, secrets, nodes, configs — several clusters in one session</li>
         <li><a href="#volume"><code>swarmexec volume</code></a> — List and remove volumes across the swarm</li>
         <li><a href="#wait"><code>swarmexec wait</code></a> — Wait until services have converged — for CI after a deploy</li>
@@ -485,7 +496,7 @@ swarmexec logs -f --tail 20 --stack shop</div>
       <div class="cmd">swarmexec mcp [flags]</div>
       <p>Run a Model Context Protocol server on stdin/stdout, so an AI assistant can inspect the swarm: services, tasks, logs, stats, stack diffs. Register it with</p>
       <pre class="helptext">claude mcp add swarmexec -- swarmexec mcp</pre>
-      <p>A service is visible only with the service label swarmexec.mcp.enable=true (compose: deploy.labels). swarmexec.mcp.logs=true allows its logs, swarmexec.mcp.exec=true a non-interactive command in its containers. An explicit &#34;false&#34; always wins. --default read makes unlabelled services visible, never readable or executable.</p>
+      <p>A service is visible only with the service label swarmexec.mcp.enable=true (compose: deploy.labels). swarmexec.mcp.logs=true allows its logs, swarmexec.mcp.exec=true a non-interactive command in its containers. An explicit &#34;false&#34; always wins. --default list makes unlabelled services visible (listed, inspected, their stats read), never their logs or exec.</p>
       <p>The labels themselves are never shown to the assistant, and nothing can be changed through this server. A service that mounts the Docker socket is never exec&#39;d into, whatever its labels say.</p>
       <p>ssh cannot prompt here: stdin and stdout are the protocol. Load the key for an ssh:// context into ssh-agent first. Logging goes to the log file.</p>
       <p>Only the docker context the server starts with (--context, $DOCKER_CONTEXT, $DOCKER_HOST or docker&#39;s current one) is reachable, plus those named with --contexts. Every other context does not exist as far as the assistant can tell: it is not listed, and asking for it is &#34;unknown docker context&#34;.</p>
@@ -496,7 +507,111 @@ swarmexec logs -f --tail 20 --stack shop</div>
           <tr><td><code>--allow strings</code></td><td>—</td><td>enable optional tools: report (security_report)</td></tr>
           <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
           <tr><td><code>--contexts strings</code></td><td>—</td><td>further docker contexts the assistant may use, besides the one the server starts with (comma list or repeated)</td></tr>
-          <tr><td><code>--default string</code></td><td><code>none</code></td><td>access for services without swarmexec.mcp.enable: none | read</td></tr>
+          <tr><td><code>--default string</code></td><td><code>none</code></td><td>access for services without swarmexec.mcp.enable: none | list (&#34;read&#34; is accepted for list)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="node" class="clicmd"><code>swarmexec node</code></h2>
+      <p class="clishort">List the swarm&#39;s nodes, prune them, set availability and labels, schedule prunes</p>
+      <div class="cmd">swarmexec node [command]</div>
+      <p class="climeta">Aliases: <code>nodes</code></p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#node-ls"><code>swarmexec node ls</code></a> — List the nodes: role, availability, state, engine, running tasks, volumes, labels</li>
+        <li><a href="#node-prune"><code>swarmexec node prune</code></a> — Free disk on one node: stopped containers, images, build cache, networks, volumes</li>
+        <li><a href="#node-prune-schedule"><code>swarmexec node prune-schedule</code></a> — Show or set the cluster-wide prune schedule the agents run</li>
+        <li><a href="#node-update"><code>swarmexec node update</code></a> — Set a node&#39;s availability (active, pause, drain) or its labels</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="node-ls" class="clicmd"><code>swarmexec node ls</code></h3>
+      <p class="clishort">List the nodes: role, availability, state, engine, running tasks, volumes, labels</p>
+      <div class="cmd">swarmexec node ls [flags]</div>
+      <p>The Nodes tab as a table. TASKS counts the running tasks the manager placed on the node; VOLS is the node&#39;s volume count, asked of its agent (&#34;-&#34; when the agent did not answer, or with --skip-agents); LABELS is the number of node labels (--json lists them).</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>do not ask the agents for volume counts (faster)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="node-prune" class="clicmd"><code>swarmexec node prune</code></h3>
+      <p class="clishort">Free disk on one node: stopped containers, images, build cache, networks, volumes</p>
+      <div class="cmd">swarmexec node prune &lt;node&gt; [flags]</div>
+      <p>Prune one node through its agent, the TUI&#39;s node prune. Without --categories it sweeps the safe ones: stopped containers, untagged images, build cache and unused local networks. &#34;images&#34; (every unused image, including those of services scaled to zero) and &#34;volumes&#34; (DATA, named volumes included) are only ever pruned when named.</p>
+      <p>Before pruning it shows what each category would free, as the agent last measured it, and asks; --yes answers in advance. Without a terminal and without --yes nothing is pruned.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec node prune worker-1
+swarmexec node prune worker-1 --categories containers,images --yes
+swarmexec node prune worker-1 --containers-until 2h</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--categories string</code></td><td>—</td><td>comma-separated: containers, images, dangling-images, buildcache, networks, volumes (default containers,dangling-images,buildcache,networks)</td></tr>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--containers-until string</code></td><td>—</td><td>keep stopped containers this long after they stop (default 24h; 0 keeps none)</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt for confirmation</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="node-prune-schedule" class="clicmd"><code>swarmexec node prune-schedule</code></h3>
+      <p class="clishort">Show or set the cluster-wide prune schedule the agents run</p>
+      <div class="cmd">swarmexec node prune-schedule [command]</div>
+      <p>The agents can prune their node on a schedule: stopped containers, unused images, build cache and unused local networks by default; volumes only when added explicitly. The schedule is stored as container labels on the agent service (swarmexec.prune.*), so setting it restarts the agents one by one.</p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#node-prune-schedule-set"><code>swarmexec node prune-schedule set</code></a> — Set (and enable) the schedule; flags not given keep their current value</li>
+        <li><a href="#node-prune-schedule-show"><code>swarmexec node prune-schedule show</code></a> — Show the schedule as the agent service carries it</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="node-prune-schedule-set" class="clicmd"><code>swarmexec node prune-schedule set</code></h3>
+      <p class="clishort">Set (and enable) the schedule; flags not given keep their current value</p>
+      <div class="cmd">swarmexec node prune-schedule set [flags]</div>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec node prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin
+swarmexec node prune-schedule set --categories containers,images,buildcache,networks,volumes
+swarmexec node prune-schedule set --disable</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--categories string</code></td><td>—</td><td>comma-separated: containers, images, dangling-images, buildcache, networks, volumes</td></tr>
+          <tr><td><code>--containers-until string</code></td><td>—</td><td>keep stopped containers this long after they stop (default 24h; 0 keeps none)</td></tr>
+          <tr><td><code>--days string</code></td><td>—</td><td>days to run: mon,tue,… or ranges like mon-fri (default every day)</td></tr>
+          <tr><td><code>--disable</code></td><td><code>false</code></td><td>turn the schedule off (keeps the other settings)</td></tr>
+          <tr><td><code>--label-filter string</code></td><td>—</td><td>only prune objects with these labels (key or key=value, comma-separated); &#34;-&#34; clears</td></tr>
+          <tr><td><code>--start string</code></td><td>—</td><td>first run of the day, HH:MM (default 00:00)</td></tr>
+          <tr><td><code>--times int</code></td><td><code>0</code></td><td>runs per day, the day split evenly from --start (1-24)</td></tr>
+          <tr><td><code>--tz string</code></td><td>—</td><td>IANA time zone for --days and --start (default UTC)</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt before restarting the agents</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="node-prune-schedule-show" class="clicmd"><code>swarmexec node prune-schedule show</code></h3>
+      <p class="clishort">Show the schedule as the agent service carries it</p>
+      <div class="cmd">swarmexec node prune-schedule show [flags]</div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="node-update" class="clicmd"><code>swarmexec node update</code></h3>
+      <p class="clishort">Set a node&#39;s availability (active, pause, drain) or its labels</p>
+      <div class="cmd">swarmexec node update &lt;node&gt; [flags]</div>
+      <p>Change a node the way the TUI&#39;s Nodes tab does. Applies at once: a node has no rolling update. Draining moves every task off the node, so it asks first (--yes answers in advance); active and pause apply directly — pause only stops new placements.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec node update worker-1 --availability drain --yes
+swarmexec node update worker-1 --label-add zone=b --label-rm old</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--availability string</code></td><td>—</td><td>active | pause | drain</td></tr>
+          <tr><td><code>--label-add stringArray</code></td><td>—</td><td>add or change a node label, key=value (repeatable)</td></tr>
+          <tr><td><code>--label-rm stringArray</code></td><td>—</td><td>remove a node label by key (repeatable)</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt before draining</td></tr>
         </tbody>
       </table></div>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
@@ -520,45 +635,6 @@ swarmexec port-forward web.2 8080</div>
           <tr><td><code>--node string</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
         </tbody>
       </table></div>
-      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
-
-      <h2 id="prune-schedule" class="clicmd"><code>swarmexec prune-schedule</code></h2>
-      <p class="clishort">Show or set the cluster-wide prune schedule the agents run</p>
-      <div class="cmd">swarmexec prune-schedule [command]</div>
-      <p>The agents can prune their node on a schedule: stopped containers, unused images, build cache and unused local networks by default; volumes only when added explicitly. The schedule is stored as container labels on the agent service (swarmexec.prune.*), so setting it restarts the agents one by one.</p>
-      <p class="climeta">Subcommands</p>
-      <ul class="clisubs">
-        <li><a href="#prune-schedule-set"><code>swarmexec prune-schedule set</code></a> — Set (and enable) the schedule; flags not given keep their current value</li>
-        <li><a href="#prune-schedule-show"><code>swarmexec prune-schedule show</code></a> — Show the schedule as the agent service carries it</li>
-      </ul>
-      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
-
-      <h3 id="prune-schedule-set" class="clicmd"><code>swarmexec prune-schedule set</code></h3>
-      <p class="clishort">Set (and enable) the schedule; flags not given keep their current value</p>
-      <div class="cmd">swarmexec prune-schedule set [flags]</div>
-      <p class="climeta">Examples</p>
-      <div class="cmd">swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin
-swarmexec prune-schedule set --categories containers,images,buildcache,networks,volumes
-swarmexec prune-schedule set --disable</div>
-      <div class="tablewrap"><table>
-        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>--categories string</code></td><td>—</td><td>comma-separated: containers, images, dangling-images, buildcache, networks, volumes</td></tr>
-          <tr><td><code>--containers-until string</code></td><td>—</td><td>keep stopped containers this long after they stop (default 24h; 0 keeps none)</td></tr>
-          <tr><td><code>--days string</code></td><td>—</td><td>days to run: mon,tue,… or ranges like mon-fri (default every day)</td></tr>
-          <tr><td><code>--disable</code></td><td><code>false</code></td><td>turn the schedule off (keeps the other settings)</td></tr>
-          <tr><td><code>--label-filter string</code></td><td>—</td><td>only prune objects with these labels (key or key=value, comma-separated); &#34;-&#34; clears</td></tr>
-          <tr><td><code>--start string</code></td><td>—</td><td>first run of the day, HH:MM (default 00:00)</td></tr>
-          <tr><td><code>--times int</code></td><td><code>0</code></td><td>runs per day, the day split evenly from --start (1-24)</td></tr>
-          <tr><td><code>--tz string</code></td><td>—</td><td>IANA time zone for --days and --start (default UTC)</td></tr>
-          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt before restarting the agents</td></tr>
-        </tbody>
-      </table></div>
-      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
-
-      <h3 id="prune-schedule-show" class="clicmd"><code>swarmexec prune-schedule show</code></h3>
-      <p class="clishort">Show the schedule as the agent service carries it</p>
-      <div class="cmd">swarmexec prune-schedule show [flags]</div>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h2 id="ps" class="clicmd"><code>swarmexec ps</code></h2>
@@ -617,12 +693,20 @@ printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes<
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h2 id="security" class="clicmd"><code>swarmexec security</code></h2>
-      <p class="clishort">Security scan of the swarm</p>
+      <p class="clishort">Security report of the cluster, and checks of stack files before deploying</p>
       <div class="cmd">swarmexec security [command]</div>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
+        <li><a href="#security-check"><code>swarmexec security check</code></a> — Check a stack file for security antipatterns without deploying it</li>
         <li><a href="#security-report"><code>swarmexec security report</code></a> — Write a Markdown security report for the whole cluster</li>
       </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="security-check" class="clicmd"><code>swarmexec security check</code></h3>
+      <p class="clishort">Check a stack file for security antipatterns without deploying it</p>
+      <div class="cmd">swarmexec security check &lt;file&gt; [stack] [flags]</div>
+      <p>Load a stack file, run the security checks `stack deploy` runs over what it would actually deploy, and print the findings. Never deploys. The stack name defaults to the file&#39;s base name.</p>
+      <p>Exit code 0 means nothing above informational, 1 a finding a deploy would stop at — so it can gate a pipeline. Same as `stack deploy --check`, and the MCP tool stack_check.</p>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h3 id="security-report" class="clicmd"><code>swarmexec security report</code></h3>
@@ -644,23 +728,32 @@ printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes<
       <div class="cmd">swarmexec stack [command]</div>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
+        <li><a href="#stack-check"><code>swarmexec stack check</code></a> — Check a stack file for security antipatterns without deploying it</li>
         <li><a href="#stack-deploy"><code>swarmexec stack deploy</code></a> — Deploy a stack file, after checking it for security antipatterns</li>
         <li><a href="#stack-diff"><code>swarmexec stack diff</code></a> — Compare a stack file against the deployed stack</li>
         <li><a href="#stack-export"><code>swarmexec stack export</code></a> — Write a deployed stack out as a compose file</li>
         <li><a href="#stack-ls"><code>swarmexec stack ls</code></a> — List the stacks deployed on the cluster</li>
+        <li><a href="#stack-rm"><code>swarmexec stack rm</code></a> — Remove a stack: its services, secrets, configs and networks</li>
       </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="stack-check" class="clicmd"><code>swarmexec stack check</code></h3>
+      <p class="clishort">Check a stack file for security antipatterns without deploying it</p>
+      <div class="cmd">swarmexec stack check &lt;file&gt; [stack] [flags]</div>
+      <p>Load a stack file, run the security checks `stack deploy` runs over what it would actually deploy, and print the findings. Never deploys. The stack name defaults to the file&#39;s base name.</p>
+      <p>Exit code 0 means nothing above informational, 1 a finding a deploy would stop at — so it can gate a pipeline. Same as `stack deploy --check`, and the MCP tool stack_check.</p>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h3 id="stack-deploy" class="clicmd"><code>swarmexec stack deploy</code></h3>
       <p class="clishort">Deploy a stack file, after checking it for security antipatterns</p>
       <div class="cmd">swarmexec stack deploy &lt;file&gt; [stack] [flags]</div>
       <p>Load a stack file, run the security checks over what it would actually deploy, and apply it. The stack name defaults to the file&#39;s base name.</p>
-      <p>If anything above informational is found the deploy STOPS and asks. Use --yes to answer in advance (for CI), or --check to look without deploying. --force deploys despite findings without asking — say it deliberately.</p>
+      <p>If anything above informational is found the deploy STOPS and asks. Use --yes to answer in advance (for CI), or --check to look without deploying. --despite-findings deploys anyway without asking — say it deliberately.</p>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>--check</code></td><td><code>false</code></td><td>only run the checks, never deploy</td></tr>
-          <tr><td><code>--force</code></td><td><code>false</code></td><td>deploy even though the check found something, without asking</td></tr>
+          <tr><td><code>--despite-findings</code></td><td><code>false</code></td><td>deploy even though the check found something, without asking</td></tr>
           <tr><td><code>--prune</code></td><td><code>false</code></td><td>remove services of the stack the file no longer declares</td></tr>
           <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not ask; deploy if the check found nothing actionable</td></tr>
         </tbody>
@@ -672,12 +765,12 @@ printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes<
       <div class="cmd">swarmexec stack diff &lt;file&gt; [stack] [flags]</div>
       <p>Show what deploying &lt;file&gt; would change. The stack name defaults to the file&#39;s base name, the same default `docker stack deploy` does not have — give it explicitly when the file is not named after the stack.</p>
       <p>A &#34;&#43;&#34; line is something deploying the file would add, a &#34;-&#34; is something it would remove. Both sides are normalised the same way, so an unchanged stack produces an empty diff rather than pages of daemon defaults.</p>
-      <p>Exit code 0 means no difference, 1 a difference, 2 a usage error and 125 an unreachable manager — so it can gate a pipeline. --ignore leaves a field out of both sides (&#34;services.*.deploy.replicas&#34; for an autoscaled count) and is reported under &#34;Not compared&#34;; --format json is the machine form.</p>
+      <p>Exit code 0 means no difference, 1 a difference, 2 a usage error and 125 an unreachable manager — so it can gate a pipeline. --ignore leaves a field out of both sides (&#34;services.*.deploy.replicas&#34; for an autoscaled count) and is reported under &#34;Not compared&#34;; --json is the machine form.</p>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>--format string</code></td><td><code>text</code></td><td>output format: text | json</td></tr>
           <tr><td><code>--ignore strings</code></td><td>—</td><td>leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of text</td></tr>
           <tr><td><code>--stack string</code></td><td>—</td><td>stack name to compare against (default: the file&#39;s base name)</td></tr>
         </tbody>
       </table></div>
@@ -699,6 +792,51 @@ printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes<
       <h3 id="stack-ls" class="clicmd"><code>swarmexec stack ls</code></h3>
       <p class="clishort">List the stacks deployed on the cluster</p>
       <div class="cmd">swarmexec stack ls [flags]</div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="stack-rm" class="clicmd"><code>swarmexec stack rm</code></h3>
+      <p class="clishort">Remove a stack: its services, secrets, configs and networks</p>
+      <div class="cmd">swarmexec stack rm &lt;stack&gt; [flags]</div>
+      <p>Remove everything `docker stack rm` would: the services, secrets, configs and networks labelled com.docker.stack.namespace=&lt;stack&gt;. It lists them and asks first; --yes answers in advance, and without a terminal and without --yes nothing is removed.</p>
+      <p>Unlike docker it waits a few seconds for a network whose endpoints are still draining, and when something will not go it removes the rest and names exactly what is left behind (exit 125).</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt for confirmation</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="stats" class="clicmd"><code>swarmexec stats</code></h2>
+      <p class="clishort">Show live CPU and memory of each container, measured by the node agents</p>
+      <div class="cmd">swarmexec stats [service...] [flags]</div>
+      <p>One reading of every running container of the named services (all services when none is named): CPU, memory against its limit, and health. The agents measure on the nodes; the manager API only knows what was reserved.</p>
+      <p>An agent samples only while someone asks, so a first reading can take a few seconds — stats waits up to --wait for CPU (a delta of two samples) and then prints what it has: &#34;warming up&#34; for a container still without a reading, &#34;unavailable&#34; where the node&#39;s agent did not answer. Same data as the MCP tool stats.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec stats
+swarmexec stats web api
+swarmexec stats --json web</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+          <tr><td><code>--wait duration</code></td><td><code>12s</code></td><td>how long to wait for agents still warming up (0: ask once)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="status" class="clicmd"><code>swarmexec status</code></h2>
+      <p class="clishort">Show the cluster at a glance: nodes, services, replicas and health</p>
+      <div class="cmd">swarmexec status [flags]</div>
+      <p>One screen of the whole cluster: every node with its role, state and availability, every service with its replicas and the health of its containers, and a summary line counting the degraded ones (running short, or with an unhealthy container). Health comes from the node agents and is best effort: without them the services are listed without it, and a note says so. Same data as the MCP tool cluster_overview.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of tables</td></tr>
+        </tbody>
+      </table></div>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h2 id="ui" class="clicmd"><code>swarmexec ui</code></h2>
