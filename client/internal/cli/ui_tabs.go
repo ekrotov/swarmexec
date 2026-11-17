@@ -123,7 +123,7 @@ func (h *helpWriter) line(keys, desc string) {
 	fmt.Fprintf(&h.b, "  [yellow]%-9s[white] %s\n", keys, desc)
 }
 
-// danger is line for a destructive key (delete / remove / stop): red, as in
+// danger is line for a destructive key (delete / remove / stop / detach): red, as in
 // the footers. One key per line, so the colour never spills onto a harmless
 // neighbour sharing the same column.
 func (h *helpWriter) danger(keys, desc string) {

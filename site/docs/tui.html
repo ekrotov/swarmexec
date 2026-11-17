@@ -320,7 +320,9 @@ node_edit_labels: l    node_availability: a    node_prune: P    node_prune_sched
 secret_delete: X secret_new: n
 forward_stop: X  forward_copy_url: o</div>
       <p>
-        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. They used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
+        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. The fixed <kbd>d</kbd> that <em>detaches</em> a network
+        or secret from a service (members view, secret detail) is red too: it reads like
+        bookkeeping and is a rolling update. The four delete keys used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
       </p>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two

@@ -314,6 +314,8 @@ func (t *networksTab) helpSection(h *helpWriter) {
 	h.line("Enter/"+keyLabel(km.NetAttached), "attached services")
 	h.line(keyLabel(km.NetNew), "new network")
 	h.line(keyLabel(km.NetAll), "swarm networks only (default) / all — the local ones (bridge, host, …) are the manager node's only")
+	h.line("  a", "in attached: attach a service")
+	h.danger("  d", "in attached: detach a service (rolling update)")
 	h.line("⚠ SUBNET", "red: node IPs inside the subnet; yellow: overlaps the underlay or another network (details: Enter)")
 	h.line("CONTAINERS", "running tasks · addresses the nodes know; ⚠ stale/dup: an address no live task has, or one held twice (details: Enter); n/a: node agent not reachable")
 	h.line("AGE", "compact past 30 days: 3mo, 4y")
@@ -910,7 +912,7 @@ func (v *netMembersView) detach() {
 func (v *netMembersView) open() {
 	u, n, list := v.u, v.n, v.list
 	v.render()
-	v.ov = u.overlayFor(pageNetMembers, u.netTab().table, footerKeys("a", "attach", "d", "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
+	v.ov = u.overlayFor(pageNetMembers, u.netTab().table, footerKeys("a", "attach", dangerKey("d"), "detach", "Enter", "aliases", "A", "add alias", "j/k", "move", "Esc", "back"))
 	list.SetInputCapture(v.handleKey)
 	height := len(n.Services) + 6
 	if v.swarmNet {

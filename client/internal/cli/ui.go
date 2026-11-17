@@ -1207,7 +1207,8 @@ func isEscLabel(label string) bool {
 }
 
 // dangerMark prefixes a key label that names a destructive action (delete,
-// remove, stop). It is a NUL byte, which no key label or tview tag contains.
+// remove, stop) — or a detach, which looks like bookkeeping and is a rolling
+// update of the service it detaches from. It is a NUL byte, which no key label or tview tag contains.
 const dangerMark = "\x00"
 
 // dangerKey marks a key label as destructive, so keyTag (and every footer and
