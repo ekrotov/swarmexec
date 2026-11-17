@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>swarmexec agents — init, down, doctor, monitoring and re-rolling</title>
-  <meta name="description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.">
+  <meta name="description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -12,7 +12,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
   <meta property="og:title" content="swarmexec agents — init, down, doctor, monitoring and re-rolling">
-  <meta property="og:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.">
+  <meta property="og:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/agents">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -21,7 +21,7 @@
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec agents — init, down, doctor, monitoring and re-rolling">
-  <meta name="twitter:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.">
+  <meta name="twitter:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
@@ -31,7 +31,7 @@
       {
         "@type": "TechArticle",
         "headline": "swarmexec agents — init, down, doctor, monitoring and re-rolling",
-        "description": "Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, monitor the agents and re-roll them without changing the secret.",
+        "description": "Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.",
         "url": "https://swarm-exec.cloud-surfers.net/docs/agents",
         "inLanguage": "en",
         "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
@@ -109,6 +109,8 @@
           <li><a href="#init">init — provision the agents</a></li>
           <li><a href="#down">down — remove the agents</a></li>
           <li><a href="#doctor">doctor — diagnose the swarm</a></li>
+          <li><a href="#status">status — the cluster at a glance</a></li>
+          <li><a href="#stats">stats — live CPU and memory per container</a></li>
           <li><a href="#monitoring">Monitoring the agents</a></li>
           <li><a href="#reroll">Re-rolling the agents without changing the secret</a></li>
         </ol>
@@ -175,6 +177,42 @@
         <tbody>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
           <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="status"><code>status</code> — the cluster at a glance</h2>
+      <p>
+        Every node with its role, state, availability and engine; every service with its
+        stack, mode, replicas, the health of its containers and a rolling update in
+        flight; and a summary line counting the <strong>degraded</strong> services —
+        running short, or with an unhealthy container. Replicas come from the manager,
+        health from the node agents, best effort: without them the services are listed
+        without health and a note on stderr says so, rather than showing all healthy.
+        The same report as the MCP tool <a href="/docs/mcp#mcp"><code>cluster_overview</code></a>.
+      </p>
+      <div class="cmd">swarmexec status
+swarmexec status --json | jq '.services[] | select(.replicas != "1/1")'</div>
+
+      <h2 id="stats"><code>stats</code> — live CPU and memory per container</h2>
+      <p>
+        One reading of every running container of the named services — all services when
+        none is named: CPU, memory against its limit, and health. The node agents measure;
+        the manager only knows what was <em>reserved</em>. An agent samples only while
+        someone asks, so a first reading takes a few seconds: <code>stats</code> waits up
+        to <code>--wait</code> (12&nbsp;s) for CPU, which needs two samples, then prints
+        what it has — <code>warming up</code> for a container still without a reading,
+        <code>unavailable</code> where the node's agent did not answer, each explained once
+        on stderr. The same rows as the MCP tool <code>stats</code>.
+      </p>
+      <div class="cmd">swarmexec stats
+swarmexec stats web api
+swarmexec stats --json web</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of the table (<code>status</code> and <code>stats</code>)</td></tr>
+          <tr><td><code>--wait</code></td><td><code>12s</code></td><td><code>stats</code>: how long to wait for agents still warming up; <code>0</code> asks once</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
         </tbody>
       </table></div>
 

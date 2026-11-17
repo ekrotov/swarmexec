@@ -32,8 +32,8 @@ func newMCPCmd(g *globalFlags) *cobra.Command {
 			"A service is visible only with the service label swarmexec.mcp.enable=true\n" +
 			"(compose: deploy.labels). swarmexec.mcp.logs=true allows its logs,\n" +
 			"swarmexec.mcp.exec=true a non-interactive command in its containers. An\n" +
-			"explicit \"false\" always wins. --default read makes unlabelled services\n" +
-			"visible, never readable or executable.\n\n" +
+			"explicit \"false\" always wins. --default list makes unlabelled services\n" +
+			"visible (listed, inspected, their stats read), never their logs or exec.\n\n" +
 			"The labels themselves are never shown to the assistant, and nothing can be\n" +
 			"changed through this server. A service that mounts the Docker socket is\n" +
 			"never exec'd into, whatever its labels say.\n\n" +
@@ -51,7 +51,7 @@ func newMCPCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVar(&f.defaultAccess, "default", "none", "access for services without swarmexec.mcp.enable: none | read")
+	fl.StringVar(&f.defaultAccess, "default", "none", "access for services without swarmexec.mcp.enable: none | list (\"read\" is accepted for list)")
 	fl.StringSliceVar(&f.allow, "allow", nil, "enable optional tools: report (security_report)")
 	fl.StringSliceVar(&f.contexts, "contexts", nil, "further docker contexts the assistant may use, besides the one the server starts with (comma list or repeated)")
 	fl.DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to an agent")

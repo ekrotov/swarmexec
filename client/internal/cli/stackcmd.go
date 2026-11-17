@@ -23,7 +23,7 @@ func newStackCmd(g *globalFlags) *cobra.Command {
 		Use:   "stack",
 		Short: "Work with deployed stacks",
 	}
-	cmd.AddCommand(newStackExportCmd(g), newStackDiffCmd(g), newStackDeployCmd(g), newStackLsCmd(g))
+	cmd.AddCommand(newStackExportCmd(g), newStackDiffCmd(g), newStackDeployCmd(g), newStackCheckCmd(g), newStackLsCmd(g), newStackRmCmd(g))
 	return cmd
 }
 
@@ -94,10 +94,15 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
+// stackDiffFlags are stack diff's flags.
+type stackDiffFlags struct {
+	stackName, format string
+	asJSON            bool
+	ignore            []string
+}
+
 func newStackDiffCmd(g *globalFlags) *cobra.Command {
-	var stackName, format string
-	var asJSON bool
-	var ignore []string
+	f := &stackDiffFlags{}
 	cmd := &cobra.Command{
 		Use:   "diff <file> [stack]",
 		Short: "Compare a stack file against the deployed stack",
@@ -113,64 +118,76 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 			"is reported under \"Not compared\"; --json is the machine form.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := args[0]
-			name := stackName
-			if len(args) > 1 {
-				name = args[1]
-			}
-			if name == "" {
-				name = stackfile.NameFromPath(path)
-			}
-			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
-			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
-			}
-			ctx := cmdContext(cmd)
-
-			deployed, err := stackfile.FromSwarm(ctx, dcli, name)
-			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
-			}
-			file, err := stackfile.FromFile(ctx, dcli, path, name)
-			if err != nil {
-				return &cliError{code: usageExitCode, err: err}
-			}
-			if format != "" && format != "text" && format != "json" {
-				return &cliError{code: usageExitCode, err: fmt.Errorf("--format must be text or json, not %q", format)}
-			}
-			d, err := stackfile.Compare(deployed, file, path, ignore...)
-			if err != nil {
-				return err
-			}
-			// Unsupported compose keys are not differences, but a file that
-			// relies on them does not describe what will run.
-			if un, uerr := stackfile.UnsupportedProperties(path); uerr == nil && len(un) > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(),
-					"note: swarm ignores these keys in %s: %v\n", path, un)
-			}
-			if asJSON || format == "json" {
-				b, jerr := d.JSON()
-				if jerr != nil {
-					return jerr
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(b))
-			} else {
-				fmt.Fprint(cmd.OutOrStdout(), d.Text())
-			}
-			if !d.Empty() {
-				// Same convention as `diff` and `git diff --exit-code`: a
-				// difference is a non-zero exit, so this is usable in CI.
-				return &cliError{code: 1, silent: true}
-			}
-			return nil
+			return runStackDiff(cmd, g, f, args)
 		},
 	}
-	cmd.Flags().StringVar(&stackName, "stack", "", "stack name to compare against (default: the file's base name)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "output JSON instead of text")
+	cmd.Flags().StringVar(&f.stackName, "stack", "", "stack name to compare against (default: the file's base name)")
+	cmd.Flags().BoolVar(&f.asJSON, "json", false, "output JSON instead of text")
 	// --format text|json predates --json, which every other command uses
 	// (review C-06); it stays for scripts, out of the help.
-	cmd.Flags().StringVar(&format, "format", "text", "output format: text | json")
+	cmd.Flags().StringVar(&f.format, "format", "text", "output format: text | json")
 	_ = cmd.Flags().MarkHidden("format")
-	cmd.Flags().StringSliceVar(&ignore, "ignore", nil, "leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)")
+	cmd.Flags().StringSliceVar(&f.ignore, "ignore", nil, "leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)")
 	return cmd
+}
+
+func runStackDiff(cmd *cobra.Command, g *globalFlags, f *stackDiffFlags, args []string) error {
+	path := args[0]
+	name := f.stackName
+	if len(args) > 1 {
+		name = args[1]
+	}
+	if name == "" {
+		name = stackfile.NameFromPath(path)
+	}
+	dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
+	if err != nil {
+		return &cliError{code: session.TransportFailure, err: err}
+	}
+	ctx := cmdContext(cmd)
+
+	deployed, err := stackfile.FromSwarm(ctx, dcli, name)
+	if err != nil {
+		return &cliError{code: session.TransportFailure, err: err}
+	}
+	file, err := stackfile.FromFile(ctx, dcli, path, name)
+	if err != nil {
+		return &cliError{code: usageExitCode, err: err}
+	}
+	if f.format != "" && f.format != "text" && f.format != "json" {
+		return &cliError{code: usageExitCode, err: fmt.Errorf("--format must be text or json, not %q", f.format)}
+	}
+	d, err := stackfile.Compare(deployed, file, path, f.ignore...)
+	if err != nil {
+		return err
+	}
+	// Unsupported compose keys are not differences, but a file that
+	// relies on them does not describe what will run.
+	if un, uerr := stackfile.UnsupportedProperties(path); uerr == nil && len(un) > 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"note: swarm ignores these keys in %s: %v\n", path, un)
+	}
+	if err := printStackDiff(cmd, d, f.asJSON || f.format == "json"); err != nil {
+		return err
+	}
+	if !d.Empty() {
+		// Same convention as `diff` and `git diff --exit-code`: a
+		// difference is a non-zero exit, so this is usable in CI.
+		return &cliError{code: 1, silent: true}
+	}
+	return nil
+}
+
+// printStackDiff writes the diff as text or as JSON.
+func printStackDiff(cmd *cobra.Command, d *stackfile.Diff, asJSON bool) error {
+	if !asJSON {
+		fmt.Fprint(cmd.OutOrStdout(), d.Text())
+		return nil
+	}
+	b, err := d.JSON()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(b))
+	return nil
 }

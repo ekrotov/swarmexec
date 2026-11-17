@@ -91,6 +91,23 @@ func (c StackContents) Counts() string {
 	return strings.Join(parts, ", ")
 }
 
+// StackItem is one object of a stack, as a listing names it.
+type StackItem struct{ Kind, Name string }
+
+// Items is every object, kind and name, in the order RemoveStack removes them.
+func (c StackContents) Items() []StackItem {
+	var out []StackItem
+	for _, k := range []struct {
+		kind string
+		objs []stackObject
+	}{{"service", c.Services}, {"secret", c.Secrets}, {"config", c.Configs}, {"network", c.Networks}} {
+		for _, o := range k.objs {
+			out = append(out, StackItem{Kind: k.kind, Name: o.Name})
+		}
+	}
+	return out
+}
+
 // StackContentsOf lists everything labelled for stack. Filtered at the daemon,
 // so a stack whose name is a prefix of another's cannot be caught by accident.
 func StackContentsOf(ctx context.Context, api StackAPI, stack string) (StackContents, error) {

@@ -9,6 +9,7 @@ import (
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/stackfile"
+	"swarmexec/client/internal/swarmops"
 )
 
 // sanitizeStacks, piece by piece: file-side credentials masked (saying when
@@ -91,7 +92,7 @@ func TestSanitizeStacks(t *testing.T) {
 // Without agent usage a service row carries no health at all — absence is
 // not "all healthy".
 func TestOverviewServiceRowWithoutUsage(t *testing.T) {
-	row := overviewServiceRow(resolve.Service{Name: "web", Running: 1, Desired: 2}, nil, nil)
+	row := swarmops.OverviewServiceRow(resolve.Service{Name: "web", Running: 1, Desired: 2}, nil, nil)
 	if row.Health != nil || row.Replicas != "1/2" {
 		t.Errorf("row = %+v, want no health and replicas 1/2", row)
 	}

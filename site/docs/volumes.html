@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm</title>
-  <meta name="description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.">
+  <title>swarmexec volume ls, volume rm, node prune and prune-schedule — disk across a Docker Swarm</title>
+  <meta name="description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, list, prune and label the nodes with swarmexec node, and set the cluster-wide prune schedule the agents run.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/volumes">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
-  <meta property="og:title" content="swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm">
-  <meta property="og:description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.">
+  <meta property="og:title" content="swarmexec volume ls, volume rm, node prune and prune-schedule — disk across a Docker Swarm">
+  <meta property="og:description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, list, prune and label the nodes with swarmexec node, and set the cluster-wide prune schedule the agents run.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/volumes">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -20,8 +20,8 @@
   <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm">
-  <meta name="twitter:description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.">
+  <meta name="twitter:title" content="swarmexec volume ls, volume rm, node prune and prune-schedule — disk across a Docker Swarm">
+  <meta name="twitter:description" content="List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, list, prune and label the nodes with swarmexec node, and set the cluster-wide prune schedule the agents run.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
@@ -30,8 +30,8 @@
     "@graph": [
       {
         "@type": "TechArticle",
-        "headline": "swarmexec volume ls, volume rm and prune-schedule — volumes across a Docker Swarm",
-        "description": "List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, and set the cluster-wide prune schedule the agents run.",
+        "headline": "swarmexec volume ls, volume rm, node prune and prune-schedule — disk across a Docker Swarm",
+        "description": "List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, list, prune and label the nodes with swarmexec node, and set the cluster-wide prune schedule the agents run.",
         "url": "https://swarm-exec.cloud-surfers.net/docs/volumes",
         "inLanguage": "en",
         "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
@@ -108,7 +108,8 @@
         <ol>
           <li><a href="#volume-ls">volume ls — list volumes</a></li>
           <li><a href="#volume-rm">volume rm — remove a volume</a></li>
-          <li><a href="#pruneschedulecmd">prune-schedule — the agents' prune schedule</a></li>
+          <li><a href="#node">node ls / prune / update — the nodes</a></li>
+          <li><a href="#pruneschedulecmd">node prune-schedule — the agents' prune schedule</a></li>
         </ol>
       </div>
 
@@ -149,15 +150,58 @@
         </tbody>
       </table></div>
 
-      <h2 id="pruneschedulecmd"><code>prune-schedule</code> — the agents' prune schedule</h2>
+      <h2 id="node"><code>node ls</code> / <code>node prune</code> / <code>node update</code> — the nodes</h2>
+      <p>
+        The <a href="/docs/tui-nodes#tui-nodes">Nodes tab</a> on the command line, running
+        the same code. <code>node ls</code> lists every node — role, availability, state,
+        engine, running tasks, the volume count its agent reports (<code>-</code> when the
+        agent did not answer; <code>--skip-agents</code> does not ask) and the number of
+        labels; <code>--json</code> gives every field, the labels themselves included.
+        A node is named by hostname, id or a unique id prefix.
+      </p>
+      <div class="cmd">swarmexec node ls
+swarmexec node prune worker-1
+swarmexec node prune worker-1 --categories containers,images --yes
+swarmexec node update worker-1 --availability drain --yes
+swarmexec node update worker-1 --label-add zone=b --label-rm old</div>
+      <p>
+        <strong><code>node prune</code></strong> is the TUI's <a href="/docs/tui-nodes#nodeprune">node
+        prune</a>: it shows what each category would free, as the agent last measured it,
+        then asks. Without <code>--categories</code> it sweeps the safe ones — stopped
+        containers, untagged images, build cache, unused local networks.
+        <code>images</code> (every unused image, those of services scaled to zero
+        included) and <code>volumes</code> (data, named volumes included) are pruned only
+        when named. Without a terminal and without <code>--yes</code> nothing is pruned; a
+        category that fails on the node is the exit code (<strong>125</strong>).
+      </p>
+      <p>
+        <strong><code>node update</code></strong> sets availability and labels. It applies
+        at once — a node has no rolling update. <code>drain</code> moves every task off
+        the node, so it asks first; <code>active</code> and <code>pause</code> apply
+        directly.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Command / flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>node ls --json</code></td><td>JSON instead of the table; <code>volumes</code> is <code>null</code> where the agent did not answer</td></tr>
+          <tr><td><code>node prune --categories</code></td><td>comma list of <code>containers</code>, <code>images</code>, <code>dangling-images</code>, <code>buildcache</code>, <code>networks</code>, <code>volumes</code> (<code>images</code> already includes <code>dangling-images</code>)</td></tr>
+          <tr><td><code>node prune --containers-until</code></td><td>keep stopped containers this long after they stop (default <code>24h</code>; <code>0</code> keeps none)</td></tr>
+          <tr><td><code>node update --availability</code></td><td><code>active</code>, <code>pause</code> or <code>drain</code></td></tr>
+          <tr><td><code>node update --label-add</code> / <code>--label-rm</code></td><td>add or change <code>key=value</code> / remove <code>key</code>; repeatable</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>do not prompt (prune, drain)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="pruneschedulecmd"><code>node prune-schedule</code> — the agents' prune schedule</h2>
       <p>
         Shows or sets the cluster-wide <a href="/docs/tui-nodes#pruneschedule">prune schedule</a>.
         <code>show</code> prints it with the next five runs; <code>set</code> changes only
         the flags you give and enables the schedule. Saving updates the agent service, so
-        the agents <strong>restart one by one</strong>; the command asks first.
+        the agents <strong>restart one by one</strong>; the command asks first. It was the
+        top-level <code>prune-schedule</code>, which still works.
       </p>
-      <div class="cmd">swarmexec prune-schedule show
-swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin</div>
+      <div class="cmd">swarmexec node prune-schedule show
+swarmexec node prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag (set)</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>

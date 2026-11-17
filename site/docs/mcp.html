@@ -134,13 +134,13 @@
         <thead><tr><th>Tool</th><th>Answers</th><th>Needs</th></tr></thead>
         <tbody>
           <tr><td><code>contexts_list</code></td><td>the Docker contexts the assistant may use (see <code>--contexts</code>), and which one the server uses</td><td>—</td></tr>
-          <tr><td><code>cluster_overview</code></td><td>nodes, and replica and health state of the visible services</td><td>—</td></tr>
+          <tr><td><code>cluster_overview</code></td><td>nodes, and replica and health state of the visible services — on the command line <a href="/docs/agents#status"><code>status</code></a></td><td>—</td></tr>
           <tr><td><code>services_list</code></td><td>like <code>ps</code>: mode, replicas, image, ports, stack and running containers</td><td><code>enable</code></td></tr>
           <tr><td><code>service_inspect</code></td><td>one service's configuration and its recent tasks</td><td><code>enable</code></td></tr>
           <tr><td><code>logs_read</code></td><td>recent logs: tail, since, regexp and minimum level, capped; never follows</td><td><code>logs</code></td></tr>
-          <tr><td><code>stats</code></td><td>live CPU, memory and healthcheck state per container; waits a few seconds for an agent that has not been asked for a while</td><td><code>enable</code></td></tr>
+          <tr><td><code>stats</code></td><td>live CPU, memory and healthcheck state per container; waits a few seconds for an agent that has not been asked for a while — on the command line <a href="/docs/agents#stats"><code>stats</code></a></td><td><code>enable</code></td></tr>
           <tr><td><code>volumes_list</code> / <code>networks_list</code> / <code>secrets_list</code> / <code>configs_list</code></td><td>names only, and only those the visible services use; <code>networks_list</code> adds each network's subnets and the <a href="/docs/tui-tabs#tui-network-overlap">subnet overlap</a> findings (node IPs inside — as a count, underlay or network overlap — another network named only if visible) with the fix; with <code>endpoints: true</code> it also asks every node's agent (<code>network.inspect</code>) and adds per node the running tasks, local containers, load-balancer endpoints, MACs and networkdb entries, plus <a href="/docs/tui-tabs#tui-network-endpoints">stale address candidates</a> and duplicates — all counted over the visible services only: a hidden service's tasks and endpoints count nowhere and never show up as stale or duplicate, a leftover of a removed service is listed without its name; node hostnames only, never node addresses</td><td><code>enable</code></td></tr>
-          <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>what deploying a stack file would change / what the deploy check finds — nothing is deployed</td><td><code>enable</code> on every service of the file</td></tr>
+          <tr><td><code>stack_diff</code> / <code>stack_check</code></td><td>what deploying a stack file would change / what the deploy check finds — nothing is deployed; on the command line <code>stack diff</code> / <a href="/docs/security-scan#stackdeploy"><code>stack check</code></a></td><td><code>enable</code> on every service of the file</td></tr>
           <tr><td><code>security_report</code></td><td>the <a href="/docs/security-scan#securityreport">security report</a>, limited to the visible services and what they use</td><td><code>--allow report</code></td></tr>
           <tr><td><code>doctor</code></td><td>manager and agent health, as <code>doctor</code></td><td>—</td></tr>
           <tr><td><code>exec_run</code></td><td>one command, no TTY, no stdin, with a timeout (<code>timeout_seconds</code>, default 30, at most 300; a command still running then comes back as “the command did not finish within …”) and an output cap</td><td><code>exec</code></td></tr>
@@ -165,8 +165,9 @@ services:
       <ul>
         <li>
           <strong>Opt-in.</strong> A service without <code>swarmexec.mcp.enable</code> does
-          not exist for the assistant. <code>--default read</code> makes unlabelled
-          services visible (status, tasks, inspect, stats) — never their logs, never exec.
+          not exist for the assistant. <code>--default list</code> makes unlabelled
+          services visible (listed, inspected, their stats read) — never their logs, never
+          exec. <code>read</code>, its old name, is still accepted.
         </li>
         <li>
           <strong>An explicit <code>"false"</code> always wins</strong>, over the default and
@@ -187,7 +188,7 @@ services:
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>--default</code></td><td><code>none</code></td><td>access for services without <code>swarmexec.mcp.enable</code>: <code>none</code> or <code>read</code></td></tr>
+          <tr><td><code>--default</code></td><td><code>none</code></td><td>access for services without <code>swarmexec.mcp.enable</code>: <code>none</code> or <code>list</code> (<code>read</code> is accepted for <code>list</code>)</td></tr>
           <tr><td><code>--allow</code></td><td>—</td><td>optional tools: <code>report</code> adds <code>security_report</code></td></tr>
           <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
           <tr><td><code>--contexts</code></td><td>—</td><td>further Docker contexts the assistant may use, besides the one the server starts with; a comma list or repeated. A name that is not a context fails at startup</td></tr>

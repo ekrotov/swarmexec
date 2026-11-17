@@ -58,9 +58,11 @@ const (
 	// exposedByDefault=false. The default, because a forgotten label should
 	// cost a missing service, not an exposed one.
 	DefaultNone Default = iota
-	// DefaultRead makes unlabelled services visible (status, tasks, inspect,
-	// stats) but grants neither logs nor exec.
-	DefaultRead
+	// DefaultList makes unlabelled services visible — listed, inspected,
+	// their stats read — but grants neither logs nor exec. Spelled "list", not
+	// "read" (review M-02): "read" sounded like reading their logs, which is
+	// exactly what it does not grant. "read" stays accepted.
+	DefaultList
 )
 
 // ParseDefault reads the --default flag.
@@ -68,15 +70,15 @@ func ParseDefault(s string) (Default, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "none":
 		return DefaultNone, nil
-	case "read":
-		return DefaultRead, nil
+	case "list", "read": // "read" is the old name of "list"
+		return DefaultList, nil
 	}
-	return DefaultNone, errors.New(`--default must be "none" or "read"`)
+	return DefaultNone, errors.New(`--default must be "none" or "list"`)
 }
 
 func (d Default) String() string {
-	if d == DefaultRead {
-		return "read"
+	if d == DefaultList {
+		return "list"
 	}
 	return "none"
 }
@@ -127,7 +129,7 @@ func (p Policy) Evaluate(labels map[string]string) (Access, []string) {
 	logs, _ := flag(KeyLogs)
 	exec, _ := flag(KeyExec)
 
-	a := Access{Visible: p.Default == DefaultRead}
+	a := Access{Visible: p.Default == DefaultList}
 	if enableSet {
 		a.Visible = enable
 	}

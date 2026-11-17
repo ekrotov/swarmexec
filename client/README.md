@@ -175,7 +175,15 @@ usual way (e.g. `DOCKER_HOST=ssh://manager` or `docker context use …`).
 ```
 swarmexec exec [flags] <service|service.slot|task-id|container-id> [-- <cmd> [args...]]
 swarmexec ps [service]
-swarmexec mcp [--default none|read] [--allow report]
+swarmexec status [--json]                      # nodes, services, replicas, health
+swarmexec stats [service...] [--json]          # live CPU/memory per container
+swarmexec node ls [--json]
+swarmexec node prune <node> [--categories …] [--yes]
+swarmexec node update <node> [--availability active|pause|drain] [--label-add k=v] [--label-rm k]
+swarmexec node prune-schedule show|set
+swarmexec stack ls | export | diff | deploy | check | rm
+swarmexec security report | check
+swarmexec mcp [--default none|list] [--allow report]
 swarmexec --version
 ```
 

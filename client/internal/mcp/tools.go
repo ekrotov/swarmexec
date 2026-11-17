@@ -190,50 +190,12 @@ func (s *Server) toolContexts(_ context.Context, _ mcpCtxIn) (string, error) {
 
 // --- cluster_overview --------------------------------------------------------
 
-type mcpNodeRow struct {
-	Hostname     string `json:"hostname"`
-	Role         string `json:"role"`
-	State        string `json:"state"`
-	Availability string `json:"availability"`
-	Leader       bool   `json:"leader,omitempty"`
-	Engine       string `json:"engine,omitempty"`
-}
-
-type mcpHealth struct {
-	Healthy   int `json:"healthy"`
-	Unhealthy int `json:"unhealthy"`
-	Starting  int `json:"starting"`
-	NoCheck   int `json:"no_healthcheck_or_unknown"`
-}
-
-type mcpServiceRow struct {
-	Name        string            `json:"name"`
-	Stack       string            `json:"stack,omitempty"`
-	Mode        string            `json:"mode"`
-	Replicas    string            `json:"replicas"`
-	Image       string            `json:"image,omitempty"`
-	Ports       string            `json:"ports,omitempty"`
-	UpdateState string            `json:"update_state,omitempty"`
-	Health      *mcpHealth        `json:"health,omitempty"`
-	Containers  []mcpContainerRow `json:"containers,omitempty"`
-}
-
-type mcpContainerRow struct {
-	Slot      int    `json:"slot,omitempty"`
-	Container string `json:"container"`
-	Node      string `json:"node"`
-	Uptime    string `json:"uptime"`
-}
-
-type mcpOverview struct {
-	Context  string          `json:"context"`
-	Manager  string          `json:"manager"`
-	Engine   string          `json:"engine,omitempty"`
-	Nodes    []mcpNodeRow    `json:"nodes"`
-	Services []mcpServiceRow `json:"services"`
-	Summary  string          `json:"summary"`
-	Note     string          `json:"note,omitempty"`
-}
+// The overview's shapes and its gathering are swarmops', shared with the
+// CLI's `swarmexec status` (review P-03).
+type (
+	mcpServiceRow   = swarmops.ServiceRow
+	mcpContainerRow = swarmops.ContainerRow
+)
 
 func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
@@ -244,94 +206,21 @@ func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	info, err := c.dcli.Info(ctx, client.InfoOptions{})
+	out, err := swarmops.GatherOverview(ctx, c.dcli, c.r, c.label, s.overviewUsage(ctx, c), v.has)
 	if err != nil {
 		return "", err
 	}
-	nodes, err := c.dcli.NodeList(ctx, client.NodeListOptions{})
-	if err != nil {
-		return "", err
-	}
-	out := mcpOverview{Context: c.label, Manager: info.Info.Name, Engine: info.Info.ServerVersion,
-		Nodes: overviewNodes(nodes.Items), Services: []mcpServiceRow{}}
-
-	svcs, cands, err := swarmops.ServicesAndContainers(ctx, c.r, "mcp.overview")
-	if err != nil {
-		return "", err
-	}
-	// Health lives on the nodes, not the manager; it is best effort, and its
-	// absence is said rather than shown as "all healthy".
-	usage := s.overviewUsage(ctx, c)
-	if len(usage) == 0 {
-		out.Note = "no live health data from the node agents; health omitted"
-	}
-	degraded := 0
-	for _, rs := range svcs {
-		if !v.has(rs.Name) {
-			continue
-		}
-		row := overviewServiceRow(rs, usage, cands)
-		have, want := rs.Progress()
-		if (!rs.IsJob() && have < want) || (row.Health != nil && row.Health.Unhealthy > 0) {
-			degraded++
-		}
-		out.Services = append(out.Services, row)
-	}
-	out.Summary = fmt.Sprintf("%d node(s), %d service(s) visible, %d degraded", len(out.Nodes), len(out.Services), degraded)
 	return jsonText(out)
-}
-
-// overviewNodes are the overview's node rows, sorted by hostname.
-func overviewNodes(nodes []swarm.Node) []mcpNodeRow {
-	rows := []mcpNodeRow{}
-	for _, n := range nodes {
-		row := mcpNodeRow{
-			Hostname:     swarmops.NodeDisplayName(n.Description.Hostname, n.ID),
-			Role:         string(n.Spec.Role),
-			State:        string(n.Status.State),
-			Availability: string(n.Spec.Availability),
-			Engine:       n.Description.Engine.EngineVersion,
-		}
-		if n.ManagerStatus != nil {
-			row.Leader = n.ManagerStatus.Leader
-		}
-		rows = append(rows, row)
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Hostname < rows[j].Hostname })
-	return rows
 }
 
 // overviewUsage asks the node agents for container health; empty when they
 // cannot be reached.
 func (s *Server) overviewUsage(ctx context.Context, c *mcpCluster) map[string]agentcall.ContainerUsage {
-	usage := map[string]agentcall.ContainerUsage{}
-	if ac, aerr := c.agents(); aerr == nil {
-		if rn, nerr := c.r.Nodes(ctx); nerr == nil {
-			usage, _ = ac.Usage(ctx, rn, s.connectTimeout)
-		}
+	ac, err := c.agents()
+	if err != nil {
+		return map[string]agentcall.ContainerUsage{}
 	}
-	return usage
-}
-
-// overviewServiceRow is one service's row, with health when there is usage.
-func overviewServiceRow(rs resolve.Service, usage map[string]agentcall.ContainerUsage, cands []resolve.Candidate) mcpServiceRow {
-	row := serviceRowOf(rs)
-	if len(usage) > 0 {
-		h := swarmops.HealthOf(usage, cands, rs.Name)
-		row.Health = &mcpHealth{Healthy: h.Healthy, Unhealthy: h.Unhealthy, Starting: h.Starting, NoCheck: h.Unknown}
-	}
-	return row
-}
-
-func serviceRowOf(rs resolve.Service) mcpServiceRow {
-	have, want := rs.Progress()
-	return mcpServiceRow{
-		Name: rs.Name, Stack: rs.Stack, Mode: rs.Mode,
-		Replicas:    fmt.Sprintf("%d/%d", have, want),
-		Image:       rs.Image,
-		Ports:       rs.Ports,
-		UpdateState: rs.UpdateState,
-	}
+	return swarmops.ClusterUsage(ctx, c.r, ac, s.connectTimeout)
 }
 
 // --- services_list -----------------------------------------------------------
@@ -365,7 +254,7 @@ func (s *Server) toolServices(ctx context.Context, in mcpOptServiceIn) (string, 
 		if !v.has(rs.Name) || (in.Service != "" && rs.Name != in.Service) {
 			continue
 		}
-		row := serviceRowOf(rs)
+		row := swarmops.ServiceRowOf(rs)
 		row.Containers = byService[rs.Name]
 		rows = append(rows, row)
 	}
@@ -643,53 +532,14 @@ func logOutput(note string, buf *capWriter, timedOut bool, serr error) string {
 
 // --- stats -------------------------------------------------------------------
 
-type mcpStatsRow struct {
-	Service   string `json:"service"`
-	Slot      int    `json:"slot,omitempty"`
-	Node      string `json:"node"`
-	Container string `json:"container"`
-	CPU       string `json:"cpu"`
-	Memory    string `json:"memory"`
-	Health    string `json:"health,omitempty"`
-	Note      string `json:"note,omitempty"`
-}
+// The stats rows and the polling are swarmops', shared with the CLI's
+// `swarmexec stats` (review P-03).
+type mcpStatsRow = swarmops.StatsRow
 
-// What a stats row says when it has no number. The two cases want different
-// things from the assistant: a sampler that is warming up has the answer a few
-// seconds from now, an agent that did not answer does not.
 const (
-	statsWarmingUp     = "warming up"
-	statsWarmingUpNote = "the node's agent had not finished its first readings yet (it samples only while someone asks, and CPU needs two readings); ask again in a few seconds"
-	statsNoAgent       = "unavailable"
-	statsNoAgentNote   = "the agent on this node did not answer the stats request (unreachable, or too old to serve stats); doctor shows which"
+	mcpStatsWait = swarmops.StatsWaitDefault
+	mcpStatsPoll = swarmops.StatsPollDefault
 )
-
-// Defaults for how long the stats tool waits for a cold agent sampler.
-//
-// The agent samples only while someone is asking and stops after a minute
-// without a request. An assistant asks once, not every few seconds as the ui
-// does, so it almost always meets a sampler that is asleep: the first answer
-// is empty, the reading with memory arrives one sampling interval (5s) later,
-// and CPU — a delta — one more interval after that. Without waiting, every
-// answer was "unavailable".
-const (
-	mcpStatsWait = 12 * time.Second
-	mcpStatsPoll = 2 * time.Second
-)
-
-// statsComplete reports whether every container in mine has a full reading —
-// or cannot get one by waiting, because its node's agent did not answer.
-func statsComplete(mine []resolve.Candidate, usage map[string]agentcall.ContainerUsage, answered map[string]bool) bool {
-	for _, cd := range mine {
-		if !answered[cd.NodeName] {
-			continue
-		}
-		if u, ok := usage[cd.ContainerID]; !ok || !u.CPUReady {
-			return false
-		}
-	}
-	return true
-}
 
 func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, error) {
 	c, err := s.cluster(ctx, in.Context)
@@ -709,90 +559,13 @@ func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, err
 	if err != nil {
 		return "", err
 	}
-	cands, err := c.r.Candidates(ctx, "")
-	if err != nil {
-		return "", err
-	}
-	nodes, err := c.r.Nodes(ctx)
-	if err != nil {
-		return "", err
-	}
-	mine, ask := statsTargets(cands, nodes, func(svc string) bool {
+	rows, err := swarmops.GatherStats(ctx, c.r, ac, func(svc string) bool {
 		return v.has(svc) && (in.Service == "" || svc == in.Service)
-	})
-	usage, answered, err := s.pollUsage(ctx, ac, ask, mine)
+	}, swarmops.StatsPoll{ConnectTimeout: s.connectTimeout, Wait: s.statsWait, Interval: s.statsPoll})
 	if err != nil {
 		return "", err
 	}
-	return jsonText(statsRows(mine, usage, answered))
-}
-
-// statsTargets is the containers of the services wanted, and only the nodes
-// that run one of them: there is nothing to report from the others, and
-// asking them costs a round trip each.
-func statsTargets(cands []resolve.Candidate, nodes []resolve.Node, wanted func(svc string) bool) (mine []resolve.Candidate, ask []resolve.Node) {
-	onNode := map[string]bool{}
-	for _, cd := range cands {
-		if wanted(cd.Service) {
-			mine = append(mine, cd)
-			onNode[cd.NodeID] = true
-		}
-	}
-	for _, n := range nodes {
-		if onNode[n.ID] {
-			ask = append(ask, n)
-		}
-	}
-	return mine, ask
-}
-
-// pollUsage asks the nodes for usage, and while a node's sampler is still
-// warming up, asks again — within s.statsWait, so a node that never gets
-// there costs seconds, not the session. answered holds the node names that
-// replied at all.
-func (s *Server) pollUsage(ctx context.Context, ac *agentcall.Client, ask []resolve.Node, mine []resolve.Candidate) (usage map[string]agentcall.ContainerUsage, answered map[string]bool, err error) {
-	usage = map[string]agentcall.ContainerUsage{}
-	answered = map[string]bool{}
-	deadline := time.Now().Add(s.statsWait)
-	for {
-		u, byNode := ac.Usage(ctx, ask, s.connectTimeout)
-		for id, cu := range u {
-			usage[id] = cu
-		}
-		for n := range byNode {
-			answered[n] = true
-		}
-		if len(byNode) == 0 || statsComplete(mine, usage, answered) || !time.Now().Add(s.statsPoll).Before(deadline) {
-			return usage, answered, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		case <-time.After(s.statsPoll):
-		}
-	}
-}
-
-// statsRows is one row per container: its reading, or why there is none.
-func statsRows(mine []resolve.Candidate, usage map[string]agentcall.ContainerUsage, answered map[string]bool) []mcpStatsRow {
-	rows := []mcpStatsRow{}
-	for _, cd := range mine {
-		row := mcpStatsRow{Service: cd.Service, Slot: cd.Slot, Node: orDash(cd.NodeName), Container: shortID(cd.ContainerID)}
-		u, ok := usage[cd.ContainerID]
-		switch {
-		case ok:
-			row.CPU, row.Memory, row.Health = swarmops.FormatCPUUsage(u), swarmops.FormatMemUsage(u), u.Health
-			if !u.CPUReady {
-				row.CPU, row.Note = statsWarmingUp, statsWarmingUpNote
-			}
-		case answered[cd.NodeName]:
-			row.CPU, row.Memory, row.Note = statsWarmingUp, statsWarmingUp, statsWarmingUpNote
-		default:
-			row.CPU, row.Memory, row.Note = statsNoAgent, statsNoAgent, statsNoAgentNote
-		}
-		rows = append(rows, row)
-	}
-	return rows
+	return jsonText(rows)
 }
 
 // --- volumes / networks / secrets / configs ----------------------------------

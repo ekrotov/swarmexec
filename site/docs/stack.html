@@ -107,6 +107,7 @@
         <p class="th">On this page</p>
         <ol>
           <li><a href="#stackfile">stack export / stack diff — a deployed stack as a file</a></li>
+          <li><a href="#stackrm">stack rm — remove a stack</a></li>
           <li><a href="#wait">wait — until a deploy has actually converged</a></li>
         </ol>
       </div>
@@ -166,6 +167,8 @@ swarmexec stack diff postgres.yml postgres</div>
           <tr><td><code>stack ls</code></td><td>the stacks deployed on the cluster</td></tr>
           <tr><td><code>stack export &lt;stack&gt;</code></td><td>write the stack as compose YAML; <code>-o</code> to a file, otherwise stdout</td></tr>
           <tr><td><code>stack diff &lt;file&gt; [stack]</code></td><td>compare a file against the deployed stack. The stack name defaults to the file's base name; <code>--stack</code> or a second argument overrides it. Exits <strong>1</strong> on any difference</td></tr>
+          <tr><td><code>stack check &lt;file&gt; [stack]</code></td><td>run the <a href="/docs/security-scan#stackdeploy">security checks</a> of <code>stack deploy</code> without deploying; exits <strong>1</strong> on a finding above informational. Also <code>security check</code></td></tr>
+          <tr><td><code>stack rm &lt;stack&gt;</code></td><td>remove the stack's services, secrets, configs and networks, after a confirm — see <a href="#stackrm">below</a></td></tr>
         </tbody>
       </table></div>
       <p>
@@ -185,6 +188,22 @@ swarmexec stack diff postgres.yml postgres</div>
       <div class="cmd">swarmexec stack diff shop.yml --ignore 'services.*.deploy.replicas'
 swarmexec stack diff shop.yml --json | jq .differs</div>
       <p class="recipe-link">See the recipe: <a href="/examples#drift-ci">catch drift in CI</a>.</p>
+
+      <h2 id="stackrm"><code>stack rm</code> — remove a stack</h2>
+      <p>
+        Removes what <code>docker stack rm</code> removes: every service, secret, config
+        and network labelled <code>com.docker.stack.namespace=&lt;stack&gt;</code> — the
+        same removal the TUI runs on a stack row. It <strong>lists each object first</strong>
+        and asks; <code>-y</code>/<code>--yes</code> answers in advance, and without a
+        terminal and without <code>--yes</code> nothing is removed. Two differences from
+        docker: a network whose endpoints are still draining gets a few seconds before it
+        counts as stuck, and when something will not go the rest is removed anyway and the
+        command names <strong>exactly what is left behind</strong> (exit <strong>125</strong>).
+        A stack with nothing labelled for it is an error, so a typo does not pass as a
+        success.
+      </p>
+      <div class="cmd">swarmexec stack rm shop
+swarmexec stack rm shop --yes</div>
 
       <h2 id="wait"><code>wait</code> — until a deploy has actually converged</h2>
       <p>
