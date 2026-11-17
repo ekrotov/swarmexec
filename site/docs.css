@@ -333,3 +333,18 @@ a.btn .s { font-family: var(--mono); color: var(--muted); font-size: .78rem; ove
   .toc ol { columns: 1; }
   .links { grid-template-columns: 1fr; }
 }
+
+/* Copy button (copy.js) on a command block with data-copy. Its room is
+   reserved here whether or not the script runs, so the button appearing
+   moves nothing; the button itself exists only when copying can work. */
+[data-copy] { position: relative; padding-right: 4.6rem; }
+.copybtn {
+  position: absolute; top: .45rem; right: .45rem; min-width: 3.9rem;
+  font: 600 .72rem/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .02em;
+  color: var(--t-ink); background: transparent; cursor: pointer; user-select: none;
+  border: 1px solid color-mix(in srgb, var(--t-ink) 35%, transparent); border-radius: 6px; padding: .4rem .5rem;
+}
+.copybtn:hover { border-color: var(--t-aqua); color: var(--t-aqua); }
+.copybtn:focus-visible { outline: 2px solid var(--t-aqua); outline-offset: 2px; }
+.copybtn.done { color: var(--t-aqua); border-color: var(--t-aqua); }
+.copystatus { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

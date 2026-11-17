@@ -69,7 +69,7 @@ COPY site/index.html site/docs.html site/examples.html site/compare.html site/da
      site/robots.txt site/sitemap.xml site/install.sh \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png site/og-image.png \
      site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif \
-     site/landing.css site/landing.js site/docs.css site/nav.css site/docsearch.js /usr/share/nginx/html/
+     site/landing.css site/landing.js site/docs.css site/nav.css site/docsearch.js site/copy.js /usr/share/nginx/html/
 # Fonts are served from here, not from Google (no third-party request, nothing
 # for the privacy page to declare); the OFL texts travel with them.
 COPY site/fonts /usr/share/nginx/html/fonts

@@ -166,6 +166,9 @@ and busybox `wget` tries `::1` without falling back.
   same colours, fonts, light/dark and top bar. Colours the TUI uses are classes
   (`tc-red`, `tc-yellow`, …), not inline styles, so they stay readable on paper in
   both modes and switch to terminal colours inside a command block.
+- `copy.js` — the copy button on a command block carrying `data-copy` (the install
+  one-liner in the landing page's hero and on `/docs/install`). It creates the button
+  only when the Clipboard API is there; CSS reserves its room either way.
 - `docsearch.js` — the docs search box (in `partials/docnav.html` and on the index).
   The index is built by [pagefind](https://pagefind.app) in the image's `search`
   stage (pinned release, checked against a sha256 in the Dockerfile) over `docs.html`

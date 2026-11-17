@@ -76,6 +76,7 @@
   <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
   <link rel="stylesheet" href="/docs.css?v=__VERSION__">
   <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="/copy.js?v=__VERSION__"></script>
   <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>
@@ -126,7 +127,7 @@
         anything it could not verify. It never uses <code>sudo</code> and never edits your
         shell profile — <a href="/install.sh">read it first</a>, it is short.
       </p>
-      <div class="prompt"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+      <div class="prompt" data-copy="curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh" data-copy-label="Copy the install command"><span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
 <span class="c">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   <span class="o"># a specific release</span></div>
       <p>
         <strong>With a package manager</strong> — then <code>brew upgrade</code> or
