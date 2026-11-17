@@ -323,7 +323,11 @@ forward_stop: X  forward_copy_url: o</div>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two
         actions bound to the same key on one tab each fall back to the default, and the
-        UI shows the warnings once on startup.
+        UI shows the warnings once on startup. The same goes for an action bound to a key
+        a detail view that also answers to it keeps for itself — <code>node_prune: M</code>
+        would prune from the Nodes tab but measure in the node detail, so it is refused
+        (the node detail's <kbd>M</kbd>, <kbd>l</kbd> and <kbd>i</kbd>; the <kbd>i</kbd> that
+        closes the context and forward details).
       </p>
       <p>
         <code>quit</code> and <code>copy</code> also apply inside every dialog — the

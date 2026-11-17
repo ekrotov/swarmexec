@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -125,6 +126,39 @@ var dialogRunes = map[rune]bool{
 	'Z': true,
 }
 
+// overlayKeysets are the overlays that answer to configurable actions next to
+// fixed keys of their own. An action bound onto one of those fixed keys would
+// work on its tab and be dead inside the overlay: the overlay's own case comes
+// first and wins. So a keys.yaml remap onto one is refused like a tab clash.
+// Each overlay declares its fixed keys here, in one place, and
+// TestOverlayKeysetsMatchTheSource keeps every entry equal to the runes its
+// key handler checks.
+type overlayKeyset struct {
+	name    string   // how the warning names the overlay
+	handler string   // the func holding its key handler, for the source test
+	fixed   string   // the runes it handles itself (j/k are reserved anyway)
+	actions []string // the configurable actions it also answers to
+}
+
+var overlayKeysets = []overlayKeyset{
+	{"node detail", "nodeDetail.keys", "Mil", []string{"node_prune", "node_prune_schedule"}},
+	{"context detail", "ui.showContextDetail", "i", []string{"context_use"}},
+	{"forward detail", "forwardsTab.showDetail", "i", []string{"forward_stop"}},
+}
+
+// overlayClash names the overlay in which r is a fixed key, if action is one
+// that overlay also answers to.
+func overlayClash(action string, r rune) (string, bool) {
+	for _, o := range overlayKeysets {
+		for _, a := range o.actions {
+			if a == action && strings.ContainsRune(o.fixed, r) {
+				return o.name, true
+			}
+		}
+	}
+	return "", false
+}
+
 // reservedRunes are the fixed structural keys a configurable binding must not
 // steal (the tab-number keys and the vim movement aliases).
 // Every digit a tab can occupy is reserved, not just the tabs that exist today:
@@ -236,6 +270,10 @@ func loadKeybinds(path string) (keybinds, []string) {
 		}
 		if dialogActions[name] && dialogRunes[r] {
 			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a key dialogs use themselves; kept default %q", name, raw[name], keyLabel(a.def)))
+			continue
+		}
+		if where, bad := overlayClash(name, r); bad {
+			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a fixed key in the %s; kept default %q", name, raw[name], where, keyLabel(a.def)))
 			continue
 		}
 		// Defaults are collision-free per tab, so a conflict can only come from an
