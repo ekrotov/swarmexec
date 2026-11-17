@@ -58,7 +58,7 @@ func (f *fakeDocker) TaskList(_ context.Context, opts client.TaskListOptions) (c
 	desired := first(filterValues(opts.Filters, "desired-state"))
 	var out []swarm.Task
 	for _, t := range f.tasks {
-		if id != "" && t.ID != id {
+		if id != "" && !strings.HasPrefix(t.ID, id) { // the engine's id filter is a prefix match
 			continue
 		}
 		if service != "" && t.ServiceID != service {
