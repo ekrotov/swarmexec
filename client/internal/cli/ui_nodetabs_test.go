@@ -197,6 +197,13 @@ func TestScheduleEditorKeys(t *testing.T) {
 	}
 	u.pages.RemovePage(pageConfirm)
 	u.pages.RemovePage(pageInfo)
+	// Ctrl-S is the same apply (T-12).
+	send(tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModCtrl))
+	if !u.pages.HasPage(pageConfirm) && !u.pages.HasPage(pageInfo) {
+		t.Error("Ctrl-S must ask before saving (or say why it cannot)")
+	}
+	u.pages.RemovePage(pageConfirm)
+	u.pages.RemovePage(pageInfo)
 	send(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
 	if u.pages.HasPage(pageNodeSchedule) {
 		t.Error("Esc must close the editor")

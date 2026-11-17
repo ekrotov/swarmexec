@@ -440,7 +440,7 @@ func (u *ui) showScheduleEditor(svc *swarm.Service, back tview.Primitive) {
 	e.table.SetBorder(true).SetTitle(" prune schedule — ALL nodes ")
 	e.preview = tview.NewTextView().SetDynamicColors(true).SetWrap(true)
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(e.table, len(e.rows)+2, 0, true).AddItem(e.preview, 0, 1, false)
-	e.ov = u.overlayFor(pageNodeSchedule, back, footerKeys("j/k", "move", "space", "toggle", "Enter", "edit", "+/-", "runs/day", "w", "save (restarts agents)", "Esc", "cancel"))
+	e.ov = u.overlayFor(pageNodeSchedule, back, footerKeys("j/k", "move", "space", "toggle", "Enter", "edit", "+/-", "runs/day", "Ctrl-S", "apply (restarts agents)", "Esc", "cancel"))
 	e.render()
 	e.table.SetInputCapture(e.keys)
 	e.ov.show(centered(layout, 84, len(e.rows)+7), e.table)
@@ -610,7 +610,8 @@ func (e *scheduleEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 		e.toggle(r)
 	case ev.Key() == tcell.KeyRune && (ev.Rune() == '+' || ev.Rune() == '-'):
 		e.stepTimes(ev.Rune())
-	case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
+	// Ctrl-S applies, as in every editor; w is its one-key alias.
+	case ev.Key() == tcell.KeyCtrlS || (ev.Key() == tcell.KeyRune && ev.Rune() == 'w'):
 		e.save()
 	default:
 		return ev

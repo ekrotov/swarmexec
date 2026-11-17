@@ -197,7 +197,7 @@ func (u *ui) editNodeLabels(n swarmops.NodeInfo, back tview.Primitive, after fun
 		list: tview.NewList().ShowSecondaryText(false)}
 	e.list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
 	e.render()
-	e.ov = u.overlayFor(pageNodeLabels, back, footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
+	e.ov = u.overlayFor(pageNodeLabels, back, footerKeys("a", "add", "e", "edit", "d", "delete", "Ctrl-S", "apply", "Esc", "cancel"))
 	e.list.SetInputCapture(e.keys)
 	e.ov.show(centered(e.list, 70, 16), e.list)
 }
@@ -233,6 +233,11 @@ func (e *nodeLabelEditor) render() {
 func (e *nodeLabelEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Key() == tcell.KeyEscape {
 		e.ov.Close()
+		return nil
+	}
+	// Ctrl-S applies, as in every editor; w is its one-key alias.
+	if ev.Key() == tcell.KeyCtrlS {
+		e.apply()
 		return nil
 	}
 	if ev.Key() != tcell.KeyRune {

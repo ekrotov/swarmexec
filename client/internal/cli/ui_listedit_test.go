@@ -289,10 +289,17 @@ func TestListEditorLeaveGuard(t *testing.T) {
 // w confirms, then applies the staged list off the UI goroutine; success
 // closes the editor and runs after, a failure keeps it open to try again.
 func TestListEditorApply(t *testing.T) {
-	for _, fail := range []bool{false, true} {
+	for _, tc := range []struct {
+		fail  bool
+		ctrlS bool // apply with Ctrl-S instead of w (T-12)
+	}{{false, false}, {true, false}, {false, true}} {
+		fail := tc.fail
 		name := "succeeds"
 		if fail {
 			name = "fails"
+		}
+		if tc.ctrlS {
+			name += " with Ctrl-S"
 		}
 		t.Run(name, func(t *testing.T) {
 			u := runningUI(t)
@@ -315,7 +322,11 @@ func TestListEditorApply(t *testing.T) {
 				e = u.newListEditor(cfg)
 				e.show()
 				pressRune(u, 'd')
-				pressRune(u, 'w')
+				if tc.ctrlS {
+					press(u, tcell.KeyCtrlS)
+				} else {
+					pressRune(u, 'w')
+				}
 			})
 			if !pageOpen(t, u, pageConfirm) {
 				t.Fatal("w did not ask to confirm")

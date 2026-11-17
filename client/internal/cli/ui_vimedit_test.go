@@ -201,6 +201,24 @@ func TestVimWriteAndQuit(t *testing.T) {
 			t.Fatalf("Ctrl-S wrote %q, mode %d", got, e.mode)
 		}
 	})
+	// T-12: the apply idiom is Ctrl-S everywhere, but w stays vim's word
+	// motion in Normal mode and plain text in Insert mode — it never writes.
+	t.Run("w moves and types, never writes", func(t *testing.T) {
+		e, press := newTestVim(t, "AB CD")
+		wrote := false
+		e.onWrite = func(string) error { wrote = true; return nil }
+		press("w")
+		if got := cur(e); got != "AB |CD" {
+			t.Fatalf("Normal w moved to %q", got)
+		}
+		press("iw<Esc>")
+		if wrote || e.ta.GetText() != "AB wCD" {
+			t.Fatalf("Insert w: text %q, wrote %v", e.ta.GetText(), wrote)
+		}
+		if f := vimFooterKeys(vimNormal); !strings.Contains(f, "Ctrl-S") || !strings.Contains(f, "apply") {
+			t.Fatalf("Normal footer does not name Ctrl-S apply: %q", f)
+		}
+	})
 	t.Run("a line error moves to its line", func(t *testing.T) {
 		e, press := newTestVim(t, "A=1\nB=2\nbad")
 		e.onWrite = func(string) error { return &lineError{line: 3, msg: "nope"} }

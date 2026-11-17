@@ -160,7 +160,7 @@ func secretFooterKeys(m vimMode) string {
 	case vimCommand:
 		return footerKeys("Enter", "run", "Esc", "cancel", ":r file", "read", ":w", "create", ":q!", "discard")
 	}
-	return footerKeys("i", "insert", "Tab", "fields", ":r file", "read", ":w", "create", ":q", "cancel", "?", "help")
+	return footerKeys("i", "insert", "Tab", "fields", ":r file", "read", "Ctrl-S", "create", ":q", "cancel", "?", "help")
 }
 
 // secretFieldFooter is the footer while Name or Labels has focus.
@@ -253,7 +253,7 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 		u.showVimHelp(ed.ta, sectionHelp("Secret",
 			"Tab  Shift-Tab", "Name → Labels → value (Normal mode; Insert types a tab)",
 			":r <file>", "insert a local file at the cursor (~ works); text only",
-			":w  Ctrl-S", "create the secret — the value is sent byte for byte",
+			"Ctrl-S  :w", "create the secret — the value is sent byte for byte",
 			"500 KB", "swarm's limit (512000 bytes); the status line shows the size",
 			"binary", "not editable here — use docker secret create NAME FILE"))
 	}
@@ -349,7 +349,7 @@ func rotateFooterKeys(m vimMode) string {
 	case vimCommand:
 		return footerKeys("Enter", "run", "Esc", "cancel", ":r file", "read", ":w", "rotate", ":q!", "discard")
 	}
-	return footerKeys("i", "insert", ":r file", "read", ":w", "rotate", ":q", "cancel", "?", "help")
+	return footerKeys("i", "insert", ":r file", "read", "Ctrl-S", "rotate", ":q", "cancel", "?", "help")
 }
 
 // rotateHooks are what the rotate editor needs from outside; injected so the
@@ -414,7 +414,7 @@ func (u *ui) openRotateEditor(back tview.Primitive, name string, labels map[stri
 	ed.onHelp = func() {
 		u.showVimHelp(ed.ta, sectionHelp("Rotate",
 			":r <file>", "insert a local file at the cursor (~ works); text only",
-			":w  Ctrl-S", "rotate — lists the services that restart and asks first",
+			"Ctrl-S  :w", "rotate — lists the services that restart and asks first",
 			"name, labels", "kept; the services are parked on "+swarmops.RotateTempName(name)+" meanwhile",
 			"restarts", "every service using the secret restarts twice",
 			"rollback", "none — the old secret object is deleted",
