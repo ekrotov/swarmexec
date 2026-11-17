@@ -171,6 +171,30 @@ swarmexec stack diff postgres.yml postgres</div>
           <tr><td><code>stack rm &lt;stack&gt;</code></td><td>remove the stack's services, secrets, configs and networks, after a confirm — see <a href="#stackrm">below</a></td></tr>
         </tbody>
       </table></div>
+      <h3 id="deploydiff"><code>stack deploy</code> next to <code>docker stack deploy</code></h3>
+      <p>
+        The conversion is docker's own, so the services submitted are the ones
+        <code>docker stack deploy</code> would submit. Around it, four things are
+        deliberate:
+      </p>
+      <ul>
+        <li><strong>The <code>default</code> network is per service.</strong> Every service
+          that names no network lands on <code>&lt;stack&gt;_default</code>, and that network
+          is created whenever <em>any</em> service needs it, also when another service
+          names its own networks. (Earlier it was created only if no service named one,
+          and such a file stopped half-applied.)</li>
+        <li><strong>An existing secret or config is left unchanged, and the deploy says
+          so.</strong> Swarm cannot change the content of either, so a changed file is not
+          applied; each one is listed (<em>“secret app_key already exists and was left
+          unchanged”</em>). To roll out new content, create it under a new name.
+          <code>docker</code> instead attempts an update and fails.</li>
+        <li><strong>Registry credentials are sent only with <code>--with-registry-auth</code></strong>,
+          exactly as in docker: the local login for each service's image is passed to the
+          manager so nodes without their own login can pull a private image.</li>
+        <li><strong>The manager's warnings are printed</strong> (to stderr, prefixed with the
+          service) instead of being dropped — for example a placement that no node can
+          satisfy yet.</li>
+      </ul>
       <p>
         <strong>As a pipeline gate.</strong> Run nightly, <code>stack diff</code> answers
         “does the cluster still match Git?”: exit <strong>0</strong> means no difference,

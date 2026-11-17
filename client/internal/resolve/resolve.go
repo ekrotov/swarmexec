@@ -191,6 +191,27 @@ func (e *AmbiguousError) Error() string {
 		e.Service, len(e.Candidates), strings.Join(slots, ", "))
 }
 
+// MinIDPrefix is the shortest task or container ID prefix a target may be.
+// Below it a target is a name, never an ID: a mistyped service name that
+// happens to be hex ("db", "fe", "cafe") would otherwise land in whichever
+// container's ID starts with it. docker prints 12 characters; 6 is a prefix
+// nobody types by accident.
+const MinIDPrefix = 6
+
+// AmbiguousIDError is returned when a task or container ID prefix matches
+// more than one. Unlike a service name it cannot be resolved by a slot or an
+// interactive pick; the operator types more of the ID.
+type AmbiguousIDError struct {
+	Kind    string   // "task" or "container"
+	Prefix  string   // what was typed
+	Matches []string // what it matched, as "<id> (<service>.<slot>)", sorted
+}
+
+func (e *AmbiguousIDError) Error() string {
+	return fmt.Sprintf("%s ID prefix %q is ambiguous: it matches %d %ss (%s) — type more of the ID",
+		e.Kind, e.Prefix, len(e.Matches), e.Kind, strings.Join(e.Matches, ", "))
+}
+
 // NoRunningTaskError is returned when a service exists but has no running
 // container (Slot 0: the whole service; else that slot). A crash-looping or
 // failing service lands here, and its last exited containers still hold the
@@ -361,6 +382,9 @@ func (r *Resolver) resolveServiceSlot(ctx context.Context, svc *swarm.Service, s
 }
 
 func (r *Resolver) resolveTaskID(ctx context.Context, id string) (*Endpoint, bool, error) {
+	if len(id) < MinIDPrefix {
+		return nil, false, nil
+	}
 	f := make(client.Filters).Add("id", id)
 	tasksRes, err := r.cli.TaskList(ctx, client.TaskListOptions{Filters: f})
 	tasks := tasksRes.Items
@@ -370,7 +394,11 @@ func (r *Resolver) resolveTaskID(ctx context.Context, id string) (*Endpoint, boo
 	if len(tasks) == 0 {
 		return nil, false, nil
 	}
-	c, err := r.taskToCandidate(ctx, tasks[0])
+	task, err := r.uniqueTask(ctx, id, tasks)
+	if err != nil {
+		return nil, false, err
+	}
+	c, err := r.taskToCandidate(ctx, task, nil)
 	if err != nil {
 		return nil, false, err
 	}
@@ -380,21 +408,72 @@ func (r *Resolver) resolveTaskID(ctx context.Context, id string) (*Endpoint, boo
 	return r.endpointFromCandidate(*c), true, nil
 }
 
+// uniqueTask picks the one task an ID prefix names: the exact ID if there is
+// one, else the only match; several are an *AmbiguousIDError.
+func (r *Resolver) uniqueTask(ctx context.Context, id string, tasks []swarm.Task) (swarm.Task, error) {
+	for _, t := range tasks {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	if len(tasks) == 1 {
+		return tasks[0], nil
+	}
+	return swarm.Task{}, r.ambiguousID("task", id, tasks)
+}
+
+// ambiguousID builds the error for a prefix that matched several tasks, naming
+// each by ID and service slot (best effort: a failing service lookup only
+// costs the names).
+func (r *Resolver) ambiguousID(kind, prefix string, tasks []swarm.Task) error {
+	names, _ := r.serviceNames(context.Background())
+	var matches []string
+	for _, t := range tasks {
+		id := t.ID
+		if kind == "container" {
+			id = containerID(t)
+		}
+		if len(id) > 12 {
+			id = id[:12]
+		}
+		desc := id
+		if n := names[t.ServiceID]; n != "" {
+			desc = fmt.Sprintf("%s (%s.%d)", id, n, t.Slot)
+		}
+		matches = append(matches, desc)
+	}
+	sort.Strings(matches)
+	return &AmbiguousIDError{Kind: kind, Prefix: prefix, Matches: matches}
+}
+
 func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) (*Endpoint, error) {
 	if nodeHint == "" {
 		// Best effort: scan running tasks for a matching container id.
 		tasks, err := r.runningTasks(ctx, "")
-		if err == nil {
+		if err == nil && len(id) >= MinIDPrefix {
+			var match []swarm.Task
 			for _, t := range tasks {
-				if cid := containerID(t); cid != "" && strings.HasPrefix(cid, id) {
-					c, err := r.taskToCandidate(ctx, t)
-					if err != nil {
-						return nil, err
-					}
-					ep := r.endpointFromCandidate(*c)
-					ep.ContainerID = cid
-					return ep, nil
+				cid := containerID(t)
+				if cid == id {
+					match = []swarm.Task{t}
+					break
 				}
+				if cid != "" && strings.HasPrefix(cid, id) {
+					match = append(match, t)
+				}
+			}
+			switch len(match) {
+			case 0:
+			case 1:
+				c, err := r.taskToCandidate(ctx, match[0], nil)
+				if err != nil {
+					return nil, err
+				}
+				ep := r.endpointFromCandidate(*c)
+				ep.ContainerID = containerID(match[0])
+				return ep, nil
+			default:
+				return nil, r.ambiguousID("container", id, match)
 			}
 		}
 		return nil, unknownTarget(id)
@@ -414,6 +493,9 @@ func (r *Resolver) resolveContainerID(ctx context.Context, id, nodeHint string) 
 // the manager has no task for (a plain docker run), so only then is --node
 // the way out; for anything else, a typo is far likelier.
 func unknownTarget(id string) error {
+	if isHexID(id) && len(id) < MinIDPrefix {
+		return fmt.Errorf("no such service %q — a task or container ID prefix needs at least %d characters; `swarmexec ps` lists what is running", id, MinIDPrefix)
+	}
 	if isHexID(id) {
 		return fmt.Errorf("no service, task or swarm container %q — for a container started outside swarm, pass --node <hostname|ip|nodeID>", id)
 	}
@@ -444,12 +526,16 @@ func (r *Resolver) candidatesWhere(ctx context.Context, svc *swarm.Service, keep
 	if err != nil {
 		return nil, err
 	}
+	nodes, err := r.nodeIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cands []Candidate
 	for _, t := range tasks {
 		if containerID(t) == "" || (keep != nil && !keep(t)) {
 			continue // task scheduled but container not up yet
 		}
-		c, err := r.taskToCandidate(ctx, t)
+		c, err := r.taskToCandidate(ctx, t, nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -487,6 +573,10 @@ func (r *Resolver) LastExited(ctx context.Context, service string, slot int) (ca
 	if len(tasks) > 0 {
 		reason = taskReason(tasks[0])
 	}
+	nodes, err := r.nodeIndex(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	seen := map[string]bool{}
 	for _, t := range tasks {
 		if slot > 0 && t.Slot != slot {
@@ -500,7 +590,7 @@ func (r *Resolver) LastExited(ctx context.Context, service string, slot int) (ca
 			continue
 		}
 		seen[key] = true
-		c, err := r.taskToCandidate(ctx, t)
+		c, err := r.taskToCandidate(ctx, t, nodes)
 		if err != nil {
 			return nil, "", err
 		}
@@ -608,12 +698,16 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 	if err != nil {
 		return nil, err
 	}
+	nodes, err := r.nodeIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cands []Candidate
 	for _, t := range tasks {
 		if containerID(t) == "" {
 			continue
 		}
-		c, err := r.taskToCandidate(ctx, t)
+		c, err := r.taskToCandidate(ctx, t, nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -827,11 +921,33 @@ func servicePorts(ports []swarm.PortConfig) string {
 	return strings.Join(out, ", ")
 }
 
-func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task) (*Candidate, error) {
-	nodeRes, err := r.cli.NodeInspect(ctx, t.NodeID, client.NodeInspectOptions{})
-	node := nodeRes.Node
+// nodeIndex lists every node once, by ID. A read that turns many tasks into
+// candidates takes this single request instead of inspecting each task's node:
+// 300 containers on 5 nodes were 300 requests per topology refresh.
+func (r *Resolver) nodeIndex(ctx context.Context) (map[string]swarm.Node, error) {
+	res, err := r.cli.NodeList(ctx, client.NodeListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("inspect node %s: %w", t.NodeID, err)
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	idx := make(map[string]swarm.Node, len(res.Items))
+	for _, n := range res.Items {
+		idx[n.ID] = n
+	}
+	return idx, nil
+}
+
+// taskToCandidate describes a task's container and node. nodes is the
+// nodeIndex of a caller converting several tasks; nil (a single task) inspects
+// just that node. A node the index lacks falls back to an inspect, which
+// reports it as the manager does.
+func (r *Resolver) taskToCandidate(ctx context.Context, t swarm.Task, nodes map[string]swarm.Node) (*Candidate, error) {
+	node, ok := nodes[t.NodeID]
+	if !ok {
+		nodeRes, err := r.cli.NodeInspect(ctx, t.NodeID, client.NodeInspectOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("inspect node %s: %w", t.NodeID, err)
+		}
+		node = nodeRes.Node
 	}
 	c := &Candidate{
 		Slot:        t.Slot,

@@ -122,8 +122,8 @@
         <tbody>
           <tr><td><code>service</code></td><td><code>web</code></td><td>The service's running task. If it has more than one replica, this is ambiguous — see below.</td></tr>
           <tr><td><code>service.slot</code></td><td><code>web.2</code></td><td>A specific replica slot. During a rolling update the newest task in the slot wins.</td></tr>
-          <tr><td><code>task-id</code></td><td><code>xxh8k1…</code></td><td>A Swarm task ID.</td></tr>
-          <tr><td><code>container-id</code></td><td><code>3f9a2b…</code></td><td>A container ID prefix. Needs a node: pass <code>--node</code>, or it is found by scanning running tasks.</td></tr>
+          <tr><td><code>task-id</code></td><td><code>xxh8k1…</code></td><td>A Swarm task ID, or a prefix of one (at least 6 characters, and it must match exactly one task).</td></tr>
+          <tr><td><code>container-id</code></td><td><code>3f9a2b…</code></td><td>A container ID prefix (at least 6 characters, and it must match exactly one container). Needs a node: pass <code>--node</code>, or it is found by scanning running tasks.</td></tr>
         </tbody>
       </table></div>
       <p>
@@ -133,6 +133,19 @@
         candidate list and exits. Disambiguate with a slot (<code>web.0</code>,
         <code>web.1</code>, …). <code>logs</code> is the exception: it follows
         <a href="/docs/logs#logs">every replica at once</a>, like <code>docker service logs</code>.
+      </p>
+      <p>
+        <strong>ID prefixes.</strong> A task or container ID prefix must be
+        <strong>at least 6 characters</strong> and must match <strong>exactly one</strong>
+        task or container. A shorter target is only ever a name: a mistyped service name
+        that happens to be hexadecimal (<code>db</code>, <code>cafe</code>) used to be taken for
+        an ID prefix and ran in whichever container's ID began with it. A prefix that
+        matches several fails with the candidates listed
+        (<em>task ID prefix "abcdef" is ambiguous: it matches 2 tasks (abcdef111111
+        (web.1), abcdef222222 (web.2)) — type more of the ID</em>); type more of the ID.
+        <strong>For scripts:</strong> a short or ambiguous prefix that used to be accepted now
+        fails with an error instead of picking the first match — use the full ID or a
+        longer prefix.
       </p>
       <div class="note">
         <strong>--node</strong> is only consulted for <em>container-id</em> targets and
