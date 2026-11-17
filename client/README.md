@@ -68,6 +68,7 @@ flags**.
 | TLS server name | `--server-name` | `SWARMEXEC_SERVER_NAME` | `server_name` |
 | Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
 | Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
+| Agent credentials per cluster (`agent_secret`, `agent_secret_file`, `ca`, `cert`, `key`, `port`, `addr_mode`, `server_name`, `insecure`) | — | — | `contexts.<name>.<key>` (falls back to the global key; precedence: flag > env > context > global > default; `init` writes here) |
 | Ask before a TUI switch (per context) | — | —         | `contexts.<name>.confirm_switch` |
 | TUI switch also sets docker's context | — | —         | `ui.sync_docker_context` |
 | Daily check for a newer release | — | `SWARMEXEC_NO_UPDATE_CHECK=1` (off) | `ui.check_updates` |

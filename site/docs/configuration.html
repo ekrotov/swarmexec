@@ -157,6 +157,7 @@
           <tr><td><code>ui.sync_docker_context</code></td><td>bool</td><td>a cluster switch in the TUI also makes that context docker's stored current one (<code>docker context use</code>), so your shells follow the TUI. Default <code>false</code>: the switch is the TUI's only, and <code>docker</code> in another terminal keeps going where it went. <code>swarmexec context use</code> always writes it — that command is an explicit choice</td></tr>
           <tr><td id="check-updates"><code>ui.check_updates</code></td><td>bool</td><td>look for a newer release (default <code>true</code>). The TUI and <code>swarmexec doctor</code> ask <code>https://swarm-exec.cloud-surfers.net/latest.json</code> at most once a day; the request is a plain GET that sends nothing about you or your cluster, and the answer is cached in <code>update-check.json</code> next to the config file. A newer release shows in the TUI's status line (and in the <kbd>?</kbd> title) and as a line in <code>doctor</code>. Builds that are not a release (<code>dev</code>, <code>review-…</code>) never ask, and offline nothing is shown. <code>false</code>, or <code>SWARMEXEC_NO_UPDATE_CHECK=1</code>, turns it off</td></tr>
           <tr><td><code>contexts.&lt;name&gt;.underlay</code></td><td>list of CIDRs</td><td>optional, per Docker context: the hosts' own network (e.g. <code>[10.0.0.0/16]</code>). The <a href="/docs/tui-tabs#tui-networks">Networks tab</a>, the create-network check and the MCP <code>networks_list</code> then also flag overlay subnets that overlap it. Without it only the nodes' own addresses are checked. A malformed CIDR is a load error naming the key</td></tr>
+          <tr><td id="per-context-credentials"><code>contexts.&lt;name&gt;.{agent_secret, agent_secret_file, ca, cert, key, port, addr_mode, server_name, insecure}</code></td><td>as the global key</td><td>optional, per Docker context: the agent credentials and dial settings of that one cluster, so several clusters can have different secrets or CAs. Each key set here replaces the global key of the same name for this context only; keys you leave out fall back to the global value, so a config without a <code>contexts:</code> block behaves exactly as before. <code>init</code> writes these for the context it deployed to</td></tr>
           <tr><td><code>contexts.&lt;name&gt;.confirm_switch</code></td><td>bool</td><td>optional, per Docker context: switching <em>to</em> this context in the TUI asks for confirmation first — for production clusters, so a stray <kbd>Enter</kbd> in the contexts sidebar is not enough</td></tr>
         </tbody>
       </table></div>
@@ -164,7 +165,10 @@
         The <code>contexts:</code> section holds settings for one Docker context, keyed by
         its name as <code>docker context ls</code> shows it (<code>default</code> for
         <code>$DOCKER_HOST</code> / the local socket). <code>config show</code> prints the
-        underlay and <code>confirm_switch</code> of the context it resolves, and
+        values in effect for the context it resolves — with where each credential or dial
+        value came from (<code>contexts.prod.agent_secret</code>, <code>config file</code>,
+        <code>env SWARMEXEC_PORT</code>, <code>flag --port</code>, <code>default</code>) —
+        plus the underlay, <code>confirm_switch</code> and
         <code>ui.sync_docker_context</code>:
       </p>
       <div class="cmd">ui:
@@ -172,7 +176,22 @@
 contexts:
   prod:
     underlay: [10.0.0.0/16]   <span class="k"># e.g. the Hetzner private network the nodes sit on</span>
-    confirm_switch: true      <span class="k"># the TUI asks before switching to prod</span></div>
+    confirm_switch: true      <span class="k"># the TUI asks before switching to prod</span>
+    agent_secret: s3cr3t      <span class="k"># prod's own agent secret (init writes this)</span>
+    insecure: true
+    addr_mode: ip</div>
+      <p id="context-precedence">
+        For one cluster the order is, highest first:
+        <code>flag</code> &rarr; <code>environment variable</code> &rarr;
+        <code>contexts.&lt;name&gt;.&lt;key&gt;</code> &rarr; global <code>&lt;key&gt;</code>
+        in the file &rarr; built-in default. The environment stays above the context block
+        because it always overrode the file: an exported
+        <code>SWARMEXEC_AGENT_SECRET</code> applies to every cluster. A context's
+        <code>agent_secret</code> or <code>agent_secret_file</code> replaces
+        <em>both</em> global spellings, so it is never shadowed by a global
+        <code>agent_secret_file</code>. An explicit <code>insecure: false</code> in a
+        context overrides a global <code>true</code>.
+      </p>
       <p>
         The <code>logs:</code> section sets defaults for format-aware log parsing and
         filtering; the <code>logs</code> command's <code>--log-format</code> /
