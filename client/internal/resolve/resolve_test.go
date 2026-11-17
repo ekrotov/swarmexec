@@ -701,6 +701,31 @@ func TestServicesFallbackCountsOnlyTheCurrentJobIteration(t *testing.T) {
 	}
 }
 
+// The fallback for a global service: desired is every task not told to shut
+// down, running only those running with a container.
+func TestServicesFallbackCountsGlobalTasks(t *testing.T) {
+	f := newFake()
+	g := svc("s-agent", "agent")
+	g.Spec.Mode = swarm.ServiceMode{Global: &swarm.GlobalService{}}
+	f.services = []swarm.Service{g}
+	running := task("t1", "s-agent", "node-a", 0, "c1")
+	running.Status.State = swarm.TaskStateRunning
+	starting := task("t2", "s-agent", "node-b", 0, "")
+	starting.Status.State = swarm.TaskStateStarting
+	gone := task("t3", "s-agent", "node-c", 0, "c3")
+	gone.DesiredState = swarm.TaskStateShutdown
+	gone.Status.State = swarm.TaskStateShutdown
+	f.tasks = []swarm.Task{running, starting, gone}
+
+	got, err := New(f, AddrHostname).Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	if got[0].Running != 1 || got[0].Desired != 2 {
+		t.Errorf("global = %d/%d, want 1/2", got[0].Running, got[0].Desired)
+	}
+}
+
 // A long-running service keeps the counters it always had.
 func TestProgressIsRunningDesiredForAService(t *testing.T) {
 	s := Service{Mode: ModeReplicated, Running: 1, Desired: 3}
