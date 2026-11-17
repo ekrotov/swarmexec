@@ -196,7 +196,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 			return err
 		}
 		if now.After(deadline) {
-			return w.timedOut(snaps, f.timeout)
+			return w.timedOut(snaps, now, f.timeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -254,13 +254,19 @@ func (w *waitProgress) step(snaps []waitSnapshot, now time.Time) (bool, error) {
 	return false, nil
 }
 
-// timedOut prints the services whose verdict is not converged and returns the
-// timeout error counting them.
-func (w *waitProgress) timedOut(snaps []waitSnapshot, timeout time.Duration) error {
+// timedOut prints the services the wait is still waiting for and returns the
+// timeout error counting them: those whose verdict is not converged, and
+// those that converged but have not held it for waitSettle yet — still
+// pending, so they count, with their state.
+func (w *waitProgress) timedOut(snaps []waitSnapshot, now time.Time, timeout time.Duration) error {
 	var stuck []string
 	for _, s := range snaps {
-		if v, why := judge(s, w.since, w.healthy); v != waitConverged {
+		v, why := judge(s, w.since, w.healthy)
+		switch {
+		case v != waitConverged:
 			stuck = append(stuck, s.name+": "+why)
+		case now.Sub(w.settledSince[s.name]) < waitSettle:
+			stuck = append(stuck, s.name+": converged, settling ("+why+")")
 		}
 	}
 	for _, s := range stuck {

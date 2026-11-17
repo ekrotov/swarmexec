@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,9 +62,12 @@ func TestWaitRun(t *testing.T) {
 		t.Errorf("paused: %q, %v", out, err)
 	}
 
+	// shop_web converged but has not held it for the settle time: the wait is
+	// still waiting for it too, and says so.
 	out, err = run("--timeout", "1ms", "shop_db", "shop_web")
-	if exit(err) != 1 || err.Error() != "timed out after 1ms waiting for 1 service(s)" ||
-		out != "  shop_db: 0/1 running — no suitable node\n  shop_web: 1/1 running\n✗ shop_db: 0/1 running — no suitable node\n" {
+	if exit(err) != 1 || err.Error() != "timed out after 1ms waiting for 2 service(s)" ||
+		out != "  shop_db: 0/1 running — no suitable node\n  shop_web: 1/1 running\n"+
+			"✗ shop_db: 0/1 running — no suitable node\n✗ shop_web: converged, settling (1/1 running)\n" {
 		t.Errorf("timeout: %q, %v", out, err)
 	}
 
@@ -113,5 +117,24 @@ func TestWaitRunConverges(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^  shop_web: 1/1 running\n  shop_web: converged \(1/1 running\)\n✓ 1 service\(s\) converged in \d+s\n$`).MatchString(out) {
 		t.Errorf("converged: %q", out)
+	}
+}
+
+// On timeout a service that has held converged through the settle time is
+// done and left out; one still settling is listed and counted.
+func TestWaitTimedOutCountsSettling(t *testing.T) {
+	now := time.Now()
+	var out strings.Builder
+	w := &waitProgress{out: &out, since: now.Add(-time.Minute),
+		settledSince: map[string]time.Time{"done": now.Add(-waitSettle), "fresh": now.Add(-time.Second)}}
+	snaps := []waitSnapshot{
+		{name: "done", have: 1, want: 1},
+		{name: "fresh", have: 2, want: 2},
+		{name: "short", have: 0, want: 1},
+	}
+	err := w.timedOut(snaps, now, time.Minute)
+	if err == nil || err.Error() != "timed out after 1m0s waiting for 2 service(s)" ||
+		out.String() != "✗ fresh: converged, settling (2/2 running)\n✗ short: 0/1 running\n" {
+		t.Errorf("%q, %v", out.String(), err)
 	}
 }

@@ -203,8 +203,10 @@ swarmexec wait api worker --healthy</div>
         deploy, before the manager has started the update, cannot pass for done. Two states
         that look settled are <strong>failures</strong>: an update that <em>paused</em>
         (the service runs a mix of old and new tasks) and a rollback that completed during
-        the wait (it runs the previous spec — the deploy did not take). On timeout the
-        reason a task is not running is printed, typically the scheduler's own message.
+        the wait (it runs the previous spec — the deploy did not take). On timeout every
+        service still waited for is listed and counted — including one that converged
+        but has not held it long enough yet (<em>converged, settling</em>) — with the
+        reason a task is not running, typically the scheduler's own message.
         With <code>--healthy</code> every container that has a healthcheck must also report
         healthy; a node whose agent cannot report health counts as <em>not yet</em>, never
         as healthy. swarmexec only observes and reports — it never rolls back or retries.
