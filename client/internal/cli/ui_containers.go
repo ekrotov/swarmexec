@@ -938,7 +938,7 @@ func (u *ui) confirmKillTask(c resolve.Candidate, ep resolve.Endpoint) {
 	u.confirm(msg, "Kill", u.ctree, func() {
 		u.app.SetFocus(u.ctree)
 		u.flash(" killing " + shortID(c.ContainerID) + "…")
-		asyncDo(u, "ui.containers.kill", func(ctx context.Context) error {
+		mutateDo(u, "ui.containers.kill", "container kill", func(ctx context.Context) error {
 			return ac.KillContainer(ctx, ep, timeout)
 		}, func(err error) {
 			if err != nil {

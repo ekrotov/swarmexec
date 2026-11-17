@@ -236,6 +236,14 @@
         are told which cluster and stay on the one that works. Every later switch back
         is immediate.
       </p>
+      <p>
+        <strong>A write is not abandoned by a switch.</strong> A stack removal, a deploy, a
+        scale, a prune or a secret rotation that is still running when you switch cluster
+        keeps going, and you are told how it ended: a notice names the cluster and says
+        whether it finished or failed (with the error). Reads — lists, inspect, diffs —
+        are cancelled by the switch as before. <kbd>q</kbd> while a write is still running
+        asks <em>Quit anyway</em> first, because quitting stops it midway.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>

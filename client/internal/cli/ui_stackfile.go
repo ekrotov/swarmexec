@@ -311,7 +311,7 @@ func (u *ui) confirmAndApply(plan *stackfile.Plan) {
 func (u *ui) applyStack(plan *stackfile.Plan) {
 	dcli := u.dcli
 	u.flash("deploying " + plan.Stack + "…")
-	async(u, "ui.stack.apply", func(ctx context.Context) (*stackfile.ApplyResult, error) {
+	mutate(u, "ui.stack.apply", "stack deploy", func(ctx context.Context) (*stackfile.ApplyResult, error) {
 		return stackfile.Apply(ctx, dcli, plan.Stack, plan.Config, stackfile.ApplyOptions{})
 	}, func(res *stackfile.ApplyResult, err error) {
 		if err != nil {

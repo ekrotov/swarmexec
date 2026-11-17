@@ -495,7 +495,7 @@ func (iv *inspectView) openRollback() {
 		}
 
 		u.confirm(rollbackConfirmText(svc, lines), "Roll back", iv.table, func() {
-			asyncDo(u, "ui.inspect.rollback", func(ctx context.Context) error {
+			mutateDo(u, "ui.inspect.rollback", "rollback", func(ctx context.Context) error {
 				return swarmops.RollbackService(ctx, dcli, svc)
 			}, func(rerr error) {
 				if rerr != nil {

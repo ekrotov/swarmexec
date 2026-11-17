@@ -407,7 +407,7 @@ func (t *volumesTab) showNodes(v swarmVolume) {
 	closeNodes := ov.Close
 
 	runDelete := func(targets []resolve.Node) {
-		async(u, "ui.volumes.remove", func(ctx context.Context) ([]agentcall.NodeResult, error) {
+		mutate(u, "ui.volumes.remove", "volume removal", func(ctx context.Context) ([]agentcall.NodeResult, error) {
 			return ac.RemoveVolume(ctx, targets, v.Name, false, f.connectTimeout), nil
 		}, func(results []agentcall.NodeResult, _ error) {
 			closeNodes()
@@ -575,7 +575,7 @@ func (t *volumesTab) showCreate() {
 			u.info("no nodes available")
 			return
 		}
-		async(u, "ui.volumes.create", func(ctx context.Context) ([]agentcall.NodeResult, error) {
+		mutate(u, "ui.volumes.create", "volume creation", func(ctx context.Context) ([]agentcall.NodeResult, error) {
 			return ac.CreateVolume(ctx, targets, req, f.connectTimeout), nil
 		}, func(results []agentcall.NodeResult, _ error) {
 			closeForm()
@@ -691,7 +691,7 @@ func (t *volumesTab) runDelete(targets []swarmVolume) {
 		fails   []string
 	}
 	st := t.st()
-	async(u, "ui.volumes.delete", func(ctx context.Context) (outcome, error) {
+	mutate(u, "ui.volumes.delete", "volume deletion", func(ctx context.Context) (outcome, error) {
 		// Delete volumes with bounded parallelism: each volume already fans
 		// out across its nodes, so a small volume-level pool keeps the total
 		// load on the agents in check. A mutex guards the shared counters
@@ -819,7 +819,7 @@ func (t *volumesTab) attachToService(volName string) {
 						return
 					}
 					mnt := mount.Mount{Type: mount.TypeVolume, Source: volName, Target: target, ReadOnly: lbl == "Attach read-only"}
-					asyncDo(u, "ui.volumes.attach", func(ctx context.Context) error {
+					mutateDo(u, "ui.volumes.attach", "volume attach", func(ctx context.Context) error {
 						return swarmops.AddServiceMount(ctx, dcli, svc, mnt)
 					}, func(err error) {
 						app.SetFocus(vtable)

@@ -426,7 +426,7 @@ func (u *ui) servicePrompt(title, confirmVerb, actionLabel string, suggestions [
 		// bouncing focus off `back` on the way would flicker the selection.
 		ov.Close()
 		u.confirm(fmt.Sprintf("%s %q?\n\nThis triggers a rolling update of the service.", confirmVerb, name), actionLabel, back, func() {
-			asyncDo(u, "ui.servicePrompt."+strings.ToLower(actionLabel), func(ctx context.Context) error {
+			mutateDo(u, "ui.servicePrompt."+strings.ToLower(actionLabel), strings.ToLower(actionLabel), func(ctx context.Context) error {
 				return do(ctx, name)
 			}, func(err error) {
 				if err != nil {

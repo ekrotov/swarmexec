@@ -98,6 +98,11 @@ type ui struct {
 	// result if it has moved. See (*ui).onCluster.
 	gen atomic.Uint64
 
+	// muts is every write still running, whatever cluster it runs on: the
+	// session's, not a cluster's, because a switch does not stop a write and
+	// quitting must be able to say that some are still going. See mutate.
+	muts mutations
+
 	// eventsLive says whether the manager's topology event stream is currently
 	// subscribed. It picks the poll rate, so it lives on the session rather than
 	// on a cluster: the ticker is one, and it always follows the visible one.

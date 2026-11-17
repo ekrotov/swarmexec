@@ -365,7 +365,7 @@ func (e *nodeLabelEditor) apply() {
 		return
 	}
 	u.confirm(fmt.Sprintf("Update labels on node %s?\n\nApplies immediately (no rolling update).", n.Hostname), "Apply", list, func() {
-		asyncDo(u, "ui.nodes.labels", func(ctx context.Context) error {
+		mutateDo(u, "ui.nodes.labels", "node label update", func(ctx context.Context) error {
 			return swarmops.SetNodeLabels(ctx, dcli, n.ID, n.Version, lbls)
 		}, func(err error) {
 			if err != nil {
@@ -396,7 +396,7 @@ func (u *ui) openNodeAvailability(n swarmops.NodeInfo, back tview.Primitive, aft
 	closeMenu := ov.Close
 
 	apply := func(to swarm.NodeAvailability) {
-		asyncDo(u, "ui.nodes.availability", func(ctx context.Context) error {
+		mutateDo(u, "ui.nodes.availability", "node availability change", func(ctx context.Context) error {
 			return swarmops.SetNodeAvailability(ctx, dcli, n.ID, n.Version, to)
 		}, func(err error) {
 			if err != nil {
@@ -732,7 +732,7 @@ func (u *ui) openNodeImagePrune(n swarmops.NodeInfo, back tview.Primitive, after
 				reclaimed int64
 				deleted   int
 			}
-			async(u, "ui.nodes.imageprune", func(ctx context.Context) (pruned, error) {
+			mutate(u, "ui.nodes.imageprune", "image prune", func(ctx context.Context) (pruned, error) {
 				// Resolve the dial address rather than deriving one from the node
 				// row: which address reaches an agent depends on the configured
 				// address mode, and only the resolver knows it.

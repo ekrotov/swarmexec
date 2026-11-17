@@ -1931,13 +1931,37 @@ func (u *ui) nextTab() {
 	}
 }
 
+// quit ends the session, after asking when a write is still running: quitting
+// cancels the session context, and a stack removal or secret rotation stopped
+// halfway leaves the cluster in a state the operator did not choose. With
+// nothing running it quits at once, as before.
+func (u *ui) quit() {
+	running := u.muts.running()
+	if len(running) == 0 {
+		u.app.Stop()
+		return
+	}
+	u.confirm(quitRunningMessage(running), "Quit anyway", u.app.GetFocus(), u.app.Stop)
+}
+
+// quitRunningMessage lists what quitting would interrupt.
+func quitRunningMessage(running []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d operation(s) still running:\n\n", len(running))
+	for _, w := range running {
+		b.WriteString("    " + tview.Escape(w) + "\n")
+	}
+	b.WriteString("\nQuitting stops them midway. Wait for them to finish, or quit anyway.")
+	return b.String()
+}
+
 // globalKey runs the keymap action bound to r, if any, and says whether
 // there was one.
 func (u *ui) globalKey(r rune) bool {
 	km := u.km
 	switch r {
 	case km.Quit:
-		u.app.Stop()
+		u.quit()
 	case km.Refresh:
 		if t := u.activeTab(); t != nil {
 			t.refresh()

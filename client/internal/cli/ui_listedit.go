@@ -251,7 +251,7 @@ func (e *listEditor) apply() {
 	u.confirm(text, "Apply", e.list, func() {
 		staged := slices.Clone(e.cur) // cur keeps changing on the UI goroutine; work gets its own
 		onApply, after := e.cfg.onApply, e.cfg.after
-		asyncDo(u, "ui.serviceedit.apply", func(ctx context.Context) error {
+		mutateDo(u, "ui.serviceedit.apply", "service update", func(ctx context.Context) error {
 			return onApply(ctx, staged)
 		}, func(err error) {
 			if err != nil {
