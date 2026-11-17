@@ -109,6 +109,11 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 	if e := noAgentIfAllDown(ctx, dcli, nodes, errs); e != nil {
 		return e
 	}
+	if len(nodes) > 0 && len(errs) == len(nodes) {
+		// Nothing answered: an empty list here would read as "no volumes".
+		reportNodeErrors(errs)
+		return &cliError{code: session.TransportFailure, err: fmt.Errorf("no node answered (%d of %d unreachable): the volume list is unknown, not empty", len(errs), len(nodes))}
+	}
 	usage := ac.VolumeUsage(ctx, nodes, f.connectTimeout)
 	wantSize := f.size || f.sort == "size"
 	var sizes map[string]int64

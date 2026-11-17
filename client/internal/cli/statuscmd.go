@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -84,7 +85,8 @@ func newStatsCmd(g *globalFlags) *cobra.Command {
 			"seconds — stats waits up to --wait for CPU (a delta of two samples) and then\n" +
 			"prints what it has: \"warming up\" for a container still without a reading,\n" +
 			"\"unavailable\" where the node's agent did not answer. Same data as the MCP\n" +
-			"tool stats.",
+			"tool stats. When no agent answered at all, stats exits 125 and prints no\n" +
+			"table: an empty reading is not a measurement.",
 		Example: "  swarmexec stats\n" +
 			"  swarmexec stats web api\n" +
 			"  swarmexec stats --json web",
@@ -121,6 +123,10 @@ func runStats(cmd *cobra.Command, g *globalFlags, f *statsFlags, args []string) 
 		swarmops.StatsPoll{ConnectTimeout: f.connectTimeout, Wait: f.wait, Interval: swarmops.StatsPollDefault})
 	if err != nil {
 		return &cliError{code: session.TransportFailure, err: err}
+	}
+	if swarmops.NoAgentAnswered(rows) {
+		// Every row says "unavailable": an empty reading is not a measurement.
+		return &cliError{code: session.TransportFailure, err: errors.New("no node agent answered the stats request: the usage is unknown (swarmexec doctor shows why)")}
 	}
 	if f.json {
 		return printJSON(cmd.OutOrStdout(), rows)

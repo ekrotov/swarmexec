@@ -818,7 +818,7 @@ swarmexec stack [command]</div>
       <p class="clishort">Show live CPU and memory of each container, measured by the node agents</p>
       <div class="cmd">swarmexec stats [service...] [flags]</div>
       <p>One reading of every running container of the named services (all services when none is named): CPU, memory against its limit, and health. The agents measure on the nodes; the manager API only knows what was reserved.</p>
-      <p>An agent samples only while someone asks, so a first reading can take a few seconds — stats waits up to --wait for CPU (a delta of two samples) and then prints what it has: &#34;warming up&#34; for a container still without a reading, &#34;unavailable&#34; where the node&#39;s agent did not answer. Same data as the MCP tool stats.</p>
+      <p>An agent samples only while someone asks, so a first reading can take a few seconds — stats waits up to --wait for CPU (a delta of two samples) and then prints what it has: &#34;warming up&#34; for a container still without a reading, &#34;unavailable&#34; where the node&#39;s agent did not answer. Same data as the MCP tool stats. When no agent answered at all, stats exits 125 and prints no table: an empty reading is not a measurement.</p>
       <p class="climeta">Examples</p>
       <div class="cmd">swarmexec stats
 swarmexec stats web api
