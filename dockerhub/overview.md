@@ -54,18 +54,29 @@ swarmexec init --image logleio/swarmexec-agent:latest
 
 ### Manual deploy (global service)
 
+The agent refuses to start without TLS configuration or `-self-signed`, so the
+manual path needs a shared secret. Create it once on a manager, then create the
+service (self-signed server certificate, shared-secret authentication):
+
 ```sh
+openssl rand -base64 32 | docker secret create swarmexec_agent_secret -
+
 docker service create \
   --name swarmexec_agent \
   --mode global \
   --label swarmexec.role=agent \
+  --secret swarmexec_agent_secret \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   --publish mode=host,target=9443,published=9443 \
-  logleio/swarmexec-agent:latest
+  --update-order stop-first \
+  logleio/swarmexec-agent:latest \
+  -self-signed -agent-secret-file=/run/secrets/swarmexec_agent_secret
 ```
 
-The agent listens on host port **9443** on every node. See the project docs for
-the mTLS / shared-secret setup and certificate material.
+The agent listens on host port **9443** on every node. Put the same secret in
+the client config (`agent_secret`, plus `insecure: true` for the self-signed
+certificate); `swarmexec init` does all of this for you. For CA-verified mTLS
+use the stack files in the project repository (`agent/deploy/`) and the docs.
 
 ## Security
 

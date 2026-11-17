@@ -18,7 +18,7 @@
 # via that node's address on the published port using mTLS.
 services:
   agent:
-    image: docker.io/logleio/swarmexec-agent:latest
+    image: ${SWARMEXEC_AGENT_IMAGE:-docker.io/logleio/swarmexec-agent:latest}
     command:
       - "-listen=:9443"
       - "-ca-cert=/run/secrets/swarmexec_ca"
