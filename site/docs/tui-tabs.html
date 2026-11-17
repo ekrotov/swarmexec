@@ -382,14 +382,16 @@
         inspect</code>. That is the point of this tab.
       </p>
       <p>
-        The list is read-only: <code>CONFIG</code> (name), <code>USED BY</code> (how many
+        Columns: <code>CONFIG</code> (name), <code>USED BY</code> (how many
         services mount it), <code>SIZE</code>, <code>AGE</code>, <code>UPDATED</code> and
-        <code>LABELS</code> (count).
+        <code>LABELS</code> (count). Like secrets, configs are <strong>immutable</strong>:
+        the tab creates them, but a new content is a new config.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
           <tr><td><kbd>Enter</kbd> / <kbd>i</kbd></td><td>open the detail overlay: name, id, size, created, updated, the services that mount it, its labels — and the config's content</td></tr>
+          <tr><td><kbd>n</kbd></td><td>create a config — the same dialog as the <a href="#secret-editor">secret editor</a>: <strong>Name</strong>, optional <strong>Labels</strong> (<code>k=v,k=v</code>) and the content in the vim editor (<kbd>:r</kbd>&nbsp;<em>file</em> reads a local text file). <kbd>Ctrl-S</kbd> or <kbd>:w</kbd> creates it through the manager API; a taken name is refused. The limit is swarm's <strong>1000&nbsp;KB</strong> for a config (a secret's is 500&nbsp;KB), binary files go through <code>docker config create</code>. Remappable as <code>config_new</code></td></tr>
           <tr><td><kbd>j</kbd> <kbd>k</kbd> / <kbd>g</kbd> <kbd>G</kbd></td><td>in the detail overlay: scroll · jump to top / bottom (<kbd>Esc</kbd> closes)</td></tr>
         </tbody>
       </table></div>

@@ -33,7 +33,7 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 	}{
 		{"secrets", u.secTab().render, u.secTab().table, 1, string(u.km.SecNew)},
 		{"networks", u.netTab().render, u.netTab().table, 1, string(u.km.NetNew)},
-		{"configs", u.cfgTab().render, u.cfgTab().table, 1, "docker config create"},
+		{"configs", u.cfgTab().render, u.cfgTab().table, 1, string(u.km.CfgNew) + " to create one"},
 		{"nodes", u.nodeTab().render, u.nodeTab().table, 1, "the manager reported none"},
 		{"volumes", u.volTab().render, u.volTab().table, 1, string(u.km.VolNew)},
 		{"forwards", u.fwdTab().render, u.fwdTab().table, 1, string(u.km.Forward)},

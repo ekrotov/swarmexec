@@ -666,3 +666,7 @@ func RotateResumeHint(err error, rerun string) string {
 // "secret data must be larger than 0 and less than 512000 bytes" from the
 // manager into a message on the status line before anything is sent.
 const MaxSecretSize = 500 * 1024
+
+// MaxConfigSize is swarm's limit on a config's content: 1000 KB, as swarmkit's
+// MaxConfigSize counts it (1000 × 1024 bytes).
+const MaxConfigSize = 1000 * 1024

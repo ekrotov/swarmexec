@@ -25,9 +25,8 @@ type configsTab struct {
 func newConfigsTab(u *ui) *configsTab {
 	t := &configsTab{newListTab(u, cfHeaders, func(c swarmops.Config) string { return c.Name })}
 	t.row = t.renderRow
-	// Nothing in this tab creates a config: swarmexec reads them, docker
-	// writes them. Saying so beats an empty box that looks broken.
-	t.empty = func() string { return emptyText("configs", "docker config create adds one") }
+	// n creates one, as on the Secrets tab (review T-14).
+	t.empty = func() string { return emptyText("configs", keyHint(u.km.CfgNew, "to create one")) }
 	t.table.SetSelectedFunc(func(int, int) {
 		if c, ok := t.selected(); ok {
 			t.showDetail(c)
@@ -53,12 +52,31 @@ func (t *configsTab) reload() {
 }
 
 func (t *configsTab) footer() string {
-	return "[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)"
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/i[white] details (with content)  [yellow]%s[white] new", keyLabel(t.u.km.CfgNew))
 }
 
 func (t *configsTab) helpSection(h *helpWriter) {
 	h.sec("Configs")
 	h.line("Enter / i", "details, including the config's content")
+	h.line(keyLabel(t.u.km.CfgNew), "new config: name, labels and the content in a vim editor (:r reads a file)")
+}
+
+// showCreate opens the create-config dialog: the Secrets tab's dialog, for a
+// config. Configs are immutable like secrets, so there is no edit — a new
+// content is a new config.
+func (t *configsTab) showCreate() {
+	u := t.u
+	dcli, ctx, gen := u.dcli, u.ctx, u.generation()
+	u.openPayloadEditor(configKind, t.table,
+		func(name string, data []byte, labels map[string]string) error {
+			return swarmops.CreateConfig(ctx, dcli, name, data, labels)
+		},
+		// The dialog belongs to the cluster it was opened on (see async).
+		func(fn func()) { u.onCluster(gen, fn) },
+		func(name string) {
+			t.reload()
+			u.flash(" [green]created[white] config " + name)
+		})
 }
 
 // yank copies the config list. Before the registry the Configs tab fell into
@@ -220,6 +238,10 @@ func (t *configsTab) keys(ev *tcell.EventKey) *tcell.EventKey {
 		if c, ok := t.selected(); ok {
 			t.showDetail(c)
 		}
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == t.u.km.CfgNew {
+		t.showCreate()
 		return nil
 	}
 	return t.u.tabKeys(ev)

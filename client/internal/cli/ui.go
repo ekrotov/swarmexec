@@ -169,6 +169,7 @@ const (
 	pageNetForm          = "netform"
 	pageNetMembers       = "netmembers"
 	pageSecForm          = "secform"
+	pageCfgForm          = "cfgform"
 	pageSecDetail        = "secdetail"
 	pageSecRotate        = "secrotate"
 	pageSecRotateRun     = "secrotaterun"

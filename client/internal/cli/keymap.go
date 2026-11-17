@@ -33,6 +33,8 @@ type keybinds struct {
 	NodeLabels, NodeAvail, NodePrune, NodePruneSched rune
 	// secrets
 	SecDelete, SecNew rune
+	// configs
+	CfgNew rune
 	// contexts
 	CtxFocus                  rune
 	CtxUse, CtxNew, CtxDelete rune
@@ -98,6 +100,7 @@ var keyActions = []keyAction{
 	{"node_prune_schedule", []string{"nodes"}, 'S', func(k *keybinds) *rune { return &k.NodePruneSched }},
 	{"secret_delete", []string{"secrets"}, 'X', func(k *keybinds) *rune { return &k.SecDelete }},
 	{"secret_new", []string{"secrets"}, 'n', func(k *keybinds) *rune { return &k.SecNew }},
+	{"config_new", []string{"configs"}, 'n', func(k *keybinds) *rune { return &k.CfgNew }},
 	// "contexts" is a scope, not a tab, since the context list moved into the
 	// sidebar: these three apply while it has the keyboard. context_focus is the
 	// one that reaches it, so it is global.
