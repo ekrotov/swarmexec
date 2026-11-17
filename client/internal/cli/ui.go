@@ -1904,19 +1904,7 @@ func (u *ui) openLogView() {
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
 	wrap := true
 	refresh := func() {
-		r := clientlog.RingBuffer()
-		var b strings.Builder
-		if r == nil {
-			b.WriteString("[gray]logging is disabled (--client-log-level off)[-]")
-		} else if lines := r.Lines(); len(lines) == 0 {
-			b.WriteString("[gray](no log records yet)[-]")
-		} else {
-			for _, line := range lines {
-				b.WriteString(colorLogLine(line))
-				b.WriteByte('\n')
-			}
-		}
-		tv.SetText(b.String())
+		tv.SetText(clientLogText())
 		tv.ScrollToEnd()
 	}
 	refresh()
@@ -1944,20 +1932,43 @@ func (u *ui) openLogView() {
 	// centeredGrow, not tv on its own: a full-screen page covered the footer,
 	// so the keys it names were never on screen.
 	u.logViewOverlay.show(centeredGrow(tv, 100, 20, 0.92), tv)
-	go func() {
-		tk := time.NewTicker(700 * time.Millisecond)
-		defer tk.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-stop:
-				return
-			case <-tk.C:
-				app.QueueUpdateDraw(refresh)
-			}
+	go refreshLogViewEvery(ctx, stop, app, refresh)
+}
+
+// clientLogText is the client log ring as the log view shows it, colored,
+// oldest first — or why there is nothing to show.
+func clientLogText() string {
+	r := clientlog.RingBuffer()
+	var b strings.Builder
+	if r == nil {
+		b.WriteString("[gray]logging is disabled (--client-log-level off)[-]")
+	} else if lines := r.Lines(); len(lines) == 0 {
+		b.WriteString("[gray](no log records yet)[-]")
+	} else {
+		for _, line := range lines {
+			b.WriteString(colorLogLine(line))
+			b.WriteByte('\n')
 		}
-	}()
+	}
+	return b.String()
+}
+
+// refreshLogViewEvery repaints the client log view on a ticker until ctx is
+// done or the view closes (stop). It runs on its own goroutine, never the
+// event loop's, so QueueUpdateDraw is safe here.
+func refreshLogViewEvery(ctx context.Context, stop <-chan struct{}, app *tview.Application, refresh func()) {
+	tk := time.NewTicker(700 * time.Millisecond)
+	defer tk.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-tk.C:
+			app.QueueUpdateDraw(refresh)
+		}
+	}
 }
 
 func (u *ui) toggleLogView() {

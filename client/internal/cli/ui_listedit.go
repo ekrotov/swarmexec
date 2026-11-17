@@ -154,26 +154,13 @@ func (e *listEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case r == 'a':
 		e.prompt("add: ", "", func(n string) { e.snapshot(); e.cur = append(e.cur, n) })
 	case r == 'e' && e.cfg.allowEdit:
-		if i, ok := e.selected(); ok {
-			e.prompt("edit: ", e.cur[i], func(n string) { e.snapshot(); e.cur[i] = n })
-		}
+		e.editSelected()
 	case r == 'd':
-		if i, ok := e.selected(); ok {
-			e.snapshot()
-			e.cur = append(e.cur[:i], e.cur[i+1:]...)
-			e.render()
-		}
+		e.deleteSelected()
 	case r == e.u.km.Copy:
-		if i, ok := e.selected(); ok && e.u.screen != nil {
-			e.u.screen.SetClipboard([]byte(e.cur[i]))
-			e.ov.setHelp(" [green]✓ copied[white] · " + footerKeys(e.keyPairs...))
-		}
+		e.copySelected()
 	case act != nil && r == act.key:
-		if i, ok := e.selected(); ok {
-			entry := e.cur[i]
-			e.ov.Close()
-			act.run(entry)
-		}
+		e.runEntryAction(act)
 	case r == 'u':
 		e.undo()
 	case r == 'w':
@@ -182,6 +169,39 @@ func (e *listEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 		return vimListKeys(ev)
 	}
 	return nil
+}
+
+// editSelected prompts for a new value of the entry under the cursor.
+func (e *listEditor) editSelected() {
+	if i, ok := e.selected(); ok {
+		e.prompt("edit: ", e.cur[i], func(n string) { e.snapshot(); e.cur[i] = n })
+	}
+}
+
+// deleteSelected stages removing the entry under the cursor.
+func (e *listEditor) deleteSelected() {
+	if i, ok := e.selected(); ok {
+		e.snapshot()
+		e.cur = append(e.cur[:i], e.cur[i+1:]...)
+		e.render()
+	}
+}
+
+// copySelected puts the entry under the cursor on the clipboard.
+func (e *listEditor) copySelected() {
+	if i, ok := e.selected(); ok && e.u.screen != nil {
+		e.u.screen.SetClipboard([]byte(e.cur[i]))
+		e.ov.setHelp(" [green]✓ copied[white] · " + footerKeys(e.keyPairs...))
+	}
+}
+
+// runEntryAction closes the editor and runs act on the entry under the cursor.
+func (e *listEditor) runEntryAction(act *listEntryAction) {
+	if i, ok := e.selected(); ok {
+		entry := e.cur[i]
+		e.ov.Close()
+		act.run(entry)
+	}
 }
 
 // leave closes the editor on Esc — unless something is staged, which it

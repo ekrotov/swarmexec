@@ -582,6 +582,18 @@ func (e *scheduleEditor) save() {
 	})
 }
 
+// stepTimes is + (one more run a day, up to the maximum) or - (one fewer,
+// at least one).
+func (e *scheduleEditor) stepTimes(key rune) {
+	if key == '+' && e.s.Times < prunesched.MaxTimesPerDay {
+		e.s.Times++
+	}
+	if key == '-' && e.s.Times > 1 {
+		e.s.Times--
+	}
+	e.render()
+}
+
 // keys is the table's input capture.
 func (e *scheduleEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 	row, _ := e.table.GetSelection()
@@ -597,13 +609,7 @@ func (e *scheduleEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 	case ev.Key() == tcell.KeyRune && ev.Rune() == ' ':
 		e.toggle(r)
 	case ev.Key() == tcell.KeyRune && (ev.Rune() == '+' || ev.Rune() == '-'):
-		if ev.Rune() == '+' && e.s.Times < prunesched.MaxTimesPerDay {
-			e.s.Times++
-		}
-		if ev.Rune() == '-' && e.s.Times > 1 {
-			e.s.Times--
-		}
-		e.render()
+		e.stepTimes(ev.Rune())
 	case ev.Key() == tcell.KeyRune && ev.Rune() == 'w':
 		e.save()
 	default:

@@ -397,28 +397,9 @@ func (t *volumesTab) showNodes(v swarmVolume) {
 	u := t.u
 	ac, f := u.agents, u.f
 	list := tview.NewList().ShowSecondaryText(false)
-	title := fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
-	if !v.Created.IsZero() {
-		title = fmt.Sprintf(" volume %s — %d node(s) · created %s ", shortVolume(v.Name), len(v.Nodes), volumeCreated(v.Created))
-	}
-	list.SetBorder(true).SetTitle(title)
+	list.SetBorder(true).SetTitle(volumeNodesTitle(v))
 	sel := make([]bool, len(v.Nodes))
-	render := func() {
-		cur := list.GetCurrentItem()
-		list.Clear()
-		for i, n := range v.Nodes {
-			mark := "[ ]"
-			if sel[i] {
-				mark = "[x]"
-			}
-			// Escaped: a List reads style tags, and "[x]" is one — the mark
-			// of a selected node vanished, so space seemed to do nothing.
-			list.AddItem(tview.Escape(fmt.Sprintf("%s %s", mark, n.Name)), "", 0, nil)
-		}
-		if cur < list.GetItemCount() {
-			list.SetCurrentItem(cur)
-		}
-	}
+	render := func() { renderNodeMarks(list, v.Nodes, sel) }
 	render()
 	ov := u.overlayFor(pageVolNodes, t.table, "")
 	closeNodes := ov.Close
@@ -429,15 +410,7 @@ func (t *volumesTab) showNodes(v swarmVolume) {
 		}, func(results []agentcall.NodeResult, _ error) {
 			closeNodes()
 			t.load()
-			var b []string
-			for _, res := range results {
-				if res.Err != nil {
-					b = append(b, fmt.Sprintf("%s: error: %v", res.Node.Name, res.Err))
-				} else {
-					b = append(b, fmt.Sprintf("%s: removed", res.Node.Name))
-				}
-			}
-			u.info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(b)))
+			u.info(fmt.Sprintf("volume %q:\n%s", v.Name, joinLines(nodeRemoveLines(results))))
 		})
 	}
 	confirmDelete := func(targets []resolve.Node) {
@@ -484,6 +457,47 @@ func (t *volumesTab) showNodes(v swarmVolume) {
 	}
 	box.AddItem(list, 0, 1, true).AddItem(help, 1, 0, false)
 	ov.show(centered(box, 64, len(v.Nodes)+5+labelH), list)
+}
+
+// volumeNodesTitle is the per-node view's title: the volume, its node count,
+// and when it was created if known.
+func volumeNodesTitle(v swarmVolume) string {
+	if !v.Created.IsZero() {
+		return fmt.Sprintf(" volume %s — %d node(s) · created %s ", shortVolume(v.Name), len(v.Nodes), volumeCreated(v.Created))
+	}
+	return fmt.Sprintf(" volume %s — %d node(s) ", shortVolume(v.Name), len(v.Nodes))
+}
+
+// renderNodeMarks (re)fills the per-node list, a check mark per selected
+// node, keeping the cursor where it was.
+func renderNodeMarks(list *tview.List, nodes []resolve.Node, sel []bool) {
+	cur := list.GetCurrentItem()
+	list.Clear()
+	for i, n := range nodes {
+		mark := "[ ]"
+		if sel[i] {
+			mark = "[x]"
+		}
+		// Escaped: a List reads style tags, and "[x]" is one — the mark
+		// of a selected node vanished, so space seemed to do nothing.
+		list.AddItem(tview.Escape(fmt.Sprintf("%s %s", mark, n.Name)), "", 0, nil)
+	}
+	if cur < list.GetItemCount() {
+		list.SetCurrentItem(cur)
+	}
+}
+
+// nodeRemoveLines is one "node: removed" or "node: error: …" line per node.
+func nodeRemoveLines(results []agentcall.NodeResult) []string {
+	var b []string
+	for _, res := range results {
+		if res.Err != nil {
+			b = append(b, fmt.Sprintf("%s: error: %v", res.Node.Name, res.Err))
+		} else {
+			b = append(b, fmt.Sprintf("%s: removed", res.Node.Name))
+		}
+	}
+	return b
 }
 
 // chosenNodes is what the per-node view's delete key acts on: the marked
