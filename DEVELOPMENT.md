@@ -24,9 +24,10 @@ make build           # cli only      -> ./bin/swarmexec
 make agent           # agent only    -> ./bin/agent
 make agent-image     # agent container image (swarmexec-agent:<version>)
 make test            # unit tests for the whole module
-make cover           # race tests + coverage; fails below COVER_MIN (CI job `test`)
-make lint            # staticcheck at the pinned STATICCHECK_VERSION (CI job `lint`)
-make ci-tools        # every pinned tool: buf + plugins, staticcheck, govulncheck, scip-go
+make cover           # race + shuffled tests + coverage; fails below COVER_MIN (CI job `test`)
+make mod-check       # go.mod/go.sum must be tidy: `go mod tidy -diff` (CI job `test`)
+make lint            # staticcheck at the pinned STATICCHECK_VERSION + `make cyclo` (no function over complexity 15) (CI job `lint`)
+make ci-tools        # every pinned tool: buf + plugins, staticcheck, gocyclo, govulncheck, scip-go
 make release         # cli for every release platform -> ./dist + SHA256SUMS (CI job `build-cli`)
 ```
 

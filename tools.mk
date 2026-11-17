@@ -13,6 +13,9 @@ PROTOC_GEN_GO_GRPC_VERSION := v1.5.1
 # staticcheck 2026.2.2 (make lint)
 STATICCHECK_VERSION        := v0.8.2
 
+# cyclomatic-complexity gate (make cyclo): no function over 15
+GOCYCLO_VERSION            := v0.6.0
+
 # CI only: govulncheck (the vulncheck gate parses its JSON output) and the
 # SCIP code-navigation indexer
 GOVULNCHECK_VERSION        := v1.9.0
