@@ -120,9 +120,8 @@ type Server struct {
 
 	// The agent's own image, resolved once by self-inspection and reused by
 	// every port-forward sidecar. See forwardImage.
-	forwardImageOnce sync.Once
-	forwardImageVal  string
-	forwardImageErr  error
+	forwardImageMu  sync.Mutex
+	forwardImageVal string
 }
 
 // New constructs a Server. metrics may be nil, in which case a no-op sink is used.

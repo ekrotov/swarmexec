@@ -481,39 +481,42 @@ func (w *sidecarControl) fail(err error) {
 
 // forwardImage returns the image to run sidecars from: the agent's own, so it
 // is guaranteed present on the node and a forward never waits on a pull.
+//
+// Only a success is remembered. A failed self-inspect (the first forward's
+// context cancelled, the daemon briefly unwell) is that request's problem; the
+// next forward asks again instead of inheriting the error until the agent
+// restarts. The inspect runs on its own bounded context for the same reason: it
+// must not die with the stream that happened to trigger it.
 func (s *Server) forwardImage(ctx context.Context) (string, error) {
 	if s.opts.ForwardImage != "" {
 		return s.opts.ForwardImage, nil
 	}
-	s.forwardImageOnce.Do(func() {
-		host, err := os.Hostname()
-		if err != nil {
-			s.forwardImageErr = fmt.Errorf("determine own hostname: %w", err)
-			return
-		}
-		res, err := s.docker.ContainerInspect(ctx, host, client.ContainerInspectOptions{})
-		if err != nil {
-			s.forwardImageErr = fmt.Errorf(
-				"cannot determine the agent's own image (inspect %q: %w) — "+
-					"port-forward runs sidecars from it; set -forward-image to override", host, err)
-			return
-		}
-		// Config is a pointer and the daemon is not contractually obliged to
-		// populate it; every other inspect call site here guards it. Without the
-		// guard a malformed response panics the RPC goroutine inside a sync.Once,
-		// so the failure is both a crash and permanently cached.
-		self := res.Container
-		if self.Config == nil || self.Config.Image == "" {
-			s.forwardImageErr = fmt.Errorf(
-				"cannot determine the agent's own image (inspect %q returned no image) — "+
-					"port-forward runs sidecars from it; set -forward-image to override", host)
-			return
-		}
-		s.forwardImageVal = self.Config.Image
-	})
-	if s.forwardImageErr != nil {
-		return "", s.forwardImageErr
+	s.forwardImageMu.Lock()
+	defer s.forwardImageMu.Unlock()
+	if s.forwardImageVal != "" {
+		return s.forwardImageVal, nil
 	}
+	host, err := os.Hostname()
+	if err != nil {
+		return "", fmt.Errorf("determine own hostname: %w", err)
+	}
+	ictx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	res, err := s.docker.ContainerInspect(ictx, host, client.ContainerInspectOptions{})
+	if err != nil {
+		return "", fmt.Errorf(
+			"cannot determine the agent's own image (inspect %q: %w) — "+
+				"port-forward runs sidecars from it; set -forward-image to override", host, err)
+	}
+	// Config is a pointer and the daemon is not contractually obliged to
+	// populate it; every other inspect call site here guards it.
+	self := res.Container
+	if self.Config == nil || self.Config.Image == "" {
+		return "", fmt.Errorf(
+			"cannot determine the agent's own image (inspect %q returned no image) — "+
+				"port-forward runs sidecars from it; set -forward-image to override", host)
+	}
+	s.forwardImageVal = self.Config.Image
 	return s.forwardImageVal, nil
 }
 

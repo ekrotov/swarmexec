@@ -44,6 +44,18 @@ type Params struct {
 	// manager again a second later. Nothing depends on it: with a nil channel,
 	// or none arriving, the polling below behaves exactly as before.
 	Wake <-chan struct{}
+
+	// ReconnectDelay overrides logReconnectDelay, the pause between attempts
+	// to find a replacement container (and before re-attaching to the same
+	// one). Zero means the default; tests shorten it.
+	ReconnectDelay time.Duration
+}
+
+func (p Params) reconnectDelay() time.Duration {
+	if p.ReconnectDelay > 0 {
+		return p.ReconnectDelay
+	}
+	return logReconnectDelay
 }
 
 // Run is a log stream's plumbing, the same for every container it ends up
@@ -111,7 +123,9 @@ func Follow(ctx context.Context, run Run, t resolve.FollowTarget, ep resolve.End
 	lastCID := ep.ContainerID
 	cur := run
 	for {
-		if err := Stream(ctx, cur, ep); err != nil {
+		err := Stream(ctx, cur, ep)
+		ended := time.Now()
+		if err != nil {
 			return err
 		}
 		if !p.Follow || ctx.Err() != nil || t.Service == "" {
@@ -120,16 +134,31 @@ func Follow(ctx context.Context, run Run, t resolve.FollowTarget, ep resolve.End
 
 		// The container ended while following. Wait for its successor — during a
 		// rolling update the replacement may still be scheduling.
-		c, ok, err := waitForSuccessor(ctx, run.Resolver, t, p.Wake, notify)
+		c, ok, err := waitForSuccessor(ctx, run.Resolver, t, p.Wake, p.reconnectDelay(), notify)
 		if !ok {
 			return err
 		}
 		ep = resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 		cur = run
 		if c.ContainerID == lastCID {
-			cur.Params.Tail = 0 // same container still up (spurious end): resume, don't re-dump the tail
-		} else if notify != nil {
-			notify(fmt.Sprintf("── container replaced; reconnected to %s on %s ──", shortID(c.ContainerID), orDash(c.NodeName)))
+			// Same container the manager still lists as running (the stream
+			// ended, so it most likely just died): resume from where the last
+			// stream ended. Tail 0 means "everything" on the wire, so the
+			// resume point is a Since, and a pause keeps this from spinning
+			// until the manager catches up.
+			cur.Params.Tail = 0
+			cur.Params.Since = time.Since(ended) + time.Second
+			select {
+			case <-time.After(p.reconnectDelay()):
+			case <-ctx.Done():
+				return nil
+			}
+		} else {
+			// A new container: all of its log is unseen.
+			cur.Params.Tail, cur.Params.Since = 0, 0
+			if notify != nil {
+				notify(fmt.Sprintf("── container replaced; reconnected to %s on %s ──", shortID(c.ContainerID), orDash(c.NodeName)))
+			}
 		}
 		lastCID = c.ContainerID
 	}
@@ -139,9 +168,9 @@ func Follow(ctx context.Context, run Run, t resolve.FollowTarget, ep resolve.End
 // is running, the service is gone, the wait window elapses, or ctx is cancelled.
 // It returns ok=false (with a nil error on a clean stop) when following should
 // end; err is non-nil only for an unrecovered resolve error.
-func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.FollowTarget, wake <-chan struct{}, notify func(string)) (resolve.Candidate, bool, error) {
+func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.FollowTarget, wake <-chan struct{}, delay time.Duration, notify func(string)) (resolve.Candidate, bool, error) {
 	var lastErr error
-	for waited := time.Duration(0); ; waited += logReconnectDelay {
+	for waited := time.Duration(0); ; waited += delay {
 		c, ok, err := r.Successor(ctx, t)
 		switch {
 		case ok:
@@ -173,7 +202,7 @@ func waitForSuccessor(ctx context.Context, r *resolve.Resolver, t resolve.Follow
 			// already a second. What it does remove is the case that looks
 			// worst: a container that restarts in place, where the replacement
 			// exists immediately and the view still paused before showing it.
-		case <-time.After(logReconnectDelay):
+		case <-time.After(delay):
 		}
 	}
 }
