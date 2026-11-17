@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec TUI — the security-risks overlay for Swarm services</title>
+  <meta name="description" content="The security-risks overlay of the swarmexec TUI: the eight static checks over each Docker Swarm service spec (docker socket, capabilities, host network, seccomp, root, secrets in env, limits, unpinned images) and the 🛡 marker.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/tui-services-security">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec TUI — the security-risks overlay for Swarm services">
+  <meta property="og:description" content="The security-risks overlay of the swarmexec TUI: the eight static checks over each Docker Swarm service spec (docker socket, capabilities, host network, seccomp, root, secrets in env, limits, unpinned images) and the 🛡 marker.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/tui-services-security">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec TUI — the security-risks overlay for Swarm services">
+  <meta name="twitter:description" content="The security-risks overlay of the swarmexec TUI: the eight static checks over each Docker Swarm service spec (docker socket, capabilities, host network, seccomp, root, secrets in env, limits, unpinned images) and the 🛡 marker.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec TUI — the security-risks overlay for Swarm services",
+        "description": "The security-risks overlay of the swarmexec TUI: the eight static checks over each Docker Swarm service spec (docker socket, capabilities, host network, seccomp, root, secrets in env, limits, unpinned images) and the 🛡 marker.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/tui-services-security",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "TUI: the security-risks overlay",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/tui-services-security"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+<header class="rail">
+  <a class="mark" href="/" aria-label="swarmexec home">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Main">
+    <a href="/docs" aria-current="true">Docs</a>
+    <a href="/examples">Examples</a>
+    <a class="rail-opt" href="/docker-swarm-exec-alternatives">Compare</a>
+    <a class="rail-opt" href="/releases">Releases</a>
+    <a class="gh" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><svg class="gh-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="rail-cta" href="/#install">Install</a>
+  </nav>
+</header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › TUI: the security-risks overlay</p>
+      <h1>TUI: the security-risks overlay<span class="cursor">_</span></h1>
+      <p class="tagline">Eight checks over every service spec, and what they flag.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#tui-security-risks">Security risks (!)</a></li>
+          <li><a href="#tui-security-checks">The checks</a></li>
+          <li><a href="#tui-security-overlay">The overlay</a></li>
+        </ol>
+      </div>
+
+      <h2 id="tui-security-risks">Security risks (<kbd>!</kbd>)</h2>
+      <p>
+        Every time the service list is fetched, swarmexec runs a set of small
+        <strong>static analyzers over each service's spec</strong> — the same spec the
+        manager already returned, so there is no extra API call, no agent involvement and
+        nothing is executed inside your containers. A service with a finding worth acting
+        on is marked with a leading <strong>🛡</strong> in the service tree, in a
+        fixed-width slot ahead of the name, so the shields line up as a vertical scan
+        column. Press <kbd>!</kbd> to open the <strong>security-risks overlay</strong>, and
+        <kbd>w</kbd> inside it to write a
+        <a href="/docs/security-scan#securityreport">cluster-wide Markdown report</a> — which covers more than
+        the overlay does, since it adds the checks that belong to the cluster rather than
+        to a service.
+      </p>
+
+      <h2 id="tui-security-checks">The checks</h2>
+      <p>
+        The eight checks that ship today. The ones that can mark a service come first;
+        the purely informational ones are grouped at the end:
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Severity</th><th>What it flags</th></tr></thead>
+        <tbody>
+          <tr><td><code>docker-socket</code> — “Docker socket mounted in”</td><td><span class="tc-red">high</span></td><td><strong>the most serious finding here.</strong> A <strong>bind mount</strong> whose source is the Docker daemon socket — <code>/var/run/docker.sock</code>, <code>/run/docker.sock</code> or any source path ending in <code>/docker.sock</code>. Anything in that container can talk to the socket, and anything that can talk to the socket can <strong>start a privileged container on that node</strong> — so it is effectively <strong>root on the host</strong>, whatever the container itself runs as. <strong>Read-only does not mitigate it</strong>: the socket is an API, not a file whose contents matter — the finding says so itself when the mount is read-only. It names the target path the socket is mounted at</td></tr>
+          <tr><td><code>added-capability</code> — “capability <em>NAME</em> added”</td><td><span class="tc-red">high</span> / <span class="tc-yellow">medium</span></td><td>a Linux capability the service adds to its container. Swarm has <strong>no <code>--privileged</code></strong>, so capabilities are how a service asks for extra host power — which makes the added set worth reading. Eight are <strong>high</strong>, each reported with the reason it carries: <code>ALL</code> (grants every capability), <code>SYS_ADMIN</code> (near-root: mount, namespace and cgroup control), <code>SYS_MODULE</code> (can load kernel modules), <code>SYS_PTRACE</code> (can inspect and control other processes), <code>SYS_RAWIO</code> (raw I/O access to devices), <code>DAC_READ_SEARCH</code> (bypasses file read permission checks), <code>NET_ADMIN</code> (full control of the node's networking), <code>NET_RAW</code> (can forge and sniff raw packets). <strong>Any other</strong> added capability is <strong>medium</strong> — a privilege beyond the default set. One finding per added capability; both spellings are recognised, in any case (<code>CAP_SYS_ADMIN</code> and <code>SYS_ADMIN</code>)</td></tr>
+          <tr><td><code>host-network</code> — “runs on the host network”</td><td><span class="tc-red">high</span></td><td>the service is attached to the network named <code>host</code>: the container shares the <strong>node's network stack</strong>, so there is no network isolation and swarm's published-port mapping no longer applies. It can reach anything the node can — <strong>including services bound to localhost</strong>, which are usually assumed to be out of a container's reach</td></tr>
+          <tr><td><code>unconfined</code> — “seccomp disabled” / “AppArmor disabled”</td><td><span class="tc-red">high</span></td><td>the container's kernel-level sandbox has been switched off: <strong>seccomp set to <code>unconfined</code></strong> — the container may make any syscall, which removes the main barrier to kernel exploits — or <strong>AppArmor confinement disabled</strong>. The two are reported separately, so a service that turns off both gets two findings</td></tr>
+          <tr><td><code>root-user</code> — “runs as root”</td><td><span class="tc-red">high</span></td><td>the spec pins the container to <strong>root explicitly</strong> — <code>User=root</code> or uid <code>0</code> (numeric forms like <code>00</code> or <code>+0</code> are caught too; only the user part of <code>user:group</code> is looked at)</td></tr>
+          <tr><td><code>secret-in-env</code> — “secret in environment variable”</td><td><span class="tc-red">high</span></td><td>a credential-looking env key holds a <strong>literal value in the service spec</strong>, readable by anyone who can read the spec. Use a Docker secret or the <code>*_FILE</code> convention instead</td></tr>
+          <tr><td><code>root-user</code> — “no user set”</td><td>low</td><td><strong>no</strong> user is set at all, so the container runs as the image's own default user, which is often root. <strong>Informational only, and it does not mark the service</strong>: an unset user is the Swarm default on nearly every service, and whether it really is root depends on the image's <code>USER</code>, which the manager spec doesn't reveal</td></tr>
+          <tr><td><code>no-resource-limits</code> — “no resource limits”</td><td>low</td><td>the task sets <strong>neither a CPU nor a memory limit</strong>, so a runaway container can consume the whole node and starve everything else on it. <strong>Informational only</strong> — see below</td></tr>
+          <tr><td><code>unpinned-image</code> — “image not pinned”</td><td>low</td><td>the image is pinned to <code>:latest</code>, or carries <strong>no tag at all</strong> (which resolves to <code>:latest</code>) — the running version can change without a spec change, so a deploy is not reproducible. A <strong>digest-pinned</strong> image (<code>…@sha256:…</code>) is exactly reproducible and is never flagged, and a colon that belongs to a registry host's port (<code>registry:5000/img</code>) is not mistaken for a tag. <strong>Informational only</strong> — see below</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Why the informational checks never mark a service.</strong> Only a finding
+        above <em>low</em> — high or medium — makes a service actionable and puts the
+        <strong>🛡</strong> on its tree row. The low ones (<code>no-resource-limits</code>,
+        <code>unpinned-image</code> and <code>root-user</code>'s “no user set”) are true of
+        <strong>almost every service in a real cluster</strong>: badging them would put a
+        shield on nearly every row and destroy the at-a-glance signal the marker exists for.
+        They are not swept under the rug, though — once a service is flagged for something
+        else, its low findings are listed with the rest in the overlay, so you see them where
+        they are actually worth reading.
+      </p>
+      <div class="note">
+        <strong>No secret value is ever displayed.</strong> Of the eight checks only
+        <code>secret-in-env</code> looks at environment variables at all, and its finding
+        names only the env var's <strong>key</strong>; the value is never read into
+        the finding, never rendered and never copied. The check is also written to stay
+        quiet: it matches whole <code>_</code>-delimited tokens
+        (<code>PASSWORD</code>, <code>PASSWD</code>, <code>PASS</code>,
+        <code>PASSPHRASE</code>, <code>SECRET</code>, <code>TOKEN</code>,
+        <code>APIKEY</code>, <code>CREDENTIAL(S)</code>, <code>PRIVATEKEY</code>, and the
+        pairs <code>API_KEY</code>, <code>ACCESS_KEY</code>, <code>PRIVATE_KEY</code>,
+        <code>SECRET_KEY</code>, <code>CLIENT_SECRET</code>, <code>AUTH_TOKEN</code>), so
+        <code>COMPASS</code>, <code>PASSENGER_PORT</code> or <code>BYPASS_AUTH</code> are
+        not reported. Keys that merely <em>reference</em> a credential are exempt
+        (<code>_FILE</code>, <code>_PATH</code>, <code>_URL</code>, <code>_URI</code>,
+        <code>_NAME</code>, <code>_ID</code>, <code>_TYPE</code>, <code>_ENABLED</code>,
+        <code>_REQUIRED</code>, <code>_LENGTH</code>, <code>_TIMEOUT</code>,
+        <code>_TTL</code>, <code>_EXPIRY</code>, <code>_ALGORITHM</code>), and so are
+        values that plainly aren't a credential — an absolute path, a boolean, a number.
+      </div>
+
+      <h2 id="tui-security-overlay">The overlay</h2>
+      <p>
+        The overlay lists <strong>every flagged service</strong> (“N of M service(s)
+        flagged · 8 checks”), grouped by service, each finding on its own line with a severity dot —
+        <span class="tc-red">● high</span>,
+        <span class="tc-yellow">● medium</span>, <span class="tc-grey">● low</span> —
+        a short title and a one-line explanation. Findings are ordered worst-first. Once a
+        service is flagged for something actionable, its informational low findings are
+        listed too. If the service under the cursor is among them it is pre-highlighted and
+        scrolled into view. When nothing is flagged the overlay says so explicitly
+        <strong>and names every check that ran</strong> (“Checked: Docker socket mounted in,
+        added Linux capabilities, host network, seccomp / AppArmor disabled, container user,
+        secrets in environment variables, missing resource limits, unpinned image.”), so an
+        all-clear tells you what it actually covers; when the service list hasn't loaded yet
+        it says <em>nothing has been scanned</em> rather than giving a false all-clear.
+        <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> (or <kbd>q</kbd>, or <kbd>!</kbd>
+        again) closes.
+      </p>
+      <div class="note">
+        The scan is an <strong>extensible registry</strong> of analyzers, not a fixed list:
+        a new check surfaces in both the tree marker and the overlay automatically. The
+        overlay's own wording comes from that registry too — the check count in its header
+        and the “Checked:” list are <strong>generated from the analyzers themselves</strong>,
+        so they cannot drift from what actually ran the way a hardcoded list does. The key
+        is remappable as <code>security_risks</code> in
+        <a href="/docs/tui#tui">keys.yaml</a>.
+      </div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/tui-services-tree" rel="prev"><span class="lbl">← Previous</span>TUI: the service tree — health, usage, stacks</a>
+        <a class="next" href="/docs/tui-services-inspect" rel="next"><span class="lbl">Next →</span>TUI: inspect a service or task</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
+          <li><a href="/docs/tui-services-security" aria-current="page">TUI: the security-risks overlay</a></li>
+          <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+          <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

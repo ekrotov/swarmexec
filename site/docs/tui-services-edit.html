@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec TUI — edit a Swarm service: version, scale, env, placement</title>
+  <meta name="description" content="Edit a Docker Swarm service from the swarmexec TUI: set or roll back the image version, diff and roll back the last update, scale, force-update, remove, diagnose placement, and edit ports, labels, networks, secrets, mounts, resources, placement and env.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/tui-services-edit">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec TUI — edit a Swarm service: version, scale, env, placement">
+  <meta property="og:description" content="Edit a Docker Swarm service from the swarmexec TUI: set or roll back the image version, diff and roll back the last update, scale, force-update, remove, diagnose placement, and edit ports, labels, networks, secrets, mounts, resources, placement and env.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/tui-services-edit">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec TUI — edit a Swarm service: version, scale, env, placement">
+  <meta name="twitter:description" content="Edit a Docker Swarm service from the swarmexec TUI: set or roll back the image version, diff and roll back the last update, scale, force-update, remove, diagnose placement, and edit ports, labels, networks, secrets, mounts, resources, placement and env.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec TUI — edit a Swarm service: version, scale, env, placement",
+        "description": "Edit a Docker Swarm service from the swarmexec TUI: set or roll back the image version, diff and roll back the last update, scale, force-update, remove, diagnose placement, and edit ports, labels, networks, secrets, mounts, resources, placement and env.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/tui-services-edit",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "TUI: edit a service & the env editor",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/tui-services-edit"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+<header class="rail">
+  <a class="mark" href="/" aria-label="swarmexec home">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Main">
+    <a href="/docs" aria-current="true">Docs</a>
+    <a href="/examples">Examples</a>
+    <a class="rail-opt" href="/docker-swarm-exec-alternatives">Compare</a>
+    <a class="rail-opt" href="/releases">Releases</a>
+    <a class="gh" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><svg class="gh-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="rail-cta" href="/#install">Install</a>
+  </nav>
+</header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › TUI: edit a service &amp; the env editor</p>
+      <h1>TUI: edit a service &amp; the env editor<span class="cursor">_</span></h1>
+      <p class="tagline">Every service change behind <kbd>a</kbd>, each one rolling update.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#tui-edit">Editing from the inspect overlay</a></li>
+          <li><a href="#tui-actions-menu">The actions menu</a></li>
+          <li><a href="#tui-set-version">Setting a version with u</a></li>
+          <li><a href="#tui-edit-actions">Every action</a></li>
+          <li><a href="#tui-staged">The staged editors</a></li>
+          <li><a href="#env-editor">The env editor</a></li>
+        </ol>
+      </div>
+
+      <h2 id="tui-edit">Editing from the inspect overlay</h2>
+      <p>
+        When you <a href="/docs/tui-services-inspect#tui-inspect">inspect</a> a <strong>service</strong> (not a container/task leaf, whose
+        overlay stays read-only), the overlay footer also exposes several edit keys, each a
+        manager-API <code>ServiceUpdate</code> that triggers a rolling update /
+        reconciliation of the service's tasks.
+      </p>
+
+      <h2 id="tui-actions-menu">Start with <kbd>a</kbd> — the actions menu</h2>
+      <p>
+        On a service inspect
+        (service only), <kbd>a</kbd> opens a single list of every editor and action the
+        overlay offers, so you don't have to remember ~14 case-sensitive keys. Every entry
+        shows its letter in front, and inside the menu that letter selects it —
+        <kbd>a</kbd> <kbd>S</kbd> is the secrets editor, <kbd>a</kbd> <kbd>R</kbd> the
+        rollback. Only <kbd>u</kbd>, <kbd>d</kbd>, <kbd>s</kbd>, <kbd>f</kbd>,
+        <kbd>e</kbd> and <kbd>X</kbd> also run straight from the inspect: the lowercase
+        letters that clash with nothing, and remove, which the footer names. The others
+        (<kbd>D</kbd>/<kbd>S</kbd>/<kbd>R</kbd>/<kbd>P</kbd> next to
+        <kbd>d</kbd>/<kbd>s</kbd>/<kbd>r</kbd>/<kbd>p</kbd>, and <kbd>p</kbd>,
+        <kbd>l</kbd>, <kbd>n</kbd>, <kbd>v</kbd>, <kbd>r</kbd>) are menu-only, so a missed
+        or stray Shift no longer opens an editor the footer never mentioned. Choosing an
+        entry closes the menu and opens exactly what the direct key opens, so the two are
+        <strong>equivalent</strong>, not variants with different behaviour. The entries, in order:
+        <em>update image version…</em> (<em>set image version…</em> when no newer one was
+        found — pinning or rolling back to a tag of your choosing is just as valid),
+        <em>diff spec (previous → current)</em>, <em>roll back to the previous version</em>,
+        <em>placement diagnosis — why a task is missing</em>, <em>scale</em>, <em>force-update</em>,
+        <em>edit ports</em>, <em>edit labels</em>, <em>edit env</em>, <em>edit networks</em>,
+        <em>edit secrets</em>, <em>edit mounts</em>, <em>edit resources</em>,
+        <em>edit placement</em>, <span class="tc-red"><em>remove service</em></span>
+        — the destructive one, marked in red — and <em>Cancel</em>. Move with
+        <kbd>j</kbd>/<kbd>k</kbd> (<kbd>g</kbd>/<kbd>G</kbd> jump to the first/last entry),
+        <kbd>Enter</kbd> selects; <kbd>Esc</kbd>, or the <em>Cancel</em> entry, closes the
+        menu without doing anything. The image-version picker is <strong>first</strong>,
+        because setting a version is the most ordinary service change there is; its direct
+        key <kbd>u</kbd> still works from any row of the inspect. When the image is one no
+        version can be chosen for — an untagged reference, or a registry that will not list
+        the repo's tags, typically a private one the client has no credentials for — the
+        entry stays in the list and <strong>says so</strong> rather than quietly
+        disappearing, and points at the <code>docker service update --image</code> that
+        does work. Each entry is described <a href="#tui-edit-actions">below</a>, by its letter in the menu.
+      </p>
+
+      <h2 id="tui-set-version">Setting a version with <kbd>u</kbd> — not only when an update exists</h2>
+      <p>
+        <kbd>u</kbd> is <strong>not gated on an upgrade being offered</strong>. It is available on
+        <em>any</em> service inspect whose image tags swarmexec could read from the registry —
+        version-pinned <em>and</em> <code>:latest</code> services alike — and from <em>any</em> row
+        of the overlay, so you never have to hunt for the hint. Setting the <strong>same</strong> version again,
+        <strong>pinning</strong> what is currently running, or going back to an
+        <strong>older</strong> tag are all normal uses; you don't have to wait for an upgrade to
+        exist. The <strong>footer wording tells you which situation you are in</strong>:
+        <code>u&nbsp;update&nbsp;version</code> when a newer version was found (the
+        <em>newer&nbsp;version&nbsp;available</em> row is there too, carrying a concrete target),
+        and <code>u&nbsp;set&nbsp;version</code> when it wasn't.
+      </p>
+      <p>
+        What <kbd>u</kbd> opens depends on what the registry knows. On a
+        <strong>version-pinned</strong> service with a <strong>newer version</strong> it is the
+        <strong>version picker</strong>: an input whose autocomplete suggests the <strong>newer
+        same-family tags</strong>, highest first and prefilled with the highest. On one that is
+        <strong>already on the newest</strong> tag it is the same picker, only the suggestions
+        fall back to <strong>every tag the repo lists</strong> (prefilled with the running tag) —
+        that is how you pin or roll back. A service on <code>:latest</code> gets the picker too,
+        with all known tags: choosing a concrete version there is how you <strong>pin a
+        <code>:latest</code> service off the floating tag</strong>, which is exactly the fix the
+        <code>unpinned-image</code> risk finding (see the <a href="/docs/tui-services-security#tui-security-checks">security-risks checks</a>) asks for.
+        The one exception is a <code>:latest</code> service with a <strong>digest update
+        pending</strong> — that stays the <strong>single confirm</strong> on the registry's new
+        digest it has always been, because a picker there would invite typing
+        <code>latest</code>, which resolves to the bare tag and would silently drop the very
+        digest pinning that the update exists to refresh.
+      </p>
+      <p>
+        In the picker the suggestion list is capped at <strong>25</strong> entries (a busy repo
+        can list hundreds) and the field stays <strong>free-text</strong>, so you can
+        <strong>type any existing tag — including an older one to pin or roll back</strong> to a
+        known-good release. A typed tag is validated against the repo (a tag it doesn't list is
+        rejected), and choosing an older one shows a <strong>downgrade warning</strong> before it
+        applies. In every case the change is one <code>ServiceUpdate</code> / rolling update,
+        behind a confirm. If the registry returned <strong>no tags at all</strong> and there is no
+        concrete target to fall back on — a private or unreachable registry, or a service pinned
+        by digest — you get an explanatory <strong>notice and nothing is changed</strong>.
+      </p>
+
+      <h2 id="tui-edit-actions">Every action</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>d</kbd></td><td>diff — shows a unified diff of the service's <em>current</em> spec against its <em>previous</em> one (what the last rolling update changed), using Swarm's <code>PreviousSpec</code>. Changed fields are listed grouped by field with <span class="tc-red">- removed</span> / <span class="tc-green">+ added</span> lines (image, mode/replicas, env, labels, networks, aliases, secrets, mounts, ports, placement constraints, spread preferences, resource limits/reservations); unchanged fields are omitted. If the service has never been updated (no previous spec) it says so. Read-only overlay — <kbd>j</kbd>/<kbd>k</kbd> scroll, <kbd>Esc</kbd> closes</td></tr>
+          <tr><td><kbd>R</kbd></td><td>roll back to the previous version (capital <kbd>R</kbd>, i.e. Shift+r, to distinguish it from <kbd>r</kbd> edit resources) — the counterpart of the <kbd>d</kbd> diff above: it undoes the last rolling update. The confirm dialog shows <strong>that same diff reversed</strong> under “This will undo:”, because that is what the rollback will actually change — a line the update <em>added</em> is listed as <span class="tc-red">- removed</span>, and one it <em>removed</em> comes back as <span class="tc-green">+ added</span>. The preview is capped at <strong>12</strong> entries, followed by an “… and N more” note pointing back at <kbd>d</kbd> for the full diff (if only metadata changed it says there are no field-level differences). Confirming does a <strong>server-side</strong> rollback — one manager-API <code>ServiceUpdate</code> with <code>ServiceUpdateOptions{Rollback: "previous"}</code>, <em>not</em> a client-side re-apply of <code>PreviousSpec</code> — so the <strong>manager</strong> drives it and honours the service's own <strong>rollback configuration</strong> (parallelism, delay, failure action), and reports progress as the update state <code>rollback_started</code>: exactly the <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span> badge of the <a href="/docs/tui-services-tree#tui-rows">service tree</a>, on the tree row and in this overlay. A service that has <strong>never been updated</strong> has no previous spec — you get an explanatory notice, not an error. Reached through the <kbd>a</kbd> actions menu only (<kbd>a</kbd> <kbd>R</kbd>). Like every action letter here it is fixed, not a remappable keymap action</td></tr>
+          <tr><td><kbd>s</kbd></td><td>scale — prompts for a new replica count and applies it (replicated services only; a global service reports it can't be scaled)</td></tr>
+          <tr><td><kbd>f</kbd></td><td>force-update — redeploys the service without changing its spec (the equivalent of <code>docker service update --force</code>: bumps <code>TaskTemplate.ForceUpdate</code>), after a confirm. Every task is restarted / rescheduled, which is how you unstick a service sitting in an <strong>incomplete state</strong> (e.g. <code>1/2</code> replicas). One <code>ServiceUpdate</code> (rolling update)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>remove the service (capital <kbd>X</kbd>) — <strong>permanently deletes</strong> it and stops all its tasks, behind a confirm; cannot be undone. One manager-API <code>ServiceRemove</code>; on success the inspect overlay closes and the service tree refreshes. If the service was the <strong>sole user of one or more secrets</strong>, swarmexec then asks whether to <strong>delete those now-orphaned secrets</strong> too (secrets still referenced by another service are left alone)</td></tr>
+          <tr><td><kbd>D</kbd></td><td>diagnose placement (capital <kbd>D</kbd>) — answers <em>why a service isn't running everywhere you expect</em> in one view, instead of chasing it through several <code>docker</code> commands. For a <strong>global</strong> service it lists every node with ✓ running or ✗ and the reason it is excluded (<strong>availability</strong> drain/pause, a <strong>down</strong> state, an unmet placement <strong>constraint</strong>, or a <strong>platform</strong> mismatch) — which is why a 3-node cluster can legitimately show <code>2/2</code> (the third node is not eligible). For a <strong>replicated</strong> service it lists each task that is <em>not</em> running with the scheduler's own message (constraints, insufficient resources, image-pull errors, …). Constraints that can't be checked client-side (<code>engine.labels.*</code>) are noted, not guessed. Read-only overlay</td></tr>
+          <tr><td><kbd>p</kbd></td><td>edit published ports — opens a staged list editor of the service's ports, each in the form <code>PUBLISHED:TARGET[/proto]</code> (proto <code>tcp</code>|<code>udp</code>|<code>sctp</code>, default <code>tcp</code>), e.g. <code>8080:80/tcp</code>. The add/edit input is a wide field that wraps a long entry onto further rows instead of scrolling it out of sight; <kbd>Enter</kbd> saves</td></tr>
+          <tr><td><kbd>l</kbd></td><td>edit labels — the same staged list editor over <code>key=value</code> entries. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small form with two wrapping fields, <strong>key</strong> and <strong>value</strong>, so a long key or a long value such as a Traefik rule stays readable as a whole; <kbd>Enter</kbd> moves to the next field</td></tr>
+          <tr><td><kbd>e</kbd></td><td>edit environment variables — opens the service's whole environment as <strong>text</strong> in a small <strong>vim-style editor</strong>, one <code>KEY=VALUE</code> per line (e.g. <code>LOG_LEVEL=debug</code>); the key is required, the value may be empty and may itself contain <code>=</code>. A value with newlines, such as <code>GITLAB_OMNIBUS_CONFIG</code>, is written as a heredoc: <code>KEY&lt;&lt;EOF</code>, the value's lines, then a line <code>EOF</code>. Lines starting with <code>#</code> are comments, so commenting a line out removes that variable. <kbd>:w</kbd> checks every line first — an error names the line and puts the cursor on it — then shows which keys are added, changed and removed and applies them in one <code>ServiceUpdate</code> (rolling update). <kbd>:list</kbd> switches to the staged list editor with your edits carried over. See <a href="#env-editor">the env editor</a> below for the keys</td></tr>
+          <tr><td><kbd>n</kbd></td><td>edit networks — a staged list editor over the service's network attachments; since an entry is just a name it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes network names</strong> (suggesting networks the service isn't already attached to, or type one yourself). Applying replaces the attachments in one <code>ServiceUpdate</code>. <strong>DNS aliases</strong> are edited from here too: select a network in this editor and press <kbd>A</kbd> to open a staged list of the service's DNS aliases <em>on that network</em> (<kbd>a</kbd> add / <kbd>e</kbd> edit / <kbd>d</kbd> delete / <kbd>y</kbd> copy / <kbd>u</kbd> undo / <kbd>w</kbd> apply / <kbd>Esc</kbd> cancel); applying replaces that network's aliases in one <code>ServiceUpdate</code>. Works even when the service has no aliases yet. (You must apply a newly-added network first before you can set its aliases.)</td></tr>
+          <tr><td><kbd>S</kbd></td><td>edit secrets (capital <kbd>S</kbd>, i.e. Shift+s, to distinguish it from <kbd>s</kbd> scale) — the same staged list editor as networks over the secrets the service references; an entry is just a name, so it's <strong>add/remove only</strong> (no <kbd>e</kbd> edit). The add input <strong>autocompletes secret names</strong> (suggesting secrets the service doesn't already use, or type one yourself). Applying replaces the service's secret references in one <code>ServiceUpdate</code> (rolling update); each secret is mounted at <code>/run/secrets/&lt;name&gt;</code>. Works even when the service currently has no secrets</td></tr>
+          <tr><td><kbd>v</kbd></td><td>edit mounts — a staged list editor over the service's volumes and bind mounts. Adding (<kbd>a</kbd>) or editing (<kbd>e</kbd>) opens a small <strong>form</strong> instead of a single text field: a <strong>bind mount</strong> checkbox, a <strong>source</strong> (when the box is unchecked it's a <em>volume</em> name with <strong>autocomplete</strong> of existing cluster volumes; when checked it's a <em>host path</em>), a <strong>container path</strong>, and a <strong>read-only</strong> checkbox. The host path and the container path are wide fields that wrap a long path onto further rows, so the whole path stays visible; <kbd>Enter</kbd> moves to the next field. (Under the hood each entry is still <code>volume:NAME:TARGET[:ro]</code> / <code>bind:/host/path:TARGET[:ro]</code>.) Bind sources and all targets must be absolute paths. Applying replaces the mounts in one <code>ServiceUpdate</code> (rolling update). <strong>Bind-mount guard (soft):</strong> if the staged list contains any bind mounts, applying first shows a warning listing the nodes the service could be scheduled on (computed from placement constraints plus node role/labels/availability) and reminds you that each bind source must <strong>already exist</strong> on all of them — swarmexec cannot verify host paths (the agent has no host filesystem access), so bind paths are not autocompleted or existence-checked; it is advisory only</td></tr>
+          <tr><td><kbd>r</kbd></td><td>edit resource limits — a small form to set, change or clear the service's <strong>CPU</strong> and <strong>memory</strong> limits (and, optionally, reservations). CPU is given in cores (e.g. <code>0.5</code>, <code>2</code>); memory as a human size (e.g. <code>512m</code>, <code>2g</code>, <code>1.5GiB</code>). Leaving a field <strong>empty clears</strong> that limit (Swarm then treats it as unlimited). A reservation may not exceed its limit. Applying does one <code>ServiceUpdate</code> (rolling update); existing Pids limits and device/generic reservations are preserved</td></tr>
+          <tr><td><kbd>P</kbd></td><td>edit placement (capital <kbd>P</kbd>, i.e. Shift+p, to distinguish it from <kbd>p</kbd> ports) — opens a small menu with two staged editors: <strong>Constraints</strong> and <strong>Spread preferences</strong>.
+            <ul>
+              <li><strong>Constraints</strong> — the service's hard placement constraints (<code>node.role</code>, <code>node.hostname</code>, <code>node.id</code>, <code>node.platform.os</code>/<code>arch</code>, <code>node.labels.&lt;k&gt;</code>, <code>engine.labels.&lt;k&gt;</code>, each with <code>==</code> or <code>!=</code>, e.g. <code>node.role==manager</code>, <code>node.labels.zone!=eu</code>). The add/edit input <strong>autocompletes</strong> fully-formed candidates built from the current cluster — every node's role, hostname, platform and node/engine labels — so you can usually pick a constraint instead of typing it (the <code>==</code> form is suggested; type <code>!=</code> by hand for a negation). The resulting node set also feeds the mounts editor's bind-mount guard.</li>
+              <li><strong>Spread preferences</strong> — the soft <code>--placement-pref spread=…</code> strategies: a staged, ordered list of bare node attributes (e.g. <code>node.labels.zone</code>, <code>node.hostname</code>) that Swarm spreads tasks evenly over. The input autocompletes the cluster's node/engine label keys and node attributes (a descriptor is just the attribute — no operator or value).</li>
+            </ul>
+            Applying either replaces that part of the placement in one <code>ServiceUpdate</code> (rolling update); the other part is preserved.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="tui-staged">The staged editors</h2>
+      <p>
+        These editors are <strong>staged</strong>: <kbd>a</kbd> adds an entry, <kbd>d</kbd>
+        deletes the one under the cursor, <kbd>y</kbd> copies the selected entry to your
+        clipboard over OSC52 (so you can grab e.g. a single environment variable while
+        viewing it), <kbd>u</kbd> undoes the last staged change
+        (add / edit / delete) as long as you haven't applied yet — press it repeatedly to
+        step back through the staged history — and <kbd>w</kbd> applies all changes at once
+        in a single <code>ServiceUpdate</code> (so adding, say, several volumes and then
+        pressing <kbd>w</kbd> triggers <em>one</em> rolling update, not one per entry),
+        behind a confirmation. If you press <kbd>Esc</kbd> while changes are still staged,
+        the editor doesn't silently drop them — it asks whether to <strong>apply</strong>,
+        <strong>discard</strong>, or <strong>keep editing</strong>.
+        While changes are still staged they are <strong>highlighted</strong> so you can
+        see exactly what will change: added or edited entries show in
+        <span class="tc-green tc-b">green (new)</span> and removed
+        entries linger as dim <span class="tc-red">red “removed”</span> rows —
+        the highlighting clears once you apply. The
+        <strong>ports</strong>, <strong>labels</strong>, <strong>mounts</strong>,
+        <strong>env</strong> and <strong>aliases</strong> editors
+        (aliases reached from the networks editor via <kbd>A</kbd>)
+        also have <kbd>e</kbd> to edit the entry under the cursor; the
+        <strong>networks</strong> and <strong>secrets</strong> editors have no <kbd>e</kbd> —
+        a network or secret entry is just a name, so it's add (<kbd>a</kbd>) /
+        remove (<kbd>d</kbd>) only. In the <strong>env</strong> list editor (reached with
+        <kbd>:list</kbd>) <kbd>e</kbd> opens a scrollable multi-line text area
+        (<kbd>Ctrl-S</kbd> save / <kbd>Esc</kbd> cancel) for long values; the ports
+        editor uses a wide input that wraps long values, and editors with
+        autocomplete (networks, secrets, placement) a single-line input — <kbd>Enter</kbd>
+        confirms in both.
+      </p>
+
+      <h2 id="env-editor">The env editor</h2>
+      <p>
+        The env editor works like vim, reduced to what editing a list of variables needs.
+        It opens in <strong>Normal</strong> mode, where keys are commands; <kbd>i</kbd>
+        switches to <strong>Insert</strong> mode to type, <kbd>Esc</kbd> back. The status
+        line at the bottom shows the mode, the cursor position and whether anything
+        changed; the footer always shows the keys that matter in the current mode, and
+        <kbd>?</kbd> opens the full list. <kbd>Esc</kbd> in Normal mode leaves the editor
+        when nothing changed.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>o</kbd> <kbd>O</kbd></td><td>insert before / after the cursor, at the line start / end, on a new line below / above</td></tr>
+          <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd>, <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd>, <kbd>0</kbd> <kbd>^</kbd> <kbd>$</kbd>, <kbd>gg</kbd> <kbd>G</kbd></td><td>move by character and line, by word, to the line start / first non-blank / line end, to the first / last line (the arrow keys work too)</td></tr>
+          <tr><td><kbd>/</kbd>text, <kbd>n</kbd> <kbd>N</kbd></td><td>search, next / previous match</td></tr>
+          <tr><td><kbd>x</kbd> <kbd>dd</kbd> <kbd>D</kbd> <kbd>dw</kbd></td><td>delete a character, the line, to the line end, to the next word</td></tr>
+          <tr><td><kbd>cc</kbd> <kbd>cw</kbd> <kbd>C</kbd> <kbd>r</kbd></td><td>change the line, the word, to the line end; replace one character</td></tr>
+          <tr><td><kbd>yy</kbd> <kbd>p</kbd> <kbd>P</kbd> <kbd>J</kbd></td><td>copy the line, paste below / above, join the next line</td></tr>
+          <tr><td><kbd>u</kbd> <kbd>Ctrl-R</kbd></td><td>undo, redo; a count repeats a command (<kbd>3dd</kbd>, <kbd>5j</kbd>)</td></tr>
+          <tr><td><kbd>:w</kbd> <kbd>Ctrl-S</kbd></td><td>check and apply (also <kbd>:wq</kbd>, <kbd>:x</kbd>, <kbd>ZZ</kbd>)</td></tr>
+          <tr><td><kbd>:q</kbd> <kbd>:q!</kbd></td><td>cancel; <kbd>:q</kbd> refuses while there are changes, <kbd>:q!</kbd> discards them</td></tr>
+          <tr><td><kbd>:list</kbd> <kbd>:42</kbd> <kbd>?</kbd></td><td>switch to the list editor, go to line 42, show the help</td></tr>
+        </tbody>
+      </table></div>
+      <pre><span class="o">LOG_LEVEL=info
+# DEBUG=1
+GITLAB_OMNIBUS_CONFIG&lt;&lt;EOF
+external_url 'https://gitlab.example.com'
+gitlab_rails['backup_keep_time'] = 604800
+EOF</span></pre>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/tui-services-inspect" rel="prev"><span class="lbl">← Previous</span>TUI: inspect a service or task</a>
+        <a class="next" href="/docs/tui-tabs" rel="next"><span class="lbl">Next →</span>TUI: Volumes, Forwards, Networks, Secrets, Configs</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
+          <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
+          <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+          <li><a href="/docs/tui-services-edit" aria-current="page">TUI: edit a service &amp; the env editor</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

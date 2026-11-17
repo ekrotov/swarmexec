@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec TUI — the service tree: health, usage and stacks</title>
+  <meta name="description" content="How the swarmexec TUI shows Docker Swarm services: replica and job counts, rows coloured by healthcheck, live CPU and memory markers, grouping by stack and the :latest version check.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/tui-services-tree">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec TUI — the service tree: health, usage and stacks">
+  <meta property="og:description" content="How the swarmexec TUI shows Docker Swarm services: replica and job counts, rows coloured by healthcheck, live CPU and memory markers, grouping by stack and the :latest version check.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/tui-services-tree">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec TUI — the service tree: health, usage and stacks">
+  <meta name="twitter:description" content="How the swarmexec TUI shows Docker Swarm services: replica and job counts, rows coloured by healthcheck, live CPU and memory markers, grouping by stack and the :latest version check.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec TUI — the service tree: health, usage and stacks",
+        "description": "How the swarmexec TUI shows Docker Swarm services: replica and job counts, rows coloured by healthcheck, live CPU and memory markers, grouping by stack and the :latest version check.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/tui-services-tree",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "TUI: the service tree — health, usage, stacks",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/tui-services-tree"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+<header class="rail">
+  <a class="mark" href="/" aria-label="swarmexec home">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Main">
+    <a href="/docs" aria-current="true">Docs</a>
+    <a href="/examples">Examples</a>
+    <a class="rail-opt" href="/docker-swarm-exec-alternatives">Compare</a>
+    <a class="rail-opt" href="/releases">Releases</a>
+    <a class="gh" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><svg class="gh-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="rail-cta" href="/#install">Install</a>
+  </nav>
+</header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › TUI: the service tree — health, usage, stacks</p>
+      <h1>TUI: the service tree — health, usage, stacks<span class="cursor">_</span></h1>
+      <p class="tagline">What a row's colour, count and markers tell you.</p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#tui-rows">Service rows</a></li>
+          <li><a href="#tui-jobs">Jobs</a></li>
+          <li><a href="#tui-health">Healthcheck colours</a></li>
+          <li><a href="#tui-usage">Live CPU &amp; memory</a></li>
+          <li><a href="#tui-stacks">Grouped by stack</a></li>
+          <li><a href="#tui-search">Search</a></li>
+          <li><a href="#tui-latest">:latest version check</a></li>
+        </ol>
+      </div>
+
+      <h2 id="tui-rows">Service rows</h2>
+      <p>
+        Every service is shown (even one scaled to zero), each row rendered like a
+        <code>docker service ls</code> line — name, mode, running/desired count, image
+        and published ports — and coloured by how it is actually doing: the
+        running/desired count sets the base colour (aqua = all tasks up, orange =
+        partial, red = down, grey = scaled to zero), and a failing
+        <strong>healthcheck</strong> overrides it (see below). A <code>▸</code>/<code>▾</code>
+        marker shows whether a service is collapsed or expanded; its running containers
+        nest underneath. A service that is <strong>mid rolling-update</strong> carries a
+        coloured badge on its tree row — <span class="tc-yellow">⟳&nbsp;updating</span> or
+        <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span> — and the same status appears
+        in the service inspect overlay; it clears once the update completes.
+      </p>
+
+      <h2 id="tui-jobs">Jobs</h2>
+      <p>
+        <strong>A job is counted by what it finished, not by what is running.</strong>
+        A <code>replicated-job</code> or <code>global-job</code> is not meant to stay up, so
+        its row shows <strong>completed/total</strong> instead of running/desired: a job that
+        ran through reads <strong>3/3</strong> in aqua where it used to read
+        <strong>0/1</strong> in red — the display of an outage, for a service that did
+        exactly what it was asked to do. Swarm reports a replicated job's <em>desired</em>
+        count as its <code>MaxConcurrent</code>, which is why the live count says nothing
+        useful once the job is done. The stack row above it counts the job the same way, so a
+        nightly backup no longer drags its whole stack into orange between runs.
+      </p>
+
+      <h2 id="tui-health">Healthcheck colours</h2>
+      <p>
+        <strong>Coloured by healthcheck, not only by replica count.</strong> A service
+        row's colour used to come from running vs desired alone — so a service whose
+        <em>every</em> container was failing its healthcheck still rendered as a calm aqua
+        <strong>3/3</strong>. The count was true and the row was misleading. Swarm's task
+        state does not help here either: a task reads <code>running</code> while its
+        container fails every probe, so the verdict has to come from the node. A failing
+        probe is now treated as degradation of the same kind as a missing replica:
+      </p>
+      <ul>
+        <li><strong>every</strong> checked container unhealthy → the row goes
+          <strong class="tc-red">red</strong>, which is as bad as none running;</li>
+        <li><strong>some</strong> of them unhealthy →
+          <strong class="tc-amber">orange</strong>, like a partial rollout;</li>
+        <li>all healthy → the colour the replica count already gave the row,
+          <strong>unchanged</strong>;</li>
+        <li>containers that declare <strong>no healthcheck</strong> → the row is
+          <strong>not recoloured at all</strong>. Nothing is known about them, and guessing
+          would be the same mistake in the other direction.</li>
+      </ul>
+      <p>
+        <strong>The markers.</strong> A service row carries
+        <span class="tc-red">✖&nbsp;N&nbsp;unhealthy</span> in red, or
+        <span class="tc-yellow">◌&nbsp;N&nbsp;starting</span> in yellow while the probes
+        have not passed yet; a container leaf carries
+        <span class="tc-red">✖&nbsp;unhealthy</span> /
+        <span class="tc-yellow">◌&nbsp;starting</span>. Unhealthy outranks starting — it
+        is the one that needs acting on. A stack row rolls the same marker up over everything
+        inside it (see <a href="#tui-stacks">grouped by stack</a>). A <strong>healthy</strong> container gets
+        <strong>no</strong> marker, and neither does one <strong>without</strong> a
+        healthcheck, so the marker keeps meaning something. These sit alongside the
+        <code>cpu</code>/<code>mem</code> resource markers below, and health comes
+        <strong>first</strong> in the row: it is the thing contradicting the count standing
+        next to it.
+      </p>
+      <div class="note">
+        <strong>Where the verdict comes from — and what it costs.</strong> Nothing extra: it
+        rides along with the resource readings below, same agent, same call, <strong>no
+        additional API request</strong>. The container list the agent already fetches on each
+        sampling pass carries the verdict in its status line
+        (<code>Up 3 days (healthy)</code>) — the same string <code>docker ps</code> prints.
+        The parser is deliberately <strong>strict</strong>: anything it does not recognise
+        becomes <em>no verdict</em> rather than a guess, so if the daemon ever rewords that
+        line swarmexec stops claiming to know instead of reporting a failing container as
+        healthy. Same precondition as the usage numbers, too — it needs agents from this
+        release or newer, so a cluster that has not been re-rolled shows no health markers
+        at all until you roll them out with
+        <a href="/docs/agents#reroll"><code>swarmexec init --force</code></a>.
+      </div>
+
+      <h2 id="tui-usage">Live CPU &amp; memory</h2>
+      <p>
+        <strong>Live CPU &amp; memory markers.</strong> Next to those badges a row can also
+        carry what it is actually <em>using</em> right now — until now swarmexec could only
+        show what the scheduler had <em>booked</em> (see the <a href="/docs/tui-nodes#tui-nodes">Nodes tab</a>). A container
+        or a service whose usage crosses <strong>70%</strong> gets an orange marker and
+        <strong>90%</strong> a red one, at the end of the row: the resource named in
+        <strong>words</strong> — <code>cpu</code> or <code>mem</code> — followed by the
+        percentage (<span class="tc-red">cpu&nbsp;94%</span>,
+        <span class="tc-amber">mem&nbsp;91%</span>). Both appear when both are hot.
+        Words rather than symbols, and at the same width: a marker whose meaning has to be
+        looked up is not doing its job, and letters cannot fail to render in a terminal.
+        Below 70% nothing is drawn at all, so the markers stay a signal rather than
+        wallpaper. A <strong>service</strong> row takes the <strong>worst of its
+        replicas</strong>, not an average — an average hides the one container that is
+        about to die, which is exactly the one worth seeing. (Absolute memory on a service
+        row is the sum across replicas; the percentage is the peak.)
+      </p>
+      <p>
+        <strong>What the percentages are of.</strong> Each one is measured against what
+        that container may actually use: <strong>its own limit when it has one, the node's
+        capacity when it does not</strong>. That distinction is the whole point — 91% of a
+        256&nbsp;MB limit means an OOM kill is close, 91% of a 64&nbsp;GB node is a
+        different conversation. The inspect overlay's <a href="/docs/tui-services-inspect#tui-stats">stats view</a> prints
+        both sides of that division per container and names the basis under the table.
+      </p>
+      <div class="note">
+        <strong>Where the numbers come from — and why they arrive late.</strong> Usage is
+        not in the manager API: container stats are <strong>per node</strong>. They come
+        from a node-local agent RPC (<code>Stats</code>); each agent samples its own
+        containers in the background and answers from memory, so the client just polls it
+        on the refresh cycle it already has. Two consequences worth knowing. A
+        <strong>CPU percentage is a delta between two readings</strong>, so it does not
+        exist until the agent has taken two (a few seconds) — while it isn't ready the
+        views show <code>…</code>, never <code>0%</code>; memory needs no delta and appears
+        from the first reading. And an agent only samples <strong>while someone is actually
+        looking</strong>: it stops about a minute after the last request, and forgets its
+        readings rather than serving stale ones. So the very first numbers after you open
+        the UI take a moment to fill in. That is deliberate — an agent nobody is watching
+        should cost nothing.
+      </div>
+      <div class="note">
+        <strong>No markers anywhere? Check the agent version.</strong> Usage is
+        supplementary, and it degrades quietly: a node whose agent is unreachable — or
+        <strong>older than this release and therefore unaware of the <code>Stats</code>
+        RPC</strong> — simply contributes no readings. The markers stay off, the node
+        block stays absent, and everything else is untouched; the client also backs off
+        from such a node rather than probing it every refresh. On a cluster that has not
+        been re-rolled yet there are therefore <strong>no usage numbers and no health
+        markers at all</strong>
+        until the agents are updated — roll them out with
+        <a href="/docs/agents#reroll"><code>swarmexec init --force</code></a>. This is by far the most
+        likely reason you see nothing.
+      </div>
+
+      <h2 id="tui-stacks">Grouped by stack</h2>
+      <p>
+        <strong>Grouped by stack.</strong> <code>docker stack deploy</code> labels every
+        service it creates with <code>com.docker.stack.namespace</code>. swarmexec reads
+        that label off the service spec the manager already returned — Swarm has no stack
+        object, and this is the only link — and nests the tree three levels deep:
+        <strong>stack&nbsp;→ service&nbsp;→ container</strong>. A stack row shows the stack
+        name, how many services are under it and the <strong>summed running/desired</strong>
+        task count (<code>(3&nbsp;svc&nbsp;·&nbsp;7/8)</code>), coloured by exactly the same
+        rule as a service row — the summed running/desired count, <strong>with the same
+        healthcheck override</strong> on top of it. Roll-up counters follow it when they are
+        non-zero: <span class="tc-yellow">⟳&nbsp;n</span> — services in that stack currently
+        <strong>mid rolling-update</strong> — <span class="tc-red">🛡&nbsp;n</span> —
+        services with an <strong>actionable security finding</strong>, the same shield the
+        service rows carry — and then the health marker,
+        <span class="tc-red">✖&nbsp;N&nbsp;unhealthy</span> or
+        <span class="tc-yellow">◌&nbsp;N&nbsp;starting</span>, summed over every container
+        of every service in the stack. So a folded stack still tells you whether anything
+        inside it needs attention. Health rolling up matters most here: the stack row is the
+        level an operator scans <em>first</em>, so a misleading &ldquo;everything is up&rdquo;
+        is worse there than one tier down, not better.
+      </p>
+      <p>
+        Services created with <code>docker service create</code> carry no stack label; they
+        are collected under <strong><code>(no stack)</code></strong>, which always sorts
+        last so it never pushes real stacks down the list. <strong>Nothing is hidden</strong>
+        — every service still appears exactly once. Stacks sort by name and start expanded,
+        so the grouped tree shows the same services the flat one did; folds you make survive
+        the auto-refresh.
+      </p>
+      <p>
+        Grouping is <strong>on by default</strong> but only takes effect when at least one
+        service in the cluster actually carries a stack label — on a cluster without stacks
+        the tree looks exactly as it always did, with no pointless <code>(no stack)</code>
+        parent. Press <kbd>s</kbd> to switch between the grouped tree and the flat service
+        list (the footer lists it as <em>s group</em>); with no stack labels anywhere it
+        says so rather than redrawing an identical tree. The key is remappable as
+        <code>stack_group</code> in <a href="/docs/tui#tui">keys.yaml</a>.
+      </p>
+
+      <h2 id="tui-search">Search</h2>
+      <p>
+        Searching (<kbd>/</kbd>) is unchanged: the filter still matches service, container
+        and node. A stack the filter empties disappears from the tree, and each stack row's
+        counts describe what actually ended up under it — so the numbers follow the filter
+        instead of advertising services you filtered away.
+      </p>
+
+      <h2 id="tui-latest">:latest version check</h2>
+      <p>
+        Swarm pins <code>:latest</code> to a digest at
+        deploy time, so a service tagged <code>:latest</code> actually runs a fixed image.
+        swarmexec resolves that against the registry (using your local docker credentials) and
+        annotates the service row <strong>right after the image URI</strong>: the
+        <strong>real version</strong> in parentheses — read from the image's
+        <code>org.opencontainers.image.version</code> label — and an
+        <strong>up-arrow&nbsp;↑</strong> when the registry's current <code>:latest</code> is a
+        newer digest than the one the service is pinned to (e.g.
+        <code>nginx:latest (1.4.0) ↑</code>).
+        Best-effort and cached: registry errors just leave the row unannotated. The inspect
+        overlay's <code>IMAGE</code> section shows the same version and, when a newer image
+        exists, a selectable <em>newer&nbsp;version&nbsp;available</em> row — move onto it and
+        press <kbd>u</kbd> (or <kbd>Enter</kbd>) to <strong>update the service</strong> — see <a href="/docs/tui-services-edit#tui-set-version">setting a version</a>.
+      </p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/tui-services" rel="prev"><span class="lbl">← Previous</span>TUI: the Stacks/Services tab</a>
+        <a class="next" href="/docs/tui-services-security" rel="next"><span class="lbl">Next →</span>TUI: the security-risks overlay</a>
+      </nav>
+
+      <nav class="toc docnav" aria-label="All documentation pages">
+        <p class="th">All docs pages</p>
+        <ol>
+          <li><a href="/docs">Overview &amp; how it works</a></li>
+          <li><a href="/docs/install">Install &amp; quick start</a></li>
+          <li><a href="/docs/exec">exec into any Swarm container</a></li>
+          <li><a href="/docs/logs">Logs of services and stacks</a></li>
+          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+          <li><a href="/docs/tui">The TUI</a></li>
+          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+          <li><a href="/docs/tui-services-tree" aria-current="page">TUI: the service tree — health, usage, stacks</a></li>
+          <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
+          <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+          <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
+          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+        </ol>
+      </nav>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>
