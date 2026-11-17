@@ -77,7 +77,7 @@ func TestVolumeRmRun(t *testing.T) {
 
 	t.Run("a scope is required", func(t *testing.T) {
 		_, _, err := rm("", "--yes", "data")
-		if exitCode(err) != usageExitCode || !strings.Contains(err.Error(), "--all or one/more --node") {
+		if exitCode(err) != exitUsage || !strings.Contains(err.Error(), "--all or one/more --node") {
 			t.Errorf("err = %v", err)
 		}
 		if agent.removals() != "" {
@@ -151,16 +151,17 @@ func TestVolumeRmRun(t *testing.T) {
 		agent.mu.Unlock()
 
 		asked := usePrompts(t, "n\n", true)
-		_, errOut, err := rm("", "--all", "data")
+		_, _, err := rm("", "--all", "data")
 		var ce *cliError
-		if !errors.As(err, &ce) || !ce.silent || ce.code != session.TransportFailure {
+		// The command's "no", not a transport failure (review CLI-03).
+		if !errors.As(err, &ce) || ce.code != exitNo || ce.err == nil || ce.err.Error() != "aborted" {
 			t.Errorf("err = %#v", err)
 		}
 		if want := `Remove volume "data" on 1 node(s) [` + agentNodeHost + `]? [y/N]: `; asked.String() != want {
 			t.Errorf("asked %q, want %q", asked.String(), want)
 		}
-		if !strings.Contains(errOut, "aborted") || agent.removals() != "" {
-			t.Errorf("stderr %q removed %q after \"n\"", errOut, agent.removals())
+		if agent.removals() != "" {
+			t.Errorf("removed %q after \"n\"", agent.removals())
 		}
 
 		usePrompts(t, "y\n", true)
