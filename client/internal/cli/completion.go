@@ -69,6 +69,7 @@ func completionTargets(g *globalFlags) (map[string]completeFunc, map[string]map[
 		"swarmexec ui":            onlyFirstArg(services),
 		"swarmexec wait":          services,
 		"swarmexec stack export":  onlyFirstArg(stacks),
+		"swarmexec stack rm":      onlyFirstArg(stacks),
 		"swarmexec context use":   onlyFirstArg(completeContexts),
 		"swarmexec context rm":    completeContexts,
 		"swarmexec secret rotate": onlyFirstArg(completeSecrets(g)),

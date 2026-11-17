@@ -161,12 +161,16 @@ var readRoutes = []route{
 	{exact("/tasks"), (*Swarm).listTasks},
 	{exact("/nodes"), func(f *Swarm, c *call, _ string) { c.reply(f.Nodes) }},
 	{under("/nodes/", ""), (*Swarm).getNode},
-	{exact("/networks"), func(f *Swarm, c *call, _ string) { c.reply(f.Networks) }},
+	{exact("/networks"), func(f *Swarm, c *call, _ string) {
+		c.reply(filterLabelled(f.Networks, c.filters(), func(n network.Summary) map[string]string { return n.Labels }))
+	}},
 	{exact("/secrets"), func(f *Swarm, c *call, _ string) {
-		c.reply(filterNamed(f.Secrets, c.filters(), func(s swarm.Secret) string { return s.Spec.Name }))
+		c.reply(filterLabelled(filterNamed(f.Secrets, c.filters(), func(s swarm.Secret) string { return s.Spec.Name }),
+			c.filters(), func(s swarm.Secret) map[string]string { return s.Spec.Labels }))
 	}},
 	{exact("/configs"), func(f *Swarm, c *call, _ string) {
-		c.reply(filterNamed(f.Configs, c.filters(), func(cf swarm.Config) string { return cf.Spec.Name }))
+		c.reply(filterLabelled(filterNamed(f.Configs, c.filters(), func(cf swarm.Config) string { return cf.Spec.Name }),
+			c.filters(), func(cf swarm.Config) map[string]string { return cf.Spec.Labels }))
 	}},
 }
 
@@ -180,6 +184,27 @@ var writeRoutes = []route{
 
 var deleteRoutes = []route{
 	{under("/services/", ""), (*Swarm).removeService},
+	{under("/secrets/", ""), func(f *Swarm, c *call, id string) {
+		f.Secrets = removeByID(c, f.Secrets, "secret "+id, func(s swarm.Secret) bool { return s.ID == id || s.Spec.Name == id })
+	}},
+	{under("/configs/", ""), func(f *Swarm, c *call, id string) {
+		f.Configs = removeByID(c, f.Configs, "config "+id, func(cf swarm.Config) bool { return cf.ID == id || cf.Spec.Name == id })
+	}},
+	{under("/networks/", ""), func(f *Swarm, c *call, id string) {
+		f.Networks = removeByID(c, f.Networks, "network "+id, func(n network.Summary) bool { return n.ID == id || n.Name == id })
+	}},
+}
+
+// removeByID drops the first item that matches and answers 204, or answers 404.
+func removeByID[T any](c *call, items []T, what string, is func(T) bool) []T {
+	for i, it := range items {
+		if is(it) {
+			c.w.WriteHeader(http.StatusNoContent)
+			return append(items[:i:i], items[i+1:]...)
+		}
+	}
+	notFound(c.w, what)
+	return items
 }
 
 func (f *Swarm) ping(c *call, _ string) {
@@ -413,6 +438,32 @@ func matchTask(t swarm.Task, f map[string]map[string]bool) bool {
 	}
 	if want := f["desired-state"]; len(want) > 0 && !want[string(t.DesiredState)] {
 		return false
+	}
+	return true
+}
+
+// filterLabelled keeps the items carrying every "label" filter (key or
+// key=value), as the manager filters.
+func filterLabelled[T any](items []T, f map[string]map[string]bool, labels func(T) map[string]string) []T {
+	if len(f["label"]) == 0 {
+		return items
+	}
+	var out []T
+	for _, it := range items {
+		if hasLabels(labels(it), f["label"]) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+func hasLabels(have map[string]string, want map[string]bool) bool {
+	for l := range want {
+		k, v, hasV := strings.Cut(l, "=")
+		got, ok := have[k]
+		if !ok || (hasV && got != v) {
+			return false
+		}
 	}
 	return true
 }
