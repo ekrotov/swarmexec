@@ -448,27 +448,7 @@ func formatServiceInspect(svc swarm.Service, info netInfo, img ImageStatus) []In
 	cs := svc.Spec.TaskTemplate.ContainerSpec
 	b.title("SERVICE  " + svc.Spec.Name)
 
-	// The upgrade hint sits directly under the title so it is the first thing the
-	// operator sees and can act on ("u") without scrolling down to the IMAGE
-	// section. Only shown when a newer image is actually available.
-	if img.newer && img.updateTarget != "" && cs != nil {
-		// Prefer the concrete newer version (the :latest image's label, or the
-		// newer tag); fall back to a short digest only for a :latest image with no
-		// version label.
-		label := img.latestVersion
-		if label == "" {
-			label = shortDigest(img.latestDigest)
-		}
-		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", img.updateTarget, img)
-	}
-
-	// A rolling update in flight is surfaced right under the title too, so it is
-	// obvious the service is mid-update without reading task states.
-	if us := svc.UpdateStatus; us != nil {
-		if _, _, active := UpdateStatusLabel(string(us.State)); active {
-			b.updateStatus(string(us.State), strings.TrimSpace(us.Message))
-		}
-	}
+	b.serviceAlerts(svc, cs, img)
 
 	b.section("NETWORKS")
 	nets := serviceNetDNS(svc, info)
@@ -494,6 +474,43 @@ func formatServiceInspect(svc swarm.Service, info netInfo, img ImageStatus) []In
 	b.image(imageLines(cs, img), img)
 	b.section("MODE")
 	b.list([]string{ServiceModeStr(svc)})
+	b.serviceSpecSections(svc, cs)
+	b.section("META")
+	b.kv("id", svc.ID)
+	b.kv("created", FormatTime(svc.Meta.CreatedAt))
+	b.kv("updated", FormatTime(svc.Meta.UpdatedAt))
+	return b.lines
+}
+
+// serviceAlerts writes what sits directly under the service title.
+//
+// The upgrade hint is there so it is the first thing the operator sees and can
+// act on ("u") without scrolling down to the IMAGE section. Only shown when a
+// newer image is actually available.
+func (b *inspBuilder) serviceAlerts(svc swarm.Service, cs *swarm.ContainerSpec, img ImageStatus) {
+	if img.newer && img.updateTarget != "" && cs != nil {
+		// Prefer the concrete newer version (the :latest image's label, or the
+		// newer tag); fall back to a short digest only for a :latest image with no
+		// version label.
+		label := img.latestVersion
+		if label == "" {
+			label = shortDigest(img.latestDigest)
+		}
+		b.upgrade("⚠ a newer version is available: "+label+" — press u to update", img.updateTarget, img)
+	}
+
+	// A rolling update in flight is surfaced right under the title too, so it is
+	// obvious the service is mid-update without reading task states.
+	if us := svc.UpdateStatus; us != nil {
+		if _, _, active := UpdateStatusLabel(string(us.State)); active {
+			b.updateStatus(string(us.State), strings.TrimSpace(us.Message))
+		}
+	}
+}
+
+// serviceSpecSections writes the service's optional sections — ENV,
+// RESOURCES, PLACEMENT, UPDATE POLICY — each only when it has something.
+func (b *inspBuilder) serviceSpecSections(svc swarm.Service, cs *swarm.ContainerSpec) {
 	if cs != nil && len(cs.Env) > 0 {
 		b.section("ENV")
 		b.list(cs.Env)
@@ -515,11 +532,6 @@ func formatServiceInspect(svc swarm.Service, info netInfo, img ImageStatus) []In
 			fmt.Sprintf("on-failure %s", uc.FailureAction),
 		})
 	}
-	b.section("META")
-	b.kv("id", svc.ID)
-	b.kv("created", FormatTime(svc.Meta.CreatedAt))
-	b.kv("updated", FormatTime(svc.Meta.UpdatedAt))
-	return b.lines
 }
 
 func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []InspectLine {
