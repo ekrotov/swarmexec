@@ -110,18 +110,8 @@ func judge(s waitSnapshot, since time.Time, wantHealthy bool) (waitVerdict, stri
 	if s.missing {
 		return waitFailed, "no such service"
 	}
-	switch s.updateState {
-	case string(swarm.UpdateStatePaused):
-		return waitFailed, fmt.Sprintf("its update paused (%s) — it runs a mix of old and new tasks; `docker service update %s` resumes it",
-			orDash(s.updateMessage), s.name)
-	case string(swarm.UpdateStateRollbackPaused):
-		return waitFailed, fmt.Sprintf("its rollback paused (%s)", orDash(s.updateMessage))
-	case string(swarm.UpdateStateRollbackCompleted):
-		if !s.updateDone.Before(since) {
-			return waitFailed, fmt.Sprintf("it was rolled back during the wait (%s) — the deploy did not take", orDash(s.updateMessage))
-		}
-	case string(swarm.UpdateStateUpdating), string(swarm.UpdateStateRollbackStarted):
-		return waitPending, progressText(s) + ", " + strings.ReplaceAll(s.updateState, "_", " ")
+	if v, why, decided := judgeUpdate(s, since); decided {
+		return v, why
 	}
 	if s.want == 0 && !s.isJob {
 		return waitConverged, "scaled to 0"
@@ -134,14 +124,43 @@ func judge(s waitSnapshot, since time.Time, wantHealthy bool) (waitVerdict, stri
 		return waitPending, why
 	}
 	if wantHealthy {
-		if len(s.healthUnknown) > 0 {
-			return waitPending, "health unknown on " + strings.Join(s.healthUnknown, ", ") + " (agent too old or unreachable)"
-		}
-		if h := s.health; h != nil && (h.Unhealthy > 0 || h.Starting > 0) {
-			return waitPending, fmt.Sprintf("%s, %d unhealthy, %d starting", progressText(s), h.Unhealthy, h.Starting)
+		if why, pending := healthPending(s); pending {
+			return waitPending, why
 		}
 	}
 	return waitConverged, progressText(s)
+}
+
+// judgeUpdate is the verdict a service's update state alone decides: a
+// paused update or rollback, a rollback during the wait, one in flight.
+// decided is false when the update state leaves it to the task counts.
+func judgeUpdate(s waitSnapshot, since time.Time) (v waitVerdict, why string, decided bool) {
+	switch s.updateState {
+	case string(swarm.UpdateStatePaused):
+		return waitFailed, fmt.Sprintf("its update paused (%s) — it runs a mix of old and new tasks; `docker service update %s` resumes it",
+			orDash(s.updateMessage), s.name), true
+	case string(swarm.UpdateStateRollbackPaused):
+		return waitFailed, fmt.Sprintf("its rollback paused (%s)", orDash(s.updateMessage)), true
+	case string(swarm.UpdateStateRollbackCompleted):
+		if !s.updateDone.Before(since) {
+			return waitFailed, fmt.Sprintf("it was rolled back during the wait (%s) — the deploy did not take", orDash(s.updateMessage)), true
+		}
+	case string(swarm.UpdateStateUpdating), string(swarm.UpdateStateRollbackStarted):
+		return waitPending, progressText(s) + ", " + strings.ReplaceAll(s.updateState, "_", " "), true
+	}
+	return waitPending, "", false
+}
+
+// healthPending is why a service whose tasks all run is not yet healthy:
+// health unknown on some node, or tasks unhealthy or still starting.
+func healthPending(s waitSnapshot) (why string, pending bool) {
+	if len(s.healthUnknown) > 0 {
+		return "health unknown on " + strings.Join(s.healthUnknown, ", ") + " (agent too old or unreachable)", true
+	}
+	if h := s.health; h != nil && (h.Unhealthy > 0 || h.Starting > 0) {
+		return fmt.Sprintf("%s, %d unhealthy, %d starting", progressText(s), h.Unhealthy, h.Starting), true
+	}
+	return "", false
 }
 
 func progressText(s waitSnapshot) string {
