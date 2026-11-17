@@ -83,6 +83,52 @@ func (c *Client) ListContainers(ctx context.Context, host, serviceFilter string)
 	return resp.GetContainers(), nil
 }
 
+// containerCallTimeout bounds one kill or inspect beyond the connect: a single
+// Engine call on the node.
+const containerCallTimeout = 15 * time.Second
+
+// KillContainer asks the container's node agent to SIGKILL it; Swarm then
+// schedules a replacement task (CONTRACT.md §3.10). The agent refuses anything
+// that is not a swarm task. An operator's explicit action, so it is never
+// gated: an agent too old for it answers every time, explained as
+// agenterr.ErrAgentTooOld.
+func (c *Client) KillContainer(ctx context.Context, ep resolve.Endpoint, connectTimeout time.Duration) error {
+	_, err := c.containerCall(ctx, ep, connectTimeout, func(ctx context.Context, a pb.AgentClient) ([]byte, error) {
+		_, err := a.KillContainer(ctx, &pb.KillContainerRequest{ContainerId: ep.ContainerID})
+		return nil, err
+	})
+	return err
+}
+
+// InspectContainer returns the node-local `docker container inspect` JSON of
+// one swarm task container (CONTRACT.md §3.10). The document carries the
+// container's environment: callers must not log it. Not gated, like
+// KillContainer: the operator asked for it.
+func (c *Client) InspectContainer(ctx context.Context, ep resolve.Endpoint, connectTimeout time.Duration) ([]byte, error) {
+	return c.containerCall(ctx, ep, connectTimeout, func(ctx context.Context, a pb.AgentClient) ([]byte, error) {
+		resp, err := a.InspectContainer(ctx, &pb.InspectContainerRequest{ContainerId: ep.ContainerID})
+		return resp.GetInspectJson(), err
+	})
+}
+
+// containerCall runs one unary call against ep's agent, bounded by the connect
+// timeout plus containerCallTimeout, and explains a failure.
+func (c *Client) containerCall(ctx context.Context, ep resolve.Endpoint, connectTimeout time.Duration, call func(context.Context, pb.AgentClient) ([]byte, error)) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, connectTimeout+containerCallTimeout)
+	defer cancel()
+	conn, err := c.Conn(cctx, ep.DialHost)
+	if err != nil {
+		return nil, c.Explain(ctx, err)
+	}
+	defer conn.Close()
+	out, err := call(cctx, conn.Agent())
+	conn.done(err)
+	if err != nil {
+		return nil, c.Explain(ctx, err)
+	}
+	return out, nil
+}
+
 // ContainerEvents streams one container's runtime events to fn until ctx
 // ends or the stream does (nil), or it fails. Gated for Unimplemented
 // (capgate.go): an agent that predates the RPC is not dialled again on every

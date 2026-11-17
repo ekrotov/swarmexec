@@ -170,6 +170,23 @@ func (a *fakeAgent) RemoveVolume(ctx context.Context, req *pb.RemoveVolumeReques
 	return &pb.RemoveVolumeResponse{}, nil
 }
 
+func (a *fakeAgent) KillContainer(ctx context.Context, req *pb.KillContainerRequest) (*pb.KillContainerResponse, error) {
+	if err := a.check(ctx, "KillContainer"); err != nil {
+		return nil, err
+	}
+	a.removedMu.Lock()
+	a.removed = append(a.removed, "kill:"+req.GetContainerId())
+	a.removedMu.Unlock()
+	return &pb.KillContainerResponse{}, nil
+}
+
+func (a *fakeAgent) InspectContainer(ctx context.Context, req *pb.InspectContainerRequest) (*pb.InspectContainerResponse, error) {
+	if err := a.check(ctx, "InspectContainer"); err != nil {
+		return nil, err
+	}
+	return &pb.InspectContainerResponse{InspectJson: []byte(`{"Id":"` + req.GetContainerId() + `"}`)}, nil
+}
+
 func (a *fakeAgent) CreateVolume(ctx context.Context, _ *pb.CreateVolumeRequest) (*pb.CreateVolumeResponse, error) {
 	if err := a.check(ctx, "CreateVolume"); err != nil {
 		return nil, err
