@@ -101,7 +101,7 @@ func TestOverlayHelpNests(t *testing.T) {
 // apart — so a fixed "follow on/off" answered the question wrongly half the
 // time.
 func TestLogFooterNamesTheFollowState(t *testing.T) {
-	on, off := logViewHelp(true), logViewHelp(false)
+	on, off := logViewHelp(true, 'q'), logViewHelp(false, 'q')
 	if on == off {
 		t.Fatal("the follow hint reads the same whether following or not")
 	}
@@ -138,7 +138,11 @@ func TestOverlayFooterPutsEscFirst(t *testing.T) {
 	if !strings.HasPrefix(shared, " Esc/q close") {
 		t.Errorf("an Esc shared with quit must lead too: %q", shared)
 	}
-	if lv := colorTags.ReplaceAllString(logViewHelp(true), ""); !strings.HasPrefix(lv, " Esc/q close") {
+	if lv := colorTags.ReplaceAllString(logViewHelp(true, 'q'), ""); !strings.HasPrefix(lv, " Esc/q close") {
 		t.Errorf("log view footer must lead with its way out: %q", lv)
+	}
+	// A quit key remapped in keys.yaml closes the log view, so its footer names it.
+	if lv := colorTags.ReplaceAllString(logViewHelp(true, 'x'), ""); !strings.HasPrefix(lv, " Esc/x close") {
+		t.Errorf("log view footer must name the configured quit key: %q", lv)
 	}
 }
