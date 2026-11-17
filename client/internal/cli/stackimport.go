@@ -27,6 +27,7 @@ type stackDeployFlags struct {
 	despiteFindings bool
 	yes             bool
 	check           bool
+	registryAuth    bool
 }
 
 func newStackDeployCmd(g *globalFlags) *cobra.Command {
@@ -48,6 +49,7 @@ func newStackDeployCmd(g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&f.despiteFindings, "despite-findings", false, "deploy even though the check found something, without asking")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "do not ask; deploy if the check found nothing actionable")
 	cmd.Flags().BoolVar(&f.check, "check", false, "only run the checks, never deploy")
+	cmd.Flags().BoolVar(&f.registryAuth, "with-registry-auth", false, "send local registry credentials to the swarm, so nodes can pull private images")
 	// Was --force (review C-07): elsewhere --force mirrors docker's own
 	// force, here it lifts the security gate, so it says what it overrides.
 	addHiddenFlagAliases(cmd.Flags(), map[string]string{"force": "despite-findings"})
@@ -96,7 +98,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 		}
 	}
 
-	res, err := stackfile.Apply(ctx, dcli, name, plan.Config, stackfile.ApplyOptions{Prune: f.prune})
+	res, err := stackfile.Apply(ctx, dcli, name, plan.Config, applyOptions(f))
 	if err != nil {
 		// A partially applied stack is the dangerous state, so say what DID
 		// happen before the error rather than only the error.
@@ -105,8 +107,19 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 		}
 		return &cliError{code: session.TransportFailure, err: err}
 	}
+	for _, n := range res.Notes() {
+		fmt.Fprintln(errOut, n)
+	}
 	fmt.Fprintf(out, "deployed %s — %s\n", name, res.Summary())
 	return nil
+}
+
+func applyOptions(f *stackDeployFlags) stackfile.ApplyOptions {
+	opts := stackfile.ApplyOptions{Prune: f.prune}
+	if f.registryAuth {
+		opts.RegistryAuth = encodedRegistryAuth
+	}
+	return opts
 }
 
 // confirmDeploy asks, on the terminal, whether to go ahead anyway.

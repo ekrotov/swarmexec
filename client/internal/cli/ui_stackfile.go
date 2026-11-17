@@ -324,7 +324,11 @@ func (u *ui) applyStack(plan *stackfile.Plan) {
 			u.info(msg)
 			return
 		}
-		u.info("deployed " + plan.Stack + " — " + res.Summary())
+		msg := "deployed " + plan.Stack + " — " + res.Summary()
+		if notes := res.Notes(); len(notes) > 0 {
+			msg += "\n\n" + strings.Join(notes, "\n")
+		}
+		u.info(msg)
 		u.treeTab().load()
 	})
 }

@@ -40,6 +40,28 @@ type ApplyResult struct {
 	Secrets  []string // secrets created
 	Configs  []string // configs created
 	Removed  []string // services pruned (only with Prune)
+	// Kept are the secrets and configs that already existed and were left as
+	// they are ("secret app_key"). Swarm cannot change their data, so a file
+	// whose content changed is NOT applied; the deploy says so rather than
+	// leaving the operator to believe the new content is live.
+	Kept []string
+	// Warnings are what the manager said about services it accepted anyway
+	// (for example a placement that no node can satisfy yet).
+	Warnings []string
+}
+
+// Notes is what a deploy has to say beyond the summary, one line each, for the
+// terminal and the ui alike.
+func (r *ApplyResult) Notes() []string {
+	var out []string
+	for _, k := range r.Kept {
+		out = append(out, k+" already exists and was left unchanged (swarm cannot change its content; "+
+			"if the file's content changed, create a new one under a new name)")
+	}
+	for _, w := range r.Warnings {
+		out = append(out, "warning: "+w)
+	}
+	return out
 }
 
 // ApplyOptions mirrors the flags of `docker stack deploy` that make sense here.
@@ -48,6 +70,11 @@ type ApplyOptions struct {
 	// Off by default, exactly as docker has it: a file that is a subset of the
 	// stack is far more often an accident than an instruction to delete.
 	Prune bool
+	// RegistryAuth, when set, returns the encoded registry credentials to send
+	// with a service's image (docker's --with-registry-auth), "" for none. Off
+	// by default, as in docker: the credentials go to the manager only when
+	// the operator asks.
+	RegistryAuth func(image string) (string, error)
 }
 
 // DeployClient is the slice of the docker client a deploy needs.
@@ -92,18 +119,25 @@ func Apply(ctx context.Context, cli DeployClient, stackName string, cfg *compose
 	}
 	for _, short := range sortedKeys(specs) {
 		spec := specs[short]
+		auth, err := registryAuthFor(opts, spec)
+		if err != nil {
+			return res, err
+		}
 		cur, found := existing[spec.Name]
 		if !found {
-			if _, err := cli.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: spec, QueryRegistry: true}); err != nil {
+			cr, err := cli.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true})
+			if err != nil {
 				return res, fmt.Errorf("create service %s: %w", spec.Name, err)
 			}
+			res.Warnings = append(res.Warnings, prefixed(spec.Name, cr.Warnings)...)
 			res.Created = append(res.Created, spec.Name)
 			continue
 		}
-		_, err := cli.ServiceUpdate(ctx, cur.ID, client.ServiceUpdateOptions{Version: cur.Version, Spec: spec, QueryRegistry: true})
+		up, err := cli.ServiceUpdate(ctx, cur.ID, client.ServiceUpdateOptions{Version: cur.Version, Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true})
 		if err != nil {
 			return res, fmt.Errorf("update service %s: %w", spec.Name, err)
 		}
+		res.Warnings = append(res.Warnings, prefixed(spec.Name, up.Warnings)...)
 		res.Updated = append(res.Updated, spec.Name)
 	}
 
@@ -113,6 +147,25 @@ func Apply(ctx context.Context, cli DeployClient, stackName string, cfg *compose
 		}
 	}
 	return res, nil
+}
+
+func registryAuthFor(opts ApplyOptions, spec swarm.ServiceSpec) (string, error) {
+	if opts.RegistryAuth == nil || spec.TaskTemplate.ContainerSpec == nil {
+		return "", nil
+	}
+	auth, err := opts.RegistryAuth(spec.TaskTemplate.ContainerSpec.Image)
+	if err != nil {
+		return "", fmt.Errorf("registry credentials for %s: %w", spec.Name, err)
+	}
+	return auth, nil
+}
+
+func prefixed(service string, warnings []string) []string {
+	out := make([]string, len(warnings))
+	for i, w := range warnings {
+		out[i] = service + ": " + w
+	}
+	return out
 }
 
 // deployedServices maps a stack's current services by their full name.
@@ -133,14 +186,18 @@ func deployedServices(ctx context.Context, cli DeployClient, stackName string) (
 func deployNetworks(ctx context.Context, cli DeployClient, ns convert.Namespace, cfg *composetypes.Config, res *ApplyResult) error {
 	used := map[string]struct{}{}
 	for _, s := range cfg.Services {
+		// A service that declares no network still lands on the stack's
+		// default one, which compose creates implicitly. This is per service,
+		// as in docker: with one service on "backend" and another on nothing,
+		// the second one still needs <stack>_default, and creating it only when
+		// NO service names a network half-applies the stack.
+		if len(s.Networks) == 0 {
+			used["default"] = struct{}{}
+			continue
+		}
 		for n := range s.Networks {
 			used[n] = struct{}{}
 		}
-	}
-	// A service that declares no network still lands on the stack's default
-	// one, which compose creates implicitly.
-	if len(used) == 0 {
-		used["default"] = struct{}{}
 	}
 	create, external := convert.Networks(ns, cfg.Networks, used)
 
@@ -193,6 +250,7 @@ func deploySecrets(ctx context.Context, cli DeployClient, ns convert.Namespace, 
 				// left exactly as it is. Changing a secret means creating a new
 				// one under a new name, which is the whole point of the
 				// convention.
+				res.Kept = append(res.Kept, "secret "+spec.Name)
 				continue
 			}
 			return fmt.Errorf("create secret %s: %w", spec.Name, err)
@@ -211,6 +269,7 @@ func deployConfigs(ctx context.Context, cli DeployClient, ns convert.Namespace, 
 	for _, spec := range specs {
 		if _, err := cli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec}); err != nil {
 			if cerrdefs.IsConflict(err) {
+				res.Kept = append(res.Kept, "config "+spec.Name)
 				continue
 			}
 			return fmt.Errorf("create config %s: %w", spec.Name, err)

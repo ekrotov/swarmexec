@@ -65,6 +65,12 @@ type Swarm struct {
 	// RegistryAuth is the X-Registry-Auth header of each service create and
 	// update, in order ("" when none was sent).
 	RegistryAuth []string
+	// StrictNetworks makes a service create or update fail, as a real manager
+	// does, when it names a network that does not exist.
+	StrictNetworks bool
+	// Warnings is what service create and update answer in their Warnings
+	// field.
+	Warnings []string
 }
 
 var apiVersionPrefix = regexp.MustCompile(`^/v[0-9.]+`)
@@ -161,6 +167,7 @@ var readRoutes = []route{
 	{exact("/tasks"), (*Swarm).listTasks},
 	{exact("/nodes"), func(f *Swarm, c *call, _ string) { c.reply(f.Nodes) }},
 	{under("/nodes/", ""), (*Swarm).getNode},
+	{under("/networks/", ""), (*Swarm).getNetwork},
 	{exact("/networks"), func(f *Swarm, c *call, _ string) {
 		c.reply(filterLabelled(f.Networks, c.filters(), func(n network.Summary) map[string]string { return n.Labels }))
 	}},
@@ -178,6 +185,7 @@ var writeRoutes = []route{
 	{exact("/secrets/create"), (*Swarm).createSecret},
 	{exact("/configs/create"), (*Swarm).createConfig},
 	{exact("/services/create"), (*Swarm).createService},
+	{exact("/networks/create"), (*Swarm).createNetwork},
 	{under("/services/", "/update"), (*Swarm).updateService},
 	{under("/nodes/", "/update"), (*Swarm).updateNode},
 }
@@ -311,6 +319,56 @@ func (f *Swarm) createConfig(c *call, _ string) {
 	c.created("config-" + spec.Name)
 }
 
+func (f *Swarm) createNetwork(c *call, _ string) {
+	var req struct {
+		Name   string
+		Driver string
+		Labels map[string]string
+	}
+	if !decode(c.w, c.r, &req) {
+		return
+	}
+	for _, n := range f.Networks {
+		if n.Name == req.Name {
+			c.taken("network", req.Name)
+			return
+		}
+	}
+	n := network.Summary{Network: network.Network{ID: "network-" + req.Name, Name: req.Name, Driver: req.Driver, Labels: req.Labels}}
+	f.Networks = append(f.Networks, n)
+	c.created(n.ID)
+}
+
+func (f *Swarm) getNetwork(c *call, id string) {
+	for _, n := range f.Networks {
+		if n.ID == id || n.Name == id {
+			c.reply(n)
+			return
+		}
+	}
+	notFound(c.w, "network "+id)
+}
+
+// missingNetwork names the first network of spec that does not exist, "" when
+// all do (or StrictNetworks is off).
+func (f *Swarm) missingNetwork(spec swarm.ServiceSpec) string {
+	if !f.StrictNetworks {
+		return ""
+	}
+	for _, att := range spec.TaskTemplate.Networks {
+		found := false
+		for _, n := range f.Networks {
+			if n.ID == att.Target || n.Name == att.Target {
+				found = true
+			}
+		}
+		if !found {
+			return att.Target
+		}
+	}
+	return ""
+}
+
 func (f *Swarm) createService(c *call, _ string) {
 	var spec swarm.ServiceSpec
 	if !decode(c.w, c.r, &spec) {
@@ -322,11 +380,17 @@ func (f *Swarm) createService(c *call, _ string) {
 			return
 		}
 	}
+	if n := f.missingNetwork(spec); n != "" {
+		fail(c.w, http.StatusBadRequest, "network "+n+" not found")
+		return
+	}
 	f.RegistryAuth = append(f.RegistryAuth, c.r.Header.Get("X-Registry-Auth"))
 	var s swarm.Service
 	s.ID, s.Version.Index, s.Spec = "service-"+spec.Name, 1, spec
 	f.Services = append(f.Services, s)
-	c.created(s.ID)
+	c.w.Header().Set("Content-Type", "application/json")
+	c.w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(c.w).Encode(swarm.ServiceCreateResponse{ID: s.ID, Warnings: f.Warnings})
 }
 
 func (f *Swarm) updateService(c *call, id string) {
@@ -345,10 +409,14 @@ func (f *Swarm) updateService(c *call, id string) {
 			fail(c.w, http.StatusInternalServerError, "update out of sequence")
 			return
 		}
+		if n := f.missingNetwork(spec); n != "" {
+			fail(c.w, http.StatusBadRequest, "network "+n+" not found")
+			return
+		}
 		f.RegistryAuth = append(f.RegistryAuth, c.r.Header.Get("X-Registry-Auth"))
 		s.Spec = spec
 		s.Version.Index++
-		c.reply(swarm.ServiceUpdateResponse{})
+		c.reply(swarm.ServiceUpdateResponse{Warnings: f.Warnings})
 		return
 	}
 	notFound(c.w, "service "+id)
