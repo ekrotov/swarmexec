@@ -88,6 +88,14 @@ func newVolumeRmCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
+// noVolumesNote is what an empty volume ls says under its header row.
+func noVolumesNote(args []string) string {
+	if len(args) > 0 {
+		return fmt.Sprintf("no volumes matching %q", args[0])
+	}
+	return "no volumes"
+}
+
 func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []string) error {
 	ac, ctx, dcli, nodes, err := volumeSetup(cmd, g)
 	if err != nil {
@@ -125,6 +133,9 @@ func runVolumeLs(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 		}
 	} else {
 		l.writeTable(os.Stdout)
+		if len(l.vols) == 0 {
+			fmt.Fprintln(os.Stderr, noVolumesNote(args))
+		}
 	}
 	reportNodeErrors(errs)
 	return nil

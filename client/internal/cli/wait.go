@@ -247,8 +247,12 @@ func (w *waitProgress) step(snaps []waitSnapshot, now time.Time) (bool, error) {
 	for _, s := range snaps {
 		v, why := judge(s, w.since, w.healthy)
 		if v == waitFailed {
-			fmt.Fprintf(w.out, "✗ %s: %s\n", s.name, why)
-			return false, &cliError{code: 1, err: fmt.Errorf("%s did not converge: %s", s.name, why), silent: true}
+			// The failure is the command's error, with the swarmexec:
+			// prefix every other command's error has (review C-08).
+			if s.missing {
+				return false, &cliError{code: 1, err: fmt.Errorf("no such service %q", s.name)}
+			}
+			return false, &cliError{code: 1, err: fmt.Errorf("%s: %s", s.name, why)}
 		}
 		if v == waitConverged {
 			if w.settledSince[s.name].IsZero() {
@@ -291,7 +295,7 @@ func (w *waitProgress) timedOut(snaps []waitSnapshot, now time.Time, timeout tim
 	for _, s := range stuck {
 		fmt.Fprintf(w.out, "✗ %s\n", s)
 	}
-	return &cliError{code: 1, err: fmt.Errorf("timed out after %s waiting for %d service(s)", timeout, len(stuck)), silent: true}
+	return &cliError{code: 1, err: fmt.Errorf("timed out after %s waiting for %d service(s)", timeout, len(stuck))}
 }
 
 // waitTargets resolves the named services and the stack into service names.
