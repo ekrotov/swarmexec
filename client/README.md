@@ -94,7 +94,10 @@ next `swarmexec ui` starts — is left alone unless `ui.sync_docker_context: tru
 Overlay subnets must not overlap the hosts' own (underlay) network: a subnet
 that contains a node's address makes that host unreachable from the network's
 containers, and IPAM may hand the host's IP to a container. The `ui` Networks
-tab shows each network's `SUBNET` and running `CONTAINERS`, and marks the subnet
+tab lists the swarm-scope networks (`a` adds the manager node's own local
+networks — `bridge`, `host`, compose networks — which exist on that node only,
+and the status line says so while they are shown). It shows each network's
+`SUBNET` and running `CONTAINERS`, and marks the subnet
 with a red `⚠` when node addresses lie inside it, a yellow one when it overlaps
 the underlay or another network. `contexts.<name>.underlay` (optional, CIDRs,
 keyed by the Docker context name; validated at load) adds the underlay check —
@@ -114,8 +117,8 @@ Networks tab (and on `r`) the `ui` asks every agent once, in the background,
 for its view (`NetworkEndpoints`, policy action `network.inspect`) and sets it
 against the manager's tasks: `CONTAINERS` reads e.g. `12 · 14 addr ⚠2 stale`
 (running tasks · task addresses the nodes know, LB excluded · stale
-candidates), yellow when something is stale or duplicated, `?` when agents
-could not answer. A stale candidate is a task endpoint whose address no live
+candidates), yellow when something is stale or duplicated, `n/a` (or
+`+2 n/a`) when node agents could not answer — the status line explains it. A stale candidate is a task endpoint whose address no live
 task has (not an LB endpoint or VIP), or an endpoint without a container. The
 members view lists per node running tasks vs local containers, LB, MACs and
 networkdb entries, then each stale candidate and duplicate IP/MAC; an agent

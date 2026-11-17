@@ -29,6 +29,13 @@ type networksTab struct {
 	// members is the detail overlay while it is open, so an endpoint load
 	// that finishes later can fill it in.
 	members *netMembersView
+
+	// all shows the manager's node-local networks too (bridge, host, none,
+	// docker_gwbridge, a compose project's networks). Off by default: the
+	// list reads as cluster-wide, and those exist on the manager node only —
+	// every other node has its own set. A session preference, like a sort
+	// order: a cluster switch keeps it.
+	all bool
 }
 
 // netEndpointsState is one cluster's endpoint analysis as last loaded.
@@ -48,7 +55,12 @@ func newNetworksTab(u *ui) *networksTab {
 	t := &networksTab{listTab: newListTab(u, nHeaders, func(n swarmops.Network) string { return n.Name })}
 	t.ep.init = func() *netEndpointsState { return &netEndpointsState{} }
 	t.row = t.renderRow
-	t.empty = func() string { return emptyText("networks", keyHint(u.km.NetNew, "to create one")) }
+	t.empty = func() string {
+		if !t.all {
+			return emptyText("swarm networks", keyHint(u.km.NetNew, "to create one, ")+keyHint(u.km.NetAll, "for the manager's local ones"))
+		}
+		return emptyText("networks", keyHint(u.km.NetNew, "to create one"))
+	}
 	t.table.SetSelectedFunc(func(int, int) {
 		if n, ok := t.selected(); ok {
 			t.showMembers(n)
@@ -67,12 +79,78 @@ func (t *networksTab) refresh() { t.reload() }
 // reload fetches the network list, with the overlap analysis against the
 // nodes' addresses and this context's configured underlay, and — on its own,
 // as an agent fan-out — the nodes' endpoint views.
+//
+// Unless all is on, only swarm-scope networks are listed. They are filtered
+// after the overlap analysis, so a swarm subnet that overlaps a local bridge
+// keeps its marker with the bridge hidden.
 func (t *networksTab) reload() {
-	dcli, underlay := t.u.dcli, t.u.underlay()
+	dcli, underlay, all := t.u.dcli, t.u.underlay(), t.all
 	t.load("ui.loadNetworks", func(ctx context.Context) ([]swarmops.Network, error) {
-		return swarmops.ListNetworks(ctx, dcli, underlay)
+		list, err := swarmops.ListNetworks(ctx, dcli, underlay)
+		if err != nil || all {
+			return list, err
+		}
+		return swarmScoped(list), nil
 	})
 	t.loadEndpoints()
+}
+
+// swarmScoped is the cluster-wide part of a network list: scope "swarm".
+func swarmScoped(list []swarmops.Network) []swarmops.Network {
+	out := make([]swarmops.Network, 0, len(list))
+	for _, n := range list {
+		if n.Scope == "swarm" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// toggleAll switches between the swarm's networks and every network the
+// manager knows, and says which is showing — the status line keeps saying it
+// while the local ones are in.
+func (t *networksTab) toggleAll() {
+	t.all = !t.all
+	t.reload()
+	t.u.updateStatus()
+	t.u.curHelp = t.u.helpFor("networks") // the footer names the other mode
+	t.u.setFooter(t.u.curHelp)
+	if t.all {
+		t.u.flash(" [yellow]all networks[white] — the local ones (bridge, host, …) are the manager node's only")
+		return
+	}
+	t.u.flash(" [green]swarm networks[white] only")
+}
+
+// statusNote says, while it applies, that local networks are listed (and
+// whose they are), and what "n/a" in CONTAINERS means.
+func (t *networksTab) statusNote() string {
+	var parts []string
+	if t.all {
+		parts = append(parts, "[yellow]+ local networks[white] [gray]of the manager node only[white]")
+	}
+	if t.endpointsUnknown() {
+		parts = append(parts, "[gray]n/a: node agent not reachable[white]")
+	}
+	return strings.Join(parts, "  ·  ")
+}
+
+// endpointsUnknown reports whether some node's endpoint view is missing, so
+// some CONTAINERS cell carries "n/a".
+func (t *networksTab) endpointsUnknown() bool {
+	st := t.endpoints()
+	if !st.loaded {
+		return false
+	}
+	if st.err != nil || st.failed > 0 {
+		return true
+	}
+	for _, e := range st.byNet {
+		if e.Unknown > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // endpoints is the visible cluster's endpoint analysis.
@@ -128,6 +206,9 @@ func (t *networksTab) loadEndpoints() {
 		if t.shownFor == u.clusterState {
 			t.render()
 		}
+		if u.activeTab() == tabView(t) {
+			u.updateStatus() // the "n/a" legend
+		}
 		if v := t.members; v != nil && u.pages.HasPage(pageNetMembers) {
 			v.endpointsArrived()
 		}
@@ -135,8 +216,9 @@ func (t *networksTab) loadEndpoints() {
 }
 
 // endpointNote is what the endpoint analysis adds to the CONTAINERS cell —
-// "· 14 addr", "⚠2 stale", "⚠1 dup", "?" for nodes that could not answer —
-// and the colour the cell should take (0: keep its own). Only swarm-scope
+// "· 14 addr", "⚠2 stale", "⚠1 dup", "n/a" when no node could answer and
+// "+2 n/a" for nodes that could not (the status line says what n/a means; it
+// used to be a bare "?") — and the colour the cell should take (0: keep its own). Only swarm-scope
 // networks have one: the agents report overlay networks only.
 func (t *networksTab) endpointNote(n swarmops.Network) (string, tcell.Color) {
 	if n.Scope != "swarm" {
@@ -149,19 +231,19 @@ func (t *networksTab) endpointNote(n swarmops.Network) (string, tcell.Color) {
 	case !st.loaded:
 		return "", 0
 	case st.err != nil:
-		return "· ?", tcell.ColorGray
+		return "· n/a", tcell.ColorGray
 	}
 	e := st.byNet[n.ID]
 	if e == nil {
 		// No live task and no node has joined it — unless some nodes could
 		// not say.
 		if st.failed > 0 {
-			return "· ?", tcell.ColorGray
+			return "· n/a", tcell.ColorGray
 		}
 		return "· 0 addr", 0
 	}
 	if e.Answered == 0 {
-		return "· ?", tcell.ColorGray
+		return "· n/a", tcell.ColorGray
 	}
 	s := fmt.Sprintf("· %d addr", e.Addrs)
 	if len(e.Stale) > 0 {
@@ -171,7 +253,7 @@ func (t *networksTab) endpointNote(n swarmops.Network) (string, tcell.Color) {
 		s += fmt.Sprintf(" ⚠%d dup", d)
 	}
 	if e.Unknown > 0 {
-		s += " ?"
+		s += fmt.Sprintf(" +%d n/a", e.Unknown)
 	}
 	if e.Warn() {
 		return s, tcell.ColorYellow
@@ -219,7 +301,11 @@ func (t *networksTab) containersText(n swarmops.Network) string {
 
 func (t *networksTab) footer() string {
 	km := t.u.km
-	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new", keyLabel(km.NetAttached), keyLabel(km.NetNew))
+	scope := "all"
+	if t.all {
+		scope = "swarm only"
+	}
+	return fmt.Sprintf("[yellow]j/k[white] up/down  [yellow]Enter/%s[white] attached  [yellow]%s[white] new  [yellow]%s[white] %s", keyLabel(km.NetAttached), keyLabel(km.NetNew), keyLabel(km.NetAll), scope)
 }
 
 func (t *networksTab) helpSection(h *helpWriter) {
@@ -227,8 +313,10 @@ func (t *networksTab) helpSection(h *helpWriter) {
 	h.sec("Networks")
 	h.line("Enter/"+keyLabel(km.NetAttached), "attached services")
 	h.line(keyLabel(km.NetNew), "new network")
+	h.line(keyLabel(km.NetAll), "swarm networks only (default) / all — the local ones (bridge, host, …) are the manager node's only")
 	h.line("⚠ SUBNET", "red: node IPs inside the subnet; yellow: overlaps the underlay or another network (details: Enter)")
-	h.line("CONTAINERS", "running tasks · addresses the nodes know; ⚠ stale/dup: an address no live task has, or one held twice (details: Enter)")
+	h.line("CONTAINERS", "running tasks · addresses the nodes know; ⚠ stale/dup: an address no live task has, or one held twice (details: Enter); n/a: node agent not reachable")
+	h.line("AGE", "compact past 30 days: 3mo, 4y")
 }
 
 func (t *networksTab) yank(b *strings.Builder) {
@@ -937,6 +1025,10 @@ func (t *networksTab) keys(ev *tcell.EventKey) *tcell.EventKey {
 	}
 	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetNew {
 		t.showCreate()
+		return nil
+	}
+	if ev.Key() == tcell.KeyRune && ev.Rune() == km.NetAll {
+		t.toggleAll()
 		return nil
 	}
 	return u.tabKeys(ev)

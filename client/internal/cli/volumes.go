@@ -300,13 +300,29 @@ func humanBytes(n int64) string {
 	return units.HumanSize(float64(n))
 }
 
-// volumeAge renders a volume's creation time as a compact relative age
-// (e.g. "3d"), or "-" when unknown.
+// volumeAge renders an object's creation time as a compact relative age
+// (e.g. "3d4h"), or "-" when unknown. It is the AGE of every list — volumes,
+// networks, secrets, configs. Past 30 days the hours stop mattering, and
+// "1588d21h" is four years spelled in hours: it reads "3mo" / "4y" instead.
 func volumeAge(t time.Time) string {
 	if t.IsZero() {
 		return "-"
 	}
-	return uptime(time.Since(t))
+	return objectAge(time.Since(t))
+}
+
+// objectAge is volumeAge for a duration: uptime's format below 30 days,
+// whole months (30 days) below a year, whole years (365 days) after.
+func objectAge(d time.Duration) string {
+	const day = 24 * time.Hour
+	switch {
+	case d < 30*day:
+		return uptime(d)
+	case d < 365*day:
+		return fmt.Sprintf("%dmo", int(d/(30*day)))
+	default:
+		return fmt.Sprintf("%dy", int(d/(365*day)))
+	}
 }
 
 // volumeCreated renders a volume's creation time as an absolute timestamp, or
