@@ -33,11 +33,12 @@ func (s *Server) KillContainer(ctx context.Context, req *pb.KillContainerRequest
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "KillContainerRequest requires container_id")
 	}
-	identity, service, err := s.authorize(ctx, auth.Request{Action: "kill", ContainerID: id})
+	a, err := s.authorize(ctx, auth.Request{Action: "kill", ContainerID: id})
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.swarmTask(ctx, id, "kill")
+	identity, service := a.Identity, a.Service
+	res, err := swarmTask(a, id, "kill")
 	if err == nil {
 		_, kerr := s.docker.ContainerKill(ctx, orID(res.Container.ID, id), client.ContainerKillOptions{Signal: "KILL"})
 		err = dockerStatus(kerr, "kill container")
@@ -58,11 +59,12 @@ func (s *Server) InspectContainer(ctx context.Context, req *pb.InspectContainerR
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "InspectContainerRequest requires container_id")
 	}
-	identity, service, err := s.authorize(ctx, auth.Request{Action: "inspect", ContainerID: id})
+	a, err := s.authorize(ctx, auth.Request{Action: "inspect", ContainerID: id})
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.swarmTask(ctx, id, "inspect")
+	identity, service := a.Identity, a.Service
+	res, err := swarmTask(a, id, "inspect")
 	var raw []byte
 	if err == nil {
 		raw = res.Raw
@@ -83,12 +85,13 @@ func (s *Server) InspectContainer(ctx context.Context, req *pb.InspectContainerR
 	return &pb.InspectContainerResponse{InspectJson: raw}, nil
 }
 
-// swarmTask inspects container id and refuses, as FailedPrecondition, one that
-// is not a swarm task. verb names the action for the messages ("kill").
-func (s *Server) swarmTask(ctx context.Context, id, verb string) (client.ContainerInspectResult, error) {
-	res, err := s.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-	if err != nil {
-		return res, dockerStatus(err, "inspect container")
+// swarmTask takes the inspect the authorization already made and refuses, as
+// FailedPrecondition, a container that is not a swarm task. verb names the
+// action for the messages ("kill").
+func swarmTask(a authed, id, verb string) (client.ContainerInspectResult, error) {
+	res := a.Inspect
+	if a.InspectErr != nil {
+		return res, dockerStatus(a.InspectErr, "inspect container")
 	}
 	if cfg := res.Container.Config; cfg == nil || cfg.Labels[swarmTaskLabel] == "" {
 		return res, status.Errorf(codes.FailedPrecondition,

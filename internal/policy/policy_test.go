@@ -18,8 +18,8 @@ rules:
     reason: no forwards to the databases
   - deny: [exec]
     users: [root, "0", "0:0"]
-  - deny: ["volume.*"]
-    services: ["prod_*"]
+  - deny: ["volume.remove", "volume.create"]
+    volumes: ["prod_*"]
 `
 
 func mustParse(t *testing.T, src string, verified bool) *Policy {
@@ -45,11 +45,17 @@ func TestDecide(t *testing.T) {
 		{Request{Action: "exec", User: "root"}, false, "rule 3"},
 		{Request{Action: "exec", User: "0:0"}, false, "rule 3"},
 		{Request{Action: "exec", User: "1000"}, true, "default"},
-		{Request{Action: "volume.remove", Service: "prod_db"}, false, "rule 4"},
-		{Request{Action: "volume.remove", Service: "staging_db"}, true, "default"},
-		// A rule on services does not match a request that has none: a volume
-		// not used by any service is not "a prod_ service".
-		{Request{Action: "volume.remove"}, true, "default"},
+		{Request{Action: "volume.remove", Volume: "prod_db_data"}, false, "rule 4"},
+		{Request{Action: "volume.create", Volume: "prod_new"}, false, "rule 4"},
+		{Request{Action: "volume.remove", Volume: "staging_db"}, true, "default"},
+		{Request{Action: "volume.list"}, true, "default"},
+		// The image's user counts: no -u on a root image is a root shell, and
+		// "root:root", "0:1" and "00" are root too.
+		{Request{Action: "exec", EffectiveUser: "root"}, false, "rule 3"},
+		{Request{Action: "exec", User: "root:root", EffectiveUser: "root:root"}, false, "rule 3"},
+		{Request{Action: "exec", User: "0:1", EffectiveUser: "0:1"}, false, "rule 3"},
+		{Request{Action: "exec", User: "00", EffectiveUser: "00"}, false, "rule 3"},
+		{Request{Action: "exec", EffectiveUser: "app"}, true, "default"},
 	}
 	for _, c := range cases {
 		allow, why := p.Decide(c.req)
@@ -145,5 +151,53 @@ func TestInspectIsNotUnderTheContainerGlob(t *testing.T) {
 	}
 	if _, err := Parse([]byte("default: allow\nrules:\n  - deny: [container.inspect]\n"), false); err == nil {
 		t.Error("container.inspect must not be an action")
+	}
+}
+
+// A condition no matched action can carry is a rule that matches nothing; Parse
+// refuses it (SEC-01).
+func TestParseRefusesDeadConditions(t *testing.T) {
+	cases := []struct{ rule, want string }{
+		{`deny: ["volume.*"]
+    services: ["prod_*"]`, "rule 1: services never applies to volume.list, volume.create, volume.remove, volume.prune"},
+		{`deny: [exec]
+    ports: [22]`, "ports never applies to exec"},
+		{`deny: [logs]
+    users: [root]`, "users never applies to logs"},
+		{`deny: [image.prune]
+    volumes: ["x"]`, "volumes never applies to image.prune"},
+	}
+	for _, c := range cases {
+		_, err := Parse([]byte("default: allow\nrules:\n  - "+c.rule+"\n"), false)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%q: err = %v, want containing %q", c.rule, err, c.want)
+		}
+	}
+}
+
+// A condition that applies to at least one matched action stays valid: a
+// "deny *" for a service still covers every container action.
+func TestParseAcceptsPartlyApplicableConditions(t *testing.T) {
+	for _, r := range []string{
+		`deny: ["*"]
+    services: ["prod_*"]`,
+		`deny: [exec, logs]
+    users: [root]`,
+		`deny: ["volume.*"]
+    volumes: ["prod_*"]`,
+		`deny: [exec]
+    users: [""]`,
+	} {
+		if _, err := Parse([]byte("default: allow\nrules:\n  - "+r+"\n"), false); err != nil {
+			t.Errorf("%q: %v", r, err)
+		}
+	}
+}
+
+func TestNormID(t *testing.T) {
+	for in, want := range map[string]string{"": "", "root": "root", "0": "0", "00": "0", "007:010": "7:10", "0:0": "0:0", "a0": "a0"} {
+		if got := normID(in); got != want {
+			t.Errorf("normID(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

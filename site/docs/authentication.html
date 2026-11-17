@@ -175,7 +175,7 @@
         By default an agent allows every request that passed authentication. A rule file
         narrows that: which <strong>actions</strong> (<code>container.list</code>, <code>container.events</code>, <code>exec</code>, <code>logs</code>, <code>portforward</code>, <code>stats.read</code>, <code>image.list</code>, <code>image.prune</code>, <code>image.prune.all</code>, <code>volume.list</code>, <code>volume.create</code>, <code>volume.remove</code>, <code>network.inspect</code> (a node's view of its overlay networks' endpoints, read-only), <code>reclaim.read</code>, <code>container.prune</code>, <code>buildcache.prune</code>, <code>network.prune</code>, <code>volume.prune</code>, <code>inspect</code> (the node-local container inspect, <strong>including the container's environment</strong>), <code>kill</code> (SIGKILL a swarm task container, which Swarm then replaces); globs like
         <code>volume.*</code> work) for which <strong>services</strong>, <strong>ports</strong>,
-        exec <strong>users</strong> and — with client certificates only — operator
+        exec <strong>users</strong>, <strong>volumes</strong> and — with client certificates only — operator
         <strong>identities</strong>. Within a rule every condition must hold; the first rule
         that matches decides, and <code>default</code> (required) covers the rest.
         The agent's version probe is not an action and is never refused by a policy,
@@ -190,9 +190,11 @@ rules:
     ports: [5432, 3306]
     reason: no forwards to the databases
   - deny: [exec]
-    users: [root, "0", "0:0"]
-  - deny: ["volume.*"]
-    services: ["prod_*"]</div>
+    users: [root, "0"]
+    reason: no root shell
+  - deny: [volume.remove, volume.create]
+    volumes: ["prod_*"]
+    reason: production volumes stay</div>
       <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
       <p>
         A refusal reaches the client as <em>permission denied</em> with the rule and its
@@ -201,9 +203,47 @@ rules:
         an unknown action, a misspelt key or a broken pattern is an error, never a rule that
         silently matches nothing. Rules on <code>identities</code> are refused while the
         agents use a shared secret without client certificates — the identity is then
-        whatever the client claims. An exec without <code>-u</code> runs as the image's
-        user, which the agent cannot see; <code>users: [""]</code> matches it. Change the
+        whatever the client claims. Change the
         file and re-run <code>init --force</code>; run it without the flag to drop the policy.
+      </p>
+      <h3 id="policy-conditions">Which condition applies to which action</h3>
+      <p>
+        An agent only knows a fact where the request carries it, so a condition on an
+        action that never carries it could never hold. Such a rule is an error
+        (<code>rule 4: services never applies to volume.list, volume.create, &hellip;</code>),
+        and an agent whose policy file has one refuses to start. A condition that applies to
+        at least one action the rule names is fine: <code>deny: ["*"]</code> with
+        <code>services: ["prod_*"]</code> covers every container action of those services.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Action</th><th>Conditions it can carry (besides <code>identities</code>)</th></tr></thead>
+        <tbody>
+          <tr><td><code>exec</code></td><td><code>services</code>, <code>users</code></td></tr>
+          <tr><td><code>portforward</code></td><td><code>services</code>, <code>ports</code></td></tr>
+          <tr><td><code>logs</code>, <code>container.events</code>, <code>kill</code>, <code>inspect</code></td><td><code>services</code></td></tr>
+          <tr><td><code>volume.create</code>, <code>volume.remove</code></td><td><code>volumes</code> (glob on the volume name; the volume's consumers are not looked up)</td></tr>
+          <tr><td>every other action: <code>container.list</code>, <code>stats.read</code>, <code>image.*</code>, <code>volume.list</code>, <code>network.inspect</code>, <code>reclaim.read</code>, all <code>*.prune</code></td><td>none &mdash; only <code>identities</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        <strong>Upgrading:</strong> a policy that has a rule like <code>deny: ["volume.*"]</code>
+        with <code>services: [...]</code> never matched anything. It is now refused when the
+        agent starts (and by <code>init</code> before it deploys). Replace the condition by
+        <code>volumes: ["prod_*"]</code>.
+      </p>
+      <h3 id="policy-users">Exec users</h3>
+      <p>
+        <code>users</code> is matched against the user the process will run as: the
+        <code>-u</code> you gave, otherwise the user the image is configured with
+        (<code>USER</code>), otherwise <code>root</code>. The group part (<code>:gid</code>) is
+        split off, and leading zeros of a numeric id are dropped, so
+        <code>root:root</code>, <code>0:1</code> and <code>00</code> are all caught by
+        <code>users: [root, "0"]</code>. A pattern that names a full <code>user:group</code>
+        (<code>"0:0"</code>) matches that exact pair. The agent cannot map a name to an id
+        inside the image, so <code>root</code> and <code>0</code> are two entries: list both.
+        An image that switches user in its entrypoint instead of <code>USER</code> is not
+        visible to the agent. <code>users: [""]</code> still matches an exec that passed no
+        <code>-u</code>, whatever the image runs as.
       </p>
       <p>
         <code>kill</code> and <code>inspect</code> deliberately sit <strong>outside</strong>

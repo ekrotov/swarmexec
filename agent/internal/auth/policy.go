@@ -32,11 +32,13 @@ func LoadPolicy(path string, identityVerified bool) (*Policy, error) {
 
 func (a *Policy) Authorize(_ context.Context, req Request) Decision {
 	allow, why := a.p.Decide(policy.Request{
-		Action:   req.Action,
-		Identity: req.Identity,
-		Service:  req.Service,
-		Port:     req.Port,
-		User:     req.User,
+		Action:        req.Action,
+		Identity:      req.Identity,
+		Service:       req.Service,
+		Port:          req.Port,
+		User:          req.User,
+		EffectiveUser: req.EffectiveUser,
+		Volume:        req.Volume,
 	})
 	return Decision{Allow: allow, Reason: why}
 }

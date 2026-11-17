@@ -38,6 +38,9 @@ type Request struct {
 	Cmd []string
 	// User is the requested user ("1000:1000", "root", or empty).
 	User string
+	// EffectiveUser is who the exec will really run as: User, else the
+	// container's configured user, else root. Set by the agent, not the client.
+	EffectiveUser string
 	// TTY indicates whether a TTY was requested.
 	TTY bool
 }

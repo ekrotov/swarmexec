@@ -277,7 +277,7 @@ command allowlists), implement `Authorizer` and pass it to `server.New` — the
 exec bridge is untouched. Every decision (allow/deny + reason) is audited.
 
 Without writing Go, `-policy-file` (or `swarmexec init --policy-file`) loads a
-rule file — actions × services × ports × exec users × (with client certs)
+rule file — actions × services × ports × exec users × volumes × (with client certs)
 identities, first match wins, a required `default`. It guards against
 accidents and records intent; it is not access control, because every write to
 services, secrets and stacks goes to the manager with the operator's own Docker

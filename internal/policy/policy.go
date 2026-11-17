@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package policy is the agent's optional rule file: which actions a request
-// may take, by action, operator identity, service, port and exec user.
+// may take, by action, operator identity, service, port, exec user and volume.
 //
 // What it is, said plainly because the opposite would be worse: a guard
 // against ACCIDENTS and a record of intent — no sweeping image prune on
@@ -47,13 +47,45 @@ var Actions = []string{
 	"reclaim.read", "container.prune", "buildcache.prune", "network.prune", "volume.prune",
 }
 
+// Conditions says which of a rule's conditions an action can ever carry. The
+// agent fills a Request field only where the RPC has the matching fact: a
+// service for the container RPCs, a port for portforward, a user for exec, a
+// volume name for volume.create and volume.remove. A condition on an action
+// that never carries it can never hold, so Parse refuses such a rule instead
+// of accepting one that silently matches nothing.
+type Conditions struct {
+	Services, Ports, Users, Volumes bool
+}
+
+// carries is the table; agent/internal/server's TestRequestFieldsMatchPolicyTable
+// checks it against what every handler really puts in its Request.
+var carries = map[string]Conditions{
+	"exec":             {Services: true, Users: true},
+	"logs":             {Services: true},
+	"portforward":      {Services: true, Ports: true},
+	"container.events": {Services: true},
+	"kill":             {Services: true},
+	"inspect":          {Services: true},
+	"volume.create":    {Volumes: true},
+	"volume.remove":    {Volumes: true},
+}
+
+// Carries reports which conditions action can carry (the zero value for an
+// action that carries none, such as image.prune or stats.read).
+func Carries(action string) Conditions { return carries[action] }
+
 // Request is what a rule is matched against.
 type Request struct {
 	Action   string
 	Identity string
 	Service  string
 	Port     uint32
-	User     string
+	// User is the exec user as requested ("" without -u). EffectiveUser is the
+	// user the process will run as: the requested one, else the image's, else
+	// root. A rule's users match either.
+	User          string
+	EffectiveUser string
+	Volume        string
 }
 
 // Policy is a parsed rule file.
@@ -70,6 +102,7 @@ type rule struct {
 	services   []string
 	ports      []uint32
 	users      []string
+	volumes    []string
 	reason     string
 }
 
@@ -80,6 +113,7 @@ type fileRule struct {
 	Services   []string `yaml:"services"`
 	Ports      []uint32 `yaml:"ports"`
 	Users      []string `yaml:"users"`
+	Volumes    []string `yaml:"volumes"`
 	Reason     string   `yaml:"reason"`
 }
 
@@ -131,7 +165,7 @@ func parseDefault(def string) (bool, error) {
 // parseRule checks rule n (1-based): one direction, known actions, valid
 // patterns, and identities only where the agent can verify them.
 func parseRule(n int, fr fileRule, identityVerified bool) (rule, error) {
-	r := rule{n: n, identities: fr.Identities, services: fr.Services, ports: fr.Ports, users: fr.Users, reason: fr.Reason}
+	r := rule{n: n, identities: fr.Identities, services: fr.Services, ports: fr.Ports, users: fr.Users, volumes: fr.Volumes, reason: fr.Reason}
 	switch {
 	case len(fr.Allow) > 0 && len(fr.Deny) > 0:
 		return rule{}, fmt.Errorf("policy rule %d: has both allow and deny; a rule decides one way", n)
@@ -147,10 +181,13 @@ func parseRule(n int, fr fileRule, identityVerified bool) (rule, error) {
 			return rule{}, fmt.Errorf("policy rule %d: %q is not an action — known: %s", n, a, strings.Join(Actions, ", "))
 		}
 	}
-	for _, pat := range append(append(append([]string{}, r.identities...), r.services...), r.users...) {
+	for _, pat := range slices.Concat(r.identities, r.services, r.users, r.volumes) {
 		if _, err := path.Match(pat, ""); err != nil {
 			return rule{}, fmt.Errorf("policy rule %d: bad pattern %q: %v", n, pat, err)
 		}
+	}
+	if err := r.checkConditions(); err != nil {
+		return rule{}, err
 	}
 	if len(r.identities) > 0 && !identityVerified {
 		return rule{}, fmt.Errorf("policy rule %d matches on identities, but this agent cannot verify identities: "+
@@ -158,6 +195,41 @@ func parseRule(n int, fr fileRule, identityVerified bool) (rule, error) {
 			"themselves — run the agent with -ca-cert and client certificates, or drop the identities", n)
 	}
 	return r, nil
+}
+
+// checkConditions refuses a condition that none of the rule's actions can
+// carry: it would never hold, so the rule would silently match nothing.
+func (r rule) checkConditions() error {
+	var matched []string
+	for _, a := range Actions {
+		if anyGlob(r.actions, a) {
+			matched = append(matched, a)
+		}
+	}
+	conds := []struct {
+		name string
+		set  bool
+		has  func(Conditions) bool
+	}{
+		{"services", len(r.services) > 0, func(c Conditions) bool { return c.Services }},
+		{"ports", len(r.ports) > 0, func(c Conditions) bool { return c.Ports }},
+		{"users", len(r.users) > 0, func(c Conditions) bool { return c.Users }},
+		{"volumes", len(r.volumes) > 0, func(c Conditions) bool { return c.Volumes }},
+	}
+	for _, c := range conds {
+		if !c.set || slices.ContainsFunc(matched, func(a string) bool { return c.has(Carries(a)) }) {
+			continue
+		}
+		var carrying []string
+		for _, a := range Actions {
+			if c.has(Carries(a)) {
+				carrying = append(carrying, a)
+			}
+		}
+		return fmt.Errorf("policy rule %d: %s never applies to %s — only %s carry it",
+			r.n, c.name, strings.Join(matched, ", "), strings.Join(carrying, ", "))
+	}
+	return nil
 }
 
 func matchesAnyAction(pat string) bool {
@@ -198,13 +270,44 @@ func (r rule) matches(q Request) bool {
 		(len(r.identities) == 0 || anyGlob(r.identities, q.Identity)) &&
 		(len(r.services) == 0 || (q.Service != "" && anyGlob(r.services, q.Service))) &&
 		(len(r.ports) == 0 || slices.Contains(r.ports, q.Port)) &&
-		(len(r.users) == 0 || anyGlob(r.users, q.User))
+		(len(r.users) == 0 || anyGlob(r.users, userForms(q.User, q.EffectiveUser)...)) &&
+		(len(r.volumes) == 0 || (q.Volume != "" && anyGlob(r.volumes, q.Volume)))
 }
 
-func anyGlob(pats []string, s string) bool {
+// userForms are the strings a rule's users patterns are tried against: for the
+// requested and the effective user, the whole "user:group" and its user part,
+// numeric ids without leading zeros ("00" is root's uid 0). The agent cannot
+// map a name to an id inside the image, so "root" and "0" are different forms:
+// list both.
+func userForms(users ...string) []string {
+	var out []string
+	for _, u := range users {
+		usr, _, _ := strings.Cut(u, ":")
+		out = append(out, normID(u), normID(usr))
+	}
+	return out
+}
+
+// normID strips leading zeros from the numeric parts of "user[:group]".
+func normID(u string) string {
+	parts := strings.Split(u, ":")
+	for i, p := range parts {
+		if t := strings.TrimLeft(p, "0"); p != "" && strings.Trim(p, "0123456789") == "" {
+			if t == "" {
+				t = "0"
+			}
+			parts[i] = t
+		}
+	}
+	return strings.Join(parts, ":")
+}
+
+func anyGlob(pats []string, ss ...string) bool {
 	for _, p := range pats {
-		if ok, _ := path.Match(p, s); ok {
-			return true
+		for _, s := range ss {
+			if ok, _ := path.Match(p, s); ok {
+				return true
+			}
 		}
 	}
 	return false
