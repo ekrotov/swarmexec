@@ -22,7 +22,10 @@ type pruneScheduleSetFlags struct {
 	disable, yes                                    bool
 }
 
-func newPruneScheduleCmd(g *globalFlags) *cobra.Command {
+// newPruneScheduleCmd is `node prune-schedule`; path is the command path its
+// examples are written with. The top-level `prune-schedule` it used to be is
+// the same command, hidden (review P-02), so scripts keep working.
+func newPruneScheduleCmd(g *globalFlags, path string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "prune-schedule",
 		Short: "Show or set the cluster-wide prune schedule the agents run",
@@ -60,9 +63,9 @@ func newPruneScheduleCmd(g *globalFlags) *cobra.Command {
 	set := &cobra.Command{
 		Use:   "set",
 		Short: "Set (and enable) the schedule; flags not given keep their current value",
-		Example: "  swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin\n" +
-			"  swarmexec prune-schedule set --categories containers,images,buildcache,networks,volumes\n" +
-			"  swarmexec prune-schedule set --disable",
+		Example: "  " + path + " set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin\n" +
+			"  " + path + " set --categories containers,images,buildcache,networks,volumes\n" +
+			"  " + path + " set --disable",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runPruneScheduleSet(cmd, g, f)
@@ -79,6 +82,14 @@ func newPruneScheduleCmd(g *globalFlags) *cobra.Command {
 	fl.BoolVar(&f.disable, "disable", false, "turn the schedule off (keeps the other settings)")
 	fl.BoolVarP(&f.yes, "yes", "y", false, "do not prompt before restarting the agents")
 	cmd.AddCommand(set)
+	return cmd
+}
+
+// newHiddenPruneScheduleCmd is the old top-level `prune-schedule`: it still
+// works, out of the help.
+func newHiddenPruneScheduleCmd(g *globalFlags) *cobra.Command {
+	cmd := newPruneScheduleCmd(g, "swarmexec node prune-schedule")
+	cmd.Hidden = true
 	return cmd
 }
 

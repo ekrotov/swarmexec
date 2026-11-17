@@ -70,6 +70,9 @@ func completionTargets(g *globalFlags) (map[string]completeFunc, map[string]map[
 		"swarmexec wait":          services,
 		"swarmexec stack export":  onlyFirstArg(stacks),
 		"swarmexec stack rm":      onlyFirstArg(stacks),
+		"swarmexec stats":         services,
+		"swarmexec node prune":    onlyFirstArg(completeNodes(g)),
+		"swarmexec node update":   onlyFirstArg(completeNodes(g)),
 		"swarmexec context use":   onlyFirstArg(completeContexts),
 		"swarmexec context rm":    completeContexts,
 		"swarmexec secret rotate": onlyFirstArg(completeSecrets(g)),
@@ -163,6 +166,30 @@ func completeStacks(g *globalFlags) completeFunc {
 			if st := s.Spec.Labels["com.docker.stack.namespace"]; st != "" && !seen[st] {
 				seen[st] = true
 				out = append(out, st)
+			}
+		}
+		sort.Strings(out)
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// completeNodes offers node hostnames.
+func completeNodes(g *globalFlags) completeFunc {
+	return func(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+		defer cancel()
+		dcli, ok := completionClient(ctx, g)
+		if !ok {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		res, err := dcli.NodeList(ctx, client.NodeListOptions{})
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var out []string
+		for _, n := range res.Items {
+			if h := n.Description.Hostname; h != "" {
+				out = append(out, h)
 			}
 		}
 		sort.Strings(out)

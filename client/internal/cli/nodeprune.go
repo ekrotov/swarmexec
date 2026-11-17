@@ -25,16 +25,17 @@ type pruneCat struct {
 	cat    pb.PruneCategory
 	label  string
 	danger bool
+	name   string // as the cli and the schedule labels spell it
 }
 
 // pruneCats is the display order, the same order the agent runs them.
 var pruneCats = []pruneCat{
-	{pb.PruneCategory_PRUNE_CATEGORY_CONTAINERS, "stopped containers", false},
-	{pb.PruneCategory_PRUNE_CATEGORY_IMAGES, "every unused image", true},
-	{pb.PruneCategory_PRUNE_CATEGORY_DANGLING_IMAGES, "untagged images", false},
-	{pb.PruneCategory_PRUNE_CATEGORY_BUILD_CACHE, "build cache", false},
-	{pb.PruneCategory_PRUNE_CATEGORY_NETWORKS, "unused local networks", false},
-	{pb.PruneCategory_PRUNE_CATEGORY_VOLUMES, "unused volumes", true},
+	{pb.PruneCategory_PRUNE_CATEGORY_CONTAINERS, "stopped containers", false, prunesched.Containers},
+	{pb.PruneCategory_PRUNE_CATEGORY_IMAGES, "every unused image", true, prunesched.Images},
+	{pb.PruneCategory_PRUNE_CATEGORY_DANGLING_IMAGES, "untagged images", false, prunesched.DanglingImages},
+	{pb.PruneCategory_PRUNE_CATEGORY_BUILD_CACHE, "build cache", false, prunesched.BuildCache},
+	{pb.PruneCategory_PRUNE_CATEGORY_NETWORKS, "unused local networks", false, prunesched.Networks},
+	{pb.PruneCategory_PRUNE_CATEGORY_VOLUMES, "unused volumes", true, prunesched.Volumes},
 }
 
 func catLabel(c pb.PruneCategory) string {
