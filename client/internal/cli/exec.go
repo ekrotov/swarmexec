@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -104,7 +105,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	ep, err := r.Resolve(ctx, resolve.Request{Target: target, NodeHint: f.node})
 	if err != nil {
 		if amb, ok := err.(*resolve.AmbiguousError); ok {
-			ep, err = pickCandidate(amb, stdinIsTerm)
+			ep, err = pickCandidate(amb, stdinIsTerm, cmd.ErrOrStderr())
 		}
 		if err != nil {
 			return &cliError{code: session.TransportFailure, err: err}
@@ -120,6 +121,9 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 		workdir:        f.workdir,
 		user:           f.user,
 		keepStdin:      f.stdin,
+		stdin:          cmd.InOrStdin(),
+		stdout:         cmd.OutOrStdout(),
+		stderr:         cmd.ErrOrStderr(),
 		connectTimeout: f.connectTimeout,
 	})
 	if runErr != nil {
@@ -141,6 +145,10 @@ type execParams struct {
 	user           string
 	keepStdin      bool
 	connectTimeout time.Duration
+	// The session's streams; the command passes cmd's, which are the
+	// process's unless a caller set others.
+	stdin          io.Reader
+	stdout, stderr io.Writer
 }
 
 // execInto dials the agent at ep, opens the Exec stream, bridges the terminal
@@ -216,13 +224,13 @@ func execInto(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p 
 
 	opts := session.Options{
 		Start:        start,
-		Stdout:       os.Stdout,
-		Stderr:       os.Stderr,
+		Stdout:       p.stdout,
+		Stderr:       p.stderr,
 		ResizeEvents: resizeEvents,
 		SizeFn:       sizeFn,
 	}
 	if p.keepStdin {
-		opts.Stdin = os.Stdin
+		opts.Stdin = p.stdin
 	}
 
 	code, runErr := session.Run(ctx, stream, opts)
@@ -245,13 +253,13 @@ func decideTTY(explicitFlag, flagValue, stdinIsTerm, noCommand bool) bool {
 
 // pickCandidate resolves an AmbiguousError: interactively prompt when attached
 // to a terminal, otherwise error with the candidate list (REQUIREMENTS §4, §8).
-func pickCandidate(amb *resolve.AmbiguousError, interactive bool) (*resolve.Endpoint, error) {
+func pickCandidate(amb *resolve.AmbiguousError, interactive bool, w io.Writer) (*resolve.Endpoint, error) {
 	if !interactive {
 		return nil, amb
 	}
-	fmt.Fprintf(os.Stderr, "service %q has %d running tasks:\n", amb.Service, len(amb.Candidates))
+	fmt.Fprintf(w, "service %q has %d running tasks:\n", amb.Service, len(amb.Candidates))
 	for i, c := range amb.Candidates {
-		fmt.Fprintf(os.Stderr, "  [%d] %s.%d  node=%s  container=%s  up=%s\n",
+		fmt.Fprintf(w, "  [%d] %s.%d  node=%s  container=%s  up=%s\n",
 			i+1, amb.Service, c.Slot, c.NodeName, shortID(c.ContainerID), uptime(c.Uptime))
 	}
 	line, ok := promptLine(fmt.Sprintf("select [1-%d]: ", len(amb.Candidates)))

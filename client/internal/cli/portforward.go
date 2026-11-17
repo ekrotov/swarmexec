@@ -89,7 +89,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 	ep, err := r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
 	if err != nil {
 		if amb, ok := err.(*resolve.AmbiguousError); ok {
-			ep, err = pickCandidate(amb, false)
+			ep, err = pickCandidate(amb, false, cmd.ErrOrStderr())
 		}
 		if err != nil {
 			return &cliError{code: session.TransportFailure, err: err}

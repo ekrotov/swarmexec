@@ -31,7 +31,6 @@ import (
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
-	cterm "swarmexec/client/internal/term"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
 	"swarmexec/internal/prunesched"
@@ -401,7 +400,7 @@ func resolveContext(out io.Writer, g *globalFlags) (dockerctx.Context, error) {
 
 	// Several contexts: prompt when interactive, else fall back to the active one
 	// so scripts keep working.
-	if !cterm.IsTerminal(os.Stdin.Fd()) {
+	if !stdinIsTerminal() {
 		for _, c := range contexts {
 			if c.Name == current {
 				fmt.Fprintf(out, "multiple Docker contexts; using the active one %q (set --context to override)\n", c.Name)

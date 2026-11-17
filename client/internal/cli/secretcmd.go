@@ -15,7 +15,6 @@ import (
 
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
-	cterm "swarmexec/client/internal/term"
 )
 
 func newSecretCmd(g *globalFlags) *cobra.Command {
@@ -184,7 +183,7 @@ func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, n
 	}
 	stderr := cmd.ErrOrStderr()
 	if !f.yes {
-		if f.fromStdin || !cterm.IsTerminal(os.Stdin.Fd()) {
+		if f.fromStdin || !stdinIsTerminal() {
 			return &cliError{code: usageExitCode, err: errors.New("not asking for confirmation without a terminal (stdin is the value or not a TTY) — pass --yes")}
 		}
 		fmt.Fprint(stderr, rotateConfirmText(plan))
