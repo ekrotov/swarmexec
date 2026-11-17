@@ -92,8 +92,22 @@ func TestLoadKeybinds_GlobalConflictAcrossTabs(t *testing.T) {
 // per-tab switch would silently shadow a binding.
 func TestDefaultKeybinds_NoPerTabCollision(t *testing.T) {
 	k := defaultKeybinds()
-	tabs := []string{"containers", "volumes", "networks", "secrets", "contexts", "forwards"}
-	for _, tab := range tabs {
+	// Every scope an action names, so a new tab's actions are checked the
+	// moment they are added (nodes and configs were missing from a fixed list).
+	scopes := map[string]bool{}
+	for _, a := range keyActions {
+		for _, s := range a.tabs {
+			if s != "*" {
+				scopes[s] = true
+			}
+		}
+	}
+	for _, want := range []string{"containers", "volumes", "networks", "secrets", "contexts", "forwards", "nodes", "configs"} {
+		if !scopes[want] {
+			t.Errorf("no action is scoped to %s", want)
+		}
+	}
+	for tab := range scopes {
 		seen := map[rune]string{}
 		for _, a := range keyActions {
 			if !sharesTab(a, keyAction{tabs: []string{tab}}) {
@@ -194,7 +208,8 @@ func TestDialogRunesMatchTheSource(t *testing.T) {
 func TestDefaultKeybinds_DestructiveActionsUseX(t *testing.T) {
 	k := defaultKeybinds()
 	for name, r := range map[string]rune{
-		"volume_delete": k.VolDelete, "secret_delete": k.SecDelete,
+		"service_remove": k.ServiceRemove,
+		"volume_delete":  k.VolDelete, "secret_delete": k.SecDelete,
 		"context_delete": k.CtxDelete, "forward_stop": k.FwdStop,
 	} {
 		if r != 'X' {
@@ -217,5 +232,17 @@ func TestLoadKeybinds_OldDBindingStillWorks(t *testing.T) {
 	}
 	if km.VolDelete != 'd' || km.SecDelete != 'd' || km.CtxDelete != 'd' || km.FwdStop != 'd' {
 		t.Errorf("explicit d bindings must win, got %+v", km)
+	}
+}
+
+// The tree's remove key is a keymap action like the other deletes (T-15).
+func TestLoadKeybinds_ServiceRemove(t *testing.T) {
+	km, warns := loadKeybinds(writeKeys(t, "service_remove: D\n"))
+	if len(warns) != 0 || km.ServiceRemove != 'D' {
+		t.Errorf("service_remove: D → %q, warnings %v", km.ServiceRemove, warns)
+	}
+	km, warns = loadKeybinds(writeKeys(t, "service_remove: E\n"))
+	if len(warns) != 1 || km.ServiceRemove != 'X' {
+		t.Errorf("service_remove onto stack_file's E must be refused, got %q, %v", km.ServiceRemove, warns)
 	}
 }

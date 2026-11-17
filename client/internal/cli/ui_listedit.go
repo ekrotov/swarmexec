@@ -64,7 +64,7 @@ func (u *ui) newListEditor(cfg editListConfig) *listEditor {
 	if cfg.entryAction != nil {
 		e.keyPairs = append(e.keyPairs, string(cfg.entryAction.key), cfg.entryAction.label)
 	}
-	e.keyPairs = append(e.keyPairs, "u", "undo", "w", "apply", "j/k", "move", "Esc", "cancel")
+	e.keyPairs = append(e.keyPairs, "u", "undo", "Ctrl-S", "apply", "j/k", "move", "Esc", "cancel")
 	e.render()
 	return e
 }
@@ -144,6 +144,11 @@ func (e *listEditor) hasChanges() bool {
 func (e *listEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Key() == tcell.KeyEscape {
 		e.leave()
+		return nil
+	}
+	// Ctrl-S applies, as in every editor; w is its one-key alias.
+	if ev.Key() == tcell.KeyCtrlS {
+		e.apply()
 		return nil
 	}
 	if ev.Key() != tcell.KeyRune {

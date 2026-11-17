@@ -35,10 +35,29 @@ const (
 	secretFieldValue
 )
 
-// validateSecret checks the dialog's input before anything is sent: a name, a
+// payloadKind is what differs between creating a secret and a config: both
+// are an immutable name, labels and a text payload, made in the same dialog.
+type payloadKind struct {
+	noun    string // "secret", "config"
+	page    string // the create dialog's overlay page
+	maxSize int    // swarm's limit on the payload, in bytes
+	limit   string // that limit as people say it
+}
+
+var (
+	secretKind = payloadKind{"secret", pageSecForm, swarmops.MaxSecretSize, "500 KB"}
+	configKind = payloadKind{"config", pageCfgForm, swarmops.MaxConfigSize, "1000 KB"}
+)
+
+// validateSecret checks a secret dialog's input (see validatePayload).
+func validateSecret(name, labels, value string) (string, map[string]string, error) {
+	return validatePayload(secretKind, name, labels, value)
+}
+
+// validatePayload checks the dialog's input before anything is sent: a name, a
 // well-formed label list, a value that is neither empty nor over the swarm
 // limit. The value is checked as given — nothing is trimmed or appended.
-func validateSecret(name, labels, value string) (string, map[string]string, error) {
+func validatePayload(k payloadKind, name, labels, value string) (string, map[string]string, error) {
 	nm := strings.TrimSpace(name)
 	if nm == "" {
 		return "", nil, &secretFieldError{secretFieldName, "name is required"}
@@ -50,8 +69,8 @@ func validateSecret(name, labels, value string) (string, map[string]string, erro
 	if value == "" {
 		return "", nil, errors.New("value is empty — type it, paste it, or :r <file>")
 	}
-	if len(value) > swarmops.MaxSecretSize {
-		return "", nil, fmt.Errorf("value is %d bytes — over the swarm limit of %d (500 KB)", len(value), swarmops.MaxSecretSize)
+	if len(value) > k.maxSize {
+		return "", nil, fmt.Errorf("value is %d bytes — over the swarm limit of %d (%s)", len(value), k.maxSize, k.limit)
 	}
 	return nm, lbls, nil
 }
@@ -66,6 +85,11 @@ func validateSecret(name, labels, value string) (string, map[string]string, erro
 // `docker secret create`, which takes raw bytes; the TextArea could not show
 // or keep them intact.
 func readSecretFile(path string, have int) (string, error) {
+	return readPayloadFile(secretKind, path, have)
+}
+
+// readPayloadFile is readSecretFile for either kind, against its limit.
+func readPayloadFile(k payloadKind, path string, have int) (string, error) {
 	if path == "" {
 		return "", errors.New("usage: :r <file>")
 	}
@@ -73,7 +97,7 @@ func readSecretFile(path string, have int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := checkSecretFile(path); err != nil {
+	if err := checkPayloadFile(k, path); err != nil {
 		return "", err
 	}
 	f, err := os.Open(path)
@@ -81,18 +105,18 @@ func readSecretFile(path string, have int) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, swarmops.MaxSecretSize+1)) // it may have grown since the stat
+	data, err := io.ReadAll(io.LimitReader(f, int64(k.maxSize)+1)) // it may have grown since the stat
 	if err != nil {
 		return "", err
 	}
-	if len(data) > swarmops.MaxSecretSize {
-		return "", fmt.Errorf("%s is over the swarm limit of %d bytes (500 KB)", path, swarmops.MaxSecretSize)
+	if len(data) > k.maxSize {
+		return "", fmt.Errorf("%s is over the swarm limit of %d bytes (%s)", path, k.maxSize, k.limit)
 	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
-		return "", fmt.Errorf("%s is binary, not text — use docker secret create NAME FILE", path)
+		return "", fmt.Errorf("%s is binary, not text — use docker %s create NAME FILE", path, k.noun)
 	}
-	if have+len(data) > swarmops.MaxSecretSize {
-		return "", fmt.Errorf("%s (%d bytes) would make the value %d bytes — over the swarm limit of %d (500 KB)", path, len(data), have+len(data), swarmops.MaxSecretSize)
+	if have+len(data) > k.maxSize {
+		return "", fmt.Errorf("%s (%d bytes) would make the value %d bytes — over the swarm limit of %d (%s)", path, len(data), have+len(data), k.maxSize, k.limit)
 	}
 	return string(data), nil
 }
@@ -109,9 +133,9 @@ func expandHome(path string) (string, error) {
 	return path, nil
 }
 
-// checkSecretFile refuses, before reading, what cannot be a secret's text: a
+// checkPayloadFile refuses, before reading, what cannot be a payload's text: a
 // missing path, a directory or device, a file over the swarm limit.
-func checkSecretFile(path string) error {
+func checkPayloadFile(k payloadKind, path string) error {
 	fi, err := os.Stat(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -122,8 +146,8 @@ func checkSecretFile(path string) error {
 		return fmt.Errorf("%s is a directory", path)
 	case !fi.Mode().IsRegular():
 		return fmt.Errorf("%s is not a regular file", path)
-	case fi.Size() > swarmops.MaxSecretSize:
-		return fmt.Errorf("%s is %d bytes — over the swarm limit of %d (500 KB)", path, fi.Size(), swarmops.MaxSecretSize)
+	case fi.Size() > int64(k.maxSize):
+		return fmt.Errorf("%s is %d bytes — over the swarm limit of %d (%s)", path, fi.Size(), k.maxSize, k.limit)
 	}
 	return nil
 }
@@ -144,10 +168,13 @@ func sizeText(text string) string {
 
 // secretSize is the status-line size of a value, red once it is over the
 // swarm limit.
-func secretSize(text string) string {
+func secretSize(text string) string { return payloadSize(secretKind, text) }
+
+// payloadSize is secretSize against either kind's limit.
+func payloadSize(k payloadKind, text string) string {
 	s := sizeText(text)
-	if len(text) > swarmops.MaxSecretSize {
-		return "[red::b]" + s + " > 500 KB[-::-]"
+	if len(text) > k.maxSize {
+		return "[red::b]" + s + " > " + k.limit + "[-::-]"
 	}
 	return "[gray]" + s + "[-]"
 }
@@ -160,15 +187,15 @@ func secretFooterKeys(m vimMode) string {
 	case vimCommand:
 		return footerKeys("Enter", "run", "Esc", "cancel", ":r file", "read", ":w", "create", ":q!", "discard")
 	}
-	return footerKeys("i", "insert", "Tab", "fields", ":r file", "read", ":w", "create", ":q", "cancel", "?", "help")
+	return footerKeys("i", "insert", "Tab", "fields", ":r file", "read", "Ctrl-S", "create", ":q", "cancel", "?", "help")
 }
 
 // secretFieldFooter is the footer while Name or Labels has focus.
 var secretFieldFooter = footerKeys("Tab", "next field", "S-Tab", "previous", "Enter", "next",
 	"Ctrl-S", "create", "Esc", "to the value (cancels when empty)")
 
-// secretDialog is the create-secret overlay: Name and Labels rows above the
-// vim editor that holds the value.
+// secretDialog is the create-secret (or create-config) overlay: Name and
+// Labels rows above the vim editor that holds the value.
 type secretDialog struct {
 	root   *tview.Flex
 	name   *tview.InputField
@@ -208,6 +235,12 @@ func (u *ui) showCreateSecret() {
 // is added or stripped. Typing "s3cret" gives exactly six bytes; a file read
 // with :r keeps its own final newline.
 func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, map[string]string) error, queue func(func()), done func(string)) *secretDialog {
+	return u.openPayloadEditor(secretKind, back, create, queue, done)
+}
+
+// openPayloadEditor is openSecretEditor for either kind: the Configs tab
+// creates a config through the same dialog.
+func (u *ui) openPayloadEditor(k payloadKind, back tview.Primitive, create func(string, []byte, map[string]string) error, queue func(func()), done func(string)) *secretDialog {
 	d := &secretDialog{ed: newVimEditor("value", "")}
 	ed := d.ed
 	d.name = tview.NewInputField().SetLabel("Name   ").SetFieldWidth(0)
@@ -225,9 +258,9 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 	d.root = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(padded, 2, 0, true).
 		AddItem(ed.root, 0, 1, false)
-	d.root.SetBorder(true).SetTitle(" new secret · ? help ")
+	d.root.SetBorder(true).SetTitle(" new " + k.noun + " · ? help ")
 
-	ov := u.overlayFor(pageSecForm, back, secretFieldFooter)
+	ov := u.overlayFor(k.page, back, secretFieldFooter)
 	order := []tview.Primitive{d.name, d.labels, ed.ta}
 	cur := 0
 	focus := func(i int) {
@@ -239,7 +272,7 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 	ed.ta.SetFocusFunc(func() { cur = secretFieldValue; ov.setHelp(secretFooterKeys(ed.mode)) })
 
 	ed.extraDirty = func() bool { return d.name.GetText() != "" || d.labels.GetText() != "" }
-	ed.posInfo = secretSize
+	ed.posInfo = func(text string) string { return payloadSize(k, text) }
 	ed.onMode = func(m vimMode) { ov.setHelp(secretFooterKeys(m)) }
 	ed.onQuit = ov.Close
 	ed.onTab = func(back bool) {
@@ -250,14 +283,14 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 		}
 	}
 	ed.onHelp = func() {
-		u.showVimHelp(ed.ta, sectionHelp("Secret",
+		u.showVimHelp(ed.ta, sectionHelp(strings.ToUpper(k.noun[:1])+k.noun[1:],
 			"Tab  Shift-Tab", "Name → Labels → value (Normal mode; Insert types a tab)",
 			":r <file>", "insert a local file at the cursor (~ works); text only",
-			":w  Ctrl-S", "create the secret — the value is sent byte for byte",
-			"500 KB", "swarm's limit (512000 bytes); the status line shows the size",
-			"binary", "not editable here — use docker secret create NAME FILE"))
+			"Ctrl-S  :w", "create the "+k.noun+" — the value is sent byte for byte",
+			k.limit, fmt.Sprintf("swarm's limit (%d bytes); the status line shows the size", k.maxSize),
+			"binary", "not editable here — use docker "+k.noun+" create NAME FILE"))
 	}
-	read := secretReadCommand(ed)
+	read := payloadReadCommand(k, ed)
 	ed.commands = map[string]func(string, string) error{"r": read, "read": read}
 
 	busy := false
@@ -265,7 +298,7 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 		if busy {
 			return errors.New("still creating — wait for the result")
 		}
-		nm, lbls, err := validateSecret(d.name.GetText(), d.labels.GetText(), text)
+		nm, lbls, err := validatePayload(k, d.name.GetText(), d.labels.GetText(), text)
 		if err != nil {
 			var fe *secretFieldError
 			if errors.As(err, &fe) {
@@ -274,7 +307,7 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 			return err
 		}
 		busy = true
-		ed.setMsg("creating secret "+nm+" …", false)
+		ed.setMsg("creating "+k.noun+" "+nm+" …", false)
 		data := []byte(text)
 		go func() {
 			err := create(nm, data, lbls)
@@ -326,8 +359,13 @@ func (u *ui) openSecretEditor(back tview.Primitive, create func(string, []byte, 
 // secretReadCommand is :r for a secret value editor: insert a local text file
 // at the cursor, refused when it would push the value over the limit.
 func secretReadCommand(ed *vimEditor) func(text, arg string) error {
+	return payloadReadCommand(secretKind, ed)
+}
+
+// payloadReadCommand is secretReadCommand against either kind's limit.
+func payloadReadCommand(k payloadKind, ed *vimEditor) func(text, arg string) error {
 	return func(text, arg string) error {
-		data, err := readSecretFile(arg, len(text))
+		data, err := readPayloadFile(k, arg, len(text))
 		if err != nil {
 			return err
 		}
@@ -349,7 +387,7 @@ func rotateFooterKeys(m vimMode) string {
 	case vimCommand:
 		return footerKeys("Enter", "run", "Esc", "cancel", ":r file", "read", ":w", "rotate", ":q!", "discard")
 	}
-	return footerKeys("i", "insert", ":r file", "read", ":w", "rotate", ":q", "cancel", "?", "help")
+	return footerKeys("i", "insert", ":r file", "read", "Ctrl-S", "rotate", ":q", "cancel", "?", "help")
 }
 
 // rotateHooks are what the rotate editor needs from outside; injected so the
@@ -414,7 +452,7 @@ func (u *ui) openRotateEditor(back tview.Primitive, name string, labels map[stri
 	ed.onHelp = func() {
 		u.showVimHelp(ed.ta, sectionHelp("Rotate",
 			":r <file>", "insert a local file at the cursor (~ works); text only",
-			":w  Ctrl-S", "rotate — lists the services that restart and asks first",
+			"Ctrl-S  :w", "rotate — lists the services that restart and asks first",
 			"name, labels", "kept; the services are parked on "+swarmops.RotateTempName(name)+" meanwhile",
 			"restarts", "every service using the secret restarts twice",
 			"rollback", "none — the old secret object is deleted",

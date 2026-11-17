@@ -92,6 +92,8 @@ func (t *nodesTab) footer() string {
 func (t *nodesTab) helpSection(h *helpWriter) {
 	km, kl := t.u.km, keyLabel
 	h.sec("Nodes")
+	h.line("★", "the swarm leader (managers in aqua)")
+	h.line("CPU% MEM%", "containers' use of the node, from its agent (– no agent)")
 	h.line("Enter / i", "details")
 	h.line(kl(km.NodeLabels), "edit labels")
 	h.line(kl(km.NodeAvail), "availability: active / pause / drain")
@@ -103,14 +105,15 @@ func (t *nodesTab) helpSection(h *helpWriter) {
 // yank copies the node list. Before the registry the Nodes tab fell into
 // yankCurrent's default branch and copied the VOLUME list.
 func (t *nodesTab) yank(b *strings.Builder) {
-	fmt.Fprintln(b, "NODE\tROLE\tAVAIL\tSTATE\tENGINE\tTASKS\tLABELS")
+	fmt.Fprintln(b, "NODE\tROLE\tAVAIL\tSTATE\tCPU%\tMEM%\tENGINE\tTASKS\tLABELS")
 	for _, n := range t.rows() {
 		name := n.Hostname
 		if n.Leader {
 			name += " (leader)"
 		}
-		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%d\t%d\n", name, orDash(n.Role), orDash(n.Availability),
-			orDash(n.State), orDash(n.EngineVersion), n.Tasks, len(n.Labels))
+		use, known := t.u.nodeUse[n.Hostname]
+		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\n", name, orDash(n.Role), orDash(n.Availability),
+			orDash(n.State), nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known), orDash(n.EngineVersion), n.Tasks, len(n.Labels))
 	}
 }
 
@@ -124,14 +127,69 @@ func (t *nodesTab) renderRow(r int, n swarmops.NodeInfo) {
 		name = "★ " + name
 	}
 	volStr := ex.volumes(n.Hostname)
+	use, known := t.u.nodeUse[n.Hostname]
+	cpu, mem := nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known)
 	t.table.SetCell(r, 0, tview.NewTableCell(name).SetTextColor(nameColor).SetExpansion(2))
 	t.table.SetCell(r, 1, tview.NewTableCell(orDash(n.Role)).SetExpansion(1))
 	t.table.SetCell(r, 2, tview.NewTableCell(orDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
 	t.table.SetCell(r, 3, tview.NewTableCell(orDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
-	t.table.SetCell(r, 4, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
-	t.table.SetCell(r, 5, tview.NewTableCell(fmt.Sprintf("%d", n.Tasks)).SetExpansion(1))
-	t.table.SetCell(r, 6, tview.NewTableCell(volStr).SetExpansion(1))
-	t.table.SetCell(r, 7, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
+	t.table.SetCell(r, 4, tview.NewTableCell(cpu).SetTextColor(usagePercentColor(cpu)).SetExpansion(1))
+	t.table.SetCell(r, 5, tview.NewTableCell(mem).SetTextColor(usagePercentColor(mem)).SetExpansion(1))
+	t.table.SetCell(r, 6, tview.NewTableCell(fmt.Sprintf("%d", n.Tasks)).SetExpansion(1))
+	t.table.SetCell(r, 7, tview.NewTableCell(volStr).SetExpansion(1))
+	t.table.SetCell(r, 8, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
+	t.table.SetCell(r, 9, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
+}
+
+// nodeCPUPercent is the Nodes tab's CPU% cell: what the node's containers
+// use, as a share of the node's cores. "–" when no agent answered (not "0%",
+// which would read as idle), "…" while the agent has only one sample.
+func nodeCPUPercent(n swarmops.NodeInfo, use nodeUsage, known bool) string {
+	if !known {
+		return "–"
+	}
+	if !use.CPUReady {
+		return "…"
+	}
+	cpus := use.NodeCPUs
+	if cpus <= 0 && n.NanoCPUs > 0 {
+		cpus = n.NanoCPUs / 1e9
+	}
+	if cpus <= 0 {
+		return "–"
+	}
+	// CPUPercent is the share of ONE cpu summed over the containers.
+	return fmt.Sprintf("%.0f%%", use.CPUPercent/float64(cpus))
+}
+
+// nodeMemPercent is the MEM% cell: the containers' memory as a share of the
+// node's, "–" when no agent answered or the node's size is unknown.
+func nodeMemPercent(n swarmops.NodeInfo, use nodeUsage, known bool) string {
+	if !known {
+		return "–"
+	}
+	total := use.NodeMem
+	if total <= 0 {
+		total = n.MemoryBytes
+	}
+	if total <= 0 {
+		return "–"
+	}
+	return fmt.Sprintf("%.0f%%", float64(use.MemBytes)*100/float64(total))
+}
+
+// usagePercentColor greys a missing reading and warns from 80 % up.
+func usagePercentColor(cell string) tcell.Color {
+	p, err := strconv.Atoi(strings.TrimSuffix(cell, "%"))
+	switch {
+	case err != nil:
+		return tcell.ColorGray
+	case p >= 90:
+		return tcell.ColorRed
+	case p >= 80:
+		return tcell.ColorYellow
+	}
+	return tcell.ColorWhite
 }
 
 // reload fetches the node list from the manager, and — on their own, since
@@ -197,7 +255,7 @@ func (u *ui) editNodeLabels(n swarmops.NodeInfo, back tview.Primitive, after fun
 		list: tview.NewList().ShowSecondaryText(false)}
 	e.list.SetBorder(true).SetTitle(fmt.Sprintf(" labels of node %s ", n.Hostname))
 	e.render()
-	e.ov = u.overlayFor(pageNodeLabels, back, footerKeys("a", "add", "e", "edit", "d", "delete", "w", "apply", "Esc", "cancel"))
+	e.ov = u.overlayFor(pageNodeLabels, back, footerKeys("a", "add", "e", "edit", "d", "delete", "Ctrl-S", "apply", "Esc", "cancel"))
 	e.list.SetInputCapture(e.keys)
 	e.ov.show(centered(e.list, 70, 16), e.list)
 }
@@ -233,6 +291,11 @@ func (e *nodeLabelEditor) render() {
 func (e *nodeLabelEditor) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Key() == tcell.KeyEscape {
 		e.ov.Close()
+		return nil
+	}
+	// Ctrl-S applies, as in every editor; w is its one-key alias.
+	if ev.Key() == tcell.KeyCtrlS {
+		e.apply()
 		return nil
 	}
 	if ev.Key() != tcell.KeyRune {

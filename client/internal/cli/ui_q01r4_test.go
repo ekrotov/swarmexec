@@ -125,6 +125,12 @@ func TestNodeLabelEditorKeys(t *testing.T) {
 		t.Error("w must ask before applying")
 	}
 	u.pages.RemovePage(pageConfirm)
+	// Ctrl-S is the same apply (T-12).
+	send(tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModCtrl))
+	if !u.pages.HasPage(pageConfirm) {
+		t.Error("Ctrl-S must ask before applying")
+	}
+	u.pages.RemovePage(pageConfirm)
 
 	if send(escKey()) != nil || u.pages.HasPage(pageNodeLabels) {
 		t.Error("Esc must close the editor")

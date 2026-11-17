@@ -148,7 +148,11 @@
         you're on), a live cluster summary (<code>3 nodes · 3/3 agents</code> — the agent
         count turns yellow when some nodes have no answering agent, and red with a
         <code>— swarmexec init</code> hint when none does), the forward count and — on the Volumes tab —
-        how many volumes you have selected; at its far right it shows the client's own version. These keys work on every tab:
+        how many volumes you have selected; at its far right it shows the client's own version.
+        On a terminal narrower than 100 columns the version gives way (the <kbd>?</kbd>
+        overlay's title still names it), and if the line still does not fit the cluster
+        summary shortens to <code>3n · 3/3 ag</code>; anything beyond that is left out
+        as a whole, never cut mid-value. These keys work on every tab:
       </p>
       <div class="note">
         <strong>Changed:</strong> the contexts used to be tab&nbsp;6, and are now the
@@ -310,17 +314,17 @@
 quit: q          refresh: r        copy: y            toggle_mouse: m
 search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
-stack_group: s   stack_file: E
+stack_group: s   stack_file: E     service_remove: X
 volume_select: space               volume_select_all: a
 volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
 network_attached: i    network_new: n    network_all: a
 context_use: u   context_new: n    context_delete: X
 node_edit_labels: l    node_availability: a    node_prune: P    node_prune_schedule: S
-secret_delete: X secret_new: n
+secret_delete: X secret_new: n     config_new: n
 forward_stop: X  forward_copy_url: o</div>
       <p>
-        The destructive keys — <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, the same key that removes a service or stack from the tree, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. The fixed <kbd>d</kbd> that <em>detaches</em> a network
+        The destructive keys — <code>service_remove</code> (a service or a whole stack, from the tree), <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. The fixed <kbd>d</kbd> that <em>detaches</em> a network
         or secret from a service (members view, secret detail) is red too: it reads like
         bookkeeping and is a rolling update. The four delete keys used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
       </p>

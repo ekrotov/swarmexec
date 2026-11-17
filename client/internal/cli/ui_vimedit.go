@@ -1118,7 +1118,7 @@ func vimFooterKeys(m vimMode) string {
 		return footerKeys("Enter", "run", "Esc", "cancel", ":w", "apply", ":q", "cancel", ":q!", "discard")
 	}
 	return footerKeys("i", "insert", "o", "new line", "dd", "delete line", "x", "delete char",
-		"u", "undo", "/", "search", ":w", "apply", ":q", "cancel", "?", "help")
+		"u", "undo", "/", "search", "Ctrl-S", "apply", ":q", "cancel", "?", "help")
 }
 
 // vimHelpText is the help view's text (dynamic-colour markup): everything the
@@ -1152,7 +1152,7 @@ func vimHelpText(extra string) string {
 	b.WriteString(row("u  Ctrl-R", "undo, redo"))
 	b.WriteString(row("3dd  5j", "a count repeats a command"))
 	b.WriteString("\n" + sec("Commands"))
-	b.WriteString(row(":w", "apply (also :wq, :x, ZZ, Ctrl-S in any mode)"))
+	b.WriteString(row("Ctrl-S  :w", "apply, in any mode (also :wq, :x, ZZ)"))
 	b.WriteString(row(":q", "cancel — refused while there are changes"))
 	b.WriteString(row(":q!", "cancel and discard the changes (also ZQ)"))
 	b.WriteString(row(":42", "go to line 42"))

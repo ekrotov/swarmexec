@@ -57,8 +57,8 @@ func TestFooterHintFollowsSidebar(t *testing.T) {
 		t.Fatalf("at start: %q, want just the version", got)
 	}
 	u.resizeSidebar(80) // too narrow for the list beside the tree
-	if got := right(); !strings.Contains(got, "c contexts") || !strings.HasSuffix(got, "v9.8.7") {
-		t.Fatalf("narrow: %q, want the hint then the version", got)
+	if got := right(); got != "c contexts" {
+		t.Fatalf("narrow: %q, want the hint and no version (T-17)", got)
 	}
 	u.resizeSidebar(160)
 	if got := right(); got != "v9.8.7" {

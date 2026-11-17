@@ -616,6 +616,32 @@ func CreateSecret(ctx context.Context, dcli swarmapi.Client, name string, data [
 	return err
 }
 
+// CreateConfig creates a swarm config, refusing a name that is taken: configs
+// are immutable like secrets, so "replace" is remove-then-create.
+func CreateConfig(ctx context.Context, dcli swarmapi.Client, name string, data []byte, labels map[string]string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("content is required")
+	}
+	listRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, c := range listRes.Items {
+		if c.Spec.Name == name {
+			return fmt.Errorf("config %q already exists (configs are immutable — remove it first to replace)", name)
+		}
+	}
+	_, err = dcli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: swarm.ConfigSpec{
+		Annotations: swarm.Annotations{Name: name, Labels: labels},
+		Data:        data,
+	}})
+	return err
+}
+
 func ListSecrets(ctx context.Context, dcli swarmapi.Client) ([]Secret, error) {
 	secsRes, err := dcli.SecretList(ctx, client.SecretListOptions{})
 	secs := secsRes.Items

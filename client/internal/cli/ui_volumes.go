@@ -302,12 +302,13 @@ func (t *volumesTab) renderRow(st *volumesState, row int, v swarmVolume) {
 	if st.selected[v.Name] {
 		mark, nameColor = "▣ ", tcell.ColorAqua
 	}
-	t.table.SetCell(row, 0, tview.NewTableCell(mark+v.Name).SetTextColor(nameColor).SetExpansion(1))
-	t.table.SetCell(row, 1, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
-	t.table.SetCell(row, 2, tview.NewTableCell(fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))).SetExpansion(1))
+	nodes := fmt.Sprintf("%d: %s", len(v.Nodes), joinNodes(v.Nodes))
+	t.table.SetCell(row, 0, tview.NewTableCell(mark+shortVolume(v.Name)).SetTextColor(nameColor).SetExpansion(1).SetMaxWidth(volNameMaxWidth))
+	t.table.SetCell(row, 1, sizeCell)
+	t.table.SetCell(row, 2, tview.NewTableCell(nodes).SetExpansion(1).SetMaxWidth(volNodesMaxWidth))
 	t.table.SetCell(row, 3, usedCell)
-	t.table.SetCell(row, 4, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
-	t.table.SetCell(row, 5, sizeCell)
+	t.table.SetCell(row, 4, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
+	t.table.SetCell(row, 5, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
 }
 
 // load fetches the volume list in two passes: names, nodes and consumers

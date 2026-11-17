@@ -60,8 +60,8 @@ func TestNodesTabLoadsNodesAndVolumeCounts(t *testing.T) {
 	for {
 		var a, b string
 		onLoop(t, u, func() {
-			a = u.nodeTab().table.GetCell(1, 6).Text
-			b = u.nodeTab().table.GetCell(2, 6).Text
+			a = u.nodeTab().table.GetCell(1, 7).Text
+			b = u.nodeTab().table.GetCell(2, 7).Text
 		})
 		if a == "2" && b == "1" {
 			break
@@ -194,6 +194,13 @@ func TestScheduleEditorKeys(t *testing.T) {
 	send(rune_('w'))
 	if !u.pages.HasPage(pageConfirm) && !u.pages.HasPage(pageInfo) {
 		t.Error("w must ask before saving (or say why it cannot)")
+	}
+	u.pages.RemovePage(pageConfirm)
+	u.pages.RemovePage(pageInfo)
+	// Ctrl-S is the same apply (T-12).
+	send(tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModCtrl))
+	if !u.pages.HasPage(pageConfirm) && !u.pages.HasPage(pageInfo) {
+		t.Error("Ctrl-S must ask before saving (or say why it cannot)")
 	}
 	u.pages.RemovePage(pageConfirm)
 	u.pages.RemovePage(pageInfo)

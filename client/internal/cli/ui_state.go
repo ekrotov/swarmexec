@@ -45,7 +45,9 @@ var uiTabList = []uiTab{
 // Column headers for the per-tab tables — constant data shared by each tab's
 // render/load methods, so they live at package scope rather than as run() locals.
 var (
-	vHeaders  = []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
+	// SIZE and NODES come before DRIVER and AGE: SIZE is why the tab is
+	// opened, and at 80 columns the right end of the row is what falls off.
+	vHeaders  = []string{"VOLUME", "SIZE", "NODES", "USED BY", "DRIVER", "AGE"}
 	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "CLUSTER", "AGE", "STATE"}
 	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "SUBNET", "ENC", "SERVICES", "CONTAINERS", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
@@ -53,7 +55,9 @@ var (
 	// The context sidebar is narrow and its rows are self-explanatory, so it
 	// carries no header at all; the endpoint each name resolves to is one
 	// keystroke away in the detail overlay.
-	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
+	// CPU% and MEM% are what the node's containers use, measured by its agent
+	// (the same pass that badges the tree), as a share of the node's capacity.
+	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "CPU%", "MEM%", "TASKS", "VOLS", "ENGINE", "LABELS"}
 )
 
 // Volume sort fields and the header column each annotates with ▲/▼.
@@ -66,7 +70,15 @@ const (
 )
 
 // volSortCol maps a sort field to the header column it annotates with ▲/▼.
-var volSortCol = map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, volSortAge: 4, volSortSize: 5}
+var volSortCol = map[int]int{volSortName: 0, volSortSize: 1, volSortNodes: 2, volSortUsed: 3, volSortAge: 5}
+
+// The widest the VOLUME and NODES cells get, so the size stays on screen at
+// 80 columns; a longer name or node list ends in "…" (the full one is in the
+// Enter / used-by overlays and in y).
+const (
+	volNameMaxWidth  = 28
+	volNodesMaxWidth = 18
+)
 
 // ui holds one UI session's ambient state: the run-wide infrastructure, the
 // shared widgets and the per-tab caches that the (formerly closure) methods
@@ -140,6 +152,11 @@ type ui struct {
 	// sidebarHidden is true while the terminal is too narrow to show the
 	// context list unasked; the footer then says which key brings it up.
 	sidebarHidden bool
+	// screenWidth is the terminal width the root last drew at (0 before the
+	// first frame), and statusRightWidth the columns the right end of the
+	// status line takes: the status line fits its parts into what is left.
+	screenWidth      int
+	statusRightWidth int
 
 	// tabs is the tab registry, by uiTabList key (see newTabViews). A tab
 	// with a type of its own keeps its widget, its preferences and its
