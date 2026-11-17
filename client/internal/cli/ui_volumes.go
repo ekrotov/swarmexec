@@ -347,17 +347,18 @@ func (t *volumesTab) load() {
 			t.render()
 		})
 		if nerr == nil && !noAgent {
-			t.loadSizes(gen, st, nodes)
+			t.loadSizes(gen, st, nodes, ac, f.connectTimeout, ctx)
 		}
 	}()
 }
 
 // loadSizes is load's second pass: fill the SIZE column once the list is
 // already shown, with a spinner on the SIZE header meanwhile. Off the UI
-// goroutine.
-func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Node) {
+// goroutine, so everything cluster-specific — the agent pool, the timeout and
+// the context — is handed in, captured by load on the UI goroutine. Reading
+// them from u here would pick up whichever cluster is visible by now.
+func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Node, ac *agentcall.Client, timeout time.Duration, ctx context.Context) {
 	u := t.u
-	ac, f, ctx := u.agents, u.f, u.ctx
 	u.onCluster(gen, func() {
 		st.sizesLoading = true
 		t.render()
@@ -381,7 +382,7 @@ func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Nod
 			}
 		}
 	}()
-	sz := ac.VolumeSizes(ctx, nodes, f.connectTimeout)
+	sz := ac.VolumeSizes(ctx, nodes, timeout)
 	close(stop)
 	u.onCluster(gen, func() {
 		st.sizesLoading = false
