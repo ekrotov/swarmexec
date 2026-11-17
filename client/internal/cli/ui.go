@@ -1453,7 +1453,33 @@ func (u *ui) showHelp() {
 	app := u.app
 	prev := app.GetFocus()
 	h := &helpWriter{}
+	u.writeHelpSections(h, prev)
 
+	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
+	hv.SetBorder(true).SetTitle(" keybindings ")
+	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
+	closeHelp := ov.Close
+	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		switch {
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?')):
+			closeHelp()
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	})
+	// Grows with the terminal: a fixed 60×24 box showed some twenty of the
+	// ~90 lines whatever the screen. centeredGrow keeps the footer free.
+	ov.show(centeredGrow(hv, 60, 24, 0.9), hv)
+}
+
+// writeHelpSections writes every section once, in showHelp's order: the open
+// overlay's keys (prev is the focus it returns to), the sidebar's or the
+// active tab's section, the other tabs, contexts and the log views, Global.
+func (u *ui) writeHelpSections(h *helpWriter, prev tview.Primitive) {
 	done := map[string]bool{}
 	section := func(name string, write func()) {
 		if !done[name] {
@@ -1484,26 +1510,6 @@ func (u *ui) showHelp() {
 	section("logs", func() { u.logViewHelpSection(h) })
 	section("clientlog", func() { u.clientLogHelpSection(h) })
 	u.globalHelpSection(h)
-
-	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
-	hv.SetBorder(true).SetTitle(" keybindings ")
-	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
-	closeHelp := ov.Close
-	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?')):
-			closeHelp()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-		}
-		return ev
-	})
-	// Grows with the terminal: a fixed 60×24 box showed some twenty of the
-	// ~90 lines whatever the screen. centeredGrow keeps the footer free.
-	ov.show(centeredGrow(hv, 60, 24, 0.9), hv)
 }
 
 // helpView is the help's text view, re-wrapped whenever its width changes —
@@ -1904,19 +1910,7 @@ func (u *ui) openLogView() {
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
 	wrap := true
 	refresh := func() {
-		r := clientlog.RingBuffer()
-		var b strings.Builder
-		if r == nil {
-			b.WriteString("[gray]logging is disabled (--client-log-level off)[-]")
-		} else if lines := r.Lines(); len(lines) == 0 {
-			b.WriteString("[gray](no log records yet)[-]")
-		} else {
-			for _, line := range lines {
-				b.WriteString(colorLogLine(line))
-				b.WriteByte('\n')
-			}
-		}
-		tv.SetText(b.String())
+		tv.SetText(clientLogText())
 		tv.ScrollToEnd()
 	}
 	refresh()
@@ -1944,20 +1938,43 @@ func (u *ui) openLogView() {
 	// centeredGrow, not tv on its own: a full-screen page covered the footer,
 	// so the keys it names were never on screen.
 	u.logViewOverlay.show(centeredGrow(tv, 100, 20, 0.92), tv)
-	go func() {
-		tk := time.NewTicker(700 * time.Millisecond)
-		defer tk.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-stop:
-				return
-			case <-tk.C:
-				app.QueueUpdateDraw(refresh)
-			}
+	go refreshLogViewEvery(ctx, stop, app, refresh)
+}
+
+// clientLogText is the client log ring as the log view shows it, colored,
+// oldest first — or why there is nothing to show.
+func clientLogText() string {
+	r := clientlog.RingBuffer()
+	var b strings.Builder
+	if r == nil {
+		b.WriteString("[gray]logging is disabled (--client-log-level off)[-]")
+	} else if lines := r.Lines(); len(lines) == 0 {
+		b.WriteString("[gray](no log records yet)[-]")
+	} else {
+		for _, line := range lines {
+			b.WriteString(colorLogLine(line))
+			b.WriteByte('\n')
 		}
-	}()
+	}
+	return b.String()
+}
+
+// refreshLogViewEvery repaints the client log view on a ticker until ctx is
+// done or the view closes (stop). It runs on its own goroutine, never the
+// event loop's, so QueueUpdateDraw is safe here.
+func refreshLogViewEvery(ctx context.Context, stop <-chan struct{}, app *tview.Application, refresh func()) {
+	tk := time.NewTicker(700 * time.Millisecond)
+	defer tk.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-tk.C:
+			app.QueueUpdateDraw(refresh)
+		}
+	}
 }
 
 func (u *ui) toggleLogView() {

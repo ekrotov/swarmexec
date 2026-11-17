@@ -671,23 +671,34 @@ func (r *Resolver) serviceCounts(ctx context.Context, s swarm.Service) (running,
 	// having completed sixty times.
 	iter := jobIteration(s)
 	for _, t := range tasks {
-		if iter != nil && (t.JobIteration == nil || t.JobIteration.Index != iter.Index) {
-			continue
-		}
-		switch {
-		case global && t.DesiredState != swarm.TaskStateShutdown:
-			desired++
-		case iter != nil && t.Status.State != swarm.TaskStateComplete:
-			// For a job, "desired" is what is still outstanding — the same thing
-			// swarm reports for a global job.
-			desired++
-		}
-		if t.Status.State == swarm.TaskStateRunning && containerID(t) != "" {
-			running++
-		}
-		if iter != nil && t.Status.State == swarm.TaskStateComplete {
-			completed++
-		}
+		run, des, comp := taskCounts(t, global, iter)
+		running += run
+		desired += des
+		completed += comp
+	}
+	return running, desired, completed
+}
+
+// taskCounts is what one task adds to serviceCounts' running, desired and
+// completed tallies. iter is the job's current execution (nil when not a job);
+// a task of an earlier one adds nothing.
+func taskCounts(t swarm.Task, global bool, iter *swarm.Version) (running, desired, completed int) {
+	if iter != nil && (t.JobIteration == nil || t.JobIteration.Index != iter.Index) {
+		return 0, 0, 0
+	}
+	switch {
+	case global && t.DesiredState != swarm.TaskStateShutdown:
+		desired = 1
+	case iter != nil && t.Status.State != swarm.TaskStateComplete:
+		// For a job, "desired" is what is still outstanding — the same thing
+		// swarm reports for a global job.
+		desired = 1
+	}
+	if t.Status.State == swarm.TaskStateRunning && containerID(t) != "" {
+		running = 1
+	}
+	if iter != nil && t.Status.State == swarm.TaskStateComplete {
+		completed = 1
 	}
 	return running, desired, completed
 }

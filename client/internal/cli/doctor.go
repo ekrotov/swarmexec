@@ -5,6 +5,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"text/tabwriter"
 	"time"
 
@@ -74,11 +75,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
 	info := infoRes.Info
 	if err != nil {
-		if f.json {
-			_ = printJSON(out, doctorReport{Client: g.version.Binary, Proto: g.version.Proto, Manager: "unreachable", Healthy: false})
-		} else {
-			fmt.Fprintf(out, "client:  %s (proto %s)\nmanager: UNREACHABLE — %v\n", g.version.Binary, g.version.Proto, err)
-		}
+		printManagerUnreachable(out, g.version, f.json, err)
 		return &cliError{code: session.TransportFailure, silent: true}
 	}
 
@@ -93,36 +90,57 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	defer ac.Close()
 	results := ac.Versions(ctx, nodes, f.connectTimeout)
 
-	healthy := agentDep
-	rows := make([]doctorNode, 0, len(results))
-	for _, r := range results {
-		st, ver, proto, ok := swarmops.ClassifyNode(r, g.version.Binary, g.version.Proto)
-		if !ok {
-			healthy = false
-		}
-		rows = append(rows, doctorNode{Node: r.Node.Name, Status: st, Version: ver, Proto: proto})
+	rows, nodesOK := doctorRows(results, g.version)
+	report := doctorReport{
+		Client: g.version.Binary, Proto: g.version.Proto, Manager: info.Name,
+		AgentDeployed: agentDep, Image: image, Healthy: agentDep && nodesOK, Nodes: rows,
 	}
-
 	if f.json {
-		report := doctorReport{
-			Client: g.version.Binary, Proto: g.version.Proto, Manager: info.Name,
-			AgentDeployed: agentDep, Image: image, Healthy: healthy, Nodes: rows,
-		}
 		if err := printJSON(out, report); err != nil {
 			return err
 		}
-		if !healthy {
-			return &cliError{code: session.TransportFailure, silent: true}
-		}
-		return nil
+	} else {
+		printDoctorTable(out, report, info.Swarm.Nodes)
 	}
+	if !report.Healthy {
+		return &cliError{code: session.TransportFailure, silent: true}
+	}
+	return nil
+}
 
-	fmt.Fprintf(out, "client:  %s (proto %s)\n", g.version.Binary, g.version.Proto)
-	fmt.Fprintf(out, "manager: %s (%s)\n", info.Name, plural(info.Swarm.Nodes, "node"))
-	if agentDep {
+// printManagerUnreachable is doctor's whole answer when the manager does not.
+func printManagerUnreachable(out io.Writer, v Version, asJSON bool, err error) {
+	if asJSON {
+		_ = printJSON(out, doctorReport{Client: v.Binary, Proto: v.Proto, Manager: "unreachable", Healthy: false})
+		return
+	}
+	fmt.Fprintf(out, "client:  %s (proto %s)\nmanager: UNREACHABLE — %v\n", v.Binary, v.Proto, err)
+}
+
+// doctorRows classifies each node's agent against this client; ok is false
+// when any of them needs attention.
+func doctorRows(results []agentcall.NodeVersion, v Version) (rows []doctorNode, ok bool) {
+	ok = true
+	rows = make([]doctorNode, 0, len(results))
+	for _, r := range results {
+		st, ver, proto, nodeOK := swarmops.ClassifyNode(r, v.Binary, v.Proto)
+		if !nodeOK {
+			ok = false
+		}
+		rows = append(rows, doctorNode{Node: r.Node.Name, Status: st, Version: ver, Proto: proto})
+	}
+	return rows, ok
+}
+
+// printDoctorTable is the human form of the report; swarmNodes is the
+// manager's node count.
+func printDoctorTable(out io.Writer, r doctorReport, swarmNodes int) {
+	fmt.Fprintf(out, "client:  %s (proto %s)\n", r.Client, r.Proto)
+	fmt.Fprintf(out, "manager: %s (%s)\n", r.Manager, plural(swarmNodes, "node"))
+	if r.AgentDeployed {
 		fmt.Fprintf(out, "agent:   service deployed")
-		if image != "" {
-			fmt.Fprintf(out, " (%s)", image)
+		if r.Image != "" {
+			fmt.Fprintf(out, " (%s)", r.Image)
 		}
 		fmt.Fprintln(out)
 	} else {
@@ -132,16 +150,15 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	fmt.Fprintln(out)
 	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, "NODE\tAGENT\tVERSION\tPROTO")
-	for _, row := range rows {
+	for _, row := range r.Nodes {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", row.Node, row.Status, orDash(row.Version), orDash(row.Proto))
 	}
 	_ = w.Flush()
 
 	fmt.Fprintln(out)
-	if healthy {
+	if r.Healthy {
 		fmt.Fprintln(out, "✓ all agents healthy")
-		return nil
+		return
 	}
 	fmt.Fprintln(out, "⚠ some checks need attention (see above)")
-	return &cliError{code: session.TransportFailure, silent: true}
 }

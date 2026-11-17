@@ -83,24 +83,8 @@ func (c *Cache) Run(ctx context.Context) {
 
 	// Debounce reactive refreshes: an event arms a short timer that fires a
 	// single refresh, coalescing bursts.
-	fire := make(chan struct{}, 1)
-	var debounce *time.Timer
-	defer func() {
-		if debounce != nil {
-			debounce.Stop()
-		}
-	}()
-	arm := func() {
-		if debounce != nil {
-			debounce.Stop()
-		}
-		debounce = time.AfterFunc(2*time.Second, func() {
-			select {
-			case fire <- struct{}{}:
-			default:
-			}
-		})
-	}
+	debounce := newDebouncer(2 * time.Second)
+	defer debounce.stop()
 
 	evCh, errCh := c.subscribe(ctx)
 	for {
@@ -109,7 +93,7 @@ func (c *Cache) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			c.Refresh(ctx)
-		case <-fire:
+		case <-debounce.fire:
 			c.Refresh(ctx)
 		case ev, ok := <-evCh:
 			if !ok {
@@ -117,7 +101,7 @@ func (c *Cache) Run(ctx context.Context) {
 				continue
 			}
 			if ev.Action == "create" || ev.Action == "destroy" {
-				arm()
+				debounce.arm()
 			}
 		case err, ok := <-errCh:
 			if ok && err != nil {
@@ -132,6 +116,37 @@ func (c *Cache) Run(ctx context.Context) {
 			}
 			evCh, errCh = c.subscribe(ctx)
 		}
+	}
+}
+
+// debouncer coalesces a burst of arm calls into a single signal on fire, sent
+// delay after the last one.
+type debouncer struct {
+	delay time.Duration
+	timer *time.Timer
+	fire  chan struct{}
+}
+
+func newDebouncer(delay time.Duration) *debouncer {
+	return &debouncer{delay: delay, fire: make(chan struct{}, 1)}
+}
+
+// arm (re)starts the delay; only the run's goroutine calls it.
+func (d *debouncer) arm() {
+	if d.timer != nil {
+		d.timer.Stop()
+	}
+	d.timer = time.AfterFunc(d.delay, func() {
+		select {
+		case d.fire <- struct{}{}:
+		default:
+		}
+	})
+}
+
+func (d *debouncer) stop() {
+	if d.timer != nil {
+		d.timer.Stop()
 	}
 }
 

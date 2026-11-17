@@ -485,3 +485,42 @@ func TestServiceNetDNS_NoIngressWithoutVIP(t *testing.T) {
 		t.Errorf("got %d rows, want only the spec network: %+v", len(nets), nets)
 	}
 }
+
+// The optional sections appear in their place, only when they have content;
+// an upgrade without a version label falls back to the short digest.
+func TestFormatServiceInspect_OptionalSections(t *testing.T) {
+	var s swarm.Service
+	s.Spec.Name = "web"
+	s.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{
+		Image:   "nginx:latest",
+		Env:     []string{"PORT=80"},
+		Configs: []*swarm.ConfigReference{{ConfigName: "nginx-conf"}},
+	}
+	s.Spec.TaskTemplate.Resources = &swarm.ResourceRequirements{Limits: &swarm.Limit{NanoCPUs: 1_000_000_000}}
+	s.Spec.TaskTemplate.Placement = &swarm.Placement{Constraints: []string{"node.role==worker"}}
+	s.Spec.UpdateConfig = &swarm.UpdateConfig{Parallelism: 2, Order: "start-first", FailureAction: "rollback"}
+
+	img := ImageStatus{newer: true, latestDigest: "sha256:0123456789abcdef", updateTarget: "nginx:latest@sha256:0123456789abcdef"}
+	joined := joinInspLines(formatServiceInspect(s, netInfo{}, img))
+	order := []string{"newer version is available: 0123456789ab", "SECRETS", "CONFIGS", "nginx-conf", "PORTS",
+		"MODE", "ENV", "PORT=80", "RESOURCES", "limits:", "PLACEMENT", "node.role==worker",
+		"UPDATE POLICY", "parallelism 2", "order start-first", "on-failure rollback", "META"}
+	at := 0
+	for _, want := range order {
+		i := strings.Index(joined[at:], want)
+		if i < 0 {
+			t.Fatalf("missing %q after offset %d:\n%s", want, at, joined)
+		}
+		at += i + len(want)
+	}
+
+	// None of them without content.
+	var bare swarm.Service
+	bare.Spec.Name = "bare"
+	joined = joinInspLines(formatServiceInspect(bare, netInfo{}, ImageStatus{newer: true, updateTarget: "x"}))
+	for _, absent := range []string{"CONFIGS", "ENV", "RESOURCES", "PLACEMENT", "UPDATE POLICY", "newer version"} {
+		if strings.Contains(joined, absent) {
+			t.Errorf("bare service shows %q:\n%s", absent, joined)
+		}
+	}
+}

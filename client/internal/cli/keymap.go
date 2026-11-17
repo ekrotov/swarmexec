@@ -261,32 +261,39 @@ func loadKeybinds(path string) (keybinds, []string) {
 			warnings = append(warnings, fmt.Sprintf("keys.yaml: unknown action %q ignored", name))
 			continue
 		}
-		r, ok := parseKey(raw[name])
-		if !ok {
-			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is not a single key; kept default %q", name, raw[name], keyLabel(a.def)))
-			continue
-		}
-		if reservedRunes[r] {
-			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a reserved key; kept default %q", name, raw[name], keyLabel(a.def)))
-			continue
-		}
-		if dialogActions[name] && dialogRunes[r] {
-			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a key dialogs use themselves; kept default %q", name, raw[name], keyLabel(a.def)))
-			continue
-		}
-		if where, bad := overlayClash(name, r); bad {
-			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q is a fixed key in the %s; kept default %q", name, raw[name], where, keyLabel(a.def)))
-			continue
-		}
-		// Defaults are collision-free per tab, so a conflict can only come from an
-		// override. Check against the bindings applied so far; the override loses.
-		if other, bad := conflictWith(&k, a, r); bad {
-			warnings = append(warnings, fmt.Sprintf("keys.yaml: %s=%q clashes with %q on a shared tab; kept default %q", name, raw[name], other, keyLabel(a.def)))
+		r, warning := overrideKey(&k, name, a, raw[name])
+		if warning != "" {
+			warnings = append(warnings, warning)
 			continue
 		}
 		*a.field(&k) = r
 	}
 	return k, warnings
+}
+
+// overrideKey checks one keys.yaml entry, action a (as name) bound to val,
+// against the bindings applied so far. warning says why it is ignored and the
+// default kept; "" means r applies.
+func overrideKey(k *keybinds, name string, a keyAction, val string) (r rune, warning string) {
+	r, ok := parseKey(val)
+	if !ok {
+		return 0, fmt.Sprintf("keys.yaml: %s=%q is not a single key; kept default %q", name, val, keyLabel(a.def))
+	}
+	if reservedRunes[r] {
+		return 0, fmt.Sprintf("keys.yaml: %s=%q is a reserved key; kept default %q", name, val, keyLabel(a.def))
+	}
+	if dialogActions[name] && dialogRunes[r] {
+		return 0, fmt.Sprintf("keys.yaml: %s=%q is a key dialogs use themselves; kept default %q", name, val, keyLabel(a.def))
+	}
+	if where, bad := overlayClash(name, r); bad {
+		return 0, fmt.Sprintf("keys.yaml: %s=%q is a fixed key in the %s; kept default %q", name, val, where, keyLabel(a.def))
+	}
+	// Defaults are collision-free per tab, so a conflict can only come from an
+	// override. Check against the bindings applied so far; the override loses.
+	if other, bad := conflictWith(k, a, r); bad {
+		return 0, fmt.Sprintf("keys.yaml: %s=%q clashes with %q on a shared tab; kept default %q", name, val, other, keyLabel(a.def))
+	}
+	return r, ""
 }
 
 // conflictWith reports whether binding action a to rune r would collide with

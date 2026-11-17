@@ -253,8 +253,38 @@ func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) 
 		return "", err
 	}
 	out := mcpOverview{Context: c.label, Manager: info.Info.Name, Engine: info.Info.ServerVersion,
-		Nodes: []mcpNodeRow{}, Services: []mcpServiceRow{}}
-	for _, n := range nodes.Items {
+		Nodes: overviewNodes(nodes.Items), Services: []mcpServiceRow{}}
+
+	svcs, cands, err := swarmops.ServicesAndContainers(ctx, c.r, "mcp.overview")
+	if err != nil {
+		return "", err
+	}
+	// Health lives on the nodes, not the manager; it is best effort, and its
+	// absence is said rather than shown as "all healthy".
+	usage := s.overviewUsage(ctx, c)
+	if len(usage) == 0 {
+		out.Note = "no live health data from the node agents; health omitted"
+	}
+	degraded := 0
+	for _, rs := range svcs {
+		if !v.has(rs.Name) {
+			continue
+		}
+		row := overviewServiceRow(rs, usage, cands)
+		have, want := rs.Progress()
+		if (!rs.IsJob() && have < want) || (row.Health != nil && row.Health.Unhealthy > 0) {
+			degraded++
+		}
+		out.Services = append(out.Services, row)
+	}
+	out.Summary = fmt.Sprintf("%d node(s), %d service(s) visible, %d degraded", len(out.Nodes), len(out.Services), degraded)
+	return jsonText(out)
+}
+
+// overviewNodes are the overview's node rows, sorted by hostname.
+func overviewNodes(nodes []swarm.Node) []mcpNodeRow {
+	rows := []mcpNodeRow{}
+	for _, n := range nodes {
 		row := mcpNodeRow{
 			Hostname:     swarmops.NodeDisplayName(n.Description.Hostname, n.ID),
 			Role:         string(n.Spec.Role),
@@ -265,43 +295,32 @@ func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) 
 		if n.ManagerStatus != nil {
 			row.Leader = n.ManagerStatus.Leader
 		}
-		out.Nodes = append(out.Nodes, row)
+		rows = append(rows, row)
 	}
-	sort.Slice(out.Nodes, func(i, j int) bool { return out.Nodes[i].Hostname < out.Nodes[j].Hostname })
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Hostname < rows[j].Hostname })
+	return rows
+}
 
-	svcs, cands, err := swarmops.ServicesAndContainers(ctx, c.r, "mcp.overview")
-	if err != nil {
-		return "", err
-	}
-	// Health lives on the nodes, not the manager; it is best effort, and its
-	// absence is said rather than shown as "all healthy".
+// overviewUsage asks the node agents for container health; empty when they
+// cannot be reached.
+func (s *Server) overviewUsage(ctx context.Context, c *mcpCluster) map[string]agentcall.ContainerUsage {
 	usage := map[string]agentcall.ContainerUsage{}
 	if ac, aerr := c.agents(); aerr == nil {
 		if rn, nerr := c.r.Nodes(ctx); nerr == nil {
 			usage, _ = ac.Usage(ctx, rn, s.connectTimeout)
 		}
 	}
-	if len(usage) == 0 {
-		out.Note = "no live health data from the node agents; health omitted"
+	return usage
+}
+
+// overviewServiceRow is one service's row, with health when there is usage.
+func overviewServiceRow(rs resolve.Service, usage map[string]agentcall.ContainerUsage, cands []resolve.Candidate) mcpServiceRow {
+	row := serviceRowOf(rs)
+	if len(usage) > 0 {
+		h := swarmops.HealthOf(usage, cands, rs.Name)
+		row.Health = &mcpHealth{Healthy: h.Healthy, Unhealthy: h.Unhealthy, Starting: h.Starting, NoCheck: h.Unknown}
 	}
-	degraded := 0
-	for _, rs := range svcs {
-		if !v.has(rs.Name) {
-			continue
-		}
-		row := serviceRowOf(rs)
-		if len(usage) > 0 {
-			h := swarmops.HealthOf(usage, cands, rs.Name)
-			row.Health = &mcpHealth{Healthy: h.Healthy, Unhealthy: h.Unhealthy, Starting: h.Starting, NoCheck: h.Unknown}
-		}
-		have, want := rs.Progress()
-		if (!rs.IsJob() && have < want) || (row.Health != nil && row.Health.Unhealthy > 0) {
-			degraded++
-		}
-		out.Services = append(out.Services, row)
-	}
-	out.Summary = fmt.Sprintf("%d node(s), %d service(s) visible, %d degraded", len(out.Nodes), len(out.Services), degraded)
-	return jsonText(out)
+	return row
 }
 
 func serviceRowOf(rs resolve.Service) mcpServiceRow {
@@ -1221,6 +1240,28 @@ func (s *Server) toolStackCheck(ctx context.Context, in mcpStackIn) (string, err
 // masked value differs, the file side says so — without saying what either
 // value is.
 func sanitizeStacks(deployed, file *stackfile.Stack) {
+	maskFileCredentials(deployed, file)
+	for _, st := range []*stackfile.Stack{deployed, file} {
+		if st == nil {
+			continue
+		}
+		for _, svc := range st.Services {
+			stripService(svc, st == deployed)
+		}
+		for _, n := range st.Networks {
+			n.Labels = nilIfEmpty(mcpaccess.Strip(n.Labels))
+		}
+		for _, group := range []map[string]*stackfile.Resource{st.Secrets, st.Configs, st.Volumes} {
+			for _, r := range group {
+				r.Labels = nilIfEmpty(mcpaccess.Strip(r.Labels))
+			}
+		}
+	}
+}
+
+// maskFileCredentials masks the credential variables of the file side, noting
+// where one differs from the deployed value.
+func maskFileCredentials(deployed, file *stackfile.Stack) {
 	for name, fs := range file.Services {
 		var ds *stackfile.Service
 		if deployed != nil {
@@ -1239,32 +1280,22 @@ func sanitizeStacks(deployed, file *stackfile.Stack) {
 			fs.Environment[k] = mcpaccess.Masked
 		}
 	}
-	for _, st := range []*stackfile.Stack{deployed, file} {
-		if st == nil {
-			continue
+}
+
+// stripService takes the access labels off one service (and its deploy
+// section); deployedSide also masks its environment.
+func stripService(svc *stackfile.Service, deployedSide bool) {
+	svc.Labels = nilIfEmpty(mcpaccess.Strip(svc.Labels))
+	if svc.Deploy != nil {
+		svc.Deploy.Labels = nilIfEmpty(mcpaccess.Strip(svc.Deploy.Labels))
+		// A deploy section that held nothing but access labels would
+		// otherwise render as "deploy: {}" — a trace of what was there.
+		if reflect.ValueOf(*svc.Deploy).IsZero() {
+			svc.Deploy = nil
 		}
-		for _, svc := range st.Services {
-			svc.Labels = nilIfEmpty(mcpaccess.Strip(svc.Labels))
-			if svc.Deploy != nil {
-				svc.Deploy.Labels = nilIfEmpty(mcpaccess.Strip(svc.Deploy.Labels))
-				// A deploy section that held nothing but access labels would
-				// otherwise render as "deploy: {}" — a trace of what was there.
-				if reflect.ValueOf(*svc.Deploy).IsZero() {
-					svc.Deploy = nil
-				}
-			}
-			if st == deployed {
-				svc.Environment = mcpaccess.MaskEnvMap(svc.Environment)
-			}
-		}
-		for _, n := range st.Networks {
-			n.Labels = nilIfEmpty(mcpaccess.Strip(n.Labels))
-		}
-		for _, group := range []map[string]*stackfile.Resource{st.Secrets, st.Configs, st.Volumes} {
-			for _, r := range group {
-				r.Labels = nilIfEmpty(mcpaccess.Strip(r.Labels))
-			}
-		}
+	}
+	if deployedSide {
+		svc.Environment = mcpaccess.MaskEnvMap(svc.Environment)
 	}
 }
 

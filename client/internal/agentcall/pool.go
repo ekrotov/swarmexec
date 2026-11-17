@@ -113,13 +113,7 @@ func (p *pool) get(ctx context.Context, key, host string) (*entry, error) {
 		p.mu.Lock()
 		if p.stopped {
 			p.mu.Unlock()
-			// A stopped pool still works, it just keeps nothing: the entry is
-			// born retired and closes on release.
-			cc, err := p.dialFn(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			return &entry{key: key, cc: cc, refs: 1, retired: true}, nil
+			return p.dialUnpooled(ctx, key, host)
 		}
 		e := p.entries[key]
 		if e == nil {
@@ -139,26 +133,16 @@ func (p *pool) get(ctx context.Context, key, host string) (*entry, error) {
 				return nil, ctx.Err()
 			}
 			p.mu.Lock()
-			if e.err != nil {
+			if dialErr := e.err; dialErr != nil {
 				p.mu.Unlock()
-				// A refused connection or a rejected certificate is the
-				// answer for us too. Only a dial that ran out of ITS time
-				// says nothing about ours, so then we try ourselves.
-				if errors.Is(e.err, context.DeadlineExceeded) || errors.Is(e.err, context.Canceled) {
-					if ctx.Err() != nil {
-						return nil, ctx.Err()
-					}
-					continue
+				retry, err := sharedDialFailure(ctx, dialErr)
+				if !retry {
+					return nil, err
 				}
-				return nil, e.err
+				continue
 			}
 		}
-		if e.err == nil && !e.retired && e.cc.GetState() == connectivity.Ready {
-			e.refs++
-			if e.timer != nil {
-				e.timer.Stop()
-				e.timer = nil
-			}
+		if p.takeLocked(e) {
 			p.mu.Unlock()
 			return e, nil
 		}
@@ -166,6 +150,44 @@ func (p *pool) get(ctx context.Context, key, host string) (*entry, error) {
 		p.retireLocked(e)
 		p.mu.Unlock()
 	}
+}
+
+// dialUnpooled serves a stopped pool, which still works but keeps nothing:
+// the entry is born retired and closes on release.
+func (p *pool) dialUnpooled(ctx context.Context, key, host string) (*entry, error) {
+	cc, err := p.dialFn(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	return &entry{key: key, cc: cc, refs: 1, retired: true}, nil
+}
+
+// sharedDialFailure is what another caller's failed dial means for ours. A
+// refused connection or a rejected certificate is the answer for us too.
+// Only a dial that ran out of ITS time says nothing about ours, so then we
+// retry — unless our own context is done as well.
+func sharedDialFailure(ctx context.Context, dialErr error) (retry bool, err error) {
+	if errors.Is(dialErr, context.DeadlineExceeded) || errors.Is(dialErr, context.Canceled) {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return true, nil
+	}
+	return false, dialErr
+}
+
+// takeLocked hands out e when its dial succeeded and it is still pooled and
+// READY: one more holder, and no idle eviction while held. p.mu is held.
+func (p *pool) takeLocked(e *entry) bool {
+	if e.err != nil || e.retired || e.cc.GetState() != connectivity.Ready {
+		return false
+	}
+	e.refs++
+	if e.timer != nil {
+		e.timer.Stop()
+		e.timer = nil
+	}
+	return true
 }
 
 // dial runs the dial for a new entry and publishes its outcome.

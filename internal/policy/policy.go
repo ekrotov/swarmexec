@@ -92,47 +92,65 @@ func Parse(data []byte, identityVerified bool) (*Policy, error) {
 	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("policy: %w", err)
 	}
-	p := &Policy{}
-	switch f.Default {
-	case "allow":
-		p.allowByDefault = true
-	case "deny":
-	case "":
-		return nil, errors.New(`policy: "default" is required — allow or deny, for requests no rule matches`)
-	default:
-		return nil, fmt.Errorf(`policy: default must be allow or deny, not %q`, f.Default)
+	allowByDefault, err := parseDefault(f.Default)
+	if err != nil {
+		return nil, err
 	}
+	p := &Policy{allowByDefault: allowByDefault}
 	for i, fr := range f.Rules {
-		n := i + 1
-		r := rule{n: n, identities: fr.Identities, services: fr.Services, ports: fr.Ports, users: fr.Users, reason: fr.Reason}
-		switch {
-		case len(fr.Allow) > 0 && len(fr.Deny) > 0:
-			return nil, fmt.Errorf("policy rule %d: has both allow and deny; a rule decides one way", n)
-		case len(fr.Allow) > 0:
-			r.allow, r.actions = true, fr.Allow
-		case len(fr.Deny) > 0:
-			r.actions = fr.Deny
-		default:
-			return nil, fmt.Errorf("policy rule %d: names no actions (allow: [...] or deny: [...])", n)
-		}
-		for _, a := range r.actions {
-			if !matchesAnyAction(a) {
-				return nil, fmt.Errorf("policy rule %d: %q is not an action — known: %s", n, a, strings.Join(Actions, ", "))
-			}
-		}
-		for _, pat := range append(append(append([]string{}, r.identities...), r.services...), r.users...) {
-			if _, err := path.Match(pat, ""); err != nil {
-				return nil, fmt.Errorf("policy rule %d: bad pattern %q: %v", n, pat, err)
-			}
-		}
-		if len(r.identities) > 0 && !identityVerified {
-			return nil, fmt.Errorf("policy rule %d matches on identities, but this agent cannot verify identities: "+
-				"with a shared secret and no client CA every operator presents the same credential and names "+
-				"themselves — run the agent with -ca-cert and client certificates, or drop the identities", n)
+		r, err := parseRule(i+1, fr, identityVerified)
+		if err != nil {
+			return nil, err
 		}
 		p.rules = append(p.rules, r)
 	}
 	return p, nil
+}
+
+// parseDefault reads the required "default" key: true for allow.
+func parseDefault(def string) (bool, error) {
+	switch def {
+	case "allow":
+		return true, nil
+	case "deny":
+		return false, nil
+	case "":
+		return false, errors.New(`policy: "default" is required — allow or deny, for requests no rule matches`)
+	default:
+		return false, fmt.Errorf(`policy: default must be allow or deny, not %q`, def)
+	}
+}
+
+// parseRule checks rule n (1-based): one direction, known actions, valid
+// patterns, and identities only where the agent can verify them.
+func parseRule(n int, fr fileRule, identityVerified bool) (rule, error) {
+	r := rule{n: n, identities: fr.Identities, services: fr.Services, ports: fr.Ports, users: fr.Users, reason: fr.Reason}
+	switch {
+	case len(fr.Allow) > 0 && len(fr.Deny) > 0:
+		return rule{}, fmt.Errorf("policy rule %d: has both allow and deny; a rule decides one way", n)
+	case len(fr.Allow) > 0:
+		r.allow, r.actions = true, fr.Allow
+	case len(fr.Deny) > 0:
+		r.actions = fr.Deny
+	default:
+		return rule{}, fmt.Errorf("policy rule %d: names no actions (allow: [...] or deny: [...])", n)
+	}
+	for _, a := range r.actions {
+		if !matchesAnyAction(a) {
+			return rule{}, fmt.Errorf("policy rule %d: %q is not an action — known: %s", n, a, strings.Join(Actions, ", "))
+		}
+	}
+	for _, pat := range append(append(append([]string{}, r.identities...), r.services...), r.users...) {
+		if _, err := path.Match(pat, ""); err != nil {
+			return rule{}, fmt.Errorf("policy rule %d: bad pattern %q: %v", n, pat, err)
+		}
+	}
+	if len(r.identities) > 0 && !identityVerified {
+		return rule{}, fmt.Errorf("policy rule %d matches on identities, but this agent cannot verify identities: "+
+			"with a shared secret and no client CA every operator presents the same credential and names "+
+			"themselves — run the agent with -ca-cert and client certificates, or drop the identities", n)
+	}
+	return r, nil
 }
 
 func matchesAnyAction(pat string) bool {

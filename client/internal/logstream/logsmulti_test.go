@@ -224,3 +224,40 @@ func TestExpandLogSourcesErrors(t *testing.T) {
 		t.Errorf("only empty services: %v", err)
 	}
 }
+
+// servicesDown is a cluster whose service listing fails.
+type servicesDown struct{ *fakeLogResolver }
+
+func (servicesDown) Services(context.Context) ([]resolve.Service, error) {
+	return nil, errors.New("manager unreachable")
+}
+
+func TestExpandLogSourcesLookupFailures(t *testing.T) {
+	if _, _, err := ExpandSources(context.Background(), servicesDown{shopCluster()}, nil, "shop", ""); err == nil ||
+		!strings.Contains(err.Error(), "manager unreachable") {
+		t.Errorf("a failed service listing must be the error: %v", err)
+	}
+	// A stack service whose replicas cannot be listed stops the expansion.
+	r := shopCluster()
+	r.services = append(r.services, resolve.Service{Name: "shop_gone", Stack: "shop"})
+	if _, _, err := ExpandSources(context.Background(), r, nil, "shop", ""); err == nil ||
+		!strings.Contains(err.Error(), "shop_gone") {
+		t.Errorf("a stack service without candidates must be the error: %v", err)
+	}
+}
+
+// A global service's tasks share slot 0: they come in node-name order.
+func TestExpandLogSourcesGlobalByNode(t *testing.T) {
+	r := shopCluster()
+	r.cands["agent"] = []resolve.Candidate{
+		{Service: "agent", NodeID: "id3", NodeName: "n3", ContainerID: "g3"},
+		{Service: "agent", NodeID: "id1", NodeName: "n1", ContainerID: "g1"},
+	}
+	srcs, _, err := ExpandSources(context.Background(), r, []string{"agent"}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(labels(srcs), " "); got != "agent@n1 agent@n3" {
+		t.Errorf("sources = %s", got)
+	}
+}

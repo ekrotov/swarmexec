@@ -54,58 +54,21 @@ type Resolver interface {
 func ExpandSources(ctx context.Context, r Resolver, targets []string, stack, nodeHint string) ([]Source, []string, error) {
 	var services []string
 	if stack != "" {
-		svcs, err := r.Services(ctx)
-		if err != nil {
+		var err error
+		if services, err = stackServices(ctx, r, stack); err != nil {
 			return nil, nil, err
 		}
-		for _, s := range svcs {
-			if s.Stack == stack {
-				services = append(services, s.Name)
-			}
-		}
-		if len(services) == 0 {
-			return nil, nil, fmt.Errorf("no services in stack %q", stack)
-		}
-		sort.Strings(services)
 	}
 
-	var out []Source
-	var notes []string
-	seen := map[string]bool{}
-	add := func(s Source) {
-		if !seen[s.Endpoint.ContainerID] {
-			seen[s.Endpoint.ContainerID] = true
-			out = append(out, s)
-		}
-	}
-	addService := func(name string) error {
-		cands, err := r.Candidates(ctx, name)
-		if err != nil {
-			return err
-		}
-		if len(cands) == 0 {
-			notes = append(notes, fmt.Sprintf("%s: no running container", name))
-		}
-		sort.Slice(cands, func(i, j int) bool {
-			if cands[i].Slot != cands[j].Slot {
-				return cands[i].Slot < cands[j].Slot
-			}
-			return cands[i].NodeName < cands[j].NodeName
-		})
-		for _, c := range cands {
-			add(SourceFromCandidate(c))
-		}
-		return nil
-	}
-
+	set := sourceSet{seen: map[string]bool{}}
 	for _, name := range services {
-		if err := addService(name); err != nil {
+		if err := set.addService(ctx, r, name); err != nil {
 			return nil, nil, err
 		}
 	}
 	for _, t := range targets {
 		if isServiceName(ctx, r, t) {
-			if err := addService(t); err != nil {
+			if err := set.addService(ctx, r, t); err != nil {
 				return nil, nil, err
 			}
 			continue
@@ -114,12 +77,67 @@ func ExpandSources(ctx context.Context, r Resolver, targets []string, stack, nod
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", t, err)
 		}
-		add(Source{Label: t, Endpoint: *ep, Target: FollowTargetOf(t)})
+		set.add(Source{Label: t, Endpoint: *ep, Target: FollowTargetOf(t)})
 	}
-	if len(out) == 0 {
-		return nil, notes, fmt.Errorf("nothing to stream: %s", strings.Join(notes, "; "))
+	if len(set.out) == 0 {
+		return nil, set.notes, fmt.Errorf("nothing to stream: %s", strings.Join(set.notes, "; "))
 	}
-	return out, notes, nil
+	return set.out, set.notes, nil
+}
+
+// stackServices names the services of stack, sorted; none is an error.
+func stackServices(ctx context.Context, r Resolver, stack string) ([]string, error) {
+	svcs, err := r.Services(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var services []string
+	for _, s := range svcs {
+		if s.Stack == stack {
+			services = append(services, s.Name)
+		}
+	}
+	if len(services) == 0 {
+		return nil, fmt.Errorf("no services in stack %q", stack)
+	}
+	sort.Strings(services)
+	return services, nil
+}
+
+// sourceSet collects sources once per container, in the order added, plus
+// the notes ExpandSources hands back.
+type sourceSet struct {
+	out   []Source
+	notes []string
+	seen  map[string]bool // container IDs already in out
+}
+
+func (set *sourceSet) add(s Source) {
+	if !set.seen[s.Endpoint.ContainerID] {
+		set.seen[s.Endpoint.ContainerID] = true
+		set.out = append(set.out, s)
+	}
+}
+
+// addService adds every running replica of service name, by slot then node.
+func (set *sourceSet) addService(ctx context.Context, r Resolver, name string) error {
+	cands, err := r.Candidates(ctx, name)
+	if err != nil {
+		return err
+	}
+	if len(cands) == 0 {
+		set.notes = append(set.notes, fmt.Sprintf("%s: no running container", name))
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].Slot != cands[j].Slot {
+			return cands[i].Slot < cands[j].Slot
+		}
+		return cands[i].NodeName < cands[j].NodeName
+	})
+	for _, c := range cands {
+		set.add(SourceFromCandidate(c))
+	}
+	return nil
 }
 
 // isServiceName reports whether t names a service exactly. Candidates errors

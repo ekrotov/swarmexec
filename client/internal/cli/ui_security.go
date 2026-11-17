@@ -22,12 +22,7 @@ import (
 func (u *ui) showSecurityRisks() {
 	app, tree := u.app, u.treeTab().st()
 
-	var flagged []resolve.Service
-	for _, s := range tree.svcs {
-		if secscan.Actionable(s.Risks) {
-			flagged = append(flagged, s)
-		}
-	}
+	flagged := actionableServices(tree.svcs)
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetRegions(true).SetScrollable(true)
 	tv.SetBorder(true).SetTitle(" security risks ")
@@ -40,12 +35,7 @@ func (u *ui) showSecurityRisks() {
 
 	// Pre-select the service under the cursor if it is among the flagged ones.
 	if sel := u.currentServiceName(); sel != "" {
-		for i, s := range flagged {
-			if s.Name == sel {
-				tv.Highlight(fmt.Sprintf("s%d", i)).ScrollToHighlight()
-				break
-			}
-		}
+		highlightFlagged(tv, flagged, sel)
 	}
 
 	prev := app.GetFocus()
@@ -76,6 +66,28 @@ func (u *ui) showSecurityRisks() {
 		return ev
 	})
 	ov.show(centered(tv, 84, 26), tv)
+}
+
+// actionableServices are the services with at least one actionable finding.
+func actionableServices(svcs []resolve.Service) []resolve.Service {
+	var flagged []resolve.Service
+	for _, s := range svcs {
+		if secscan.Actionable(s.Risks) {
+			flagged = append(flagged, s)
+		}
+	}
+	return flagged
+}
+
+// highlightFlagged highlights service name's region (s<i>, its index among
+// flagged) and scrolls to it; nothing when it is not flagged.
+func highlightFlagged(tv *tview.TextView, flagged []resolve.Service, name string) {
+	for i, s := range flagged {
+		if s.Name == name {
+			tv.Highlight(fmt.Sprintf("s%d", i)).ScrollToHighlight()
+			return
+		}
+	}
 }
 
 // securityOverlayState is what the overlay needs to describe itself honestly.

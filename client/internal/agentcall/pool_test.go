@@ -355,3 +355,28 @@ func TestWaitersShareARefusal(t *testing.T) {
 		t.Errorf("%d dials for 5 concurrent callers to a refused node", got)
 	}
 }
+
+// sharedDialFailure: another caller's refusal is ours too; its timeout is not,
+// unless our own context is done as well.
+func TestSharedDialFailure(t *testing.T) {
+	refused := errors.New("connection refused")
+	done, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		name      string
+		ctx       context.Context
+		dialErr   error
+		wantRetry bool
+		wantErr   error
+	}{
+		{"refused", context.Background(), refused, false, refused},
+		{"their deadline", context.Background(), context.DeadlineExceeded, true, nil},
+		{"their cancel", context.Background(), context.Canceled, true, nil},
+		{"ours done too", done, context.DeadlineExceeded, false, context.Canceled},
+	} {
+		retry, err := sharedDialFailure(tc.ctx, tc.dialErr)
+		if retry != tc.wantRetry || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
+			t.Errorf("%s: got (%v, %v), want (%v, %v)", tc.name, retry, err, tc.wantRetry, tc.wantErr)
+		}
+	}
+}

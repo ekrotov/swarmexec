@@ -194,3 +194,47 @@ func TestValidateBadAddrMode(t *testing.T) {
 		t.Fatal("want error for invalid addr-mode")
 	}
 }
+
+// Every SWARMEXEC_* variable lands on its field; unparsable numbers and
+// booleans leave the value from before.
+func TestOverlayEnvEveryVariable(t *testing.T) {
+	for k, v := range map[string]string{
+		"SWARMEXEC_CA":                "/e/ca",
+		"SWARMEXEC_CERT":              "/e/cert",
+		"SWARMEXEC_KEY":               "/e/key",
+		"SWARMEXEC_PORT":              "9001",
+		"SWARMEXEC_ADDR_MODE":         "ip",
+		"SWARMEXEC_SERVER_NAME":       "agent.example",
+		"SWARMEXEC_AGENT_SECRET":      "s3",
+		"SWARMEXEC_AGENT_SECRET_FILE": "/e/secret",
+		"SWARMEXEC_OPERATOR":          "alice",
+		"SWARMEXEC_INSECURE":          " Yes ",
+		"SWARMEXEC_UI_DIM":            "0.5",
+	} {
+		t.Setenv(k, v)
+	}
+	c := Default()
+	overlayEnv(&c)
+	got := []string{c.CA, c.Cert, c.Key, c.AddrMode, c.ServerName, c.AgentSecret, c.AgentSecretFile, c.Operator}
+	want := []string{"/e/ca", "/e/cert", "/e/key", "ip", "agent.example", "s3", "/e/secret", "alice"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("strings = %q, want %q", got, want)
+	}
+	if c.Port != 9001 || !c.Insecure || c.UI.Dim != 0.5 {
+		t.Errorf("port/insecure/dim = %d/%v/%v, want 9001/true/0.5", c.Port, c.Insecure, c.UI.Dim)
+	}
+
+	t.Setenv("SWARMEXEC_INSECURE", "off")
+	t.Setenv("SWARMEXEC_PORT", "notaport")
+	t.Setenv("SWARMEXEC_UI_DIM", "dim")
+	overlayEnv(&c)
+	if c.Insecure || c.Port != 9001 || c.UI.Dim != 0.5 {
+		t.Errorf("after off/garbage: port/insecure/dim = %d/%v/%v, want 9001/false/0.5", c.Port, c.Insecure, c.UI.Dim)
+	}
+	t.Setenv("SWARMEXEC_INSECURE", "maybe")
+	c.Insecure = true
+	overlayEnv(&c)
+	if !c.Insecure {
+		t.Error("an unrecognised SWARMEXEC_INSECURE must leave the value alone")
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
@@ -326,18 +327,7 @@ func (s *Server) prunableNetworks(ctx context.Context, labels []string) ([]netwo
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
-	used := map[string]bool{}
-	for _, c := range cs.Items {
-		if c.NetworkSettings == nil {
-			continue
-		}
-		for name, ep := range c.NetworkSettings.Networks {
-			used[name] = true
-			if ep != nil && ep.NetworkID != "" {
-				used[ep.NetworkID] = true
-			}
-		}
-	}
+	used := networksInUse(cs.Items)
 	var out []network.Network
 	for _, n := range list.Items {
 		if !removableNetwork(n.Network) || used[n.ID] || used[n.Name] || !matchesLabels(n.Labels, labels) {
@@ -353,6 +343,24 @@ func (s *Server) prunableNetworks(ctx context.Context, labels []string) ([]netwo
 		out = append(out, n.Network)
 	}
 	return out, nil
+}
+
+// networksInUse is every network name and ID some container (running or not)
+// is attached to.
+func networksInUse(cs []container.Summary) map[string]bool {
+	used := map[string]bool{}
+	for _, c := range cs {
+		if c.NetworkSettings == nil {
+			continue
+		}
+		for name, ep := range c.NetworkSettings.Networks {
+			used[name] = true
+			if ep != nil && ep.NetworkID != "" {
+				used[ep.NetworkID] = true
+			}
+		}
+	}
+	return used
 }
 
 func (s *Server) pruneNetworks(ctx context.Context, labels []string) (count int64, err error) {

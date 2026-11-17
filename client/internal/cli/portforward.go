@@ -272,46 +272,60 @@ func forwardConn(ctx context.Context, client pb.AgentClient, local net.Conn, con
 
 	// Wait for readiness before piping, so a closed target port surfaces as an
 	// error here instead of as a mysteriously silent connection.
+	if err := awaitForwardReady(stream); err != nil {
+		return err
+	}
+	go pumpToAgent(local, stream, cancel)
+	return pumpFromAgent(ctx, stream, local)
+}
+
+// awaitForwardReady reads the agent's first message: ready, or why not.
+func awaitForwardReady(stream pb.Agent_PortForwardClient) error {
 	first, err := stream.Recv()
 	if err != nil {
 		return err
 	}
 	switch pl := first.Payload.(type) {
 	case *pb.ForwardServerMessage_Ready:
-		// connected
+		return nil // connected
 	case *pb.ForwardServerMessage_Error:
 		return errors.New(pl.Error)
 	default:
 		return fmt.Errorf("agent sent %T before ready", pl)
 	}
+}
 
-	// local -> container
-	go func() {
-		buf := make([]byte, 32*1024)
-		for {
-			n, rerr := local.Read(buf)
-			if n > 0 {
-				// Copy out of the reused buffer before it enters a protobuf
-				// message (CONTRACT.md §6).
-				chunk := make([]byte, n)
-				copy(chunk, buf[:n])
-				if serr := stream.Send(&pb.ForwardClientMessage{
-					Payload: &pb.ForwardClientMessage_Data{Data: chunk},
-				}); serr != nil {
-					cancel()
-					return
-				}
-			}
-			if rerr != nil {
-				// Local peer closed its write side: half-close toward the
-				// container and keep reading the other direction.
-				_ = stream.CloseSend()
+// pumpToAgent copies local -> container until either side gives up: a failed
+// send cancels the bridge, the local peer closing half-closes toward the
+// container (the other direction keeps going).
+func pumpToAgent(local net.Conn, stream pb.Agent_PortForwardClient, cancel context.CancelFunc) {
+	buf := make([]byte, 32*1024)
+	for {
+		n, rerr := local.Read(buf)
+		if n > 0 {
+			// Copy out of the reused buffer before it enters a protobuf
+			// message (CONTRACT.md §6).
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			if serr := stream.Send(&pb.ForwardClientMessage{
+				Payload: &pb.ForwardClientMessage_Data{Data: chunk},
+			}); serr != nil {
+				cancel()
 				return
 			}
 		}
-	}()
+		if rerr != nil {
+			// Local peer closed its write side: half-close toward the
+			// container and keep reading the other direction.
+			_ = stream.CloseSend()
+			return
+		}
+	}
+}
 
-	// container -> local
+// pumpFromAgent copies container -> local until the stream ends; only an
+// agent-side failure is an error.
+func pumpFromAgent(ctx context.Context, stream pb.Agent_PortForwardClient, local net.Conn) error {
 	for {
 		msg, rerr := stream.Recv()
 		if rerr != nil {

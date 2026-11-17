@@ -91,30 +91,39 @@ func (u *ui) logFooterText(following bool) string {
 // capture (the configured toggle_mouse key).
 func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
 	return func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && ev.Rune() == u.km.Quit):
+		if ev.Key() == tcell.KeyEscape {
 			closeLogs()
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'f':
+			return nil
+		}
+		if ev.Key() != tcell.KeyRune {
+			return ev
+		}
+		// The keymap's keys are variables, so the first matching case wins —
+		// the order is the precedence when keys.yaml binds one of them to f.
+		switch ev.Rune() {
+		case u.km.Quit:
+			closeLogs()
+		case 'f':
 			follow.Store(!follow.Load())
 			if follow.Load() {
 				tv.ScrollToEnd() // re-enabling: jump to the newest line
 			}
 			setTitle()
 			refreshHint() // the footer names the state too, not just the title
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'F':
+		case 'F':
 			lv.cycleFormat()
 			setTitle()
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'a':
+		case 'a':
 			// Five formats and no way to know which one this container uses is
 			// a question the output can answer better than the operator can.
 			u.info(lv.autoDetectNow())
 			setTitle()
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'l':
+		case 'l':
 			lv.cycleLevel()
 			setTitle()
-		case ev.Key() == tcell.KeyRune && ev.Rune() == '/':
+		case '/':
 			u.logGrepPrompt(lv, tv, setTitle)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.ToggleMouse:
+		case u.km.ToggleMouse:
 			// Same mouse toggle as the tabs, but the tabs' flash lands on the
 			// footer hidden behind this overlay, so reflect the state in the
 			// log footer instead.

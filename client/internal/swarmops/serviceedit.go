@@ -707,11 +707,7 @@ func ValidatePlacementConstraint(s string) (string, error) {
 	}
 	key := strings.TrimSpace(s[:at])
 	val := strings.TrimSpace(s[at+2:])
-	known := key == "node.role" || key == "node.hostname" || key == "node.id" ||
-		key == "node.platform.os" || key == "node.platform.arch" ||
-		(strings.HasPrefix(key, "node.labels.") && len(key) > len("node.labels.")) ||
-		(strings.HasPrefix(key, "engine.labels.") && len(key) > len("engine.labels."))
-	if !known {
+	if !knownConstraintKey(key) {
 		return "", fmt.Errorf("unknown constraint key %q (use node.role / node.hostname / node.id / node.platform.os|arch / node.labels.<k> / engine.labels.<k>)", key)
 	}
 	if val == "" {
@@ -721,6 +717,21 @@ func ValidatePlacementConstraint(s string) (string, error) {
 		return "", fmt.Errorf("constraint value %q must not contain spaces", val)
 	}
 	return key + op + val, nil
+}
+
+// knownConstraintKey: the node attributes Swarm constrains on, and a named
+// node or engine label.
+func knownConstraintKey(key string) bool {
+	switch key {
+	case "node.role", "node.hostname", "node.id", "node.platform.os", "node.platform.arch":
+		return true
+	}
+	for _, prefix := range []string{"node.labels.", "engine.labels."} {
+		if strings.HasPrefix(key, prefix) && len(key) > len(prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // PlacementSuggestions builds fully-formed candidate constraints from the
