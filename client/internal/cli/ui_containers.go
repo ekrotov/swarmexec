@@ -197,7 +197,7 @@ func (t *treeTab) refresh() {
 func (t *treeTab) footer() string {
 	km, kl := t.u.km, keyLabel
 	return fmt.Sprintf("[yellow]j/k[white] move  [yellow]Enter[white] open  [yellow]%s[white] logs  [yellow]%s/%s[white] fold  [yellow]%s[white] inspect  [yellow]%s[white] search  [yellow]%s[white] forward  [yellow]%s[white] risks  [yellow]%s[white] group  [yellow]%s[white] stack file  %s remove",
-		kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup), kl(km.StackFile), keyTag(dangerKey("X")))
+		kl(km.Logs), kl(km.Fold), kl(km.Unfold), kl(km.ContainerInspect), kl(km.Search), kl(km.Forward), kl(km.SecurityRisks), kl(km.StackGroup), kl(km.StackFile), keyTag(dangerKey(kl(km.ServiceRemove))))
 }
 
 func (t *treeTab) helpSection(h *helpWriter) {
@@ -211,7 +211,7 @@ func (t *treeTab) helpSection(h *helpWriter) {
 	h.line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	h.line(kl(km.StackGroup), "group services by stack / flat list")
 	h.line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
-	h.danger("X", "remove: service · container’s service · whole stack (confirmed)")
+	h.danger(kl(km.ServiceRemove), "remove: service · container’s service · whole stack (confirmed)")
 	h.line(kl(km.Search), "search services / containers / nodes")
 
 	h.sec("Service inspect (" + kl(km.ContainerInspect) + ")")
@@ -1051,9 +1051,9 @@ func (t *treeTab) runeBindings() []treeBinding {
 		{km.Logs, t.logsUnderCursor},
 		{km.SecurityRisks, u.showSecurityRisks},
 		// Remove the service under the cursor, without the detour through the
-		// inspect overlay. Destructive, so it is a fixed capital key (like X in
-		// the inspect) and always behind a confirm.
-		{'X', t.removeUnderCursor},
+		// inspect overlay. Destructive, so it defaults to capital X (like X in
+		// the inspect) and is always behind a confirm.
+		{km.ServiceRemove, t.removeUnderCursor},
 		{km.Fold, t.fold},
 		{km.Unfold, t.unfold},
 		{km.StackFile, u.openStackFileMenu},

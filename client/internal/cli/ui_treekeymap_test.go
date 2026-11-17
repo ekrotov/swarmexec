@@ -195,3 +195,28 @@ func TestTreeKeysFallThroughToTheTabKeys(t *testing.T) {
 		t.Errorf("Down came back as %v", out)
 	}
 }
+
+// service_remove is a keymap action (T-15): rebound, the new key removes and
+// the old X falls through like any unbound key; the footer names the bound
+// key, still drawn red.
+func TestTreeServiceRemoveIsRemappable(t *testing.T) {
+	u := treeKeysUI(t)
+	onLoop(t, u, func() { u.km.ServiceRemove = 'D' })
+	cursorTo(t, u, "shop_db")
+	ev := rune_('X')
+	if out := treeKey(t, u, ev); out != ev {
+		t.Errorf("X after the remap was handled: %v", out)
+	}
+	if p := frontPage(t, u); p != pageMain {
+		t.Fatalf("X after the remap opened %s", p)
+	}
+	onLoop(t, u, func() {
+		if f := u.treeTab().footer(); !strings.Contains(f, keyTag(dangerKey("D"))) || strings.Contains(f, keyTag(dangerKey("X"))) {
+			t.Errorf("footer does not name the bound key: %q", f)
+		}
+	})
+	if out := treeKey(t, u, rune_('D')); out != nil {
+		t.Error("the bound key was passed on")
+	}
+	waitFront(t, u, pageConfirm)
+}

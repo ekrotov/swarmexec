@@ -194,7 +194,8 @@ func TestDialogRunesMatchTheSource(t *testing.T) {
 func TestDefaultKeybinds_DestructiveActionsUseX(t *testing.T) {
 	k := defaultKeybinds()
 	for name, r := range map[string]rune{
-		"volume_delete": k.VolDelete, "secret_delete": k.SecDelete,
+		"service_remove": k.ServiceRemove,
+		"volume_delete":  k.VolDelete, "secret_delete": k.SecDelete,
 		"context_delete": k.CtxDelete, "forward_stop": k.FwdStop,
 	} {
 		if r != 'X' {
@@ -217,5 +218,17 @@ func TestLoadKeybinds_OldDBindingStillWorks(t *testing.T) {
 	}
 	if km.VolDelete != 'd' || km.SecDelete != 'd' || km.CtxDelete != 'd' || km.FwdStop != 'd' {
 		t.Errorf("explicit d bindings must win, got %+v", km)
+	}
+}
+
+// The tree's remove key is a keymap action like the other deletes (T-15).
+func TestLoadKeybinds_ServiceRemove(t *testing.T) {
+	km, warns := loadKeybinds(writeKeys(t, "service_remove: D\n"))
+	if len(warns) != 0 || km.ServiceRemove != 'D' {
+		t.Errorf("service_remove: D → %q, warnings %v", km.ServiceRemove, warns)
+	}
+	km, warns = loadKeybinds(writeKeys(t, "service_remove: E\n"))
+	if len(warns) != 1 || km.ServiceRemove != 'X' {
+		t.Errorf("service_remove onto stack_file's E must be refused, got %q, %v", km.ServiceRemove, warns)
 	}
 }

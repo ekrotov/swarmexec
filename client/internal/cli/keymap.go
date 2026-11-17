@@ -24,7 +24,7 @@ type keybinds struct {
 	// containers + volumes
 	Search rune
 	// containers
-	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup, StackFile rune
+	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup, StackFile, ServiceRemove rune
 	// volumes
 	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach, VolNew rune
 	// networks
@@ -49,9 +49,9 @@ type keyAction struct {
 	field func(*keybinds) *rune
 }
 
-// The destructive actions — volume_delete, secret_delete, context_delete and
-// forward_stop — default to capital X, the same key the tree removes a
-// service or stack with: one deliberate, shifted key for "make it go away" on
+// The destructive actions — service_remove (the tree: a service or a whole
+// stack), volume_delete, secret_delete, context_delete and forward_stop —
+// default to capital X: one deliberate, shifted key for "make it go away" on
 // every tab, drawn red in the footers (dangerKey). There is no lowercase d
 // alias; a keys.yaml that binds d still works, as any explicit binding does.
 var keyActions = []keyAction{
@@ -70,6 +70,9 @@ var keyActions = []keyAction{
 	// Capital E: the stack-file actions are one gesture away from the tree, and
 	// a capital keeps them clear of the single-letter navigation keys.
 	{"stack_file", []string{"containers"}, 'E', func(k *keybinds) *rune { return &k.StackFile }},
+	// Removes the service (or the whole stack) under the tree cursor, always
+	// behind a confirm.
+	{"service_remove", []string{"containers"}, 'X', func(k *keybinds) *rune { return &k.ServiceRemove }},
 	{"volume_select", []string{"volumes"}, ' ', func(k *keybinds) *rune { return &k.VolSelect }},
 	{"volume_select_all", []string{"volumes"}, 'a', func(k *keybinds) *rune { return &k.VolSelectAll }},
 	{"volume_delete", []string{"volumes"}, 'X', func(k *keybinds) *rune { return &k.VolDelete }},
