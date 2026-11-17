@@ -82,6 +82,13 @@ func Run(ctx context.Context, stream Stream, opts Options) (int, error) {
 	// stdin → agent, half-closing on EOF.
 	if opts.Stdin != nil {
 		go pumpStdin(opts.Stdin, snd)
+	} else {
+		// No stdin to forward: say so now. The agent always attaches stdin, so
+		// without this EOF a command that reads it (cat, rg without a path)
+		// would hang until the caller's timeout instead of seeing EOF as it does
+		// under `docker exec` without -i. Resize events cannot follow: the agent
+		// stops reading its input once it sees the half-close.
+		_ = snd.closeSend()
 	}
 
 	// resize → agent.
