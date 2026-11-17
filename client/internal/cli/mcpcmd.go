@@ -34,8 +34,9 @@ func newMCPCmd(g *globalFlags) *cobra.Command {
 			"swarmexec.mcp.exec=true a non-interactive command in its containers. An\n" +
 			"explicit \"false\" always wins. --default list makes unlabelled services\n" +
 			"visible (listed, inspected, their stats read), never their logs or exec.\n\n" +
-			"The labels themselves are never shown to the assistant, and nothing can be\n" +
-			"changed through this server. A service that mounts the Docker socket is\n" +
+			"The labels themselves are never shown to the assistant, and no tool changes a\n" +
+			"service, stack or label; the one tool that is not read-only is exec_run, which\n" +
+			"runs a command in a service that has swarmexec.mcp.exec=true. A service that mounts the Docker socket is\n" +
 			"never exec'd into, whatever its labels say.\n\n" +
 			"ssh cannot prompt here: stdin and stdout are the protocol. Load the key for\n" +
 			"an ssh:// context into ssh-agent first. Logging goes to the log file.\n\n" +
