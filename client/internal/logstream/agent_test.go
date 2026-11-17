@@ -29,6 +29,11 @@ import (
 // each log two stdout lines and one stderr line, then end — a container that
 // exited.
 func testRun(t *testing.T, p Params, out, errOut io.Writer) (Run, *agenttest.Agent) {
+	return testRunSwarm(t, p, &swarmfake.Swarm{}, out, errOut)
+}
+
+// testRunSwarm is testRun against the given fake manager state.
+func testRunSwarm(t *testing.T, p Params, sw *swarmfake.Swarm, out, errOut io.Writer) (Run, *agenttest.Agent) {
 	t.Helper()
 	d := agenttest.NewDocker()
 	for _, id := range []string{"c1", "c2"} {
@@ -37,7 +42,7 @@ func testRun(t *testing.T, p Params, out, errOut io.Writer) (Run, *agenttest.Age
 	}
 	agent := agenttest.Start(t, agenttest.Options{Secret: "s3cret", Docker: d})
 
-	api := httptest.NewServer(&swarmfake.Swarm{})
+	api := httptest.NewServer(sw)
 	t.Cleanup(api.Close)
 	dcli, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
 	if err != nil {

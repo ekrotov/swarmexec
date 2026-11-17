@@ -424,13 +424,19 @@ func isHexID(s string) bool {
 }
 
 func (r *Resolver) candidatesForService(ctx context.Context, svc *swarm.Service) ([]Candidate, error) {
+	return r.candidatesWhere(ctx, svc, nil)
+}
+
+// candidatesWhere is candidatesForService limited to the tasks keep accepts
+// (nil keeps all).
+func (r *Resolver) candidatesWhere(ctx context.Context, svc *swarm.Service, keep func(swarm.Task) bool) ([]Candidate, error) {
 	tasks, err := r.runningTasks(ctx, svc.ID)
 	if err != nil {
 		return nil, err
 	}
 	var cands []Candidate
 	for _, t := range tasks {
-		if containerID(t) == "" {
+		if containerID(t) == "" || (keep != nil && !keep(t)) {
 			continue // task scheduled but container not up yet
 		}
 		c, err := r.taskToCandidate(ctx, t)
@@ -538,7 +544,10 @@ func (r *Resolver) Successor(ctx context.Context, t FollowTarget) (Candidate, bo
 	if svc == nil {
 		return Candidate{}, false, ErrTargetGone
 	}
-	cands, err := r.candidatesForService(ctx, svc)
+	// Only tasks the node reports as running: the manager keeps listing a
+	// just-died container as desired-state=running until the orchestrator
+	// reacts, and following it again would re-read a dead log.
+	cands, err := r.candidatesWhere(ctx, svc, func(t swarm.Task) bool { return t.Status.State == swarm.TaskStateRunning })
 	if err != nil {
 		return Candidate{}, false, err
 	}

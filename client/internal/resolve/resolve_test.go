@@ -127,6 +127,7 @@ func node(id, host, addr string) swarm.Node {
 func task(id, serviceID, nodeID string, slot int, containerID string) swarm.Task {
 	t := swarm.Task{ID: id, ServiceID: serviceID, NodeID: nodeID, Slot: slot}
 	t.DesiredState = swarm.TaskStateRunning
+	t.Status.State = swarm.TaskStateRunning
 	t.Status.Timestamp = time.Now().Add(-5 * time.Minute)
 	if containerID != "" {
 		t.Status.ContainerStatus = &swarm.ContainerStatus{ContainerID: containerID}
