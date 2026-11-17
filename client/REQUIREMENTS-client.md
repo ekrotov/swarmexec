@@ -1,5 +1,7 @@
 # REQUIREMENTS — swarmexec CLI Client
 
+> **Historical (v1.0).** This file describes the first version, not the current behaviour; see `README.md`, `CONTRACT.md`, `agent/README.md`, `client/README.md` and the site docs (<https://swarm-exec.cloud-surfers.net/docs>) for what swarmexec does today.
+
 > Implements the client component defined in `CONTRACT.md`. Read `CONTRACT.md`
 > first; it is the authoritative wire protocol. This document specifies the
 > CLI's behavior, terminal handling, and node resolution. Do not redefine the

@@ -1,5 +1,7 @@
 # REQUIREMENTS — swarmexec Agent
 
+> **Historical (v1.0).** This file describes the first version, not the current behaviour; see `README.md`, `CONTRACT.md`, `agent/README.md`, `client/README.md` and the site docs (<https://swarm-exec.cloud-surfers.net/docs>) for what swarmexec does today.
+
 > Implements the agent component defined in `CONTRACT.md`. Read `CONTRACT.md`
 > first; it is the authoritative wire protocol. This document specifies the
 > agent's behavior, deployment, and security. Do not redefine the proto here —
