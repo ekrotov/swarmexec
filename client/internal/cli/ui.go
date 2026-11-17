@@ -1445,8 +1445,10 @@ func (u *ui) helpFor(name string) string {
 // keymap, so remapped keys show correctly. Bound to "?" on every tab and, via
 // overlayHelpKey, in every overlay.
 //
-// An overlay's own keys come first, read off its footer so the two cannot
-// drift.
+// The order is "where am I" first: the open overlay's own keys (read off its
+// footer, so the two cannot drift), else the sidebar's or the active tab's
+// section, then the other tabs, and Global last — the keys an operator who
+// pressed ? already half knows.
 func (u *ui) showHelp() {
 	app := u.app
 	prev := app.GetFocus()
@@ -1468,17 +1470,22 @@ func (u *ui) showHelp() {
 			section("clientlog", func() { u.clientLogHelpSection(h) })
 		}
 	}
-	u.globalHelpSection(h)
-	// Every tab's own section, in tab order, from the registry.
+	if u.sidebarFocused() {
+		section("contexts", func() { u.contextsHelpSection(h) })
+	}
+	if t := u.activeTab(); t != nil {
+		section(u.active, func() { t.helpSection(h) })
+	}
+	// Every other tab's own section, in tab order, from the registry.
 	for _, t := range uiTabList {
 		section(t.key, func() { u.tab(t.key).helpSection(h) })
 	}
 	section("contexts", func() { u.contextsHelpSection(h) })
 	section("logs", func() { u.logViewHelpSection(h) })
 	section("clientlog", func() { u.clientLogHelpSection(h) })
+	u.globalHelpSection(h)
 
-	hv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	hv.SetText(h.String())
+	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
 	hv.SetBorder(true).SetTitle(" keybindings ")
 	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeHelp := ov.Close
@@ -1494,7 +1501,29 @@ func (u *ui) showHelp() {
 		}
 		return ev
 	})
-	ov.show(centered(hv, 60, 24), hv)
+	// Grows with the terminal: a fixed 60×24 box showed some twenty of the
+	// ~90 lines whatever the screen. centeredGrow keeps the footer free.
+	ov.show(centeredGrow(hv, 60, 24, 0.9), hv)
+}
+
+// helpView is the help's text view, re-wrapped whenever its width changes —
+// the hanging indent (helpWriter.text) needs the width, and the width is only
+// known when it is drawn. Draw runs on the UI goroutine, so it sets the text
+// directly.
+type helpView struct {
+	*tview.TextView
+	h     *helpWriter
+	width int
+}
+
+func (v *helpView) Draw(screen tcell.Screen) {
+	if _, _, w, _ := v.GetInnerRect(); w != v.width {
+		v.width = w
+		row, col := v.GetScrollOffset()
+		v.SetText(v.h.text(w))
+		v.ScrollTo(row, col)
+	}
+	v.TextView.Draw(screen)
 }
 
 // globalHelpSection lists the keys every tab shares.

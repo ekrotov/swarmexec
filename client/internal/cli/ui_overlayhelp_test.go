@@ -30,8 +30,8 @@ func openHelpText(t *testing.T, u *ui) string {
 	var text string
 	onLoop(t, u, func() {
 		if box, ok := u.pages.GetPage(pageHelp).(*centeredBox); ok {
-			if tv, ok := box.inner.(*tview.TextView); ok {
-				text = tv.GetText(false)
+			if hv, ok := box.inner.(*helpView); ok {
+				text = hv.h.String()
 			}
 		}
 	})
@@ -39,7 +39,7 @@ func openHelpText(t *testing.T, u *ui) string {
 }
 
 // ? in an overlay opens the help with that overlay's own keys first — read
-// off its footer, danger keys still red. ? again closes the
+// off its footer, danger keys still red — and Global last. ? again closes the
 // help and hands the keyboard back to the overlay.
 func TestQuestionMarkInAnOverlayListsItsKeysFirst(t *testing.T) {
 	u, _, _ := editUIWith(t, editSwarm(), map[string]pb.AgentServer{"node-a": &pruneAgent{stats: statsFixture()}})
@@ -56,6 +56,9 @@ func TestQuestionMarkInAnOverlayListsItsKeysFirst(t *testing.T) {
 		if !strings.Contains(own, want) {
 			t.Errorf("own section lacks %q:\n%s", want, own)
 		}
+	}
+	if g := strings.LastIndex(text, "[aqua]"); !strings.HasPrefix(text[g:], "[aqua]Global") {
+		t.Errorf("Global must be the last section:\n%s", text)
 	}
 
 	pressViaApp(t, u, '?')
@@ -127,5 +130,62 @@ func TestFooterPairs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("pair %d = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// A description too long for the box wraps under itself (a hanging indent),
+// not under the key column; a key wider than the column pushes its
+// description right, and the continuation follows it.
+func TestHelpTextHangingIndent(t *testing.T) {
+	h := &helpWriter{}
+	h.sec("S")
+	h.line("p", "port-forward the task under the cursor and then some more words")
+	h.line("CONTAINERS", "running tasks and the addresses the nodes know")
+	got := h.text(40)
+	want := "[aqua]S[-]\n" +
+		"  [yellow]p[white]         port-forward the task under\n" +
+		"            the cursor and then some\n" +
+		"            more words\n" +
+		"  [yellow]CONTAINERS[white] running tasks and the\n" +
+		"             addresses the nodes know\n"
+	if got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	if h.String() != h.text(0) || strings.Count(h.text(0), "\n") != 3 {
+		t.Errorf("unwrapped: %q", h.String())
+	}
+}
+
+// The help grows with the terminal, unlike the old fixed 60×24 box, and
+// still leaves the footer rows free; it re-wraps to the width it gets.
+func TestHelpGrowsWithTheTerminal(t *testing.T) {
+	u := tabsUI()
+	u.active = "containers"
+	u.showHelp()
+	_, front := u.pages.GetFrontPage()
+	box := front.(*centeredBox)
+	hv := box.inner.(*helpView)
+	scr := tcell.NewSimulationScreen("UTF-8")
+	if err := scr.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer scr.Fini()
+	for _, size := range [][2]int{{160, 45}, {80, 24}} {
+		scr.SetSize(size[0], size[1])
+		box.SetRect(0, 0, size[0], size[1])
+		box.Draw(scr)
+		_, y, w, h := hv.GetRect()
+		if size[0] == 160 && (w < 140 || h < 38) {
+			t.Errorf("at 160×45 the help is %d×%d, want ~90%%", w, h)
+		}
+		if y+h > size[1]-overlayFooterReserve {
+			t.Errorf("at %v the help covers the footer (y %d, h %d)", size, y, h)
+		}
+		if hv.width != w-2 {
+			t.Errorf("at %v the help wrapped for %d columns, the box has %d", size, hv.width, w-2)
+		}
+	}
+	if !strings.Contains(hv.GetText(false), "port-forward the task under the cursor\n") {
+		t.Error("the p line should be the short one")
 	}
 }
