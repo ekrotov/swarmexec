@@ -306,7 +306,8 @@ var rotateSecretFn = swarmops.RotateSecret
 // Esc only hides the progress overlay, and so does a switch (which closes the
 // old cluster's overlays). Either way the rotation still reports how it
 // ended; when another cluster is on screen by then, the report names the
-// cluster the rotation ran on. Quitting the UI does stop it — runCtx ends.
+// cluster the rotation ran on. Quitting the UI does stop it — runCtx ends — which is why q
+// asks first while one runs.
 //
 // Progress arrives on the rotating goroutine. It is collected under a lock
 // and drawn by at most one queued update at a time, so a burst of lines costs
@@ -360,7 +361,10 @@ func (t *secretsTab) runRotation(name string, data []byte) {
 	draw()
 	ov.show(centered(tv, 90, 18), tv)
 
-	// Deliberately not async: that would drop the report after a switch.
+	// Deliberately not mutate: the rotation has its own overlay and its own
+	// report, and the one thing it shares with mutate is being counted, so
+	// quitting asks first.
+	end := u.muts.begin("secret rotation of " + name + " on " + cs.name)
 	go func() {
 		start := time.Now()
 		err := rotateSecretFn(ctx, dcli, name, data, swarmops.RotateOptions{
@@ -368,6 +372,7 @@ func (t *secretsTab) runRotation(name string, data []byte) {
 				add(fmt.Sprintf("[yellow]%d/%d[-] %s", e.Step, swarmops.RotateSteps, tview.Escape(e.Msg)))
 			},
 		})
+		end()
 		logOp(ctx, "ui.secrets.rotate", start, err, "cluster", cs.name, "secret", name)
 		app.QueueUpdateDraw(func() {
 			delete(rotating, name)
@@ -403,7 +408,7 @@ func (t *secretsTab) openDelete(s swarmops.Secret) {
 		msg += fmt.Sprintf("\n\n⚠ Still referenced by %d service(s): %s\nDocker will refuse to remove a secret in use — detach it from those services first.", len(s.Services), strings.Join(s.Services, ", "))
 	}
 	u.confirm(msg, "Delete", sectable, func() {
-		asyncDo(u, "ui.secrets.remove", func(ctx context.Context) error {
+		mutateDo(u, "ui.secrets.remove", "secret removal", func(ctx context.Context) error {
 			return removeSecret(ctx, dcli, s.Name)
 		}, func(err error) {
 			if err != nil {

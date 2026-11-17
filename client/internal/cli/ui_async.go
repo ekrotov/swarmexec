@@ -6,6 +6,9 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -51,9 +54,9 @@ import (
 //   - apply is dropped — not run at all — when the operator has switched
 //     cluster since the call: its result describes a cluster no longer on
 //     screen, and the modal or table it would open would sit over the wrong
-//     one. The drop is logged at debug; the outcome itself is already in the
-//     log through the Timed record, so a mutation that finished (or failed)
-//     after a switch still leaves a trace.
+//     one. The drop is logged at debug. async is for reads: a write goes
+//     through mutate below, which neither cancels on a switch nor drops the
+//     outcome.
 //
 // async must be called on the UI goroutine (a key handler, an apply, a
 // confirm's callback). It never blocks there: the only QueueUpdateDraw is on
@@ -79,6 +82,118 @@ func async[T any](u *ui, op string, work func(ctx context.Context) (T, error), a
 		}
 		u.deliver(gen, op, func() { apply(v, err) })
 	}()
+}
+
+// mutateTimeout bounds one write. Generous — a stack removal or a deploy
+// walks many objects — but finite, so a hung manager cannot pin a write (and
+// the quit confirmation that waits for it) forever.
+const mutateTimeout = 10 * time.Minute
+
+// mutate is async's sibling for writes: update, scale, remove, deploy, prune.
+// A read that a switch interrupts can be cancelled and forgotten; a write
+// cannot, because the operator then no longer knows whether it happened. So
+// where async ties the work to the cluster's context and drops the result,
+// mutate:
+//
+//   - runs on the SESSION context (u.runCtx) with mutateTimeout, so switching
+//     away does not stop it. Only quitting does — and quitting asks first
+//     while one is running (see mutations).
+//   - always reports. When the cluster it ran on is still the visible one,
+//     apply runs exactly as for async. When the operator has switched away,
+//     apply is not run (its widgets belong to a cluster no longer on screen),
+//     and a notice names the cluster and says how it ended, success or error.
+//   - counts as running from the call until work returns, which is what the
+//     quit confirmation lists.
+//
+// label is the operator-facing name of the write ("stack removal"); op is the
+// log key, as for async. Same calling rules as async: UI goroutine only.
+func mutate[T any](u *ui, op, label string, work func(ctx context.Context) (T, error), apply func(T, error)) {
+	gen, cs := u.generation(), u.clusterState
+	name := cs.name
+	base := u.runCtx
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, mutateTimeout)
+	var dcli swarmops.ServiceLister // stays a nil interface, not a nil *client.Client
+	if cs.dcli != nil {
+		dcli = cs.dcli
+	}
+	auth := agenterr.AuthOf(cs.cfg)
+	end := u.muts.begin(label + " on " + name)
+	go func() {
+		defer cancel()
+		start := time.Now()
+		v, err := work(ctx)
+		end()
+		logOp(ctx, op, start, err, "cluster", name)
+		if err != nil {
+			err = explainErr(ctx, auth, dcli, err)
+		}
+		u.app.QueueUpdateDraw(func() {
+			if u.gen.Load() == gen {
+				apply(v, err)
+				return
+			}
+			u.info(mutatedElsewhere(label, name, err))
+		})
+	}()
+}
+
+// mutateDo is mutate for a write that produces nothing but an error.
+func mutateDo(u *ui, op, label string, work func(ctx context.Context) error, apply func(error)) {
+	mutate(u, op, label, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, work(ctx)
+	}, func(_ struct{}, err error) { apply(err) })
+}
+
+// mutatedElsewhere is the notice for a write that ended after the operator
+// had switched to another cluster. It says which cluster and how it ended;
+// what it cannot say is how far a failed multi-step write got, so it points at
+// the cluster rather than guessing.
+func mutatedElsewhere(label, cluster string, err error) string {
+	if err == nil {
+		return fmt.Sprintf("%s on cluster %q finished.\n\nYou had switched to another cluster while it ran.", label, cluster)
+	}
+	return fmt.Sprintf("%s on cluster %q failed:\n\n%v\n\nYou had switched to another cluster while it ran; look at %q to see what is left.", label, cluster, err, cluster)
+}
+
+// mutations is the set of writes in flight — begin/end from mutate, and the
+// secret rotation, which has its own progress overlay but the same stake: ended
+// halfway it leaves services on a temporary secret.
+type mutations struct {
+	mu   sync.Mutex
+	next uint64
+	live map[uint64]string
+}
+
+// begin registers a running write and returns the function that ends it.
+func (m *mutations) begin(what string) (end func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.live == nil {
+		m.live = map[uint64]string{}
+	}
+	m.next++
+	id := m.next
+	m.live[id] = what
+	return func() {
+		m.mu.Lock()
+		delete(m.live, id)
+		m.mu.Unlock()
+	}
+}
+
+// running lists what is in flight, sorted so the dialog is stable.
+func (m *mutations) running() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, 0, len(m.live))
+	for _, w := range m.live {
+		out = append(out, w)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // asyncDo is async for work that produces nothing but an error — the shape of

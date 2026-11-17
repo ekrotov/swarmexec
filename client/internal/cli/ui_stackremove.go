@@ -51,7 +51,7 @@ func (u *ui) openRemoveStack(stack string, back tview.Primitive, onRemoved func(
 			u.info(fmt.Sprintf("removing stack %q (%s)…", stack, contents.Counts()))
 			// Per-object failures are the result, not an error: the rest
 			// is gone and the notice must say what is left behind.
-			async(u, "ui.stack.remove", func(ctx context.Context) ([]error, error) {
+			mutate(u, "ui.stack.remove", "stack removal", func(ctx context.Context) ([]error, error) {
 				return swarmops.RemoveStack(ctx, dcli, contents), nil
 			}, func(errs []error, _ error) {
 				if onRemoved != nil {

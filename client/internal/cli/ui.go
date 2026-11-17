@@ -1251,10 +1251,25 @@ func (u *ui) info(msg string) {
 // so it must handle its own focus. Only one confirm is ever open at a time, so
 // a single shared page name is safe.
 func (u *ui) confirm(msg, confirmLabel string, back tview.Primitive, onConfirm func()) {
+	u.confirmWith(msg, confirmLabel, false, back, onConfirm)
+}
+
+// confirmCancelDefault is confirm with the cursor on Cancel. For the few
+// questions where the confirming key does not undo a visible thing but
+// abandons work already in flight, so a reflex Enter must not be the
+// destructive answer (review NEB-05).
+func (u *ui) confirmCancelDefault(msg, confirmLabel string, back tview.Primitive, onConfirm func()) {
+	u.confirmWith(msg, confirmLabel, true, back, onConfirm)
+}
+
+func (u *ui) confirmWith(msg, confirmLabel string, cancelDefault bool, back tview.Primitive, onConfirm func()) {
 	app := u.app
 	m := tview.NewModal().
 		SetText(msg).
 		AddButtons([]string{confirmLabel, "Cancel"})
+	if cancelDefault {
+		m.SetFocus(1)
+	}
 	// Close before onConfirm runs, not after: onConfirm routinely opens the next
 	// overlay, and that one has to be able to take the page and the focus.
 	// Cancel is the path that wants `back`, so Close only restores focus there.
@@ -1931,13 +1946,37 @@ func (u *ui) nextTab() {
 	}
 }
 
+// quit ends the session, after asking when a write is still running: quitting
+// cancels the session context, and a stack removal or secret rotation stopped
+// halfway leaves the cluster in a state the operator did not choose. With
+// nothing running it quits at once, as before.
+func (u *ui) quit() {
+	running := u.muts.running()
+	if len(running) == 0 {
+		u.app.Stop()
+		return
+	}
+	u.confirmCancelDefault(quitRunningMessage(running), "Quit anyway", u.app.GetFocus(), u.app.Stop)
+}
+
+// quitRunningMessage lists what quitting would interrupt.
+func quitRunningMessage(running []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d operation(s) still running:\n\n", len(running))
+	for _, w := range running {
+		b.WriteString("    " + tview.Escape(w) + "\n")
+	}
+	b.WriteString("\nQuitting stops them midway. Wait for them to finish, or quit anyway.")
+	return b.String()
+}
+
 // globalKey runs the keymap action bound to r, if any, and says whether
 // there was one.
 func (u *ui) globalKey(r rune) bool {
 	km := u.km
 	switch r {
 	case km.Quit:
-		u.app.Stop()
+		u.quit()
 	case km.Refresh:
 		if t := u.activeTab(); t != nil {
 			t.refresh()

@@ -416,7 +416,7 @@ func (u *ui) openEnvText(svcName string, items []string, back tview.Primitive, a
 		}
 		msg := envChangeSummary(items, list) + "\n\nUpdate the environment?\n\nThis triggers a rolling update of the service."
 		u.confirm(msg, "Apply", ed.ta, func() {
-			asyncDo(u, "ui.serviceedit.env.apply", func(ctx context.Context) error {
+			mutateDo(u, "ui.serviceedit.env.apply", "environment update", func(ctx context.Context) error {
 				return swarmops.SetServiceEnv(ctx, dcli, svcName, list)
 			}, func(err error) {
 				if err != nil {
@@ -834,7 +834,7 @@ func (u *ui) openScalePrompt(svcName string, back tview.Primitive, after func())
 				u.info("invalid replica count")
 				return
 			}
-			asyncDo(u, "ui.serviceedit.scale", func(ctx context.Context) error {
+			mutateDo(u, "ui.serviceedit.scale", "scale", func(ctx context.Context) error {
 				return swarmops.ScaleService(ctx, dcli, svcName, n)
 			}, func(serr error) {
 				if serr != nil {
@@ -859,7 +859,7 @@ func (u *ui) openForceUpdate(svcName string, back tview.Primitive, after func())
 	app, dcli := u.app, u.dcli
 	u.confirm(fmt.Sprintf("Force-update %q?\n\nRedeploys the service (like docker service update --force): every task is restarted / rescheduled. Handy to unstick a service in an incomplete state (e.g. 1/2).", svcName), "Force update", back, func() {
 		app.SetFocus(back)
-		asyncDo(u, "ui.serviceedit.forceupdate", func(ctx context.Context) error {
+		mutateDo(u, "ui.serviceedit.forceupdate", "force update", func(ctx context.Context) error {
 			return swarmops.ForceUpdateService(ctx, dcli, svcName)
 		}, func(err error) {
 			if err != nil {
@@ -893,7 +893,7 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []swarmops.SecretRef) {
 			}
 			// Per-secret failures are collected, not returned: one secret that
 			// cannot go must not hide which others did.
-			async(u, "ui.serviceedit.orphansecrets.delete", func(ctx context.Context) ([]string, error) {
+			mutate(u, "ui.serviceedit.orphansecrets.delete", "secret cleanup", func(ctx context.Context) ([]string, error) {
 				var failed []string
 				for _, o := range orphans {
 					if err := removeSecret(ctx, dcli, o.Name); err != nil {
@@ -919,7 +919,7 @@ func (u *ui) promptDeleteOrphanSecrets(orphans []swarmops.SecretRef) {
 func (u *ui) openRemoveService(svcName string, back tview.Primitive, onRemoved func()) {
 	app, dcli := u.app, u.dcli
 	u.confirm(fmt.Sprintf("Remove service %q?\n\nThis permanently deletes the service and stops all its tasks. It cannot be undone.", svcName), "Remove", back, func() {
-		async(u, "ui.serviceedit.remove", func(ctx context.Context) ([]swarmops.SecretRef, error) {
+		mutate(u, "ui.serviceedit.remove", "service removal", func(ctx context.Context) ([]swarmops.SecretRef, error) {
 			// Compute orphaned secrets BEFORE removal (we need the service's
 			// spec and the other services' current usage).
 			orphans, _ := swarmops.SecretsOnlyUsedBy(ctx, dcli, svcName)
@@ -1062,7 +1062,7 @@ func (u *ui) confirmImageUpdate(svcName, target string, downgrade bool, back tvi
 	}
 	u.confirm(msg, "Update", back, func() {
 		app.SetFocus(back)
-		asyncDo(u, "ui.serviceedit.image", func(ctx context.Context) error {
+		mutateDo(u, "ui.serviceedit.image", "image update", func(ctx context.Context) error {
 			return swarmops.UpdateServiceImage(ctx, dcli, svcName, target)
 		}, func(err error) {
 			if err != nil {
@@ -1154,7 +1154,7 @@ func (u *ui) openResourcesEditor(svcName string, back tview.Primitive, after fun
 				return
 			}
 			u.confirm("Update resource limits for "+svcName+"?\n\nThis triggers a rolling update of the service.", "Apply", form, func() {
-				asyncDo(u, "ui.serviceedit.resources.apply", func(ctx context.Context) error {
+				mutateDo(u, "ui.serviceedit.resources.apply", "resources update", func(ctx context.Context) error {
 					return swarmops.SetServiceResources(ctx, dcli, svcName, cl, ml, cr, mr)
 				}, func(aerr error) {
 					if aerr != nil {

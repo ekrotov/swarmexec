@@ -220,6 +220,21 @@ func (u *ui) pollInterval() time.Duration {
 	return treeRefreshFast
 }
 
+// pollTick is what one tick of the poll does, handed to the UI loop. Both
+// halves read the visible cluster's fields (context, manager client, agent
+// pool), which only the UI goroutine may do: activateCluster swaps them there,
+// and a tick that read them from the timer goroutine raced the switch — and
+// could pair one cluster's context with another's client. The hand-off is
+// cheap, since each half starts its own goroutine for the slow part.
+func (u *ui) pollTick() {
+	u.app.QueueUpdate(func() {
+		u.treeTab().autoRefresh()
+		// Usage rides the same tick but on its own goroutine, so a slow or
+		// unreachable agent delays only the badges, never the tree.
+		u.loadUsage()
+	})
+}
+
 // pollTopology is the net under the manager's event stream: it re-lists the
 // tree on a timer (fast while no events arrive, slow while they do) and rides
 // the agents' usage sampling on the same tick. It runs until the session ends.
@@ -238,10 +253,7 @@ func (u *ui) pollTopology(ctx context.Context) {
 				rate = want
 				t.Reset(rate)
 			}
-			u.treeTab().autoRefresh()
-			// Usage rides the same tick but on its own goroutine, so a slow or
-			// unreachable agent delays only the badges, never the tree.
-			u.loadUsage()
+			u.pollTick()
 		}
 	}
 }

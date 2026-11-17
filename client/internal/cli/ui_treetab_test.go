@@ -436,7 +436,7 @@ func TestTreeTabFetchErrorAndAutoRefresh(t *testing.T) {
 	cursorTo(t, u, "shop_db")
 
 	failing.Store(true)
-	u.treeTab().autoRefresh() // off the UI goroutine, like the poll
+	onLoop(t, u, func() { u.treeTab().autoRefresh() }) // on the loop, as pollTick hands it over
 	waitFor(t, "the failed poll to finish", func() bool { return !u.autoRefreshBusy.Load() })
 	if text := treeText(t, u); !strings.Contains(text, "shop_db") {
 		t.Fatalf("a failed poll replaced the tree:\n%s", text)
@@ -456,7 +456,7 @@ func TestTreeTabFetchErrorAndAutoRefresh(t *testing.T) {
 	next.Services = append(next.Services, stackedService("s4", "shop_cache", "shop", 0))
 	live.cur.Store(next)
 	failing.Store(false)
-	u.treeTab().autoRefresh()
+	onLoop(t, u, func() { u.treeTab().autoRefresh() })
 	waitForTree(t, u, "shop_cache")
 	if got := cursorRow(t, u); !strings.Contains(got, "shop_db") {
 		t.Errorf("cursor after the error cleared: %q, want shop_db", got)

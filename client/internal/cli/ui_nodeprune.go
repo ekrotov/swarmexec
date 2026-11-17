@@ -169,7 +169,7 @@ func (d *pruneDialog) run() {
 		d.ov.Close()
 		req := d.choice.request()
 		u.flash(fmt.Sprintf(" [gray]pruning on %s…[white]", host))
-		async(u, "ui.nodes.prune", func(ctx context.Context) (*pb.PruneResponse, error) {
+		mutate(u, "ui.nodes.prune", "node prune", func(ctx context.Context) (*pb.PruneResponse, error) {
 			target, err := nodeByHostname(ctx, r, host)
 			if err != nil {
 				return nil, err
@@ -570,7 +570,7 @@ func (e *scheduleEditor) save() {
 		saved, svc := e.s, e.svc
 		u.flash(" [gray]saving the prune schedule…[white]")
 		dcli := u.dcli
-		asyncDo(u, "ui.nodes.schedule.save", func(ctx context.Context) error {
+		mutateDo(u, "ui.nodes.schedule.save", "prune schedule save", func(ctx context.Context) error {
 			return swarmops.SaveAgentSchedule(ctx, dcli, svc, saved)
 		}, func(err error) {
 			if err != nil {

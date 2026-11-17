@@ -743,12 +743,13 @@ func (t *treeTab) autoRefresh() {
 	ctx, r := u.ctx, u.r
 	// Cheap gate: skip the fetch when an overlay is known to be open. Best
 	// effort by design — the invariant is enforced below, on the UI goroutine.
-	if u.anyOverlayOpen() || !u.autoRefreshBusy.CompareAndSwap(false, true) {
+	busy := &u.autoRefreshBusy // this cluster's flag, taken here: the goroutine must not look u.clusterState up
+	if u.anyOverlayOpen() || !busy.CompareAndSwap(false, true) {
 		return
 	}
 	gen := u.generation()
 	go func() {
-		defer u.autoRefreshBusy.Store(false)
+		defer busy.Store(false)
 		svcs, cands, err := fetchTree(ctx, r)
 		if err != nil || ctx.Err() != nil {
 			return // transient error, or the run is ending
@@ -937,7 +938,7 @@ func (u *ui) confirmKillTask(c resolve.Candidate, ep resolve.Endpoint) {
 	u.confirm(msg, "Kill", u.ctree, func() {
 		u.app.SetFocus(u.ctree)
 		u.flash(" killing " + shortID(c.ContainerID) + "…")
-		asyncDo(u, "ui.containers.kill", func(ctx context.Context) error {
+		mutateDo(u, "ui.containers.kill", "container kill", func(ctx context.Context) error {
 			return ac.KillContainer(ctx, ep, timeout)
 		}, func(err error) {
 			if err != nil {
@@ -1014,12 +1015,13 @@ func (u *ui) loadUsage() {
 	// for every minute someone spends in a dialog. The fan-out runs off the
 	// main loop; what an overlay must not pay for is remarkUsage's walk of the
 	// whole tree, so only that waits until the tree is on screen again.
-	if !u.usageBusy.CompareAndSwap(false, true) {
+	busy := &u.usageBusy // this cluster's flag, taken here: the goroutine must not look u.clusterState up
+	if !busy.CompareAndSwap(false, true) {
 		return
 	}
 	gen := u.generation()
 	go func() {
-		defer u.usageBusy.Store(false)
+		defer busy.Store(false)
 		start := time.Now()
 		nodes, err := r.Nodes(ctx)
 		if err != nil {
