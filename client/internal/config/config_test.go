@@ -70,6 +70,42 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+// ui.sync_docker_context and contexts.<name>.confirm_switch: both off unless
+// the file says so, per context for the confirm, and a value that is not a
+// boolean is a load error naming the file rather than a silent "off".
+func TestContextSwitchSettings(t *testing.T) {
+	if c := Default(); c.UI.SyncDockerContext || c.ConfirmSwitch("prod") {
+		t.Errorf("defaults: sync=%v confirm(prod)=%v, want both off", c.UI.SyncDockerContext, c.ConfirmSwitch("prod"))
+	}
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.yaml")
+	body := "ui:\n  sync_docker_context: true\ncontexts:\n  prod:\n    confirm_switch: true\n  dev:\n    underlay: [10.0.0.0/16]\n"
+	if err := os.WriteFile(good, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.UI.SyncDockerContext {
+		t.Error("ui.sync_docker_context: true not loaded")
+	}
+	if c.UI.Dim != DefaultUIDim {
+		t.Errorf("a ui block without dim lost the default: %v", c.UI.Dim)
+	}
+	if !c.ConfirmSwitch("prod") || c.ConfirmSwitch("dev") || c.ConfirmSwitch("other") {
+		t.Errorf("confirm prod/dev/other = %v/%v/%v, want true/false/false", c.ConfirmSwitch("prod"), c.ConfirmSwitch("dev"), c.ConfirmSwitch("other"))
+	}
+
+	bad := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(bad, []byte("contexts:\n  prod:\n    confirm_switch: maybe\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), bad) {
+		t.Errorf("confirm_switch: maybe: err = %v, want a load error naming the file", err)
+	}
+}
+
 func TestUIDimFileEnvAndDefault(t *testing.T) {
 	dir := t.TempDir()
 

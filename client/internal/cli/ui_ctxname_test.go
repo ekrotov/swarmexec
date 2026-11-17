@@ -122,9 +122,10 @@ func TestUIContextNameWithoutDockerHost(t *testing.T) {
 // A sidebar switch while DOCKER_HOST is set. The switched-to cluster is
 // dialled BY NAME (switchCluster builds it with ctxOverride == name), so
 // DOCKER_HOST no longer applies to it; "default" keeps meaning DOCKER_HOST.
-// dockerctx.Use still records the choice as docker's current context — here in
-// a temp DOCKER_CONFIG, never the operator's — and the flash says a shell that
-// exports DOCKER_HOST will not follow.
+// With ui.sync_docker_context the choice is recorded as docker's current
+// context (dockerctx.Use, here in a temp DOCKER_CONFIG, never the operator's)
+// and the flash says a shell that exports DOCKER_HOST will not follow; without
+// it nothing is recorded and the flash says the switch is the TUI's only.
 func TestSidebarSwitchWithDockerHostSet(t *testing.T) {
 	writeContexts(t)
 	setStoredCurrent(t, "alpha")
@@ -136,7 +137,8 @@ func TestSidebarSwitchWithDockerHostSet(t *testing.T) {
 	if first.name != "default" {
 		t.Fatalf("first cluster keyed %q, want default", first.name)
 	}
-	// What switchCluster("beta") builds and what activateCluster records.
+	// What switchCluster("beta") builds and what activateCluster records when
+	// it syncs.
 	target := u.cluster("beta", "beta")
 	if got := resolveEndpoint(target.ctxOverride).Host; got != "ssh://bastion-beta" {
 		t.Errorf("switch to beta dials %q, want its own endpoint despite DOCKER_HOST", got)
@@ -156,19 +158,24 @@ func TestSidebarSwitchWithDockerHostSet(t *testing.T) {
 		t.Errorf("default dials %q after the switch, want DOCKER_HOST %q", got, local)
 	}
 
-	msg := switchedFlash("beta", true, nil, true)
-	if !strings.Contains(msg, "$DOCKER_HOST") {
-		t.Errorf("flash = %q, want the DOCKER_HOST caveat", msg)
+	msg := switchedFlash("beta", true, true, nil, true)
+	if !strings.Contains(msg, "$DOCKER_HOST") || !strings.Contains(msg, "docker context is now beta (shell too)") {
+		t.Errorf("flash = %q, want the sync note and the DOCKER_HOST caveat", msg)
 	}
-	if msg := switchedFlash("default", true, nil, true); strings.Contains(msg, "$DOCKER_HOST") {
+	if msg := switchedFlash("default", true, true, nil, true); strings.Contains(msg, "$DOCKER_HOST") {
 		t.Errorf("flash for default = %q: default IS DOCKER_HOST, no caveat", msg)
 	}
-	if msg := switchedFlash("beta", true, nil, false); strings.Contains(msg, "$DOCKER_HOST") {
+	if msg := switchedFlash("beta", true, true, nil, false); strings.Contains(msg, "$DOCKER_HOST") {
 		t.Errorf("flash without DOCKER_HOST = %q", msg)
+	}
+	// Not syncing (the default): the shell is not promised anything, so there
+	// is no DOCKER_HOST caveat either — only that the switch is the TUI's.
+	if msg := switchedFlash("beta", false, false, nil, true); strings.Contains(msg, "$DOCKER_HOST") || !strings.Contains(msg, "TUI only") || !strings.Contains(msg, "loading") {
+		t.Errorf("unsynced flash = %q", msg)
 	}
 	// A failed `docker context use` used to be flashed and then immediately
 	// overwritten by "switched to"; it is now part of that one message.
-	if msg := switchedFlash("beta", true, errors.New("disk full"), true); !strings.Contains(msg, "disk full") {
+	if msg := switchedFlash("beta", true, true, errors.New("disk full"), true); !strings.Contains(msg, "disk full") {
 		t.Errorf("flash = %q, want the Use error", msg)
 	}
 }

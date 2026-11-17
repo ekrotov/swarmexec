@@ -61,6 +61,8 @@ flags**.
 | TLS server name | `--server-name` | `SWARMEXEC_SERVER_NAME` | `server_name` |
 | Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
 | Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
+| Ask before a TUI switch (per context) | — | —         | `contexts.<name>.confirm_switch` |
+| TUI switch also sets docker's context | — | —         | `ui.sync_docker_context` |
 
 Config file (default `~/.config/swarmexec/config.yaml`, override with `--config`
 or `SWARMEXEC_CONFIG`):
@@ -74,11 +76,18 @@ addr_mode: hostname
 
 ui:
   dim: 0.6   # fade behind an open overlay: 0 = off, 1 = flat background
+  sync_docker_context: false   # true: a TUI cluster switch also runs `docker context use`
 
 contexts:            # optional, per Docker context name
   prod:
     underlay: [10.0.0.0/16]   # the hosts' own network
+    confirm_switch: true      # the TUI asks before switching to prod
 ```
+
+A cluster switch in the `ui` contexts sidebar is the TUI's own: docker's stored
+current context — what `docker` in your other terminals talks to, and where the
+next `swarmexec ui` starts — is left alone unless `ui.sync_docker_context: true`.
+`swarmexec context use` is an explicit command and always sets it.
 
 ### Network subnet overlap
 

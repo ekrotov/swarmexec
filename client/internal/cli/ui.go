@@ -1467,6 +1467,8 @@ func (u *ui) showHelp() {
 	h.sec("Contexts (sidebar, not a tab)")
 	h.line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
 	h.line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
+	h.line("", "TUI only: your shell's docker context stays (config ui.sync_docker_context syncs it)")
+	h.line("", "config contexts.<name>.confirm_switch: ask before switching to that context")
 	h.line("i", "context details (endpoint, jump hosts)")
 	h.line(kl(km.CtxNew), "new")
 	h.danger(kl(km.CtxDelete), "delete")

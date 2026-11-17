@@ -128,8 +128,12 @@
         the context list, never the active context stored in
         <code>config.json</code>. Switching to a named context in the TUI goes to that
         context's own endpoint for the rest of the session; <code>default</code> stays
-        <code>$DOCKER_HOST</code>. The switch also becomes docker's current context,
+        <code>$DOCKER_HOST</code>. The switch does not touch docker's current context, so
+        your shells and the next <code>swarmexec ui</code> start where they did; with
+        <code>ui.sync_docker_context: true</code> in the
+        <a href="/docs/configuration">config</a> it becomes docker's current context too,
         but a shell that still exports <code>$DOCKER_HOST</code> keeps going there.
+        <code>swarmexec context use</code> always sets it.
       </p>
       <div class="note">
         <strong>No local Docker required.</strong> The client never runs the
