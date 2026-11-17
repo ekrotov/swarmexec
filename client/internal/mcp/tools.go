@@ -17,6 +17,8 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/dockerctx"
@@ -1509,7 +1511,7 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 	stderr := &capWriter{max: mcpExecMaxOutput}
 	code, err := ac.RunNonInteractive(ctx, ep, in.Command, timeout, stdout, stderr)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
+		if timedOut(err) {
 			return "", fmt.Errorf("the command did not finish within %s", timeout)
 		}
 		return "", err
@@ -1520,4 +1522,11 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 		Stdout:   stdout.String(), Stderr: stderr.String(),
 		StdoutTruncated: stdout.Truncated(), StderrTruncated: stderr.Truncated(),
 	})
+}
+
+// timedOut reports whether err is exec_run's own deadline: either the local
+// context's, or — the usual case, when the command was still running — the
+// agent's DeadlineExceeded status for the stream the deadline ended.
+func timedOut(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded
 }

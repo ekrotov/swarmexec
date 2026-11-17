@@ -1,11 +1,14 @@
-# swarmexec — cluster-wide `docker exec -it` for Docker Swarm
+# swarmexec — exec, logs, port-forward and a terminal UI for Docker Swarm
 
-`swarmexec` gives an operator an interactive shell (or runs a one-off command)
-inside **any** container in a Docker Swarm, from a single host — the
-`docker exec -it` experience, but cluster-wide. It is the CLI client of the
-`Agent` gRPC service defined in [`../CONTRACT.md`](../CONTRACT.md).
+`swarmexec` gives an operator exec, logs, port-forward and a terminal UI for
+**any** container in a Docker Swarm, from a single host — without SSH to the
+nodes. An interactive shell or a one-off command is the `docker exec -it`
+experience, but cluster-wide; `logs -f` follows a service across task
+restarts, `port-forward` reaches a container port, and `swarmexec ui` browses
+stacks, services, volumes, networks, secrets, nodes and configs. It is the CLI
+client of the `Agent` gRPC service defined in [`../CONTRACT.md`](../CONTRACT.md).
 
-It does two things:
+Underneath, it does two things:
 
 1. **Resolves** which node a target task runs on (and the container ID) via the
    Swarm **manager API**.
@@ -61,6 +64,11 @@ flags**.
 | TLS server name | `--server-name` | `SWARMEXEC_SERVER_NAME` | `server_name` |
 | Backdrop dim | —             | `SWARMEXEC_UI_DIM`     | `ui.dim`      |
 | Underlay CIDRs (per context) | — | —                  | `contexts.<name>.underlay` |
+
+The flags in this table (plus `--agent-secret`, `--agent-secret-file`,
+`--insecure` and `--operator`) are the **connection flags**. Every command
+accepts them, but a command's `--help` only points at them; `swarmexec --help`
+and `swarmexec help connection` print the full list.
 
 Config file (default `~/.config/swarmexec/config.yaml`, override with `--config`
 or `SWARMEXEC_CONFIG`):

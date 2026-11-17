@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
@@ -245,6 +246,55 @@ func TestTreeTabLoadsFromTheManager(t *testing.T) {
 			t.Errorf("state after load: loaded %v, err %v, %d services, %d containers", st.loaded, st.fetchErr, len(st.svcs), len(st.cands))
 		}
 	})
+}
+
+// X on a service asks, then removes it at the manager and reloads the tree
+// without it; on a container it offers the owning service.
+func TestTreeTabRemovesService(t *testing.T) {
+	ls := &lockedSwarm{fs: shopSwarm()}
+	u := treeHarness(t, map[string]http.Handler{"a": ls})
+	onLoop(t, u, func() { u.treeTab().load() })
+	waitForTree(t, u, "shop_db")
+
+	cursorTo(t, u, "shop_db")
+	onLoop(t, u, func() { u.treeTab().keys(rune_('X')) })
+	waitFront(t, u, pageConfirm)
+	if text := drawFront(t, u, 200, 40); !strings.Contains(text, `Remove service "shop_db"?`) {
+		t.Errorf("confirm:\n%s", text)
+	}
+	keyCode(t, u, tcell.KeyEnter)
+	waitFront(t, u, pageInfo)
+	if text := drawFront(t, u, 200, 40); !strings.Contains(text, `removed service "shop_db"`) {
+		t.Errorf("notice:\n%s", text)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for strings.Contains(treeText(t, u), "shop_db") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the tree still shows shop_db:\n%s", treeText(t, u))
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	ls.mu.Lock()
+	var names []string
+	for _, s := range ls.fs.Services {
+		names = append(names, s.Spec.Name)
+	}
+	tasks := len(ls.fs.Tasks)
+	ls.mu.Unlock()
+	if strings.Join(names, ",") != "shop_web,loose" || tasks != 2 {
+		t.Errorf("services left %v, %d tasks", names, tasks)
+	}
+
+	// On a container row X names the container's service; Esc keeps it.
+	onLoop(t, u, func() { u.pages.RemovePage(pageInfo) })
+	cursorTo(t, u, "shop_web")
+	onLoop(t, u, func() { u.treeTab().keys(rune_(u.km.Unfold)) })
+	cursorTo(t, u, "web1aaaaaaaa")
+	onLoop(t, u, func() { u.treeTab().keys(rune_('X')) })
+	waitFront(t, u, pageConfirm)
+	if text := drawFront(t, u, 200, 40); !strings.Contains(text, `Remove service "shop_web"?`) {
+		t.Errorf("confirm on a container:\n%s", text)
+	}
 }
 
 // Each cluster keeps its own cursor: a switch paints the other cluster's

@@ -49,8 +49,9 @@ func TestMCPExecRunEdges(t *testing.T) {
 	}
 
 	// The deadline ends the stream at the agent, so what comes back is the
-	// agent's DeadlineExceeded status, passed on as is.
-	if got := call(map[string]any{"command": []string{"hang"}, "slot": 1, "timeout_seconds": 1}); !got.isError || !strings.Contains(got.text, "DeadlineExceeded") {
+	// agent's DeadlineExceeded status; it reads as the timeout, not as gRPC.
+	if got := call(map[string]any{"command": []string{"hang"}, "slot": 1, "timeout_seconds": 1}); !got.isError ||
+		!strings.Contains(got.text, "the command did not finish within 1s") || strings.Contains(got.text, "DeadlineExceeded") {
 		t.Errorf("timeout = %q (error %v)", got.text, got.isError)
 	}
 }

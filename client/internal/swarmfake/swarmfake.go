@@ -7,10 +7,11 @@
 // *client.Client at it through httptest, and every layer above the client
 // runs as it does against a cluster.
 //
-// It also takes the writes `swarmexec init` makes — creating secrets, configs
-// and services, and updating a service — into the same lists, with the two
-// refusals of a real manager that init's behaviour depends on: a name that is
-// taken, and an update computed from a stale version.
+// It also takes the writes `swarmexec init` and the TUI make — creating
+// secrets, configs and services, updating a service or a node, removing a
+// service — into the same lists, with the two refusals of a real manager that
+// their behaviour depends on: a name that is taken, and an update computed
+// from a stale version.
 //
 // Test-only: nothing outside _test.go files imports it.
 package swarmfake
@@ -76,10 +77,13 @@ func (f *Swarm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "injected failure: "+r.Method+" "+path)
 		return
 	}
-	// Every POST is a write; any other method reads.
+	// POST writes, DELETE removes; any other method reads.
 	table := readRoutes
-	if r.Method == http.MethodPost {
+	switch r.Method {
+	case http.MethodPost:
 		table = writeRoutes
+	case http.MethodDelete:
+		table = deleteRoutes
 	}
 	c := &call{w: w, r: r}
 	for _, rt := range table {
@@ -146,7 +150,8 @@ func under(prefix, suffix string) func(string) (string, bool) {
 	}
 }
 
-// readRoutes and writeRoutes are tried in order; the first match serves.
+// readRoutes, writeRoutes and deleteRoutes are tried in order; the first
+// match serves.
 var readRoutes = []route{
 	{exact("/_ping"), (*Swarm).ping},
 	{exact("/info"), (*Swarm).info},
@@ -170,6 +175,11 @@ var writeRoutes = []route{
 	{exact("/configs/create"), (*Swarm).createConfig},
 	{exact("/services/create"), (*Swarm).createService},
 	{under("/services/", "/update"), (*Swarm).updateService},
+	{under("/nodes/", "/update"), (*Swarm).updateNode},
+}
+
+var deleteRoutes = []route{
+	{under("/services/", ""), (*Swarm).removeService},
 }
 
 func (f *Swarm) ping(c *call, _ string) {
@@ -241,7 +251,8 @@ func (f *Swarm) unknown(w http.ResponseWriter, r *http.Request, path string) {
 	notFound(w, path)
 }
 
-// The writes: the creates and the service update. A new object's id is
+// The writes: the creates, the service and node updates, the service
+// removal. A new object's id is
 // "<kind>-<name>", so a test can lay down tasks for a service init has yet to
 // create.
 
@@ -313,6 +324,50 @@ func (f *Swarm) updateService(c *call, id string) {
 		s.Spec = spec
 		s.Version.Index++
 		c.reply(swarm.ServiceUpdateResponse{})
+		return
+	}
+	notFound(c.w, "service "+id)
+}
+
+func (f *Swarm) updateNode(c *call, id string) {
+	var spec swarm.NodeSpec
+	if !decode(c.w, c.r, &spec) {
+		return
+	}
+	for i := range f.Nodes {
+		n := &f.Nodes[i]
+		if n.ID != id && n.Description.Hostname != id {
+			continue
+		}
+		// The same optimistic lock as a service update.
+		if c.r.URL.Query().Get("version") != fmt.Sprint(n.Version.Index) {
+			fail(c.w, http.StatusInternalServerError, "update out of sequence")
+			return
+		}
+		n.Spec = spec
+		n.Version.Index++
+		c.w.WriteHeader(http.StatusOK)
+		return
+	}
+	notFound(c.w, "node "+id)
+}
+
+// removeService drops the service and its tasks, as the manager does once
+// the tasks have shut down.
+func (f *Swarm) removeService(c *call, id string) {
+	for i, s := range f.Services {
+		if s.ID != id && s.Spec.Name != id {
+			continue
+		}
+		f.Services = append(f.Services[:i:i], f.Services[i+1:]...)
+		var tasks []swarm.Task
+		for _, t := range f.Tasks {
+			if t.ServiceID != s.ID {
+				tasks = append(tasks, t)
+			}
+		}
+		f.Tasks = tasks
+		c.w.WriteHeader(http.StatusOK)
 		return
 	}
 	notFound(c.w, "service "+id)
