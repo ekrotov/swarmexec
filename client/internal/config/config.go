@@ -280,34 +280,27 @@ func overlayFile(cfg *Config, path string) error {
 }
 
 func overlayEnv(cfg *Config) {
-	if v := os.Getenv("SWARMEXEC_CA"); v != "" {
-		cfg.CA = v
-	}
-	if v := os.Getenv("SWARMEXEC_CERT"); v != "" {
-		cfg.Cert = v
-	}
-	if v := os.Getenv("SWARMEXEC_KEY"); v != "" {
-		cfg.Key = v
+	for _, ev := range []struct {
+		name string
+		dst  *string
+	}{
+		{"SWARMEXEC_CA", &cfg.CA},
+		{"SWARMEXEC_CERT", &cfg.Cert},
+		{"SWARMEXEC_KEY", &cfg.Key},
+		{"SWARMEXEC_ADDR_MODE", &cfg.AddrMode},
+		{"SWARMEXEC_SERVER_NAME", &cfg.ServerName},
+		{"SWARMEXEC_AGENT_SECRET", &cfg.AgentSecret},
+		{"SWARMEXEC_AGENT_SECRET_FILE", &cfg.AgentSecretFile},
+		{"SWARMEXEC_OPERATOR", &cfg.Operator},
+	} {
+		if v := os.Getenv(ev.name); v != "" {
+			*ev.dst = v
+		}
 	}
 	if v := os.Getenv("SWARMEXEC_PORT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Port = n
 		}
-	}
-	if v := os.Getenv("SWARMEXEC_ADDR_MODE"); v != "" {
-		cfg.AddrMode = v
-	}
-	if v := os.Getenv("SWARMEXEC_SERVER_NAME"); v != "" {
-		cfg.ServerName = v
-	}
-	if v := os.Getenv("SWARMEXEC_AGENT_SECRET"); v != "" {
-		cfg.AgentSecret = v
-	}
-	if v := os.Getenv("SWARMEXEC_AGENT_SECRET_FILE"); v != "" {
-		cfg.AgentSecretFile = v
-	}
-	if v := os.Getenv("SWARMEXEC_OPERATOR"); v != "" {
-		cfg.Operator = v
 	}
 	if v := os.Getenv("SWARMEXEC_INSECURE"); v != "" {
 		switch strings.ToLower(strings.TrimSpace(v)) {
@@ -353,48 +346,57 @@ func (c Config) Validate() error {
 		return fmt.Errorf("invalid addr-mode %q (want %q or %q)", c.AddrMode, AddrModeHostname, AddrModeIP)
 	}
 
-	// readable verifies a configured path exists.
-	readable := func(name, path string) error {
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("TLS material for %s not readable: %w", name, err)
-		}
-		return nil
-	}
-
 	if c.SecretMode() {
-		// Shared-secret auth (self-signed agent): client cert is optional, and a
-		// CA is optional (without one, the server cert can't be verified, so
-		// --insecure is required). Any provided paths must still be readable.
-		if c.CA == "" && !c.Insecure {
-			return fmt.Errorf("shared-secret mode needs either ca (to verify the agent) or insecure=true (skip verification)")
-		}
-		if c.CA != "" {
-			if err := readable("ca", c.CA); err != nil {
-				return err
-			}
-		}
-		if (c.Cert == "") != (c.Key == "") {
-			return fmt.Errorf("cert and key must be set together (or both empty)")
-		}
-		if c.Cert != "" {
-			if err := readable("cert", c.Cert); err != nil {
-				return err
-			}
-			if err := readable("key", c.Key); err != nil {
-				return err
-			}
-		}
-		return nil
+		return c.validateSecretMode()
 	}
+	return c.validateMTLS()
+}
 
-	// Default: mTLS is mandatory — all three TLS paths present and readable.
+// readableTLS verifies a configured TLS path exists.
+func readableTLS(name, path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("TLS material for %s not readable: %w", name, err)
+	}
+	return nil
+}
+
+// validateSecretMode: shared-secret auth (self-signed agent). The client cert
+// is optional, and a CA is optional (without one, the server cert can't be
+// verified, so --insecure is required). Any provided paths must still be
+// readable.
+func (c Config) validateSecretMode() error {
+	if c.CA == "" && !c.Insecure {
+		return fmt.Errorf("shared-secret mode needs either ca (to verify the agent) or insecure=true (skip verification)")
+	}
+	if c.CA != "" {
+		if err := readableTLS("ca", c.CA); err != nil {
+			return err
+		}
+	}
+	if (c.Cert == "") != (c.Key == "") {
+		return fmt.Errorf("cert and key must be set together (or both empty)")
+	}
+	if c.Cert != "" {
+		if err := readableTLS("cert", c.Cert); err != nil {
+			return err
+		}
+		if err := readableTLS("key", c.Key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateMTLS: the default, where mTLS is mandatory — all three TLS paths
+// present and readable.
+func (c Config) validateMTLS() error {
 	for _, f := range []struct {
 		name, path string
 	}{{"ca", c.CA}, {"cert", c.Cert}, {"key", c.Key}} {
 		if f.path == "" {
 			return fmt.Errorf("missing TLS material: %s is required (mTLS is mandatory; or set agent_secret for a self-signed agent)", f.name)
 		}
-		if err := readable(f.name, f.path); err != nil {
+		if err := readableTLS(f.name, f.path); err != nil {
 			return err
 		}
 	}
