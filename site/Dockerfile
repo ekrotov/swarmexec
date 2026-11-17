@@ -20,11 +20,15 @@ ARG RELEASES_API=https://gitlab.logle.io/api/v4/projects/242/repository/tags?per
 # v1.8.1, nine releases behind. CI usually has no such cache, which is exactly
 # why it would go unnoticed until the day it does.
 ARG VERSION=dev
+# The tags are fetched to a file first: in `wget | jq` the exit status is jq's,
+# and jq given no input succeeds with no output — a failed fetch then left an
+# empty releases.json instead of the [] fallback.
 RUN apk add --no-cache wget jq ca-certificates && \
     echo "building release data for ${VERSION}" && \
-    ( wget -qO- "$RELEASES_API" \
-      | jq '[ .[] | select(.name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | { version: .name, date: .commit.created_at, message: (.message // "") } ] | sort_by(.date) | reverse' > /releases.json ) \
-    || echo '[]' > /releases.json
+    ( wget -qO /tmp/tags.json "$RELEASES_API" \
+      && jq -e '[ .[] | select(.name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | { version: .name, date: .commit.created_at, message: (.message // "") } ] | sort_by(.date) | reverse' /tmp/tags.json > /releases.json ) \
+    || echo '[]' > /releases.json ; \
+    rm -f /tmp/tags.json
 # /latest.json is what the client's daily update check asks (F17):
 # {"version":"vX.Y.Z"}. The release being built when VERSION is one (deploys
 # run on semver tags), else the newest entry of releases.json, else {} —
