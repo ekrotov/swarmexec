@@ -120,6 +120,13 @@ func TestForwardConn(t *testing.T) {
 	}
 }
 
+// A device is not a file to read a secret from.
+func TestReadSecretFileRefusesDevice(t *testing.T) {
+	if _, err := readSecretFile("/dev/null", 0); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("err = %v, want not a regular file", err)
+	}
+}
+
 func TestRolloutLine(t *testing.T) {
 	task := func(desired, state swarm.TaskState, errMsg, msg string) swarm.Task {
 		var tk swarm.Task

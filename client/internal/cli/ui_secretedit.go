@@ -69,25 +69,12 @@ func readSecretFile(path string, have int) (string, error) {
 	if path == "" {
 		return "", errors.New("usage: :r <file>")
 	}
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("cannot expand ~: %v", err)
-		}
-		path = filepath.Join(home, path[1:])
-	}
-	fi, err := os.Stat(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("no such file: %s", path)
-	case err != nil:
+	path, err := expandHome(path)
+	if err != nil {
 		return "", err
-	case fi.IsDir():
-		return "", fmt.Errorf("%s is a directory", path)
-	case !fi.Mode().IsRegular():
-		return "", fmt.Errorf("%s is not a regular file", path)
-	case fi.Size() > swarmops.MaxSecretSize:
-		return "", fmt.Errorf("%s is %d bytes — over the swarm limit of %d (500 KB)", path, fi.Size(), swarmops.MaxSecretSize)
+	}
+	if err := checkSecretFile(path); err != nil {
+		return "", err
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -108,6 +95,37 @@ func readSecretFile(path string, have int) (string, error) {
 		return "", fmt.Errorf("%s (%d bytes) would make the value %d bytes — over the swarm limit of %d (500 KB)", path, len(data), have+len(data), swarmops.MaxSecretSize)
 	}
 	return string(data), nil
+}
+
+// expandHome expands "~" and "~/…" to the home directory.
+func expandHome(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot expand ~: %v", err)
+		}
+		path = filepath.Join(home, path[1:])
+	}
+	return path, nil
+}
+
+// checkSecretFile refuses, before reading, what cannot be a secret's text: a
+// missing path, a directory or device, a file over the swarm limit.
+func checkSecretFile(path string) error {
+	fi, err := os.Stat(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("no such file: %s", path)
+	case err != nil:
+		return err
+	case fi.IsDir():
+		return fmt.Errorf("%s is a directory", path)
+	case !fi.Mode().IsRegular():
+		return fmt.Errorf("%s is not a regular file", path)
+	case fi.Size() > swarmops.MaxSecretSize:
+		return fmt.Errorf("%s is %d bytes — over the swarm limit of %d (500 KB)", path, fi.Size(), swarmops.MaxSecretSize)
+	}
+	return nil
 }
 
 // sizeText is "N lines · M bytes" for a text; a last line without a newline
