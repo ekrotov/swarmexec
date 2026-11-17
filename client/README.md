@@ -12,7 +12,7 @@ Underneath, it does two things:
 
 1. **Resolves** which node a target task runs on (and the container ID) via the
    Swarm **manager API**.
-2. **Bridges** your terminal to that node's agent over an **mTLS gRPC** stream
+2. **Bridges** your terminal to that node's agent over a **TLS gRPC** stream (mTLS or shared secret)
    (direct connection — no agent-to-agent mesh).
 
 ```
@@ -42,13 +42,17 @@ make generate        # regenerates internal/pb from proto/swarmexec.proto
 make check-generate  # fail if internal/pb does not match the .proto (CI runs this)
 ```
 
-## Configure TLS (mandatory)
+## Configure TLS
 
-mTLS is **required** — there is no insecure mode. You present a client
-certificate and the agent is verified against the configured CA. The client
-certificate's **Common Name (CN) is your operator identity**, used by the agent
-for authorization and audit, so **each operator gets their own certificate** —
-never share one.
+The agent authenticates you with either a client certificate (mTLS) or a
+connection-bound shared secret (self-signed agents, `--agent-secret`; the
+default of `swarmexec init`). With a CA the agent is verified against it; with
+`--insecure` the client skips server-certificate verification and relies on the
+secret alone (see `CONTRACT.md` §2.1 for what that does and does not protect).
+When you use client certificates, the certificate's **Common Name (CN) is your
+operator identity**, used by the agent for authorization and audit, so **each
+operator gets their own certificate** — never share one. (With the secret alone
+there is no verified identity; `--operator` is audit-only and unauthenticated.)
 
 Provide TLS material (and other settings) by flag, environment variable, or a
 config file. Precedence, lowest to highest: **defaults → config file → env →
@@ -247,9 +251,9 @@ List candidates and the node each runs on:
 
 ```sh
 swarmexec ps web
-# SERVICE  SLOT  NODE    CONTAINER     DIAL    UPTIME
-# web      1     host-a  3f9a1c2b8e10  host-a  2h13m
-# web      2     host-b  a1b2c3d4e5f6  host-b  2h13m
+# SERVICE  SLOT  CONTAINER     NODE    IP         UPTIME
+# web      1     3f9a1c2b8e10  host-a  10.0.0.11  2h13m
+# web      2     a1b2c3d4e5f6  host-b  10.0.0.12  2h13m
 ```
 
 Run as a different user / workdir / with env:

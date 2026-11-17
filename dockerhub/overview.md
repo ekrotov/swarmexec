@@ -10,7 +10,7 @@ nodes, a content diff of deployed stacks, and a security gate before
 📦 **Source:** <https://github.com/ekrotov/swarmexec>
 
 This image is the **agent**: it runs as a **global** Swarm service (one task per
-node), has the local Docker socket mounted, and serves an mTLS gRPC endpoint that
+node), has the local Docker socket mounted, and serves a TLS gRPC endpoint (mTLS, or self-signed + shared secret) that
 the `swarmexec` CLI connects to. The CLI resolves which node hosts your target
 via the Swarm manager API, then talks **directly** to that node's agent.
 

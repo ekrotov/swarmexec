@@ -33,10 +33,12 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
 
 ## 2. Transport & Security
 
-- Transport: **gRPC** over TLS with **mutual TLS** (both sides present certs).
-- The agent authenticates the client via its client certificate. The client
-  certificate's Common Name (CN) is the operator identity used for
-  authorization and audit.
+- Transport: **gRPC** over TLS — **mutual TLS** (both sides present certs), or a
+  self-signed server certificate plus shared secret (§2.1).
+- The agent authenticates the client by its client certificate (the Common
+  Name, CN, is the operator identity used for authorization and audit) or, on
+  a self-signed agent, by the connection-bound shared secret (§2.1); a CA-less
+  agent has no verified identity.
 - The agent authorizes each request (exec, logs, port-forward, volume, image,
   stats and prune actions) before starting it. Without a policy file the
   default is to allow any authenticated client; with `-policy-file` (§8) the

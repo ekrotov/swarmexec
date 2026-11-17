@@ -42,7 +42,7 @@ The manual paths below give you full control (mTLS, custom stack) if you prefer.
 
 ### Step 3.1 — Get certificates
 
-mTLS is mandatory. You need:
+This guide sets up mTLS (CA-verified client certificates). You need:
 
 | File | Purpose | Key requirement |
 |------|---------|-----------------|
@@ -453,16 +453,23 @@ and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),
 
 ## 7. Security & production notes
 
-- **mTLS is the only authentication.** Anyone with a CA-signed client cert can
-  exec; protect operator keys and scope the CA. The default authorizer
-  (`agent/internal/auth`, `AllowAll`) permits any CA-signed client — implement
-  the `Authorizer` interface for per-user/per-service allowlists, `root` denial,
-  or command allowlists without touching the exec bridge.
-- **The Docker socket is never exposed to the network** — only the narrow gRPC
-  surface (List + Exec) is reachable. The agent mounts the socket read-write
-  (exec needs write) and runs as root, which is inherent to socket access.
+- **Authentication is mTLS or a shared secret.** With a CA-signed client cert
+  (this guide) anyone holding such a cert can use the agent; protect operator
+  keys and scope the CA. A self-signed agent (`swarmexec init` default) instead
+  authenticates a connection-bound proof of the shared secret, optionally
+  combined with a client CA. Whoever authenticates can use the whole agent
+  API: exec and logs, but also port-forward, volume create/remove, image and
+  disk prune, and killing task containers (17 RPCs in all). The default
+  authorizer (`agent/internal/auth`, `AllowAll`) permits every authenticated
+  client — use `-policy-file`, or implement the `Authorizer` interface, for
+  per-action/per-service allowlists, `root` denial, or command allowlists
+  without touching the exec bridge.
+- **The Docker socket is never exposed to the network** — the agent only offers
+  its own gRPC API, which is broad (see above), not a raw socket. The agent
+  mounts the socket read-write (exec needs write) and runs as root, which is
+  inherent to socket access.
 - **Defense in depth:** restrict `9443` at the host firewall to operator
-  networks even though mTLS is the primary control.
+  networks even though mTLS (or the shared secret) is the primary control.
 - **Audit:** every session start/end and authorization decision is logged as one
   structured JSON line (no stdin/stdout payloads). Ship `audit-dest` somewhere
   durable.

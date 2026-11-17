@@ -81,7 +81,7 @@ agent/deploy/                 stack file, secret + dev-cert scripts
 
 ## Build
 
-Requires Go 1.22+ (the shared module currently pins `go 1.25` in `go.mod`; any
+Requires the Go version in `go.mod` (`go 1.27.4` at the time of writing; any
 toolchain that recent works). Run all `make` targets **from the repository
 root**:
 
@@ -267,10 +267,15 @@ balance `9443` across all agents and break per-node targeting).
 
 Security posture:
 
-- **mTLS is the primary control.** Without a valid client cert signed by the
-  configured CA, the connection is rejected (`RequireAndVerifyClientCert`).
-- The raw Docker socket is **never** exposed to the network — only the narrow
-  gRPC surface (List + Exec) is reachable.
+- **Authentication is mTLS or a shared secret.** With `-ca-cert` and a server
+  certificate, a connection without a valid client cert signed by that CA is
+  rejected (`RequireAndVerifyClientCert`). With `-self-signed` and no CA, the
+  connection-bound shared secret is the only authentication; with both, client
+  certificates are verified as well.
+- The raw Docker socket is **never** exposed to the network, but the gRPC API
+  that is reachable is broad: 17 RPCs, among them exec, logs, port-forward and
+  destructive ones (`Prune`, `RemoveVolume`, `KillContainer`). Whoever
+  authenticates can call all of them unless a `-policy-file` restricts them.
 - As defense-in-depth, restrict `9443` at the host firewall to operator
   networks. If you do not want it on the public interface, bind the published
   port to an internal address or front it with a management network.
@@ -278,7 +283,7 @@ Security posture:
 ## Authorization
 
 `internal/auth` defines the `Authorizer` interface. The v1 default,
-`auth.AllowAll`, permits any client whose cert verified against the trusted CA.
+`auth.AllowAll`, permits every client that authenticated (a cert verified against the trusted CA, or the shared secret).
 To enforce a richer policy (per-user/per-service allowlists, deny `root`,
 command allowlists), implement `Authorizer` and pass it to `server.New` — the
 exec bridge is untouched. Every decision (allow/deny + reason) is audited.
