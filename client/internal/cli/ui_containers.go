@@ -859,6 +859,10 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 			})
 		})
 		list.AddItem("port forward", "", 0, func() { closeMenu(); u.portPrompt(c) })
+		list.AddItem("inspect container (node-local)", "", 0, func() { closeMenu(); u.inspectContainer(c, ep) })
+		list.AddItem("copy container id", "", 0, func() { closeMenu(); u.copyToClipboard(c.ContainerID) })
+		// Red like every other destructive action (dangerKey, "remove service").
+		list.AddItem("[red]kill task (swarm reschedules it)[-]", "", 0, func() { closeMenu(); u.confirmKillTask(c, ep) })
 		list.AddItem("cancel", "", 0, closeMenu)
 		if cur >= 0 && cur < list.GetItemCount() {
 			list.SetCurrentItem(cur)
@@ -882,8 +886,59 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 		render()
 	})
 
-	// Height tracks the item count: 6 items plus the border.
-	ov.show(centered(list, 48, 8), list)
+	// Height tracks the item count: 9 items plus the border.
+	ov.show(centered(list, 48, 11), list)
+}
+
+// inspectContainer opens the inspect overlay on the node-local `docker
+// container inspect` of c, fetched from its node's agent (InspectContainer) —
+// the runtime state the manager's task inspect cannot show. The document is
+// never logged: it carries the container's environment.
+func (u *ui) inspectContainer(c resolve.Candidate, ep resolve.Endpoint) {
+	ac, ctx, timeout := u.agents, u.ctx, u.f.connectTimeout
+	u.showInspect(fmt.Sprintf("container %s (%s) on %s", shortID(c.ContainerID), orDash(c.Service), orDash(c.NodeName)),
+		"ui.inspect.container", "", statsSubject{containerID: c.ContainerID},
+		func() ([]swarmops.InspectLine, string, error) {
+			raw, err := ac.InspectContainer(ctx, ep, timeout)
+			if err != nil {
+				return nil, "", err
+			}
+			return swarmops.ContainerInspectViews(raw)
+		})
+}
+
+// copyToClipboard puts text on the system clipboard (OSC52, like the yank key)
+// and says so in the footer.
+func (u *ui) copyToClipboard(text string) {
+	if u.screen == nil || text == "" {
+		return
+	}
+	u.screen.SetClipboard([]byte(text))
+	u.flash(" [green]✓ copied to clipboard[white]")
+}
+
+// confirmKillTask asks before SIGKILLing c through its node's agent
+// (KillContainer). Swarm, not the agent, replaces the task — the confirm text
+// says so, because "kill" alone reads as "and it stays dead".
+func (u *ui) confirmKillTask(c resolve.Candidate, ep resolve.Endpoint) {
+	ac, timeout := u.agents, u.f.connectTimeout
+	msg := fmt.Sprintf("Kill task container %s of %s on %s?\n\n"+
+		"It gets SIGKILL now; Swarm then starts a replacement task per the "+
+		"service's restart policy.", shortID(c.ContainerID), orDash(c.Service), orDash(c.NodeName))
+	u.confirm(msg, "Kill", u.ctree, func() {
+		u.app.SetFocus(u.ctree)
+		u.flash(" killing " + shortID(c.ContainerID) + "…")
+		asyncDo(u, "ui.containers.kill", func(ctx context.Context) error {
+			return ac.KillContainer(ctx, ep, timeout)
+		}, func(err error) {
+			if err != nil {
+				u.info("Kill failed: " + err.Error())
+				return
+			}
+			u.flash(" [green]✓ killed " + shortID(c.ContainerID) + " — swarm reschedules the task[white]")
+			u.treeTab().load()
+		})
+	})
 }
 
 // svcUsageBadge is the resource marker for a service row: the worst reading
