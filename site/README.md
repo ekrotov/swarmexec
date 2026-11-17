@@ -53,6 +53,14 @@ sh site/nav.sh check   # what CI runs (site-check job): fails on any difference
 A new page goes into the table at the top of `nav.sh`; `check` fails for a
 served page that is missing from it.
 
+The docs page list works the same way. Every `docs/<topic>.html` carries a
+verbatim copy of [`partials/docnav.html`](partials/docnav.html) (the
+`<aside class="docside">`: "All docs pages" and the search box) in which its
+own entry has `aria-current="page"`. It sits at the foot of the page on narrow
+screens and becomes a left sidebar from 980px (`docs.css`). A new docs page
+goes into the partial; `nav.sh write` copies it everywhere, and `check` fails
+on any difference, and on an entry whose page does not exist.
+
 ## How a change gets live
 
 From [`.gitlab-ci.yml`](../.gitlab-ci.yml):
