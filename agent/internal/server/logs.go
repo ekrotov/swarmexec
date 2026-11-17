@@ -29,7 +29,7 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	}
 	ctx := stream.Context()
 
-	identity, service, err := s.authorize(ctx, auth.Request{
+	a, err := s.authorize(ctx, auth.Request{
 		Action:      "logs",
 		ContainerID: req.GetContainerId(),
 	})
@@ -38,10 +38,7 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	}
 
 	// A TTY container's log stream is raw; a non-TTY one is stdcopy-multiplexed.
-	tty := false
-	if res, err := s.docker.ContainerInspect(ctx, req.GetContainerId(), client.ContainerInspectOptions{}); err == nil && res.Container.Config != nil {
-		tty = res.Container.Config.Tty
-	}
+	identity, service, tty := a.Identity, a.Service, a.TTY
 
 	opts := client.ContainerLogsOptions{
 		ShowStdout: true,

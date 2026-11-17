@@ -47,7 +47,7 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 
 	// (2) Identity, service and authorization — the shared per-RPC gate. Deny
 	// before creating the exec (REQUIREMENTS §5).
-	identity, service, err := s.authorize(stream.Context(), auth.Request{
+	a, err := s.authorize(stream.Context(), auth.Request{
 		Action:      "exec",
 		ContainerID: se.GetContainerId(),
 		Cmd:         se.GetCmd(),
@@ -58,7 +58,7 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 		return err
 	}
 
-	return s.runSession(stream, se, identity, service)
+	return s.runSession(stream, se, a.Identity, a.Service)
 }
 
 // runSession creates the exec, attaches, and bridges both directions until the

@@ -275,42 +275,66 @@ func tcpPorts(ports []container.PortSummary) []uint32 {
 	return slices.Compact(out)
 }
 
-// resolveService inspects the container to recover its swarm service name. A
-// failure here is non-fatal: it returns "" so authorization and audit still
-// proceed with whatever identity/container information is available.
-func (s *Server) resolveService(ctx context.Context, containerID string) string {
-	res, err := s.docker.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
-	if err != nil {
-		s.log.Warn("ContainerInspect failed; service name unresolved", "container_id", containerID, "err", err)
-		return ""
-	}
-	info := res.Container
-	if info.Config == nil {
-		return ""
-	}
-	return info.Config.Labels[swarmServiceLabel]
+// authed is what the per-container gate learned: who asked, and the one
+// inspect of the container it took the service, the effective exec user and the
+// TTY flag from. Handlers that need the document again (kill, inspect) reuse it
+// instead of inspecting a second time.
+type authed struct {
+	Identity string
+	Service  string // "" when the container is not a swarm task or could not be inspected
+	TTY      bool
+	Inspect  client.ContainerInspectResult
+	// InspectErr is why Inspect is empty; the authorization went ahead without it.
+	InspectErr error
 }
 
-// authorize is the per-RPC security gate shared by the streaming handlers
-// (Exec/Logs/PortForward): resolve the mTLS identity and the swarm service,
-// authorize req — whose action-specific fields (Action, ContainerID, and any of
-// Cmd/User/TTY/Port) the caller has already set — audit the decision, and count a
-// denial. It fills req.Identity and req.Service. On failure it returns a ready
-// gRPC status error (with empty identity/service) so callers just `return err`.
+// effectiveExecUser is who an exec will run as: the requested user, else the
+// container's configured one, else root (the Engine's default). The policy
+// matches "users" against it, so a root shell without -u is still a root shell.
+func effectiveExecUser(requested string, cfg *container.Config) string {
+	switch {
+	case requested != "":
+		return requested
+	case cfg != nil && cfg.User != "":
+		return cfg.User
+	default:
+		return "root"
+	}
+}
+
+// authorize is the per-RPC security gate shared by the container handlers
+// (Exec/Logs/PortForward/events/kill/inspect): resolve the mTLS identity,
+// inspect the container once, authorize req — whose action-specific fields
+// (Action, ContainerID, and any of Cmd/User/TTY/Port) the caller has already
+// set — audit the decision, and count a denial. It fills req.Identity,
+// req.Service and, for an exec, req.EffectiveUser. The inspect is best effort:
+// a failure leaves the service empty so authorization and audit still proceed
+// (a rule on services then does not match). On failure it returns a ready gRPC
+// status error so callers just `return err`.
 // Keeping the sequence in one place stops the authorize/audit/deny order —
 // and the audit of denied requests — from drifting between handlers.
-func (s *Server) authorize(ctx context.Context, req auth.Request) (identity, service string, err error) {
-	identity, err = s.identity(ctx)
+func (s *Server) authorize(ctx context.Context, req auth.Request) (authed, error) {
+	identity, err := s.identity(ctx)
 	if err != nil {
-		return "", "", err
+		return authed{}, err
 	}
-	service = s.resolveService(ctx, req.ContainerID)
+	a := authed{Identity: identity}
+	a.Inspect, a.InspectErr = s.docker.ContainerInspect(ctx, req.ContainerID, client.ContainerInspectOptions{})
+	var cfg *container.Config
+	if a.InspectErr != nil {
+		s.log.Warn("ContainerInspect failed; service name unresolved", "container_id", req.ContainerID, "err", a.InspectErr)
+	} else if cfg = a.Inspect.Container.Config; cfg != nil {
+		a.Service, a.TTY = cfg.Labels[swarmServiceLabel], cfg.Tty
+	}
 	req.Identity = identity
-	req.Service = service
-	if reason, ok := s.decide(ctx, req); !ok {
-		return "", "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
+	req.Service = a.Service
+	if req.Action == "exec" {
+		req.EffectiveUser = effectiveExecUser(req.User, cfg)
 	}
-	return identity, service, nil
+	if reason, ok := s.decide(ctx, req); !ok {
+		return authed{}, status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
+	}
+	return a, nil
 }
 
 // authorizeUnary is the gate of the unary RPCs that act on the node rather than

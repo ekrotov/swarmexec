@@ -81,7 +81,7 @@ func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
 	// (2) Identity, service and authorization — the shared per-RPC gate.
 	// Forwarding is its own action: it moves an internal port onto the operator's
 	// machine, so a policy may deny it while allowing exec.
-	identity, service, err := s.authorize(stream.Context(), auth.Request{
+	a, err := s.authorize(stream.Context(), auth.Request{
 		Action:      "portforward",
 		ContainerID: sf.GetContainerId(),
 		Port:        sf.GetPort(),
@@ -90,7 +90,7 @@ func (s *Server) PortForward(stream pb.Agent_PortForwardServer) error {
 		return err
 	}
 
-	return s.runForward(stream, sf, identity, service)
+	return s.runForward(stream, sf, a.Identity, a.Service)
 }
 
 // runForward establishes the byte channel to the target port and bridges it to

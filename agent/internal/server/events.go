@@ -41,7 +41,7 @@ func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, strea
 	}
 
 	ctx := stream.Context()
-	identity, service, err := s.authorize(ctx, auth.Request{
+	a, err := s.authorize(ctx, auth.Request{
 		Action:      "container.events",
 		ContainerID: req.GetContainerId(),
 	})
@@ -49,8 +49,9 @@ func (s *Server) WatchContainerEvents(req *pb.WatchContainerEventsRequest, strea
 		return err
 	}
 
+	identity := a.Identity
 	start := time.Now()
-	s.audit.EventWatchStart(identity, req.GetContainerId(), service, peerAddr(ctx))
+	s.audit.EventWatchStart(identity, req.GetContainerId(), a.Service, peerAddr(ctx))
 	var sent int64
 	defer func() { s.audit.EventWatchEnd(identity, req.GetContainerId(), time.Since(start), sent) }()
 
