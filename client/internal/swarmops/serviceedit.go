@@ -95,9 +95,26 @@ func SetServicePorts(ctx context.Context, dcli swarmapi.Client, name string, por
 		if spec.EndpointSpec == nil {
 			spec.EndpointSpec = &swarm.EndpointSpec{}
 		}
-		spec.EndpointSpec.Ports = ports
+		// Merge by published port + protocol: an unchanged entry keeps its
+		// existing struct (name and all), only new or edited ones are replaced.
+		existing := map[string]swarm.PortConfig{}
+		for _, p := range spec.EndpointSpec.Ports {
+			existing[portKey(p)] = p
+		}
+		merged := make([]swarm.PortConfig, 0, len(ports))
+		for _, p := range ports {
+			if e, ok := existing[portKey(p)]; ok && e.TargetPort == p.TargetPort && e.PublishMode == p.PublishMode {
+				p = e
+			}
+			merged = append(merged, p)
+		}
+		spec.EndpointSpec.Ports = merged
 		return nil
 	})
+}
+
+func portKey(p swarm.PortConfig) string {
+	return fmt.Sprintf("%d/%s", p.PublishedPort, p.Protocol)
 }
 
 // SetServiceLabels replaces a service's labels.
@@ -159,12 +176,22 @@ func CurrentServiceReplicas(ctx context.Context, dcli swarmapi.Client, name stri
 }
 
 // SetServiceNetworks replaces the networks a service is attached to. targetIDs
-// are network IDs (or names the daemon can resolve). It writes the current
-// TaskTemplate.Networks.
+// are network IDs (or names the daemon can resolve). Attachments that remain
+// keep their aliases and options; only new ones are created bare.
 func SetServiceNetworks(ctx context.Context, dcli swarmapi.Client, name string, targetIDs []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
+		// Merge by Target: an attachment that stays keeps its aliases and
+		// driver opts; only new networks get a bare attachment (KOR-01).
+		existing := map[string]swarm.NetworkAttachmentConfig{}
+		for _, n := range spec.TaskTemplate.Networks {
+			existing[n.Target] = n
+		}
 		var nets []swarm.NetworkAttachmentConfig
 		for _, id := range targetIDs {
+			if n, ok := existing[id]; ok {
+				nets = append(nets, n)
+				continue
+			}
 			nets = append(nets, swarm.NetworkAttachmentConfig{Target: id})
 		}
 		spec.TaskTemplate.Networks = nets
@@ -398,8 +425,8 @@ func EnvFromStrings(items []string) ([]string, error) {
 }
 
 // SetServiceSecrets replaces the secrets a service references. SecretNames are
-// resolved to their IDs; each is mounted at /run/secrets/<name>. Read-modify-
-// write ServiceUpdate (rolling update).
+// resolved to their IDs. Existing references are kept untouched; each new one is
+// mounted at /run/secrets/<name>. Read-modify-write ServiceUpdate.
 func SetServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string, secretNames []string) error {
 	return updateServiceSpec(ctx, dcli, name, func(spec *swarm.ServiceSpec) error {
 		if spec.TaskTemplate.ContainerSpec == nil {
@@ -411,8 +438,18 @@ func SetServiceSecrets(ctx context.Context, dcli swarmapi.Client, name string, s
 				idByName[s.Spec.Name] = s.ID
 			}
 		}
+		// Merge by SecretName: a reference that stays keeps its File target
+		// (name, uid, gid, mode); only new ones get the /run/secrets default.
+		existing := map[string]*swarm.SecretReference{}
+		for _, r := range spec.TaskTemplate.ContainerSpec.Secrets {
+			existing[r.SecretName] = r
+		}
 		var refs []*swarm.SecretReference
 		for _, sn := range secretNames {
+			if r, ok := existing[sn]; ok {
+				refs = append(refs, r)
+				continue
+			}
 			id := idByName[sn]
 			if id == "" {
 				return fmt.Errorf("unknown secret %q", sn)
@@ -466,9 +503,29 @@ func SetServiceMounts(ctx context.Context, dcli swarmapi.Client, name string, mo
 		if spec.TaskTemplate.ContainerSpec == nil {
 			return fmt.Errorf("service %q has no container spec", name)
 		}
-		spec.TaskTemplate.ContainerSpec.Mounts = mounts
+		spec.TaskTemplate.ContainerSpec.Mounts = mergeMounts(spec.TaskTemplate.ContainerSpec.Mounts, mounts)
 		return nil
 	})
+}
+
+// mergeMounts keeps the existing mount (with its VolumeOptions, BindOptions,
+// TmpfsOptions, ...) for every wanted mount that has the same target, type and
+// source; only the read-only flag follows the wanted entry. Others are new.
+func mergeMounts(existing, wanted []mount.Mount) []mount.Mount {
+	byTarget := map[string]mount.Mount{}
+	for _, m := range existing {
+		byTarget[m.Target] = m
+	}
+	out := make([]mount.Mount, 0, len(wanted))
+	for _, w := range wanted {
+		if e, ok := byTarget[w.Target]; ok && e.Type == w.Type && e.Source == w.Source {
+			e.ReadOnly = w.ReadOnly
+			out = append(out, e)
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
 }
 
 // AddServiceMount appends a single mount to a service (read-modify-write
@@ -506,7 +563,9 @@ func CurrentServiceMountSpecs(ctx context.Context, dcli swarmapi.Client, name st
 	return out, nil
 }
 
-// FormatServiceMount renders a mount as "type:source:target[:ro]".
+// FormatServiceMount renders a mount as "type:source:target[:ro]" (tmpfs has an
+// empty source). Type-specific options are not shown; SetServiceMounts keeps
+// them for mounts that stay.
 func FormatServiceMount(m mount.Mount) string {
 	s := fmt.Sprintf("%s:%s:%s", m.Type, m.Source, m.Target)
 	if m.ReadOnly {
@@ -528,7 +587,7 @@ func ParseServiceMount(s string) (mount.Mount, error) {
 		return mount.Mount{}, fmt.Errorf("format: volume:NAME:TARGET[:ro] or bind:/host/path:TARGET[:ro]")
 	}
 	typ, src, tgt := parts[0], parts[1], parts[2]
-	if src == "" || tgt == "" {
+	if tgt == "" || (src == "" && typ != "tmpfs") {
 		return mount.Mount{}, fmt.Errorf("source and target are required")
 	}
 	if !strings.HasPrefix(tgt, "/") {
@@ -543,8 +602,12 @@ func ParseServiceMount(s string) (mount.Mount, error) {
 		if !strings.HasPrefix(src, "/") {
 			return mount.Mount{}, fmt.Errorf("bind source %q must be an absolute host path", src)
 		}
+	case "tmpfs", "npipe", "cluster":
+		// Shown so existing mounts of these types survive an edit; their
+		// options are preserved by SetServiceMounts.
+		mt = mount.Type(typ)
 	default:
-		return mount.Mount{}, fmt.Errorf("mount type must be 'volume' or 'bind' (got %q)", typ)
+		return mount.Mount{}, fmt.Errorf("mount type must be volume, bind, tmpfs, npipe or cluster (got %q)", typ)
 	}
 	return mount.Mount{Type: mt, Source: src, Target: tgt, ReadOnly: ro}, nil
 }
@@ -954,15 +1017,27 @@ func FormatMemBytes(b int64) string {
 	return units.BytesSize(float64(b))
 }
 
-// FormatServicePort renders a port config as "published:target/proto".
+// FormatServicePort renders a port config as "published:target/proto", with a
+// " host" suffix for host-mode ports (ingress is the unmarked default).
 func FormatServicePort(p swarm.PortConfig) string {
-	return fmt.Sprintf("%d:%d/%s", p.PublishedPort, p.TargetPort, p.Protocol)
+	s := fmt.Sprintf("%d:%d/%s", p.PublishedPort, p.TargetPort, p.Protocol)
+	if p.PublishMode == swarm.PortConfigPublishModeHost {
+		s += " host"
+	}
+	return s
 }
 
-// ParseServicePort parses "PUBLISHED:TARGET[/proto]" (proto tcp|udp|sctp,
-// default tcp) into a PortConfig published in ingress mode.
+// ParseServicePort parses "PUBLISHED:TARGET[/proto][ host]" (proto tcp|udp|sctp,
+// default tcp) into a PortConfig; ingress mode unless " host" is appended.
 func ParseServicePort(s string) (swarm.PortConfig, error) {
 	s = strings.TrimSpace(s)
+	mode := swarm.PortConfigPublishModeIngress
+	if f := strings.Fields(s); len(f) == 2 && f[1] == "host" {
+		mode = swarm.PortConfigPublishModeHost
+		s = f[0]
+	} else if len(f) == 2 && f[1] == "ingress" {
+		s = f[0]
+	}
 	proto := "tcp"
 	if i := strings.LastIndex(s, "/"); i >= 0 {
 		proto = strings.ToLower(strings.TrimSpace(s[i+1:]))
@@ -989,7 +1064,7 @@ func ParseServicePort(s string) (swarm.PortConfig, error) {
 		Protocol:      network.IPProtocol(proto),
 		PublishedPort: uint32(pub),
 		TargetPort:    uint32(tgt),
-		PublishMode:   swarm.PortConfigPublishModeIngress,
+		PublishMode:   mode,
 	}, nil
 }
 
