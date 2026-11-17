@@ -63,13 +63,22 @@ func (r initRun) clientConfig(t *testing.T) (config.Config, bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cfg, true
+	// init stores its keys under the context it deployed to: DOCKER_HOST makes
+	// that "default".
+	return cfg.ForContext("default"), true
 }
 
 // runInitOn runs `init args...` against f (nil: a manager nobody answers on).
 // dockerConfig, when not empty, is this machine's Docker config.json — where
 // init reads registry credentials from.
 func runInitOn(t *testing.T, f *swarmfake.Swarm, dockerConfig string, args ...string) initRun {
+	t.Helper()
+	return runInitSeeded(t, f, dockerConfig, "", args...)
+}
+
+// runInitSeeded is runInitOn with a client config file already in place
+// (seed, when not empty, written 0644 on purpose: init must tighten it).
+func runInitSeeded(t *testing.T, f *swarmfake.Swarm, dockerConfig, seed string, args ...string) initRun {
 	t.Helper()
 	var host string
 	if f != nil {
@@ -101,6 +110,14 @@ func runInitOn(t *testing.T, f *swarmfake.Swarm, dockerConfig string, args ...st
 	t.Setenv("DOCKER_CONFIG", dir)
 
 	g := &globalFlags{configPath: filepath.Join(t.TempDir(), "config.yaml")}
+	if seed != "" {
+		if err := os.WriteFile(g.configPath, []byte(seed), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(g.configPath, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cmd := newInitCmd(g)
 	cmd.SetArgs(args)
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
@@ -516,5 +533,45 @@ func TestInitFailures(t *testing.T) {
 				t.Error("a failed init wrote the client config")
 			}
 		})
+	}
+}
+
+// The SEC-06 regression: init against a second cluster used to replace the
+// one global agent_secret, so the first cluster rejected every call after it.
+func TestInitSecondClusterKeepsTheFirstClustersSecret(t *testing.T) {
+	const seed = "# my config\nagent_secret: global-made-up\ncontexts:\n  prod:\n    agent_secret: prod-made-up\n    insecure: true\n"
+	t.Setenv("SWARMEXEC_CA", "/made/up/ca.pem") // env value: must not reach the file
+	t.Setenv("SWARMEXEC_OPERATOR", "env-operator")
+	r := runInitSeeded(t, manager(), "", seed, "--wait=false", "--secret", "staging-made-up")
+	if r.err != nil {
+		t.Fatalf("init: %v\n%s", r.err, r.out)
+	}
+	raw, err := os.ReadFile(r.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"/made/up/ca.pem", "env-operator"} {
+		if strings.Contains(string(raw), bad) {
+			t.Errorf("config file persisted %q:\n%s", bad, raw)
+		}
+	}
+	if !strings.Contains(string(raw), "# my config") {
+		t.Errorf("comment lost:\n%s", raw)
+	}
+	if fi, err := os.Stat(r.cfgPath); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, %v; want 0600 on the pre-existing file", fi.Mode().Perm(), err)
+	}
+	cfg, err := config.Load(r.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ForContext("prod").AgentSecret; got != "prod-made-up" {
+		t.Errorf("first cluster's secret = %q, want it untouched", got)
+	}
+	if got := cfg.ForContext("default").AgentSecret; got != "staging-made-up" {
+		t.Errorf("second cluster's secret = %q", got)
+	}
+	if cfg.AgentSecret != "global-made-up" {
+		t.Errorf("global secret = %q, want it untouched", cfg.AgentSecret)
 	}
 }

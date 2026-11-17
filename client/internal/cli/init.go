@@ -117,7 +117,7 @@ func newInitCmd(g *globalFlags) *cobra.Command {
 func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
-	dcli, err := connectInitManager(ctx, out, g)
+	dcli, ctxName, err := connectInitManager(ctx, out, g)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 		waitRollout(ctx, dcli, serviceID, out, f.rolloutTimeout)
 	}
 	if f.saveConfig {
-		d.saveClientConfig(g.configPath, secret)
+		d.saveClientConfig(g.configPath, ctxName, secret)
 	}
 
 	fmt.Fprintf(out, "\n✓ ready — try:\n  swarmexec ps\n  swarmexec ui\n")
@@ -153,27 +153,27 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 
 // connectInitManager picks the Docker context, connects to it and makes sure
 // it is a Swarm manager, saying which as it goes.
-func connectInitManager(ctx context.Context, out io.Writer, g *globalFlags) (*client.Client, error) {
+func connectInitManager(ctx context.Context, out io.Writer, g *globalFlags) (*client.Client, string, error) {
 	tctx, cerr := resolveContext(out, g)
 	if cerr != nil {
-		return nil, cerr
+		return nil, "", cerr
 	}
 	dcli, err := newDockerClient(ctx, tctx.Name)
 	if err != nil {
-		return nil, &cliError{code: usageExitCode, err: err}
+		return nil, "", &cliError{code: usageExitCode, err: err}
 	}
 	fmt.Fprintf(out, "deploying agents into Docker context %q (%s)\n", tctx.Name, hostOrDefault(tctx.Host))
 
 	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
 	info := infoRes.Info
 	if err != nil {
-		return nil, &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
+		return nil, "", &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
 	}
 	if !info.Swarm.ControlAvailable {
-		return nil, &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
+		return nil, "", &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
 	}
 	fmt.Fprintf(out, "manager: %s (%s)\n", info.Name, plural(info.Swarm.Nodes, "node"))
-	return dcli, nil
+	return dcli, tctx.Name, nil
 }
 
 // initPlan is what init settles before it writes anything. Everything that
@@ -351,19 +351,19 @@ func (d *initDeploy) registryAuth() (string, error) {
 	return auth, nil
 }
 
-// saveClientConfig writes the client config the deployed agents accept — if
-// init knows the secret's value.
-func (d *initDeploy) saveClientConfig(path string, s initSecret) {
+// saveClientConfig records what the deployed agents accept under
+// contexts.<ctxName> — if init knows the secret's value. It writes only the
+// keys init is responsible for (secret, insecure, addr_mode, port), only into
+// that context's block, and never anything that merely came from the
+// environment or the rest of the file: a second cluster no longer replaces the
+// first one's secret (SEC-06).
+func (d *initDeploy) saveClientConfig(path, ctxName string, s initSecret) {
 	if !s.known {
 		fmt.Fprintln(d.out, "note: reused an existing secret whose value is unknown — set `agent_secret` in your config manually, or re-run with --secret")
 		return
 	}
-	cfg, _ := config.Load(path)
-	cfg.AgentSecret = s.value
-	cfg.Insecure = true
-	cfg.AddrMode = config.AddrModeIP
-	cfg.Port = d.f.port
-	if written, err := cfg.Save(path); err != nil {
+	keys := config.ContextKeys{AgentSecret: s.value, Insecure: true, AddrMode: config.AddrModeIP, Port: d.f.port}
+	if written, err := config.SetContextKeys(path, ctxName, keys); err != nil {
 		fmt.Fprintf(d.out, "warning: could not write client config: %v\n", err)
 	} else {
 		fmt.Fprintf(d.out, "client config: %s\n", written)

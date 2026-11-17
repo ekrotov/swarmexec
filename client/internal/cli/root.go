@@ -19,6 +19,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -232,8 +233,8 @@ func (g *globalFlags) initLogging() error {
 	return nil
 }
 
-// resolveConfig merges defaults + file + env, then overlays explicitly-set
-// global flags.
+// resolveConfig merges defaults + file + the endpoint's context block + env,
+// then overlays explicitly-set global flags.
 // ep is the endpoint this run is pointed at, and it is a PARAMETER rather than
 // something looked up here on purpose. Looking it up here is exactly what the
 // bug was: this function used g.dockerContext (the --context flag, never
@@ -247,34 +248,25 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 	if err != nil {
 		return cfg, err
 	}
+	// The context's own credentials, over the global ones and under the
+	// environment (config.ForContext); flags then win over everything.
+	cfg = cfg.ForContext(dockerctx.ResolveName(ep.Context))
 	pf := cmd.Flags()
-	if pf.Changed("ca") {
-		cfg.CA = g.ca
+	flag := func(name, key string, apply func()) {
+		if pf.Changed(name) {
+			apply()
+			cfg.SetSource(key, "flag --"+name)
+		}
 	}
-	if pf.Changed("cert") {
-		cfg.Cert = g.cert
-	}
-	if pf.Changed("key") {
-		cfg.Key = g.key
-	}
-	if pf.Changed("port") {
-		cfg.Port = g.port
-	}
-	if pf.Changed("addr-mode") {
-		cfg.AddrMode = g.addrMode
-	}
-	if pf.Changed("server-name") {
-		cfg.ServerName = g.serverName
-	}
-	if pf.Changed("agent-secret") {
-		cfg.AgentSecret = g.agentSecret
-	}
-	if pf.Changed("agent-secret-file") {
-		cfg.AgentSecretFile = g.agentSecretFile
-	}
-	if pf.Changed("insecure") {
-		cfg.Insecure = g.insecure
-	}
+	flag("ca", config.KeyCA, func() { cfg.CA = g.ca })
+	flag("cert", config.KeyCert, func() { cfg.Cert = g.cert })
+	flag("key", config.KeyKey, func() { cfg.Key = g.key })
+	flag("port", config.KeyPort, func() { cfg.Port = g.port })
+	flag("addr-mode", config.KeyAddrMode, func() { cfg.AddrMode = g.addrMode })
+	flag("server-name", config.KeyServerName, func() { cfg.ServerName = g.serverName })
+	flag("agent-secret", config.KeyAgentSecret, func() { cfg.AgentSecret = g.agentSecret })
+	flag("agent-secret-file", config.KeyAgentSecret, func() { cfg.AgentSecretFile = g.agentSecretFile })
+	flag("insecure", config.KeyInsecure, func() { cfg.Insecure = g.insecure })
 	if pf.Changed("operator") {
 		cfg.Operator = g.operator
 	}
