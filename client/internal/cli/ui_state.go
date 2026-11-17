@@ -55,7 +55,9 @@ var (
 	// The context sidebar is narrow and its rows are self-explanatory, so it
 	// carries no header at all; the endpoint each name resolves to is one
 	// keystroke away in the detail overlay.
-	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "ENGINE", "TASKS", "VOLS", "LABELS"}
+	// CPU% and MEM% are what the node's containers use, measured by its agent
+	// (the same pass that badges the tree), as a share of the node's capacity.
+	noHeaders = []string{"NODE", "ROLE", "AVAIL", "STATE", "CPU%", "MEM%", "TASKS", "VOLS", "ENGINE", "LABELS"}
 )
 
 // Volume sort fields and the header column each annotates with ▲/▼.

@@ -108,11 +108,17 @@
         Lists the swarm's nodes with general info and a few aggregations — <code>NODE</code>
         (hostname; managers in aqua, the leader marked <code>★</code>), <code>ROLE</code>
         (manager / worker), <code>AVAIL</code> (active / pause / drain, colour-coded),
-        <code>STATE</code> (ready / down), <code>ENGINE</code> version, <code>TASKS</code>
+        <code>STATE</code> (ready / down), <code>CPU%</code> and <code>MEM%</code> (what the
+        node's containers use, as a share of the node's cores and memory — measured by its
+        agent on the same pass that puts usage badges on the tree, so containers only, not
+        the kernel or anything outside docker; yellow from 80&nbsp;%, red from 90&nbsp;%,
+        <code>–</code> when the agent did not answer and <code>…</code> while it has its
+        first CPU sample only), <code>TASKS</code>
         (running tasks scheduled on the node), <code>VOLS</code> (volumes the node holds —
         node-local, so it fills in a moment after the rest; <code>–</code> when the node's
-        agent did not answer, rather than a <code>0</code> that would read as “no volumes”)
-        and <code>LABELS</code> (count).
+        agent did not answer, rather than a <code>0</code> that would read as “no volumes”),
+        <code>ENGINE</code> version and <code>LABELS</code> (count). The <kbd>?</kbd> overlay
+        explains the <code>★</code> too.
       </p>
       <p>
         Every action on this tab has a command-line twin under

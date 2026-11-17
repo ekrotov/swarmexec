@@ -976,6 +976,9 @@ func (u *ui) loadUsage() {
 			if u.onUsage != nil {
 				u.onUsage()
 			}
+			if u.active == "nodes" {
+				u.nodeTab().render() // CPU% / MEM% come from this pass
+			}
 			if u.overlayOpen() {
 				return // the badges catch up when the tree is back
 			}

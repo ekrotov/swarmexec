@@ -60,8 +60,8 @@ func TestNodesTabLoadsNodesAndVolumeCounts(t *testing.T) {
 	for {
 		var a, b string
 		onLoop(t, u, func() {
-			a = u.nodeTab().table.GetCell(1, 6).Text
-			b = u.nodeTab().table.GetCell(2, 6).Text
+			a = u.nodeTab().table.GetCell(1, 7).Text
+			b = u.nodeTab().table.GetCell(2, 7).Text
 		})
 		if a == "2" && b == "1" {
 			break
