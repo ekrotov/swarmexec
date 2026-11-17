@@ -198,7 +198,17 @@ rules:
       <div class="cmd">swarmexec init --force --policy-file policy.yaml</div>
       <p>
         A refusal reaches the client as <em>permission denied</em> with the rule and its
-        reason, and the same text lands in the audit log. <code>init</code> checks the file
+        reason, and the same text lands in the audit log, in an <code>auth_decision</code>
+        record that also names the requested <code>action</code> and its object
+        (<code>container_id</code>, <code>service</code>, and where they apply
+        <code>port</code>, <code>user</code>, <code>volume</code>,
+        <code>client_addr</code>; never the command line or environment). Allowed reads
+        a client repeats on a timer (<code>stats.read</code>, <code>volume.list</code>
+        and the like) are recorded once per identity and action per minute with a
+        <code>suppressed</code> count; refusals are never thinned out. A failed
+        shared-secret authentication is counted
+        (<code>swarmexec_auth_failures_total</code>) and logged as a warning, throttled
+        per peer. <code>init</code> checks the file
         before deploying anything, and the agent refuses to start on one it cannot read:
         an unknown action, a misspelt key or a broken pattern is an error, never a rule that
         silently matches nothing. Rules on <code>identities</code> are refused while the

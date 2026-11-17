@@ -14,6 +14,15 @@ groups:
         annotations:
           summary: "{{ $labels.instance }}: {{ $value | humanize }} authorization denials in 10m"
 
+      # Failed shared-secret authentication: someone is guessing the secret, or
+      # a client holds a stale one. The agent's own health probe is not counted.
+      - alert: SwarmexecAuthFailuresRising
+        expr: increase(swarmexec_auth_failures_total[10m]) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $value | humanize }} failed authentications ({{ $labels.reason }}) in 10m"
+
       # Agents on different builds behave differently, and doctor reports only
       # what the client compares against. Version skew that lasts beyond a
       # rollout means some node did not take the update.

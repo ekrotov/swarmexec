@@ -236,6 +236,7 @@ swarmexec stats --json web</div>
           <tr><td><code>swarmexec_active_sessions</code></td><td>exec sessions open right now</td></tr>
           <tr><td><code>swarmexec_sessions_total</code></td><td>exec sessions started</td></tr>
           <tr><td><code>swarmexec_auth_denials_total</code></td><td>requests the authorizer refused — the one signal that makes an attempt visible</td></tr>
+          <tr><td><code>swarmexec_auth_failures_total{reason}</code></td><td>failed shared-secret authentications (<code>missing</code>, <code>invalid</code>, <code>legacy_refused</code>) — someone guessing the secret; the agent's own loopback health probe is not counted</td></tr>
           <tr><td><code>swarmexec_limit_refusals_total{limit}</code></td><td>requests refused at a node cap (<code>streams</code>, <code>forward_sidecars</code>)</td></tr>
           <tr><td><code>swarmexec_active_streams{method}</code></td><td>streams open right now, per RPC (<code>Exec</code>, <code>Logs</code>, <code>PortForward</code>, <code>WatchContainerEvents</code>)</td></tr>
           <tr><td><code>swarmexec_streams_total{method}</code></td><td>streams admitted past the drain and the stream cap, per RPC — including ones the authorizer then refuses</td></tr>
