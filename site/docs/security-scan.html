@@ -121,7 +121,7 @@
       </p>
       <div class="cmd">swarmexec stack deploy web.yml            # asks if anything is found
 swarmexec stack deploy web.yml --check    # only check, never deploy
-swarmexec stack deploy web.yml --force    # deploy despite findings, deliberately</div>
+swarmexec stack deploy web.yml --despite-findings    # deliberately</div>
       <p>
         In the TUI, <kbd>E</kbd> → <em>deploy a file</em> does the same: the findings are
         shown first, <kbd>d</kbd> proceeds, <kbd>Esc</kbd> walks away. Nothing has been
@@ -143,7 +143,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         “do not ask”, and a run that finds something above informational still
         <strong>refuses</strong> and exits non-zero. Anything else would turn the gate
         into a formality the first time someone put it in CI. To deploy despite findings
-        you have to say <code>--force</code>, which is a different thing to type and a
+        you have to say <code>--despite-findings</code>, which is a different thing to type and a
         different thing to explain afterwards. A non-interactive run with no answer on
         stdin counts as <strong>no</strong>.
       </p>
@@ -152,7 +152,7 @@ swarmexec stack deploy web.yml --force    # deploy despite findings, deliberatel
         <tbody>
           <tr><td><code>--check</code></td><td>run the checks and stop. Exits <strong>1</strong> if anything above informational was found, so it gates a pipeline</td></tr>
           <tr><td><code>-y</code>, <code>--yes</code></td><td>do not ask. Deploys when the checks are clean; <strong>refuses</strong> when they are not</td></tr>
-          <tr><td><code>--force</code></td><td>deploy despite findings, without asking</td></tr>
+          <tr><td><code>--despite-findings</code></td><td>deploy despite findings, without asking. Was <code>--force</code>, which still works</td></tr>
           <tr><td><code>--prune</code></td><td>remove services of the stack the file no longer declares. Off by default, as in docker: a file that is a subset of the stack is far more often an accident than an instruction to delete</td></tr>
         </tbody>
       </table></div>
