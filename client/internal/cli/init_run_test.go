@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,8 +72,7 @@ func runInitOn(t *testing.T, f *swarmfake.Swarm, dockerConfig string, args ...st
 	t.Helper()
 	var host string
 	if f != nil {
-		api := httptest.NewServer(f)
-		t.Cleanup(api.Close)
+		api := swarmfake.Serve(t, f)
 		host = "tcp://" + strings.TrimPrefix(api.URL, "http://")
 	} else {
 		l, err := net.Listen("tcp", "127.0.0.1:0")

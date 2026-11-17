@@ -60,7 +60,7 @@ func TestSwarmAnswersTheRealClient(t *testing.T) {
 	if err != nil || len(front.Items) != 1 || front.Items[0].ID != "s1" {
 		t.Errorf("label filter = %+v, %v", front.Items, err)
 	}
-	named, err := c.ServiceList(ctx, client.ServiceListOptions{Filters: make(client.Filters).Add("name", "db")})
+	named, err := c.ServiceList(ctx, client.ServiceListOptions{Filters: make(client.Filters).Add("name", "shop_d")})
 	if err != nil || len(named.Items) != 1 || named.Items[0].ID != "s2" {
 		t.Errorf("name filter = %+v, %v", named.Items, err)
 	}
@@ -89,7 +89,7 @@ func TestSwarmAnswersTheRealClient(t *testing.T) {
 	if nets, err := c.NetworkList(ctx, client.NetworkListOptions{}); err != nil || len(nets.Items) != 1 {
 		t.Errorf("networks = %+v, %v", nets.Items, err)
 	}
-	if secs, err := c.SecretList(ctx, client.SecretListOptions{Filters: make(client.Filters).Add("name", "db")}); err != nil || len(secs.Items) != 1 {
+	if secs, err := c.SecretList(ctx, client.SecretListOptions{Filters: make(client.Filters).Add("name", "db_")}); err != nil || len(secs.Items) != 1 {
 		t.Errorf("secrets = %+v, %v", secs.Items, err)
 	}
 	if cfgs, err := c.ConfigList(ctx, client.ConfigListOptions{Filters: make(client.Filters).Add("name", "nope")}); err != nil || len(cfgs.Items) != 0 {

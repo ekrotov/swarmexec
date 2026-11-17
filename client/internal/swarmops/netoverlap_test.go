@@ -5,7 +5,6 @@ package swarmops
 
 import (
 	"context"
-	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"testing"
@@ -169,8 +168,7 @@ func ipamNet(id, name, subnet, gw string) network.Summary {
 
 func fakeDocker(t *testing.T, f *swarmfake.Swarm) *client.Client {
 	t.Helper()
-	api := httptest.NewServer(f)
-	t.Cleanup(api.Close)
+	api := swarmfake.Serve(t, f)
 	dcli, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
 	if err != nil {
 		t.Fatal(err)

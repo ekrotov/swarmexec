@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,8 +36,7 @@ const agentNodeHost = "127.0.0.1"
 // (127.0.0.2) refuses.
 func cliCluster(t *testing.T, f *swarmfake.Swarm, agent pb.AgentServer) *globalFlags {
 	t.Helper()
-	api := httptest.NewServer(f)
-	t.Cleanup(api.Close)
+	api := swarmfake.Serve(t, f)
 	t.Setenv("DOCKER_HOST", "tcp://"+strings.TrimPrefix(api.URL, "http://"))
 	t.Setenv("DOCKER_CONTEXT", "")
 	dir := t.TempDir()
