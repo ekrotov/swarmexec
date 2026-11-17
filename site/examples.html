@@ -398,7 +398,7 @@
         </p>
         <h3>Pitfalls</h3>
         <ul>
-          <li><strong>Without <code>swarmexec.mcp.enable</code> a service is invisible</strong> — indistinguishable from one that does not exist. Use <code>deploy.labels</code>; a container label grants nothing and is logged as a warning. <code>--default read</code> makes unlabelled services readable, never their logs or exec.</li>
+          <li><strong>Without <code>swarmexec.mcp.enable</code> a service is invisible</strong> — indistinguishable from one that does not exist. Use <code>deploy.labels</code>; a container label grants nothing and is logged as a warning. <code>--default list</code> makes unlabelled services visible, never their logs or exec.</li>
           <li>Only the start context and those named with <code>--contexts</code> exist for the assistant. Production stays out unless you name it.</li>
           <li>ssh cannot prompt: stdin/stdout carry the protocol. Load the key into <code>ssh-agent</code> and have the host key in <code>known_hosts</code> first.</li>
           <li>What a tool returns goes to the model provider. Log lines and command output pass as they are, and anyone who writes to those logs can address the assistant.</li>
@@ -411,10 +411,10 @@
         <h2 id="prune-schedule">10. Free disk space on a schedule</h2>
         <p class="goal"><strong>Goal:</strong> see what each node could reclaim, prune one now, and let every agent prune its own node at night.</p>
         <h3>CLI</h3>
-        <div class="prompt"><span class="c">$</span> swarmexec prune-schedule show
-<span class="c">$</span> swarmexec prune-schedule set --days mon-fri --start 03:00 --tz Europe/Berlin \
+        <div class="prompt"><span class="c">$</span> swarmexec node prune-schedule show
+<span class="c">$</span> swarmexec node prune-schedule set --days mon-fri --start 03:00 --tz Europe/Berlin \
       --categories containers,dangling-images,buildcache,networks
-<span class="c">$</span> swarmexec prune-schedule set --disable           <span class="o"># off, settings kept</span></div>
+<span class="c">$</span> swarmexec node prune-schedule set --disable           <span class="o"># off, settings kept</span></div>
         <h3>In the TUI</h3>
         <p>
           Tab <kbd>6</kbd> (Nodes), <kbd>Enter</kbd> on a node: the detail ends with
@@ -436,7 +436,7 @@
           <li><strong>Volumes are pruned only when you choose them</strong> — <code>volumes</code> in <code>--categories</code>, or the red checkbox — and then named volumes go with their data.</li>
           <li>Times are UTC unless you give <code>--tz</code>.</li>
         </ul>
-        <p class="more">More in the docs: <a href="/docs/volumes#pruneschedulecmd"><code>prune-schedule</code></a> · <a href="/docs/tui-nodes#nodeprune">pruning a node</a> · <a href="/docs/tui-nodes#pruneschedule">the schedule</a></p>
+        <p class="more">More in the docs: <a href="/docs/volumes#pruneschedulecmd"><code>node prune-schedule</code></a> · <a href="/docs/tui-nodes#nodeprune">pruning a node</a> · <a href="/docs/tui-nodes#pruneschedule">the schedule</a></p>
       </article>
 
       <!-- 11 -->

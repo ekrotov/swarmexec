@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security scan for Docker Swarm stacks — stack deploy --check and security report</title>
-  <meta name="description" content="Check a stack file before it is deployed and stop on findings with swarmexec stack deploy --check, and write a Markdown security report of the whole Docker Swarm cluster.">
+  <title>Security scan for Docker Swarm stacks — stack check and security report</title>
+  <meta name="description" content="Check a stack file before it is deployed and stop on findings with swarmexec stack check, and write a Markdown security report of the whole Docker Swarm cluster.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/security-scan">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
-  <meta property="og:title" content="Security scan for Docker Swarm stacks — stack deploy --check and security report">
-  <meta property="og:description" content="Check a stack file before it is deployed and stop on findings with swarmexec stack deploy --check, and write a Markdown security report of the whole Docker Swarm cluster.">
+  <meta property="og:title" content="Security scan for Docker Swarm stacks — stack check and security report">
+  <meta property="og:description" content="Check a stack file before it is deployed and stop on findings with swarmexec stack check, and write a Markdown security report of the whole Docker Swarm cluster.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/security-scan">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -20,8 +20,8 @@
   <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Security scan for Docker Swarm stacks — stack deploy --check and security report">
-  <meta name="twitter:description" content="Check a stack file before it is deployed and stop on findings with swarmexec stack deploy --check, and write a Markdown security report of the whole Docker Swarm cluster.">
+  <meta name="twitter:title" content="Security scan for Docker Swarm stacks — stack check and security report">
+  <meta name="twitter:description" content="Check a stack file before it is deployed and stop on findings with swarmexec stack check, and write a Markdown security report of the whole Docker Swarm cluster.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
@@ -30,8 +30,8 @@
     "@graph": [
       {
         "@type": "TechArticle",
-        "headline": "Security scan for Docker Swarm stacks — stack deploy --check and security report",
-        "description": "Check a stack file before it is deployed and stop on findings with swarmexec stack deploy --check, and write a Markdown security report of the whole Docker Swarm cluster.",
+        "headline": "Security scan for Docker Swarm stacks — stack check and security report",
+        "description": "Check a stack file before it is deployed and stop on findings with swarmexec stack check, and write a Markdown security report of the whole Docker Swarm cluster.",
         "url": "https://swarm-exec.cloud-surfers.net/docs/security-scan",
         "inLanguage": "en",
         "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
@@ -120,8 +120,16 @@
         is found the deploy <strong>stops and asks</strong>.
       </p>
       <div class="cmd">swarmexec stack deploy web.yml            # asks if anything is found
-swarmexec stack deploy web.yml --check    # only check, never deploy
+swarmexec stack check web.yml             # only check, never deploy
 swarmexec stack deploy web.yml --despite-findings    # deliberately</div>
+      <p>
+        <strong>Checking without deploying.</strong> <code>stack check &lt;file&gt; [stack]</code>
+        runs the same checks and stops: exit <strong>0</strong> when nothing above
+        informational was found, <strong>1</strong> when the deploy would stop — the
+        form for a pipeline. It is <code>stack deploy --check</code> under its own name
+        (the MCP tool is <code>stack_check</code>), and <code>security check</code> is the
+        same command again, for whoever looks for it under <code>security</code>.
+      </p>
       <p>
         In the TUI, <kbd>E</kbd> → <em>deploy a file</em> does the same: the findings are
         shown first, <kbd>d</kbd> proceeds, <kbd>Esc</kbd> walks away. Nothing has been
@@ -150,7 +158,7 @@ swarmexec stack deploy web.yml --despite-findings    # deliberately</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>--check</code></td><td>run the checks and stop. Exits <strong>1</strong> if anything above informational was found, so it gates a pipeline</td></tr>
+          <tr><td><code>--check</code></td><td>run the checks and stop, like <code>stack check</code>. Exits <strong>1</strong> if anything above informational was found, so it gates a pipeline</td></tr>
           <tr><td><code>-y</code>, <code>--yes</code></td><td>do not ask. Deploys when the checks are clean; <strong>refuses</strong> when they are not</td></tr>
           <tr><td><code>--despite-findings</code></td><td>deploy despite findings, without asking. Was <code>--force</code>, which still works</td></tr>
           <tr><td><code>--prune</code></td><td>remove services of the stack the file no longer declares. Off by default, as in docker: a file that is a subset of the stack is far more often an accident than an instruction to delete</td></tr>

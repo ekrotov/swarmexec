@@ -114,6 +114,12 @@
         agent did not answer, rather than a <code>0</code> that would read as “no volumes”)
         and <code>LABELS</code> (count).
       </p>
+      <p>
+        Every action on this tab has a command-line twin under
+        <a href="/docs/volumes#node"><code>swarmexec node</code></a>: <code>node ls</code>
+        for the list, <code>node prune</code>, <code>node update --availability</code> /
+        <code>--label-add</code> / <code>--label-rm</code>, and <code>node prune-schedule</code>.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
@@ -279,7 +285,7 @@
         audited with <code>trigger=schedule</code>. The node detail shows the schedule as
         that node's agent sees it, the next run, and the last run with what it freed per
         category and any error. <code>swarmexec init --force</code> keeps the labels; the
-        CLI equivalent is <a href="/docs/volumes#pruneschedulecmd"><code>prune-schedule</code></a>.
+        CLI equivalent is <a href="/docs/volumes#pruneschedulecmd"><code>node prune-schedule</code></a>.
       </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Container label</th><th>Default</th><th>Meaning</th></tr></thead>
