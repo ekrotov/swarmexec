@@ -166,6 +166,14 @@ and busybox `wget` tries `::1` without falling back.
   same colours, fonts, light/dark and top bar. Colours the TUI uses are classes
   (`tc-red`, `tc-yellow`, …), not inline styles, so they stay readable on paper in
   both modes and switch to terminal colours inside a command block.
+- `docsearch.js` — the docs search box (in `partials/docnav.html` and on the index).
+  The index is built by [pagefind](https://pagefind.app) in the image's `search`
+  stage (pinned release, checked against a sha256 in the Dockerfile) over `docs.html`
+  and `docs/*.html` only, and served from `/pagefind/`: no search service, no
+  request elsewhere. The form is `hidden` until the script runs, so without
+  JavaScript, or opened from the repository without an index, the page list is the
+  way around. `/docs?q=…` opens with a search done. To bump pagefind, change
+  `PAGEFIND_VERSION` and both checksums (the `.sha256` files on its release).
 - `fonts/` — `fonts.css` plus Archivo and JetBrains Mono (latin + latin-ext, woff2)
   with their SIL OFL texts. Served from here on purpose: no request to Google,
   nothing for the privacy page to declare.
@@ -180,7 +188,7 @@ and busybox `wget` tries `::1` without falling back.
   and `/docs/` → their clean URL, and the redirects of
   removed pages.
 - `Dockerfile` — `nginx-unprivileged` (non-root); bakes `VERSION`, the sitemap
-  date and `releases.json` in.
+  date, `releases.json` and the docs search index (`/pagefind/`) in.
 - `deploy/site-stack.yml` — Swarm stack (Traefik labels, gateway net, non-root +
   read-only + cap-drop).
 - `proposals/` — design drafts; not part of the image.

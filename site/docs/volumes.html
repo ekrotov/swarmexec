@@ -224,6 +224,13 @@ swarmexec node prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Eu
       </nav>
 
       <aside class="docside" aria-label="Documentation">
+        <form class="docsearch" role="search" hidden>
+          <label class="th" for="docsearch-q">Search the docs</label>
+          <input id="docsearch-q" type="search" name="q" placeholder="e.g. rotate secret" autocomplete="off" spellcheck="false">
+          <p class="docsearch-status" role="status" aria-live="polite"></p>
+          <ol class="docsearch-results"></ol>
+        </form>
+        <script src="/docsearch.js?v=__VERSION__" defer></script>
         <nav class="toc docnav" aria-label="All documentation pages">
           <p class="th">All docs pages</p>
           <ol>

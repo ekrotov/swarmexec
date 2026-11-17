@@ -210,6 +210,28 @@ footer code { font-size: .84em; }
   main:has(> .card > .docside) .docnav li { font-size: .86rem; line-height: 1.35; margin: .4rem 0; }
 }
 
+/* Docs search (docsearch.js, the pagefind index under /pagefind/). The form
+   is `hidden` in the markup; the script shows it once it runs. */
+.docsearch { margin: 2rem 0 1rem; }
+.docsearch .th { display: block; font-family: var(--mono); color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .1em; margin: 0 0 .5rem; }
+.docsearch input {
+  width: 100%; font: inherit; font-size: .95rem; color: var(--ink);
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: .5rem .7rem;
+}
+.docsearch input:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: transparent; }
+.docsearch-status { font-size: .84rem; color: var(--muted); margin: .4rem 0 0; min-height: 1.2em; }
+.docsearch-status:empty { min-height: 0; margin: 0; }
+.docsearch-results { list-style: none; margin: .3rem 0 0; padding: 0; }
+.docsearch-results li { margin: .7rem 0; }
+.docsearch-results a { font-weight: 700; text-decoration: none; }
+.docsearch-results a:hover { text-decoration: underline; }
+.docsearch-results p { margin: .15rem 0 0; font-size: .86rem; color: var(--ink-2); }
+.docsearch-results mark { background: color-mix(in srgb, var(--aqua) 22%, transparent); color: inherit; border-radius: 2px; }
+.docsearch-index { max-width: 34rem; }
+@media (min-width: 980px) {
+  main:has(> .card > .docside) .docsearch { margin: 0 0 1.4rem; }
+}
+
 /* docs/cli.html, the generated CLI reference (make cli-docs): one section per
    command; subcommands are indented in the contents. */
 .clitoc { font-family: var(--mono); font-size: .84rem; }
