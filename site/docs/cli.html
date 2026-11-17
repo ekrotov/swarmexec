@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec CLI reference — every command and flag</title>
+  <meta name="description" content="Every swarmexec command, subcommand and flag on one page, generated from the client's own help text: usage, aliases, defaults, and the global and connection flags.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/cli">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec CLI reference — every command and flag">
+  <meta property="og:description" content="Every swarmexec command, subcommand and flag on one page, generated from the client's own help text: usage, aliases, defaults, and the global and connection flags.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/cli">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec CLI reference — every command and flag">
+  <meta name="twitter:description" content="Every swarmexec command, subcommand and flag on one page, generated from the client's own help text: usage, aliases, defaults, and the global and connection flags.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec CLI reference — every command and flag",
+        "description": "Every swarmexec command, subcommand and flag on one page, generated from the client's own help text: usage, aliases, defaults, and the global and connection flags.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/cli",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "CLI reference",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/cli"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+<header class="rail">
+  <a class="mark" href="/" aria-label="swarmexec home">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Main">
+    <a href="/docs" aria-current="true">Docs</a>
+    <a href="/examples">Examples</a>
+    <a class="rail-opt" href="/docker-swarm-exec-alternatives">Compare</a>
+    <a class="rail-opt" href="/releases">Releases</a>
+    <a class="gh" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><svg class="gh-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="rail-cta" href="/#install">Install</a>
+  </nav>
+</header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › CLI reference</p>
+      <h1>CLI reference<span class="cursor">_</span></h1>
+      <p class="tagline">Every command and flag, from the binary's own help.</p>
+
+      <p class="lead">
+        This page is generated from the command tree of the <code>swarmexec</code>
+        client, so it says what <code>swarmexec &lt;command&gt; --help</code> says.
+        The topic pages explain the commands with context and examples; the
+        <a href="/docs/parity">parity matrix</a> shows which of them the TUI and the
+        MCP server offer too.
+      </p>
+
+      <div class="toc">
+        <p class="th">Commands</p>
+        <ol class="clitoc">
+          <li class="d0"><a href="#swarmexec">swarmexec</a></li>
+          <li class="d1"><a href="#completion">swarmexec completion</a></li>
+          <li class="d2"><a href="#completion-bash">swarmexec completion bash</a></li>
+          <li class="d2"><a href="#completion-fish">swarmexec completion fish</a></li>
+          <li class="d2"><a href="#completion-powershell">swarmexec completion powershell</a></li>
+          <li class="d2"><a href="#completion-zsh">swarmexec completion zsh</a></li>
+          <li class="d1"><a href="#config">swarmexec config</a></li>
+          <li class="d2"><a href="#config-show">swarmexec config show</a></li>
+          <li class="d1"><a href="#connection">swarmexec help connection</a></li>
+          <li class="d1"><a href="#context">swarmexec context</a></li>
+          <li class="d2"><a href="#context-create">swarmexec context create</a></li>
+          <li class="d2"><a href="#context-ls">swarmexec context ls</a></li>
+          <li class="d2"><a href="#context-rm">swarmexec context rm</a></li>
+          <li class="d2"><a href="#context-use">swarmexec context use</a></li>
+          <li class="d1"><a href="#doctor">swarmexec doctor</a></li>
+          <li class="d1"><a href="#down">swarmexec down</a></li>
+          <li class="d1"><a href="#exec">swarmexec exec</a></li>
+          <li class="d1"><a href="#init">swarmexec init</a></li>
+          <li class="d1"><a href="#logs">swarmexec logs</a></li>
+          <li class="d1"><a href="#mcp">swarmexec mcp</a></li>
+          <li class="d1"><a href="#port-forward">swarmexec port-forward</a></li>
+          <li class="d1"><a href="#prune-schedule">swarmexec prune-schedule</a></li>
+          <li class="d2"><a href="#prune-schedule-set">swarmexec prune-schedule set</a></li>
+          <li class="d2"><a href="#prune-schedule-show">swarmexec prune-schedule show</a></li>
+          <li class="d1"><a href="#ps">swarmexec ps</a></li>
+          <li class="d1"><a href="#secret">swarmexec secret</a></li>
+          <li class="d2"><a href="#secret-rotate">swarmexec secret rotate</a></li>
+          <li class="d1"><a href="#security">swarmexec security</a></li>
+          <li class="d2"><a href="#security-report">swarmexec security report</a></li>
+          <li class="d1"><a href="#stack">swarmexec stack</a></li>
+          <li class="d2"><a href="#stack-deploy">swarmexec stack deploy</a></li>
+          <li class="d2"><a href="#stack-diff">swarmexec stack diff</a></li>
+          <li class="d2"><a href="#stack-export">swarmexec stack export</a></li>
+          <li class="d2"><a href="#stack-ls">swarmexec stack ls</a></li>
+          <li class="d1"><a href="#ui">swarmexec ui</a></li>
+          <li class="d1"><a href="#volume">swarmexec volume</a></li>
+          <li class="d2"><a href="#volume-ls">swarmexec volume ls</a></li>
+          <li class="d2"><a href="#volume-rm">swarmexec volume rm</a></li>
+          <li class="d1"><a href="#wait">swarmexec wait</a></li>
+          <li class="d0"><a href="#global-flags">Global flags</a></li>
+          <li class="d0"><a href="#connection-flags">Connection flags</a></li>
+        </ol>
+      </div>
+
+      <h2 id="swarmexec" class="clicmd"><code>swarmexec</code></h2>
+      <p class="clishort">exec, logs, port-forward and a terminal UI for Docker Swarm — without SSH to the nodes</p>
+      <div class="cmd">swarmexec [flags]
+swarmexec [command]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--info</code></td><td><code>false</code></td><td>show version, license, and contact info</td></tr>
+          <tr><td><code>-v, --version</code></td><td><code>false</code></td><td>version for swarmexec</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#completion"><code>swarmexec completion</code></a> — Generate the autocompletion script for the specified shell</li>
+        <li><a href="#config"><code>swarmexec config</code></a> — Inspect the resolved client configuration</li>
+        <li><a href="#connection"><code>swarmexec help connection</code></a> — Flags for reaching the agents: TLS, the agent secret, node addressing</li>
+        <li><a href="#context"><code>swarmexec context</code></a> — Manage Docker contexts used for the manager API</li>
+        <li><a href="#doctor"><code>swarmexec doctor</code></a> — Diagnose the swarm: manager, agent deployment, and per-node agent health</li>
+        <li><a href="#down"><code>swarmexec down</code></a> — Remove the agent service (and secret) provisioned by `init`</li>
+        <li><a href="#exec"><code>swarmexec exec</code></a> — Exec into a container running anywhere in the swarm</li>
+        <li><a href="#init"><code>swarmexec init</code></a> — Provision the agent on every node of the swarm (self-signed &#43; shared secret)</li>
+        <li><a href="#logs"><code>swarmexec logs</code></a> — Stream logs of one or more containers, services or a stack from anywhere in the swarm</li>
+        <li><a href="#mcp"><code>swarmexec mcp</code></a> — Serve the swarm to an AI assistant over MCP (stdio)</li>
+        <li><a href="#port-forward"><code>swarmexec port-forward</code></a> — Forward a local port to a port inside a container in the swarm</li>
+        <li><a href="#prune-schedule"><code>swarmexec prune-schedule</code></a> — Show or set the cluster-wide prune schedule the agents run</li>
+        <li><a href="#ps"><code>swarmexec ps</code></a> — List candidate tasks/containers and the node each runs on</li>
+        <li><a href="#secret"><code>swarmexec secret</code></a> — Work with swarm secrets</li>
+        <li><a href="#security"><code>swarmexec security</code></a> — Security scan of the swarm</li>
+        <li><a href="#stack"><code>swarmexec stack</code></a> — Work with deployed stacks</li>
+        <li><a href="#ui"><code>swarmexec ui</code></a> — Terminal UI: stacks/services, volumes, forwards, networks, secrets, nodes, configs — several clusters in one session</li>
+        <li><a href="#volume"><code>swarmexec volume</code></a> — List and remove volumes across the swarm</li>
+        <li><a href="#wait"><code>swarmexec wait</code></a> — Wait until services have converged — for CI after a deploy</li>
+      </ul>
+
+      <h2 id="completion" class="clicmd"><code>swarmexec completion</code></h2>
+      <p class="clishort">Generate the autocompletion script for the specified shell</p>
+      <div class="cmd">swarmexec completion [command]</div>
+      <p>Generate the autocompletion script for swarmexec for the specified shell. See each sub-command&#39;s help for details on how to use the generated script.</p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#completion-bash"><code>swarmexec completion bash</code></a> — Generate the autocompletion script for bash</li>
+        <li><a href="#completion-fish"><code>swarmexec completion fish</code></a> — Generate the autocompletion script for fish</li>
+        <li><a href="#completion-powershell"><code>swarmexec completion powershell</code></a> — Generate the autocompletion script for powershell</li>
+        <li><a href="#completion-zsh"><code>swarmexec completion zsh</code></a> — Generate the autocompletion script for zsh</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="completion-bash" class="clicmd"><code>swarmexec completion bash</code></h3>
+      <p class="clishort">Generate the autocompletion script for bash</p>
+      <div class="cmd">swarmexec completion bash</div>
+      <p>Generate the autocompletion script for the bash shell.</p>
+      <p>This script depends on the &#39;bash-completion&#39; package. If it is not installed already, you can install it via your OS&#39;s package manager.</p>
+      <p>To load completions in your current shell session:</p>
+      <pre class="helptext">source &lt;(swarmexec completion bash)</pre>
+      <p>To load completions for every new session, execute once:</p>
+      <p class="climeta">Linux:</p>
+      <pre class="helptext">swarmexec completion bash &gt; /etc/bash_completion.d/swarmexec</pre>
+      <p class="climeta">macOS:</p>
+      <pre class="helptext">swarmexec completion bash &gt; $(brew --prefix)/etc/bash_completion.d/swarmexec</pre>
+      <p>You will need to start a new shell for this setup to take effect.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--no-descriptions</code></td><td><code>false</code></td><td>disable completion descriptions</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="completion-fish" class="clicmd"><code>swarmexec completion fish</code></h3>
+      <p class="clishort">Generate the autocompletion script for fish</p>
+      <div class="cmd">swarmexec completion fish [flags]</div>
+      <p>Generate the autocompletion script for the fish shell.</p>
+      <p>To load completions in your current shell session:</p>
+      <pre class="helptext">swarmexec completion fish | source</pre>
+      <p>To load completions for every new session, execute once:</p>
+      <pre class="helptext">swarmexec completion fish &gt; ~/.config/fish/completions/swarmexec.fish</pre>
+      <p>You will need to start a new shell for this setup to take effect.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--no-descriptions</code></td><td><code>false</code></td><td>disable completion descriptions</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="completion-powershell" class="clicmd"><code>swarmexec completion powershell</code></h3>
+      <p class="clishort">Generate the autocompletion script for powershell</p>
+      <div class="cmd">swarmexec completion powershell [flags]</div>
+      <p>Generate the autocompletion script for powershell.</p>
+      <p>To load completions in your current shell session:</p>
+      <pre class="helptext">swarmexec completion powershell | Out-String | Invoke-Expression</pre>
+      <p>To load completions for every new session, add the output of the above command to your powershell profile.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--no-descriptions</code></td><td><code>false</code></td><td>disable completion descriptions</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="completion-zsh" class="clicmd"><code>swarmexec completion zsh</code></h3>
+      <p class="clishort">Generate the autocompletion script for zsh</p>
+      <div class="cmd">swarmexec completion zsh [flags]</div>
+      <p>Generate the autocompletion script for the zsh shell.</p>
+      <p>If shell completion is not already enabled in your environment you will need to enable it.  You can execute the following once:</p>
+      <pre class="helptext">echo &#34;autoload -U compinit; compinit&#34; &gt;&gt; ~/.zshrc</pre>
+      <p>To load completions in your current shell session:</p>
+      <pre class="helptext">source &lt;(swarmexec completion zsh)</pre>
+      <p>To load completions for every new session, execute once:</p>
+      <p class="climeta">Linux:</p>
+      <pre class="helptext">swarmexec completion zsh &gt; &#34;${fpath[1]}/_swarmexec&#34;</pre>
+      <p class="climeta">macOS:</p>
+      <pre class="helptext">swarmexec completion zsh &gt; $(brew --prefix)/share/zsh/site-functions/_swarmexec</pre>
+      <p>You will need to start a new shell for this setup to take effect.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--no-descriptions</code></td><td><code>false</code></td><td>disable completion descriptions</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="config" class="clicmd"><code>swarmexec config</code></h2>
+      <p class="clishort">Inspect the resolved client configuration</p>
+      <div class="cmd">swarmexec config [command]</div>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#config-show"><code>swarmexec config show</code></a> — Print the effective client configuration (secret masked)</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="config-show" class="clicmd"><code>swarmexec config show</code></h3>
+      <p class="clishort">Print the effective client configuration (secret masked)</p>
+      <div class="cmd">swarmexec config show [flags]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="connection" class="clicmd"><code>swarmexec help connection</code> <span class="clitag">help topic</span></h2>
+      <p class="clishort">Flags for reaching the agents: TLS, the agent secret, node addressing</p>
+      <p>Connection flags reach the swarmexec agents on the nodes. Every command takes them; they override the matching config file keys and SWARMEXEC_* variables (see &#34;swarmexec config show&#34;). Most setups set them once in the config file and never on the command line.</p>
+      <p>Connection Flags:</p>
+      <pre class="helptext">--addr-mode string           node dial address: hostname|ip (default hostname)
+--agent-secret string        shared secret for a self-signed agent (Portainer-style auth)
+--agent-secret-file string   file to read the shared secret from
+--ca string                  CA certificate to verify the agent (mTLS)
+--cert string                client certificate (mTLS; CN is the operator identity)
+--insecure                   skip agent server-certificate verification (self-signed agents)
+--key string                 client private key (mTLS)
+--operator string            operator identity reported for audit (default: OS username)
+--port int                   agent port (default 9443)
+--server-name string         override TLS server name for agent verification</pre>
+
+      <h2 id="context" class="clicmd"><code>swarmexec context</code></h2>
+      <p class="clishort">Manage Docker contexts used for the manager API</p>
+      <div class="cmd">swarmexec context [command]</div>
+      <p class="climeta">Aliases: <code>ctx</code></p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#context-create"><code>swarmexec context create</code></a> — Create a Docker context pointing at a manager host</li>
+        <li><a href="#context-ls"><code>swarmexec context ls</code></a> — List Docker contexts</li>
+        <li><a href="#context-rm"><code>swarmexec context rm</code></a> — Remove one or more Docker contexts</li>
+        <li><a href="#context-use"><code>swarmexec context use</code></a> — Set the current Docker context</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="context-create" class="clicmd"><code>swarmexec context create</code></h3>
+      <p class="clishort">Create a Docker context pointing at a manager host</p>
+      <div class="cmd">swarmexec context create &lt;name&gt; [flags]</div>
+      <p>Create a Docker context in docker&#39;s own store, so `swarmexec --context &lt;name&gt;` (and the docker CLI) can use it. The host is a docker daemon endpoint — typically an ssh:// bastion to a Swarm manager, or tcp:// / unix://.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--description string</code></td><td>—</td><td>optional description</td></tr>
+          <tr><td><code>--docker-host string</code></td><td>—</td><td>docker daemon endpoint (ssh:// | tcp:// | unix:// | npipe://)</td></tr>
+          <tr><td><code>--ssh-jump string</code></td><td>—</td><td>ssh jump host(s) for an ssh:// context, comma-separated (ProxyJump / -J)</td></tr>
+          <tr><td><code>--use</code></td><td><code>false</code></td><td>also make it the current context</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="context-ls" class="clicmd"><code>swarmexec context ls</code></h3>
+      <p class="clishort">List Docker contexts</p>
+      <div class="cmd">swarmexec context ls [flags]</div>
+      <p class="climeta">Aliases: <code>list</code></p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="context-rm" class="clicmd"><code>swarmexec context rm</code></h3>
+      <p class="clishort">Remove one or more Docker contexts</p>
+      <div class="cmd">swarmexec context rm &lt;name&gt; [name...] [flags]</div>
+      <p class="climeta">Aliases: <code>remove</code></p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f, --force</code></td><td><code>false</code></td><td>remove even if it is the current context (resets selection to default)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="context-use" class="clicmd"><code>swarmexec context use</code></h3>
+      <p class="clishort">Set the current Docker context</p>
+      <div class="cmd">swarmexec context use &lt;name&gt; [flags]</div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="doctor" class="clicmd"><code>swarmexec doctor</code></h2>
+      <p class="clishort">Diagnose the swarm: manager, agent deployment, and per-node agent health</p>
+      <div class="cmd">swarmexec doctor [flags]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="down" class="clicmd"><code>swarmexec down</code></h2>
+      <p class="clishort">Remove the agent service (and secret) provisioned by `init`</p>
+      <div class="cmd">swarmexec down [flags]</div>
+      <p>down is the inverse of init: it removes the global agent service and, by default, the shared-secret Docker secret. It does not touch the client config.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--keep-secret</code></td><td><code>false</code></td><td>do not remove the shared-secret Docker secret</td></tr>
+          <tr><td><code>--service-name string</code></td><td><code>swarmexec_agent</code></td><td>name of the agent service to remove</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt for confirmation</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="exec" class="clicmd"><code>swarmexec exec</code></h2>
+      <p class="clishort">Exec into a container running anywhere in the swarm</p>
+      <div class="cmd">swarmexec exec [flags] &lt;service|service.slot|task-id|container-id&gt; [-- &lt;cmd&gt; [args...]]</div>
+      <p>Open a shell, or run a command, in a container on whatever node of the swarm it runs — the docker exec experience, without ssh to that node.</p>
+      <p>The target is one of:</p>
+      <pre class="helptext">service        the service&#39;s running task, e.g. web
+service.slot   one replica, e.g. web.2
+task-id        a Swarm task ID
+container-id   a container ID prefix (--node names its node, or the running
+               tasks are scanned for it)</pre>
+      <p>A service with several running replicas is ambiguous: on a terminal you are asked to pick one from a numbered list; without one the candidates are printed and nothing runs. Name a slot to skip the question.</p>
+      <p>With no command it opens /bin/sh, with a TTY when stdin is a terminal. The remote command&#39;s exit code is passed through.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec exec web -- sh
+swarmexec exec web.2 -- cat /etc/hostname
+swarmexec exec -u root -w /app web -- ls -la</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+          <tr><td><code>-e, --env stringArray</code></td><td>—</td><td>set environment variables (KEY=VALUE, repeatable)</td></tr>
+          <tr><td><code>--node string</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>-i, --stdin</code></td><td><code>true</code></td><td>keep stdin open</td></tr>
+          <tr><td><code>-t, --tty</code></td><td><code>false</code></td><td>allocate a TTY (default: auto — true iff stdin is a terminal and no command)</td></tr>
+          <tr><td><code>-u, --user string</code></td><td>—</td><td>username or UID (e.g. 1000:1000)</td></tr>
+          <tr><td><code>-w, --workdir string</code></td><td>—</td><td>working directory inside the container</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="init" class="clicmd"><code>swarmexec init</code></h2>
+      <p class="clishort">Provision the agent on every node of the swarm (self-signed &#43; shared secret)</p>
+      <div class="cmd">swarmexec init [flags]</div>
+      <p>init deploys the swarmexec agent as a global Swarm service via the manager API: it creates a shared-secret Docker secret, runs the agent in self-signed mode on every node (host port 9443), and writes the matching client config so exec/logs/volume work immediately.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--allow-legacy-secret</code></td><td><code>true</code></td><td>accept the raw shared secret from clients predating connection-bound auth; pass=false once all clients are upgraded</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>update the service if it already exists</td></tr>
+          <tr><td><code>--image string</code></td><td><code>docker.io/logleio/swarmexec-agent:latest</code></td><td>agent image to deploy</td></tr>
+          <tr><td><code>--metrics-port int</code></td><td><code>0</code></td><td>publish the agent&#39;s Prometheus metrics on this host port (0 = off); plain HTTP, counts only</td></tr>
+          <tr><td><code>--policy-file string</code></td><td>—</td><td>authorization rule file for the agents (YAML, checked before deploying); without it every authenticated request is allowed</td></tr>
+          <tr><td><code>--port int</code></td><td><code>9443</code></td><td>host port the agent publishes</td></tr>
+          <tr><td><code>--registry-auth</code></td><td><code>true</code></td><td>pass local registry credentials so nodes can pull a private image</td></tr>
+          <tr><td><code>--rollout-timeout duration</code></td><td><code>1m30s</code></td><td>how long to wait for agents to start</td></tr>
+          <tr><td><code>--save-config</code></td><td><code>true</code></td><td>write the client config (~/.config/swarmexec/config.yaml)</td></tr>
+          <tr><td><code>--secret string</code></td><td>—</td><td>shared secret to use (default: generate a random one)</td></tr>
+          <tr><td><code>--service-name string</code></td><td><code>swarmexec_agent</code></td><td>name for the agent service</td></tr>
+          <tr><td><code>--wait</code></td><td><code>true</code></td><td>wait for the agents to come up and report progress</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="logs" class="clicmd"><code>swarmexec logs</code></h2>
+      <p class="clishort">Stream logs of one or more containers, services or a stack from anywhere in the swarm</p>
+      <div class="cmd">swarmexec logs [flags] &lt;service|service.slot|task-id|container-id&gt;...</div>
+      <p>Stream logs from anywhere in the swarm.</p>
+      <p>One target that is one container streams exactly as before. Several targets, a service with several replicas, or --stack follow every source at once: each line is prefixed with where it came from (svc.slot, svc@node for a global service), each source reconnects across its own container replacements, and each has its own format detection.</p>
+      <p>A service (or service.slot) with no running container — crash-looping, failing its health check — shows the newest exited container of each slot instead, so the logs that say why it fails are one command away.</p>
+      <p>--min-level filters the log output shown here; swarmexec&#39;s own logging is the global --client-log-level.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec logs -f --tail 100 web
+swarmexec logs --grep &#39;timeout|refused&#39; -f web
+swarmexec logs -f --tail 20 --stack shop</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+          <tr><td><code>-f, --follow</code></td><td><code>false</code></td><td>keep streaming new log lines</td></tr>
+          <tr><td><code>--grep string</code></td><td>—</td><td>only show lines whose message matches this regexp</td></tr>
+          <tr><td><code>--log-format string</code></td><td>—</td><td>parse lines as: auto | classic | json | logfmt | gelf | raw (auto detects it from the lines themselves; default from config, else classic)</td></tr>
+          <tr><td><code>--min-level string</code></td><td>—</td><td>only show this level and above: trace|debug|info|warn|error|fatal</td></tr>
+          <tr><td><code>--node string</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>--since duration</code></td><td><code>0s</code></td><td>only logs newer than this (e.g. 10m, 1h; 0 = no limit)</td></tr>
+          <tr><td><code>--stack string</code></td><td>—</td><td>follow every service of this stack (in addition to any targets)</td></tr>
+          <tr><td><code>--tail uint32</code></td><td><code>0</code></td><td>number of lines from the end to start with (0 = all)</td></tr>
+          <tr><td><code>-t, --timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="mcp" class="clicmd"><code>swarmexec mcp</code></h2>
+      <p class="clishort">Serve the swarm to an AI assistant over MCP (stdio)</p>
+      <div class="cmd">swarmexec mcp [flags]</div>
+      <p>Run a Model Context Protocol server on stdin/stdout, so an AI assistant can inspect the swarm: services, tasks, logs, stats, stack diffs. Register it with</p>
+      <pre class="helptext">claude mcp add swarmexec -- swarmexec mcp</pre>
+      <p>A service is visible only with the service label swarmexec.mcp.enable=true (compose: deploy.labels). swarmexec.mcp.logs=true allows its logs, swarmexec.mcp.exec=true a non-interactive command in its containers. An explicit &#34;false&#34; always wins. --default read makes unlabelled services visible, never readable or executable.</p>
+      <p>The labels themselves are never shown to the assistant, and nothing can be changed through this server. A service that mounts the Docker socket is never exec&#39;d into, whatever its labels say.</p>
+      <p>ssh cannot prompt here: stdin and stdout are the protocol. Load the key for an ssh:// context into ssh-agent first. Logging goes to the log file.</p>
+      <p>Only the docker context the server starts with (--context, $DOCKER_CONTEXT, $DOCKER_HOST or docker&#39;s current one) is reachable, plus those named with --contexts. Every other context does not exist as far as the assistant can tell: it is not listed, and asking for it is &#34;unknown docker context&#34;.</p>
+      <p>Masking secrets in env and inspect output is cosmetic once exec is granted: a command run in the container can print its environment.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--allow strings</code></td><td>—</td><td>enable optional tools: report (security_report)</td></tr>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
+          <tr><td><code>--contexts strings</code></td><td>—</td><td>further docker contexts the assistant may use, besides the one the server starts with (comma list or repeated)</td></tr>
+          <tr><td><code>--default string</code></td><td><code>none</code></td><td>access for services without swarmexec.mcp.enable: none | read</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="port-forward" class="clicmd"><code>swarmexec port-forward</code></h2>
+      <p class="clishort">Forward a local port to a port inside a container in the swarm</p>
+      <div class="cmd">swarmexec port-forward [flags] &lt;service|service.slot|task-id|container-id&gt; [local:]remote</div>
+      <p class="climeta">Aliases: <code>pf</code></p>
+      <p>Forward a local TCP port to a port inside a container anywhere in the swarm, without publishing that port on the cluster.</p>
+      <p>The local port defaults to the remote one, so `port-forward api 8080` listens on 127.0.0.1:8080 and forwards to port 8080 in the container.</p>
+      <p>Targeting a service forwards to exactly ONE of its tasks (the one the target resolves to), not across all replicas — a forward that silently load-balanced would make debugging misleading.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec port-forward db 5432
+swarmexec pf web 9090:8080
+swarmexec port-forward web.2 8080</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--address string</code></td><td><code>127.0.0.1</code></td><td>local address to bind; loopback by default so the forwarded port is not exposed to your network</td></tr>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+          <tr><td><code>--node string</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="prune-schedule" class="clicmd"><code>swarmexec prune-schedule</code></h2>
+      <p class="clishort">Show or set the cluster-wide prune schedule the agents run</p>
+      <div class="cmd">swarmexec prune-schedule [command]</div>
+      <p>The agents can prune their node on a schedule: stopped containers, unused images, build cache and unused local networks by default; volumes only when added explicitly. The schedule is stored as container labels on the agent service (swarmexec.prune.*), so setting it restarts the agents one by one.</p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#prune-schedule-set"><code>swarmexec prune-schedule set</code></a> — Set (and enable) the schedule; flags not given keep their current value</li>
+        <li><a href="#prune-schedule-show"><code>swarmexec prune-schedule show</code></a> — Show the schedule as the agent service carries it</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="prune-schedule-set" class="clicmd"><code>swarmexec prune-schedule set</code></h3>
+      <p class="clishort">Set (and enable) the schedule; flags not given keep their current value</p>
+      <div class="cmd">swarmexec prune-schedule set [flags]</div>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec prune-schedule set --days mon-fri --start 03:00 --times 2 --tz Europe/Berlin
+swarmexec prune-schedule set --categories containers,images,buildcache,networks,volumes
+swarmexec prune-schedule set --disable</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--categories string</code></td><td>—</td><td>comma-separated: containers, images, dangling-images, buildcache, networks, volumes</td></tr>
+          <tr><td><code>--containers-until string</code></td><td>—</td><td>keep stopped containers this long after they stop (default 24h; 0 keeps none)</td></tr>
+          <tr><td><code>--days string</code></td><td>—</td><td>days to run: mon,tue,… or ranges like mon-fri (default every day)</td></tr>
+          <tr><td><code>--disable</code></td><td><code>false</code></td><td>turn the schedule off (keeps the other settings)</td></tr>
+          <tr><td><code>--label-filter string</code></td><td>—</td><td>only prune objects with these labels (key or key=value, comma-separated); &#34;-&#34; clears</td></tr>
+          <tr><td><code>--start string</code></td><td>—</td><td>first run of the day, HH:MM (default 00:00)</td></tr>
+          <tr><td><code>--times int</code></td><td><code>0</code></td><td>runs per day, the day split evenly from --start (1-24)</td></tr>
+          <tr><td><code>--tz string</code></td><td>—</td><td>IANA time zone for --days and --start (default UTC)</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt before restarting the agents</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="prune-schedule-show" class="clicmd"><code>swarmexec prune-schedule show</code></h3>
+      <p class="clishort">Show the schedule as the agent service carries it</p>
+      <div class="cmd">swarmexec prune-schedule show [flags]</div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="ps" class="clicmd"><code>swarmexec ps</code></h2>
+      <p class="clishort">List candidate tasks/containers and the node each runs on</p>
+      <div class="cmd">swarmexec ps [service] [flags]</div>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec ps
+swarmexec ps web
+swarmexec ps --json web</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="secret" class="clicmd"><code>swarmexec secret</code></h2>
+      <p class="clishort">Work with swarm secrets</p>
+      <div class="cmd">swarmexec secret [command]</div>
+      <p class="climeta">Aliases: <code>secrets</code></p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#secret-rotate"><code>swarmexec secret rotate</code></a> — Replace a secret&#39;s content, keeping its name</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="secret-rotate" class="clicmd"><code>swarmexec secret rotate</code></h3>
+      <p class="clishort">Replace a secret&#39;s content, keeping its name</p>
+      <div class="cmd">swarmexec secret rotate &lt;name&gt; (--from-file FILE | --from-stdin) [flags]</div>
+      <p>Give a secret new content without renaming it, so stack files that name it stay valid. Swarm secrets are immutable and cannot be removed while in use, so every service using it is parked on a temporary secret meanwhile:</p>
+      <pre class="helptext">1  create &lt;name&gt;_rotating with the new content (same labels &#43; a marker)
+2  switch every service to &lt;name&gt;_rotating          (rolling update)
+3  remove the old &lt;name&gt;
+4  create &lt;name&gt; again: new content, original labels
+5  switch every service back to &lt;name&gt;              (rolling update)
+6  remove &lt;name&gt;_rotating</pre>
+      <p>Only the secret behind each mount changes: target path, uid, gid and mode stay. Every service using the secret restarts twice. There is no rollback to the old content — the old secret object is deleted.</p>
+      <p>The value is sent byte for byte (nothing trimmed or added), must not be empty and is limited to 500 KB. It is never printed.</p>
+      <p>If a run stops half-way, the services keep running on &lt;name&gt;_rotating, which holds the new content. Run the same command again to finish: it reads where the last run stopped and continues there.</p>
+      <p>If the secret came from a stack file with `file:`, put the new content in that file too, or the next `docker stack deploy` fails on the changed data.</p>
+      <p>Without --yes, the services that will restart are listed and a y/N answer is read from the terminal; without a terminal, --yes is required.</p>
+      <p>Exit code 0 means rotated, 1 a failure (the message names the step and, when there is something to resume, how), 2 a usage error, 125 an unreachable manager.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec secret rotate db_password --from-file ./db_password.txt
+printf %s &#34;$NEW&#34; | swarmexec secret rotate api_token --from-stdin --yes</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--from-file string</code></td><td>—</td><td>read the new value from this file</td></tr>
+          <tr><td><code>--from-stdin</code></td><td><code>false</code></td><td>read the new value from stdin</td></tr>
+          <tr><td><code>--timeout duration</code></td><td><code>5m0s</code></td><td>how long to wait for each service&#39;s rolling update</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not ask for confirmation</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="security" class="clicmd"><code>swarmexec security</code></h2>
+      <p class="clishort">Security scan of the swarm</p>
+      <div class="cmd">swarmexec security [command]</div>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#security-report"><code>swarmexec security report</code></a> — Write a Markdown security report for the whole cluster</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="security-report" class="clicmd"><code>swarmexec security report</code></h3>
+      <p class="clishort">Write a Markdown security report for the whole cluster</p>
+      <div class="cmd">swarmexec security report [flags]</div>
+      <p>Scan every service, network, secret, config and node in the cluster and write the findings as Markdown. Writes to stdout unless -o is given, so it can be piped as well as saved.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout when checking agents</td></tr>
+          <tr><td><code>-o, --output string</code></td><td>—</td><td>write to this file instead of stdout</td></tr>
+          <tr><td><code>--skip-agents</code></td><td><code>false</code></td><td>do not contact the node agents (faster; agent version skew is then reported as not covered)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="stack" class="clicmd"><code>swarmexec stack</code></h2>
+      <p class="clishort">Work with deployed stacks</p>
+      <div class="cmd">swarmexec stack [command]</div>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#stack-deploy"><code>swarmexec stack deploy</code></a> — Deploy a stack file, after checking it for security antipatterns</li>
+        <li><a href="#stack-diff"><code>swarmexec stack diff</code></a> — Compare a stack file against the deployed stack</li>
+        <li><a href="#stack-export"><code>swarmexec stack export</code></a> — Write a deployed stack out as a compose file</li>
+        <li><a href="#stack-ls"><code>swarmexec stack ls</code></a> — List the stacks deployed on the cluster</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="stack-deploy" class="clicmd"><code>swarmexec stack deploy</code></h3>
+      <p class="clishort">Deploy a stack file, after checking it for security antipatterns</p>
+      <div class="cmd">swarmexec stack deploy &lt;file&gt; [stack] [flags]</div>
+      <p>Load a stack file, run the security checks over what it would actually deploy, and apply it. The stack name defaults to the file&#39;s base name.</p>
+      <p>If anything above informational is found the deploy STOPS and asks. Use --yes to answer in advance (for CI), or --check to look without deploying. --force deploys despite findings without asking — say it deliberately.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--check</code></td><td><code>false</code></td><td>only run the checks, never deploy</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>deploy even though the check found something, without asking</td></tr>
+          <tr><td><code>--prune</code></td><td><code>false</code></td><td>remove services of the stack the file no longer declares</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not ask; deploy if the check found nothing actionable</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="stack-diff" class="clicmd"><code>swarmexec stack diff</code></h3>
+      <p class="clishort">Compare a stack file against the deployed stack</p>
+      <div class="cmd">swarmexec stack diff &lt;file&gt; [stack] [flags]</div>
+      <p>Show what deploying &lt;file&gt; would change. The stack name defaults to the file&#39;s base name, the same default `docker stack deploy` does not have — give it explicitly when the file is not named after the stack.</p>
+      <p>A &#34;&#43;&#34; line is something deploying the file would add, a &#34;-&#34; is something it would remove. Both sides are normalised the same way, so an unchanged stack produces an empty diff rather than pages of daemon defaults.</p>
+      <p>Exit code 0 means no difference, 1 a difference, 2 a usage error and 125 an unreachable manager — so it can gate a pipeline. --ignore leaves a field out of both sides (&#34;services.*.deploy.replicas&#34; for an autoscaled count) and is reported under &#34;Not compared&#34;; --format json is the machine form.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--format string</code></td><td><code>text</code></td><td>output format: text | json</td></tr>
+          <tr><td><code>--ignore strings</code></td><td>—</td><td>leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)</td></tr>
+          <tr><td><code>--stack string</code></td><td>—</td><td>stack name to compare against (default: the file&#39;s base name)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="stack-export" class="clicmd"><code>swarmexec stack export</code></h3>
+      <p class="clishort">Write a deployed stack out as a compose file</p>
+      <div class="cmd">swarmexec stack export &lt;stack&gt; [flags]</div>
+      <p>Read a deployed stack back from the cluster and write it as compose-shaped YAML. Writes to stdout unless -o is given.</p>
+      <p>This is a description of the stack, not a backup of it: a secret&#39;s value is write-only in the engine API and a volume&#39;s contents live on the nodes, so both are declared external. The file says so in its own header.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-o, --output string</code></td><td>—</td><td>write to this file instead of stdout</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="stack-ls" class="clicmd"><code>swarmexec stack ls</code></h3>
+      <p class="clishort">List the stacks deployed on the cluster</p>
+      <div class="cmd">swarmexec stack ls [flags]</div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="ui" class="clicmd"><code>swarmexec ui</code></h2>
+      <p class="clishort">Terminal UI: stacks/services, volumes, forwards, networks, secrets, nodes, configs — several clusters in one session</p>
+      <div class="cmd">swarmexec ui [service] [flags]</div>
+      <p>A terminal UI over the swarm: stacks, services and their containers, volumes, port-forwards, networks, secrets, nodes and configs, one tab each, with exec, logs and port-forwarding built in. The docker contexts are a sidebar (c), and switching between them keeps your place in each cluster. Needs an interactive terminal; ? inside lists every key.</p>
+      <p>With a service argument the UI opens with the Stacks/Services tree already filtered to it, as if you had typed it into the / search.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec ui
+swarmexec ui web
+swarmexec --context prod ui</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to an agent</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="volume" class="clicmd"><code>swarmexec volume</code></h2>
+      <p class="clishort">List and remove volumes across the swarm</p>
+      <div class="cmd">swarmexec volume [command]</div>
+      <p class="climeta">Aliases: <code>volumes</code></p>
+      <p class="climeta">Subcommands</p>
+      <ul class="clisubs">
+        <li><a href="#volume-ls"><code>swarmexec volume ls</code></a> — List volumes across all nodes and which nodes hold each</li>
+        <li><a href="#volume-rm"><code>swarmexec volume rm</code></a> — Remove a volume on all nodes (--all) or specific nodes (--node)</li>
+      </ul>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="volume-ls" class="clicmd"><code>swarmexec volume ls</code></h3>
+      <p class="clishort">List volumes across all nodes and which nodes hold each</p>
+      <div class="cmd">swarmexec volume ls [name-filter] [flags]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--json</code></td><td><code>false</code></td><td>output JSON instead of a table</td></tr>
+          <tr><td><code>--reverse</code></td><td><code>false</code></td><td>reverse the sort direction</td></tr>
+          <tr><td><code>--size</code></td><td><code>false</code></td><td>also compute each volume&#39;s on-disk size (slower: du per volume)</td></tr>
+          <tr><td><code>--sort string</code></td><td><code>name</code></td><td>sort by: name|nodes|used|age|size (size implies --size)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h3 id="volume-rm" class="clicmd"><code>swarmexec volume rm</code></h3>
+      <p class="clishort">Remove a volume on all nodes (--all) or specific nodes (--node)</p>
+      <div class="cmd">swarmexec volume rm &lt;name&gt; [flags]</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--all</code></td><td><code>false</code></td><td>remove on every node that holds the volume</td></tr>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>per-node connect timeout</td></tr>
+          <tr><td><code>--force</code></td><td><code>false</code></td><td>pass docker&#39;s force flag</td></tr>
+          <tr><td><code>--node stringArray</code></td><td>—</td><td>remove only on these nodes (repeatable)</td></tr>
+          <tr><td><code>-y, --yes</code></td><td><code>false</code></td><td>do not prompt for confirmation</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="wait" class="clicmd"><code>swarmexec wait</code></h2>
+      <p class="clishort">Wait until services have converged — for CI after a deploy</p>
+      <div class="cmd">swarmexec wait [flags] &lt;service&gt;...</div>
+      <p>Block until every named service (or every service of --stack) has converged, then exit 0. Exit 1 with the reason when one does not converge in time, when its update paused, or when it was rolled back during the wait.</p>
+      <p>Converged means: no update in flight, as many running tasks as desired (for a job: its completions reached), held for two polls in a row. With --healthy every container that has a healthcheck must also report healthy; a node whose agent cannot report health counts as &#34;not yet&#34;, never as healthy.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to an agent (--healthy)</td></tr>
+          <tr><td><code>--healthy</code></td><td><code>false</code></td><td>also require every container with a healthcheck to be healthy (asks the agents)</td></tr>
+          <tr><td><code>--stack string</code></td><td>—</td><td>wait for every service of this stack (in addition to any named)</td></tr>
+          <tr><td><code>--timeout duration</code></td><td><code>5m0s</code></td><td>give up after this long (exit 1)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="global-flags">Global flags</h2>
+      <p>Every command takes these.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--client-log-file string</code></td><td>—</td><td>swarmexec&#39;s own log file (default swarmexec.log next to config; the TUI also has a live viewer)</td></tr>
+          <tr><td><code>--client-log-level string</code></td><td><code>info</code></td><td>swarmexec&#39;s own log verbosity: debug|info|warn|error|off</td></tr>
+          <tr><td><code>--config string</code></td><td>—</td><td>config file path (default ~/.config/swarmexec/config.yaml)</td></tr>
+          <tr><td><code>--context string</code></td><td>—</td><td>docker context for the manager API; supports ssh:// (also $DOCKER_CONTEXT)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="connection-flags">Connection flags</h2>
+      <p>
+        Every command takes these too; they reach the agents on the nodes. Most setups
+        set them once in the <a href="/docs/configuration">config file</a> and never on
+        the command line. <code>swarmexec help connection</code> prints them.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--addr-mode string</code></td><td>—</td><td>node dial address: hostname|ip (default hostname)</td></tr>
+          <tr><td><code>--agent-secret string</code></td><td>—</td><td>shared secret for a self-signed agent (Portainer-style auth)</td></tr>
+          <tr><td><code>--agent-secret-file string</code></td><td>—</td><td>file to read the shared secret from</td></tr>
+          <tr><td><code>--ca string</code></td><td>—</td><td>CA certificate to verify the agent (mTLS)</td></tr>
+          <tr><td><code>--cert string</code></td><td>—</td><td>client certificate (mTLS; CN is the operator identity)</td></tr>
+          <tr><td><code>--insecure</code></td><td><code>false</code></td><td>skip agent server-certificate verification (self-signed agents)</td></tr>
+          <tr><td><code>--key string</code></td><td>—</td><td>client private key (mTLS)</td></tr>
+          <tr><td><code>--operator string</code></td><td>—</td><td>operator identity reported for audit (default: OS username)</td></tr>
+          <tr><td><code>--port int</code></td><td><code>0</code></td><td>agent port (default 9443)</td></tr>
+          <tr><td><code>--server-name string</code></td><td>—</td><td>override TLS server name for agent verification</td></tr>
+        </tbody>
+      </table></div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/tui-nodes" rel="prev"><span class="lbl">← Previous</span>TUI: the Nodes tab</a>
+        <a class="next" href="/docs/parity" rel="next"><span class="lbl">Next →</span>CLI · TUI · MCP: who does what</a>
+      </nav>
+
+      <aside class="docside" aria-label="Documentation">
+        <nav class="toc docnav" aria-label="All documentation pages">
+          <p class="th">All docs pages</p>
+          <ol>
+            <li><a href="/docs">Overview &amp; how it works</a></li>
+            <li><a href="/docs/install">Install &amp; quick start</a></li>
+            <li><a href="/docs/exec">exec into any Swarm container</a></li>
+            <li><a href="/docs/logs">Logs of services and stacks</a></li>
+            <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+            <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+            <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+            <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+            <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+            <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+            <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+            <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+            <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+            <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+            <li><a href="/docs/tui">The TUI</a></li>
+            <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+            <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
+            <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
+            <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+            <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
+            <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+            <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+            <li><a href="/docs/cli" aria-current="page">CLI reference</a></li>
+          </ol>
+        </nav>
+      </aside>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

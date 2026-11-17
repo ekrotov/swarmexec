@@ -7,7 +7,7 @@ by nginx (non-root, port 8080) behind Traefik.
 |---|---|---|
 | `/` | `index.html` | landing page |
 | `/docs` | `docs.html` | documentation index: how it works, and a list of every docs page |
-| `/docs/<topic>` | `docs/<topic>.html` | one docs page per topic — `install`, `exec`, `logs`, `port-forward`, `stack`, `security-scan`, `secrets`, `volumes`, `mcp`, `agents`, `authentication`, `contexts`, `configuration`, `tui`, `tui-services` (an overview of `tui-services-tree`, `tui-services-security`, `tui-services-inspect`, `tui-services-edit`), `tui-tabs`, `tui-nodes` |
+| `/docs/<topic>` | `docs/<topic>.html` | one docs page per topic — `install`, `exec`, `logs`, `port-forward`, `stack`, `security-scan`, `secrets`, `volumes`, `mcp`, `agents`, `authentication`, `contexts`, `configuration`, `tui`, `tui-services` (an overview of `tui-services-tree`, `tui-services-security`, `tui-services-inspect`, `tui-services-edit`), `tui-tabs`, `tui-nodes`, `cli` (generated, see below) |
 | `/examples` | `examples.html` | recipes: whole workflows, CLI and TUI side by side |
 | `/docker-swarm-exec-alternatives` (`/compare` redirects) | `compare.html` | swarmexec against SSH, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels and kubectl, with an FAQ |
 | `/releases` | `releases.html` | release notes, rendered from `releases.json` |
@@ -139,6 +139,12 @@ and busybox `wget` tries `::1` without falling back.
   index it carries a small script that forwards a moved fragment
   (`/docs/tui-services#env-editor`) to the page that holds it now — keep that table
   in step too.
+- `docs/cli.html` — the CLI reference, **generated**: `make cli-docs` renders every
+  command, subcommand and visible flag from the cobra tree
+  (`client/cmd/gen-cli-docs`, `client/internal/clidocs`), with the top bar and
+  the docs list taken from `partials/`. Do not edit it by hand; change the
+  command's help text and regenerate. CI (`test`: `make cli-docs-check`) fails
+  when the checked-in page differs from what the tree renders.
 - `examples.html` — the recipes. Every flag and key in it is checked against
   `client/internal/cli` (and `keymap.go` for the TUI); keep it that way when a
   command changes.

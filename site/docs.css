@@ -187,6 +187,22 @@ footer code { font-size: .84em; }
 .pager .lbl { display: block; font-family: var(--mono); font-weight: 400; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .docnav a[aria-current="page"] { color: var(--aqua); font-weight: 700; }
 
+/* docs/cli.html, the generated CLI reference (make cli-docs): one section per
+   command; subcommands are indented in the contents. */
+.clitoc { font-family: var(--mono); font-size: .84rem; }
+.clitoc .d2 { padding-left: 1.1rem; }
+.clishort { font-size: 1.04rem; color: var(--ink-2); }
+.climeta { font-size: .92rem; color: var(--muted); margin: 1rem 0 .3rem; }
+.clisubs { margin-top: .2rem; }
+.clitag {
+  font-family: var(--mono); font-size: .7rem; font-weight: 400; color: var(--muted);
+  border: 1px solid var(--rule); border-radius: 4px; padding: .05em .4em; vertical-align: middle;
+}
+pre.helptext {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: .7rem 1rem; margin: .9rem 0; font-size: .8rem; line-height: 1.6;
+}
+
 /* Colours the TUI uses, named rather than hard-coded, so they read on paper in
    both modes and as terminal colours inside a terminal block. */
 .tc-green  { color: var(--green); }
