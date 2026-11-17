@@ -121,6 +121,13 @@
         → the local socket <code>unix:///var/run/docker.sock</code>.
       </p>
       <p>
+        The agent credentials follow the context too: <code>contexts.&lt;name&gt;.agent_secret</code>
+        (and <code>ca</code>, <code>cert</code>, <code>key</code>, <code>port</code>,
+        <code>addr_mode</code>, <code>insecure</code>) give each cluster its own, falling back
+        to the global keys; switching clusters in the TUI switches them as well. See
+        <a href="/docs/configuration#context-precedence">precedence</a>.
+      </p>
+      <p>
         Every label follows the same order. With only <code>$DOCKER_HOST</code> set, the
         context in use is <code>default</code> — the one that <em>is</em>
         <code>$DOCKER_HOST</code>, as for the docker CLI — so the TUI status bar shows

@@ -99,6 +99,10 @@ type Config struct {
 	// nodes (only reachable through the bastion) would be unreachable. nil means
 	// dial the node directly.
 	ProxyDialer func(ctx context.Context, addr string) (net.Conn, error) `yaml:"-"`
+
+	// src records where each credential/dial key got its value, for
+	// `config show` (see Source). Never from YAML.
+	src map[string]string
 }
 
 // LogsConfig holds default log parsing/filtering for the log views.
@@ -123,6 +127,20 @@ type ContextConfig struct {
 	// production clusters, where a stray Enter in the contexts sidebar should
 	// not be enough to put every following keystroke on them.
 	ConfirmSwitch bool `yaml:"confirm_switch,omitempty"`
+
+	// Agent credentials and dial settings for this cluster. Each one, when
+	// set, replaces the global key of the same name for this context only;
+	// unset keys fall back to the global value (see ForContext).
+	CA              string `yaml:"ca,omitempty"`
+	Cert            string `yaml:"cert,omitempty"`
+	Key             string `yaml:"key,omitempty"`
+	Port            int    `yaml:"port,omitempty"`
+	AddrMode        string `yaml:"addr_mode,omitempty"`
+	ServerName      string `yaml:"server_name,omitempty"`
+	AgentSecret     string `yaml:"agent_secret,omitempty"`
+	AgentSecretFile string `yaml:"agent_secret_file,omitempty"`
+	// Insecure is a pointer so that an explicit false overrides a global true.
+	Insecure *bool `yaml:"insecure,omitempty"`
 }
 
 // ConfirmSwitch reports whether switching to contextName in the TUI asks
@@ -162,6 +180,14 @@ func parseUnderlay(s string) (netip.Prefix, error) {
 // CIDR is a load error naming the key instead of a silently missing warning.
 func (c Config) validateContexts() error {
 	for name, cc := range c.Contexts {
+		if cc.Port < 0 || cc.Port > 65535 {
+			return fmt.Errorf("contexts.%s.port: %d is not a port", name, cc.Port)
+		}
+		switch cc.AddrMode {
+		case "", AddrModeHostname, AddrModeIP:
+		default:
+			return fmt.Errorf("contexts.%s.addr_mode: %q (want %q or %q)", name, cc.AddrMode, AddrModeHostname, AddrModeIP)
+		}
 		for _, s := range cc.Underlay {
 			if _, err := parseUnderlay(s); err != nil {
 				return fmt.Errorf("contexts.%s.underlay: %q is not a CIDR like 10.0.0.0/16", name, s)
@@ -246,6 +272,7 @@ func Load(path string) (Config, error) {
 		}
 	}
 	overlayEnv(&cfg)
+	cfg.src = loadSources(path)
 	// Default the audited operator identity to the local OS username.
 	if cfg.Operator == "" {
 		if u, err := user.Current(); err == nil {
@@ -256,7 +283,9 @@ func Load(path string) (Config, error) {
 }
 
 // Save writes the config as YAML to path (DefaultFilePath if empty), creating
-// the directory. The file is 0600 because it may hold the agent secret.
+// the directory. The write is atomic and the file is always 0600, because it
+// may hold the agent secret. It marshals the WHOLE config, environment values
+// included: `init` therefore does not use it (see SetContextKeys).
 func (c Config) Save(path string) (string, error) {
 	if path == "" {
 		path = DefaultFilePath()
@@ -264,17 +293,53 @@ func (c Config) Save(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("cannot determine config file path")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", err
-	}
 	b, err := yaml.Marshal(c)
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, b, 0o600); err != nil {
+	if err := writeFileAtomic(path, b); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// writeFileAtomic writes data to path through a temp file in the same
+// directory and a rename, so a crash never leaves a truncated config, and
+// forces mode 0600 whether or not the file existed (a pre-existing 0644 file
+// would otherwise keep 0644 around the secret just written into it).
+func writeFileAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	fail := func(err error) error {
+		f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		return fail(err)
+	}
+	if _, err := f.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func overlayFile(cfg *Config, path string) error {

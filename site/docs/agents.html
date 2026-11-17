@@ -318,7 +318,12 @@ swarmexec stats --json web</div>
       </div>
       <p>
         <code>--save-config</code> defaults to <code>true</code>, so a re-roll also
-        rewrites <code>~/.config/swarmexec/config.yaml</code>. Pass
+        updates <code>~/.config/swarmexec/config.yaml</code> &mdash; but only
+        <code>contexts.&lt;name&gt;.{agent_secret, insecure, addr_mode, port}</code> of the
+        Docker context it deployed to. Another cluster's block, the global keys, comments
+        and unknown keys are left alone, values that merely came from the environment are
+        never written, and the file is replaced atomically with mode <code>0600</code>.
+        A file that does not parse is reported and not touched. Pass
         <code>--save-config=false</code> whenever the local client config must stay
         untouched — for example when you re-roll the agents from a machine whose config
         is already correct, or from CI.
