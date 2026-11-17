@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/swarmops"
 )
 
 // TestMCPContextsRestricted checks that the assistant gets the context the
@@ -101,7 +102,7 @@ func TestMCPStatsWaitsForWarmup(t *testing.T) {
 	if got.isError || !strings.Contains(got.text, "0.12 / 4.00 cores") || !strings.Contains(got.text, "64MiB / 256MiB") {
 		t.Fatalf("stats did not wait for the sampler:\n%s", got.text)
 	}
-	for _, bad := range []string{statsWarmingUp, statsNoAgent} {
+	for _, bad := range []string{swarmops.StatsWarmingUp, swarmops.StatsNoAgent} {
 		if strings.Contains(got.text, bad) {
 			t.Errorf("stats says %q after waiting:\n%s", bad, got.text)
 		}
@@ -136,10 +137,10 @@ func TestMCPStatsWarmingUpVsUnavailable(t *testing.T) {
 	for _, r := range rows {
 		byNode[r.Node] = r
 	}
-	if r := byNode["node-a"]; r.CPU != statsWarmingUp || r.Note != statsWarmingUpNote {
+	if r := byNode["node-a"]; r.CPU != swarmops.StatsWarmingUp || r.Note != swarmops.StatsWarmingUpNote {
 		t.Errorf("node-a (agent answered, sampler cold) = %+v, want warming up", r)
 	}
-	if r := byNode["node-b"]; r.CPU != statsNoAgent || r.Note != statsNoAgentNote {
+	if r := byNode["node-b"]; r.CPU != swarmops.StatsNoAgent || r.Note != swarmops.StatsNoAgentNote {
 		t.Errorf("node-b (agent down) = %+v, want unavailable", r)
 	}
 }
