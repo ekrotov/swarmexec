@@ -19,26 +19,26 @@ func TestEvaluateDefaults(t *testing.T) {
 		want   Access
 	}{
 		{"unlabelled, default none", DefaultNone, nil, Access{}},
-		{"unlabelled, default read", DefaultRead, nil, Access{Visible: true}},
+		{"unlabelled, default read", DefaultList, nil, Access{Visible: true}},
 		{"enabled", DefaultNone, map[string]string{KeyEnable: "true"}, Access{Visible: true}},
 		{"enabled with logs and exec", DefaultNone,
 			map[string]string{KeyEnable: "true", KeyLogs: "true", KeyExec: "true"},
 			Access{Visible: true, Logs: true, Exec: true}},
-		{"explicit false beats default read", DefaultRead, map[string]string{KeyEnable: "false"}, Access{}},
-		{"explicit false hides even with logs/exec", DefaultRead,
+		{"explicit false beats default read", DefaultList, map[string]string{KeyEnable: "false"}, Access{}},
+		{"explicit false hides even with logs/exec", DefaultList,
 			map[string]string{KeyEnable: "false", KeyLogs: "true", KeyExec: "true"}, Access{}},
 		{"logs without enable under default none stays hidden", DefaultNone,
 			map[string]string{KeyLogs: "true"}, Access{}},
-		{"logs without enable under default read", DefaultRead,
+		{"logs without enable under default read", DefaultList,
 			map[string]string{KeyLogs: "true"}, Access{Visible: true, Logs: true}},
 		{"explicit logs false", DefaultNone,
 			map[string]string{KeyEnable: "true", KeyLogs: "false", KeyExec: "true"},
 			Access{Visible: true, Exec: true}},
-		{"default read never grants exec", DefaultRead, map[string]string{"other": "x"}, Access{Visible: true}},
+		{"default read never grants exec", DefaultList, map[string]string{"other": "x"}, Access{Visible: true}},
 		{"ParseBool spellings", DefaultNone,
 			map[string]string{KeyEnable: "TRUE", KeyLogs: "1", KeyExec: "0"},
 			Access{Visible: true, Logs: true}},
-		{"garbled enable fails closed", DefaultRead, map[string]string{KeyEnable: "yes please"}, Access{}},
+		{"garbled enable fails closed", DefaultList, map[string]string{KeyEnable: "yes please"}, Access{}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestEvaluateWarnsAboutGarbledValue(t *testing.T) {
 }
 
 func TestParseDefault(t *testing.T) {
-	for in, want := range map[string]Default{"": DefaultNone, "none": DefaultNone, "READ": DefaultRead} {
+	for in, want := range map[string]Default{"": DefaultNone, "none": DefaultNone, "READ": DefaultList, "list": DefaultList, " List ": DefaultList} {
 		got, err := ParseDefault(in)
 		if err != nil || got != want {
 			t.Errorf("ParseDefault(%q) = %v, %v", in, got, err)
