@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec CLI, TUI and MCP — which interface does what</title>
+  <meta name="description" content="One table of every swarmexec capability with its CLI command, TUI key and MCP tool, and the reason for each one the TUI alone offers.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/parity">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec CLI, TUI and MCP — which interface does what">
+  <meta property="og:description" content="One table of every swarmexec capability with its CLI command, TUI key and MCP tool, and the reason for each one the TUI alone offers.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/parity">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec CLI, TUI and MCP — which interface does what">
+  <meta name="twitter:description" content="One table of every swarmexec capability with its CLI command, TUI key and MCP tool, and the reason for each one the TUI alone offers.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec CLI, TUI and MCP — which interface does what",
+        "description": "One table of every swarmexec capability with its CLI command, TUI key and MCP tool, and the reason for each one the TUI alone offers.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/parity",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "CLI · TUI · MCP",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/parity"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+<header class="rail">
+  <a class="mark" href="/" aria-label="swarmexec home">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Main">
+    <a href="/docs" aria-current="true">Docs</a>
+    <a href="/examples">Examples</a>
+    <a class="rail-opt" href="/docker-swarm-exec-alternatives">Compare</a>
+    <a class="rail-opt" href="/releases">Releases</a>
+    <a class="gh" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><svg class="gh-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="rail-cta" href="/#install">Install</a>
+  </nav>
+</header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › CLI · TUI · MCP</p>
+      <h1>CLI · TUI · MCP<span class="cursor">_</span></h1>
+      <p class="tagline">Which interface does what — and why some things live in the TUI alone.</p>
+
+      <p class="lead">
+        swarmexec has three faces: the <strong>CLI</strong> for scripts and one-off
+        commands, the <strong>TUI</strong> (<code>swarmexec ui</code>) for looking around
+        and changing things interactively, and the <strong>MCP server</strong>
+        (<code>swarmexec mcp</code>) that lets an AI assistant read the services you opt
+        in. This table puts them side by side.
+      </p>
+      <p>
+        The rule behind it: <strong>whatever the TUI changes has a CLI twin, or is
+        listed here as TUI-only with its reason.</strong> The MCP server is read-only
+        on purpose, with one exception (<code>exec_run</code>, off unless a service's
+        labels allow it), so a write action is never a gap in the MCP column.
+        The <a href="/docs/cli">CLI reference</a> lists every command and flag.
+      </p>
+      <p class="more">
+        A cell names the command, key or tool. <span class="pm-no">—</span> means the
+        interface does not offer it. Rows marked <span class="pm-only">TUI only</span>
+        are deliberate; the reason is under the capability.
+      </p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#read">Reading the cluster</a></li>
+          <li><a href="#containers">Containers: logs, exec, forward</a></li>
+          <li><a href="#stacks">Stacks</a></li>
+          <li><a href="#services">Changing a service</a></li>
+          <li><a href="#nodes">Nodes and disk cleanup</a></li>
+          <li><a href="#objects">Volumes, networks, secrets, configs</a></li>
+          <li><a href="#setup">Contexts and the agents</a></li>
+        </ol>
+      </div>
+
+      <h2 id="read">Reading the cluster</h2>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>Cluster overview: nodes, replicas and health of every service</td><td><code>status</code></td><td>the tree and the Nodes tab</td><td><code>cluster_overview</code></td></tr>
+          <tr><td>Services and their containers (slot, id, node, uptime)</td><td><code>ps</code></td><td>Stacks/Services tab</td><td><code>services_list</code></td></tr>
+          <tr><td>Live CPU and memory per container</td><td><code>stats</code></td><td>markers in the tree; <kbd>i</kbd> → stats view</td><td><code>stats</code></td></tr>
+          <tr><td>Inspect a service: spec and recent tasks</td><td><span class="pm-no">—</span></td><td><kbd>i</kbd> on a service</td><td><code>service_inspect</code></td></tr>
+          <tr><td>Inspect a container on its node<br><span class="pm-why"><span class="pm-only">TUI only</span> for now: it reads the container from its node's agent, picked from the tree; a CLI form can follow.</span></td><td><span class="pm-no">—</span></td><td>container menu → inspect</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Security risks of the deployed services</td><td><code>security report</code> (whole cluster)</td><td><kbd>!</kbd> overlay</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Security report of the whole cluster (Markdown)</td><td><code>security report</code></td><td><kbd>!</kbd> then <kbd>w</kbd></td><td><code>security_report</code> (with <code>--allow report</code>)</td></tr>
+          <tr><td>Placement diagnosis — why a task is missing<br><span class="pm-why"><span class="pm-only">TUI only</span> for now: it is one view over nodes, constraints and task errors; there is no CLI or MCP form of it yet.</span></td><td><span class="pm-no">—</span></td><td><kbd>i</kbd> → <kbd>a</kbd> → <kbd>D</kbd></td><td><span class="pm-no">—</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="containers">Containers: logs, exec, forward</h2>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>Logs of a container, a service or a whole stack</td><td><code>logs</code> (<code>--stack</code>, <code>-f</code>)</td><td><kbd>L</kbd>, the log view</td><td><code>logs_read</code> (bounded, never follows)</td></tr>
+          <tr><td>Interactive shell in a container</td><td><code>exec</code></td><td>container menu → bash / sh / shell as user…</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Run one command in a container</td><td><code>exec web -- cmd</code></td><td><span class="pm-no">—</span> (open a shell)</td><td><code>exec_run</code> (needs the service's exec label)</td></tr>
+          <tr><td>Forward a local port into a container</td><td><code>port-forward</code></td><td><kbd>p</kbd>; the Forwards tab</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Copy a container's id<br><span class="pm-why"><span class="pm-only">TUI only</span> the clipboard belongs to the terminal UI; on the command line <code>ps</code> prints the id.</span></td><td><span class="pm-no">—</span></td><td>container menu → copy id</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Kill a task's container<br><span class="pm-why"><span class="pm-only">TUI only</span> a deliberate, one-at-a-time act on the container you are looking at; Swarm replaces the task, so there is nothing for a script to wait on.</span></td><td><span class="pm-no">—</span></td><td>container menu → kill task</td><td><span class="pm-no">—</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="stacks">Stacks</h2>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>List stacks</td><td><code>stack ls</code></td><td><kbd>s</kbd> groups the tree by stack</td><td>in <code>services_list</code></td></tr>
+          <tr><td>Export a deployed stack as a file</td><td><code>stack export</code></td><td><kbd>E</kbd> → export</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Diff a stack file against the cluster</td><td><code>stack diff</code></td><td><kbd>E</kbd> → compare</td><td><code>stack_diff</code></td></tr>
+          <tr><td>Security-check a stack file before deploying</td><td><code>stack check</code> = <code>security check</code></td><td><kbd>E</kbd> → deploy checks first</td><td><code>stack_check</code></td></tr>
+          <tr><td>Deploy a stack file</td><td><code>stack deploy</code></td><td><kbd>E</kbd> → deploy</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Remove a stack</td><td><code>stack rm</code></td><td><kbd>X</kbd> on a stack row</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Wait until a deploy has converged<br><span class="pm-why">CLI only: a gate for scripts and CI; the TUI shows the same state live.</span></td><td><code>wait</code></td><td><span class="pm-no">—</span> (watch the tree)</td><td><span class="pm-no">—</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="services">Changing a service</h2>
+      <p>
+        These are the editors behind <kbd>i</kbd> → <kbd>a</kbd> on a service
+        (<a href="/docs/tui-services-edit">edit a service</a>). They are TUI-only on
+        purpose: each is an interactive, staged edit of one live service. In a script
+        the declarative way is the stack file — <code>stack diff</code>, then
+        <code>stack deploy</code> — and every one of them is also a
+        <code>docker service update</code> flag against the manager, which swarmexec
+        does not need to repeat.
+      </p>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>Set or update the image version <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>u</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Diff the spec against the previous one <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>d</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Roll back to the previous version <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>R</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Scale <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>s</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Force-update (redeploy unchanged) <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>f</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Edit env, labels, ports, networks, secrets, mounts, resources, placement <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>e</kbd> <kbd>l</kbd> <kbd>p</kbd> <kbd>n</kbd> <kbd>S</kbd> <kbd>v</kbd> <kbd>r</kbd> <kbd>P</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Remove a service <span class="pm-only">TUI only</span></td><td><span class="pm-no">—</span></td><td><kbd>X</kbd></td><td><span class="pm-no">—</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="nodes">Nodes and disk cleanup</h2>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>List nodes: state, role, resources, what each could reclaim</td><td><code>node ls</code></td><td>Nodes tab</td><td>nodes in <code>cluster_overview</code></td></tr>
+          <tr><td>Prune a node per category</td><td><code>node prune</code></td><td><kbd>P</kbd> on a node</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Show or set the cluster-wide prune schedule</td><td><code>node prune-schedule</code></td><td><kbd>S</kbd> on the Nodes tab</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Node labels and availability (active / pause / drain)<br><span class="pm-why"><span class="pm-only">TUI only</span> a node property set by hand; <code>docker node update</code> does it against the manager.</span></td><td><span class="pm-no">—</span></td><td><kbd>l</kbd>, <kbd>a</kbd> on a node</td><td><span class="pm-no">—</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="objects">Volumes, networks, secrets, configs</h2>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>List volumes on every node, with their users</td><td><code>volume ls</code></td><td>Volumes tab</td><td><code>volumes_list</code></td></tr>
+          <tr><td>Remove a volume on the nodes that hold it</td><td><code>volume rm</code></td><td><kbd>X</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Remove every unused volume</td><td><code>node prune</code> (volumes category)</td><td><kbd>P</kbd> on the Volumes tab</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Create a volume; attach one to a service<br><span class="pm-why"><span class="pm-only">TUI only</span> attaching is a service edit (see above); creating names a node you pick from the cluster.</span></td><td><span class="pm-no">—</span></td><td><kbd>n</kbd>, <kbd>A</kbd></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>List networks, with subnet-overlap findings</td><td><span class="pm-no">—</span></td><td>Networks tab</td><td><code>networks_list</code></td></tr>
+          <tr><td>Create a network; attach, detach, DNS aliases<br><span class="pm-why"><span class="pm-only">TUI only</span> service edits and <code>docker network create</code> already cover scripts.</span></td><td><span class="pm-no">—</span></td><td><kbd>n</kbd>; <kbd>a</kbd> <kbd>d</kbd> <kbd>A</kbd> in the members view</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>List secrets (names only) and their users</td><td><span class="pm-no">—</span></td><td>Secrets tab</td><td><code>secrets_list</code></td></tr>
+          <tr><td>Rotate a secret and keep its name</td><td><code>secret rotate</code></td><td><kbd>R</kbd> in the secret's detail</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Create, delete, attach, detach a secret<br><span class="pm-why"><span class="pm-only">TUI only</span> <code>docker secret create</code> / <code>rm</code> and service edits cover scripts; the TUI adds the editor.</span></td><td><span class="pm-no">—</span></td><td><kbd>n</kbd>, <kbd>X</kbd>; <kbd>a</kbd> <kbd>d</kbd> in the detail</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>List configs and their users; read a config</td><td><span class="pm-no">—</span></td><td>Configs tab</td><td><code>configs_list</code> (names and users)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="setup">Contexts and the agents</h2>
+      <div class="tablewrap"><table class="parity">
+        <thead><tr><th>Capability</th><th>CLI</th><th>TUI</th><th>MCP</th></tr></thead>
+        <tbody>
+          <tr><td>List Docker contexts</td><td><code>context ls</code></td><td>the sidebar (<kbd>c</kbd>)</td><td><code>contexts_list</code></td></tr>
+          <tr><td>Create, remove, switch a context</td><td><code>context create</code> / <code>rm</code> / <code>use</code></td><td><kbd>n</kbd>, <kbd>X</kbd>, <kbd>u</kbd> in the sidebar</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Deploy or remove the agents</td><td><code>init</code>, <code>down</code></td><td><span class="pm-no">—</span></td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Update the agent image</td><td><code>init --force</code></td><td><kbd>u</kbd> on the agent service</td><td><span class="pm-no">—</span></td></tr>
+          <tr><td>Check manager and agents</td><td><code>doctor</code></td><td>status line names the failing agent</td><td><code>doctor</code></td></tr>
+          <tr><td>Show the effective configuration</td><td><code>config show</code></td><td><span class="pm-no">—</span></td><td><span class="pm-no">—</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/cli" rel="prev"><span class="lbl">← Previous</span>CLI reference</a>
+      </nav>
+
+      <aside class="docside" aria-label="Documentation">
+        <form class="docsearch" role="search" hidden>
+          <label class="th" for="docsearch-q">Search the docs</label>
+          <input id="docsearch-q" type="search" name="q" placeholder="e.g. rotate secret" autocomplete="off" spellcheck="false">
+          <p class="docsearch-status" role="status" aria-live="polite"></p>
+          <ol class="docsearch-results"></ol>
+        </form>
+        <script src="/docsearch.js?v=__VERSION__" defer></script>
+        <nav class="toc docnav" aria-label="All documentation pages">
+          <p class="th">All docs pages</p>
+          <ol>
+            <li><a href="/docs">Overview &amp; how it works</a></li>
+            <li><a href="/docs/install">Install &amp; quick start</a></li>
+            <li><a href="/docs/exec">exec into any Swarm container</a></li>
+            <li><a href="/docs/logs">Logs of services and stacks</a></li>
+            <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+            <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+            <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+            <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+            <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+            <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+            <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+            <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+            <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+            <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+            <li><a href="/docs/tui">The TUI</a></li>
+            <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+            <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
+            <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
+            <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+            <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
+            <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+            <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+            <li><a href="/docs/cli">CLI reference</a></li>
+            <li><a href="/docs/parity" aria-current="page">CLI · TUI · MCP: who does what</a></li>
+          </ol>
+        </nav>
+      </aside>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

@@ -94,4 +94,54 @@ while read -r page href cur; do
 done < "$tmp/pages"
 
 [ "$fail" = 0 ] && [ "$mode" = check ] && echo "nav.sh: top bar identical on $(wc -l < "$tmp/pages") pages"
+
+# The docs page list (<aside class="docside">: the search box and "All docs
+# pages") is the same on every docs topic page, the same way: it lives once in
+# partials/docnav.html, and each docs/<topic>.html carries a verbatim copy in
+# which its own entry has aria-current="page". At the foot of the page on
+# narrow screens, a left sidebar from 980px (docs.css). A new docs page goes
+# into the partial; `write` then copies it into every page.
+DOCNAV=partials/docnav.html
+ndocs=0
+for page in docs/*.html; do
+	name=${page#docs/}; name=${name%.html}
+	sed "s|href=\"/docs/$name\"|& aria-current=\"page\"|" "$DOCNAV" > "$tmp/want"
+	if ! grep -q 'aria-current="page"' "$tmp/want"; then
+		echo "nav.sh: $page: no entry with href=\"/docs/$name\" in $DOCNAV" >&2
+		fail=1; continue
+	fi
+	n=$(grep -c '<aside class="docside"' "$page" || true)
+	if [ "$n" != 1 ]; then
+		echo "nav.sh: $page: expected exactly one <aside class=\"docside\">, found $n" >&2
+		fail=1; continue
+	fi
+	ndocs=$((ndocs + 1))
+	if [ "$mode" = write ]; then
+		awk -v want="$tmp/want" '
+			/<aside class="docside"/ { while ((getline l < want) > 0) print l; skip = 1; next }
+			skip && /<\/aside>/      { skip = 0; next }
+			!skip                    { print }
+		' "$page" > "$tmp/new"
+		if ! cmp -s "$tmp/new" "$page"; then
+			cat "$tmp/new" > "$page"
+			echo "nav.sh: updated $page (docs list)"
+		fi
+	else
+		awk '/<aside class="docside"/ { p = 1 } p { print } p && /<\/aside>/ { exit }' "$page" > "$tmp/got"
+		if ! diff -u "$tmp/want" "$tmp/got" > "$tmp/diff"; then
+			echo "nav.sh: $page: docs list differs from $DOCNAV (run: sh site/nav.sh write)" >&2
+			cat "$tmp/diff" >&2
+			fail=1
+		fi
+	fi
+done
+# Every entry of the partial is a page that exists.
+for href in $(sed -n 's|.*href="/docs/\([a-z0-9-]*\)".*|\1|p' "$DOCNAV"); do
+	if [ ! -f "docs/$href.html" ]; then
+		echo "nav.sh: $DOCNAV links /docs/$href, but docs/$href.html does not exist" >&2
+		fail=1
+	fi
+done
+
+[ "$fail" = 0 ] && [ "$mode" = check ] && echo "nav.sh: docs list identical on $ndocs docs pages"
 exit "$fail"

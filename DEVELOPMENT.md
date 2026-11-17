@@ -62,6 +62,11 @@ cannot change without breaking deployed agents.
 only; the privacy page also exists in German (`datenschutz.html`) and English (`datenschutz.en.html`). See
 [`site/README.md`](site/README.md).
 
+The CLI reference page (`site/docs/cli.html`, served as `/docs/cli`) is
+generated from the command tree: after adding or changing a command or flag,
+run `make cli-docs` and commit the page. CI's `test` job runs
+`make cli-docs-check`, which regenerates it and fails on any difference.
+
 ### Releases (CI/CD)
 
 [`.gitlab-ci.yml`](.gitlab-ci.yml) builds and versions automatically:

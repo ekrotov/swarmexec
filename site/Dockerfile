@@ -26,6 +26,36 @@ RUN apk add --no-cache wget jq ca-certificates && \
       | jq '[ .[] | select(.name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | { version: .name, date: .commit.created_at, message: (.message // "") } ] | sort_by(.date) | reverse' > /releases.json ) \
     || echo '[]' > /releases.json
 
+# --- search stage: the docs search index (served from /pagefind/, queried by
+# docsearch.js in the browser — no search service, nothing leaves the site).
+# pagefind is a pinned release binary, checked against the sha256 written
+# here (not one downloaded next to it). It indexes the docs only — docs.html
+# and docs/*.html — and leaves out the top bar, the docs list, the pager and
+# the footer, which every page repeats.
+FROM alpine:3.20 AS search
+ARG PAGEFIND_VERSION=1.3.0
+ARG PAGEFIND_SHA256_X86_64=5dfb56609c2d08058c3be56a1a2d332d8dc50d9a6c74f20b3619eadb53240af3
+ARG PAGEFIND_SHA256_AARCH64=0662a9b81a5b40112fc0d99a5aec8a3ac1fcdd7b396bee605f1fbd37c11bc427
+RUN apk add --no-cache wget ca-certificates && \
+    arch="$(uname -m)" && \
+    case "$arch" in \
+      x86_64)  sum="$PAGEFIND_SHA256_X86_64" ;; \
+      aarch64) sum="$PAGEFIND_SHA256_AARCH64" ;; \
+      *) echo "no pagefind checksum for $arch" >&2; exit 1 ;; \
+    esac && \
+    tgz="pagefind-v${PAGEFIND_VERSION}-${arch}-unknown-linux-musl.tar.gz" && \
+    wget -qO "/tmp/$tgz" "https://github.com/CloudCannon/pagefind/releases/download/v${PAGEFIND_VERSION}/$tgz" && \
+    echo "$sum  /tmp/$tgz" | sha256sum -c - && \
+    tar -xzf "/tmp/$tgz" -C /usr/local/bin pagefind && \
+    rm "/tmp/$tgz"
+COPY site/docs.html /site/docs.html
+COPY site/docs /site/docs
+RUN pagefind --site /site --glob "{docs.html,docs/*.html}" --output-path /site/pagefind \
+      --exclude-selectors "header.rail" --exclude-selectors ".skip" \
+      --exclude-selectors ".docside" --exclude-selectors ".pager" \
+      --exclude-selectors "footer" --exclude-selectors ".crumbs" \
+      --exclude-selectors ".cursor" --exclude-selectors ".docsearch"
+
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 
 ARG VERSION=dev
@@ -39,7 +69,7 @@ COPY site/index.html site/docs.html site/examples.html site/compare.html site/da
      site/robots.txt site/sitemap.xml site/install.sh \
      site/favicon.svg site/favicon.ico site/apple-touch-icon.png site/og-image.png \
      site/demo.gif site/portforward.gif site/ui.gif site/report.gif site/contexts.gif \
-     site/landing.css site/landing.js site/docs.css site/nav.css /usr/share/nginx/html/
+     site/landing.css site/landing.js site/docs.css site/nav.css site/docsearch.js site/copy.js /usr/share/nginx/html/
 # Fonts are served from here, not from Google (no third-party request, nothing
 # for the privacy page to declare); the OFL texts travel with them.
 COPY site/fonts /usr/share/nginx/html/fonts
@@ -47,6 +77,8 @@ COPY site/fonts /usr/share/nginx/html/fonts
 COPY site/docs /usr/share/nginx/html/docs
 # Build-time-generated release data (same-origin fetch target for releases.html).
 COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
+# The docs search index (search stage above).
+COPY --from=search /site/pagefind /usr/share/nginx/html/pagefind
 # Every page carries the __VERSION__ placeholder (at least as ?v= on its
 # stylesheets: all of them load nav.css, the shared top bar). The sitemap's <lastmod> is the
 # build date (UTC): CI builds this image when site/ changes on main and on a

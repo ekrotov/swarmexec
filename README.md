@@ -72,7 +72,7 @@ connects straight to that node's agent — there is no mesh between agents.
 The full documentation lives at **[swarm-exec.cloud-surfers.net/docs](https://swarm-exec.cloud-surfers.net/docs)**:
 [configuration](https://swarm-exec.cloud-surfers.net/docs/configuration) ·
 [Docker contexts and SSH](https://swarm-exec.cloud-surfers.net/docs/contexts) ·
-[all commands](https://swarm-exec.cloud-surfers.net/docs#commands) ·
+[all commands](https://swarm-exec.cloud-surfers.net/docs/cli) ·
 [the TUI](https://swarm-exec.cloud-surfers.net/docs/tui#tui) ·
 [monitoring](https://swarm-exec.cloud-surfers.net/docs/agents#monitoring) ·
 [policy file](https://swarm-exec.cloud-surfers.net/docs/authentication#policy) ·

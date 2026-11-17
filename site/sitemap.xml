@@ -24,6 +24,8 @@
   <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui-services-edit</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui-tabs</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/docs/tui-nodes</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/cli</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://swarm-exec.cloud-surfers.net/docs/parity</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives</loc><lastmod>__LASTMOD__</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/examples</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://swarm-exec.cloud-surfers.net/releases</loc><lastmod>__LASTMOD__</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>

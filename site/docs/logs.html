@@ -112,8 +112,8 @@
           <tr><td><code>-f</code>, <code>--follow</code></td><td><code>false</code></td><td>keep streaming new log lines</td></tr>
           <tr><td><code>--tail</code></td><td><code>0</code></td><td>lines from the end to start with (<code>0</code> = all)</td></tr>
           <tr><td><code>-t</code>, <code>--timestamps</code></td><td><code>false</code></td><td>prefix each line with a timestamp</td></tr>
-          <tr><td><code>--since</code></td><td><code>0</code></td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
-          <tr><td><code>--log-format</code></td><td><code>classic</code></td><td>parse lines as <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decides from the lines themselves (default from config, else <code>classic</code>)</td></tr>
+          <tr><td><code>--since</code></td><td><code>0s</code> (no limit)</td><td>only logs newer than this (e.g. <code>10m</code>, <code>1h</code>)</td></tr>
+          <tr><td><code>--log-format</code></td><td>from config, else <code>classic</code></td><td>parse lines as <code>auto</code> | <code>classic</code> | <code>json</code> | <code>logfmt</code> | <code>gelf</code> | <code>raw</code> — <code>auto</code> decides from the lines themselves (default from config, else <code>classic</code>)</td></tr>
           <tr><td><code>--min-level</code></td><td>—</td><td>only show this level and above: <code>trace</code> | <code>debug</code> | <code>info</code> | <code>warn</code> | <code>error</code> | <code>fatal</code>. It filters the streamed output; swarmexec's own logging is the global <a href="/docs/configuration#global"><code>--client-log-level</code></a></td></tr>
           <tr><td><code>--grep</code></td><td>—</td><td>only show lines whose (parsed) message matches this Go regexp</td></tr>
           <tr><td><code>--stack</code></td><td>—</td><td>follow every service of this stack (in addition to any targets)</td></tr>
@@ -222,33 +222,44 @@
         <a class="next" href="/docs/port-forward" rel="next"><span class="lbl">Next →</span>port-forward into the Swarm</a>
       </nav>
 
-      <nav class="toc docnav" aria-label="All documentation pages">
-        <p class="th">All docs pages</p>
-        <ol>
-          <li><a href="/docs">Overview &amp; how it works</a></li>
-          <li><a href="/docs/install">Install &amp; quick start</a></li>
-          <li><a href="/docs/exec">exec into any Swarm container</a></li>
-          <li><a href="/docs/logs" aria-current="page">Logs of services and stacks</a></li>
-          <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
-          <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
-          <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
-          <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
-          <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
-          <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
-          <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
-          <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
-          <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
-          <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
-          <li><a href="/docs/tui">The TUI</a></li>
-          <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
-          <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
-          <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
-          <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
-          <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
-          <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
-          <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
-        </ol>
-      </nav>
+      <aside class="docside" aria-label="Documentation">
+        <form class="docsearch" role="search" hidden>
+          <label class="th" for="docsearch-q">Search the docs</label>
+          <input id="docsearch-q" type="search" name="q" placeholder="e.g. rotate secret" autocomplete="off" spellcheck="false">
+          <p class="docsearch-status" role="status" aria-live="polite"></p>
+          <ol class="docsearch-results"></ol>
+        </form>
+        <script src="/docsearch.js?v=__VERSION__" defer></script>
+        <nav class="toc docnav" aria-label="All documentation pages">
+          <p class="th">All docs pages</p>
+          <ol>
+            <li><a href="/docs">Overview &amp; how it works</a></li>
+            <li><a href="/docs/install">Install &amp; quick start</a></li>
+            <li><a href="/docs/exec">exec into any Swarm container</a></li>
+            <li><a href="/docs/logs" aria-current="page">Logs of services and stacks</a></li>
+            <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+            <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+            <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+            <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+            <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+            <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+            <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+            <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+            <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+            <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+            <li><a href="/docs/tui">The TUI</a></li>
+            <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+            <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
+            <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
+            <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+            <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
+            <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+            <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+            <li><a href="/docs/cli">CLI reference</a></li>
+            <li><a href="/docs/parity">CLI · TUI · MCP: who does what</a></li>
+          </ol>
+        </nav>
+      </aside>
 
       <footer>
         <span>Current release: <strong>__VERSION__</strong></span> ·

@@ -187,6 +187,76 @@ footer code { font-size: .84em; }
 .pager .lbl { display: block; font-family: var(--mono); font-weight: 400; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .docnav a[aria-current="page"] { color: var(--aqua); font-weight: 700; }
 
+/* The docs list (<aside class="docside">, partials/docnav.html) closes every
+   docs page. From 980px it is a left sidebar instead: fixed beside the text,
+   scrolling on its own when it is taller than the window, and the page makes
+   room for it. Positioned, not a grid, so the page's flow — and its collapsing
+   margins — stay exactly as on a phone. Browsers without :has() keep the list
+   at the foot. */
+@media (min-width: 980px) {
+  main:has(> .card > .docside) {
+    max-width: calc(920px + 16rem);
+    padding-left: calc(var(--gutter) + 16rem);
+  }
+  main:has(> .card > .docside) .docside {
+    position: fixed; top: 3rem; bottom: 0;
+    left: max(var(--gutter), calc((100vw - 920px - 16rem) / 2 + var(--gutter)));
+    width: 14rem; overflow-y: auto; overscroll-behavior: contain;
+    padding: 1.6rem 1rem 2rem 0;
+    border-right: 1px solid var(--rule);
+  }
+  main:has(> .card > .docside) .docnav { background: none; border: 0; border-radius: 0; padding: 0; margin: 0; }
+  main:has(> .card > .docside) .docnav ol { columns: 1; }
+  main:has(> .card > .docside) .docnav li { font-size: .86rem; line-height: 1.35; margin: .4rem 0; }
+}
+
+/* Docs search (docsearch.js, the pagefind index under /pagefind/). The form
+   is `hidden` in the markup; the script shows it once it runs. */
+.docsearch { margin: 2rem 0 1rem; }
+.docsearch .th { display: block; font-family: var(--mono); color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .1em; margin: 0 0 .5rem; }
+.docsearch input {
+  width: 100%; font: inherit; font-size: .95rem; color: var(--ink);
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: .5rem .7rem;
+}
+.docsearch input:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: transparent; }
+.docsearch-status { font-size: .84rem; color: var(--muted); margin: .4rem 0 0; min-height: 1.2em; }
+.docsearch-status:empty { min-height: 0; margin: 0; }
+.docsearch-results { list-style: none; margin: .3rem 0 0; padding: 0; }
+.docsearch-results li { margin: .7rem 0; }
+.docsearch-results a { font-weight: 700; text-decoration: none; }
+.docsearch-results a:hover { text-decoration: underline; }
+.docsearch-results p { margin: .15rem 0 0; font-size: .86rem; color: var(--ink-2); }
+.docsearch-results mark { background: color-mix(in srgb, var(--aqua) 22%, transparent); color: inherit; border-radius: 2px; }
+.docsearch-index { max-width: 34rem; }
+@media (min-width: 980px) {
+  main:has(> .card > .docside) .docsearch { margin: 0 0 1.4rem; }
+}
+
+/* docs/cli.html, the generated CLI reference (make cli-docs): one section per
+   command; subcommands are indented in the contents. */
+.clitoc { font-family: var(--mono); font-size: .84rem; }
+.clitoc .d2 { padding-left: 1.1rem; }
+.clishort { font-size: 1.04rem; color: var(--ink-2); }
+.climeta { font-size: .92rem; color: var(--muted); margin: 1rem 0 .3rem; }
+.clisubs { margin-top: .2rem; }
+.clitag {
+  font-family: var(--mono); font-size: .7rem; font-weight: 400; color: var(--muted);
+  border: 1px solid var(--rule); border-radius: 4px; padding: .05em .4em; vertical-align: middle;
+}
+/* docs/parity.html: CLI · TUI · MCP side by side. */
+table.parity td:first-child { min-width: 14em; }
+table.parity td + td { font-size: .86rem; }
+.pm-no { color: var(--muted); }
+.pm-only {
+  font-family: var(--mono); font-size: .7rem; color: var(--amber); white-space: nowrap;
+  border: 1px solid currentColor; border-radius: 4px; padding: 0 .35em;
+}
+.pm-why { display: block; margin-top: .25rem; font-size: .84rem; color: var(--muted); }
+pre.helptext {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: .7rem 1rem; margin: .9rem 0; font-size: .8rem; line-height: 1.6;
+}
+
 /* Colours the TUI uses, named rather than hard-coded, so they read on paper in
    both modes and as terminal colours inside a terminal block. */
 .tc-green  { color: var(--green); }
@@ -263,3 +333,18 @@ a.btn .s { font-family: var(--mono); color: var(--muted); font-size: .78rem; ove
   .toc ol { columns: 1; }
   .links { grid-template-columns: 1fr; }
 }
+
+/* Copy button (copy.js) on a command block with data-copy. Its room is
+   reserved here whether or not the script runs, so the button appearing
+   moves nothing; the button itself exists only when copying can work. */
+[data-copy] { position: relative; padding-right: 4.6rem; }
+.copybtn {
+  position: absolute; top: .45rem; right: .45rem; min-width: 3.9rem;
+  font: 600 .72rem/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .02em;
+  color: var(--t-ink); background: transparent; cursor: pointer; user-select: none;
+  border: 1px solid color-mix(in srgb, var(--t-ink) 35%, transparent); border-radius: 6px; padding: .4rem .5rem;
+}
+.copybtn:hover { border-color: var(--t-aqua); color: var(--t-aqua); }
+.copybtn:focus-visible { outline: 2px solid var(--t-aqua); outline-offset: 2px; }
+.copybtn.done { color: var(--t-aqua); border-color: var(--t-aqua); }
+.copystatus { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -259,6 +259,10 @@ test:
         echo "$unformatted"
         exit 1
       fi
+    # The site's CLI reference (site/docs/cli.html) is generated from the
+    # command tree: regenerate it and fail on any difference, so a command or
+    # flag change cannot merge without its page (review W-05).
+    - make cli-docs-check
     # Race tests plus the coverage gate: fails below COVER_MIN (Makefile).
     - make cover
   coverage: '/^total coverage (\d+\.\d+)%/'

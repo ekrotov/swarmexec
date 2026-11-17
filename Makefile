@@ -46,7 +46,7 @@ COVER_MIN  ?= 78.1
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
 
-.PHONY: all tools ci-tools tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
+.PHONY: all cli-docs cli-docs-check tools ci-tools tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
 
 all: generate build-all
 
@@ -115,6 +115,17 @@ release:
 	done
 	cd dist && sha256sum swarmexec-* > SHA256SUMS
 	@ls -la dist
+
+## cli-docs: regenerate the site's CLI reference (site/docs/cli.html) from the command tree
+# The page is the help text of every command and flag, rendered by
+# client/cmd/gen-cli-docs; run it after changing a command and commit the page.
+cli-docs:
+	go run ./client/cmd/gen-cli-docs -site site -o site/docs/cli.html
+
+## cli-docs-check: fail when site/docs/cli.html is not what the command tree renders (CI: test)
+cli-docs-check: cli-docs
+	@git diff --exit-code -- site/docs/cli.html || { \
+		echo "site/docs/cli.html is out of date with the commands: run 'make cli-docs' and commit it"; exit 1; }
 
 ## test / vet
 test:
