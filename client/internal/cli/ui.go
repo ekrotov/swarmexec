@@ -1453,7 +1453,33 @@ func (u *ui) showHelp() {
 	app := u.app
 	prev := app.GetFocus()
 	h := &helpWriter{}
+	u.writeHelpSections(h, prev)
 
+	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
+	hv.SetBorder(true).SetTitle(" keybindings ")
+	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
+	closeHelp := ov.Close
+	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		switch {
+		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?')):
+			closeHelp()
+			return nil
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
+			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
+			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		}
+		return ev
+	})
+	// Grows with the terminal: a fixed 60×24 box showed some twenty of the
+	// ~90 lines whatever the screen. centeredGrow keeps the footer free.
+	ov.show(centeredGrow(hv, 60, 24, 0.9), hv)
+}
+
+// writeHelpSections writes every section once, in showHelp's order: the open
+// overlay's keys (prev is the focus it returns to), the sidebar's or the
+// active tab's section, the other tabs, contexts and the log views, Global.
+func (u *ui) writeHelpSections(h *helpWriter, prev tview.Primitive) {
 	done := map[string]bool{}
 	section := func(name string, write func()) {
 		if !done[name] {
@@ -1484,26 +1510,6 @@ func (u *ui) showHelp() {
 	section("logs", func() { u.logViewHelpSection(h) })
 	section("clientlog", func() { u.clientLogHelpSection(h) })
 	u.globalHelpSection(h)
-
-	hv := &helpView{TextView: tview.NewTextView().SetDynamicColors(true).SetScrollable(true), h: h}
-	hv.SetBorder(true).SetTitle(" keybindings ")
-	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
-	closeHelp := ov.Close
-	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?')):
-			closeHelp()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'j':
-			return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
-		case ev.Key() == tcell.KeyRune && ev.Rune() == 'k':
-			return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-		}
-		return ev
-	})
-	// Grows with the terminal: a fixed 60×24 box showed some twenty of the
-	// ~90 lines whatever the screen. centeredGrow keeps the footer free.
-	ov.show(centeredGrow(hv, 60, 24, 0.9), hv)
 }
 
 // helpView is the help's text view, re-wrapped whenever its width changes —
