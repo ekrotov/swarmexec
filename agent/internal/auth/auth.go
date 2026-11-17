@@ -41,6 +41,9 @@ type Request struct {
 	// EffectiveUser is who the exec will really run as: User, else the
 	// container's configured user, else root. Set by the agent, not the client.
 	EffectiveUser string
+	// ClientAddr is the peer's network address. It is for the audit record;
+	// no policy condition matches on it.
+	ClientAddr string
 	// TTY indicates whether a TTY was requested.
 	TTY bool
 }

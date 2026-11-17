@@ -67,6 +67,9 @@ type Options struct {
 	Policy string
 	// Docker is the fake daemon; nil starts an empty one.
 	Docker *Docker
+	// Metrics is the sink the server and the authentication check count into;
+	// nil counts nothing.
+	Metrics server.Metrics
 	// Server tunes the agent (MaxStreams, IdleTimeout, ...). SecretAuth is set
 	// from the authentication mode, not from here.
 	Server server.Options
@@ -95,6 +98,14 @@ type Agent struct {
 
 	auditMu  sync.Mutex
 	auditBuf bytes.Buffer
+	logBuf   bytes.Buffer // the operational log, under auditMu
+}
+
+// Log returns the agent's operational (non-audit) log so far, as text.
+func (a *Agent) Log() string {
+	a.auditMu.Lock()
+	defer a.auditMu.Unlock()
+	return a.logBuf.String()
 }
 
 // Addr is "host:port".
@@ -178,7 +189,7 @@ func Start(t testing.TB, o Options) *Agent {
 	}
 	a := &Agent{Host: "127.0.0.1", Secret: o.Secret, Docker: o.Docker, dir: t.TempDir()}
 
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.NewTextHandler(lockedWriter{&a.auditMu, &a.logBuf}, nil))
 	identityVerified := o.MTLS
 	auditLog := audit.New(slog.New(slog.NewJSONHandler(
 		lockedWriter{&a.auditMu, &a.auditBuf}, &slog.HandlerOptions{Level: slog.LevelInfo})), identityVerified)
@@ -218,7 +229,7 @@ func Start(t testing.TB, o Options) *Agent {
 
 	so := o.Server
 	so.SecretAuth = !o.MTLS // lenient identity only when no client certificate is required
-	srv := server.New(o.Docker, authz, auditLog, log, nil, so)
+	srv := server.New(o.Docker, authz, auditLog, log, o.Metrics, so)
 	a.Server = srv
 
 	var secretAuth *server.SecretAuth
@@ -228,6 +239,7 @@ func Start(t testing.TB, o Options) *Agent {
 			CertDER:     tlsCfg.Certificates[0].Certificate[0],
 			AllowLegacy: o.AllowLegacySecret,
 			Log:         log,
+			Metrics:     o.Metrics,
 		}
 	}
 	opts := append([]grpc.ServerOption{grpc.Creds(credentials.NewTLS(tlsCfg))}, server.Interceptors(log, secretAuth, srv)...)

@@ -10,6 +10,10 @@ type Metrics interface {
 	SessionStarted()
 	SessionEnded()
 	AuthDenied()
+	// AuthFailed counts a failed transport authentication (the shared secret);
+	// reason is "missing", "invalid" or "legacy_refused". AuthDenied is the
+	// other kind: an authenticated caller the policy refused.
+	AuthFailed(reason string)
 	BytesTransferred(in, out int64)
 	// LimitRefused counts a request refused because a node cap was reached;
 	// limit is "streams" or "forward_sidecars".
@@ -28,6 +32,7 @@ type NopMetrics struct{}
 func (NopMetrics) SessionStarted()             {}
 func (NopMetrics) SessionEnded()               {}
 func (NopMetrics) AuthDenied()                 {}
+func (NopMetrics) AuthFailed(string)           {}
 func (NopMetrics) BytesTransferred(_, _ int64) {}
 func (NopMetrics) LimitRefused(string)         {}
 func (NopMetrics) StreamStarted(string)        {}

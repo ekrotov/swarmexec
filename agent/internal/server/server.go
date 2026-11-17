@@ -283,6 +283,7 @@ type authed struct {
 	Identity string
 	Service  string // "" when the container is not a swarm task or could not be inspected
 	TTY      bool
+	User     string // the effective exec user; "" for anything but an exec
 	Inspect  client.ContainerInspectResult
 	// InspectErr is why Inspect is empty; the authorization went ahead without it.
 	InspectErr error
@@ -330,7 +331,9 @@ func (s *Server) authorize(ctx context.Context, req auth.Request) (authed, error
 	req.Service = a.Service
 	if req.Action == "exec" {
 		req.EffectiveUser = effectiveExecUser(req.User, cfg)
+		a.User = req.EffectiveUser
 	}
+	req.ClientAddr = peerAddr(ctx)
 	if reason, ok := s.decide(ctx, req); !ok {
 		return authed{}, status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
 	}
@@ -352,6 +355,7 @@ func (s *Server) authorizeUnary(ctx context.Context, req auth.Request) (string, 
 		return "", err
 	}
 	req.Identity = identity
+	req.ClientAddr = peerAddr(ctx)
 	if reason, ok := s.decide(ctx, req); !ok {
 		return "", status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
 	}
@@ -368,13 +372,34 @@ func (s *Server) identity(ctx context.Context) (string, error) {
 	return identity, nil
 }
 
+// polledActions are the read-only unary actions a client repeats on a timer
+// (the TUI's refresh); their allow-records are throttled in the audit log.
+var polledActions = map[string]bool{
+	"stats.read": true, "volume.list": true, "image.list": true,
+	"reclaim.read": true, "network.inspect": true, "container.list": true,
+}
+
+// userOf is the user an audit record names: the effective one the agent
+// computed for an exec, else whatever the request asked for.
+func userOf(req auth.Request) string {
+	if req.EffectiveUser != "" {
+		return req.EffectiveUser
+	}
+	return req.User
+}
+
 // decide asks the Authorizer about req (Identity already set), audits the
 // decision with req's container and service, and counts a denial. It returns
 // the Authorizer's reason and whether req is allowed. Every authorization in
 // the agent goes through here, including each category of a Prune.
 func (s *Server) decide(ctx context.Context, req auth.Request) (reason string, allowed bool) {
 	decision := s.authz.Authorize(ctx, req)
-	s.audit.AuthDecision(req.Identity, req.ContainerID, req.Service, decision.Allow, decision.Reason)
+	s.audit.AuthDecision(audit.AuthRecord{
+		Identity: req.Identity, Action: req.Action, ContainerID: req.ContainerID,
+		Service: req.Service, Port: req.Port, User: userOf(req), Volume: req.Volume,
+		ClientAddr: req.ClientAddr, Allow: decision.Allow, Reason: decision.Reason,
+		Polled: polledActions[req.Action],
+	})
 	if !decision.Allow {
 		s.metrics.AuthDenied()
 	}

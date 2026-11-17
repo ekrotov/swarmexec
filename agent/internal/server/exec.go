@@ -58,17 +58,18 @@ func (s *Server) Exec(stream pb.Agent_ExecServer) error {
 		return err
 	}
 
-	return s.runSession(stream, se, a.Identity, a.Service)
+	return s.runSession(stream, se, a)
 }
 
 // runSession creates the exec, attaches, and bridges both directions until the
 // process exits, the client disconnects, or a timeout fires.
-func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, identity, service string) error {
+func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, a authed) error {
+	identity := a.Identity
 	s.metrics.SessionStarted()
 	start := time.Now()
 
 	clientAddr := peerAddr(stream.Context())
-	s.audit.SessionStart(identity, se.GetContainerId(), service, se.GetCmd(), se.GetTty(), clientAddr)
+	s.audit.SessionStart(identity, se.GetContainerId(), a.Service, a.User, se.GetCmd(), se.GetTty(), clientAddr)
 
 	// (5) Create the exec.
 	execCfg := execCreateOptions(se)

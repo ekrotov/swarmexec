@@ -7,11 +7,15 @@ import (
 	"context"
 	"crypto/subtle"
 	"log/slog"
+	"net"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"swarmexec/internal/authmeta"
@@ -42,8 +46,99 @@ type SecretAuth struct {
 	// AllowLegacy accepts the raw secret from clients that predate binding.
 	AllowLegacy bool
 	Log         *slog.Logger
+	// Metrics counts failed authentications; nil counts nothing.
+	Metrics Metrics
 
 	warnedLegacy atomic.Bool
+
+	failMu sync.Mutex
+	fails  map[failKey]*failState
+	now    func() time.Time // tests; nil is time.Now
+}
+
+// Reasons of a failed authentication, the label of swarmexec_auth_failures_total.
+const (
+	failMissing      = "missing"        // no credential at all
+	failInvalid      = "invalid"        // a credential that does not verify
+	failLegacyRefuse = "legacy_refused" // the raw secret, which this agent does not accept
+)
+
+// failLogInterval is how often a failure is logged per peer host and reason.
+// Counting is not throttled; only the log line is, so a brute-force run is one
+// line a minute carrying how many attempts it was.
+const failLogInterval = time.Minute
+
+// maxFailKeys bounds the throttle table against a flood from many addresses.
+const maxFailKeys = 4096
+
+type failKey struct{ host, reason string }
+
+type failState struct {
+	last       time.Time
+	suppressed int
+}
+
+// fail counts and (throttled) logs a failed authentication and returns the
+// Unauthenticated error for it. A credential-less call from the loopback
+// address is the agent's own health probe (every 10 s, on purpose without
+// credentials) and is neither counted nor logged; any other failure from
+// loopback still is. The first failure from a host is always logged.
+func (a *SecretAuth) fail(ctx context.Context, reason, msg string) error {
+	host := peerHost(ctx)
+	if !(reason == failMissing && isLoopback(host)) {
+		if a.Metrics != nil {
+			a.Metrics.AuthFailed(reason)
+		}
+		a.logFailure(host, reason)
+	}
+	return status.Error(codes.Unauthenticated, msg)
+}
+
+func (a *SecretAuth) logFailure(host, reason string) {
+	if a.Log == nil {
+		return
+	}
+	now := time.Now
+	if a.now != nil {
+		now = a.now
+	}
+	a.failMu.Lock()
+	k := failKey{host, reason}
+	st := a.fails[k]
+	t := now()
+	if st != nil && t.Sub(st.last) < failLogInterval {
+		st.suppressed++
+		a.failMu.Unlock()
+		return
+	}
+	held := 0
+	if st != nil {
+		held = st.suppressed
+	}
+	if a.fails == nil || len(a.fails) >= maxFailKeys {
+		a.fails = map[failKey]*failState{}
+	}
+	a.fails[k] = &failState{last: t}
+	a.failMu.Unlock()
+	// The credential presented is never part of the line.
+	a.Log.Warn("authentication failed", "peer", host, "reason", reason, "suppressed_since_last", held)
+}
+
+// peerHost is the host part of the peer address, "" when unknown.
+func peerHost(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(p.Addr.String()); err == nil {
+		return h
+	}
+	return p.Addr.String()
+}
+
+func isLoopback(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // check verifies the incoming credentials in constant time.
@@ -52,24 +147,24 @@ func (a *SecretAuth) check(ctx context.Context) error {
 
 	if proof := firstMD(md, authmeta.BindingKey); proof != "" {
 		if len(a.CertDER) == 0 {
-			return status.Error(codes.Unauthenticated,
+			return a.fail(ctx, failInvalid,
 				"connection-bound authentication is unavailable on this agent")
 		}
 		want := authmeta.Bind(a.Secret, a.CertDER)
 		if subtle.ConstantTimeCompare([]byte(proof), []byte(want)) != 1 {
-			return status.Error(codes.Unauthenticated, "invalid agent secret")
+			return a.fail(ctx, failInvalid, "invalid agent secret")
 		}
 		return nil
 	}
 
 	if raw := firstMD(md, authmeta.SecretKey); raw != "" {
 		if !a.AllowLegacy {
-			return status.Error(codes.Unauthenticated,
+			return a.fail(ctx, failLegacyRefuse,
 				"this client sends the raw shared secret, which this agent no longer accepts; "+
 					"upgrade the client, or start the agent with -allow-legacy-secret")
 		}
 		if subtle.ConstantTimeCompare([]byte(raw), []byte(a.Secret)) != 1 {
-			return status.Error(codes.Unauthenticated, "invalid agent secret")
+			return a.fail(ctx, failInvalid, "invalid agent secret")
 		}
 		// Once per agent lifetime: a line per RPC would bury it, and the fact
 		// being reported is a standing condition, not an event.
@@ -81,7 +176,7 @@ func (a *SecretAuth) check(ctx context.Context) error {
 		return nil
 	}
 
-	return status.Error(codes.Unauthenticated, "missing agent secret")
+	return a.fail(ctx, failMissing, "missing agent secret")
 }
 
 // UnaryInterceptor rejects unary RPCs without valid credentials.

@@ -67,6 +67,7 @@ func (m *testMetrics) streams(method string) (started, ended int) {
 func (m *testMetrics) SessionStarted()             { m.started.Add(1) }
 func (m *testMetrics) SessionEnded()               { m.ended.Add(1) }
 func (m *testMetrics) AuthDenied()                 { m.denied.Add(1) }
+func (m *testMetrics) AuthFailed(string)           {}
 func (m *testMetrics) BytesTransferred(i, o int64) { m.in.Add(i); m.out.Add(o) }
 func (m *testMetrics) LimitRefused(limit string) {
 	switch limit {

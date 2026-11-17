@@ -323,12 +323,27 @@ starts regardless. A run belongs to the weekday it happens on, in `tz`.
 
 ## Audit & observability
 
+- **Failed authentication** is not an audit event (no identity yet) but is never
+  silent: `swarmexec_auth_failures_total{reason}` counts every failed shared-secret
+  check (`missing`, `invalid`, `legacy_refused`), and the operational log gets a
+  `WARN authentication failed` line with `peer` and `reason` — the first
+  occurrence at once, then at most one per peer and reason per minute with
+  `suppressed_since_last`. A credential-less call from loopback is the agent's own
+  health probe and is neither counted nor logged.
+
 - **Audit log** (`-audit-dest`): one structured JSON line per event, each with
   `component=audit`, `identity`, `identity_verified` and an `event` field to
   filter on:
-  - `auth_decision` — every allow/deny, with the reason
-  - `session_start` / `session_end` — exec (command, tty; exit code, duration,
-    bytes in/out)
+  - `auth_decision` — every allow/deny, with the reason and what was asked:
+    `action`, `container_id`, `service`, plus `port`, `user` (the effective exec
+    user), `volume` and `client_addr` where the action carries them. Never the
+    command line or environment. Allowed *polled* reads (`stats.read`,
+    `volume.list`, `image.list`, `reclaim.read`, `network.inspect`,
+    `container.list`) are written once per identity and action per minute, the
+    next one carrying `suppressed` (how many it stands for); denials are never
+    thrown away
+  - `session_start` / `session_end` — exec (user, command, tty; exit code,
+    duration, bytes in/out)
   - `logs_start` / `logs_end` — log streams (follow; duration, bytes out)
   - `forward_start` / `forward_end` — port-forwards (port, sidecar; duration,
     bytes in/out)

@@ -21,6 +21,7 @@ type Prometheus struct {
 	activeSessions prometheus.Gauge
 	totalSessions  prometheus.Counter
 	authDenials    prometheus.Counter
+	authFailures   *prometheus.CounterVec
 	bytesIn        prometheus.Counter
 	bytesOut       prometheus.Counter
 	limitRefusals  *prometheus.CounterVec
@@ -58,6 +59,13 @@ func New(version, protocol string) *Prometheus {
 			Help: "Total bytes sent to clients (exec output, logs, port-forward).",
 		}),
 	}
+	p.authFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "swarmexec_auth_failures_total",
+		Help: "Failed transport authentications (shared secret), by reason: missing | invalid | legacy_refused.",
+	}, []string{"reason"})
+	for _, r := range []string{"missing", "invalid", "legacy_refused"} {
+		p.authFailures.WithLabelValues(r)
+	}
 	p.limitRefusals = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "swarmexec_limit_refusals_total",
 		Help: "Requests refused because a node cap was reached (limit = streams | forward_sidecars).",
@@ -85,7 +93,7 @@ func New(version, protocol string) *Prometheus {
 		Help: "Constant 1, labelled with the agent build and wire-protocol version.",
 	}, []string{"version", "protocol"})
 	info.WithLabelValues(version, protocol).Set(1)
-	reg.MustRegister(p.activeSessions, p.totalSessions, p.authDenials, p.bytesIn, p.bytesOut, p.limitRefusals,
+	reg.MustRegister(p.activeSessions, p.totalSessions, p.authDenials, p.authFailures, p.bytesIn, p.bytesOut, p.limitRefusals,
 		p.streamsTotal, p.activeStreams, info)
 	return p
 }
@@ -98,6 +106,8 @@ func (p *Prometheus) SessionStarted() {
 func (p *Prometheus) SessionEnded() { p.activeSessions.Dec() }
 
 func (p *Prometheus) AuthDenied() { p.authDenials.Inc() }
+
+func (p *Prometheus) AuthFailed(reason string) { p.authFailures.WithLabelValues(reason).Inc() }
 
 func (p *Prometheus) BytesTransferred(in, out int64) {
 	if in > 0 {
