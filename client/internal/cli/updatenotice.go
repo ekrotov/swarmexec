@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/rivo/tview"
@@ -40,6 +41,25 @@ func (g *globalFlags) newerRelease(ctx context.Context, cfg config.Config) (stri
 		return "", false
 	}
 	return checkForUpdate(ctx, g.version.Binary, g.configDir())
+}
+
+// startNewerRelease runs newerRelease in the background and returns how to
+// wait for its answer ("" when there is no newer release). For a command
+// that has other work to do meanwhile.
+func (g *globalFlags) startNewerRelease(ctx context.Context, cfg config.Config) func() string {
+	ch := make(chan string, 1)
+	go func() {
+		v, _ := g.newerRelease(ctx, cfg)
+		ch <- v
+	}()
+	var (
+		once sync.Once
+		v    string
+	)
+	return func() string {
+		once.Do(func() { v = <-ch })
+		return v
+	}
 }
 
 // updateFlashFor is how long the startup notice of a newer release stays in

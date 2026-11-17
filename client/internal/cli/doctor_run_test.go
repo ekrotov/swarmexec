@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/swarm"
@@ -149,5 +150,43 @@ func TestDoctorOutput(t *testing.T) {
 				t.Errorf("err = %#v, want a silent transport failure", err)
 			}
 		})
+	}
+}
+
+// F17: a newer release is an extra line (and a JSON field), information
+// only — a healthy cluster stays healthy, exit code 0. Switched off, the
+// check is not even asked.
+func TestDoctorReportsNewerRelease(t *testing.T) {
+	calls := stubUpdate(t, "v1.27.0")
+	t.Setenv("SWARMEXEC_NO_UPDATE_CHECK", "")
+	g := doctorCluster(t, true, false)
+	out, _, err := runCmd(t, newDoctorCmd(g))
+	if err != nil {
+		t.Fatalf("err = %v, want none: a newer release is not a failure", err)
+	}
+	want := "client:  1.2.3 (proto 7)\nupdate:  v1.27.0 is available — see https://swarm-exec.cloud-surfers.net/docs/install\nmanager: manager-1"
+	if !strings.HasPrefix(out, want) || !strings.HasSuffix(out, "✓ all agents healthy\n") {
+		t.Errorf("stdout:\n%s", out)
+	}
+	if c := calls.list(); len(c) != 1 || c[0].current != "1.2.3" {
+		t.Errorf("check calls %+v", c)
+	}
+
+	out, _, _ = runCmd(t, newDoctorCmd(g), "--json")
+	if !strings.Contains(out, `"latest_release": "v1.27.0"`) {
+		t.Errorf("json lacks latest_release:\n%s", out)
+	}
+
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+	out, _, _ = runCmd(t, newDoctorCmd(g))
+	if !strings.HasPrefix(out, "client:  1.2.3 (proto 7)\nupdate:  v1.27.0 is available") {
+		t.Errorf("unreachable manager:\n%s", out)
+	}
+
+	t.Setenv("SWARMEXEC_NO_UPDATE_CHECK", "1")
+	n := len(calls.list())
+	out, _, _ = runCmd(t, newDoctorCmd(g))
+	if strings.Contains(out, "update:") || len(calls.list()) != n {
+		t.Errorf("switched off, still asked or printed:\n%s", out)
 	}
 }

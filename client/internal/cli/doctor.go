@@ -16,6 +16,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/updatecheck"
 )
 
 type doctorFlags struct {
@@ -39,8 +40,11 @@ func newDoctorCmd(g *globalFlags) *cobra.Command {
 }
 
 type doctorReport struct {
-	Client        string       `json:"client"`
-	Proto         string       `json:"proto"`
+	Client string `json:"client"`
+	Proto  string `json:"proto"`
+	// LatestRelease is a release newer than Client, when the daily check
+	// (ui.check_updates) knows one. Information, not a failure.
+	LatestRelease string       `json:"latest_release,omitempty"`
 	Manager       string       `json:"manager"`
 	AgentDeployed bool         `json:"agent_deployed"`
 	Image         string       `json:"image,omitempty"`
@@ -66,6 +70,9 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	}
 	ctx := cmdContext(cmd)
 	out := cmd.OutOrStdout()
+	// Asked alongside the cluster probes; at most a 3 s wait, usually a
+	// cache read.
+	latest := g.startNewerRelease(ctx, cfg)
 
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
@@ -75,7 +82,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
 	info := infoRes.Info
 	if err != nil {
-		printManagerUnreachable(out, g.version, f.json, err)
+		printManagerUnreachable(out, g.version, latest(), f.json, err)
 		return &cliError{code: session.TransportFailure, silent: true}
 	}
 
@@ -92,7 +99,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 
 	rows, nodesOK := doctorRows(results, g.version)
 	report := doctorReport{
-		Client: g.version.Binary, Proto: g.version.Proto, Manager: info.Name,
+		Client: g.version.Binary, Proto: g.version.Proto, LatestRelease: latest(), Manager: info.Name,
 		AgentDeployed: agentDep, Image: image, Healthy: agentDep && nodesOK, Nodes: rows,
 	}
 	if f.json {
@@ -109,12 +116,22 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 }
 
 // printManagerUnreachable is doctor's whole answer when the manager does not.
-func printManagerUnreachable(out io.Writer, v Version, asJSON bool, err error) {
+func printManagerUnreachable(out io.Writer, v Version, latest string, asJSON bool, err error) {
 	if asJSON {
-		_ = printJSON(out, doctorReport{Client: v.Binary, Proto: v.Proto, Manager: "unreachable", Healthy: false})
+		_ = printJSON(out, doctorReport{Client: v.Binary, Proto: v.Proto, LatestRelease: latest, Manager: "unreachable", Healthy: false})
 		return
 	}
-	fmt.Fprintf(out, "client:  %s (proto %s)\nmanager: UNREACHABLE — %v\n", v.Binary, v.Proto, err)
+	printDoctorClient(out, v.Binary, v.Proto, latest)
+	fmt.Fprintf(out, "manager: UNREACHABLE — %v\n", err)
+}
+
+// printDoctorClient is the client line, and the update line under it when a
+// newer release exists.
+func printDoctorClient(out io.Writer, binary, proto, latest string) {
+	fmt.Fprintf(out, "client:  %s (proto %s)\n", binary, proto)
+	if latest != "" {
+		fmt.Fprintf(out, "update:  %s is available — see %s\n", latest, updatecheck.InstallURL)
+	}
 }
 
 // doctorRows classifies each node's agent against this client; ok is false
@@ -135,7 +152,7 @@ func doctorRows(results []agentcall.NodeVersion, v Version) (rows []doctorNode, 
 // printDoctorTable is the human form of the report; swarmNodes is the
 // manager's node count.
 func printDoctorTable(out io.Writer, r doctorReport, swarmNodes int) {
-	fmt.Fprintf(out, "client:  %s (proto %s)\n", r.Client, r.Proto)
+	printDoctorClient(out, r.Client, r.Proto, r.LatestRelease)
 	fmt.Fprintf(out, "manager: %s (%s)\n", r.Manager, plural(swarmNodes, "node"))
 	if r.AgentDeployed {
 		fmt.Fprintf(out, "agent:   service deployed")
