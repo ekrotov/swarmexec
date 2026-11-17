@@ -59,3 +59,36 @@ func TestConfigShowContextSwitchSettings(t *testing.T) {
 		t.Errorf("config show without the keys:\n%s", out)
 	}
 }
+
+// `config show` names ui.check_updates: on by default, off through the
+// environment variable (F17).
+func TestConfigShowCheckUpdates(t *testing.T) {
+	isolatedDockerConfig(t)
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+	t.Setenv("SWARMEXEC_NO_UPDATE_CHECK", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("insecure: true\nagent_secret: s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g := &globalFlags{configPath: path}
+	line := func() string {
+		out, _, err := runCmd(t, newConfigCmd(g), "show")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "check updates:") {
+				return strings.Join(strings.Fields(l), " ")
+			}
+		}
+		t.Fatalf("no check updates line:\n%s", out)
+		return ""
+	}
+	if got := line(); got != "check updates: true" {
+		t.Errorf("default: %q", got)
+	}
+	t.Setenv("SWARMEXEC_NO_UPDATE_CHECK", "1")
+	if got := line(); got != "check updates: false" {
+		t.Errorf("with SWARMEXEC_NO_UPDATE_CHECK=1: %q", got)
+	}
+}

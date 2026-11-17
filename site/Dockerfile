@@ -20,11 +20,25 @@ ARG RELEASES_API=https://gitlab.logle.io/api/v4/projects/242/repository/tags?per
 # v1.8.1, nine releases behind. CI usually has no such cache, which is exactly
 # why it would go unnoticed until the day it does.
 ARG VERSION=dev
+# The tags are fetched to a file first: in `wget | jq` the exit status is jq's,
+# and jq given no input succeeds with no output — a failed fetch then left an
+# empty releases.json instead of the [] fallback.
 RUN apk add --no-cache wget jq ca-certificates && \
     echo "building release data for ${VERSION}" && \
-    ( wget -qO- "$RELEASES_API" \
-      | jq '[ .[] | select(.name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | { version: .name, date: .commit.created_at, message: (.message // "") } ] | sort_by(.date) | reverse' > /releases.json ) \
-    || echo '[]' > /releases.json
+    ( wget -qO /tmp/tags.json "$RELEASES_API" \
+      && jq -e '[ .[] | select(.name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | { version: .name, date: .commit.created_at, message: (.message // "") } ] | sort_by(.date) | reverse' /tmp/tags.json > /releases.json ) \
+    || echo '[]' > /releases.json ; \
+    rm -f /tmp/tags.json
+# /latest.json is what the client's daily update check asks (F17):
+# {"version":"vX.Y.Z"}. The release being built when VERSION is one (deploys
+# run on semver tags), else the newest entry of releases.json, else {} —
+# which the client takes as "nothing known". Never fails the build.
+RUN ( v="" ; \
+      if echo "$VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then v="$VERSION"; \
+      else v="$(jq -r '.[0].version // empty' /releases.json 2>/dev/null)"; fi ; \
+      if [ -n "$v" ]; then jq -cn --arg v "$v" '{version: $v}' > /latest.json; else echo '{}' > /latest.json; fi ) \
+    || echo '{}' > /latest.json ; \
+    cat /latest.json
 
 # --- search stage: the docs search index (served from /pagefind/, queried by
 # docsearch.js in the browser — no search service, nothing leaves the site).
@@ -77,6 +91,8 @@ COPY site/fonts /usr/share/nginx/html/fonts
 COPY site/docs /usr/share/nginx/html/docs
 # Build-time-generated release data (same-origin fetch target for releases.html).
 COPY --from=notes /releases.json /usr/share/nginx/html/releases.json
+# The newest release, for the client's update check (notes stage above).
+COPY --from=notes /latest.json /usr/share/nginx/html/latest.json
 # The docs search index (search stage above).
 COPY --from=search /site/pagefind /usr/share/nginx/html/pagefind
 # Every page carries the __VERSION__ placeholder (at least as ?v= on its

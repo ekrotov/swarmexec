@@ -115,6 +115,18 @@
         functioning operation). The log data is stored only for as long as it is
         necessary for these purposes.
       </p>
+      <p>
+        At most once a day, the swarmexec client retrieves the file
+        <code>/latest.json</code> from this website to check whether a newer
+        version is available, unless this check has been switched off
+        (<code>ui.check_updates: false</code> or the environment variable
+        <code>SWARMEXEC_NO_UPDATE_CHECK=1</code>). This request reaches the web
+        server like an ordinary page view; the access data listed above is
+        processed to the same extent and kept for the same period. The request
+        contains no information about you, your system or your cluster and is
+        not included in the audience measurement (section 3). The purpose is
+        to point out new versions; the legal basis is Art. 6(1)(f) GDPR.
+      </p>
 
       <h2>3. Audience Measurement with a Self-Hosted Tool</h2>
       <p>

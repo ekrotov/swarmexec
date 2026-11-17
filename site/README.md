@@ -199,4 +199,7 @@ and busybox `wget` tries `::1` without falling back.
 The pages load Umami (self-hosted at `stats.cloud-surfers.net`) for page views
 and link clicks (`data-umami-event`) — no session recording; the privacy policy
 describes it. The landing page says so next to "no telemetry", which is about the
-binary.
+binary. The one request the binary makes to this site is `/latest.json` (the
+newest release, written by the Dockerfile's notes stage), at most once a day
+and only with `ui.check_updates` on; the landing page's FAQ and both privacy
+pages say so.

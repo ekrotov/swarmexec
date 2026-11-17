@@ -115,6 +115,19 @@
         einem sicheren, funktionsfähigen Betrieb). Die Logdaten werden nur so
         lange gespeichert, wie es für diese Zwecke erforderlich ist.
       </p>
+      <p>
+        Der swarmexec-Client ruft höchstens einmal täglich die Datei
+        <code>/latest.json</code> dieser Website ab, um zu prüfen, ob eine neuere
+        Version verfügbar ist, sofern diese Prüfung nicht abgeschaltet ist
+        (<code>ui.check_updates: false</code> oder Umgebungsvariable
+        <code>SWARMEXEC_NO_UPDATE_CHECK=1</code>). Dieser Abruf erreicht den
+        Webserver wie ein gewöhnlicher Seitenaufruf; die oben genannten
+        Zugriffsdaten werden dabei im selben Umfang und mit derselben
+        Speicherdauer verarbeitet. Der Abruf enthält keine Angaben über Sie, Ihr
+        System oder Ihren Cluster und fließt nicht in die Reichweitenmessung
+        (Abschnitt 3) ein. Zweck ist der Hinweis auf neue Versionen;
+        Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO.
+      </p>
 
       <h2>3. Reichweitenmessung mit einem selbst betriebenen Tool</h2>
       <p>

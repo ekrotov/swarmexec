@@ -170,6 +170,10 @@
         non-zero if the manager is unreachable or any agent is unhealthy. A node reported
         as <code>too old (init --force)</code> runs an agent older than your client —
         see <a href="#reroll">re-rolling the agents without changing the secret</a>.
+        When a newer swarmexec release exists, an <code>update:</code> line under the
+        client line says so (<code>latest_release</code> in <code>--json</code>) — information
+        only, it does not change the exit code; see
+        <a href="/docs/configuration#check-updates"><code>ui.check_updates</code></a>.
       </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
