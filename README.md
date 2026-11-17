@@ -1,6 +1,6 @@
 # swarmexec
 
-**`docker exec`, logs and port-forward for any container in a Docker Swarm — from one terminal, without SSH to the node that runs it.**
+**`docker exec`, logs, port-forward and a terminal UI for any container in a Docker Swarm — from one terminal, without SSH to the node that runs it.**
 
 🌐 **Website and full documentation: [swarm-exec.cloud-surfers.net](https://swarm-exec.cloud-surfers.net)** — [docs](https://swarm-exec.cloud-surfers.net/docs) · [recipes](https://swarm-exec.cloud-surfers.net/examples) · [how it compares](https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives) · [release notes](https://swarm-exec.cloud-surfers.net/releases)
 

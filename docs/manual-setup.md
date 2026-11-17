@@ -427,6 +427,8 @@ non-interactive, lists the candidates and exits).
 Global: `--ca`, `--cert`, `--key`, `--port` (9443), `--addr-mode hostname|ip`,
 `--server-name`, `--config`, `--context` (Docker context for the manager API,
 also `$DOCKER_CONTEXT`), `--agent-secret`(`-file`), `--insecure`, `--operator`.
+All but `--config` and `--context` are connection flags: `swarmexec help
+connection` lists them (a subcommand's `--help` only points there).
 
 `exec`: `-i/--stdin` (default on), `-t/--tty` (auto: on iff stdin is a terminal
 and no command), `-u/--user`, `-w/--workdir`, `-e/--env KEY=VALUE` (repeatable),

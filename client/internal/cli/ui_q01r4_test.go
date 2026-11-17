@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/swarmops"
@@ -133,7 +134,9 @@ func TestNodeLabelEditorKeys(t *testing.T) {
 // Applying the labels goes through a confirm; a manager that refuses the
 // update says so and leaves the editor open.
 func TestNodeLabelEditorApplyFailure(t *testing.T) {
-	u, _, _ := editUI(t, editSwarm())
+	fs := editSwarm()
+	fs.Fail = map[string]bool{"POST /nodes/n1/update": true}
+	u, _, _ := editUI(t, fs)
 	onLoop(t, u, func() { u.editNodeLabels(swarmops.NodeInfo{ID: "n1", Hostname: "node-a"}, u.ctree, nil) })
 	waitFront(t, u, pageNodeLabels)
 	keyRune(t, u, 'w')
@@ -145,6 +148,45 @@ func TestNodeLabelEditorApplyFailure(t *testing.T) {
 	}
 	if !pageOpen(t, u, pageNodeLabels) {
 		t.Error("a failed update must leave the editor open")
+	}
+}
+
+// A confirmed apply writes the edited labels onto the node, from its current
+// version, closes the editor, says so and runs the caller's refresh.
+func TestNodeLabelEditorApplies(t *testing.T) {
+	u, ls, _ := editUI(t, editSwarm())
+	refreshed := make(chan struct{}, 1)
+	onLoop(t, u, func() {
+		u.editNodeLabels(swarmops.NodeInfo{ID: "n1", Hostname: "node-a", Labels: map[string]string{"zone": "a"}},
+			u.ctree, func() { refreshed <- struct{}{} })
+	})
+	waitFront(t, u, pageNodeLabels)
+	keyRune(t, u, 'd') // zone=a goes
+	keyRune(t, u, 'a')
+	waitFront(t, u, pageNodeLabelPrompt)
+	onLoop(t, u, func() { frontInner(t, u).(*tview.InputField).SetText("rack=r7") })
+	keyCode(t, u, tcell.KeyEnter)
+	waitFront(t, u, pageNodeLabels)
+	keyRune(t, u, 'w')
+	waitFront(t, u, pageConfirm)
+	keyCode(t, u, tcell.KeyEnter)
+	waitFront(t, u, pageInfo)
+	if text := drawFront(t, u, 200, 40); !strings.Contains(text, "node node-a labels updated") {
+		t.Errorf("notice:\n%s", text)
+	}
+	if pageOpen(t, u, pageNodeLabels) {
+		t.Error("a successful update must close the editor")
+	}
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Error("the caller's refresh did not run")
+	}
+	ls.mu.Lock()
+	n1 := ls.fs.Nodes[0]
+	ls.mu.Unlock()
+	if len(n1.Spec.Labels) != 1 || n1.Spec.Labels["rack"] != "r7" || n1.Spec.Role != swarm.NodeRoleManager || n1.Version.Index != 1 {
+		t.Errorf("node n1 = %+v (version %d)", n1.Spec, n1.Version.Index)
 	}
 }
 

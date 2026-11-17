@@ -54,7 +54,11 @@ func TestSwarmRoutes(t *testing.T) {
 		{"GET", `/secrets?filters={"name":{"tak":true}}`, "", 200, `"ID":"x"`},
 		{"GET", "/configs", "", 200, `"ID":"y"`},
 		{"GET", "/volumes", "", 404, "not found: /volumes"},
-		{"DELETE", "/services/s1", "", 200, `"ID":"s1"`}, // anything but POST reads
+		{"DELETE", "/nodes/n1", "", 404, "not found: /nodes/n1"}, // DELETE never reads
+		{"POST", "/nodes/n1/update?version=3", `{"Role":"worker"}`, 500, "update out of sequence"},
+		{"POST", "/nodes/n9/update?version=0", `{}`, 404, "not found: node n9"},
+		{"POST", "/nodes/n1/update", `{`, 400, "bad request body"},
+		{"POST", "/nodes/n1/update?version=0", `{"Labels":{"zone":"a"}}`, 200, ""},
 		{"POST", "/secrets/create", `{"Name":"taken"}`, 409, "secret taken already exists"},
 		{"POST", "/secrets/create", `{`, 400, "bad request body"},
 		{"POST", "/configs/create", `{"Name":"taken"}`, 409, "config taken already exists"},
@@ -67,6 +71,10 @@ func TestSwarmRoutes(t *testing.T) {
 		{"POST", "/services/s1/update", `{`, 400, "bad request body"},
 		{"POST", "/services/web/update?version=4", `{"Name":"web"}`, 200, "{"},
 		{"POST", "/services/s1/scale", `{}`, 404, "not found: /services/s1/scale"},
+		{"POST", "/services/s1/update?version=5", `{"Name":"web"}`, 200, "{"}, // bumped by the update above
+		{"DELETE", "/services/s9", "", 404, "not found: service s9"},
+		{"DELETE", "/services/web", "", 200, ""},
+		{"GET", "/services/s1", "", 404, "not found: service s1"},
 	}
 	for _, c := range cases {
 		rec := do(c.method, c.target, c.body)
@@ -77,10 +85,13 @@ func TestSwarmRoutes(t *testing.T) {
 	if got := do("GET", "/_ping", "").Header().Get("Ostype"); got != "linux" {
 		t.Errorf("ping Ostype = %q", got)
 	}
-	if f.Services[0].Version.Index != 5 {
-		t.Errorf("update did not bump the version: %d", f.Services[0].Version.Index)
+	if len(f.Services) != 0 {
+		t.Errorf("removed service still listed: %+v", f.Services)
 	}
-	want := []string{"GET /volumes", "POST /services/s1/scale"}
+	if n := f.Nodes[0]; n.Version.Index != 1 || n.Spec.Labels["zone"] != "a" {
+		t.Errorf("node update = %+v", n)
+	}
+	want := []string{"GET /volumes", "DELETE /nodes/n1", "POST /services/s1/scale"}
 	if !reflect.DeepEqual(f.Unknown, want) {
 		t.Errorf("Unknown = %q, want %q", f.Unknown, want)
 	}
