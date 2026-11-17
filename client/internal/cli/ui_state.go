@@ -45,7 +45,9 @@ var uiTabList = []uiTab{
 // Column headers for the per-tab tables — constant data shared by each tab's
 // render/load methods, so they live at package scope rather than as run() locals.
 var (
-	vHeaders  = []string{"VOLUME", "DRIVER", "NODES", "USED BY", "AGE", "SIZE"}
+	// SIZE and NODES come before DRIVER and AGE: SIZE is why the tab is
+	// opened, and at 80 columns the right end of the row is what falls off.
+	vHeaders  = []string{"VOLUME", "SIZE", "NODES", "USED BY", "DRIVER", "AGE"}
 	fHeaders  = []string{"LOCAL", "REMOTE", "CONTAINER", "SERVICE", "NODE", "CLUSTER", "AGE", "STATE"}
 	nHeaders  = []string{"NETWORK", "DRIVER", "SCOPE", "TYPE", "SUBNET", "ENC", "SERVICES", "CONTAINERS", "AGE"}
 	sHeaders  = []string{"SECRET", "USED BY", "AGE", "UPDATED", "LABELS"}
@@ -66,7 +68,15 @@ const (
 )
 
 // volSortCol maps a sort field to the header column it annotates with ▲/▼.
-var volSortCol = map[int]int{volSortName: 0, volSortNodes: 2, volSortUsed: 3, volSortAge: 4, volSortSize: 5}
+var volSortCol = map[int]int{volSortName: 0, volSortSize: 1, volSortNodes: 2, volSortUsed: 3, volSortAge: 5}
+
+// The widest the VOLUME and NODES cells get, so the size stays on screen at
+// 80 columns; a longer name or node list ends in "…" (the full one is in the
+// Enter / used-by overlays and in y).
+const (
+	volNameMaxWidth  = 28
+	volNodesMaxWidth = 18
+)
 
 // ui holds one UI session's ambient state: the run-wide infrastructure, the
 // shared widgets and the per-tab caches that the (formerly closure) methods
