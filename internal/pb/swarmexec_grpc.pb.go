@@ -120,7 +120,7 @@ type AgentClient interface {
 	// CONTRACT.md §3.10.
 	KillContainer(ctx context.Context, in *KillContainerRequest, opts ...grpc.CallOption) (*KillContainerResponse, error)
 	// The node-local `docker container inspect` of one swarm task container on
-	// THIS node, as the Engine's JSON (authorized as "container.inspect" +
+	// THIS node, as the Engine's JSON (authorized as "inspect" +
 	// audited). The manager's task inspect cannot show runtime state — health
 	// probe output, the container's network settings, its real mounts — because
 	// only the node's daemon has them. See CONTRACT.md §3.10.
@@ -407,7 +407,7 @@ type AgentServer interface {
 	// CONTRACT.md §3.10.
 	KillContainer(context.Context, *KillContainerRequest) (*KillContainerResponse, error)
 	// The node-local `docker container inspect` of one swarm task container on
-	// THIS node, as the Engine's JSON (authorized as "container.inspect" +
+	// THIS node, as the Engine's JSON (authorized as "inspect" +
 	// audited). The manager's task inspect cannot show runtime state — health
 	// probe output, the container's network settings, its real mounts — because
 	// only the node's daemon has them. See CONTRACT.md §3.10.

@@ -351,10 +351,12 @@ real mounts).
   `FAILED_PRECONDITION` (`container <id> is not a swarm task; …`). A node may
   run other containers beside the swarm; neither RPC reaches them.
 - **Authorization.** `KillContainer` is the action `kill`; `InspectContainer`
-  is `container.inspect`. The request's service is resolved from the container
-  as for exec, so a rule may name `services`. `kill` is deliberately outside
-  the `container.*` namespace: a policy that allowed `container.*` before kill
-  existed does not start allowing it — only `*` or `kill` itself does.
+  is `inspect`. The request's service is resolved from the container as for
+  exec, so a rule may name `services`. Both are deliberately outside the
+  `container.*` namespace: one stops workloads, the other hands out the
+  container's environment (credentials), and a policy that allowed
+  `container.*` (for the listing and the event watch) before they existed must
+  not start allowing either — only `*` or the action's own name does.
 - **Kill** sends `SIGKILL` (no other signal; the request has no field for one).
   The agent does not restart, remove or replace anything: Swarm sees the task
   fail and schedules a replacement per the service's restart policy. A

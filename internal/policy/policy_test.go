@@ -117,14 +117,33 @@ func TestKillIsNotUnderTheContainerGlob(t *testing.T) {
 	if ok, _ := p.Decide(Request{Action: "kill"}); ok {
 		t.Error(`"container.*" must not allow kill`)
 	}
-	if ok, _ := p.Decide(Request{Action: "container.inspect"}); !ok {
-		t.Error(`"container.*" should cover the read-only container.inspect`)
-	}
 	p = mustParse(t, "default: deny\nrules:\n  - allow: [\"*\"]\n", false)
 	if ok, _ := p.Decide(Request{Action: "kill"}); !ok {
 		t.Error(`"*" must cover kill`)
 	}
 	if _, err := Parse([]byte("default: allow\nrules:\n  - deny: [kill]\n"), false); err != nil {
 		t.Errorf("kill must be a known action: %v", err)
+	}
+}
+
+// "inspect" hands out the container's environment (credentials), so an older
+// "container.*" grant must not start covering it either; "*" does.
+func TestInspectIsNotUnderTheContainerGlob(t *testing.T) {
+	p := mustParse(t, "default: deny\nrules:\n  - allow: [\"container.*\"]\n", false)
+	if ok, _ := p.Decide(Request{Action: "inspect"}); ok {
+		t.Error(`"container.*" must not allow inspect`)
+	}
+	if ok, _ := p.Decide(Request{Action: "container.events"}); !ok {
+		t.Error(`"container.*" still covers the event watch`)
+	}
+	p = mustParse(t, "default: deny\nrules:\n  - allow: [\"*\"]\n", false)
+	if ok, _ := p.Decide(Request{Action: "inspect"}); !ok {
+		t.Error(`"*" must cover inspect`)
+	}
+	if _, err := Parse([]byte("default: allow\nrules:\n  - deny: [inspect]\n"), false); err != nil {
+		t.Errorf("inspect must be a known action: %v", err)
+	}
+	if _, err := Parse([]byte("default: allow\nrules:\n  - deny: [container.inspect]\n"), false); err == nil {
+		t.Error("container.inspect must not be an action")
 	}
 }

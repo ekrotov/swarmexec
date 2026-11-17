@@ -128,7 +128,7 @@ func TestInspectContainerReturnsTheDocument(t *testing.T) {
 	if got.ID != "task1full" || got.Config.Labels[swarmServiceLabel] != "web" {
 		t.Errorf("document = %+v", got)
 	}
-	if len(seen) != 1 || seen[0].Action != "container.inspect" || seen[0].Service != "web" {
+	if len(seen) != 1 || seen[0].Action != "inspect" || seen[0].Service != "web" {
 		t.Errorf("authorized = %+v", seen)
 	}
 	out := log.String()
@@ -164,7 +164,7 @@ func TestInspectContainerRefusals(t *testing.T) {
 		t.Errorf("audit = %v", rec)
 	}
 
-	srv, _ = newTestServer(swarmTaskFake(), denyActions{deny: map[string]bool{"container.inspect": true}}, Options{})
+	srv, _ = newTestServer(swarmTaskFake(), denyActions{deny: map[string]bool{"inspect": true}}, Options{})
 	if _, err := srv.InspectContainer(context.Background(), &pb.InspectContainerRequest{ContainerId: "task1"}); statusCode(err) != codes.PermissionDenied {
 		t.Errorf("policy denial: %v", err)
 	}

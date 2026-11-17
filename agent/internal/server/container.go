@@ -51,14 +51,14 @@ func (s *Server) KillContainer(ctx context.Context, req *pb.KillContainerRequest
 }
 
 // InspectContainer returns the Engine's inspect document of one swarm task
-// container, verbatim. Authorized as "container.inspect" and audited; the
+// container, verbatim. Authorized as "inspect" and audited; the
 // document is never logged (it carries the container's environment).
 func (s *Server) InspectContainer(ctx context.Context, req *pb.InspectContainerRequest) (*pb.InspectContainerResponse, error) {
 	id := req.GetContainerId()
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "InspectContainerRequest requires container_id")
 	}
-	identity, service, err := s.authorize(ctx, auth.Request{Action: "container.inspect", ContainerID: id})
+	identity, service, err := s.authorize(ctx, auth.Request{Action: "inspect", ContainerID: id})
 	if err != nil {
 		return nil, err
 	}
