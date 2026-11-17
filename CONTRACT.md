@@ -41,7 +41,11 @@ operator terminal ──gRPC/mTLS──> agent(nodeN) ──docker.sock──> c
   stats and prune actions) before starting it. Without a policy file the
   default is to allow any authenticated client; with `-policy-file` (§8) the
   rule file defined in `internal/policy` decides per action, identity,
-  service, port and exec user.
+  service, port, exec user and volume name. A condition an action never
+  carries (`services` on `volume.remove`) is a parse error, not a dead rule;
+  `policy.Carries` is the table, and the server tests check it per handler.
+  `users` is matched against the *effective* exec user: requested, else the
+  image's `Config.User`, else `root`.
 - Default agent port: **9443** (gRPC, TLS).
 
 ### 2.1 Shared-secret authentication (self-signed agents)

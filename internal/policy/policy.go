@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package policy is the agent's optional rule file: which actions a request
-// may take, by action, operator identity, service, port and exec user.
+// may take, by action, operator identity, service, port, exec user and volume.
 //
 // What it is, said plainly because the opposite would be worse: a guard
 // against ACCIDENTS and a record of intent — no sweeping image prune on
