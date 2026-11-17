@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -510,9 +511,8 @@ func (u *ui) runScreen() error {
 	// Intercept tview's one hard-coded global key (Ctrl-C → Stop) so that inside
 	// a container shell Ctrl-C reaches the remote process instead of quitting the
 	// TUI; elsewhere it is swallowed (quit is on the `q` key). See ctrlCCapture.
-	app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		return ctrlCCapture(ev, app.GetFocus())
-	})
+	// The same capture routes ? to the help from any overlay (appKeys).
+	app.SetInputCapture(u.appKeys)
 
 	// From here ssh asks through a dialog instead of the terminal, which tview
 	// is about to own. Before this line — the first cluster's connection and
@@ -1442,55 +1442,47 @@ func (u *ui) helpFor(name string) string {
 
 // showHelp opens a scrollable overlay listing every keybinding — the complete
 // reference the single-row footer cannot hold. It is generated from the live
-// keymap, so remapped keys show correctly. Bound to "?" on every tab.
+// keymap, so remapped keys show correctly. Bound to "?" on every tab and, via
+// overlayHelpKey, in every overlay.
+//
+// An overlay's own keys come first, read off its footer so the two cannot
+// drift.
 func (u *ui) showHelp() {
-	km, app := u.km, u.app
-	kl := keyLabel
+	app := u.app
+	prev := app.GetFocus()
 	h := &helpWriter{}
 
-	h.b.WriteString("[aqua]Global[-]\n")
-	h.line("?", "this help")
-	h.line(kl(km.Quit), "quit")
-	h.line(kl(km.Refresh), "refresh the current tab + cluster")
-	h.line(kl(km.Copy), "copy the current list to the clipboard")
-	h.line(kl(km.ToggleMouse), "toggle mouse on/off")
-	h.line("Tab", "next tab")
-	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
-	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
-	h.line("`", "toggle the client log view (w wraps long lines)")
-	h.line("Esc", "leave the current overlay / dialog (back, cancel or close — always the first key in its footer)")
-
+	done := map[string]bool{}
+	section := func(name string, write func()) {
+		if !done[name] {
+			done[name] = true
+			write()
+		}
+	}
+	if top := u.topOverlay(); top != nil {
+		u.overlayHelpSection(h, top, prev)
+		switch top.name {
+		case pageLogs:
+			section("logs", func() { u.logViewHelpSection(h) })
+		case pageLogView:
+			section("clientlog", func() { u.clientLogHelpSection(h) })
+		}
+	}
+	u.globalHelpSection(h)
 	// Every tab's own section, in tab order, from the registry.
 	for _, t := range uiTabList {
-		u.tab(t.key).helpSection(h)
+		section(t.key, func() { u.tab(t.key).helpSection(h) })
 	}
+	section("contexts", func() { u.contextsHelpSection(h) })
+	section("logs", func() { u.logViewHelpSection(h) })
+	section("clientlog", func() { u.clientLogHelpSection(h) })
 
-	h.sec("Contexts (sidebar, not a tab)")
-	h.line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
-	h.line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
-	h.line("", "TUI only: your shell's docker context stays (config ui.sync_docker_context syncs it)")
-	h.line("", "config contexts.<name>.confirm_switch: ask before switching to that context")
-	h.line("i", "context details (endpoint, jump hosts)")
-	h.line(kl(km.CtxNew), "new")
-	h.danger(kl(km.CtxDelete), "delete")
-	h.line("▶ · ✗", "active · connected (instant) · last attempt refused")
-
-	h.sec("Log view (`)")
-	h.line("f", "follow on/off")
-	h.line("F", "cycle format")
-	h.line("a", "auto-detect format")
-	h.line("l", "cycle min level")
-	h.line("/", "filter message")
-	h.line("↑/↓", "scroll")
-	b := &h.b
-
-	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	tv.SetText(strings.TrimLeft(b.String(), "\n"))
-	tv.SetBorder(true).SetTitle(" keybindings ")
-	prev := app.GetFocus()
+	hv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
+	hv.SetText(h.String())
+	hv.SetBorder(true).SetTitle(" keybindings ")
 	ov := u.overlayFor(pageHelp, prev, footerKeys("j/k", "scroll", "Esc", "back"))
 	closeHelp := ov.Close
-	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+	hv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		switch {
 		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == '?')):
 			closeHelp()
@@ -1502,7 +1494,139 @@ func (u *ui) showHelp() {
 		}
 		return ev
 	})
-	ov.show(centered(tv, 60, 24), tv)
+	ov.show(centered(hv, 60, 24), hv)
+}
+
+// globalHelpSection lists the keys every tab shares.
+func (u *ui) globalHelpSection(h *helpWriter) {
+	km, kl := u.km, keyLabel
+	h.sec("Global")
+	h.line("?", "this help — in an overlay, its own keys first")
+	h.line(kl(km.Quit), "quit")
+	h.line(kl(km.Refresh), "refresh the current tab + cluster")
+	h.line(kl(km.Copy), "copy the current list to the clipboard")
+	h.line(kl(km.ToggleMouse), "toggle mouse on/off")
+	h.line("Tab", "next tab")
+	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
+	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
+	h.line("`", "toggle the client log view")
+	h.line("Esc", "leave the current overlay / dialog (back, cancel or close — always the first key in its footer)")
+}
+
+func (u *ui) contextsHelpSection(h *helpWriter) {
+	km, kl := u.km, keyLabel
+	h.sec("Contexts (sidebar, not a tab)")
+	h.line(kl(km.CtxFocus), "focus the sidebar from any tab; again or Esc to leave")
+	h.line("Enter / "+kl(km.CtxUse), "switch to that cluster — keeps your place, filters and forwards")
+	h.line("", "TUI only: your shell's docker context stays (config ui.sync_docker_context syncs it)")
+	h.line("", "config contexts.<name>.confirm_switch: ask before switching to that context")
+	h.line("i", "context details (endpoint, jump hosts)")
+	h.line(kl(km.CtxNew), "new")
+	h.danger(kl(km.CtxDelete), "delete")
+	h.line("▶ · ✗", "active · connected (instant) · last attempt refused")
+}
+
+// logViewHelpSection is the container / service log view (logViewKeys).
+func (u *ui) logViewHelpSection(h *helpWriter) {
+	h.sec("Log view (" + keyLabel(u.km.Logs) + ")")
+	h.line("f", "follow on/off")
+	h.line("F", "cycle format")
+	h.line("a", "auto-detect format")
+	h.line("l", "cycle min level")
+	h.line("/", "filter message")
+	h.line(keyLabel(u.km.ToggleMouse), "mouse on/off (off: select & copy in your terminal)")
+	h.line("↑/↓", "scroll")
+}
+
+// clientLogHelpSection is the client's own log (openLogView).
+func (u *ui) clientLogHelpSection(h *helpWriter) {
+	h.sec("Client log (`)")
+	h.line("`", "open / close")
+	h.line("w", "wrap long lines on/off")
+	h.line(keyLabel(u.km.ToggleMouse), "mouse on/off (off: select & copy in your terminal)")
+	h.line("↑/↓", "scroll")
+}
+
+// topOverlay is the newest overlay on screen, nil when there is none.
+func (u *ui) topOverlay() *overlay {
+	if len(u.shown) == 0 {
+		return nil
+	}
+	return u.shown[len(u.shown)-1]
+}
+
+// overlayHelpSection writes o's own keys as the help's first section, read
+// off the footer it shows (o.help), so the help cannot list a key the footer
+// does not or miss one it does. The title is the focused widget's border
+// title — the name the operator sees on the box. An overlay without footer
+// keys (the log views draw their own hint line) has no such section.
+func (u *ui) overlayHelpSection(h *helpWriter, o *overlay, focus tview.Primitive) {
+	pairs := footerPairs(o.help)
+	if len(pairs) == 0 {
+		return
+	}
+	title := "This view"
+	if b, ok := focus.(interface{ GetTitle() string }); ok {
+		if t := strings.TrimSpace(b.GetTitle()); t != "" {
+			title += " — " + t
+		}
+	}
+	h.sec(title)
+	h.entries = append(h.entries, pairs...)
+}
+
+// footerKeyTag finds one key in footer markup: footerKeys and keyTag draw a
+// key yellow, or red when dangerKey marked it, and close it with [white].
+var footerKeyTag = regexp.MustCompile(`\[(yellow|red)\]([^\[]*)\[white\]`)
+
+// footerPairs reads the key/description pairs back out of footer markup —
+// each key's description runs to the next key. Text before the first key (a
+// status such as "✓ copied ·") is not a key and is dropped.
+func footerPairs(markup string) []helpEntry {
+	locs := footerKeyTag.FindAllStringSubmatchIndex(markup, -1)
+	pairs := make([]helpEntry, 0, len(locs))
+	for i, l := range locs {
+		end := len(markup)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		desc := strings.TrimSpace(markup[l[1]:end])
+		pairs = append(pairs, helpEntry{keys: markup[l[4]:l[5]], desc: desc, danger: markup[l[2]:l[3]] == "red"})
+	}
+	return pairs
+}
+
+// overlayHelpKey routes ? to the help from any overlay. Overlays do not pass
+// keys through tabKeys, so before this each one either wired ? itself or
+// left it dead, while the help promised it everywhere. It runs ahead of the
+// focused widget (appKeys) and steps aside where ? is not a request for help:
+// in the help itself and the vim help (? closes them), and wherever the focus
+// takes text — an input field, the vim editor, the shell — where ? is a
+// character. Only a widget that cannot be typed into opens the help (a
+// drop-down can: it jumps to the option typed).
+func (u *ui) overlayHelpKey(ev *tcell.EventKey) *tcell.EventKey {
+	if ev.Key() != tcell.KeyRune || ev.Rune() != '?' {
+		return ev
+	}
+	top := u.topOverlay()
+	if top == nil || top.name == pageHelp || top.name == pageVimHelp {
+		return ev
+	}
+	switch u.app.GetFocus().(type) {
+	case *tview.TextView, *tview.List, *tview.Table, *tview.TreeView, *tview.Checkbox, *tview.Button:
+		u.showHelp()
+		return nil
+	}
+	return ev
+}
+
+// appKeys is the application-wide input capture, ahead of whatever has
+// focus: Ctrl-C (ctrlCCapture), then ? in an overlay (overlayHelpKey).
+func (u *ui) appKeys(ev *tcell.EventKey) *tcell.EventKey {
+	if ev = ctrlCCapture(ev, u.app.GetFocus()); ev == nil {
+		return nil
+	}
+	return u.overlayHelpKey(ev)
 }
 
 func (u *ui) renderTabBar(active string) {

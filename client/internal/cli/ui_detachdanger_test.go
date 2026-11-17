@@ -36,8 +36,8 @@ func TestDetachIsADangerKey(t *testing.T) {
 	} {
 		var h helpWriter
 		sec(&h)
-		if !strings.Contains(h.b.String(), "[red]  d ") {
-			t.Errorf("%s help does not draw detach red:\n%s", name, h.b.String())
+		if !strings.Contains(h.String(), "[red]  d[white]") {
+			t.Errorf("%s help does not draw detach red:\n%s", name, h.String())
 		}
 	}
 }

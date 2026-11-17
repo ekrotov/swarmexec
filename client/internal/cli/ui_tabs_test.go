@@ -52,7 +52,7 @@ func TestEveryTabIsRegistered(t *testing.T) {
 		}
 		h := &helpWriter{}
 		v.helpSection(h)
-		if !strings.Contains(h.b.String(), "[aqua]") {
+		if !strings.Contains(h.String(), "[aqua]") {
 			t.Errorf("%s: no section in the help overlay", tab.key)
 		}
 	}

@@ -206,8 +206,8 @@ func TestVolumesTabSortFilterSelectAndCopy(t *testing.T) {
 			t.Errorf("copy lacks %q:\n%s", want, b.String())
 		}
 	}
-	if !strings.Contains(foot, "prune") || !strings.Contains(h.b.String(), "prune unused") {
-		t.Errorf("footer %q / help %q", foot, h.b.String())
+	if !strings.Contains(foot, "prune") || !strings.Contains(h.String(), "prune unused") {
+		t.Errorf("footer %q / help %q", foot, h.String())
 	}
 
 	// "/" opens the search bar on this tab.

@@ -114,18 +114,90 @@ func (p *perCluster[S]) of(c *clusterState) *S {
 	return s
 }
 
-// helpWriter writes the "?" overlay: a section title, then one key per line.
-type helpWriter struct{ b strings.Builder }
+// helpWriter collects the "?" overlay: a section title, then one key per line.
+// It records entries rather than text because the text depends on the width
+// it is shown at: a description too long for the box wraps under itself, not
+// under the key column (see text).
+type helpWriter struct{ entries []helpEntry }
 
-func (h *helpWriter) sec(title string) { fmt.Fprintf(&h.b, "\n[aqua]%s[-]\n", title) }
+// helpEntry is one line of the help: a section title, or a key and what it does.
+type helpEntry struct {
+	title      string // a section heading; keys and desc are empty
+	keys, desc string
+	danger     bool
+}
+
+func (h *helpWriter) sec(title string) { h.entries = append(h.entries, helpEntry{title: title}) }
 
 func (h *helpWriter) line(keys, desc string) {
-	fmt.Fprintf(&h.b, "  [yellow]%-9s[white] %s\n", keys, desc)
+	h.entries = append(h.entries, helpEntry{keys: keys, desc: desc})
 }
 
 // danger is line for a destructive key (delete / remove / stop / detach): red, as in
 // the footers. One key per line, so the colour never spills onto a harmless
 // neighbour sharing the same column.
 func (h *helpWriter) danger(keys, desc string) {
-	fmt.Fprintf(&h.b, "  [red]%-9s[white] %s\n", keys, desc)
+	h.entries = append(h.entries, helpEntry{keys: keys, desc: desc, danger: true})
+}
+
+// helpKeyCol is the width of the key column; a longer key pushes its
+// description right instead of being cut.
+const helpKeyCol = 9
+
+// String is the help unwrapped, for tests and anything without a width.
+func (h *helpWriter) String() string { return h.text(0) }
+
+// text renders the help for a box width columns wide (0: no wrapping). A
+// description that does not fit wraps with a hanging indent — its later lines
+// start where its first one did — so the key column stays a column and the
+// eye can run down it.
+func (h *helpWriter) text(width int) string {
+	var b strings.Builder
+	for i, e := range h.entries {
+		if e.title != "" {
+			if i > 0 {
+				b.WriteByte('\n')
+			}
+			fmt.Fprintf(&b, "[aqua]%s[-]\n", e.title)
+			continue
+		}
+		color := "yellow"
+		if e.danger {
+			color = "red"
+		}
+		kw := tview.TaggedStringWidth(e.keys)
+		fmt.Fprintf(&b, "  [%s]%s[white]%s ", color, e.keys, strings.Repeat(" ", max(helpKeyCol-kw, 0)))
+		indent := 2 + max(kw, helpKeyCol) + 1
+		lines := wrapWords(e.desc, width-indent)
+		b.WriteString(strings.Join(lines, "\n"+strings.Repeat(" ", indent)))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// wrapWords breaks s into lines of at most width columns at spaces (a word
+// longer than width gets a line of its own). width < 1 means no wrapping —
+// and so does a box too narrow to leave the description a useful column,
+// where the TextView's own wrapping does better than a column of one-word
+// lines.
+func wrapWords(s string, width int) []string {
+	if width < 12 {
+		return []string{s}
+	}
+	var lines []string
+	cur, curW := "", 0
+	for _, w := range strings.Fields(s) {
+		ww := tview.TaggedStringWidth(w)
+		if curW > 0 && curW+1+ww > width {
+			lines = append(lines, cur)
+			cur, curW = "", 0
+		}
+		if curW > 0 {
+			cur += " "
+			curW++
+		}
+		cur += w
+		curW += ww
+	}
+	return append(lines, cur)
 }
