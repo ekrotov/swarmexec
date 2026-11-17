@@ -471,32 +471,12 @@ func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out
 			fmt.Fprintf(out, "      (could not query tasks: %v)\n", err)
 			return
 		}
-		desired, running := 0, 0
-		var taskErr string
-		for _, t := range tasks {
-			if t.DesiredState == swarm.TaskStateRunning {
-				desired++
-			}
-			switch t.Status.State {
-			case swarm.TaskStateRunning:
-				running++
-			case swarm.TaskStateRejected, swarm.TaskStateFailed:
-				if t.Status.Err != "" {
-					taskErr = t.Status.Err
-				} else if t.Status.Message != "" {
-					taskErr = t.Status.Message
-				}
-			}
-		}
-		msg := fmt.Sprintf("%d/%d running", running, desired)
-		if taskErr != "" && running < desired {
-			msg += " — " + taskErr // surface e.g. "port already in use" instead of a silent timeout
-		}
+		msg, done := rolloutLine(tasks)
 		if msg != last {
 			fmt.Fprintf(out, "      agents: %s\n", msg)
 			last = msg
 		}
-		if desired > 0 && running >= desired {
+		if done {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -509,6 +489,34 @@ func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out
 		case <-time.After(1500 * time.Millisecond):
 		}
 	}
+}
+
+// rolloutLine is the rollout's progress line — running/desired, and while it
+// is short, the latest failed task's reason — and whether every desired task
+// runs.
+func rolloutLine(tasks []swarm.Task) (msg string, done bool) {
+	desired, running := 0, 0
+	var taskErr string
+	for _, t := range tasks {
+		if t.DesiredState == swarm.TaskStateRunning {
+			desired++
+		}
+		switch t.Status.State {
+		case swarm.TaskStateRunning:
+			running++
+		case swarm.TaskStateRejected, swarm.TaskStateFailed:
+			if t.Status.Err != "" {
+				taskErr = t.Status.Err
+			} else if t.Status.Message != "" {
+				taskErr = t.Status.Message
+			}
+		}
+	}
+	msg = fmt.Sprintf("%d/%d running", running, desired)
+	if taskErr != "" && running < desired {
+		msg += " — " + taskErr // surface e.g. "port already in use" instead of a silent timeout
+	}
+	return msg, desired > 0 && running >= desired
 }
 
 // ensureSecret returns the id of the named secret, creating it with createWith
