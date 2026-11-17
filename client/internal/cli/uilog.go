@@ -32,9 +32,9 @@ const logBufferCap = 5000
 // stopped following looks exactly like a view whose container went quiet, and
 // the footer — the thing an operator reads to find out — said the same either
 // way. The mouse hint one field along already spells out its current mode for
-// the same reason.
-func logViewHelp(following bool) string {
-	return " [yellow]Esc/q[white] close  [yellow]f[white] follow " + followHint(following) +
+// the same reason. quit is the configured quit key, which also closes the view.
+func logViewHelp(following bool, quit rune) string {
+	return " [yellow]Esc/" + tview.Escape(keyLabel(quit)) + "[white] close  [yellow]f[white] follow " + followHint(following) +
 		"  [yellow]F[white] cycle format (classic/json/logfmt/gelf/raw)  [yellow]a[white] auto-detect format  [yellow]l[white] cycle min level  [yellow]/[white] filter message (text/regex)  [yellow]↑/↓[white] scroll"
 }
 

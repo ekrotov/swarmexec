@@ -83,7 +83,7 @@ func (u *ui) logFooterText(following bool) string {
 	if !u.mouseEnabled {
 		m = " [yellow]" + key + "[white] mouse: off — select & copy with your terminal"
 	}
-	return logViewHelp(following) + "  " + m
+	return logViewHelp(following, u.km.Quit) + "  " + m
 }
 
 // logViewKeys is the shared input capture for a log view: close, follow,
