@@ -36,14 +36,7 @@ const agentNodeHost = "127.0.0.1"
 // (127.0.0.2) refuses.
 func cliCluster(t *testing.T, f *swarmfake.Swarm, agent pb.AgentServer) *globalFlags {
 	t.Helper()
-	api := swarmfake.Serve(t, f)
-	t.Setenv("DOCKER_HOST", "tcp://"+strings.TrimPrefix(api.URL, "http://"))
-	t.Setenv("DOCKER_CONTEXT", "")
-	dir := t.TempDir()
-	prev := cliconfig.Dir()
-	cliconfig.SetDir(dir)
-	t.Cleanup(func() { cliconfig.SetDir(prev) })
-	t.Setenv("DOCKER_CONFIG", dir)
+	useSwarm(t, f)
 
 	lis, err := net.Listen("tcp", agentNodeHost+":0")
 	if err != nil {
@@ -58,6 +51,26 @@ func cliCluster(t *testing.T, f *swarmfake.Swarm, agent pb.AgentServer) *globalF
 	} else {
 		lis.Close()
 	}
+	return clientConfig(t, port)
+}
+
+// useSwarm points the Docker environment at f, with an empty Docker config.
+func useSwarm(t *testing.T, f *swarmfake.Swarm) {
+	t.Helper()
+	api := swarmfake.Serve(t, f)
+	t.Setenv("DOCKER_HOST", "tcp://"+strings.TrimPrefix(api.URL, "http://"))
+	t.Setenv("DOCKER_CONTEXT", "")
+	dir := t.TempDir()
+	prev := cliconfig.Dir()
+	cliconfig.SetDir(dir)
+	t.Cleanup(func() { cliconfig.SetDir(prev) })
+	t.Setenv("DOCKER_CONFIG", dir)
+}
+
+// clientConfig writes a client config for an agent on port (shared secret
+// s3cret, certificate not verified) and returns the flags that use it.
+func clientConfig(t *testing.T, port int) *globalFlags {
+	t.Helper()
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := fmt.Sprintf("port: %d\naddr_mode: hostname\ninsecure: true\nagent_secret: s3cret\n", port)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
