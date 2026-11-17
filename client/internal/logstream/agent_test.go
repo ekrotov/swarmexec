@@ -6,7 +6,6 @@ package logstream
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"io"
 	"net"
 	"net/http/httptest"
@@ -16,62 +15,27 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 
+	"swarmexec/agent/agenttest"
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmfake"
-	pb "swarmexec/internal/pb"
 )
 
-// logAgent answers Logs over real gRPC and TLS: two stdout lines and one
-// stderr line per container, then the end of the stream — a container that
+// testRun starts a real agent (agenttest: the production handlers, interceptor
+// chain and TLS over a fake Docker daemon) and an empty fake manager, and
+// returns a Run wired to both, writing into out/errOut. Containers c1 and c2
+// each log two stdout lines and one stderr line, then end — a container that
 // exited.
-type logAgent struct {
-	pb.UnimplementedAgentServer
-
-	mu   sync.Mutex
-	reqs []*pb.LogsRequest
-}
-
-func (a *logAgent) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
-	a.mu.Lock()
-	a.reqs = append(a.reqs, req)
-	a.mu.Unlock()
-	id := req.GetContainerId()
-	for _, c := range []*pb.LogChunk{
-		{Payload: &pb.LogChunk_Stdout{Stdout: []byte("hello from " + id + "\n")}},
-		{Payload: &pb.LogChunk_Stderr{Stderr: []byte("oops in " + id + "\n")}},
-		{Payload: &pb.LogChunk_Stdout{Stdout: []byte("bye from " + id + "\n")}},
-	} {
-		if err := stream.Send(c); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *logAgent) requests() []*pb.LogsRequest {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return append([]*pb.LogsRequest(nil), a.reqs...)
-}
-
-// testRun starts the fake agent and an empty fake manager, and returns a Run
-// wired to both, writing into out/errOut.
-func testRun(t *testing.T, p Params, out, errOut io.Writer) (Run, *logAgent) {
+func testRun(t *testing.T, p Params, out, errOut io.Writer) (Run, *agenttest.Agent) {
 	t.Helper()
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	d := agenttest.NewDocker()
+	for _, id := range []string{"c1", "c2"} {
+		d.AddContainer(agenttest.Container{ID: id, Service: "web"})
+		d.SetLogs(id, "hello from "+id+"\nERR oops in "+id+"\nbye from "+id+"\n")
 	}
-	gs := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{swarmfake.SelfSignedPair(t)}})))
-	agent := &logAgent{}
-	pb.RegisterAgentServer(gs, agent)
-	go func() { _ = gs.Serve(lis) }()
-	t.Cleanup(gs.Stop)
+	agent := agenttest.Start(t, agenttest.Options{Secret: "s3cret", Docker: d})
 
 	api := httptest.NewServer(&swarmfake.Swarm{})
 	t.Cleanup(api.Close)
@@ -81,14 +45,11 @@ func testRun(t *testing.T, p Params, out, errOut io.Writer) (Run, *logAgent) {
 	}
 	t.Cleanup(func() { dcli.Close() })
 
-	addr := lis.Addr().String()
 	ac := agentcall.New(config.Config{
-		Port:     7000,
-		Insecure: true,
-		ProxyDialer: func(ctx context.Context, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "tcp", addr)
-		},
+		Port:        7000,
+		Insecure:    true,
+		AgentSecret: "s3cret",
+		ProxyDialer: agent.Dial,
 	})
 	t.Cleanup(ac.Close)
 	if p.ConnectTimeout == 0 {
@@ -116,12 +77,16 @@ func TestStreamSplitsStdoutAndStderr(t *testing.T) {
 	if got := errOut.String(); got != "oops in c1\n" {
 		t.Errorf("stderr = %q", got)
 	}
-	reqs := agent.requests()
-	if len(reqs) != 1 {
-		t.Fatalf("got %d Logs calls, want 1", len(reqs))
+	// What the agent asked the daemon for, after translating the request.
+	calls := agent.Docker.LogCalls()
+	if len(calls) != 1 {
+		t.Fatalf("got %d ContainerLogs calls, want 1", len(calls))
 	}
-	if r := reqs[0]; r.GetContainerId() != "c1" || r.GetTail() != 50 || !r.GetTimestamps() || r.GetSinceSeconds() != 120 || r.GetFollow() {
-		t.Errorf("request = %+v, want c1, tail 50, timestamps, since 120s, no follow", r)
+	if o := calls[0]; o.Tail != "50" || !o.Timestamps || o.Since == "" || o.Follow {
+		t.Errorf("daemon options = %+v, want tail 50, timestamps, a since time, no follow", o)
+	}
+	if recs := agent.AuditEvents("logs_start"); len(recs) != 1 || recs[0]["container_id"] != "c1" || recs[0]["service"] != "web" {
+		t.Errorf("audit logs_start = %v, want one record for c1 of service web", recs)
 	}
 }
 
@@ -143,8 +108,8 @@ func TestFollowStopsWhenTheTargetIsGone(t *testing.T) {
 	if len(notes) != 1 || !strings.Contains(notes[0], "no running container left") {
 		t.Errorf("notes = %q, want one saying the target is gone", notes)
 	}
-	if n := len(agent.requests()); n != 1 {
-		t.Errorf("got %d Logs calls, want 1 (nothing to reconnect to)", n)
+	if n := len(agent.Docker.LogCalls()); n != 1 {
+		t.Errorf("got %d ContainerLogs calls, want 1 (nothing to reconnect to)", n)
 	}
 }
 
