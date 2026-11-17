@@ -113,7 +113,7 @@
         from one terminal. A small per-node <strong>agent</strong> (a global Swarm
         service) does the work on its node; the <strong>client</strong> asks the
         Swarm manager which node runs your target, then connects straight to that
-        node's agent over mTLS. These pages document the client; for whole workflows —
+        node's agent over TLS (mutual TLS, or a shared secret). These pages document the client; for whole workflows —
         debugging a crash, rotating a secret, gating a deploy — see the
         <a href="/examples">recipes</a>.
       </p>
@@ -139,7 +139,7 @@
         <li><a href="/docs/security-scan">Security scan &amp; report</a> — Check a stack file before it is deployed and stop on findings with swarmexec stack check, and write a Markdown security report of the whole Docker Swarm cluster.</li>
         <li><a href="/docs/secrets">Rotate a secret, keep its name</a> — Give a Docker Swarm secret that services use new content without renaming it to _v2: how swarmexec secret rotate works, resuming an interrupted rotation, and its flags.</li>
         <li><a href="/docs/volumes">Volumes &amp; prune schedule</a> — List volumes on every Docker Swarm node with the services that use them, remove one on the node that holds it, list, prune and label the nodes with swarmexec node, and set the cluster-wide prune schedule the agents run.</li>
-        <li><a href="/docs/mcp">MCP server for AI assistants</a> — swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.</li>
+        <li><a href="/docs/mcp">MCP server for AI assistants</a> — swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only apart from an opt-in single command, with labels hidden from the assistant.</li>
       </ul>
       <h2 id="reference">Setup &amp; reference</h2>
       <ul class="doclist">

@@ -23,7 +23,7 @@ scene: health, exec, port-forward and `logs -f`.
 - **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarm-exec.cloud-surfers.net/docs/tui-nodes#nodeprune)
 - **Secret rotation that keeps the name** — `swarmexec secret rotate NAME --from-file new.txt` gives a secret in use new content without a `_v2` rename; resumable if interrupted. [secret rotate →](https://swarm-exec.cloud-surfers.net/docs/secrets)
 - **A security report** of the whole cluster, as Markdown you can file and compare. [security report →](https://swarm-exec.cloud-surfers.net/docs/security-scan#securityreport)
-- **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only, labels hidden from the assistant. [mcp →](https://swarm-exec.cloud-surfers.net/docs/mcp)
+- **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only apart from an opt-in single command (`exec_run`, only where a service's labels allow it), labels hidden from the assistant. [mcp →](https://swarm-exec.cloud-surfers.net/docs/mcp)
 - **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarm-exec.cloud-surfers.net/docs/authentication)
 
 Apache-2.0, self-hosted, no telemetry, no node limit. Docker Engine 19.03 or newer.

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>swarmexec mcp — let an AI assistant inspect your Docker Swarm</title>
-  <meta name="description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.">
+  <meta name="description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only apart from an opt-in single command, with labels hidden from the assistant.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -12,7 +12,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
   <meta property="og:title" content="swarmexec mcp — let an AI assistant inspect your Docker Swarm">
-  <meta property="og:description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.">
+  <meta property="og:description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only apart from an opt-in single command, with labels hidden from the assistant.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/mcp">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -21,7 +21,7 @@
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec mcp — let an AI assistant inspect your Docker Swarm">
-  <meta name="twitter:description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.">
+  <meta name="twitter:description" content="swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only apart from an opt-in single command, with labels hidden from the assistant.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
@@ -31,7 +31,7 @@
       {
         "@type": "TechArticle",
         "headline": "swarmexec mcp — let an AI assistant inspect your Docker Swarm",
-        "description": "swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only, with labels hidden from the assistant.",
+        "description": "swarmexec mcp lets Claude Code and other MCP clients read status, logs and stack diffs of the Docker Swarm services you opt in by label — read-only apart from an opt-in single command, with labels hidden from the assistant.",
         "url": "https://swarm-exec.cloud-surfers.net/docs/mcp",
         "inLanguage": "en",
         "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
@@ -101,7 +101,7 @@
     <div class="card">
       <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › MCP server for AI assistants</p>
       <h1>MCP server for AI assistants<span class="cursor">_</span></h1>
-      <p class="tagline">Read-only Swarm access for an AI assistant, per service, by label.</p>
+      <p class="tagline">Swarm access for an AI assistant, per service, by label — read-only except for an opt-in command.</p>
 
       <h2 id="mcp"><code>mcp</code> — let an AI assistant inspect the swarm</h2>
       <p>
@@ -110,8 +110,9 @@
         through the same two channels every other command uses — the manager API and the
         node agents — on any Docker context, <code>ssh://</code> included. It reads
         status, tasks, logs and resource usage, diffs and checks stack files, and, where
-        you allow it, runs a single non-interactive command in a container. It changes
-        nothing.
+        you allow it, runs a single non-interactive command in a container. Apart from
+        that one tool (<code>exec_run</code>, off unless a service's labels allow it, and
+        a command can of course change whatever it can reach) it changes nothing.
       </p>
       <div class="cmd">claude mcp add swarmexec -- swarmexec mcp</div>
       <p class="recipe-link">See the recipe: <a href="/examples#mcp-claude">let Claude inspect your swarm</a>.</p>
@@ -205,7 +206,9 @@ services:
           which is accepted.
         </li>
         <li>
-          <strong>They cannot be changed through MCP.</strong> There are no write tools.
+          <strong>They cannot be changed through MCP.</strong> No tool deploys, updates or
+          edits a service, a stack or a label; the only tool that is not read-only is
+          <code>exec_run</code>, and only for a service that has <code>swarmexec.mcp.exec</code>.
           Any future one has to pass a guard that compares the service before and after the
           change and refuses if an access label would be added, changed or removed.
         </li>

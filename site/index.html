@@ -493,7 +493,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     Protocol server: Claude Code and other assistants read status, tasks, logs and stack
     diffs through the same agents — but only of services you opt in with the service label
     <code>swarmexec.mcp.enable=true</code>; every other service does not exist for them. It
-    has no write tools; reading logs needs <code>swarmexec.mcp.logs</code>, running a
+    has no tools that change a service; reading logs needs <code>swarmexec.mcp.logs</code>, running a
     single command needs <code>swarmexec.mcp.exec</code>. Register it with
     <code>claude mcp add swarmexec -- swarmexec mcp</code> —
     <a href="examples.html#mcp-claude">the recipe</a>.

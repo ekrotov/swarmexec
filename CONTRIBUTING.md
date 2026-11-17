@@ -61,7 +61,7 @@ header from `proto/swarmexec.proto`.
 ## Before you open a merge request
 
 - `go build ./...` and `go test ./...` pass.
-- `gofmt -l .` reports nothing, and `make lint` (staticcheck) is clean.
+- `gofmt -l .` reports nothing, and `make lint` (staticcheck + the complexity gate, no function over 15) is clean; `make mod-check` too.
 - `make cover` stays above the coverage minimum.
 - Protocol changes pass `make proto-check` (buf lint + breaking) and are
   reflected in [`CONTRACT.md`](CONTRACT.md) — it is the authoritative wire

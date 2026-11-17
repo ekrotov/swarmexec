@@ -81,7 +81,7 @@ agent/deploy/                 stack file, secret + dev-cert scripts
 
 ## Build
 
-Requires Go 1.22+ (the shared module currently pins `go 1.25` in `go.mod`; any
+Requires the Go version in `go.mod` (`go 1.27.4` at the time of writing; any
 toolchain that recent works). Run all `make` targets **from the repository
 root**:
 
@@ -111,10 +111,17 @@ build and protocol version.
 
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
-| `-listen` | `SWARMEXEC_LISTEN` | `:9443` | gRPC listen address |
-| `-ca-cert` | `SWARMEXEC_CA_CERT` | — (required) | CA cert to verify client certs |
-| `-server-cert` | `SWARMEXEC_SERVER_CERT` | — (required) | server certificate |
-| `-server-key` | `SWARMEXEC_SERVER_KEY` | — (required) | server private key |
+| `-port` | `SWARMEXEC_PORT` | `9443` | gRPC listen port; `-listen` overrides it when set |
+| `-listen` | `SWARMEXEC_LISTEN` | — (derived from `-port`, i.e. `:9443`) | gRPC listen address |
+| `-ca-cert` | `SWARMEXEC_CA_CERT` | — | CA cert to verify client certs; with `-server-cert`/`-server-key` required unless `-self-signed` |
+| `-server-cert` | `SWARMEXEC_SERVER_CERT` | — | server certificate |
+| `-server-key` | `SWARMEXEC_SERVER_KEY` | — | server private key |
+| `-self-signed` | `SWARMEXEC_SELF_SIGNED` | `false` | generate the server certificate at startup; then needs `-ca-cert` or a shared secret |
+| `-cert-sans` | `SWARMEXEC_CERT_SANS` | — | extra SANs for the self-signed cert, e.g. `DNS:swarmexec-agent,IP:10.0.0.5` |
+| `-agent-secret` | `SWARMEXEC_AGENT_SECRET` | — | shared secret clients must present (prefer the file form) |
+| `-agent-secret-file` | `SWARMEXEC_AGENT_SECRET_FILE` | — | read the shared secret from a file, e.g. a Docker secret |
+| `-policy-file` | `SWARMEXEC_POLICY_FILE` | — | authorization rule file (YAML); empty = every authenticated request is allowed |
+| `-forward-image` | `SWARMEXEC_FORWARD_IMAGE` | — (the agent's own image) | image for port-forward sidecars |
 | `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
 | `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` disables) | per-session idle timeout |
@@ -260,10 +267,15 @@ balance `9443` across all agents and break per-node targeting).
 
 Security posture:
 
-- **mTLS is the primary control.** Without a valid client cert signed by the
-  configured CA, the connection is rejected (`RequireAndVerifyClientCert`).
-- The raw Docker socket is **never** exposed to the network — only the narrow
-  gRPC surface (List + Exec) is reachable.
+- **Authentication is mTLS or a shared secret.** With `-ca-cert` and a server
+  certificate, a connection without a valid client cert signed by that CA is
+  rejected (`RequireAndVerifyClientCert`). With `-self-signed` and no CA, the
+  connection-bound shared secret is the only authentication; with both, client
+  certificates are verified as well.
+- The raw Docker socket is **never** exposed to the network, but the gRPC API
+  that is reachable is broad: 17 RPCs, among them exec, logs, port-forward and
+  destructive ones (`Prune`, `RemoveVolume`, `KillContainer`). Whoever
+  authenticates can call all of them unless a `-policy-file` restricts them.
 - As defense-in-depth, restrict `9443` at the host firewall to operator
   networks. If you do not want it on the public interface, bind the published
   port to an internal address or front it with a management network.
@@ -271,7 +283,7 @@ Security posture:
 ## Authorization
 
 `internal/auth` defines the `Authorizer` interface. The v1 default,
-`auth.AllowAll`, permits any client whose cert verified against the trusted CA.
+`auth.AllowAll`, permits every client that authenticated (a cert verified against the trusted CA, or the shared secret).
 To enforce a richer policy (per-user/per-service allowlists, deny `root`,
 command allowlists), implement `Authorizer` and pass it to `server.New` — the
 exec bridge is untouched. Every decision (allow/deny + reason) is audited.
@@ -304,7 +316,7 @@ The schedule is stored as **container labels** on the agent service
 (`TaskTemplate.ContainerSpec.Labels`) — the only configuration an agent on a
 worker can read, by inspecting its own container through the local socket. The
 agent reads them once at start; changing them is a service update, so the
-agents restart one by one. `swarmexec prune-schedule set` and the TUI (Nodes
+agents restart one by one. `swarmexec node prune-schedule set` and the TUI (Nodes
 tab, `S`) edit them; `swarmexec init --force` keeps them.
 
 | Label | Default | Meaning |
@@ -351,6 +363,8 @@ starts regardless. A run belongs to the weekday it happens on, in `tz`.
     count of events, never their content)
   - `container_list` — discovery (filter and match count, never the listing)
   - `volume_create`, `volume_remove`, `image_prune` — with outcome and error
+  - `container_kill`, `container_inspect` — with the container, service, outcome
+    and error (an inspect document is never recorded: it carries the environment)
   - `prune` — one record per category of a `Prune` call or a scheduled run
     (`trigger` = `manual` / `schedule`, `category`, `freed_bytes`, `count`,
     `skipped`, outcome and error)
@@ -378,8 +392,9 @@ Certs are external; rotation is a redeploy:
    ```
 
 3. Update `deploy/agent-stack.yml` to reference the new secret names and
-   redeploy (`docker stack deploy …`). `update_config.order: start-first`
-   keeps a task serving during the rollout.
+   redeploy (`docker stack deploy …`). `update_config.order` is `stop-first`
+   (host-mode port 9443 admits one task per node), so each node's agent is
+   briefly down while its task is replaced; nodes roll one at a time.
 4. Remove the old secrets once the rollout completes.
 
 To rotate the **CA**, distribute a bundle CA (old + new) first, roll all

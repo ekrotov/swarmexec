@@ -46,7 +46,7 @@ COVER_MIN  ?= 78.1
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
 
-.PHONY: all cli-docs cli-docs-check tools ci-tools tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
+.PHONY: all cli-docs cli-docs-check tools ci-tools tool-gocyclo cyclo mod-check tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
 
 all: generate build-all
 
@@ -57,7 +57,7 @@ build-all: build agent
 tools: tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc
 
 ## ci-tools: install every pinned tool at once (CI installs each where it is used)
-ci-tools: tools tool-staticcheck tool-govulncheck tool-scip-go
+ci-tools: tools tool-staticcheck tool-gocyclo tool-govulncheck tool-scip-go
 
 tool-buf:
 	$(call install-tool,buf,github.com/bufbuild/buf/cmd/buf,$(BUF_VERSION))
@@ -67,6 +67,8 @@ tool-protoc-gen-go-grpc:
 	$(call install-tool,protoc-gen-go-grpc,google.golang.org/grpc/cmd/protoc-gen-go-grpc,$(PROTOC_GEN_GO_GRPC_VERSION))
 tool-staticcheck:
 	$(call install-tool,staticcheck,honnef.co/go/tools/cmd/staticcheck,$(STATICCHECK_VERSION))
+tool-gocyclo:
+	$(call install-tool,gocyclo,github.com/fzipp/gocyclo/cmd/gocyclo,$(GOCYCLO_VERSION))
 tool-govulncheck:
 	$(call install-tool,govulncheck,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
 tool-scip-go:
@@ -138,15 +140,24 @@ vet:
 # -count=1: always run the tests. CI keeps GOCACHE between pipelines, and a
 # gate that reports "(cached)" results did not test this commit.
 cover:
-	go test -race -count=1 -covermode=atomic -coverprofile=coverage.raw ./...
+	go test -race -shuffle=on -count=1 -covermode=atomic -coverprofile=coverage.raw ./...
 	grep -v '^swarmexec/internal/pb/' coverage.raw > coverage.out
 	@go tool cover -func=coverage.out | awk -v min=$(COVER_MIN) '/^total:/ { \
 		sub("%", "", $$3); printf "total coverage %s%% (minimum %s%%)\n", $$3, min; \
 		if ($$3 + 0 < min + 0) { print "coverage is below the minimum"; exit 1 } }'
 
-## lint: staticcheck at the pinned version (CI: lint)
-lint: tool-staticcheck
+## lint: staticcheck at the pinned version, plus the complexity gate (CI: lint)
+lint: tool-staticcheck cyclo
 	$(GOBIN)/staticcheck ./...
+
+## cyclo: fail on any non-test function with cyclomatic complexity over 15 (CI: lint)
+cyclo: tool-gocyclo
+	@out="$$($(GOBIN)/gocyclo -over 15 $$(git ls-files '*.go' | grep -v '_test\.go$$' | grep -v '^internal/pb/'))"; \
+	if [ -n "$$out" ]; then echo "functions over complexity 15:"; echo "$$out"; exit 1; fi
+
+## mod-check: fail when go.mod/go.sum are not what `go mod tidy` writes (CI: test)
+mod-check:
+	go mod tidy -diff
 
 clean:
 	rm -rf bin dist coverage.raw coverage.out

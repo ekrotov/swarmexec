@@ -1,6 +1,6 @@
 # Design — Port Forwarding
 
-**Status:** proposal, not implemented.
+**Status:** implemented (the `PortForward` RPC, `swarmexec port-forward` and the TUI forwards view exist); this is the original design proposal and the shipped behaviour may differ — see `CONTRACT.md` and the site docs.
 **Scope:** a new `PortForward` RPC, a `swarmexec port-forward` command, and TUI
 integration modelled on `k9s`. Touches [`CONTRACT.md`](CONTRACT.md) §3 — the
 wire protocol is versioned with both binaries, so agent and cli ship together.

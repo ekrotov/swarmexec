@@ -263,6 +263,9 @@ test:
     # command tree: regenerate it and fail on any difference, so a command or
     # flag change cannot merge without its page (review W-05).
     - make cli-docs-check
+    # go.mod/go.sum must be what `go mod tidy` writes (a direct import marked
+    # `// indirect` slipped through once).
+    - make mod-check
     # Race tests plus the coverage gate: fails below COVER_MIN (Makefile).
     - make cover
   coverage: '/^total coverage (\d+\.\d+)%/'
@@ -289,7 +292,7 @@ lint:
         - .gocache/staticcheck # the packages it loads come from GOCACHE (volume)
       when: always
   script:
-    - make lint # staticcheck from the tool cache (installed once, not `go run` per job)
+    - make lint # staticcheck + gocyclo (a function over complexity 15 fails) from the tool cache (installed once, not `go run` per job)
 
 # ----------------------------------------------------------------------------
 # generate-check — the checked-in internal/pb must be exactly what
