@@ -4,11 +4,10 @@
 package cli
 
 import (
-	"slices"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/docker/cli/cli/connhelper/ssh"
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/resolve"
@@ -82,21 +81,30 @@ func TestSlotNames(t *testing.T) {
 }
 
 // The one thing that makes a completion over ssh safe: it can never stop to
-// ask for a password, because nobody is there to type it.
-func TestCompletionSSHNeverPrompts(t *testing.T) {
-	sp := &ssh.Spec{Host: "manager"}
-	sshNonInteractive.Store(false)
-	if a := sshForwardArgs(sp, "node:9443", ""); slices.Contains(a, "BatchMode=yes") {
-		t.Fatal("ordinary commands must keep interactive ssh")
+// ask for a password, because nobody is there to type it. What the flags then
+// look like is the endpoint package's own test (TestNonInteractiveSSHNeverPrompts);
+// what matters here is that the completion path is what turns it on, and that
+// it does so BEFORE the connection is attempted.
+func TestCompletionTurnsSSHPromptingOff(t *testing.T) {
+	src, err := os.ReadFile("completion.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	sshNonInteractive.Store(true)
-	defer sshNonInteractive.Store(false)
-	for name, a := range map[string][]string{
-		"agent tunnel": sshForwardArgs(sp, "node:9443", ""),
-		"docker api":   sshEndpointOpts("ssh://manager", ""),
-	} {
-		if !slices.Contains(a, "BatchMode=yes") || !slices.Contains(a, "ConnectTimeout=3") {
-			t.Errorf("%s: ssh may prompt during completion: %v", name, a)
-		}
+	fn := string(src)
+	i := strings.Index(fn, "func completionClient(")
+	if i < 0 {
+		t.Fatal("completionClient is gone; this test has to follow it")
+	}
+	body := fn[i:]
+	if j := strings.Index(body, "\n}\n"); j > 0 {
+		body = body[:j]
+	}
+	set := strings.Index(body, "endpoint.SetNonInteractive()")
+	dial := strings.Index(body, "Connect(")
+	switch {
+	case set < 0:
+		t.Error("completionClient no longer forbids ssh to prompt")
+	case dial >= 0 && set > dial:
+		t.Error("ssh prompting is forbidden only after the connection is made")
 	}
 }

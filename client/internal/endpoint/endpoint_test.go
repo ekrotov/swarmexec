@@ -1,13 +1,18 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/client/pkg/versions"
@@ -49,8 +54,8 @@ func writeContexts(t *testing.T) {
 func TestEndpointFeedsBothChannelsFromOneResolution(t *testing.T) {
 	writeContexts(t)
 
-	alpha := resolveEndpoint("alpha")
-	beta := resolveEndpoint("beta")
+	alpha := Resolve("alpha")
+	beta := Resolve("beta")
 	if alpha.Host != "ssh://bastion-alpha" {
 		t.Fatalf("alpha host = %q, want the context's endpoint", alpha.Host)
 	}
@@ -65,8 +70,8 @@ func TestEndpointFeedsBothChannelsFromOneResolution(t *testing.T) {
 
 	// Both channels read the same field of the same value. There is no second
 	// lookup left that could answer differently.
-	for _, e := range []dockerEndpoint{alpha, beta} {
-		d, err := e.agentDialer()
+	for _, e := range []Docker{alpha, beta} {
+		d, err := e.AgentDialer()
 		if err != nil {
 			t.Fatalf("%s: agent dialer: %v", e.Context, err)
 		}
@@ -81,8 +86,8 @@ func TestNonSSHEndpointGetsNoTunnel(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
 	t.Setenv("DOCKER_CONTEXT", "")
 
-	e := resolveEndpoint("")
-	d, err := e.agentDialer()
+	e := Resolve("")
+	d, err := e.AgentDialer()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,14 +102,14 @@ func TestNonSSHEndpointGetsNoTunnel(t *testing.T) {
 func TestUnresolvableEndpointFailsAtTheClient(t *testing.T) {
 	writeContexts(t)
 
-	e := resolveEndpoint("does-not-exist")
+	e := Resolve("does-not-exist")
 	if e.err == nil {
 		t.Fatal("an unknown context should not resolve")
 	}
-	if _, err := e.client(); err == nil {
+	if _, err := e.Client(); err == nil {
 		t.Error("the manager client must report the failure")
 	}
-	d, err := e.agentDialer()
+	d, err := e.AgentDialer()
 	if err != nil {
 		t.Errorf("an unresolvable endpoint must not fail config resolution: %v", err)
 	}
@@ -117,11 +122,11 @@ func TestUnresolvableEndpointFailsAtTheClient(t *testing.T) {
 // edits the constant. 1.40 is Docker Engine 19.03, and the two must stay a pair
 // — an error naming an API version nobody knows by heart is not actionable.
 func TestMinimumDockerVersionIsStated(t *testing.T) {
-	if minDockerAPI != "1.40" {
-		t.Errorf("minDockerAPI = %q; if this moved on purpose, update site/docs/install.html too", minDockerAPI)
+	if minAPI != "1.40" {
+		t.Errorf("minAPI = %q; if this moved on purpose, update site/docs/install.html too", minAPI)
 	}
-	if minDockerEngine != "19.03" {
-		t.Errorf("minDockerEngine = %q, which must be the release that speaks API %s", minDockerEngine, minDockerAPI)
+	if minEngine != "19.03" {
+		t.Errorf("minEngine = %q, which must be the release that speaks API %s", minEngine, minAPI)
 	}
 }
 
@@ -141,8 +146,68 @@ func TestVersionFloorBoundaryIsInclusive(t *testing.T) {
 		{"1.56", false}, // what the test cluster runs
 	}
 	for _, c := range cases {
-		if got := versions.LessThan(c.api, minDockerAPI); got != c.old {
+		if got := versions.LessThan(c.api, minAPI); got != c.old {
 			t.Errorf("API %s: too old = %v, want %v", c.api, got, c.old)
 		}
+	}
+}
+
+// The version floor is checked against a real daemon answer, not only against
+// the comparison: Connect is the one door every command goes through, so a
+// Ping that is never read, or a header that is read from the wrong field,
+// would let an unsupported cluster through and fail one view at a time —
+// exactly the failure the floor exists to replace.
+func TestConnectRefusesADaemonBelowTheFloor(t *testing.T) {
+	cases := []struct {
+		name    string
+		api     string
+		wantErr bool
+	}{
+		{"one below the floor", "1.39", true},
+		{"exactly the floor", minAPI, false},
+		{"well above", "1.47", false},
+		// A daemon that answers without naming a version is not evidence of
+		// being too old; whatever call comes next reports the real problem.
+		{"no version header", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.api != "" {
+					w.Header().Set("Api-Version", tc.api)
+					w.Header().Set("Ostype", "linux")
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			ep := Docker{Host: "tcp://" + strings.TrimPrefix(srv.URL, "http://")}
+			c, err := ep.Connect(context.Background())
+			if c != nil {
+				c.Close()
+			}
+			switch {
+			case tc.wantErr && err == nil:
+				t.Fatalf("API %s accepted; the floor is %s", tc.api, minAPI)
+			case tc.wantErr && !strings.Contains(err.Error(), minEngine):
+				t.Errorf("err = %v; it must name the Engine release an operator can act on", err)
+			case !tc.wantErr && err != nil:
+				t.Errorf("API %q refused: %v", tc.api, err)
+			}
+		})
+	}
+}
+
+// An endpoint that could not be resolved carries its failure to the client,
+// where a bad context has always surfaced as a connection failure. Connect
+// must not swallow it on the way to the Ping.
+func TestConnectReportsAnUnresolvableEndpoint(t *testing.T) {
+	ep := Docker{err: errors.New("no such context: typo")}
+	c, err := ep.Connect(context.Background())
+	if c != nil {
+		c.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "typo") {
+		t.Fatalf("err = %v, want the resolution failure", err)
 	}
 }

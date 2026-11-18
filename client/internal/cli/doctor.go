@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/client/internal/updatecheck"
@@ -69,7 +70,7 @@ type doctorNode struct {
 }
 
 func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
@@ -84,7 +85,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	// cache read.
 	latest := g.startNewerRelease(ctx, cfg)
 
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -189,7 +190,7 @@ func (u *ui) testNewContext(c *newContextFields) {
 	pj := c.proxyJump()
 	u.flash(" [gray]testing " + host + " …[white]")
 	asyncDo(u, "ui.contexts.test", func(ctx context.Context) error {
-		return pingDockerHost(ctx, host, pj)
+		return endpoint.PingHost(ctx, host, pj)
 	}, func(terr error) {
 		if terr != nil {
 			u.info("test failed: " + terr.Error())

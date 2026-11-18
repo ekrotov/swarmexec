@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 )
@@ -88,8 +89,8 @@ func completionTargets(g *globalFlags) (map[string]completeFunc, map[string]map[
 // completionClient connects to the manager with the completion deadline and
 // with ssh forbidden to prompt.
 func completionClient(ctx context.Context, g *globalFlags) (*client.Client, bool) {
-	sshNonInteractive.Store(true)
-	dcli, err := resolveEndpoint(g.dockerContext).connect(ctx)
+	endpoint.SetNonInteractive()
+	dcli, err := endpoint.Resolve(g.dockerContext).Connect(ctx)
 	if err != nil {
 		return nil, false
 	}

@@ -23,7 +23,7 @@ client/internal/cli/secretcmd.go       90
 client/internal/cli/prompt.go          70
 client/internal/cli/init.go            78
 client/internal/cli/logs.go            80
-client/internal/cli/endpoint.go        75
+client/internal/endpoint/endpoint.go   75
 client/internal/cli/terminal.go        65
 
 # What they stand on.

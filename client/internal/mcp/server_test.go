@@ -413,10 +413,7 @@ func TestMCPExecRefusesDockerSocket(t *testing.T) {
 }
 
 func TestMCPResultScrubsAndCaps(t *testing.T) {
-	// The caller says what an ssh sign-in failure looks like (the cli's
-	// isSSHAuthError); the server says what to do about it.
-	sshAuth := func(err error) bool { return strings.Contains(err.Error(), "Permission denied (") }
-	s := New(Options{ConnectTimeout: time.Second, IsSSHAuthError: sshAuth})
+	s := New(Options{ConnectTimeout: time.Second})
 
 	big := strings.Repeat("x", mcpMaxOutput+100)
 	res := s.result("t", time.Now(), big, nil)

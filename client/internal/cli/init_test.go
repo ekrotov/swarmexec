@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/internal/deploy"
 )
 
@@ -195,7 +196,7 @@ func TestResolveContextHonoursDockerHost(t *testing.T) {
 	if c.Host != local {
 		t.Errorf("resolved host %q, want DOCKER_HOST %q", c.Host, local)
 	}
-	if got := resolveEndpoint(c.Name).Host; got != local {
+	if got := endpoint.Resolve(c.Name).Host; got != local {
 		t.Errorf("context %q dials %q, want DOCKER_HOST %q", c.Name, got, local)
 	}
 
@@ -204,7 +205,7 @@ func TestResolveContextHonoursDockerHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Name != "beta" || resolveEndpoint(c.Name).Host != "ssh://bastion-beta" {
-		t.Errorf("--context beta resolved to %q (%s)", c.Name, resolveEndpoint(c.Name).Host)
+	if c.Name != "beta" || endpoint.Resolve(c.Name).Host != "ssh://bastion-beta" {
+		t.Errorf("--context beta resolved to %q (%s)", c.Name, endpoint.Resolve(c.Name).Host)
 	}
 }

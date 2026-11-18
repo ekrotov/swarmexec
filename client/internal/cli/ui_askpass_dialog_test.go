@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+
+	"swarmexec/client/internal/endpoint"
 )
 
 // ssh's questions in the TUI. Nothing here starts ssh: the dialogs are fed
@@ -24,7 +26,7 @@ type askAnswer struct {
 
 // ask runs askpassPrompt off the UI goroutine, as the askpass server does,
 // and hands back its answer.
-func ask(u *ui, req askpassRequest) <-chan askAnswer {
+func ask(u *ui, req endpoint.Request) <-chan askAnswer {
 	ch := make(chan askAnswer, 1)
 	go func() {
 		a, ok := u.askpassPrompt(req)
@@ -56,7 +58,7 @@ func askpassUI(t *testing.T) (*ui, context.CancelFunc) {
 func TestAskpassPassphraseDialog(t *testing.T) {
 	u, _ := askpassUI(t)
 
-	ch := ask(u, askpassRequest{Prompt: "Enter passphrase for key '/home/op/.ssh/id_ed25519': "})
+	ch := ask(u, endpoint.Request{Prompt: "Enter passphrase for key '/home/op/.ssh/id_ed25519': "})
 	waitPageText(t, u, pageAskpass, "SSH sign-in", "Enter passphrase for key")
 	typeText(t, u, "s3cret")
 	if text := pageText(t, u, pageAskpass); !strings.Contains(text, "••••••") || strings.Contains(text, "s3cret") {
@@ -69,7 +71,7 @@ func TestAskpassPassphraseDialog(t *testing.T) {
 	waitPageGone(t, u, pageAskpass)
 
 	// A host-key question echoes; Esc declines.
-	ch = ask(u, askpassRequest{Prompt: "Are you sure you want to continue connecting (yes/no/[fingerprint])?"})
+	ch = ask(u, endpoint.Request{Prompt: "Are you sure you want to continue connecting (yes/no/[fingerprint])?"})
 	waitPageText(t, u, pageAskpass, "continue connecting")
 	typeText(t, u, "yes")
 	waitPageText(t, u, pageAskpass, "yes")
@@ -82,14 +84,14 @@ func TestAskpassPassphraseDialog(t *testing.T) {
 func TestAskpassConfirmAndNotice(t *testing.T) {
 	u, cancel := askpassUI(t)
 
-	ch := ask(u, askpassRequest{Prompt: "Allow use of key id_ed25519?", Kind: "confirm"})
+	ch := ask(u, endpoint.Request{Prompt: "Allow use of key id_ed25519?", Kind: "confirm"})
 	waitPageText(t, u, pageAskpass, "ssh asks:", "Allow use of key", "Yes", "No")
 	sendSpecial(t, u, tcell.KeyEnter)
 	if a := answerOf(t, ch); !a.ok {
 		t.Errorf("Yes answered %+v", a)
 	}
 
-	ch = ask(u, askpassRequest{Prompt: "Allow use of key id_ed25519?", Kind: "confirm"})
+	ch = ask(u, endpoint.Request{Prompt: "Allow use of key id_ed25519?", Kind: "confirm"})
 	waitPageText(t, u, pageAskpass, "ssh asks:")
 	sendSpecial(t, u, tcell.KeyTab)
 	sendSpecial(t, u, tcell.KeyEnter)
@@ -97,14 +99,14 @@ func TestAskpassConfirmAndNotice(t *testing.T) {
 		t.Errorf("No answered %+v", a)
 	}
 
-	ch = ask(u, askpassRequest{Prompt: "Confirm user presence for key ED25519-SK", Kind: "none"})
+	ch = ask(u, endpoint.Request{Prompt: "Confirm user presence for key ED25519-SK", Kind: "none"})
 	if a := answerOf(t, ch); !a.ok {
 		t.Errorf("a notice answered %+v", a)
 	}
 	waitFooter(t, u, "ssh: Confirm user presence")
 
 	// The UI ending stops the wait.
-	ch = ask(u, askpassRequest{Prompt: "Enter passphrase: "})
+	ch = ask(u, endpoint.Request{Prompt: "Enter passphrase: "})
 	waitPageText(t, u, pageAskpass, "Enter passphrase")
 	cancel()
 	if a := answerOf(t, ch); a.ok {
@@ -116,8 +118,7 @@ func TestOfferSSHAddGuards(t *testing.T) {
 	isolatedDockerConfig(t) // the "default" context: a unix socket, no ssh
 	// With ssh able to ask through swarmexec there is nothing to offer; an
 	// earlier test of this binary may have left the server up.
-	prev := askpassSrv.Swap(nil)
-	t.Cleanup(func() { askpassSrv.Store(prev) })
+	t.Cleanup(endpoint.SuspendAskpass())
 	u, _ := askpassUI(t)
 	authErr := errors.New("ssh: Permission denied (publickey)")
 	var c *clusterState
@@ -148,7 +149,7 @@ func TestOfferSSHAddGuards(t *testing.T) {
 }
 
 func TestSSHAddOffer(t *testing.T) {
-	t.Setenv(askpassEnv, "off") // and so no `ssh -V` either
+	t.Setenv(endpoint.EnvAskpass, "off") // and so no `ssh -V` either
 	u, _ := askpassUI(t)
 	var c *clusterState
 	onLoop(t, u, func() { c = newClusterState("prod", "prod") })
@@ -156,7 +157,7 @@ func TestSSHAddOffer(t *testing.T) {
 
 	t.Setenv("SSH_AUTH_SOCK", "")
 	onLoop(t, u, func() { u.showSSHAddOffer(c, argv, func() {}) })
-	waitPageText(t, u, pageInfo, `SSH sign-in to "prod" failed`, "no ssh-agent is running", askpassEnv+" is off")
+	waitPageText(t, u, pageInfo, `SSH sign-in to "prod" failed`, "no ssh-agent is running", endpoint.EnvAskpass+" is off")
 	closeInfo(t, u)
 
 	t.Setenv("SSH_AUTH_SOCK", "/tmp/agent.sock")

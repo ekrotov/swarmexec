@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"bufio"
@@ -43,45 +43,45 @@ import (
 // question at that moment and is gone; the connection sharing in sshmux.go is
 // what makes one answer enough for a whole session.
 
-// askpassHelperArg is the argv[1] that turns this binary into the helper. It
+// HelperArg is the argv[1] that turns this binary into the helper. It
 // is deliberately not a cobra command: the helper runs once per question,
 // inside ssh, and must not set up logging, read the config or print help.
-const askpassHelperArg = "__askpass"
+const HelperArg = "__askpass"
 
 // askpassSockEnv carries the socket path from the swarmexec process, through
 // ssh, to the helper.
 const askpassSockEnv = "SWARMEXEC_ASKPASS_SOCK"
 
-// askpassEnv switches the whole mechanism off (0/off/false/no), for an
+// EnvAskpass switches the whole mechanism off (0/off/false/no), for an
 // operator who wants ssh's own behaviour — or their own SSH_ASKPASS.
-const askpassEnv = "SWARMEXEC_SSH_ASKPASS"
+const EnvAskpass = "SWARMEXEC_SSH_ASKPASS"
 
-// askpassRequest is one question from ssh. Kind is ssh's SSH_ASKPASS_PROMPT:
+// Request is one question from ssh. Kind is ssh's SSH_ASKPASS_PROMPT:
 // "" wants a typed answer, "confirm" a yes/no (the exit status), "none" is a
 // notice that needs no answer (e.g. "touch your security key").
-type askpassRequest struct {
+type Request struct {
 	Prompt string `json:"prompt"`
 	Kind   string `json:"kind,omitempty"`
 	SSHPID int    `json:"ssh_pid,omitempty"` // the ssh that asks (the helper's parent)
 }
 
-type askpassResponse struct {
+type Response struct {
 	OK     bool   `json:"ok"`
 	Answer string `json:"answer,omitempty"`
 }
 
-// promptFunc asks the operator one question. ok=false means they declined.
-type promptFunc func(req askpassRequest) (answer string, ok bool)
+// PromptFunc asks the operator one question. ok=false means they declined.
+type PromptFunc func(req Request) (answer string, ok bool)
 
-// runAskpassHelper is the helper side: forward the question, print the answer.
+// RunHelper is the helper side: forward the question, print the answer.
 // Exit 0 with the answer on stdout is "here it is"; anything else tells ssh
 // the operator declined.
-func runAskpassHelper(args []string, out io.Writer) int {
+func RunHelper(args []string, out io.Writer) int {
 	sock := os.Getenv(askpassSockEnv)
 	if sock == "" {
 		return 1
 	}
-	req := askpassRequest{Prompt: strings.Join(args, " "), Kind: os.Getenv("SSH_ASKPASS_PROMPT"), SSHPID: os.Getppid()}
+	req := Request{Prompt: strings.Join(args, " "), Kind: os.Getenv("SSH_ASKPASS_PROMPT"), SSHPID: os.Getppid()}
 	conn, err := net.Dial("unix", sock)
 	if err != nil {
 		return 1
@@ -90,7 +90,7 @@ func runAskpassHelper(args []string, out io.Writer) int {
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
 		return 1
 	}
-	var resp askpassResponse
+	var resp Response
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil || !resp.OK {
 		return 1
 	}
@@ -100,21 +100,21 @@ func runAskpassHelper(args []string, out io.Writer) int {
 	return 0
 }
 
-// askpassServer answers the helpers of one swarmexec process.
-type askpassServer struct {
+// server answers the helpers of one swarmexec process.
+type server struct {
 	ln  net.Listener
 	dir string
 
 	mu        sync.Mutex
-	inflight  map[string]*askpassCall // questions on screen right now
-	declined  bool                    // the operator cancelled; ask nothing
-	cancelled map[int]bool            // ssh processes whose sign-in was cancelled
-	pending   atomic.Int32            // questions waiting for the operator
+	inflight  map[string]*call // questions on screen right now
+	declined  bool             // the operator cancelled; ask nothing
+	cancelled map[int]bool     // ssh processes whose sign-in was cancelled
+	pending   atomic.Int32     // questions waiting for the operator
 
 	ask sync.Mutex // one question on screen at a time
 }
 
-type askpassCall struct {
+type call struct {
 	done   chan struct{}
 	answer string
 	ok     bool
@@ -139,7 +139,7 @@ type askpassCall struct {
 // ssh processes: one whose sign-in was cancelled stays cancelled, or it comes
 // back right after the reload with its next method's question ("password:")
 // ahead of the passphrase the operator is about to type.
-func (s *askpassServer) answer(req askpassRequest) (string, bool) {
+func (s *server) answer(req Request) (string, bool) {
 	key := req.Kind + "\x00" + req.Prompt
 	s.mu.Lock()
 	if s.declined || (req.SSHPID > 0 && s.cancelled[req.SSHPID]) {
@@ -151,7 +151,7 @@ func (s *askpassServer) answer(req askpassRequest) (string, bool) {
 		<-c.done
 		return c.answer, c.ok
 	}
-	c := &askpassCall{done: make(chan struct{})}
+	c := &call{done: make(chan struct{})}
 	s.inflight[key] = c
 	s.pending.Add(1)
 	s.mu.Unlock()
@@ -174,14 +174,14 @@ func (s *askpassServer) answer(req askpassRequest) (string, bool) {
 	return c.answer, c.ok
 }
 
-func (s *askpassServer) resetDeclined() {
+func (s *server) resetDeclined() {
 	clientlog.L().Debug("ssh questions may be asked again")
 	s.mu.Lock()
 	s.declined = false
 	s.mu.Unlock()
 }
 
-func (s *askpassServer) serve() {
+func (s *server) serve() {
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
@@ -191,10 +191,10 @@ func (s *askpassServer) serve() {
 	}
 }
 
-func (s *askpassServer) handle(conn net.Conn) {
+func (s *server) handle(conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	var req askpassRequest
+	var req Request
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return
 	}
@@ -202,23 +202,23 @@ func (s *askpassServer) handle(conn net.Conn) {
 	clientlog.L().Info("ssh asks", "prompt", req.Prompt, "kind", req.Kind)
 	answer, ok := s.answer(req)
 	clientlog.L().Debug("ssh answered", "prompt", req.Prompt, "ok", ok)
-	_ = json.NewEncoder(conn).Encode(askpassResponse{OK: ok, Answer: answer})
+	_ = json.NewEncoder(conn).Encode(Response{OK: ok, Answer: answer})
 }
 
-func (s *askpassServer) close() {
+func (s *server) close() {
 	_ = s.ln.Close()
 	_ = os.RemoveAll(s.dir)
 }
 
 var (
-	askpassOnce sync.Once
-	askpassSrv  atomic.Pointer[askpassServer]
-	prompter    atomic.Pointer[promptFunc]
+	startOnce sync.Once
+	srv       atomic.Pointer[server]
+	prompter  atomic.Pointer[PromptFunc]
 )
 
-// setAskpassPrompter routes questions to p; nil routes them to the terminal.
+// SetPrompter routes questions to p; nil routes them to the terminal.
 // The TUI sets itself while it owns the screen.
-func setAskpassPrompter(p promptFunc) {
+func SetPrompter(p PromptFunc) {
 	if p == nil {
 		prompter.Store(nil)
 		return
@@ -226,38 +226,38 @@ func setAskpassPrompter(p promptFunc) {
 	prompter.Store(&p)
 }
 
-func currentPrompter() promptFunc {
+func currentPrompter() PromptFunc {
 	if p := prompter.Load(); p != nil {
 		return *p
 	}
 	return terminalPrompt
 }
 
-// askpassActive reports whether ssh asks through swarmexec in this process.
-func askpassActive() bool { return askpassSrv.Load() != nil }
+// Active reports whether ssh asks through swarmexec in this process.
+func Active() bool { return srv.Load() != nil }
 
-// askpassPending reports whether a question is waiting for the operator.
-func askpassPending() bool {
-	s := askpassSrv.Load()
+// pending reports whether a question is waiting for the operator.
+func pending() bool {
+	s := srv.Load()
 	return s != nil && s.pending.Load() > 0
 }
 
-// resetAskpassDeclines lets questions the operator declined be asked again.
-func resetAskpassDeclines() {
-	if s := askpassSrv.Load(); s != nil {
+// ResetDeclines lets questions the operator declined be asked again.
+func ResetDeclines() {
+	if s := srv.Load(); s != nil {
 		s.resetDeclined()
 	}
 }
 
-// prepareSSHPrompting sets SSH_ASKPASS up before the first ssh starts. Called
+// Prepare sets SSH_ASKPASS up before the first ssh starts. Called
 // where ssh is about to be used, not at startup: a command that never touches
 // an ssh:// endpoint should not create a socket or run `ssh -V`.
-func prepareSSHPrompting() {
-	if sshNonInteractive.Load() {
+func Prepare() {
+	if nonInteractive.Load() {
 		return // shell completion: never ask
 	}
-	askpassOnce.Do(func() {
-		if why := askpassUnavailable(); why != "" {
+	startOnce.Do(func() {
+		if why := Unavailable(); why != "" {
 			clientlog.L().Debug("ssh askpass off", "why", why)
 			return
 		}
@@ -266,22 +266,22 @@ func prepareSSHPrompting() {
 			clientlog.L().Warn("ssh askpass unavailable", "err", err.Error())
 			return
 		}
-		askpassSrv.Store(s)
+		srv.Store(s)
 	})
 }
 
-// stopAskpass removes the socket and the script. Deferred by Execute.
-func stopAskpass() {
-	if s := askpassSrv.Swap(nil); s != nil {
+// Stop removes the socket and the script. Deferred by Execute.
+func Stop() {
+	if s := srv.Swap(nil); s != nil {
 		s.close()
 	}
 }
 
-// askpassUnavailable says why askpass is not used here, or "" if it is.
-func askpassUnavailable() string {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(askpassEnv))) {
+// Unavailable says why askpass is not used here, or "" if it is.
+func Unavailable() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvAskpass))) {
 	case "0", "off", "false", "no":
-		return askpassEnv + " is off"
+		return EnvAskpass + " is off"
 	}
 	if runtime.GOOS == "windows" {
 		return "not on Windows"
@@ -299,7 +299,7 @@ func askpassUnavailable() string {
 // askpassSockLimit keeps the socket path inside sun_path (see sshMuxPathLimit).
 const askpassSockLimit = 100
 
-func startAskpass() (*askpassServer, error) {
+func startAskpass() (*server, error) {
 	base := sshMuxDir() // per-user, 0700: nobody else can reach the socket
 	if base == "" {
 		return nil, fmt.Errorf("no private runtime directory")
@@ -329,7 +329,7 @@ func startAskpass() (*askpassServer, error) {
 		return nil, err
 	}
 	_ = os.Chmod(sock, 0o600)
-	s := &askpassServer{ln: ln, dir: dir, inflight: map[string]*askpassCall{}, cancelled: map[int]bool{}}
+	s := &server{ln: ln, dir: dir, inflight: map[string]*call{}, cancelled: map[int]bool{}}
 	go s.serve()
 	// The process environment, because commandconn starts ssh with it and
 	// offers no way to pass a per-command one.
@@ -343,18 +343,18 @@ func startAskpass() (*askpassServer, error) {
 // prompt as its only argument and cannot pass one of its own, hence a script
 // rather than the binary itself.
 func askpassScript(exe string) string {
-	return "#!/bin/sh\nexec " + shQuote(exe) + " " + askpassHelperArg + " \"$@\"\n"
+	return "#!/bin/sh\nexec " + shQuote(exe) + " " + HelperArg + " \"$@\"\n"
 }
 
 func shQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// askpassEchoes reports whether the answer may be shown while typed. ssh asks
+// EchoesPrompt reports whether the answer may be shown while typed. ssh asks
 // the host-key question ("yes/no/[fingerprint]") through the same channel as
 // a passphrase; that one is not a secret, and typing a fingerprint blind is
 // hopeless.
-func askpassEchoes(prompt string) bool {
+func EchoesPrompt(prompt string) bool {
 	return strings.Contains(prompt, "(yes/no")
 }
 
@@ -362,7 +362,7 @@ var ttyAsk sync.Mutex
 
 // terminalPrompt asks on the controlling terminal — the CLI's way, and the
 // TUI's before it has taken the screen.
-func terminalPrompt(req askpassRequest) (string, bool) {
+func terminalPrompt(req Request) (string, bool) {
 	ttyAsk.Lock()
 	defer ttyAsk.Unlock()
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
@@ -382,7 +382,7 @@ func terminalPrompt(req askpassRequest) (string, bool) {
 		return "", a == "y" || a == "yes"
 	}
 	fmt.Fprintf(tty, "ssh: %s ", prompt)
-	if askpassEchoes(prompt) {
+	if EchoesPrompt(prompt) {
 		line, err := bufio.NewReader(tty).ReadString('\n')
 		if err != nil {
 			return "", false
@@ -397,10 +397,10 @@ func terminalPrompt(req askpassRequest) (string, bool) {
 	return string(b), true
 }
 
-// promptAwareTimeout is context.WithTimeout that does not count the time the
+// PromptAwareTimeout is context.WithTimeout that does not count the time the
 // operator spends answering ssh. A reachability probe with a 15-second budget
 // would otherwise give up while the passphrase is half typed.
-func promptAwareTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+func PromptAwareTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)
 	go func() {
 		t := time.NewTimer(d)
@@ -410,7 +410,7 @@ func promptAwareTimeout(parent context.Context, d time.Duration) (context.Contex
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if !askpassPending() {
+				if !pending() {
 					cancel()
 					return
 				}
@@ -466,4 +466,13 @@ func sshVersionString() string {
 		return sshVerRaw[:i]
 	}
 	return sshVerRaw
+}
+
+// SuspendAskpass turns askpass off for the caller and restores it afterwards.
+// It exists for tests in other packages that need to see "ssh cannot ask
+// through swarmexec here": the server is process-wide and an earlier test of
+// the same binary may have left one running.
+func SuspendAskpass() (restore func()) {
+	prev := srv.Swap(nil)
+	return func() { srv.Store(prev) }
 }

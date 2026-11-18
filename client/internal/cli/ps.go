@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -40,7 +41,7 @@ type psRow struct {
 }
 
 func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error {
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
@@ -53,7 +54,7 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 		service = args[0]
 	}
 
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

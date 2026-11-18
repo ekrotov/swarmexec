@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 )
@@ -171,8 +172,8 @@ func progressText(s waitSnapshot) string {
 
 func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) error {
 	ctx := cmdContext(cmd)
-	dockerEP := resolveEndpoint(g.dockerContext)
-	dcli, err := dockerEP.connect(ctx)
+	dockerEP := endpoint.Resolve(g.dockerContext)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

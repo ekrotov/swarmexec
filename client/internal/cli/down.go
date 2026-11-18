@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
 )
@@ -50,7 +51,7 @@ func runDown(cmd *cobra.Command, g *globalFlags, f *downFlags) error {
 	if cerr != nil {
 		return cerr
 	}
-	dcli, err := newDockerClient(ctx, tctx.Name)
+	dcli, err := endpoint.NewClient(ctx, tctx.Name)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
 	}

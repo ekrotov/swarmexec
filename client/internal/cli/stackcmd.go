@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/stackfile"
 )
 
@@ -32,7 +33,7 @@ func newStackLsCmd(g *globalFlags) *cobra.Command {
 		Short: "List the stacks deployed on the cluster",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
+			dcli, err := endpoint.NewClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
 				return &cliError{code: exitTransport, err: err}
 			}
@@ -66,7 +67,7 @@ func newStackExportCmd(g *globalFlags) *cobra.Command {
 			"both are declared external. The file says so in its own header.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
+			dcli, err := endpoint.NewClient(cmdContext(cmd), g.dockerContext)
 			if err != nil {
 				return &cliError{code: exitTransport, err: err}
 			}
@@ -140,7 +141,7 @@ func runStackDiff(cmd *cobra.Command, g *globalFlags, f *stackDiffFlags, args []
 	if name == "" {
 		name = stackfile.NameFromPath(path)
 	}
-	dcli, err := newDockerClient(cmdContext(cmd), g.dockerContext)
+	dcli, err := endpoint.NewClient(cmdContext(cmd), g.dockerContext)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

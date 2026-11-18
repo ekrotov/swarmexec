@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"swarmexec/client/internal/endpoint"
 )
 
 // resolveWith builds the real command tree, parses args on `ps` and resolves
@@ -67,7 +69,7 @@ func TestSecretPrecedenceFlagEnvContextFile(t *testing.T) {
 		t.Helper()
 		g := &globalFlags{}
 		cmd, _, _ := resolveWith(t, g, append([]string{"--config", cfgPath}, args...)...)
-		cfg, err := g.resolveConfig(cmd, resolveEndpoint("default"))
+		cfg, err := g.resolveConfig(cmd, endpoint.Resolve("default"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +110,7 @@ func TestResolveConfigRefusesATypoedKey(t *testing.T) {
 	}
 	g := &globalFlags{}
 	cmd, _, _ := resolveWith(t, g, "--config", p)
-	_, err := g.resolveConfig(cmd, resolveEndpoint("default"))
+	_, err := g.resolveConfig(cmd, endpoint.Resolve("default"))
 	if err == nil || !strings.Contains(err.Error(), "confirmSwitch") || !strings.Contains(err.Error(), "confirm_switch") {
 		t.Errorf("err = %v", err)
 	}
@@ -125,7 +127,7 @@ func TestResolveConfigWarnsOnceOnAForeignKey(t *testing.T) {
 	g := &globalFlags{}
 	cmd, errOut, _ := resolveWith(t, g, "--config", p)
 	for i := 0; i < 3; i++ {
-		if _, err := g.resolveConfig(cmd, resolveEndpoint("default")); err != nil {
+		if _, err := g.resolveConfig(cmd, endpoint.Resolve("default")); err != nil {
 			t.Fatal(err)
 		}
 	}

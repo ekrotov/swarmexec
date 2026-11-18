@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -40,7 +41,7 @@ func newStackRmCmd(g *globalFlags) *cobra.Command {
 
 func runStackRm(cmd *cobra.Command, g *globalFlags, stack string, yes bool) error {
 	ctx := cmdContext(cmd)
-	dcli, err := newDockerClient(ctx, g.dockerContext)
+	dcli, err := endpoint.NewClient(ctx, g.dockerContext)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

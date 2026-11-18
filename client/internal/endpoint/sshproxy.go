@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"context"
@@ -24,21 +24,21 @@ import (
 // exec/logs/doctor/ui work like the Docker API does.
 //
 // It takes an ALREADY RESOLVED host rather than a context name, and that is the
-// point: reached only through dockerEndpoint.agentDialer, it cannot be handed a
+// point: reached only through Docker.agentDialer, it cannot be handed a
 // different cluster than the manager client got. A helper that resolved a name
 // of its own is precisely what let the two drift apart.
 func sshDialerForHost(host, jump string) (func(context.Context, string) (net.Conn, error), error) {
 	if !strings.HasPrefix(host, "ssh://") {
 		return nil, nil
 	}
-	prepareSSHPrompting()
+	Prepare()
 	sp, err := ssh.ParseURL(host)
 	if err != nil {
 		return nil, fmt.Errorf("parse ssh docker context %q: %w", host, err)
 	}
 	return func(ctx context.Context, addr string) (net.Conn, error) {
 		// commandconn runs ssh via exec (no shell), so args need no quoting.
-		conn, cerr := commandconn.New(ctx, "ssh", sshForwardArgs(sp, addr, jump)...)
+		conn, cerr := commandconn.New(ctx, "ssh", ForwardArgs(sp, addr, jump)...)
 		if cerr != nil {
 			return nil, fmt.Errorf("ssh tunnel to %s via %s: %w", addr, sp.Host, cerr)
 		}
@@ -46,7 +46,7 @@ func sshDialerForHost(host, jump string) (func(context.Context, string) (net.Con
 	}, nil
 }
 
-// sshForwardArgs builds `ssh [-l user] [-p port] [-J jump] [sharing] -W <target> -- <host>`,
+// ForwardArgs builds `ssh [-l user] [-p port] [-J jump] [sharing] -W <target> -- <host>`,
 // which forwards this process's stdio to target through the ssh host (via the
 // jump host(s) when set) — exactly the net.Conn commandconn wraps.
 //
@@ -55,7 +55,7 @@ func sshDialerForHost(host, jump string) (func(context.Context, string) (net.Con
 // stats poll, per node, every refresh. Without them each of those repeated a
 // full handshake and authentication against a bastion that was already
 // connected. See sshMuxOpts.
-func sshForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
+func ForwardArgs(sp *ssh.Spec, target, proxyJump string) []string {
 	var args []string
 	if sp.User != "" {
 		args = append(args, "-l", sp.User)

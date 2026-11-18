@@ -1,7 +1,15 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+// Package endpoint is where a run is pointed: it turns a docker context into
+// the manager API client and the ssh tunnel the node agents are reached
+// through, and it owns everything ssh needs on the way — connection sharing,
+// the askpass server that lets a passphrase be typed, and the hints for when
+// signing in fails.
+//
+// It is the bottom of the client. Commands, the TUI and the MCP server all
+// come through it and it reaches none of them back; see boundary_test.go.
+package endpoint
 
 import (
 	"context"
@@ -21,7 +29,7 @@ import (
 //   - the node agents' gRPC, which the manager knows nothing about, over its
 //     own ssh tunnel to the same bastion.
 //
-// They used to be built from two separate lookups — newDockerClient resolved
+// They used to be built from two separate lookups — NewClient resolved
 // one context name, sshProxyDialer resolved another — and the two could
 // disagree. In the ui they did: switching cluster re-pointed the Docker client
 // and left the agent tunnel aimed at the previous cluster's bastion, so the tree
@@ -29,10 +37,10 @@ import (
 // stats and volumes all went dark. Measured: 3/3 agents when started on a
 // context directly, 0/3 after switching to the same context in the ui.
 //
-// dockerEndpoint is the fix in one sentence: resolve ONCE, build both from that.
+// Docker is the fix in one sentence: resolve ONCE, build both from that.
 // Divergence is then not unlikely, it is unconstructible — there is no second
 // lookup left to disagree with the first.
-type dockerEndpoint struct {
+type Docker struct {
 	// Context is the context name this was resolved from, "" when the endpoint
 	// came from DOCKER_HOST or the current-context default. Carried so callers
 	// that want to NAME the cluster (a report header, a filename) use the same
@@ -55,21 +63,21 @@ type dockerEndpoint struct {
 	err error
 }
 
-// resolveEndpoint works out where a run is pointed. contextName is the
+// Resolve works out where a run is pointed. contextName is the
 // explicit choice ("" means "whatever docker would use").
-func resolveEndpoint(contextName string) dockerEndpoint {
+func Resolve(contextName string) Docker {
 	host, err := dockerctx.ResolveHost(contextName)
 	if err != nil {
-		return dockerEndpoint{Context: contextName, err: err}
+		return Docker{Context: contextName, err: err}
 	}
-	return dockerEndpoint{
+	return Docker{
 		Context:   contextName,
 		Host:      host,
 		ProxyJump: dockerctx.ResolveProxyJump(contextName),
 	}
 }
 
-// minDockerAPI is the oldest Docker Engine API swarmexec supports, and 1.40 is
+// minAPI is the oldest Docker Engine API swarmexec supports, and 1.40 is
 // Docker Engine 19.03 (2019).
 //
 // Three reasons for this number rather than a lower one. It is where the docker
@@ -84,19 +92,19 @@ func resolveEndpoint(contextName string) dockerEndpoint {
 // and the per-node image view, which want 1.41 and 1.42. Those degrade rather
 // than fail: they stay empty and say so. The floor here is about whether
 // swarmexec can do its job at all.
-const minDockerAPI = "1.40"
+const minAPI = "1.40"
 
-// minDockerEngine is the release that speaks minDockerAPI, for an error message
+// minEngine is the release that speaks minAPI, for an error message
 // an operator can act on. Nobody knows their API version by heart.
-const minDockerEngine = "19.03"
+const minEngine = "19.03"
 
 // connect builds the manager client and refuses a daemon too old to serve it.
 //
 // The check lives here because this is the one door: every command reaches the
 // manager through it, so none of them can forget. It costs one Ping, which the
 // client's version negotiation performs on first contact anyway.
-func (e dockerEndpoint) connect(ctx context.Context) (*client.Client, error) {
-	c, err := e.client()
+func (e Docker) Connect(ctx context.Context) (*client.Client, error) {
+	c, err := e.Client()
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +115,7 @@ func (e dockerEndpoint) connect(ctx context.Context) (*client.Client, error) {
 	return c, nil
 }
 
-// checkAPIVersion refuses a daemon below minDockerAPI.
+// checkAPIVersion refuses a daemon below minAPI.
 //
 // A Ping that fails for any OTHER reason is deliberately not treated as a
 // version problem: the daemon may simply be unreachable, and reporting that as
@@ -118,20 +126,20 @@ func checkAPIVersion(ctx context.Context, c *client.Client) error {
 	if err != nil || ping.APIVersion == "" {
 		return nil
 	}
-	if versions.LessThan(ping.APIVersion, minDockerAPI) {
+	if versions.LessThan(ping.APIVersion, minAPI) {
 		return fmt.Errorf(
 			"this Docker daemon speaks API %s; swarmexec needs at least API %s (Docker Engine %s or newer)",
-			ping.APIVersion, minDockerAPI, minDockerEngine)
+			ping.APIVersion, minAPI, minEngine)
 	}
 	return nil
 }
 
 // client builds the manager API client for this endpoint.
-func (e dockerEndpoint) client() (*client.Client, error) {
+func (e Docker) Client() (*client.Client, error) {
 	if e.err != nil {
 		return nil, e.err
 	}
-	return dockerClientForHost(e.Host, e.ProxyJump)
+	return clientForHost(e.Host, e.ProxyJump)
 }
 
 // agentDialer is how agent gRPC connections reach the nodes, or nil to dial
@@ -142,7 +150,7 @@ func (e dockerEndpoint) client() (*client.Client, error) {
 // traffic goes over the same ssh host, through the same jump hosts. Built from
 // the same resolution the Docker client above was built from, which is the
 // whole point of this type.
-func (e dockerEndpoint) agentDialer() (func(context.Context, string) (net.Conn, error), error) {
+func (e Docker) AgentDialer() (func(context.Context, string) (net.Conn, error), error) {
 	if e.err != nil {
 		return nil, nil
 	}

@@ -26,6 +26,7 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -80,10 +81,10 @@ func cmdContext(cmd *cobra.Command) context.Context {
 // Execute builds and runs the root command, returning a process exit code.
 func Execute(v Version) int {
 	// ssh runs us as its SSH_ASKPASS (see askpass.go): answer and leave.
-	if len(os.Args) > 1 && os.Args[1] == askpassHelperArg {
-		return runAskpassHelper(os.Args[2:], os.Stdout)
+	if len(os.Args) > 1 && os.Args[1] == endpoint.HelperArg {
+		return endpoint.RunHelper(os.Args[2:], os.Stdout)
 	}
-	defer stopAskpass()
+	defer endpoint.Stop()
 
 	g := &globalFlags{version: v}
 	root := newRootCmd(g, v)
@@ -133,7 +134,7 @@ func runWithSignals(root *cobra.Command, g *globalFlags, sigs <-chan os.Signal, 
 			case <-sigs:
 			case <-timer.C:
 			}
-			stopAskpass()
+			endpoint.Stop()
 			hardExit(exitCodeForSignal(s))
 		}
 	}()
@@ -173,11 +174,11 @@ func reportError(w io.Writer, err error, g *globalFlags) int {
 // sshAuthHintFor names the way past an ssh sign-in failure on the endpoint
 // this run used. Resolved only on that failure: it reads the Docker context.
 func sshAuthHintFor(err error, g *globalFlags) string {
-	if !isSSHAuthError(err) {
+	if !endpoint.IsAuthError(err) {
 		return ""
 	}
-	ep := resolveEndpoint(g.dockerContext)
-	return sshAuthHint(err, ep.Host, ep.ProxyJump)
+	ep := endpoint.Resolve(g.dockerContext)
+	return endpoint.AuthHint(err, ep.Host, ep.ProxyJump)
 }
 
 // newRootCmd assembles the whole command tree.
@@ -336,7 +337,7 @@ func (g *globalFlags) initLogging() error {
 // cluster's bastion. Taking the endpoint means the caller has already decided
 // where it is going, and the manager client and the agent tunnel come out of
 // that one decision.
-func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (config.Config, error) {
+func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep endpoint.Docker) (config.Config, error) {
 	cfg, err := config.Load(g.configPath)
 	if err != nil {
 		return cfg, err
@@ -370,7 +371,7 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 
 	// With an ssh:// Docker context, tunnel agent traffic over the same ssh host
 	// (the nodes are usually only reachable through the bastion).
-	dialer, err := ep.agentDialer()
+	dialer, err := ep.AgentDialer()
 	if err != nil {
 		return cfg, err
 	}

@@ -4,7 +4,9 @@
 package cli
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,8 +14,35 @@ import (
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/mcp"
 )
+
+// writeContexts lays down a docker config directory holding two ssh contexts,
+// so the endpoint resolution has something real to read. The endpoint package
+// has its own copy for its own tests; the two are deliberately independent —
+// a shared helper would make this package depend on that one's test fixtures.
+func writeContexts(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	// Docker stores a context under <config>/contexts/meta/<sha256(name)>/meta.json.
+	for name, host := range map[string]string{
+		"alpha": "ssh://bastion-alpha",
+		"beta":  "ssh://bastion-beta",
+	} {
+		sub := filepath.Join(dir, "contexts", "meta", fmt.Sprintf("%x", sha256.Sum256([]byte(name))))
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		meta := fmt.Sprintf(`{"Name":%q,"Endpoints":{"docker":{"Host":%q}}}`, name, host)
+		if err := os.WriteFile(filepath.Join(sub, "meta.json"), []byte(meta), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DOCKER_CONFIG", dir)
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("DOCKER_CONTEXT", "")
+}
 
 // setStoredCurrent marks a context current in the test DOCKER_CONFIG, the way
 // `docker context use` would.
@@ -42,10 +71,10 @@ func TestUIContextNameHonoursDockerHost(t *testing.T) {
 	}
 	// The name and the startup connection agree: the first cluster is dialled
 	// from ctxOverride "" and remembered under name.
-	if got := resolveEndpoint("").Host; got != local {
+	if got := endpoint.Resolve("").Host; got != local {
 		t.Errorf("startup dials %q, want DOCKER_HOST %q", got, local)
 	}
-	if got := resolveEndpoint(name).Host; got != local {
+	if got := endpoint.Resolve(name).Host; got != local {
 		t.Errorf("context %q dials %q, want DOCKER_HOST %q", name, got, local)
 	}
 
@@ -82,7 +111,7 @@ func TestUIContextNameExplicitContextBeatsDockerHost(t *testing.T) {
 	if got := effectiveContextName("beta"); got != "beta" {
 		t.Fatalf("--context beta named %q", got)
 	}
-	if got := resolveEndpoint("beta").Host; got != "ssh://bastion-beta" {
+	if got := endpoint.Resolve("beta").Host; got != "ssh://bastion-beta" {
 		t.Errorf("--context beta dials %q", got)
 	}
 	if got := ctxStatusLabel("beta"); got != "beta" {
@@ -100,7 +129,7 @@ func TestUIContextNameDockerContextBeatsDockerHost(t *testing.T) {
 	if got := effectiveContextName(""); got != "beta" {
 		t.Fatalf("DOCKER_CONTEXT=beta named %q", got)
 	}
-	if got := resolveEndpoint("").Host; got != "ssh://bastion-beta" {
+	if got := endpoint.Resolve("").Host; got != "ssh://bastion-beta" {
 		t.Errorf("DOCKER_CONTEXT=beta dials %q", got)
 	}
 }
@@ -140,7 +169,7 @@ func TestSidebarSwitchWithDockerHostSet(t *testing.T) {
 	// What switchCluster("beta") builds and what activateCluster records when
 	// it syncs.
 	target := u.cluster("beta", "beta")
-	if got := resolveEndpoint(target.ctxOverride).Host; got != "ssh://bastion-beta" {
+	if got := endpoint.Resolve(target.ctxOverride).Host; got != "ssh://bastion-beta" {
 		t.Errorf("switch to beta dials %q, want its own endpoint despite DOCKER_HOST", got)
 	}
 	if err := dockerctx.Use(target.name); err != nil {
@@ -154,7 +183,7 @@ func TestSidebarSwitchWithDockerHostSet(t *testing.T) {
 	if back := u.cluster("default", "default"); back != first {
 		t.Error("switching back to default built a second cluster instead of reusing the first")
 	}
-	if got := resolveEndpoint("default").Host; got != local {
+	if got := endpoint.Resolve("default").Host; got != local {
 		t.Errorf("default dials %q after the switch, want DOCKER_HOST %q", got, local)
 	}
 

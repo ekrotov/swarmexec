@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/mcp"
 	"swarmexec/client/internal/mcpaccess"
 )
@@ -85,7 +86,7 @@ func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 	// ssh must never ask. There is no terminal to ask on: stdin is the
 	// protocol too, so a passphrase prompt would read a JSON frame as the
 	// answer — or hang the session waiting for one.
-	sshNonInteractive.Store(true)
+	endpoint.SetNonInteractive()
 
 	s := mcp.New(mcp.Options{
 		Policy:         mcpaccess.Policy{Default: def},
@@ -96,7 +97,6 @@ func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 		ClientVersion:  g.version.Binary,
 		ClientProto:    g.version.Proto,
 		Dial:           mcpDialer(cmd, g),
-		IsSSHAuthError: isSSHAuthError,
 	})
 	defer s.Close()
 
@@ -112,12 +112,12 @@ func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 // for that endpoint.
 func mcpDialer(cmd *cobra.Command, g *globalFlags) func(context.Context, string) (mcp.Endpoint, error) {
 	return func(ctx context.Context, name string) (mcp.Endpoint, error) {
-		ep := resolveEndpoint(name)
+		ep := endpoint.Resolve(name)
 		cfg, err := g.resolveConfig(cmd, ep)
 		if err != nil {
 			return mcp.Endpoint{}, err
 		}
-		dcli, err := ep.connect(ctx)
+		dcli, err := ep.Connect(ctx)
 		if err != nil {
 			return mcp.Endpoint{}, err
 		}

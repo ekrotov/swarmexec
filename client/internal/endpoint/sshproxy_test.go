@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"reflect"
@@ -44,9 +44,9 @@ func TestSSHForwardArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := sshForwardArgs(tt.spec, tt.target, tt.jump)
+			got := ForwardArgs(tt.spec, tt.target, tt.jump)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("sshForwardArgs() = %v, want %v", got, tt.want)
+				t.Errorf("ForwardArgs() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -56,7 +56,7 @@ func TestSSHProxyDialerNonSSH(t *testing.T) {
 	// A tcp:// host must not get a proxy dialer (direct dial).
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
 	t.Setenv("DOCKER_CONTEXT", "")
-	dialer, err := resolveEndpoint("").agentDialer()
+	dialer, err := Resolve("").AgentDialer()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
