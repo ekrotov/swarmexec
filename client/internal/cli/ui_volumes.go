@@ -37,6 +37,7 @@ type volumesTab struct {
 	sortDesc  bool
 
 	per perCluster[volumesState]
+	seq loadSeq // orders overlapping loads (see loadSeq)
 	// shownFor is the cluster whose rows the table holds, nil while it shows a
 	// loading or error state. A render for another cluster first saves this
 	// one's cursor — that is how a switch back lands on the same volume.
@@ -319,6 +320,7 @@ func (t *volumesTab) load() {
 	st := t.st()
 	t.placeholder(loadingCell())
 	gen := u.generation()
+	id := t.seq.start()
 	go func() {
 		start := time.Now()
 		nodes, nerr := r.Nodes(ctx)
@@ -334,7 +336,13 @@ func (t *volumesTab) load() {
 			}
 		}
 		clientlog.Timed("ui.loadVolumes", start, nerr, "nodes", len(nodes), "vols", len(vs))
+		fresh := make(chan bool, 1)
 		u.onCluster(gen, func() {
+			ok := t.seq.fresh(id)
+			fresh <- ok
+			if !ok {
+				return // a later load already answered
+			}
 			st.vols, st.usage, st.errs, st.sizes = vs, usage, errs, nil
 			if nerr != nil {
 				t.placeholder(errorCell(nerr))
@@ -346,8 +354,15 @@ func (t *volumesTab) load() {
 			}
 			t.render()
 		})
-		if nerr == nil && !noAgent {
-			t.loadSizes(gen, st, nodes, ac, f.connectTimeout, ctx)
+		// The sizes belong to the list just applied; for a stale answer they
+		// would be sized against volumes the screen no longer shows. If the
+		// apply never ran (the cluster switched), there is nothing to size.
+		select {
+		case ok := <-fresh:
+			if ok && nerr == nil && !noAgent {
+				t.loadSizes(gen, st, nodes, ac, f.connectTimeout, ctx, id)
+			}
+		case <-ctx.Done():
 		}
 	}()
 }
@@ -357,9 +372,12 @@ func (t *volumesTab) load() {
 // goroutine, so everything cluster-specific — the agent pool, the timeout and
 // the context — is handed in, captured by load on the UI goroutine. Reading
 // them from u here would pick up whichever cluster is visible by now.
-func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Node, ac *agentcall.Client, timeout time.Duration, ctx context.Context) {
+func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Node, ac *agentcall.Client, timeout time.Duration, ctx context.Context, id uint64) {
 	u := t.u
 	u.onCluster(gen, func() {
+		if !t.seq.latest(id) {
+			return
+		}
 		st.sizesLoading = true
 		t.render()
 	})
@@ -385,6 +403,9 @@ func (t *volumesTab) loadSizes(gen uint64, st *volumesState, nodes []resolve.Nod
 	sz := ac.VolumeSizes(ctx, nodes, timeout)
 	close(stop)
 	u.onCluster(gen, func() {
+		if !t.seq.latest(id) {
+			return // a newer load replaced the list these sizes belong to
+		}
 		st.sizesLoading = false
 		st.sizes = sz
 		t.render()

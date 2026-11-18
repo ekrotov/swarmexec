@@ -37,6 +37,7 @@ type treeTab struct {
 	groupByStack bool
 
 	per perCluster[treeState]
+	seq loadSeq // orders overlapping loads and polls (see loadSeq)
 	// shownFor is the cluster whose services the tree holds, nil while it
 	// shows an error. A render for another cluster first saves this one's
 	// position — that is how a switch back lands where the operator was.
@@ -722,9 +723,14 @@ func (t *treeTab) load() {
 	st.resetCols = true
 	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
 	gen, ctx, r := u.generation(), u.ctx, u.r
+	id := t.seq.start()
 	go func() {
 		svcs, cands, err := fetchTree(ctx, r)
-		u.onCluster(gen, func() { t.apply(svcs, cands, err) })
+		u.onCluster(gen, func() {
+			if t.seq.fresh(id) {
+				t.apply(svcs, cands, err)
+			}
+		})
 	}()
 }
 
@@ -748,6 +754,7 @@ func (t *treeTab) autoRefresh() {
 		return
 	}
 	gen := u.generation()
+	id := t.seq.start()
 	go func() {
 		defer busy.Store(false)
 		svcs, cands, err := fetchTree(ctx, r)
@@ -758,7 +765,7 @@ func (t *treeTab) autoRefresh() {
 			// The gate that matters, asked where the answer is exact: an
 			// overlay may have opened while we were fetching, and rebuilding
 			// the tree underneath one is what pulls its focus away.
-			if u.overlayOpen() {
+			if u.overlayOpen() || !t.seq.fresh(id) {
 				return
 			}
 			t.apply(svcs, cands, nil)

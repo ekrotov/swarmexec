@@ -366,3 +366,40 @@ func TestListEditorApply(t *testing.T) {
 		})
 	}
 }
+
+// A second w while the first update is still running must not send the staged
+// list again: that is a second rolling update behind the first.
+func TestListEditorApplyIsNotReentrant(t *testing.T) {
+	u := runningUI(t)
+	u.km = defaultKeybinds()
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	cfg := editListConfig{title: "t", items: []string{"A", "B"}, validate: upperOrBad, applyVerb: "Update it",
+		onApply: func(context.Context, []string) error {
+			started <- struct{}{}
+			<-release
+			return nil
+		}}
+	onLoop(t, u, func() {
+		e := u.newListEditor(cfg)
+		e.show()
+		pressRune(u, 'd')
+		pressRune(u, 'w')
+	})
+	onLoop(t, u, func() { press(u, tcell.KeyEnter) })
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first apply never started")
+	}
+	onLoop(t, u, func() { pressRune(u, 'w') })
+	if pageOpen(t, u, pageConfirm) {
+		t.Error("a second w asked to confirm while the first update was running")
+	}
+	close(release)
+	select {
+	case <-started:
+		t.Error("the staged list was sent twice")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
