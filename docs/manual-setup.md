@@ -350,19 +350,24 @@ swarmexec volume rm data --node docker1 --node docker2   # only these nodes
 
 ### Interactive ui
 
-Browse interactively — a **two-tab** view (Containers / Volumes), switch with
-**Tab** or **1/2**:
+Browse interactively — a seven-tab view: **Stacks/Services** (1), **Volumes**
+(2), **Forwards** (3), **Networks** (4), **Secrets** (5), **Nodes** (6) and
+**Configs** (7). Switch with **Tab** or **1**–**7**; the docker contexts are a
+sidebar (**c**), and **?** lists every key of the tab you are on:
 
 ```sh
-swarmexec ui                 # ↑/↓ j/k h/l move, Tab switch, Enter, r refresh, q quit
-swarmexec ui <service>       # filter containers to one service
+swarmexec ui                 # j/k move, Tab/1-7 switch tab, Enter, r refresh, ? keys, q quit
+swarmexec ui <service>       # open with the tree filtered to one service
 ```
 
-- **Containers** tab: Enter on a row opens **logs / bash / sh** in a modal pane
-  (the shells run in an embedded terminal; **Ctrl-]** detaches).
-- **Volumes** tab: Enter on a volume lists the nodes that hold it; **space** to
-  select nodes, **d** to delete the selected (or highlighted) ones, **a** to
-  delete on all — with a confirmation step.
+- **Stacks/Services** tab: a tree of stacks, services and their containers.
+  Enter on a container opens a menu — **logs**, **bash** or **sh** in a modal
+  pane (the shells run in an embedded terminal; **Ctrl-]** detaches).
+- **Volumes** tab: Enter on a volume lists the nodes that hold it; **space**
+  selects (**a** selects all), **X** deletes the selected (or highlighted) ones
+  on every node that holds them — with a confirmation step.
+- The other tabs follow the same pattern; the full key reference is the
+  [TUI page of the site](https://swarm-exec.cloud-surfers.net/docs/tui).
 
 ### Step 4.5 — Exec
 
