@@ -17,6 +17,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmfake"
 )
@@ -119,7 +120,7 @@ func treeHarness(t *testing.T, fakes map[string]http.Handler) *ui {
 	u := runningUI(t)
 	onLoop(t, u, func() {
 		u.km = defaultKeybinds()
-		u.forwards = newForwardRegistry()
+		u.forwards = portfwd.NewRegistry()
 		u.clusters = map[string]*clusterState{}
 		for name, dcli := range clients {
 			c := u.clusterState

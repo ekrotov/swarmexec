@@ -6,6 +6,8 @@ package cli
 import (
 	"reflect"
 	"testing"
+
+	"swarmexec/client/internal/portfwd"
 )
 
 // The env editor's text is typed (or pasted) by the operator. Whatever parses
@@ -48,9 +50,9 @@ func FuzzPortSpecs(f *testing.F) {
 		f.Add(s, s, s)
 	}
 	f.Fuzz(func(t *testing.T, spec, address, local string) {
-		l, r, err := parsePortSpec(spec)
+		l, r, err := portfwd.ParsePortSpec(spec)
 		if err == nil && (l == 0 || l > 65535 || r == 0 || r > 65535) {
-			t.Fatalf("parsePortSpec(%q) = %d, %d without an error", spec, l, r)
+			t.Fatalf("portfwd.ParsePortSpec(%q) = %d, %d without an error", spec, l, r)
 		}
 		fs, err := parseForwardForm(spec, address, local)
 		if err == nil && (fs.local == 0 || fs.local > 65535 || fs.remote == 0 || fs.remote > 65535) {

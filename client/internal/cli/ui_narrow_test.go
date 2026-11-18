@@ -139,7 +139,7 @@ func TestStatusLineDropsWholePartsWhenNarrow(t *testing.T) {
 	u := statusUI(t)
 	u.activeCtx = "a-rather-long-context-name-for-production"
 	for i := 0; i < 3; i++ {
-		u.forwards.add("default", resolve.Candidate{}, uint32(8080+i), 80, func() {})
+		u.forwards.Add("default", resolve.Candidate{}, uint32(8080+i), 80, func() {})
 	}
 	u.resizeSidebar(80)
 	got := strings.TrimSpace(u.status.GetText(true))

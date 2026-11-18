@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/endpoint"
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/swarmapi"
@@ -363,9 +364,9 @@ func (u *ui) install(c *clusterState, l *clusterLink) {
 func (u *ui) run(keyWarnings []string) error {
 	// forwards is the UI's only persistent background resource: a port forward
 	// outlives the overlay that started it, unlike every stream here.
-	forwards := newForwardRegistry()
+	forwards := portfwd.NewRegistry()
 	u.forwards = forwards
-	defer forwards.stopAll()
+	defer forwards.StopAll()
 	// Every cluster this session touched, not only the visible one.
 	defer u.closeClusters()
 
@@ -1408,7 +1409,7 @@ func (u *ui) statusParts(cluster string) []string {
 	if cluster != "" {
 		parts = append(parts, cluster)
 	}
-	if total, act := u.forwards.counts(); total > 0 {
+	if total, act := u.forwards.Counts(); total > 0 {
 		if act == total {
 			parts = append(parts, fmt.Sprintf("[aqua]%d[white] fwd", total))
 		} else {

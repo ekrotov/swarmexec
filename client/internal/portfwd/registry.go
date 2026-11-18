@@ -1,69 +1,69 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package portfwd
 
 import (
 	"fmt"
 	"net"
 	"sort"
 	"strconv"
-	"strings"
+
 	"sync"
 	"time"
 
 	"swarmexec/client/internal/resolve"
 )
 
-// forwardState is where a forward is in its life.
-type forwardState int
+// State is where a forward is in its life.
+type State int
 
 const (
-	// forwardStarting covers dialling the agent and binding the local port.
+	// StateStarting covers dialling the agent and binding the local port.
 	// Dialling can take up to the connect timeout, so this state is visible.
-	forwardStarting forwardState = iota
-	forwardActive
-	forwardFailed
+	StateStarting State = iota
+	StateActive
+	StateFailed
 )
 
-func (s forwardState) String() string {
+func (s State) String() string {
 	switch s {
-	case forwardStarting:
+	case StateStarting:
 		return "starting"
-	case forwardActive:
+	case StateActive:
 		return "active"
 	default:
 		return "failed"
 	}
 }
 
-// forwardEntry is one port forward the operator started from the UI.
+// Entry is one port forward the operator started from the UI.
 //
 // Unlike every other stream in this UI, a forward is not tied to a visible
 // page: it keeps running after its overlay closes, until it is stopped
 // explicitly or the UI exits. That is the whole point of the feature, and the
 // reason this registry exists at all.
-type forwardEntry struct {
-	id int
+type Entry struct {
+	ID int
 	// cluster is the docker context this forward's container lives in. A
 	// forward now outlives a cluster switch, so the entry has to say which
 	// cluster it belongs to — otherwise the Forwards tab lists ports whose
 	// CONTAINER and NODE columns name things the visible cluster does not have,
 	// and the tree would annotate a same-named container on the wrong cluster.
-	cluster   string
-	cand      resolve.Candidate
-	address   string // requested local bind address; empty means defaultForwardAddress
-	local     uint32 // requested local port; 0 means "kernel picks"
-	remote    uint32
-	localAddr string // actually bound address, known once active
-	state     forwardState
-	err       error
+	Cluster   string
+	Cand      resolve.Candidate
+	Address   string // requested local bind address; empty means DefaultAddress
+	Local     uint32 // requested local port; 0 means "kernel picks"
+	Remote    uint32
+	LocalAddr string // actually bound address, known once active
+	State     State
+	Err       error
 	// connErr is the most recent per-connection failure. The listener stays up
 	// through these (one bad connection must not kill a forward), so without
 	// surfacing it the forward would read "active" while every connection
 	// silently fails — exactly what happens against an outdated agent.
-	connErr error
-	started time.Time
+	ConnErr error
+	Started time.Time
 
 	// stop tears the forward down. Guarded by the registry mutex, and
 	// idempotent so a double "d" cannot panic.
@@ -77,28 +77,28 @@ type forwardEntry struct {
 // you had to open the Forwards tab to learn which container port was hit. The
 // state lives on the local side: a number when bound, … while starting, ✗ when
 // failed; the remote port is always the anchor, since it identifies the target.
-func (e *forwardEntry) label() string {
-	switch e.state {
-	case forwardActive:
-		return fmt.Sprintf("%d→%d", e.boundPort(), e.remote)
-	case forwardStarting:
-		return fmt.Sprintf("…→%d", e.remote)
+func (e *Entry) Label() string {
+	switch e.State {
+	case StateActive:
+		return fmt.Sprintf("%d→%d", e.BoundPort(), e.Remote)
+	case StateStarting:
+		return fmt.Sprintf("…→%d", e.Remote)
 	default:
-		return fmt.Sprintf("✗→%d", e.remote)
+		return fmt.Sprintf("✗→%d", e.Remote)
 	}
 }
 
 // boundPort is the local port in effect: the requested one, or the one the
 // kernel chose once the listener is up.
-func (e *forwardEntry) boundPort() uint32 {
-	if e.localAddr != "" {
-		if _, p, err := net.SplitHostPort(e.localAddr); err == nil {
+func (e *Entry) BoundPort() uint32 {
+	if e.LocalAddr != "" {
+		if _, p, err := net.SplitHostPort(e.LocalAddr); err == nil {
 			if n, cerr := strconv.ParseUint(p, 10, 32); cerr == nil {
 				return uint32(n)
 			}
 		}
 	}
-	return e.local
+	return e.Local
 }
 
 // bindAddress is the local address the forward was asked to listen on.
@@ -107,80 +107,80 @@ func (e *forwardEntry) boundPort() uint32 {
 // dual-stack [::], so the listener's own address would show "[::]" for what the
 // operator typed as 0.0.0.0. The port is the other way round (see boundPort),
 // because only the listener knows which port the kernel picked for 0.
-func (e *forwardEntry) bindAddress() string {
-	if e.address == "" {
-		return defaultForwardAddress
+func (e *Entry) BindAddress() string {
+	if e.Address == "" {
+		return DefaultAddress
 	}
-	return e.address
+	return e.Address
 }
 
 // localEndpoint renders address:port for the table and the detail view.
-func (e *forwardEntry) localEndpoint() string {
-	return net.JoinHostPort(e.bindAddress(), strconv.FormatUint(uint64(e.boundPort()), 10))
+func (e *Entry) LocalEndpoint() string {
+	return net.JoinHostPort(e.BindAddress(), strconv.FormatUint(uint64(e.BoundPort()), 10))
 }
 
 // url is what the copy-URL key puts on the clipboard. A forward bound to
 // 0.0.0.0 or :: listens on loopback too, and loopback is what a browser on this
 // machine can actually connect to.
-func (e *forwardEntry) url() string {
-	return "http://" + net.JoinHostPort(browseHost(e.bindAddress()), strconv.FormatUint(uint64(e.boundPort()), 10))
+func (e *Entry) URL() string {
+	return "http://" + net.JoinHostPort(BrowseHost(e.BindAddress()), strconv.FormatUint(uint64(e.BoundPort()), 10))
 }
 
-// forwardRegistry tracks the live forwards. Every method is safe to call from
+// Registry tracks the live forwards. Every method is safe to call from
 // any goroutine: forwards are started and torn down off the UI goroutine, but
 // rendered on it.
-type forwardRegistry struct {
+type Registry struct {
 	mu      sync.Mutex
-	entries map[int]*forwardEntry
+	entries map[int]*Entry
 	nextID  int
 }
 
-func newForwardRegistry() *forwardRegistry {
-	return &forwardRegistry{entries: map[int]*forwardEntry{}}
+func NewRegistry() *Registry {
+	return &Registry{entries: map[int]*Entry{}}
 }
 
 // add registers a loopback forward in the starting state and returns it.
-func (r *forwardRegistry) add(cluster string, cand resolve.Candidate, local, remote uint32, stop func()) *forwardEntry {
-	return r.addAt(cluster, defaultForwardAddress, cand, local, remote, stop)
+func (r *Registry) Add(cluster string, cand resolve.Candidate, local, remote uint32, stop func()) *Entry {
+	return r.AddAt(cluster, DefaultAddress, cand, local, remote, stop)
 }
 
 // addAt registers a forward bound to address in the starting state.
-func (r *forwardRegistry) addAt(cluster, address string, cand resolve.Candidate, local, remote uint32, stop func()) *forwardEntry {
+func (r *Registry) AddAt(cluster, address string, cand resolve.Candidate, local, remote uint32, stop func()) *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextID++
-	e := &forwardEntry{
-		id:      r.nextID,
-		cluster: cluster,
-		cand:    cand,
-		address: address,
-		local:   local,
-		remote:  remote,
-		state:   forwardStarting,
-		started: time.Now(),
+	e := &Entry{
+		ID:      r.nextID,
+		Cluster: cluster,
+		Cand:    cand,
+		Address: address,
+		Local:   local,
+		Remote:  remote,
+		State:   StateStarting,
+		Started: time.Now(),
 		stop:    stop,
 	}
-	r.entries[e.id] = e
+	r.entries[e.ID] = e
 	return e
 }
 
 // markActive records the address the forward actually bound.
-func (r *forwardRegistry) markActive(id int, localAddr string) {
+func (r *Registry) MarkActive(id int, localAddr string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if e, ok := r.entries[id]; ok {
-		e.state, e.localAddr, e.err = forwardActive, localAddr, nil
+		e.State, e.LocalAddr, e.Err = StateActive, localAddr, nil
 	}
 }
 
 // markFailed records why a forward is unusable but KEEPS it listed. A forward
 // that vanished on failure would leave the operator with no idea what went
 // wrong; they remove it themselves once they have read the reason.
-func (r *forwardRegistry) markFailed(id int, err error) {
+func (r *Registry) MarkFailed(id int, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if e, ok := r.entries[id]; ok {
-		e.state, e.err = forwardFailed, err
+		e.State, e.Err = StateFailed, err
 	}
 }
 
@@ -188,12 +188,12 @@ func (r *forwardRegistry) markFailed(id int, err error) {
 // listener is still up and the next connection may well succeed. It reports
 // whether this is the first failure on that forward, so the caller can announce
 // it once instead of on every rejected connection.
-func (r *forwardRegistry) noteConnError(id int, err error) (first bool) {
+func (r *Registry) NoteConnError(id int, err error) (first bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if e, ok := r.entries[id]; ok {
-		first = e.connErr == nil
-		e.connErr = err
+		first = e.ConnErr == nil
+		e.ConnErr = err
 	}
 	return first
 }
@@ -203,18 +203,18 @@ func (r *forwardRegistry) noteConnError(id int, err error) (first bool) {
 // lived, long after the problem (a restarting container, a flapping bastion)
 // was gone. It reports whether there was one to clear, so the caller redraws
 // only on a change.
-func (r *forwardRegistry) clearConnError(id int) (cleared bool) {
+func (r *Registry) ClearConnError(id int) (cleared bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if e, ok := r.entries[id]; ok && e.connErr != nil {
-		e.connErr = nil
+	if e, ok := r.entries[id]; ok && e.ConnErr != nil {
+		e.ConnErr = nil
 		cleared = true
 	}
 	return cleared
 }
 
 // remove stops the forward and drops it from the registry.
-func (r *forwardRegistry) remove(id int) {
+func (r *Registry) Remove(id int) {
 	r.mu.Lock()
 	e, ok := r.entries[id]
 	if ok {
@@ -228,13 +228,13 @@ func (r *forwardRegistry) remove(id int) {
 
 // stopAll tears every forward down; used when the UI exits so no goroutine or
 // gRPC connection outlives the process's main loop.
-func (r *forwardRegistry) stopAll() {
+func (r *Registry) StopAll() {
 	r.mu.Lock()
-	all := make([]*forwardEntry, 0, len(r.entries))
+	all := make([]*Entry, 0, len(r.entries))
 	for _, e := range r.entries {
 		all = append(all, e)
 	}
-	r.entries = map[int]*forwardEntry{}
+	r.entries = map[int]*Entry{}
 	r.mu.Unlock()
 	for _, e := range all {
 		if e.stop != nil {
@@ -245,14 +245,14 @@ func (r *forwardRegistry) stopAll() {
 
 // list returns a stable snapshot, oldest first, so the table does not reshuffle
 // under the cursor on every redraw.
-func (r *forwardRegistry) list() []forwardEntry {
+func (r *Registry) List() []Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]forwardEntry, 0, len(r.entries))
+	out := make([]Entry, 0, len(r.entries))
 	for _, e := range r.entries {
 		out = append(out, *e)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 
@@ -262,16 +262,16 @@ func (r *forwardRegistry) list() []forwardEntry {
 // The cluster is part of the question, not a refinement of it: forwards survive
 // a switch, and a container id is only unique within its own daemon. Matching on
 // the id alone would let one cluster's forward annotate another cluster's row.
-func (r *forwardRegistry) forContainer(cluster, containerID string) []forwardEntry {
+func (r *Registry) ForContainer(cluster, containerID string) []Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []forwardEntry
+	var out []Entry
 	for _, e := range r.entries {
-		if e.cluster == cluster && e.cand.ContainerID == containerID {
+		if e.Cluster == cluster && e.Cand.ContainerID == containerID {
 			out = append(out, *e)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 
@@ -287,53 +287,41 @@ func (r *forwardRegistry) forContainer(cluster, containerID string) []forwardEnt
 // matches — it means "any free port", which cannot collide with anything. And a
 // failed forward is skipped: it holds no listener (the bind never happened, or
 // Serve returned and Close ran), so it must not block the port it never got.
-func (r *forwardRegistry) byLocalPort(port uint32) (forwardEntry, bool) {
+func (r *Registry) ByLocalPort(port uint32) (Entry, bool) {
 	if port == 0 {
-		return forwardEntry{}, false
+		return Entry{}, false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, e := range r.entries {
-		if e.state != forwardFailed && e.boundPort() == port {
+		if e.State != StateFailed && e.BoundPort() == port {
 			return *e, true
 		}
 	}
-	return forwardEntry{}, false
+	return Entry{}, false
 }
 
 // get returns a live snapshot of one forward. The detail view uses it rather
 // than the rendered row, whose connErr is only as fresh as the last redraw.
-func (r *forwardRegistry) get(id int) (forwardEntry, bool) {
+func (r *Registry) Get(id int) (Entry, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.entries[id]
 	if !ok {
-		return forwardEntry{}, false
+		return Entry{}, false
 	}
 	return *e, true
 }
 
 // counts reports total and active forwards for the footer indicator.
-func (r *forwardRegistry) counts() (total, active int) {
+func (r *Registry) Counts() (total, active int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, e := range r.entries {
 		total++
-		if e.state == forwardActive {
+		if e.State == StateActive {
 			active++
 		}
 	}
 	return total, active
-}
-
-// annotateForwards appends the forward markers for a container to its tree row.
-func annotateForwards(label string, fws []forwardEntry) string {
-	if len(fws) == 0 {
-		return label
-	}
-	parts := make([]string, 0, len(fws))
-	for i := range fws {
-		parts = append(parts, fws[i].label())
-	}
-	return label + "  " + strings.Join(parts, " ")
 }

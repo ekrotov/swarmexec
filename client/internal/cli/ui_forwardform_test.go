@@ -14,12 +14,20 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/portfwd"
+	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmfake"
 	pb "swarmexec/internal/pb"
 )
 
 // Both sources are merged into one list: ascending, each port once, and a zero
 // (a PortConfig without a target) never offered.
+// cand is a resolve candidate for the forward tests. The portfwd package has
+// its own; a shared one would tie this package's tests to that one's fixtures.
+func cand(id, service, node string) resolve.Candidate {
+	return resolve.Candidate{ContainerID: id, Service: service, NodeName: node}
+}
+
 func TestMergePortsDedupesAndSorts(t *testing.T) {
 	got := mergePorts([]uint32{8080, 80, 0}, nil, []uint32{443, 80, 8080})
 	if want := []uint32{80, 443, 8080}; !slices.Equal(got, want) {
@@ -74,74 +82,38 @@ func TestContainerPortsFor(t *testing.T) {
 	}
 }
 
-func TestIsLoopbackAddr(t *testing.T) {
-	for addr, want := range map[string]bool{
-		"":            true, // empty means the default
-		"127.0.0.1":   true,
-		"127.1.2.3":   true, // all of 127.0.0.0/8
-		"::1":         true,
-		"[::1]":       true,
-		"localhost":   true,
-		"LocalHost":   true,
-		" 127.0.0.1":  true,
-		"0.0.0.0":     false,
-		"::":          false,
-		"192.168.1.5": false,
-		"myhost":      false,
-	} {
-		if got := isLoopbackAddr(addr); got != want {
-			t.Errorf("isLoopbackAddr(%q) = %v, want %v", addr, got, want)
-		}
-	}
-}
-
-func TestBrowseHost(t *testing.T) {
-	for addr, want := range map[string]string{
-		"":          "127.0.0.1",
-		"0.0.0.0":   "127.0.0.1",
-		"::":        "::1",
-		"127.0.0.1": "127.0.0.1",
-		"10.0.0.5":  "10.0.0.5",
-	} {
-		if got := browseHost(addr); got != want {
-			t.Errorf("browseHost(%q) = %q, want %q", addr, got, want)
-		}
-	}
-}
-
-// The address carries through to everything that used to hard-code 127.0.0.1.
 func TestForwardEntryAddressPropagates(t *testing.T) {
-	r := newForwardRegistry()
-	e := r.addAt("prod", "0.0.0.0", cand("abc", "api", "n1"), 8080, 80, func() {})
-	got, _ := r.get(e.id)
-	if s := got.localEndpoint(); s != "0.0.0.0:8080" {
+	r := portfwd.NewRegistry()
+	e := r.AddAt("prod", "0.0.0.0", cand("abc", "api", "n1"), 8080, 80, func() {})
+	got, _ := r.Get(e.ID)
+	if s := got.LocalEndpoint(); s != "0.0.0.0:8080" {
 		t.Errorf("starting endpoint = %q", s)
 	}
 	// Go binds the 0.0.0.0 wildcard dual-stack, so the listener reports [::].
 	// What the operator typed is what they should see.
-	r.markActive(e.id, "[::]:8080")
-	got, _ = r.get(e.id)
-	if s := got.localEndpoint(); s != "0.0.0.0:8080" {
+	r.MarkActive(e.ID, "[::]:8080")
+	got, _ = r.Get(e.ID)
+	if s := got.LocalEndpoint(); s != "0.0.0.0:8080" {
 		t.Errorf("active endpoint = %q, want the requested address", s)
 	}
-	if s := got.url(); s != "http://127.0.0.1:8080" {
+	if s := got.URL(); s != "http://127.0.0.1:8080" {
 		t.Errorf("url for 0.0.0.0 = %q, want it through loopback", s)
 	}
 
-	v6 := r.addAt("prod", "::1", cand("abc", "api", "n1"), 9090, 80, func() {})
-	r.markActive(v6.id, "[::1]:9090")
-	got, _ = r.get(v6.id)
-	if s := got.localEndpoint(); s != "[::1]:9090" {
+	v6 := r.AddAt("prod", "::1", cand("abc", "api", "n1"), 9090, 80, func() {})
+	r.MarkActive(v6.ID, "[::1]:9090")
+	got, _ = r.Get(v6.ID)
+	if s := got.LocalEndpoint(); s != "[::1]:9090" {
 		t.Errorf("v6 endpoint = %q", s)
 	}
-	if s := got.url(); s != "http://[::1]:9090" {
+	if s := got.URL(); s != "http://[::1]:9090" {
 		t.Errorf("v6 url = %q", s)
 	}
 
 	// The old entry point stays loopback.
-	old := r.add("prod", cand("abc", "api", "n1"), 7070, 80, func() {})
-	got, _ = r.get(old.id)
-	if s := got.url(); s != "http://127.0.0.1:7070" {
+	old := r.Add("prod", cand("abc", "api", "n1"), 7070, 80, func() {})
+	got, _ = r.Get(old.ID)
+	if s := got.URL(); s != "http://127.0.0.1:7070" {
 		t.Errorf("default url = %q", s)
 	}
 }
@@ -221,13 +193,13 @@ func TestPortCompletions(t *testing.T) {
 // one forward already running on local port 8080 so a conflict can be hit.
 func forwardFormUI() *ui {
 	u := overlayUI()
-	u.forwards = newForwardRegistry()
+	u.forwards = portfwd.NewRegistry()
 	u.clusterState = &clusterState{ctx: context.Background()}
 	u.f = &uiFlags{connectTimeout: time.Second}
 	u.ctree = tview.NewTreeView()
 	// Long names, so the conflict sentence is longer than the dialog is wide.
-	e := u.forwards.add("prod-eu-west-1", cand("other", "billing-postgres-primary", "n2"), 8080, 5432, func() {})
-	u.forwards.markActive(e.id, "127.0.0.1:8080")
+	e := u.forwards.Add("prod-eu-west-1", cand("other", "billing-postgres-primary", "n2"), 8080, 5432, func() {})
+	u.forwards.MarkActive(e.ID, "127.0.0.1:8080")
 	return u
 }
 
@@ -662,7 +634,7 @@ func TestForwardFormReturnsFocusToTheTree(t *testing.T) {
 func runningForwardForm(t *testing.T, before func(d *fwdDialog)) *fwdDialog {
 	t.Helper()
 	u := runningUI(t)
-	u.forwards = newForwardRegistry()
+	u.forwards = portfwd.NewRegistry()
 	u.f = &uiFlags{connectTimeout: time.Second}
 	u.ctree = tview.NewTreeView()
 	var svc swarm.Service

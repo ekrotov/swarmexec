@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -33,7 +34,7 @@ func scopeUI(t *testing.T) (*ui, *networksTab) {
 	u := listUI(t, m)
 	onLoop(t, u, func() {
 		u.status = tview.NewTextView().SetDynamicColors(true)
-		u.forwards = newForwardRegistry()
+		u.forwards = portfwd.NewRegistry()
 		u.active = "networks"
 	})
 	return u, u.netTab()

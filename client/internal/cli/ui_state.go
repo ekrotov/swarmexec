@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/portfwd"
 )
 
 // uiTabList drives the tab bar, the digit keys and Tab cycling: one list entry
@@ -128,7 +129,7 @@ type ui struct {
 	// listener the operator started and expects to keep, and tearing it down
 	// because they looked at another cluster is the behaviour this feature
 	// exists to remove. Each entry records which cluster it belongs to.
-	forwards *forwardRegistry
+	forwards *portfwd.Registry
 
 	// shared widgets (built in run(), once the tree/tables exist)
 	//

@@ -12,6 +12,10 @@
 # listed file that is renamed or deleted fails the check until this list
 # follows.
 
+# The port-forward data path: an operator's bytes go through these.
+client/internal/portfwd/forwarder.go   72
+client/internal/portfwd/registry.go    85
+
 # Commands that exec, forward or delete.
 client/internal/cli/exec.go            70
 client/internal/cli/portforward.go     85

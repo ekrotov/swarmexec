@@ -5,22 +5,17 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"net"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
-	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/endpoint"
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
-	pb "swarmexec/internal/pb"
 )
 
 type portForwardFlags struct {
@@ -51,7 +46,7 @@ func newPortForwardCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVar(&f.address, "address", defaultForwardAddress,
+	fl.StringVar(&f.address, "address", portfwd.DefaultAddress,
 		"local address to bind; loopback by default so the forwarded port is not exposed to your network")
 	fl.StringVar(&f.node, "node", "", "node hint/override for container-id targets")
 	fl.DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the agent")
@@ -68,12 +63,12 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 		return &cliError{code: exitUsage, err: err}
 	}
 
-	localPort, remotePort, err := parsePortSpec(args[1])
+	localPort, remotePort, err := portfwd.ParsePortSpec(args[1])
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
 	}
 
-	if !isLoopbackAddr(f.address) {
+	if !portfwd.IsLoopback(f.address) {
 		// Same warning the TUI form shows: the internal port this reaches is
 		// now open to whoever can reach this machine.
 		fmt.Fprintf(cmd.ErrOrStderr(), "swarmexec: warning: --address %s is not loopback; the forwarded port is reachable from your network\n", f.address)
@@ -98,11 +93,11 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 
 	ac := agentcall.New(cfg)
 	defer ac.Close()
-	err = runForwarder(ctx, ac, *ep, forwardParams{
-		address:        f.address,
-		localPort:      localPort,
-		remotePort:     remotePort,
-		connectTimeout: f.connectTimeout,
+	err = runForwarder(ctx, ac, *ep, portfwd.Params{
+		Address:        f.address,
+		LocalPort:      localPort,
+		RemotePort:     remotePort,
+		ConnectTimeout: f.connectTimeout,
 	}, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
 		return &cliError{code: exitTransport, err: explainSession(ctx, cfg, dcli, err)}
@@ -110,247 +105,33 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 	return nil
 }
 
-// parsePortSpec accepts "8080" (same port both sides) or "9090:8080"
-// (local:remote), matching the kubectl port-forward spelling.
-func parsePortSpec(spec string) (local, remote uint32, err error) {
-	parsePort := func(s, what string) (uint32, error) {
-		n, perr := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
-		if perr != nil || n == 0 || n > 65535 {
-			return 0, fmt.Errorf("invalid %s port %q: expected 1-65535", what, s)
-		}
-		return uint32(n), nil
-	}
-
-	l, r, found := strings.Cut(spec, ":")
-	if !found {
-		p, perr := parsePort(spec, "")
-		return p, p, perr
-	}
-	if local, err = parsePort(l, "local"); err != nil {
-		return 0, 0, err
-	}
-	if remote, err = parsePort(r, "remote"); err != nil {
-		return 0, 0, err
-	}
-	return local, remote, nil
-}
-
-type forwardParams struct {
-	address        string
-	localPort      uint32
-	remotePort     uint32
-	connectTimeout time.Duration
-}
-
-// forwarder holds one gRPC connection to the agent plus the local listener. It
-// opens a PortForward stream per accepted connection; HTTP/2 multiplexes those
-// over the single transport, so no connection id is needed on the wire.
-//
-// Setup (startForwarder) is separate from serving (Serve) so a caller can learn
-// the bound address — and surface a bind conflict — before committing to a
-// blocking loop. The TUI needs exactly that; the command just chains the two.
-type forwarder struct {
-	conn        *agentcall.Conn
-	ln          net.Listener
-	containerID string
-	remotePort  uint32
-	auth        agenterr.Auth // which credential an Unauthenticated is about
-	onConnOK    func()        // see setOnConnOK
-}
-
-// startForwarder binds the local port and dials the agent. On success the
-// caller owns the forwarder and must Close it.
-//
-// Bind first, dial second, and the order is the point: the local bind is the
-// cheap check that fails for a reason the operator can act on immediately (the
-// port is taken), while the dial goes over ssh to another machine and can take
-// the whole connect timeout. Doing it the other way round — as this did — meant
-// a forward that was never going to work still paid for a full agent connection
-// before saying so.
-//
-// The listener existing slightly before the agent is reachable is harmless:
-// Serve is a separate call, so nothing is accepted in between. Early arrivals
-// wait in the listen backlog and are reset if the dial fails and we close it.
-func startForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p forwardParams) (*forwarder, error) {
-	bind := net.JoinHostPort(p.address, strconv.FormatUint(uint64(p.localPort), 10))
-	var lc net.ListenConfig
-	ln, err := lc.Listen(ctx, "tcp", bind)
-	if err != nil {
-		return nil, fmt.Errorf("listen on %s: %w", bind, err)
-	}
-
-	dctx, dcancel := context.WithTimeout(ctx, p.connectTimeout)
-	conn, err := ac.Conn(dctx, ep.DialHost)
-	dcancel()
-	if err != nil {
-		ln.Close()
-		return nil, err
-	}
-	return &forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.remotePort, auth: agenterr.AuthOf(ac.Config())}, nil
-}
-
-// LocalAddr is the address actually bound, which is what to show the operator:
-// with local port 0 the kernel picks one, and only this reports which.
-// onConnOK, when set before Serve, is called for each connection that ended
-// cleanly. The TUI uses it to take the failure marker off a forward that works
-// again.
-func (f *forwarder) setOnConnOK(fn func()) { f.onConnOK = fn }
-
-func (f *forwarder) LocalAddr() net.Addr { return f.ln.Addr() }
-
-func (f *forwarder) Close() error {
-	err := f.ln.Close()
-	f.conn.Close()
-	return err
-}
-
-// Serve accepts connections until ctx is cancelled or the listener fails.
-// onConnErr, when non-nil, is called for each connection that fails; a single
-// bad connection never tears the listener down, because the operator keeps the
-// forward and simply reconnects their client.
-func (f *forwarder) Serve(ctx context.Context, onConnErr func(error)) error {
-	// Unblock Accept on cancellation.
-	go func() {
-		<-ctx.Done()
-		_ = f.ln.Close()
-	}()
-
-	client := f.conn.Agent()
-	var wg sync.WaitGroup
-	defer wg.Wait()
-
-	for {
-		local, aerr := f.ln.Accept()
-		if aerr != nil {
-			if ctx.Err() != nil {
-				return nil // cancelled: a clean stop, not a failure
-			}
-			return fmt.Errorf("accept on %s: %w", f.ln.Addr(), aerr)
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer local.Close()
-			ferr := forwardConn(ctx, client, local, f.containerID, f.remotePort)
-			if ferr == nil && f.onConnOK != nil {
-				f.onConnOK()
-			}
-			if ferr != nil && onConnErr != nil {
-				// Against an agent that predates PortForward every single
-				// connection fails, so leaving the raw "unknown method
-				// PortForward" to repeat in the operator's face would bury
-				// the one thing they need to do about it; Explain says it.
-				onConnErr(agenterr.Explain(ctx, ferr, agenterr.Options{Auth: f.auth}))
-			}
-		}()
-	}
-}
-
 // runForwarder is the blocking command-line path: set up, announce, serve.
-func runForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p forwardParams, stdout, stderr io.Writer) error {
-	fw, err := startForwarder(ctx, ac, ep, p)
+// The announcement stays here rather than in portfwd: what a command prints is
+// the command layer's business, and it is the only thing the two callers of
+// the forwarder do differently.
+func runForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p portfwd.Params, stdout, stderr io.Writer) error {
+	fw, err := portfwd.Start(ctx, ac, ep, p)
 	if err != nil {
 		return err
 	}
 	defer fw.Close()
 
 	fmt.Fprintf(stdout, "forwarding %s -> %s:%d (%s) — press Ctrl-C to stop\n",
-		fw.LocalAddr(), shortID(ep.ContainerID), p.remotePort, ep.NodeName)
+		fw.LocalAddr(), shortID(ep.ContainerID), p.RemotePort, ep.NodeName)
 
 	return fw.Serve(ctx, func(cerr error) {
 		fmt.Fprintf(stderr, "swarmexec: forward connection failed: %v\n", cerr)
 	})
 }
 
-// forwardConn bridges one accepted local connection to the container port over
-// a single PortForward stream.
-func forwardConn(ctx context.Context, client pb.AgentClient, local net.Conn, containerID string, port uint32) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	stream, err := client.PortForward(ctx)
-	if err != nil {
-		return err
+// annotateForwards appends the forward markers for a container to its tree row.
+func annotateForwards(label string, fws []portfwd.Entry) string {
+	if len(fws) == 0 {
+		return label
 	}
-	if err := stream.Send(&pb.ForwardClientMessage{
-		Payload: &pb.ForwardClientMessage_Start{
-			Start: &pb.StartForward{ContainerId: containerID, Port: port},
-		},
-	}); err != nil {
-		return err
+	parts := make([]string, 0, len(fws))
+	for i := range fws {
+		parts = append(parts, fws[i].Label())
 	}
-
-	// Wait for readiness before piping, so a closed target port surfaces as an
-	// error here instead of as a mysteriously silent connection.
-	if err := awaitForwardReady(stream); err != nil {
-		return err
-	}
-	go pumpToAgent(local, stream, cancel)
-	return pumpFromAgent(ctx, stream, local)
-}
-
-// awaitForwardReady reads the agent's first message: ready, or why not.
-func awaitForwardReady(stream pb.Agent_PortForwardClient) error {
-	first, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-	switch pl := first.Payload.(type) {
-	case *pb.ForwardServerMessage_Ready:
-		return nil // connected
-	case *pb.ForwardServerMessage_Error:
-		return errors.New(pl.Error)
-	default:
-		return fmt.Errorf("agent sent %T before ready", pl)
-	}
-}
-
-// pumpToAgent copies local -> container until either side gives up: a failed
-// send cancels the bridge, the local peer closing half-closes toward the
-// container (the other direction keeps going).
-func pumpToAgent(local net.Conn, stream pb.Agent_PortForwardClient, cancel context.CancelFunc) {
-	buf := make([]byte, 32*1024)
-	for {
-		n, rerr := local.Read(buf)
-		if n > 0 {
-			// Copy out of the reused buffer before it enters a protobuf
-			// message (CONTRACT.md §6).
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			if serr := stream.Send(&pb.ForwardClientMessage{
-				Payload: &pb.ForwardClientMessage_Data{Data: chunk},
-			}); serr != nil {
-				cancel()
-				return
-			}
-		}
-		if rerr != nil {
-			// Local peer closed its write side: half-close toward the
-			// container and keep reading the other direction.
-			_ = stream.CloseSend()
-			return
-		}
-	}
-}
-
-// pumpFromAgent copies container -> local until the stream ends; only an
-// agent-side failure is an error.
-func pumpFromAgent(ctx context.Context, stream pb.Agent_PortForwardClient, local net.Conn) error {
-	for {
-		msg, rerr := stream.Recv()
-		if rerr != nil {
-			if errors.Is(rerr, io.EOF) || ctx.Err() != nil {
-				return nil
-			}
-			return rerr
-		}
-		switch pl := msg.Payload.(type) {
-		case *pb.ForwardServerMessage_Data:
-			if _, werr := local.Write(pl.Data); werr != nil {
-				return nil // local peer went away; not an agent-side failure
-			}
-		case *pb.ForwardServerMessage_Error:
-			return errors.New(pl.Error)
-		}
-	}
+	return label + "  " + strings.Join(parts, " ")
 }

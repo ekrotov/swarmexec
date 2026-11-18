@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"sync"
 	"time"
@@ -29,15 +30,15 @@ import (
 // rule an operator can hold in their head; "taken on this address but not that
 // one" is not.
 func (u *ui) portConflict(local uint32) (string, bool) {
-	e, ok := u.forwards.byLocalPort(local)
+	e, ok := u.forwards.ByLocalPort(local)
 	if !ok {
 		return "", false
 	}
-	what := orDash(e.cand.Service)
-	if e.cand.Service == "" {
-		what = shortID(e.cand.ContainerID)
+	what := orDash(e.Cand.Service)
+	if e.Cand.Service == "" {
+		what = shortID(e.Cand.ContainerID)
 	}
-	return fmt.Sprintf("port %d is already forwarded to %s on cluster %s", local, what, orDash(e.cluster)), true
+	return fmt.Sprintf("port %d is already forwarded to %s on cluster %s", local, what, orDash(e.Cluster)), true
 }
 
 // startForward brings a forward up off the UI goroutine: dialling the agent
@@ -62,24 +63,24 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 	// somewhere else.
 	fctx, fcancel := context.WithCancel(u.runCtx)
 	var once sync.Once
-	entry := forwards.addAt(u.activeCtx, address, c, local, remote, func() { once.Do(fcancel) })
+	entry := forwards.AddAt(u.activeCtx, address, c, local, remote, func() { once.Do(fcancel) })
 	u.refreshForwardViews()
 
 	go func() {
 		ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
-		fw, ferr := startForwarder(fctx, ac, ep, forwardParams{
-			address:        address,
-			localPort:      local,
-			remotePort:     remote,
-			connectTimeout: f.connectTimeout,
+		fw, ferr := portfwd.Start(fctx, ac, ep, portfwd.Params{
+			Address:        address,
+			LocalPort:      local,
+			RemotePort:     remote,
+			ConnectTimeout: f.connectTimeout,
 		})
 		if ferr != nil {
-			forwards.markFailed(entry.id, ferr)
+			forwards.MarkFailed(entry.ID, ferr)
 			app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 			return
 		}
 		addr := fw.LocalAddr().String()
-		// Kept as a local: reading entry.localAddr later would race with
+		// Kept as a local: reading entry.LocalAddr later would race with
 		// the registry's own writers.
 		boundPort := local
 		if _, ps, perr := net.SplitHostPort(addr); perr == nil {
@@ -87,11 +88,11 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 				boundPort = uint32(n)
 			}
 		}
-		forwards.markActive(entry.id, addr)
+		forwards.MarkActive(entry.ID, addr)
 		app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 
-		fw.setOnConnOK(func() {
-			if forwards.clearConnError(entry.id) {
+		fw.SetOnConnOK(func() {
+			if forwards.ClearConnError(entry.ID) {
 				app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 			}
 		})
@@ -103,7 +104,7 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 			// marker). Redrawing on every one would rebuild the whole
 			// container tree per rejected connection — a browser hammering
 			// a broken forward would turn that into a redraw storm.
-			if !forwards.noteConnError(entry.id, cerr) {
+			if !forwards.NoteConnError(entry.ID, cerr) {
 				return
 			}
 			app.QueueUpdateDraw(func() {
@@ -115,7 +116,7 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 		// A cancelled forward was stopped on purpose; anything else is a
 		// real failure the operator needs to see in the table.
 		if serr != nil && fctx.Err() == nil {
-			forwards.markFailed(entry.id, serr)
+			forwards.MarkFailed(entry.ID, serr)
 			app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 		}
 	}()
@@ -156,7 +157,7 @@ type forwardsTab struct {
 	u     *ui
 	table *tview.Table
 	// rows mirrors the rendered table so a row maps to a forward.
-	rows []forwardEntry
+	rows []portfwd.Entry
 }
 
 func newForwardsTab(u *ui) *forwardsTab {
@@ -196,14 +197,14 @@ func (t *forwardsTab) helpSection(h *helpWriter) {
 
 func (t *forwardsTab) yank(b *strings.Builder) {
 	fmt.Fprintln(b, "LOCAL\tREMOTE\tCONTAINER\tSERVICE\tNODE\tSTATE")
-	for _, e := range t.u.forwards.list() {
+	for _, e := range t.u.forwards.List() {
 		local := "-"
-		if e.boundPort() > 0 {
-			local = e.localEndpoint()
+		if e.BoundPort() > 0 {
+			local = e.LocalEndpoint()
 		}
 		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%s\n",
-			local, e.remote, shortID(e.cand.ContainerID),
-			orDash(e.cand.Service), orDash(e.cand.NodeName), e.state)
+			local, e.Remote, shortID(e.Cand.ContainerID),
+			orDash(e.Cand.Service), orDash(e.Cand.NodeName), e.State)
 	}
 }
 
@@ -212,19 +213,19 @@ func (t *forwardsTab) render() {
 	u, ftable := t.u, t.table
 	prev, _ := ftable.GetSelection()
 	tableHeaders(ftable, fHeaders)
-	t.rows = u.forwards.list()
+	t.rows = u.forwards.List()
 	for i, e := range t.rows {
 		row := i + 1
 		local := "-"
-		if e.boundPort() > 0 {
-			local = e.localEndpoint()
+		if e.BoundPort() > 0 {
+			local = e.LocalEndpoint()
 		}
-		state := e.state.String()
+		state := e.State.String()
 		color := tcell.ColorWhite
-		switch e.state {
-		case forwardActive:
+		switch e.State {
+		case portfwd.StateActive:
 			color = tcell.ColorGreen
-			if e.connErr != nil {
+			if e.ConnErr != nil {
 				// Listening, but connections are failing — the operator
 				// needs to see that, not a reassuring green "active". Kept
 				// to a marker because the column truncates; Enter shows the
@@ -232,38 +233,38 @@ func (t *forwardsTab) render() {
 				color = tcell.ColorYellow
 				state = "active ⚠"
 			}
-		case forwardStarting:
+		case portfwd.StateStarting:
 			color = tcell.ColorYellow
-		case forwardFailed:
+		case portfwd.StateFailed:
 			color = tcell.ColorRed
-			if e.err != nil {
+			if e.Err != nil {
 				// The reason matters more than the word "failed": it is the
 				// only place the operator can learn what went wrong.
-				state = "failed: " + e.err.Error()
+				state = "failed: " + e.Err.Error()
 			}
 		}
 		// Escaped: an IPv6 endpoint such as [::1]:8080 is otherwise read as
 		// a style tag and vanishes from the cell.
 		lcell := tview.NewTableCell(tview.Escape(local))
-		if !isLoopbackAddr(e.bindAddress()) {
+		if !portfwd.IsLoopback(e.BindAddress()) {
 			// Reachable from the network: worth a second look in a column
 			// that is otherwise always loopback.
 			lcell.SetTextColor(tcell.ColorYellow)
 		}
 		ftable.SetCell(row, 0, lcell)
-		ftable.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", e.remote)))
-		ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.cand.ContainerID)))
-		ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.cand.Service)))
-		ftable.SetCell(row, 4, tview.NewTableCell(orDash(e.cand.NodeName)))
+		ftable.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", e.Remote)))
+		ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.Cand.ContainerID)))
+		ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.Cand.Service)))
+		ftable.SetCell(row, 4, tview.NewTableCell(orDash(e.Cand.NodeName)))
 		// The cluster column is dimmed for the one you are looking at and plain
 		// for the others, so a glance answers "is any of this somewhere else?"
 		// without reading names.
-		ccell := tview.NewTableCell(orDash(e.cluster))
-		if e.cluster == u.activeCtx {
+		ccell := tview.NewTableCell(orDash(e.Cluster))
+		if e.Cluster == u.activeCtx {
 			ccell.SetTextColor(tcell.ColorGray)
 		}
 		ftable.SetCell(row, 5, ccell)
-		ftable.SetCell(row, 6, tview.NewTableCell(uptime(time.Since(e.started))))
+		ftable.SetCell(row, 6, tview.NewTableCell(uptime(time.Since(e.Started))))
 		ftable.SetCell(row, 7, tview.NewTableCell(state).SetTextColor(color))
 	}
 	if len(t.rows) == 0 {
@@ -282,7 +283,7 @@ func (t *forwardsTab) render() {
 }
 
 // selected maps the cursor row back to a forward.
-func (t *forwardsTab) selected() (forwardEntry, bool) {
+func (t *forwardsTab) selected() (portfwd.Entry, bool) {
 	return selectedRow(t.table, t.rows)
 }
 
@@ -295,7 +296,7 @@ func (t *forwardsTab) showDetail() {
 	}
 	// Re-read from the registry: the rendered row's connErr is only as
 	// fresh as the last redraw, and redraws are deliberately rare.
-	e, ok := forwards.get(row.id)
+	e, ok := forwards.Get(row.ID)
 	if !ok {
 		return
 	}
@@ -305,34 +306,34 @@ func (t *forwardsTab) showDetail() {
 	// error string can contain "[".
 	esc := tview.Escape
 	var b strings.Builder
-	fmt.Fprintf(&b, "local:      %s\n", esc(e.localEndpoint()))
-	if !isLoopbackAddr(e.bindAddress()) {
+	fmt.Fprintf(&b, "local:      %s\n", esc(e.LocalEndpoint()))
+	if !portfwd.IsLoopback(e.BindAddress()) {
 		b.WriteString("            [yellow]not loopback: reachable from your network[-]\n")
 	}
-	fmt.Fprintf(&b, "remote:     %d\n", e.remote)
-	fmt.Fprintf(&b, "container:  %s\n", esc(shortID(e.cand.ContainerID)))
-	fmt.Fprintf(&b, "service:    %s\n", esc(orDash(e.cand.Service)))
-	fmt.Fprintf(&b, "node:       %s\n", esc(orDash(e.cand.NodeName)))
-	fmt.Fprintf(&b, "state:      %s", esc(e.state.String()))
-	if e.err != nil {
-		fmt.Fprintf(&b, "\n\n[red]failed:[-] %s", esc(e.err.Error()))
+	fmt.Fprintf(&b, "remote:     %d\n", e.Remote)
+	fmt.Fprintf(&b, "container:  %s\n", esc(shortID(e.Cand.ContainerID)))
+	fmt.Fprintf(&b, "service:    %s\n", esc(orDash(e.Cand.Service)))
+	fmt.Fprintf(&b, "node:       %s\n", esc(orDash(e.Cand.NodeName)))
+	fmt.Fprintf(&b, "state:      %s", esc(e.State.String()))
+	if e.Err != nil {
+		fmt.Fprintf(&b, "\n\n[red]failed:[-] %s", esc(e.Err.Error()))
 	}
-	if e.connErr != nil {
-		fmt.Fprintf(&b, "\n\n[yellow]last connection failed:[-]\n%s", esc(e.connErr.Error()))
+	if e.ConnErr != nil {
+		fmt.Fprintf(&b, "\n\n[yellow]last connection failed:[-]\n%s", esc(e.ConnErr.Error()))
 	}
 	b.WriteString("\n\n[gray]Esc[-] back   " + keyTag(dangerKey(keyLabel(u.km.FwdStop))) + " stop")
 
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
-	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
+	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.ID))
 	ov := u.overlayFor(pageFwdDetail, ftable, "")
 	closeDetail := ov.Close
 	cases := u.forwardDetailCases(closeDetail, func() {
 		// Stop straight from the detail view — the operator is already
 		// looking at what they are about to kill. Same key as the table.
-		forwards.remove(e.id)
+		forwards.Remove(e.ID)
 		closeDetail()
 		u.refreshForwardViews()
-		u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+		u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.Cand.ContainerID), e.Remote))
 	})
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyEnter {
@@ -374,17 +375,17 @@ func (t *forwardsTab) keys(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case km.FwdStop:
 			if e, ok := t.selected(); ok {
-				forwards.remove(e.id)
+				forwards.Remove(e.ID)
 				u.refreshForwardViews()
-				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.Cand.ContainerID), e.Remote))
 			}
 			return nil
 		case km.FwdCopyURL:
 			// Copy rather than launch a browser: the UI often runs over
 			// ssh, where opening a local browser would target the wrong
 			// machine — and the forward is bound on the operator's side.
-			if e, ok := t.selected(); ok && e.state == forwardActive {
-				url := e.url()
+			if e, ok := t.selected(); ok && e.State == portfwd.StateActive {
+				url := e.URL()
 				if screen != nil {
 					screen.SetClipboard([]byte(url))
 				}

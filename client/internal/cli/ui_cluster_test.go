@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 )
 
@@ -23,7 +24,7 @@ func treeUI(cluster string, svcs []resolve.Service, cands []resolve.Candidate) *
 	u := &ui{
 		clusterState: newClusterState(cluster, cluster),
 		clusters:     map[string]*clusterState{},
-		forwards:     newForwardRegistry(),
+		forwards:     portfwd.NewRegistry(),
 		activeCtx:    cluster,
 	}
 	u.clusters[cluster] = u.clusterState
@@ -209,17 +210,17 @@ func TestGenerationMovesOnSwitch(t *testing.T) {
 // A forward outlives a switch now, so the tree annotation has to ask about a
 // cluster as well as a container: ids are only unique within one daemon.
 func TestForwardsAnnotateOnlyTheirOwnCluster(t *testing.T) {
-	r := newForwardRegistry()
-	r.add("prod", cand("abc123", "api", "n1"), 9090, 8080, func() {})
-	r.add("staging", cand("abc123", "api", "n1"), 9091, 8080, func() {})
+	r := portfwd.NewRegistry()
+	r.Add("prod", cand("abc123", "api", "n1"), 9090, 8080, func() {})
+	r.Add("staging", cand("abc123", "api", "n1"), 9091, 8080, func() {})
 
-	if got := r.forContainer("prod", "abc123"); len(got) != 1 || got[0].local != 9090 {
+	if got := r.ForContainer("prod", "abc123"); len(got) != 1 || got[0].Local != 9090 {
 		t.Errorf("prod should see only its own forward, got %+v", got)
 	}
-	if got := r.forContainer("staging", "abc123"); len(got) != 1 || got[0].local != 9091 {
+	if got := r.ForContainer("staging", "abc123"); len(got) != 1 || got[0].Local != 9091 {
 		t.Errorf("staging should see only its own forward, got %+v", got)
 	}
-	if got := r.forContainer("other", "abc123"); len(got) != 0 {
+	if got := r.ForContainer("other", "abc123"); len(got) != 0 {
 		t.Errorf("a third cluster sharing the container id must see nothing, got %+v", got)
 	}
 }
