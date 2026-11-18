@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/swarmops"
 
 	"github.com/gdamore/tcell/v2"
@@ -21,7 +22,7 @@ func TestEveryEmptyTabSaysWhatWouldFillIt(t *testing.T) {
 		clusterState: newClusterState("test", "test"),
 		clusters:     map[string]*clusterState{},
 		cxtable:      newStateTable(),
-		forwards:     newForwardRegistry(),
+		forwards:     portfwd.NewRegistry(),
 	}
 
 	cases := []struct {
@@ -67,7 +68,7 @@ func TestEmptyStateHintsFollowTheKeymap(t *testing.T) {
 		km:           defaultKeybinds(),
 		clusterState: newClusterState("test", "test"),
 		clusters:     map[string]*clusterState{},
-		forwards:     newForwardRegistry(),
+		forwards:     portfwd.NewRegistry(),
 	}
 	u.km.Forward = 'F'
 	u.fwdTab().render()

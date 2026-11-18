@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/internal/pb"
 )
 
@@ -31,7 +32,7 @@ func covChromeUI(t *testing.T) *ui {
 	u := runningUI(t)
 	onLoop(t, u, func() {
 		u.km = defaultKeybinds()
-		u.forwards = newForwardRegistry()
+		u.forwards = portfwd.NewRegistry()
 		u.status = tview.NewTextView()
 		u.search = tview.NewInputField()
 		u.root = tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.search, 0, 0, false)

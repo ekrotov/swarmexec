@@ -18,27 +18,11 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
 	pb "swarmexec/internal/pb"
 )
-
-// defaultForwardAddress is where a forward listens unless the operator says
-// otherwise: loopback, so an internal port is not re-exposed to the network the
-// operator's machine sits on. The CLI's --address defaults to the same.
-const defaultForwardAddress = "127.0.0.1"
-
-// isLoopbackAddr reports whether a local bind address keeps the forward on this
-// machine: 127.0.0.0/8, ::1 or the name localhost. Empty counts as loopback,
-// because empty means the default.
-func isLoopbackAddr(addr string) bool {
-	addr = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(addr), "["), "]")
-	if addr == "" || strings.EqualFold(addr, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(addr)
-	return ip != nil && ip.IsLoopback()
-}
 
 // normalizeForwardAddress trims an address typed into the form, drops the
 // brackets an IPv6 literal is often written with, and fills in the default.
@@ -50,7 +34,7 @@ func normalizeForwardAddress(addr string) (string, error) {
 		addr = addr[1 : len(addr)-1]
 	}
 	if addr == "" {
-		return defaultForwardAddress, nil
+		return portfwd.DefaultAddress, nil
 	}
 	if net.ParseIP(addr) != nil {
 		return addr, nil
@@ -61,22 +45,6 @@ func normalizeForwardAddress(addr string) (string, error) {
 		}
 	}
 	return addr, nil
-}
-
-// browseHost is the host to put in a URL for a forward bound to addr. An
-// unspecified bind address listens everywhere but is not something to connect
-// to, so the URL goes through loopback, which it also listens on.
-func browseHost(addr string) string {
-	if addr == "" {
-		return defaultForwardAddress
-	}
-	if ip := net.ParseIP(addr); ip != nil && ip.IsUnspecified() {
-		if ip.To4() != nil {
-			return "127.0.0.1"
-		}
-		return "::1"
-	}
-	return addr
 }
 
 // mergePorts folds port lists from several sources into one ascending list
@@ -427,7 +395,7 @@ func newFwdDialog(c resolve.Candidate) *fwdDialog {
 	d.lport.SetAcceptanceFunc(tview.InputFieldInteger).
 		SetPlaceholder("= container").SetPlaceholderTextColor(palette.textFade)
 	d.addr = newFwdField("Address", 28)
-	d.addr.SetText(defaultForwardAddress)
+	d.addr.SetText(portfwd.DefaultAddress)
 
 	// Item padding 1 is tview.Form's own default: a blank row between fields.
 	// Draw takes it back to 0 on a short terminal.
@@ -584,7 +552,7 @@ func (e *forwardForm) render() {
 	default:
 		fmt.Fprintf(&b, "[%s]exposed[-] %s  [%s]↓ to pick[-]", dim, formatPorts(e.suggested), dim)
 	}
-	if !isLoopbackAddr(e.d.addr.GetText()) {
+	if !portfwd.IsLoopback(e.d.addr.GetText()) {
 		b.WriteString("\n[yellow]⚠ reachable from your network[-]")
 	}
 	if e.errMsg != "" {

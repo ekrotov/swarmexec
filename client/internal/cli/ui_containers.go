@@ -531,7 +531,7 @@ func (t *treeTab) addService(st *treeState, parent *tview.TreeNode, row shownSer
 		cur.service = svcNode
 	}
 	for _, c := range row.cands {
-		label := annotateForwards(leaves.label(c), t.u.forwards.forContainer(t.u.activeCtx, c.ContainerID))
+		label := annotateForwards(leaves.label(c), t.u.forwards.ForContainer(t.u.activeCtx, c.ContainerID))
 		// Keep the badge-free label: re-marking a row when new readings land
 		// then just re-appends, instead of trying to cut the old marker back
 		// off a string that also carries the forward and update markers.

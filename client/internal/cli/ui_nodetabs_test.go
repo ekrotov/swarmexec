@@ -107,8 +107,8 @@ func TestForwardsTabStopKey(t *testing.T) {
 	u := tabsUI()
 	stopped := map[string]bool{}
 	for _, name := range []string{"api", "web"} {
-		e := u.forwards.addAt("other-cluster", "127.0.0.1", resolve.Candidate{Service: name, ContainerID: "c-" + name, NodeName: "n1"}, 0, 80, func() { stopped[name] = true })
-		u.forwards.markActive(e.id, "127.0.0.1:8080")
+		e := u.forwards.AddAt("other-cluster", "127.0.0.1", resolve.Candidate{Service: name, ContainerID: "c-" + name, NodeName: "n1"}, 0, 80, func() { stopped[name] = true })
+		u.forwards.MarkActive(e.ID, "127.0.0.1:8080")
 	}
 	ft := u.fwdTab()
 	ft.render()

@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 )
@@ -24,7 +25,7 @@ func tabsUI() *ui {
 	u.clusters = map[string]*clusterState{"a": u.clusterState}
 	u.cxtable = newStateTable()
 	u.status = tview.NewTextView()
-	u.forwards = newForwardRegistry()
+	u.forwards = portfwd.NewRegistry()
 	u.tab("containers") // builds the registry, and with it the tree u.ctree names
 	return u
 }
