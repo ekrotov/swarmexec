@@ -63,6 +63,21 @@ strict `FILE` rules: a removed or renumbered field fails the pipeline, as
 CONTRACT.md §7 asks. The lint exceptions in `buf.yaml` are wire names that
 cannot change without breaking deployed agents.
 
+### Test hygiene
+
+- **Fuzz targets** (`FuzzXxx`, next to the parser they exercise) cover what
+  reads untrusted input: log formats, forward frames, policy files, prune
+  schedule labels, the env editor text, port specs, service-edit strings, stack
+  files and target resolution. They are seeded, so plain `go test` replays them
+  in milliseconds; `make fuzz` explores for `FUZZTIME` each. An input that breaks
+  one lands in the package's `testdata/fuzz/`: fix the code and commit the file.
+- **Goroutine leaks:** packages that start goroutines call
+  `leakcheck.Main(m)` from `TestMain` (`internal/leakcheck`), which fails the run
+  if one outlives the tests. Add it to a new package of that kind.
+- **Global state** a test replaces (the client logger, a stubbed function) is put
+  back with `t.Cleanup` (`clientlog.Save()` for the logger), and CI runs the
+  suites with `-shuffle=on`, so an order dependence fails there.
+
 ### Testing the client against the real agent (`agenttest`)
 
 `client/` and `agent/` do not import each other, and Go's `internal` rule keeps
