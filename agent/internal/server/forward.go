@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"swarmexec/agent/internal/safego"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -133,12 +134,14 @@ func (s *Server) runForward(stream pb.Agent_PortForwardServer, sf *pb.StartForwa
 
 	// Closing the channel unblocks the reader when the client disconnects.
 	go func() {
+		defer safego.Recover(s.log, "forward closer", cancel)
 		<-ctx.Done()
 		ch.Close()
 	}()
 
 	// Client -> target.
 	go func() {
+		defer safego.Recover(s.log, "forward input pump", cancel)
 		for {
 			msg, rerr := stream.Recv()
 			if rerr != nil {
@@ -283,6 +286,7 @@ func (c *sidecarChannel) startDemux() {
 
 	ctrl := &sidecarControl{log: c.log, id: c.id, ready: c.ready}
 	go func() {
+		defer safego.Recover(c.log, "sidecar output copy", func() { ctrl.fail(errors.New("forward sidecar reader panicked")) })
 		_, err := stdcopy.StdCopy(pw, ctrl, c.attach.Reader)
 		if err == nil {
 			err = io.EOF

@@ -18,8 +18,9 @@ import (
 // forward open on the node. The recovery interceptors turn a handler panic into
 // codes.Internal for that one RPC and an error log with the stack.
 //
-// They only see the handler's own goroutine. A panic in a goroutine a handler
-// starts (exec's copy loops, for one) still ends the process.
+// They only see the handler's own goroutine. The goroutines a handler or a
+// background loop starts are covered by internal/safego instead: a panic in one
+// of those would otherwise still end the process.
 
 // RecoveryUnaryInterceptor recovers a panicking unary handler.
 func RecoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {

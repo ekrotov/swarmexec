@@ -38,9 +38,10 @@ func (f *fakeDocker) ContainerInspect(_ context.Context, id string, _ client.Con
 // fakePrune records the calls the scheduler makes and answers with one result
 // per category.
 type fakePrune struct {
-	mu    sync.Mutex
-	calls []pruneCall
-	fail  map[pb.PruneCategory]string
+	deadline time.Duration // time left on the context of the last call, 0 if none
+	mu       sync.Mutex
+	calls    []pruneCall
+	fail     map[pb.PruneCategory]string
 }
 
 type pruneCall struct {
@@ -50,10 +51,13 @@ type pruneCall struct {
 	labels            []string
 }
 
-func (f *fakePrune) prune(_ context.Context, identity, trigger string, cats []pb.PruneCategory, until time.Duration, labels []string) []*pb.PruneCategoryResult {
+func (f *fakePrune) prune(ctx context.Context, identity, trigger string, cats []pb.PruneCategory, until time.Duration, labels []string) []*pb.PruneCategoryResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, pruneCall{identity, trigger, cats, until, labels})
+	if dl, ok := ctx.Deadline(); ok {
+		f.deadline = time.Until(dl)
+	}
 	var out []*pb.PruneCategoryResult
 	for _, c := range cats {
 		out = append(out, &pb.PruneCategoryResult{Category: c, FreedBytes: 10, Error: f.fail[c]})
@@ -194,4 +198,18 @@ func waitLoaded(t *testing.T, s *Scheduler) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("the schedule was never loaded")
+}
+
+// A scheduled prune holds the prune lock the manual one waits on, so it must
+// not be able to run for ever when the daemon stops answering.
+func TestRunOnceBoundsThePrune(t *testing.T) {
+	s, p, _ := newTestScheduler(&fakeDocker{})
+	s.Load(map[string]string{prunesched.LabelEnabled: "true", prunesched.LabelCategories: "networks"})
+	sched, _, _ := s.Schedule()
+	s.RunOnce(context.Background(), sched)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.deadline <= 0 || p.deadline > scheduledPruneTimeout {
+		t.Errorf("prune context had %v left, want a deadline within %v", p.deadline, scheduledPruneTimeout)
+	}
 }

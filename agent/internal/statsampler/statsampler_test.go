@@ -363,3 +363,29 @@ func TestSamplerRunSamplesWhileWanted(t *testing.T) {
 		t.Fatal("Run did not return after cancel")
 	}
 }
+
+// The limits inspect is bounded like the stats read: a daemon that stops
+// answering inspects must not hold the sampler's workers forever.
+func TestStatsCacheInspectHasDeadline(t *testing.T) {
+	d := statsFake(512<<20, 0)
+	c := New(d, discardLog(), time.Hour)
+	c.refresh(context.Background())
+	if d.inspectCalls() == 0 {
+		t.Fatal("no inspect happened; the test proves nothing")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.inspectNoDeadline != 0 {
+		t.Errorf("%d inspects ran without a deadline", d.inspectNoDeadline)
+	}
+}
+
+// A panic in a worker goroutine ends the whole process unless the worker
+// recovers: this test binary dying is the failure.
+func TestStatsWorkerPanicIsRecovered(t *testing.T) {
+	d := statsFake(0, 0)
+	d.statsPanic = true
+	c := New(d, discardLog(), time.Hour)
+	c.refresh(context.Background())
+	c.refresh(context.Background())
+}

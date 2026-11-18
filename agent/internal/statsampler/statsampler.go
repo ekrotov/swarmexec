@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"swarmexec/agent/internal/safego"
 	"sync"
 	"time"
 
@@ -157,7 +158,11 @@ func (c *Sampler) limitsFor(ctx context.Context, id string) containerLimits {
 	if ok {
 		return lim
 	}
-	res, err := c.docker.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	// Bounded like the stats read: eight wedged inspects would hold every worker
+	// of the pass, and with it the sampler.
+	ictx, cancel := context.WithTimeout(ctx, statsSampleTimeout)
+	defer cancel()
+	res, err := c.docker.ContainerInspect(ictx, id, client.ContainerInspectOptions{})
 	insp := res.Container
 	if err != nil || insp.HostConfig == nil {
 		// Cache the zero value anyway: a container we cannot inspect should not be
@@ -263,6 +268,7 @@ func (c *Sampler) refresh(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer safego.Recover(c.log, "stats worker")
 			s, ok := c.sample(ctx, id)
 			if !ok {
 				return
