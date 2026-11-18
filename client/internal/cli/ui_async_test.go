@@ -81,6 +81,7 @@ func switchAway(t *testing.T, u *ui, cancel bool) {
 // test can wait for a record the code under test writes off its own goroutine.
 func captureLog(t *testing.T) *clientlog.Ring {
 	t.Helper()
+	t.Cleanup(clientlog.Save())
 	r, err := clientlog.Init("debug", "")
 	if err != nil {
 		t.Fatal(err)

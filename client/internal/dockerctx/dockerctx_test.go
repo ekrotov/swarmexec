@@ -187,6 +187,7 @@ func TestResolveName_MatchesResolveHost(t *testing.T) {
 // A corrupt meta.json still drops that context from the list (as docker does),
 // but leaves a warning in the client log instead of vanishing silently.
 func TestList_CorruptMetaIsWarned(t *testing.T) {
+	t.Cleanup(clientlog.Save())
 	ring, err := clientlog.Init("warn", "")
 	if err != nil {
 		t.Fatal(err)
