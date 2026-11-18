@@ -2085,10 +2085,7 @@ func (u *ui) openLogView() {
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	tv.SetBorder(true).SetTitle(" logs — newest at bottom ")
 	wrap := true
-	refresh := func() {
-		tv.SetText(clientLogText())
-		tv.ScrollToEnd()
-	}
+	refresh := logViewRefresher(tv, clientLogText)
 	refresh()
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == u.km.Quit)) {
@@ -2133,6 +2130,36 @@ func clientLogText() string {
 		}
 	}
 	return b.String()
+}
+
+// logViewRefresher returns the function that brings the client log view up to
+// date. It used to set the whole ring and jump to the end on every tick, which
+// threw away wherever the operator had scrolled to read an older line — the
+// scrolling the footer advertises was undone 700 ms later. Now it follows the
+// end only while the view is at the end, keeps the position otherwise, and
+// does nothing when the text has not changed. UI goroutine only.
+func logViewRefresher(tv *tview.TextView, text func() string) func() {
+	var last string
+	first := true
+	return func() {
+		next := text()
+		if !first && next == last {
+			return
+		}
+		follow := first
+		row, col := tv.GetScrollOffset()
+		if !first {
+			_, _, _, h := tv.GetInnerRect()
+			follow = row+h >= tv.GetWrappedLineCount()
+		}
+		first, last = false, next
+		tv.SetText(next)
+		if follow {
+			tv.ScrollToEnd()
+		} else {
+			tv.ScrollTo(row, col)
+		}
+	}
 }
 
 // refreshLogViewEvery repaints the client log view on a ticker until ctx is
