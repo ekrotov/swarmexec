@@ -344,7 +344,7 @@ func (s *Server) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service
 	}
 	if cs != nil {
 		out.Image = cs.Image
-		out.Command, out.Args = cs.Command, cs.Args
+		out.Command, out.Args = mcpaccess.MaskArgs(cs.Command), mcpaccess.MaskArgs(cs.Args)
 		out.User, out.Workdir = cs.User, cs.Dir
 		out.ContainerLabels = mcpaccess.Strip(cs.Labels)
 		out.Env = mcpaccess.MaskEnv(cs.Env)
@@ -1094,8 +1094,9 @@ func (s *Server) toolReport(ctx context.Context, in mcpCtxIn) (string, error) {
 		return "", err
 	}
 	scans := make([]secscan.ServiceScan, 0, len(v.services))
+	hostNets := swarmops.HostNetworks(ctx, c.dcli)
 	for _, ms := range v.services {
-		scans = append(scans, secscan.ServiceScan{Name: ms.svc.Spec.Name, Findings: secscan.Scan(ms.svc)})
+		scans = append(scans, secscan.ServiceScan{Name: ms.svc.Spec.Name, Findings: secscan.ScanWithHostNetworks(ms.svc, hostNets)})
 	}
 	cluster, err := swarmops.GatherCluster(ctx, c.dcli)
 	if err != nil {
@@ -1216,13 +1217,19 @@ var errDockerSocket = errors.New("not permitted: exec is never available for a s
 // execRefusal is the docker-socket gate, apart from the access check so it can
 // be tested on its own: whatever the labels grant, a service that can talk to
 // the daemon could relabel any service, and exec into it would hand that over.
-func execRefusal(svc swarm.Service) error {
-	if mcpaccess.ExposesDockerSocket(svc.Spec) {
-		return errDockerSocket
-	}
-	// A rolling update can leave tasks of the previous spec running.
-	if svc.PreviousSpec != nil && mcpaccess.ExposesDockerSocket(*svc.PreviousSpec) {
-		return errDockerSocket
+//
+// Besides mounts it refuses the other ways to the daemon: a DOCKER_HOST in the
+// environment, and a network shared with a Docker socket proxy (proxyNets,
+// from mcpaccess.SocketProxyNetworks over every service, hidden ones included).
+func execRefusal(svc swarm.Service, proxyNets map[string]bool) error {
+	for _, spec := range []*swarm.ServiceSpec{&svc.Spec, svc.PreviousSpec} {
+		// A rolling update can leave tasks of the previous spec running.
+		if spec == nil {
+			continue
+		}
+		if mcpaccess.ExposesDockerSocket(*spec) || mcpaccess.ReachesDockerAPI(*spec) || mcpaccess.SharesNetwork(*spec, proxyNets) {
+			return errDockerSocket
+		}
 	}
 	// The agent itself, should its mounts ever be spelled in a way the check
 	// above does not know.
@@ -1287,7 +1294,7 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 	if !ms.access.Exec {
 		return "", errNotPermitted
 	}
-	if err := execRefusal(ms.svc); err != nil {
+	if err := execRefusal(ms.svc, v.proxyNets); err != nil {
 		return "", err
 	}
 	if err := checkExecCommand(in.Command); err != nil {

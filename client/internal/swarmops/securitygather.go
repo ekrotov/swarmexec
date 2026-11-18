@@ -28,6 +28,7 @@ import (
 // listServicesForScan runs the per-service analyzers over every service in the
 // cluster.
 func listServicesForScan(ctx context.Context, dcli swarmapi.Client) ([]secscan.ServiceScan, error) {
+	hostNets := HostNetworks(ctx, dcli)
 	svcsRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -37,10 +38,29 @@ func listServicesForScan(ctx context.Context, dcli swarmapi.Client) ([]secscan.S
 	for _, s := range svcs {
 		out = append(out, secscan.ServiceScan{
 			Name:     s.Spec.Name,
-			Findings: secscan.Scan(s),
+			Findings: secscan.ScanWithHostNetworks(s, hostNets),
 		})
 	}
 	return out, nil
+}
+
+// HostNetworks returns the ids and names of the cluster's host-driver
+// networks, which is how a deployed service may reference the host network
+// (the manager can swap the literal "host" for the id). Best effort: on a list
+// error it returns nil and the scan falls back to the literal.
+func HostNetworks(ctx context.Context, dcli swarmapi.Client) map[string]bool {
+	res, err := dcli.NetworkList(ctx, client.NetworkListOptions{})
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, n := range res.Items {
+		if n.Driver == "host" {
+			out[n.ID] = true
+			out[n.Name] = true
+		}
+	}
+	return out
 }
 
 // GatherCluster collects the cluster-level objects.

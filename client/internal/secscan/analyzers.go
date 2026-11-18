@@ -293,9 +293,18 @@ func (capabilityAnalyzer) Analyze(svc swarm.Service) []Finding {
 // published-port mapping no longer apply.
 type hostNetworkAnalyzer struct{}
 
-func (hostNetworkAnalyzer) Analyze(svc swarm.Service) []Finding {
+func (a hostNetworkAnalyzer) Analyze(svc swarm.Service) []Finding {
+	return a.AnalyzeWith(svc, nil)
+}
+
+// AnalyzeWith is Analyze plus the ids and names of the cluster's host-driver
+// networks. The manager can store the attachment by network id instead of the
+// literal "host", so a deployed service is only recognised when the caller
+// says which networks are the host network.
+func (hostNetworkAnalyzer) AnalyzeWith(svc swarm.Service, hostNets map[string]bool) []Finding {
 	for _, n := range svc.Spec.TaskTemplate.Networks {
-		if strings.EqualFold(strings.TrimSpace(n.Target), "host") {
+		t := strings.TrimSpace(n.Target)
+		if strings.EqualFold(t, "host") || hostNets[t] {
 			return []Finding{{
 				Rule:     "host-network",
 				Title:    "runs on the host network",

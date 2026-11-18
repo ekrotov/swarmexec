@@ -401,13 +401,13 @@ func TestMCPExecRefusesDockerSocket(t *testing.T) {
 		}()},
 	}
 	for name, svc := range cases {
-		if err := execRefusal(svc); err == nil {
+		if err := execRefusal(svc, nil); err == nil {
 			t.Errorf("%s: exec allowed", name)
 		} else if strings.Contains(err.Error(), "swarmexec.mcp") {
 			t.Errorf("%s: refusal names a label: %v", name, err)
 		}
 	}
-	if err := execRefusal(swarm.Service{Spec: bind("/srv/data")}); err != nil {
+	if err := execRefusal(swarm.Service{Spec: bind("/srv/data")}, nil); err != nil {
 		t.Errorf("an ordinary bind was refused: %v", err)
 	}
 }
