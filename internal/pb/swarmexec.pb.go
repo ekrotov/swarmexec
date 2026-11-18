@@ -1161,8 +1161,11 @@ type RemoveVolumeRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Name  string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Force bool   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"` // remove even with the "force" flag (does not override in-use)
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Passed to the Engine's volume remove: a volume that is already gone is not
+	// an error, and one its driver fails to remove is dropped anyway. It does
+	// NOT override in-use — a volume a container still references is refused.
+	Force bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
 }
 
 func (x *RemoveVolumeRequest) Reset() {
