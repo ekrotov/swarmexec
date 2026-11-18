@@ -310,14 +310,20 @@ func (v *logViewer) flush() {
 
 // addNote appends a dim status line (e.g. a reconnect notice). It is always
 // shown regardless of the active filter and survives a re-render.
-func (v *logViewer) addNote(text string) {
-	v.addNoteTone(text, toneNeutral)
-}
+func (v *logViewer) addNote(text string) { v.addNoteRow(logRow{note: true, line: text}) }
 
 // addNoteTone is addNote for a line whose severity should show.
 func (v *logViewer) addNoteTone(text string, tone noteTone) {
+	v.addNoteRow(logRow{note: true, line: text, tone: tone})
+}
+
+// addError is a note for a stream that failed. It goes through the row buffer
+// like any other line: written straight to the TextView it vanished at the next
+// rebuild (a format, level or filter key re-renders from the buffer).
+func (v *logViewer) addError(text string) { v.addNoteTone(text, toneBad) }
+
+func (v *logViewer) addNoteRow(row logRow) {
 	v.mu.Lock()
-	row := logRow{note: true, line: text, tone: tone}
 	v.rows = append(v.rows, row)
 	if len(v.rows) > logBufferCap {
 		v.rows = v.rows[len(v.rows)-logBufferCap:]
@@ -446,6 +452,12 @@ type logIngest struct {
 	buf []byte
 }
 
+// maxPartialLine bounds the text held back while waiting for a newline. A
+// container that writes megabytes without one (a progress bar, binary output)
+// would otherwise grow the buffer without limit; past this the text is shown as
+// a line of its own.
+const maxPartialLine = 64 << 10
+
 func (w *logIngest) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	w.buf = append(w.buf, p...)
@@ -457,6 +469,10 @@ func (w *logIngest) Write(p []byte) (int, error) {
 		}
 		lines = append(lines, string(w.buf[:i]))
 		w.buf = w.buf[i+1:]
+	}
+	if len(w.buf) > maxPartialLine {
+		lines = append(lines, string(w.buf))
+		w.buf = nil
 	}
 	w.mu.Unlock()
 	w.v.addLines(w.prefix, lines, w.stderr)

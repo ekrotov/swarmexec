@@ -90,6 +90,11 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 		forwards.markActive(entry.id, addr)
 		app.QueueUpdateDraw(func() { u.refreshForwardViews() })
 
+		fw.setOnConnOK(func() {
+			if forwards.clearConnError(entry.id) {
+				app.QueueUpdateDraw(func() { u.refreshForwardViews() })
+			}
+		})
 		serr := fw.Serve(fctx, func(cerr error) {
 			// Announce the first failure only: against an outdated agent
 			// every connection fails, and flashing each one would hide the
