@@ -66,7 +66,7 @@ var lifecycleEvents = map[string]bool{
 // ctx ends. wake, when non-nil, is nudged on lifecycle events; it must be
 // buffered, and a full buffer is simply skipped — one pending wake-up is as
 // good as five.
-func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) {
+func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string, noteTone), wake chan<- struct{}) {
 	backoff := eventRetryMin
 	reported := false
 	for ctx.Err() == nil {
@@ -80,10 +80,10 @@ func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.
 			// output the operator actually came for.
 			reported = true
 			if agentTooOld(err) {
-				note("container events unavailable — the agent on " + orDash(ep.NodeName) +
-					" predates this feature (swarmexec init --force)")
+				note("container events unavailable — the agent on "+orDash(ep.NodeName)+
+					" predates this feature (swarmexec init --force)", toneNeutral)
 			} else {
-				note("container events unavailable: " + err.Error())
+				note("container events unavailable: "+err.Error(), toneNeutral)
 			}
 		}
 		select {
@@ -97,10 +97,10 @@ func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.
 	}
 }
 
-func streamContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string), wake chan<- struct{}) error {
+func streamContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, connectTimeout time.Duration, note func(string, noteTone), wake chan<- struct{}) error {
 	return ac.ContainerEvents(ctx, ep, connectTimeout, func(ev *pb.ContainerEvent) {
-		if line := describeContainerEvent(ev); line != "" {
-			note(line)
+		if line, tone := describeContainerEventTone(ev); line != "" {
+			note(line, tone)
 		}
 		if wake != nil && lifecycleEvents[ev.GetAction()] {
 			select {
@@ -111,51 +111,70 @@ func streamContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve
 	})
 }
 
+// noteTone is how strongly a note reads. The text carries the meaning; the
+// tone only colours it, and the log view owns the colours so a note never
+// ships markup of its own (review KOR-07).
+type noteTone int
+
+const (
+	toneNeutral noteTone = iota
+	toneGood
+	toneWarn
+	toneBad
+)
+
 // describeContainerEvent renders one event as a log-view note, or "" for the
 // ones not worth a line.
 func describeContainerEvent(ev *pb.ContainerEvent) string {
+	line, _ := describeContainerEventTone(ev)
+	return line
+}
+
+// describeContainerEventTone is describeContainerEvent with the tone the log
+// view paints the line in.
+func describeContainerEventTone(ev *pb.ContainerEvent) (string, noteTone) {
 	action := ev.GetAction()
 
 	// Health transitions carry the verdict in the action itself.
 	if h := ev.GetHealth(); h != "" {
 		switch h {
 		case "healthy":
-			return "● healthcheck passing"
+			return "● healthcheck passing", toneGood
 		case "unhealthy":
 			// The one an operator most needs beside the output: the container
 			// is running, says nothing, and the manager still calls it healthy.
-			return "● healthcheck FAILING"
+			return "● healthcheck FAILING", toneBad
 		case "starting":
-			return "● healthcheck starting"
+			return "● healthcheck starting", toneNeutral
 		default:
-			return "● healthcheck: " + h
+			return "● healthcheck: " + h, toneNeutral
 		}
 	}
 
 	if !interestingEvents[action] {
-		return ""
+		return "", toneNeutral
 	}
 	switch action {
 	case "oom":
 		// Named explicitly because the usual evidence is a bare exit 137 and a
 		// silent log, which reads like a crash of the program rather than the
 		// kernel taking it away.
-		return "✖ killed: out of memory"
+		return "✖ killed: out of memory", toneBad
 	case "die":
 		if code := ev.GetExitCode(); code != 0 {
-			return fmt.Sprintf("✖ exited with code %d", code)
+			return fmt.Sprintf("✖ exited with code %d", code), toneBad
 		}
-		return "✖ exited (code 0)"
+		return "✖ exited (code 0)", toneWarn
 	case "kill":
-		return "✖ killed"
+		return "✖ killed", toneWarn
 	case "start":
-		return "▶ started"
+		return "▶ started", toneGood
 	case "restart":
-		return "↻ restarted"
+		return "↻ restarted", toneWarn
 	case "stop":
-		return "■ stopped"
+		return "■ stopped", toneWarn
 	case "pause", "unpause":
-		return strings.ToUpper(action[:1]) + action[1:] + "d"
+		return strings.ToUpper(action[:1]) + action[1:] + "d", toneNeutral
 	}
-	return ""
+	return "", toneNeutral
 }

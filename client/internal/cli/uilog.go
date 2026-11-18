@@ -60,7 +60,8 @@ type logRow struct {
 	prefix string // service view tag, e.g. "[slot 2] "; "" for a single container
 	line   string // raw log line, or the note text when note is set
 	stderr bool
-	note   bool // a status line (e.g. a reconnect notice): always shown, never parsed
+	note   bool     // a status line (e.g. a reconnect notice): always shown, never parsed
+	tone   noteTone // how a note reads; the view owns the colour, the note never carries markup
 
 	// Parsing and rendering a line is expensive — a rebuild of a full ring cost
 	// ~230ms on the MAIN event loop, which is what made a format or filter key
@@ -310,8 +311,13 @@ func (v *logViewer) flush() {
 // addNote appends a dim status line (e.g. a reconnect notice). It is always
 // shown regardless of the active filter and survives a re-render.
 func (v *logViewer) addNote(text string) {
+	v.addNoteTone(text, toneNeutral)
+}
+
+// addNoteTone is addNote for a line whose severity should show.
+func (v *logViewer) addNoteTone(text string, tone noteTone) {
 	v.mu.Lock()
-	row := logRow{note: true, line: text}
+	row := logRow{note: true, line: text, tone: tone}
 	v.rows = append(v.rows, row)
 	if len(v.rows) > logBufferCap {
 		v.rows = v.rows[len(v.rows)-logBufferCap:]
@@ -460,12 +466,26 @@ func (w *logIngest) Write(p []byte) (int, error) {
 // renderLogRow produces the tview-coloured display line for a row under the
 // given format. Structured formats show "LEVEL  message"; plain formats keep
 // the raw line (stderr red, else tinted by level when one was detected).
+// noteColor is the tview colour a note's tone renders in. Notes are escaped,
+// so this is the only place a note gets markup.
+func noteColor(t noteTone) string {
+	switch t {
+	case toneGood:
+		return "[green]"
+	case toneWarn:
+		return "[yellow]"
+	case toneBad:
+		return "[red]"
+	}
+	return "[gray]"
+}
+
 // e is the already-parsed entry; renderLogRow does not parse again. It used to,
 // which meant every line was parsed TWICE on every pass — once for the filter
 // and once here.
 func renderLogRow(f logfmt.Format, r logRow, e logfmt.Entry) string {
 	if r.note {
-		return "[gray]" + tview.Escape(r.line) + "[-]"
+		return noteColor(r.tone) + tview.Escape(r.line) + "[-]"
 	}
 	prefix := ""
 	if r.prefix != "" {

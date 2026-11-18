@@ -37,3 +37,32 @@ func TestDescribeContainerEventHasNoColourTags(t *testing.T) {
 		}
 	}
 }
+
+// The note text carries no markup, and the view paints the severity: an OOM
+// kill must still read as red (review KOR-07).
+func TestEventToneDrivesTheColour(t *testing.T) {
+	cases := []struct {
+		ev   *pb.ContainerEvent
+		want string
+	}{
+		{&pb.ContainerEvent{Action: "oom"}, "[red]"},
+		{&pb.ContainerEvent{Action: "die", ExitCode: 137}, "[red]"},
+		{&pb.ContainerEvent{Action: "health_status", Health: "unhealthy"}, "[red]"},
+		{&pb.ContainerEvent{Action: "health_status", Health: "healthy"}, "[green]"},
+		{&pb.ContainerEvent{Action: "start"}, "[green]"},
+		{&pb.ContainerEvent{Action: "stop"}, "[yellow]"},
+		{&pb.ContainerEvent{Action: "health_status", Health: "starting"}, "[gray]"},
+	}
+	for _, c := range cases {
+		line, tone := describeContainerEventTone(c.ev)
+		if line == "" {
+			t.Fatalf("%s/%s produced no note", c.ev.GetAction(), c.ev.GetHealth())
+		}
+		if strings.ContainsAny(line, "[]") {
+			t.Errorf("%q carries markup; the view owns the colour", line)
+		}
+		if got := renderLogRow(logfmt.JSON, logRow{note: true, line: line, tone: tone}, logfmt.Entry{}); !strings.HasPrefix(got, c.want) {
+			t.Errorf("%s: rendered %q, want it to start %s", c.ev.GetAction(), got, c.want)
+		}
+	}
+}

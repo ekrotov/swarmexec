@@ -188,7 +188,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 	// Buffered by one: the follower only ever needs to know THAT something
 	// happened, not how often.
 	wake := make(chan struct{}, 1)
-	go watchContainerEvents(lctx, ac, ep, f.connectTimeout, lv.addNote, wake)
+	go watchContainerEvents(lctx, ac, ep, f.connectTimeout, lv.addNoteTone, wake)
 	go func() {
 		lerr := logstream.Follow(lctx, logstream.Run{Agents: ac, Resolver: r,
 			Params: logstream.Params{Follow: true, Tail: 1000, ConnectTimeout: f.connectTimeout, Wake: wake},
