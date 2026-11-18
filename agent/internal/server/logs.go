@@ -71,8 +71,13 @@ func (s *Server) Logs(req *pb.LogsRequest, stream pb.Agent_LogsServer) error {
 	if tty {
 		_, copyErr = io.Copy(out, rc)
 	} else {
-		errOut := &logWriter{stream: stream, stderr: true, count: bytesOut}
-		_, copyErr = stdcopy.StdCopy(out, errOut, rc)
+		b := newOutBatcher(func(stderr bool, p []byte) error {
+			return (&logWriter{stream: stream, stderr: stderr, count: bytesOut}).send(p)
+		})
+		_, copyErr = stdcopy.StdCopy(b.writer(false), b.writer(true), rc)
+		if cerr := b.Close(); copyErr == nil {
+			copyErr = cerr
+		}
 	}
 
 	s.audit.LogsEnd(identity, req.GetContainerId(), time.Since(start), bytesOut.Load())
@@ -96,6 +101,14 @@ type logWriter struct {
 func (w *logWriter) Write(p []byte) (int, error) {
 	buf := make([]byte, len(p))
 	copy(buf, p)
+	if err := w.send(buf); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// send emits buf, which the message takes ownership of, as one chunk.
+func (w *logWriter) send(buf []byte) error {
 
 	var msg *pb.LogChunk
 	if w.stderr {
@@ -104,8 +117,8 @@ func (w *logWriter) Write(p []byte) (int, error) {
 		msg = &pb.LogChunk{Payload: &pb.LogChunk_Stdout{Stdout: buf}}
 	}
 	if err := w.stream.Send(msg); err != nil {
-		return 0, err
+		return err
 	}
-	w.count.Add(int64(len(p)))
-	return len(p), nil
+	w.count.Add(int64(len(buf)))
+	return nil
 }

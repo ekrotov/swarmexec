@@ -68,6 +68,7 @@ type Docker struct {
 	info       system.Info
 	execFn     ExecFunc
 	logCalls   []client.ContainerLogsOptions
+	logStreams map[string]func() io.ReadCloser
 }
 
 type execState struct {
@@ -110,6 +111,23 @@ func (d *Docker) SetLogs(containerID, text string) *Docker {
 	d.logs[containerID] = text
 	return d
 }
+
+// SetLogStream makes ContainerLogs serve what open returns for a container,
+// byte for byte (a non-TTY container's stream must already be stdcopy-framed,
+// see Frame). It lets a test feed lines over time or serve a large stream.
+func (d *Docker) SetLogStream(containerID string, open func() io.ReadCloser) *Docker {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.logStreams == nil {
+		d.logStreams = map[string]func() io.ReadCloser{}
+	}
+	d.logStreams[containerID] = open
+	return d
+}
+
+// Frame builds one stdcopy frame (stream 1 = stdout, 2 = stderr) for a
+// SetLogStream reader.
+func Frame(stream byte, p []byte) []byte { return frame(stream, p) }
 
 // AddVolume adds a local volume to the node.
 func (d *Docker) AddVolume(name string) *Docker {
@@ -255,7 +273,11 @@ func (d *Docker) ContainerLogs(_ context.Context, id string, opts client.Contain
 	}
 	d.mu.Lock()
 	text := d.logs[id]
+	open := d.logStreams[id]
 	d.mu.Unlock()
+	if open != nil {
+		return open(), nil
+	}
 	if c.TTY {
 		return io.NopCloser(strings.NewReader(text)), nil
 	}
