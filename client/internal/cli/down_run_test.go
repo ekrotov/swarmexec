@@ -10,6 +10,7 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 
+	"swarmexec/client/internal/agentdeploy"
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmfake"
 )
@@ -29,8 +30,8 @@ func agentSwarm() *swarmfake.Swarm {
 			{ID: "sec-app", Spec: swarm.SecretSpec{Annotations: swarm.Annotations{Name: "app_secret"}}},
 		},
 		Configs: []swarm.Config{
-			cfg("cfg-p1", policyConfigPrefix+"a", roleLabels),
-			cfg("cfg-p2", policyConfigPrefix+"b", roleLabels),
+			cfg("cfg-p1", agentdeploy.PolicyConfigPrefix+"a", roleLabels),
+			cfg("cfg-p2", agentdeploy.PolicyConfigPrefix+"b", roleLabels),
 			cfg("cfg-other", "labelled_but_not_policy", roleLabels),
 			cfg("cfg-user", "app_config", nil),
 		},

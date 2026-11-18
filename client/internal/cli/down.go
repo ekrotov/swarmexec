@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/agentdeploy"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
@@ -111,7 +112,7 @@ func removePolicyConfigs(ctx context.Context, dcli *client.Client) (int, error) 
 	n := 0
 	var firstErr error
 	for _, c := range list {
-		if !strings.HasPrefix(c.Spec.Name, policyConfigPrefix) {
+		if !strings.HasPrefix(c.Spec.Name, agentdeploy.PolicyConfigPrefix) {
 			continue
 		}
 		if _, err := dcli.ConfigRemove(ctx, c.ID, client.ConfigRemoveOptions{}); err != nil {

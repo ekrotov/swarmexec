@@ -20,6 +20,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 
+	"swarmexec/client/internal/agentdeploy"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmfake"
@@ -162,7 +163,7 @@ func wantOut(t *testing.T, got, want string) {
 // existingAgent is an agent init deployed earlier, edited by hand since: an
 // env var and a prune schedule (which the TUI sets as labels).
 func existingAgent(f *swarmfake.Swarm) {
-	spec := agentServiceSpec(defaultInitFlags(), "secret-old")
+	spec := agentSpecFor(defaultInitFlags(), "secret-old")
 	spec.TaskTemplate.ContainerSpec.Env = []string{"HAND_EDIT=1"}
 	spec.TaskTemplate.ContainerSpec.Labels = prunesched.Default().Labels()
 	var svc swarm.Service
@@ -197,7 +198,7 @@ func TestInitFreshDeploy(t *testing.T) {
 	if len(f.Services) != 1 {
 		t.Fatalf("services = %+v", f.Services)
 	}
-	wantSpec(t, f.Services[0].Spec, agentServiceSpec(defaultInitFlags(), f.Secrets[0].ID))
+	wantSpec(t, f.Services[0].Spec, agentSpecFor(defaultInitFlags(), f.Secrets[0].ID))
 	if len(f.RegistryAuth) != 1 || f.RegistryAuth[0] != "" {
 		t.Errorf("registry auth = %q, want none for a public image without credentials", f.RegistryAuth)
 	}
@@ -297,7 +298,7 @@ func TestInitForceReplacesTheSpec(t *testing.T) {
 		"note: reused an existing secret whose value is unknown — set `agent_secret` in your config manually, or re-run with --secret\n"+
 		initReady)
 
-	want := agentServiceSpec(defaultInitFlags(), "secret-old")
+	want := agentSpecFor(defaultInitFlags(), "secret-old")
 	want.TaskTemplate.ContainerSpec.Labels = prunesched.Default().Labels()
 	wantSpec(t, f.Services[0].Spec, want)
 	if f.Services[0].Version.Index != 6 {
@@ -365,11 +366,11 @@ func TestInitFlagsShapeTheSpec(t *testing.T) {
 		initReady)
 
 	sum := sha256.Sum256(policyData)
-	cfgName := policyConfigPrefix + hex.EncodeToString(sum[:])[:12]
+	cfgName := agentdeploy.PolicyConfigPrefix + hex.EncodeToString(sum[:])[:12]
 	if len(f.Configs) != 1 || f.Configs[0].Spec.Name != cfgName || !bytes.Equal(f.Configs[0].Spec.Data, policyData) {
 		t.Fatalf("configs = %+v, want the policy as %s", f.Configs, cfgName)
 	}
-	want := agentServiceSpec(&initFlags{image: "reg.example/agent:2", serviceName: "myagent", port: 9555,
+	want := agentSpecFor(&initFlags{image: "reg.example/agent:2", serviceName: "myagent", port: 9555,
 		metricsPort: 9464, policyFile: policyFile}, f.Secrets[0].ID)
 	want.TaskTemplate.ContainerSpec.Configs = []*swarm.ConfigReference{{
 		ConfigID: f.Configs[0].ID, ConfigName: cfgName,
