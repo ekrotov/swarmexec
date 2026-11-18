@@ -66,7 +66,7 @@ func updateService(ctx context.Context, dcli swarmapi.Client, name string, check
 	}
 	if _, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{Version: version, Spec: spec}); err != nil {
 		if based {
-			return asConflict("service", name, err)
+			return AsConflict("service", name, err)
 		}
 		return err
 	}

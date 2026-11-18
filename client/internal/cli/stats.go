@@ -10,8 +10,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
 )
 
 // Live resource usage is node-local: the manager API knows what the scheduler
@@ -87,11 +87,11 @@ func usageBadge(u containerUsage) string {
 	var b strings.Builder
 	if u.CPUReady {
 		if c := usageColor(levelOf(u.CPURatio)); c != "" {
-			fmt.Fprintf(&b, "  [%s]%s %s[-]", c, cpuGlyph, swarmops.FormatRatio(u.CPURatio))
+			fmt.Fprintf(&b, "  [%s]%s %s[-]", c, cpuGlyph, clusterread.FormatRatio(u.CPURatio))
 		}
 	}
 	if c := usageColor(levelOf(u.MemRatio)); c != "" {
-		fmt.Fprintf(&b, "  [%s]%s %s[-]", c, memGlyph, swarmops.FormatRatio(u.MemRatio))
+		fmt.Fprintf(&b, "  [%s]%s %s[-]", c, memGlyph, clusterread.FormatRatio(u.MemRatio))
 	}
 	return b.String()
 }
@@ -129,7 +129,7 @@ func serviceUsage(usage map[string]containerUsage, cands []resolve.Candidate, se
 // healthBadge names a failing healthcheck on a row. Healthy and un-checked
 // containers get nothing: the badge exists to contradict the running/desired
 // count, and a badge on every row would stop doing that.
-func healthBadge(h swarmops.ServiceHealth) string {
+func healthBadge(h clusterread.ServiceHealth) string {
 	switch {
 	case h.Unhealthy > 0:
 		return fmt.Sprintf("  [red]✖ %d unhealthy[-]", h.Unhealthy)
@@ -143,9 +143,9 @@ func healthBadge(h swarmops.ServiceHealth) string {
 // containerHealthBadge is the same marker for a single container leaf.
 func containerHealthBadge(health string) string {
 	switch health {
-	case swarmops.HealthUnhealthy:
+	case clusterread.HealthUnhealthy:
 		return "  [red]✖ unhealthy[-]"
-	case swarmops.HealthStarting:
+	case clusterread.HealthStarting:
 		return "  [yellow]◌ starting[-]"
 	default:
 		return ""
@@ -159,7 +159,7 @@ func containerHealthBadge(health string) string {
 // as a calm "3/3" in aqua. A failing probe is degradation of the same kind as a
 // missing replica, so it is coloured the same way — every container failing is
 // as bad as none running.
-func healthColor(base tcell.Color, h swarmops.ServiceHealth) tcell.Color {
+func healthColor(base tcell.Color, h clusterread.ServiceHealth) tcell.Color {
 	switch {
 	case h.Unhealthy == 0:
 		return base

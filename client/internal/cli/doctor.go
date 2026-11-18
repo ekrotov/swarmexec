@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
@@ -157,7 +158,7 @@ func doctorRows(ctx context.Context, results []agentcall.NodeVersion, v Version,
 	ok = true
 	rows = make([]doctorNode, 0, len(results))
 	for _, r := range results {
-		st, ver, proto, nodeOK := swarmops.ClassifyNode(r, v.Binary, v.Proto)
+		st, ver, proto, nodeOK := clusterread.ClassifyNode(r, v.Binary, v.Proto)
 		if !nodeOK {
 			ok = false
 		}

@@ -13,6 +13,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/dockerfmt"
@@ -920,12 +921,12 @@ func (iv *inspectView) statsLines() []statsRow {
 			// The worst replica, not the average: an average hides the one that is
 			// about to be OOM-killed, which is the container you opened this for.
 			rows = append(rows, statsRow{
-				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", swarmops.FormatRatio(agg.CPURatio)),
+				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", clusterread.FormatRatio(agg.CPURatio)),
 				color: tcell.ColorWhite,
 			})
 			rows = append(rows, statsRow{
 				text: fmt.Sprintf("  %-10s %s of its limit (worst replica) · %s in total",
-					"memory", swarmops.FormatRatio(agg.MemRatio), dockerfmt.Bytes(agg.MemBytes)),
+					"memory", clusterread.FormatRatio(agg.MemRatio), dockerfmt.Bytes(agg.MemBytes)),
 				color: tcell.ColorWhite,
 			})
 		}
@@ -950,7 +951,7 @@ func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage)
 		measured++
 		cells = append(cells, []string{
 			name, dockerfmt.OrDash(c.NodeName), healthCell(u.Health),
-			swarmops.FormatCPUUsage(u), swarmops.FormatMemUsage(u),
+			clusterread.FormatCPUUsage(u), clusterread.FormatMemUsage(u),
 		})
 	}
 	return cells, measured
@@ -960,11 +961,11 @@ func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage)
 // as healthy and must not render as a blank, which would read as a pass.
 func healthCell(health string) string {
 	switch health {
-	case swarmops.HealthUnhealthy:
+	case clusterread.HealthUnhealthy:
 		return "unhealthy"
-	case swarmops.HealthStarting:
+	case clusterread.HealthStarting:
 		return "starting"
-	case swarmops.HealthHealthy:
+	case clusterread.HealthHealthy:
 		return "healthy"
 	default:
 		return "none"

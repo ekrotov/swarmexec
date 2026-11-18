@@ -11,7 +11,6 @@ import (
 
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
 
 	"swarmexec/client/internal/swarmfake"
 )
@@ -166,17 +165,6 @@ func ipamNet(id, name, subnet, gw string) network.Summary {
 	return n
 }
 
-func fakeDocker(t *testing.T, f *swarmfake.Swarm) *client.Client {
-	t.Helper()
-	api := swarmfake.Serve(t, f)
-	dcli, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { dcli.Close() })
-	return dcli
-}
-
 func TestListNetworksSubnetsContainersAndOverlaps(t *testing.T) {
 	running := func(id string, nets ...string) swarm.Task {
 		var tk swarm.Task
@@ -194,7 +182,7 @@ func TestListNetworksSubnetsContainersAndOverlaps(t *testing.T) {
 		Nodes:    []swarm.Node{node("n2", "docker2v2", "10.0.1.2", "")},
 		Tasks:    []swarm.Task{running("t1", "db", "app"), running("t2", "db", "db"), stopped},
 	}
-	nets, err := ListNetworks(context.Background(), fakeDocker(t, f), []netip.Prefix{pfx("10.0.0.0/16")})
+	nets, err := ListNetworks(context.Background(), swarmfake.Client(t, f), []netip.Prefix{pfx("10.0.0.0/16")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +206,7 @@ func TestPreflightNetworkCreate(t *testing.T) {
 		Networks: []network.Summary{ipamNet("app", "appnet", "10.100.1.0/24", "")},
 		Nodes:    []swarm.Node{node("n2", "docker2v2", "10.0.1.2", "")},
 	}
-	dcli := fakeDocker(t, f)
+	dcli := swarmfake.Client(t, f)
 	ctx := context.Background()
 	if fs := PreflightNetworkCreate(ctx, dcli, NewNetworkOpts{Name: "x", Subnet: "10.100.1.0/25"}, nil); len(fs) != 1 || fs[0].Kind != OverlapNetwork {
 		t.Errorf("overlap with appnet: %+v", fs)

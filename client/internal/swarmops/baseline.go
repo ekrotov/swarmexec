@@ -96,9 +96,9 @@ func forgetLoaded(ctx context.Context, name string) {
 	}
 }
 
-// asConflict turns the swarm's own "update out of sequence" into a
+// AsConflict turns the swarm's own "update out of sequence" into a
 // ConflictError, for a write that lost the race after our check.
-func asConflict(kind, name string, err error) error {
+func AsConflict(kind, name string, err error) error {
 	if err != nil && (isVersionConflict(err) || strings.Contains(err.Error(), "out of sequence")) {
 		return &ConflictError{Kind: kind, Name: name, Detached: true}
 	}

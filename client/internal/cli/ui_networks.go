@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
@@ -46,9 +47,9 @@ type networksTab struct {
 type netEndpointsState struct {
 	loading time.Time // when the load in flight started; zero when none is
 	loaded  bool
-	byNet   map[string]*swarmops.NetEndpoints // by network ID
-	failed  int                               // nodes that could not answer
-	err     error                             // the whole load failed (node or task list)
+	byNet   map[string]*clusterread.NetEndpoints // by network ID
+	failed  int                                  // nodes that could not answer
+	err     error                                // the whole load failed (node or task list)
 }
 
 // endpointsStuck is how long a load may be in flight before another one is
@@ -162,7 +163,7 @@ func (t *networksTab) endpoints() *netEndpointsState { return t.ep.of(t.u.cluste
 
 // netEndpointsResult is what one endpoint load hands to the UI goroutine.
 type netEndpointsResult struct {
-	byNet  map[string]*swarmops.NetEndpoints
+	byNet  map[string]*clusterread.NetEndpoints
 	failed int
 }
 
@@ -200,11 +201,11 @@ func fetchNetEndpoints(ctx context.Context, r *resolve.Resolver, ac *agentcall.C
 	// The manager's tasks are read after the nodes answered: a task
 	// that started meanwhile is then known (no false stale); only one
 	// that stopped meanwhile can still show, until the next refresh.
-	tasks, err := swarmops.NetworkTaskAddrs(ctx, dcli)
+	tasks, err := clusterread.NetworkTaskAddrs(ctx, dcli)
 	if err != nil {
 		return netEndpointsResult{}, err
 	}
-	out := netEndpointsResult{byNet: swarmops.AnalyzeEndpoints(tasks, res)}
+	out := netEndpointsResult{byNet: clusterread.AnalyzeEndpoints(tasks, res)}
 	for _, n := range res {
 		if n.Err != nil {
 			out.failed++
@@ -716,7 +717,7 @@ func endpointSummary(st *netEndpointsState, n swarmops.Network) string {
 // row per node (running tasks the manager places there against the node's
 // own endpoints), then every stale candidate and duplicate, then the fix.
 // Nodes that have not joined the network and expect nothing are left out.
-func endpointBlock(e *swarmops.NetEndpoints, netName string, width int) []string {
+func endpointBlock(e *clusterread.NetEndpoints, netName string, width int) []string {
 	if e == nil {
 		return nil
 	}
@@ -746,10 +747,10 @@ func endpointBlock(e *swarmops.NetEndpoints, netName string, width int) []string
 
 // endpointNodeRow is one node's row of the endpoint block, its name padded
 // to nodeW; false for a node off the network that expects nothing there.
-func endpointNodeRow(n swarmops.NodeEndpoints, nodeW int) (string, bool) {
+func endpointNodeRow(n clusterread.NodeEndpoints, nodeW int) (string, bool) {
 	name := fmt.Sprintf("    %-*s  ", nodeW, tview.Escape(n.Node))
 	switch n.State {
-	case swarmops.NodeEndpointsOK:
+	case clusterread.NodeEndpointsOK:
 		line := fmt.Sprintf("%srunning %d · local %d + %d LB · MACs %d · networkdb %d",
 			name, n.Expected, n.Containers, n.LB, n.MACs, n.Known)
 		if n.Stale > 0 {
@@ -759,12 +760,12 @@ func endpointNodeRow(n swarmops.NodeEndpoints, nodeW int) (string, bool) {
 			line += "  [gray](local ≠ running)[-]"
 		}
 		return line, true
-	case swarmops.NodeNotOnNetwork:
+	case clusterread.NodeNotOnNetwork:
 		if n.Expected > 0 {
 			return fmt.Sprintf("%s[yellow]running %d, but the node reports no such network[-]", name, n.Expected), true
 		}
 		return "", false
-	case swarmops.NodeNetworkError, swarmops.NodeUnreachable:
+	case clusterread.NodeNetworkError, clusterread.NodeUnreachable:
 		return fmt.Sprintf("%s[gray]%s: %s[-]", name, n.State, tview.Escape(n.Err)), true
 	default:
 		return fmt.Sprintf("%s[gray]%s[-]", name, n.State), true
@@ -773,7 +774,7 @@ func endpointNodeRow(n swarmops.NodeEndpoints, nodeW int) (string, bool) {
 
 // staleEndpointRow is one stale candidate: address, MAC, endpoint name, and
 // where it was found.
-func staleEndpointRow(s swarmops.StaleEndpoint) string {
+func staleEndpointRow(s clusterread.StaleEndpoint) string {
 	line := fmt.Sprintf("    %-15s %-17s %s", s.IP, dockerfmt.OrDash(s.MAC), tview.Escape(dockerfmt.OrDash(s.Name)))
 	var where []string
 	if s.Owner != "" {
@@ -795,7 +796,7 @@ func staleEndpointRow(s swarmops.StaleEndpoint) string {
 
 // duplicateRows is a titled list of addresses held by several endpoints;
 // nothing when there are none.
-func duplicateRows(title string, ds []swarmops.Duplicate) []string {
+func duplicateRows(title string, ds []clusterread.Duplicate) []string {
 	if len(ds) == 0 {
 		return nil
 	}

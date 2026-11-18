@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/swarmops"
 )
@@ -121,10 +122,10 @@ func TestNetworksStatusNoteExplainsNA(t *testing.T) {
 		want bool
 	}{
 		{"not loaded", netEndpointsState{}, false},
-		{"all answered", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 2}}}, false},
+		{"all answered", netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Answered: 2}}}, false},
 		{"load failed", netEndpointsState{loaded: true, err: errors.New("x")}, true},
 		{"a node failed", netEndpointsState{loaded: true, failed: 1}, true},
-		{"unknown on a network", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 1, Unknown: 1}}}, true},
+		{"unknown on a network", netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Answered: 1, Unknown: 1}}}, true},
 	}
 	for _, c := range cases {
 		var note string

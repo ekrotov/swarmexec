@@ -113,7 +113,7 @@ func TestServiceEditsRefuseStaleLoad(t *testing.T) {
 		t.Run(e.name+"/concurrent change refused", func(t *testing.T) {
 			f := &swarmfake.Swarm{Services: []swarm.Service{stackService()},
 				Networks: []network.Summary{{Network: network.Network{ID: "net1", Name: "shop_backend"}}}}
-			d := fakeDocker(t, f)
+			d := swarmfake.Client(t, f)
 			ctx := WithBaseline(context.Background())
 			if err := e.load(ctx, d); err != nil {
 				t.Fatal(err)
@@ -135,7 +135,7 @@ func TestServiceEditsRefuseStaleLoad(t *testing.T) {
 		t.Run(e.name+"/unchanged applies", func(t *testing.T) {
 			f := &swarmfake.Swarm{Services: []swarm.Service{stackService()},
 				Networks: []network.Summary{{Network: network.Network{ID: "net1", Name: "shop_backend"}}}}
-			d := fakeDocker(t, f)
+			d := swarmfake.Client(t, f)
 			ctx := WithBaseline(context.Background())
 			if err := e.load(ctx, d); err != nil {
 				t.Fatal(err)
@@ -152,7 +152,7 @@ func TestServiceEditsRefuseStaleLoad(t *testing.T) {
 
 func TestServiceEditConflictMessageAndRecovery(t *testing.T) {
 	f := &swarmfake.Swarm{Services: []swarm.Service{stackService()}}
-	d := fakeDocker(t, f)
+	d := swarmfake.Client(t, f)
 	ctx := WithBaseline(context.Background())
 	if _, err := CurrentServiceEnv(ctx, d, "shop_api"); err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestServiceEditConflictMessageAndRecovery(t *testing.T) {
 // baseline left behind by an editor that was cancelled earlier.
 func TestActionsIgnoreAbandonedBaseline(t *testing.T) {
 	f := &swarmfake.Swarm{Services: []swarm.Service{stackService()}}
-	d := fakeDocker(t, f)
+	d := swarmfake.Client(t, f)
 	ctx := WithBaseline(context.Background())
 	if _, err := CurrentServiceEnv(ctx, d, "shop_api"); err != nil {
 		t.Fatal(err)
@@ -197,70 +197,12 @@ func TestActionsIgnoreAbandonedBaseline(t *testing.T) {
 }
 
 func TestAsConflictRecognisesSwarmsOwnRefusal(t *testing.T) {
-	err := asConflict("service", "web", errors.New("rpc error: update out of sequence"))
+	err := AsConflict("service", "web", errors.New("rpc error: update out of sequence"))
 	if !errors.Is(err, ErrConflict) {
 		t.Errorf("err = %v", err)
 	}
 	other := errors.New("boom")
-	if asConflict("service", "web", other) != other {
+	if AsConflict("service", "web", other) != other {
 		t.Error("an unrelated error was rewritten")
-	}
-}
-
-// Nodes carry their version on NodeInfo; the mutation is refused when the node
-// moved since that read.
-func TestNodeMutationsRefuseStaleVersion(t *testing.T) {
-	mk := func() *swarmfake.Swarm {
-		n := swarm.Node{ID: "n1"}
-		n.Version.Index = 3
-		n.Description.Hostname = "worker-1"
-		n.Spec.Availability = swarm.NodeAvailabilityActive
-		n.Spec.Labels = map[string]string{"zone": "a"}
-		return &swarmfake.Swarm{Nodes: []swarm.Node{n}}
-	}
-	ops := []struct {
-		name  string
-		apply func(ctx context.Context, d swarmapi.Client, v swarm.Version) error
-		check func(t *testing.T, n swarm.Node)
-	}{
-		{"labels", func(ctx context.Context, d swarmapi.Client, v swarm.Version) error {
-			return SetNodeLabels(ctx, d, "n1", v, map[string]string{"zone": "b"})
-		}, func(t *testing.T, n swarm.Node) {
-			if n.Spec.Labels["zone"] != "b" {
-				t.Errorf("labels = %v", n.Spec.Labels)
-			}
-		}},
-		{"availability", func(ctx context.Context, d swarmapi.Client, v swarm.Version) error {
-			return SetNodeAvailability(ctx, d, "n1", v, swarm.NodeAvailabilityDrain)
-		}, func(t *testing.T, n swarm.Node) {
-			if n.Spec.Availability != swarm.NodeAvailabilityDrain {
-				t.Errorf("availability = %s", n.Spec.Availability)
-			}
-		}},
-	}
-	for _, op := range ops {
-		t.Run(op.name+"/unchanged applies", func(t *testing.T) {
-			f := mk()
-			d := fakeDocker(t, f)
-			if err := op.apply(context.Background(), d, swarm.Version{Index: 3}); err != nil {
-				t.Fatal(err)
-			}
-			op.check(t, f.Nodes[0])
-		})
-		t.Run(op.name+"/concurrent change refused", func(t *testing.T) {
-			f := mk()
-			d := fakeDocker(t, f)
-			// another operator relabels the node after our read (version 3).
-			f.Nodes[0].Spec.Labels = map[string]string{"zone": "a", "disk": "ssd"}
-			f.Nodes[0].Version.Index = 4
-			err := op.apply(context.Background(), d, swarm.Version{Index: 3})
-			var ce *ConflictError
-			if !errors.As(err, &ce) || ce.Kind != "node" || ce.Name != "worker-1" || ce.Loaded != 3 || ce.Current != 4 {
-				t.Fatalf("err = %v", err)
-			}
-			if f.Nodes[0].Version.Index != 4 || f.Nodes[0].Spec.Labels["disk"] != "ssd" || f.Nodes[0].Spec.Availability != swarm.NodeAvailabilityActive {
-				t.Errorf("a refused edit wrote: %+v", f.Nodes[0])
-			}
-		})
 	}
 }

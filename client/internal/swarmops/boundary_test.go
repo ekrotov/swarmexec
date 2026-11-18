@@ -39,6 +39,15 @@ func TestSwarmopsStaysBelowTheCLI(t *testing.T) {
 				t.Errorf("%s imports the cli package; cli calls swarmops, never the reverse", path)
 			case p == "swarmexec/client/internal/dial":
 				t.Errorf("%s imports dial; agent connections belong to agentcall", path)
+			case p == "swarmexec/client/internal/agentcall" && !strings.HasSuffix(path, "_test.go"):
+				// Six files used to. That is what made "manager-side logic"
+				// false for a third of the package and put the cluster
+				// readings next to the service editors; they are in
+				// clusterread now, which imports this package and not the
+				// other way round.
+				t.Errorf("%s imports agentcall; anything that asks a node agent belongs in clusterread", path)
+			case p == "swarmexec/client/internal/clusterread":
+				t.Errorf("%s imports clusterread; clusterread reads through swarmops, never the reverse", path)
 			}
 		}
 	}

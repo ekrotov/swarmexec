@@ -16,8 +16,8 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
@@ -94,7 +94,7 @@ func runNodeLs(cmd *cobra.Command, g *globalFlags, f *nodeLsFlags) error {
 		return err
 	}
 	defer c.dcli.Close()
-	nodes, err := swarmops.ListNodes(c.ctx, c.dcli)
+	nodes, err := clusterread.ListNodes(c.ctx, c.dcli)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}
@@ -130,7 +130,7 @@ func (c *clusterConn) volumeCounts(connectTimeout time.Duration) map[string]int 
 		return nil
 	}
 	vs, errs := ac.Volumes(c.ctx, ns, connectTimeout)
-	counts := swarmops.VolumeCountsByNode(vs)
+	counts := clusterread.VolumeCountsByNode(vs)
 	for _, n := range ns {
 		if _, failed := errs[n.Name]; !failed {
 			counts[n.Name] += 0 // answered with no volumes: 0, not unknown
@@ -139,7 +139,7 @@ func (c *clusterConn) volumeCounts(connectTimeout time.Duration) map[string]int 
 	return counts
 }
 
-func nodeRowOf(n swarmops.NodeInfo, vols map[string]int) nodeRow {
+func nodeRowOf(n clusterread.NodeInfo, vols map[string]int) nodeRow {
 	row := nodeRow{
 		Hostname: n.Hostname, ID: n.ID, Role: n.Role, Leader: n.Leader,
 		Availability: n.Availability, State: n.State, Addr: n.Addr,
@@ -404,11 +404,11 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 		return err
 	}
 	defer c.dcli.Close()
-	nodes, err := swarmops.ListNodes(c.ctx, c.dcli)
+	nodes, err := clusterread.ListNodes(c.ctx, c.dcli)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}
-	n, err := matchNode(nodes, ref, func(n swarmops.NodeInfo) string { return n.ID }, func(n swarmops.NodeInfo) string { return n.Hostname })
+	n, err := matchNode(nodes, ref, func(n clusterread.NodeInfo) string { return n.ID }, func(n clusterread.NodeInfo) string { return n.Hostname })
 	if err != nil {
 		return err
 	}
@@ -423,7 +423,7 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 		}
 	}
 	if len(f.labelAdd) > 0 || len(f.labelRm) > 0 {
-		if err := swarmops.SetNodeLabels(c.ctx, c.dcli, n.ID, n.Version, labels); err != nil {
+		if err := clusterread.SetNodeLabels(c.ctx, c.dcli, n.ID, n.Version, labels); err != nil {
 			return &cliError{code: exitTransport, err: err}
 		}
 		fmt.Fprintf(out, "%s: labels %s\n", n.Hostname, labelsText(labels))
@@ -432,7 +432,7 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 }
 
 // setAvailability applies one availability, behind the drain confirm.
-func (c *clusterConn) setAvailability(out, errOut io.Writer, n swarmops.NodeInfo, to swarm.NodeAvailability, yes bool) error {
+func (c *clusterConn) setAvailability(out, errOut io.Writer, n clusterread.NodeInfo, to swarm.NodeAvailability, yes bool) error {
 	if to == swarm.NodeAvailabilityDrain && !yes {
 		fmt.Fprintf(out, "Draining %q stops its %s running task(s) and reschedules them on other nodes.\n"+
 			"Services whose tasks cannot be placed elsewhere will go unschedulable.\n", n.Hostname, n.TaskCount())
@@ -441,7 +441,7 @@ func (c *clusterConn) setAvailability(out, errOut io.Writer, n swarmops.NodeInfo
 			return &cliError{code: exitTransport, silent: true}
 		}
 	}
-	if err := swarmops.SetNodeAvailability(c.ctx, c.dcli, n.ID, n.Version, to); err != nil {
+	if err := clusterread.SetNodeAvailability(c.ctx, c.dcli, n.ID, n.Version, to); err != nil {
 		return &cliError{code: exitTransport, err: fmt.Errorf("set %s to %s: %w", n.Hostname, to, err)}
 	}
 	fmt.Fprintf(out, "%s: availability %s\n", n.Hostname, to)

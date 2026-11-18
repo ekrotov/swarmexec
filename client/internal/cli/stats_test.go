@@ -10,8 +10,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 )
 
@@ -66,7 +66,7 @@ func TestUsageIgnoresUnreadyCPU(t *testing.T) {
 	if usageLevelOf(u) != usageCrit {
 		t.Errorf("level = %v, want crit from memory alone", usageLevelOf(u))
 	}
-	if got := swarmops.FormatCPUUsage(u); got != "…" {
+	if got := clusterread.FormatCPUUsage(u); got != "…" {
 		t.Errorf("cpu display = %q, want a placeholder rather than a number", got)
 	}
 	if strings.Contains(usageBadge(u), cpuGlyph) {
@@ -184,7 +184,7 @@ func TestInspModeCycles(t *testing.T) {
 
 // A node reading must not be invented when no agent answered.
 func TestNodeUsageSectionAbsentWhenUnknown(t *testing.T) {
-	n := swarmops.NodeInfo{Hostname: "host-a", NanoCPUs: 4e9, MemoryBytes: 8 << 30}
+	n := clusterread.NodeInfo{Hostname: "host-a", NanoCPUs: 4e9, MemoryBytes: 8 << 30}
 	if got := nodeUsageSection(n, nodeUsage{}, false); got != "" {
 		t.Errorf("no agent reading should render nothing, got %q", got)
 	}
@@ -214,31 +214,31 @@ func TestHealthColorContradictsTheCount(t *testing.T) {
 	full := serviceColor(3, 3) // what the row used to be, unconditionally
 
 	// Every container failing is as bad as none running.
-	allBad := swarmops.HealthOf(map[string]containerUsage{
-		"c1": {Health: swarmops.HealthUnhealthy}, "c2": {Health: swarmops.HealthUnhealthy}, "c3": {Health: swarmops.HealthUnhealthy},
+	allBad := clusterread.HealthOf(map[string]containerUsage{
+		"c1": {Health: clusterread.HealthUnhealthy}, "c2": {Health: clusterread.HealthUnhealthy}, "c3": {Health: clusterread.HealthUnhealthy},
 	}, cands, "web")
 	if got := healthColor(full, allBad); got != tcell.ColorRed {
 		t.Errorf("all unhealthy = %v, want red", got)
 	}
 
 	// Some failing is degradation, like a missing replica.
-	someBad := swarmops.HealthOf(map[string]containerUsage{
-		"c1": {Health: swarmops.HealthUnhealthy}, "c2": {Health: swarmops.HealthHealthy}, "c3": {Health: swarmops.HealthHealthy},
+	someBad := clusterread.HealthOf(map[string]containerUsage{
+		"c1": {Health: clusterread.HealthUnhealthy}, "c2": {Health: clusterread.HealthHealthy}, "c3": {Health: clusterread.HealthHealthy},
 	}, cands, "web")
 	if got := healthColor(full, someBad); got != tcell.ColorOrange {
 		t.Errorf("one of three unhealthy = %v, want orange", got)
 	}
 
 	// All healthy must not change what the count already said.
-	allGood := swarmops.HealthOf(map[string]containerUsage{
-		"c1": {Health: swarmops.HealthHealthy}, "c2": {Health: swarmops.HealthHealthy}, "c3": {Health: swarmops.HealthHealthy},
+	allGood := clusterread.HealthOf(map[string]containerUsage{
+		"c1": {Health: clusterread.HealthHealthy}, "c2": {Health: clusterread.HealthHealthy}, "c3": {Health: clusterread.HealthHealthy},
 	}, cands, "web")
 	if got := healthColor(full, allGood); got != full {
 		t.Errorf("all healthy = %v, want the count's own colour %v", got, full)
 	}
 
 	// No healthchecks at all: we know nothing, so we must not recolour.
-	none := swarmops.HealthOf(map[string]containerUsage{}, cands, "web")
+	none := clusterread.HealthOf(map[string]containerUsage{}, cands, "web")
 	if got := healthColor(full, none); got != full {
 		t.Errorf("no verdicts = %v, want the count's own colour", got)
 	}
@@ -256,9 +256,9 @@ func TestHealthColorContradictsTheCount(t *testing.T) {
 func TestHealthBadges(t *testing.T) {
 	cands := healthCands()
 	usage := map[string]containerUsage{
-		"c1": {Health: swarmops.HealthUnhealthy}, "c2": {Health: swarmops.HealthStarting}, "c3": {Health: swarmops.HealthHealthy},
+		"c1": {Health: clusterread.HealthUnhealthy}, "c2": {Health: clusterread.HealthStarting}, "c3": {Health: clusterread.HealthHealthy},
 	}
-	h := swarmops.HealthOf(usage, cands, "web")
+	h := clusterread.HealthOf(usage, cands, "web")
 	if h.Unhealthy != 1 || h.Starting != 1 || h.Healthy != 1 || h.Total() != 3 {
 		t.Fatalf("counts wrong: %+v", h)
 	}
@@ -273,24 +273,24 @@ func TestHealthBadges(t *testing.T) {
 	}
 
 	// Starting alone is worth showing, but not in red.
-	starting := healthBadge(swarmops.ServiceHealth{Starting: 2, Healthy: 1})
+	starting := healthBadge(clusterread.ServiceHealth{Starting: 2, Healthy: 1})
 	if !strings.Contains(starting, "2 starting") || strings.Contains(starting, "red") {
 		t.Errorf("starting badge = %q", starting)
 	}
 
 	// A healthy service gets no badge — it must not become wallpaper.
-	if got := healthBadge(swarmops.ServiceHealth{Healthy: 3}); got != "" {
+	if got := healthBadge(clusterread.ServiceHealth{Healthy: 3}); got != "" {
 		t.Errorf("healthy service badge = %q, want none", got)
 	}
-	if got := healthBadge(swarmops.ServiceHealth{Unknown: 3}); got != "" {
+	if got := healthBadge(clusterread.ServiceHealth{Unknown: 3}); got != "" {
 		t.Errorf("a service with no healthchecks must not be badged, got %q", got)
 	}
 
 	// Per-container markers follow the same rule.
-	if got := containerHealthBadge(swarmops.HealthUnhealthy); !strings.Contains(got, "unhealthy") {
+	if got := containerHealthBadge(clusterread.HealthUnhealthy); !strings.Contains(got, "unhealthy") {
 		t.Errorf("container badge = %q", got)
 	}
-	for _, quiet := range []string{swarmops.HealthHealthy, "", "bogus"} {
+	for _, quiet := range []string{clusterread.HealthHealthy, "", "bogus"} {
 		if got := containerHealthBadge(quiet); got != "" {
 			t.Errorf("containerHealthBadge(%q) = %q, want none", quiet, got)
 		}
@@ -303,9 +303,9 @@ func TestHealthBadges(t *testing.T) {
 func TestStackHealthRollsUp(t *testing.T) {
 	u := &ui{clusterState: &clusterState{
 		usage: map[string]containerUsage{
-			"c1": {Health: swarmops.HealthUnhealthy},
-			"c2": {Health: swarmops.HealthHealthy},
-			"c3": {Health: swarmops.HealthUnhealthy},
+			"c1": {Health: clusterread.HealthUnhealthy},
+			"c2": {Health: clusterread.HealthHealthy},
+			"c3": {Health: clusterread.HealthUnhealthy},
 		},
 	}}
 	u.treeTab().st().cands = []resolve.Candidate{
@@ -343,7 +343,7 @@ func TestStatsTableCellsCarryTheirUnits(t *testing.T) {
 		"c1": {
 			CPUReady: true, CPUPercent: 180, CPULimitCores: 2, CPURatio: 0.9, CPULimited: true,
 			MemBytes: 900 << 20, MemLimitBytes: 1 << 30, MemRatio: 0.88, MemLimited: true,
-			Health: swarmops.HealthHealthy,
+			Health: clusterread.HealthHealthy,
 		},
 		// c2 has no reading at all.
 	}
@@ -384,11 +384,11 @@ func TestStatsTableCellsCarryTheirUnits(t *testing.T) {
 // "No healthcheck" is not the same as healthy and must not render as a blank.
 func TestHealthCell(t *testing.T) {
 	for verdict, want := range map[string]string{
-		swarmops.HealthHealthy:   "healthy",
-		swarmops.HealthUnhealthy: "unhealthy",
-		swarmops.HealthStarting:  "starting",
-		"":                       "none",
-		"bogus":                  "none",
+		clusterread.HealthHealthy:   "healthy",
+		clusterread.HealthUnhealthy: "unhealthy",
+		clusterread.HealthStarting:  "starting",
+		"":                          "none",
+		"bogus":                     "none",
 	} {
 		if got := healthCell(verdict); got != want {
 			t.Errorf("healthCell(%q) = %q, want %q", verdict, got, want)

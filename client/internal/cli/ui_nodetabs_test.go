@@ -15,8 +15,8 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
 )
 
 // nodeManager is a listManager that also answers the task list the Nodes tab
@@ -71,7 +71,7 @@ func TestNodesTabLoadsNodesAndVolumeCounts(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	var n swarmops.NodeInfo
+	var n clusterread.NodeInfo
 	onLoop(t, u, func() {
 		u.nodeTab().table.Select(2, 0)
 		n, _ = u.nodeTab().selected()
@@ -86,7 +86,7 @@ func TestNodesTabLoadsNodesAndVolumeCounts(t *testing.T) {
 func TestNodesTabKeys(t *testing.T) {
 	u := tabsUI()
 	nt := u.nodeTab()
-	nt.st().rows = []swarmops.NodeInfo{{Hostname: "node-a", Labels: map[string]string{"zone": "a"}}}
+	nt.st().rows = []clusterread.NodeInfo{{Hostname: "node-a", Labels: map[string]string{"zone": "a"}}}
 	nt.render()
 
 	if nt.keys(rune_(u.km.NodeLabels)) != nil || !u.pages.HasPage(pageNodeLabels) {

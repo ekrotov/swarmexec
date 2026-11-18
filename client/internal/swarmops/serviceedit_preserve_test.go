@@ -49,7 +49,7 @@ func TestEditorsPreserveUntouchedEntries(t *testing.T) {
 		},
 		Networks: []network.Summary{{Network: network.Network{ID: "net1", Name: "shop_backend"}}, {Network: network.Network{ID: "net2", Name: "monitoring"}}},
 	}
-	dcli := fakeDocker(t, f)
+	dcli := swarmfake.Client(t, f)
 	ctx := context.Background()
 	spec := func() swarm.ServiceSpec { return f.Services[0].Spec }
 	wantSecret := *svc.Spec.TaskTemplate.ContainerSpec.Secrets[0]

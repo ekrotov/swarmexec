@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
@@ -672,7 +673,7 @@ func sortCands(cands []resolve.Candidate) {
 // from u here, off the loop, they would be whichever cluster is visible by the
 // time the goroutine runs.
 func fetchTree(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []resolve.Candidate, error) {
-	svcs, cands, err := swarmops.ServicesAndContainers(ctx, r, "ui.containers")
+	svcs, cands, err := clusterread.ServicesAndContainers(ctx, r, "ui.containers")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -977,7 +978,7 @@ func (t *treeTab) svcUsageBadge(service string) string {
 	// Health leads: it is the marker that contradicts the running/desired count
 	// standing right next to it, so it should not sit behind the resource
 	// numbers when the row is long.
-	badge := healthBadge(swarmops.HealthOf(u.usage, st.cands, service))
+	badge := healthBadge(clusterread.HealthOf(u.usage, st.cands, service))
 	if agg, ok := serviceUsage(u.usage, st.cands, service); ok {
 		badge += usageBadge(agg)
 	}
@@ -986,15 +987,15 @@ func (t *treeTab) svcUsageBadge(service string) string {
 
 // stackHealth folds the healthcheck verdicts of every container under a stack
 // into one count.
-func (t *treeTab) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
+func (t *treeTab) stackHealth(services []resolve.Service) clusterread.ServiceHealth {
 	st := t.st()
 	u := t.u
-	var out swarmops.ServiceHealth
+	var out clusterread.ServiceHealth
 	if len(u.usage) == 0 {
 		return out
 	}
 	for _, svc := range services {
-		h := swarmops.HealthOf(u.usage, st.cands, svc.Name)
+		h := clusterread.HealthOf(u.usage, st.cands, svc.Name)
 		out.Healthy += h.Healthy
 		out.Unhealthy += h.Unhealthy
 		out.Starting += h.Starting
@@ -1012,7 +1013,7 @@ func (t *treeTab) svcColor(s resolve.Service) tcell.Color {
 	if len(u.usage) == 0 {
 		return base
 	}
-	return healthColor(base, swarmops.HealthOf(u.usage, st.cands, s.Name))
+	return healthColor(base, clusterread.HealthOf(u.usage, st.cands, s.Name))
 }
 
 // loadUsage refreshes the live resource readings in the background and re-marks

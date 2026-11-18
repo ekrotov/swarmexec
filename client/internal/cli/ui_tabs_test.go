@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
@@ -296,7 +297,7 @@ func TestVolumesTabCursorIsPerCluster(t *testing.T) {
 func TestEveryTabYanksItsOwnList(t *testing.T) {
 	u := tabsUI()
 	u.cfgTab().st().rows = []swarmops.Config{{Name: "nginx.conf", Size: 2048}}
-	u.nodeTab().st().rows = []swarmops.NodeInfo{{Hostname: "mgr-1", Role: "manager", Leader: true}}
+	u.nodeTab().st().rows = []clusterread.NodeInfo{{Hostname: "mgr-1", Role: "manager", Leader: true}}
 	u.netTab().st().rows = []swarmops.Network{{Name: "edge"}}
 	u.secTab().st().rows = []swarmops.Secret{{Name: "db_pw"}}
 	u.volTab().st().vols = []swarmVolume{vol("shop_data", "node-a")}
