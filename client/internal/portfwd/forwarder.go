@@ -84,7 +84,7 @@ func Start(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p Par
 		ln.Close()
 		return nil, err
 	}
-	return &Forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.RemotePort, auth: agenterr.AuthOf(ac.Config())}, nil
+	return &Forwarder{conn: conn, ln: ln, containerID: ep.ContainerID, remotePort: p.RemotePort, auth: agenterr.AuthOf(ac.Config().SecretMode())}, nil
 }
 
 // LocalAddr is the address actually bound, which is what to show the operator:

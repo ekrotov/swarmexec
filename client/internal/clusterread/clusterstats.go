@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 )
 
 // Live container usage, one row per container — what the MCP tool `stats`
@@ -143,7 +144,7 @@ func PollUsage(ctx context.Context, ac *agentcall.Client, ask []resolve.Node, mi
 func StatsRows(mine []resolve.Candidate, usage map[string]agentcall.ContainerUsage, answered map[string]bool) []StatsRow {
 	rows := []StatsRow{}
 	for _, cd := range mine {
-		row := StatsRow{Service: cd.Service, Slot: cd.Slot, Node: orDash(cd.NodeName), Container: shortID(cd.ContainerID)}
+		row := StatsRow{Service: cd.Service, Slot: cd.Slot, Node: dockerfmt.OrDash(cd.NodeName), Container: dockerfmt.ShortID(cd.ContainerID)}
 		u, ok := usage[cd.ContainerID]
 		switch {
 		case ok:

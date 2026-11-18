@@ -14,12 +14,9 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
-)
 
-// stackLabel is how docker marks everything that belongs to a stack. It is the
-// only thing that makes a stack a stack — there is no stack object in the
-// engine, just services wearing the same label.
-const stackLabel = "com.docker.stack.namespace"
+	"swarmexec/client/internal/swarmlabel"
+)
 
 // SwarmReader is the slice of the docker client this needs. An interface, so
 // the reduction can be tested against fixtures rather than a live cluster.
@@ -38,14 +35,14 @@ type SwarmReader interface {
 // external. An export is a description of a stack, not a backup of it, and the
 // difference matters most exactly when someone is relying on it.
 func FromSwarm(ctx context.Context, cli SwarmReader, name string) (*Stack, error) {
-	f := make(client.Filters).Add("label", stackLabel+"="+name)
+	f := make(client.Filters).Add("label", swarmlabel.StackNamespace+"="+name)
 	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
 	svcs := svcsRes.Items
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
 	if len(svcs) == 0 {
-		return nil, fmt.Errorf("no stack named %q is deployed (no service carries %s=%s)", name, stackLabel, name)
+		return nil, fmt.Errorf("no stack named %q is deployed (no service carries %s=%s)", name, swarmlabel.StackNamespace, name)
 	}
 
 	st := &Stack{
@@ -71,7 +68,7 @@ func FromSwarm(ctx context.Context, cli SwarmReader, name string) (*Stack, error
 	for _, n := range nets {
 		byID[n.ID] = n.Name
 		byName[n.Name] = n
-		if n.Labels[stackLabel] == name {
+		if n.Labels[swarmlabel.StackNamespace] == name {
 			owned[n.Name] = true
 		}
 	}
@@ -149,7 +146,7 @@ func readNetworks(ns string, byName map[string]network.Summary, st *Stack) {
 			st.Notes = append(st.Notes, fmt.Sprintf("Network %q is attached by a service but no longer exists.", short))
 			continue
 		}
-		if !own || n.Labels[stackLabel] != ns {
+		if !own || n.Labels[swarmlabel.StackNamespace] != ns {
 			st.Networks[short] = &Network{External: true, Name: n.Name}
 			continue
 		}
@@ -188,14 +185,14 @@ func driverOpts(in map[string]string) map[string]string {
 func ownSecretsConfigs(ctx context.Context, cli SwarmReader, ns string, owned map[string]bool) {
 	if secs, err := cli.SecretList(ctx, client.SecretListOptions{}); err == nil {
 		for _, s := range secs.Items {
-			if s.Spec.Labels[stackLabel] == ns {
+			if s.Spec.Labels[swarmlabel.StackNamespace] == ns {
 				owned[s.Spec.Name] = true
 			}
 		}
 	}
 	if cfgs, err := cli.ConfigList(ctx, client.ConfigListOptions{}); err == nil {
 		for _, c := range cfgs.Items {
-			if c.Spec.Labels[stackLabel] == ns {
+			if c.Spec.Labels[swarmlabel.StackNamespace] == ns {
 				owned[c.Spec.Name] = true
 			}
 		}
@@ -214,7 +211,7 @@ func ownVolumes(svcs []swarm.Service, ns string, owned map[string]bool) {
 		}
 		for _, m := range cs.Mounts {
 			if m.Type == mount.TypeVolume && m.Source != "" && m.VolumeOptions != nil &&
-				m.VolumeOptions.Labels[stackLabel] == ns {
+				m.VolumeOptions.Labels[swarmlabel.StackNamespace] == ns {
 				owned[m.Source] = true
 			}
 		}
@@ -243,14 +240,14 @@ func readSecretsAndConfigs(ctx context.Context, cli SwarmReader, ns string, st *
 	}
 	if secs, err := cli.SecretList(ctx, client.SecretListOptions{}); err == nil {
 		for _, s := range secs.Items {
-			if short := stripNamespace(ns, s.Spec.Name); wantSec[short] && s.Spec.Labels[stackLabel] == ns {
+			if short := stripNamespace(ns, s.Spec.Name); wantSec[short] && s.Spec.Labels[swarmlabel.StackNamespace] == ns {
 				st.Secrets[short] = &Resource{External: true, Name: s.Spec.Name, Labels: stackLabels(s.Spec.Labels)}
 			}
 		}
 	}
 	if cfgs, err := cli.ConfigList(ctx, client.ConfigListOptions{}); err == nil {
 		for _, c := range cfgs.Items {
-			if short := stripNamespace(ns, c.Spec.Name); wantCfg[short] && c.Spec.Labels[stackLabel] == ns {
+			if short := stripNamespace(ns, c.Spec.Name); wantCfg[short] && c.Spec.Labels[swarmlabel.StackNamespace] == ns {
 				st.Configs[short] = &Resource{External: true, Name: c.Spec.Name, Labels: stackLabels(c.Spec.Labels)}
 			}
 		}
@@ -291,7 +288,7 @@ func StackNames(ctx context.Context, cli SwarmReader) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	for _, s := range svcs {
-		if ns := s.Spec.Labels[stackLabel]; ns != "" {
+		if ns := s.Spec.Labels[swarmlabel.StackNamespace]; ns != "" {
 			seen[ns] = true
 		}
 	}

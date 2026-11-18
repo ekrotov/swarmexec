@@ -17,6 +17,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
@@ -152,10 +153,10 @@ func TestEndpointNoteStates(t *testing.T) {
 		{"load failed", netEndpointsState{loaded: true, err: errors.New("x")}, swarmNet, "· n/a", tcell.ColorGray},
 		{"unknown network, all answered", netEndpointsState{loaded: true}, swarmNet, "· 0 addr", 0},
 		{"unknown network, some failed", netEndpointsState{loaded: true, failed: 1}, swarmNet, "· n/a", tcell.ColorGray},
-		{"nobody answered", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Unknown: 2}}}, swarmNet, "· n/a", tcell.ColorGray},
-		{"clean", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 2, Addrs: 4}}}, swarmNet, "· 4 addr", 0},
-		{"some nodes unknown", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 1, Unknown: 2, Addrs: 4}}}, swarmNet, "· 4 addr +2 n/a", 0},
-		{"duplicates", netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 2, Addrs: 4, DupIPs: []swarmops.Duplicate{{}}, DupMACs: []swarmops.Duplicate{{}}}}}, swarmNet, "· 4 addr ⚠2 dup", tcell.ColorYellow},
+		{"nobody answered", netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Unknown: 2}}}, swarmNet, "· n/a", tcell.ColorGray},
+		{"clean", netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Answered: 2, Addrs: 4}}}, swarmNet, "· 4 addr", 0},
+		{"some nodes unknown", netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Answered: 1, Unknown: 2, Addrs: 4}}}, swarmNet, "· 4 addr +2 n/a", 0},
+		{"duplicates", netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Answered: 2, Addrs: 4, DupIPs: []clusterread.Duplicate{{}}, DupMACs: []clusterread.Duplicate{{}}}}}, swarmNet, "· 4 addr ⚠2 dup", tcell.ColorYellow},
 	}
 	for _, c := range cases {
 		var text string
@@ -182,8 +183,8 @@ func TestEndpointSummaryAndBlock(t *testing.T) {
 		{netEndpointsState{loaded: true, err: errors.New("no nodes")}, "? no nodes"},
 		{netEndpointsState{loaded: true}, "no node has joined"},
 		{netEndpointsState{loaded: true, failed: 1}, "some agents could not answer"},
-		{netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Unknown: 1}}}, "no agent could answer"},
-		{netEndpointsState{loaded: true, byNet: map[string]*swarmops.NetEndpoints{"id": {Answered: 1, DupIPs: []swarmops.Duplicate{{}}}}}, "⚠ 1 duplicate"},
+		{netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Unknown: 1}}}, "no agent could answer"},
+		{netEndpointsState{loaded: true, byNet: map[string]*clusterread.NetEndpoints{"id": {Answered: 1, DupIPs: []clusterread.Duplicate{{}}}}}, "⚠ 1 duplicate"},
 	} {
 		if got := sum(c.st); !strings.Contains(got, c.want) {
 			t.Errorf("summary = %q, want %q in it", got, c.want)
@@ -193,17 +194,17 @@ func TestEndpointSummaryAndBlock(t *testing.T) {
 	if endpointBlock(nil, "net", 90) != nil {
 		t.Error("no analysis, no block")
 	}
-	e := &swarmops.NetEndpoints{
-		Nodes: []swarmops.NodeEndpoints{
-			{Node: "a", State: swarmops.NodeEndpointsOK, Expected: 2, Containers: 3, MACs: 3},
-			{Node: "b", State: swarmops.NodeNotOnNetwork, Expected: 1},
-			{Node: "idle", State: swarmops.NodeNotOnNetwork},
-			{Node: "c", State: swarmops.NodeUnreachable, Err: "dial refused"},
-			{Node: "d", State: swarmops.NodeNotPermitted},
+	e := &clusterread.NetEndpoints{
+		Nodes: []clusterread.NodeEndpoints{
+			{Node: "a", State: clusterread.NodeEndpointsOK, Expected: 2, Containers: 3, MACs: 3},
+			{Node: "b", State: clusterread.NodeNotOnNetwork, Expected: 1},
+			{Node: "idle", State: clusterread.NodeNotOnNetwork},
+			{Node: "c", State: clusterread.NodeUnreachable, Err: "dial refused"},
+			{Node: "d", State: clusterread.NodeNotPermitted},
 		},
-		Stale:   []swarmops.StaleEndpoint{{IP: "10.0.0.9", Name: "ep-x", Orphan: true, Local: true, Owner: "a", SeenBy: []string{"a"}}},
-		DupIPs:  []swarmops.Duplicate{{Addr: "10.0.0.5", Endpoints: []string{"x", "y"}}},
-		DupMACs: []swarmops.Duplicate{{Addr: "02:42:0a:00:00:05", Endpoints: []string{"x", "y"}}},
+		Stale:   []clusterread.StaleEndpoint{{IP: "10.0.0.9", Name: "ep-x", Orphan: true, Local: true, Owner: "a", SeenBy: []string{"a"}}},
+		DupIPs:  []clusterread.Duplicate{{Addr: "10.0.0.5", Endpoints: []string{"x", "y"}}},
+		DupMACs: []clusterread.Duplicate{{Addr: "02:42:0a:00:00:05", Endpoints: []string{"x", "y"}}},
 	}
 	block := strings.Join(endpointBlock(e, "net", 90), "\n")
 	for _, want := range []string{

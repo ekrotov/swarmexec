@@ -13,6 +13,7 @@ import (
 
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -178,7 +179,7 @@ func secretDetailText(s swarmops.Secret, members []swarmops.NetService, loading 
 		}
 		fmt.Fprintf(&b, "  %s\n", head)
 		for _, c := range m.Containers {
-			fmt.Fprintf(&b, "      %s  %s\n", c.ID, orDash(c.Node))
+			fmt.Fprintf(&b, "      %s  %s\n", c.ID, dockerfmt.OrDash(c.Node))
 		}
 	}
 	fmt.Fprintf(&b, "\n[gray]the secret value is not retrievable via the Docker API[white]")

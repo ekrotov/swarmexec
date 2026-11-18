@@ -65,3 +65,11 @@ type Client interface {
 // The real client is a Client; a method signature drifting in a moby upgrade
 // fails here, at compile time, rather than at the UI's assignment.
 var _ Client = (*client.Client)(nil)
+
+// DesiredRunning filters a TaskList to the tasks the swarm WANTS running,
+// which leaves out the task history. Without it a node that has restarted a
+// few times reports every dead attempt as a task, and the counts read as an
+// outage that already ended.
+func DesiredRunning() client.Filters {
+	return make(client.Filters).Add("desired-state", "running")
+}

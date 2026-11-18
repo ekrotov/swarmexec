@@ -13,8 +13,10 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // inspectView is one open inspect overlay: a table rendered from structured
@@ -830,7 +832,7 @@ func (u *ui) inspectCurrent() {
 		return
 	}
 	if c, ok := n.GetReference().(resolve.Candidate); ok {
-		u.showInspect(fmt.Sprintf("task %s (%s)", shortID(c.ContainerID), orDash(c.Service)), "ui.inspect.task", "",
+		u.showInspect(fmt.Sprintf("task %s (%s)", dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.Service)), "ui.inspect.task", "",
 			statsSubject{containerID: c.ContainerID},
 			func() ([]swarmops.InspectLine, string, error) { return swarmops.TaskInspectViews(ctx, dcli, c.TaskID) })
 		return
@@ -919,12 +921,12 @@ func (iv *inspectView) statsLines() []statsRow {
 			// The worst replica, not the average: an average hides the one that is
 			// about to be OOM-killed, which is the container you opened this for.
 			rows = append(rows, statsRow{
-				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", swarmops.FormatRatio(agg.CPURatio)),
+				text:  fmt.Sprintf("  %-10s %s of its limit (worst replica)", "cpu", clusterread.FormatRatio(agg.CPURatio)),
 				color: tcell.ColorWhite,
 			})
 			rows = append(rows, statsRow{
 				text: fmt.Sprintf("  %-10s %s of its limit (worst replica) · %s in total",
-					"memory", swarmops.FormatRatio(agg.MemRatio), humanBytes(agg.MemBytes)),
+					"memory", clusterread.FormatRatio(agg.MemRatio), dockerfmt.Bytes(agg.MemBytes)),
 				color: tcell.ColorWhite,
 			})
 		}
@@ -937,19 +939,19 @@ func (iv *inspectView) statsLines() []statsRow {
 func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage) (cells [][]string, measured int) {
 	cells = [][]string{{"CONTAINER", "NODE", "HEALTH", "CPU", "MEMORY"}}
 	for _, c := range cands {
-		name := shortID(c.ContainerID)
+		name := dockerfmt.ShortID(c.ContainerID)
 		if c.Slot > 0 {
-			name = fmt.Sprintf("%s.%d", orDash(c.Service), c.Slot)
+			name = fmt.Sprintf("%s.%d", dockerfmt.OrDash(c.Service), c.Slot)
 		}
 		u, ok := usage[c.ContainerID]
 		if !ok {
-			cells = append(cells, []string{name, orDash(c.NodeName), "-", "no reading", "no reading"})
+			cells = append(cells, []string{name, dockerfmt.OrDash(c.NodeName), "-", "no reading", "no reading"})
 			continue
 		}
 		measured++
 		cells = append(cells, []string{
-			name, orDash(c.NodeName), healthCell(u.Health),
-			swarmops.FormatCPUUsage(u), swarmops.FormatMemUsage(u),
+			name, dockerfmt.OrDash(c.NodeName), healthCell(u.Health),
+			clusterread.FormatCPUUsage(u), clusterread.FormatMemUsage(u),
 		})
 	}
 	return cells, measured
@@ -959,11 +961,11 @@ func statsTableCells(cands []resolve.Candidate, usage map[string]containerUsage)
 // as healthy and must not render as a blank, which would read as a pass.
 func healthCell(health string) string {
 	switch health {
-	case swarmops.HealthUnhealthy:
+	case clusterread.HealthUnhealthy:
 		return "unhealthy"
-	case swarmops.HealthStarting:
+	case clusterread.HealthStarting:
 		return "starting"
-	case swarmops.HealthHealthy:
+	case clusterread.HealthHealthy:
 		return "healthy"
 	default:
 		return "none"
@@ -1047,7 +1049,7 @@ func historyRows(cands []resolve.Candidate, hist map[string]*usageRing) []string
 
 func candidateLabel(c resolve.Candidate) string {
 	if c.Slot > 0 {
-		return fmt.Sprintf("%s.%d", orDash(c.Service), c.Slot)
+		return fmt.Sprintf("%s.%d", dockerfmt.OrDash(c.Service), c.Slot)
 	}
-	return shortID(c.ContainerID)
+	return dockerfmt.ShortID(c.ContainerID)
 }

@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/logstream"
@@ -28,7 +29,9 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/stackfile"
+	"swarmexec/client/internal/swarmlabel"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // The tools. Descriptions are what the model reads to decide what to call, so
@@ -194,8 +197,8 @@ func (s *Server) toolContexts(_ context.Context, _ mcpCtxIn) (string, error) {
 // The overview's shapes and its gathering are swarmops', shared with the
 // CLI's `swarmexec status` (review P-03).
 type (
-	mcpServiceRow   = swarmops.ServiceRow
-	mcpContainerRow = swarmops.ContainerRow
+	mcpServiceRow   = clusterread.ServiceRow
+	mcpContainerRow = clusterread.ContainerRow
 )
 
 func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) {
@@ -207,7 +210,7 @@ func (s *Server) toolOverview(ctx context.Context, in mcpCtxIn) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	out, err := swarmops.GatherOverview(ctx, c.dcli, c.r, c.label, s.overviewUsage(ctx, c), v.has)
+	out, err := clusterread.GatherOverview(ctx, c.dcli, c.r, c.label, s.overviewUsage(ctx, c), v.has)
 	if err != nil {
 		return "", err
 	}
@@ -221,7 +224,7 @@ func (s *Server) overviewUsage(ctx context.Context, c *mcpCluster) map[string]ag
 	if err != nil {
 		return map[string]agentcall.ContainerUsage{}
 	}
-	return swarmops.ClusterUsage(ctx, c.r, ac, s.connectTimeout)
+	return clusterread.ClusterUsage(ctx, c.r, ac, s.connectTimeout)
 }
 
 // --- services_list -----------------------------------------------------------
@@ -240,14 +243,14 @@ func (s *Server) toolServices(ctx context.Context, in mcpOptServiceIn) (string, 
 			return "", err
 		}
 	}
-	svcs, cands, err := swarmops.ServicesAndContainers(ctx, c.r, "mcp.services")
+	svcs, cands, err := clusterread.ServicesAndContainers(ctx, c.r, "mcp.services")
 	if err != nil {
 		return "", err
 	}
 	byService := map[string][]mcpContainerRow{}
 	for _, cd := range cands {
 		byService[cd.Service] = append(byService[cd.Service], mcpContainerRow{
-			Slot: cd.Slot, Container: shortID(cd.ContainerID), Node: orDash(cd.NodeName), Uptime: swarmops.FormatUptime(cd.Uptime),
+			Slot: cd.Slot, Container: dockerfmt.ShortID(cd.ContainerID), Node: dockerfmt.OrDash(cd.NodeName), Uptime: clusterread.FormatUptime(cd.Uptime),
 		})
 	}
 	rows := []mcpServiceRow{}
@@ -255,7 +258,7 @@ func (s *Server) toolServices(ctx context.Context, in mcpOptServiceIn) (string, 
 		if !v.has(rs.Name) || (in.Service != "" && rs.Name != in.Service) {
 			continue
 		}
-		row := swarmops.ServiceRowOf(rs)
+		row := clusterread.ServiceRowOf(rs)
 		row.Containers = byService[rs.Name]
 		rows = append(rows, row)
 	}
@@ -331,7 +334,7 @@ func (s *Server) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service
 	out := mcpInspect{
 		Name:      svc.Spec.Name,
 		ID:        svc.ID,
-		Stack:     svc.Spec.Labels["com.docker.stack.namespace"],
+		Stack:     svc.Spec.Labels[swarmlabel.StackNamespace],
 		Mode:      swarmops.ServiceModeStr(svc),
 		Labels:    mcpaccess.Strip(svc.Spec.Labels),
 		Mounts:    swarmops.SpecMounts(cs),
@@ -381,12 +384,12 @@ func (s *Server) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service
 		}
 		for _, t := range items {
 			row := mcpTaskRow{
-				ID: shortID(t.ID), Slot: t.Slot, Node: firstNonEmpty(nodeNames[t.NodeID], shortID(t.NodeID)),
+				ID: dockerfmt.ShortID(t.ID), Slot: t.Slot, Node: firstNonEmpty(nodeNames[t.NodeID], dockerfmt.ShortID(t.NodeID)),
 				State: string(t.Status.State), Desired: string(t.DesiredState),
 				Message: t.Status.Message, Error: t.Status.Err, Since: swarmops.FormatTime(t.Status.Timestamp),
 			}
 			if st := t.Status.ContainerStatus; st != nil {
-				row.Container, row.ExitCode = shortID(st.ContainerID), st.ExitCode
+				row.Container, row.ExitCode = dockerfmt.ShortID(st.ContainerID), st.ExitCode
 			}
 			out.Tasks = append(out.Tasks, row)
 		}
@@ -543,11 +546,11 @@ func logOutput(note string, buf *capWriter, timedOut bool, serr error) string {
 
 // The stats rows and the polling are swarmops', shared with the CLI's
 // `swarmexec stats` (review P-03).
-type mcpStatsRow = swarmops.StatsRow
+type mcpStatsRow = clusterread.StatsRow
 
 const (
-	mcpStatsWait = swarmops.StatsWaitDefault
-	mcpStatsPoll = swarmops.StatsPollDefault
+	mcpStatsWait = clusterread.StatsWaitDefault
+	mcpStatsPoll = clusterread.StatsPollDefault
 )
 
 func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, error) {
@@ -568,9 +571,9 @@ func (s *Server) toolStats(ctx context.Context, in mcpOptServiceIn) (string, err
 	if err != nil {
 		return "", err
 	}
-	rows, err := swarmops.GatherStats(ctx, c.r, ac, func(svc string) bool {
+	rows, err := clusterread.GatherStats(ctx, c.r, ac, func(svc string) bool {
 		return v.has(svc) && (in.Service == "" || svc == in.Service)
-	}, swarmops.StatsPoll{ConnectTimeout: s.connectTimeout, Wait: s.statsWait, Interval: s.statsPoll})
+	}, clusterread.StatsPoll{ConnectTimeout: s.connectTimeout, Wait: s.statsWait, Interval: s.statsPoll})
 	if err != nil {
 		return "", err
 	}
@@ -663,7 +666,7 @@ func (s *Server) toolNetworks(ctx context.Context, in mcpNetworksIn) (string, er
 // endpoints attributable to them are dropped before the analysis, so they
 // count nowhere. unavailable says why there is nothing, in words that name no
 // node address.
-func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []string, v *mcpView) (map[string]*swarmops.NetEndpoints, string) {
+func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []string, v *mcpView) (map[string]*clusterread.NetEndpoints, string) {
 	if len(ids) == 0 {
 		return nil, ""
 	}
@@ -676,19 +679,19 @@ func (s *Server) networkEndpoints(ctx context.Context, c *mcpCluster, ids []stri
 		return nil, "node list unavailable"
 	}
 	res := ac.NodesNetworkEndpoints(ctx, nodes, ids, s.connectTimeout)
-	tasks, err := swarmops.NetworkTaskAddrs(ctx, c.dcli)
+	tasks, err := clusterread.NetworkTaskAddrs(ctx, c.dcli)
 	if err != nil {
 		return nil, "task list unavailable"
 	}
-	tasks, res = swarmops.ScopeEndpoints(tasks, res, v.endpointScope())
-	return swarmops.AnalyzeEndpoints(tasks, res), ""
+	tasks, res = clusterread.ScopeEndpoints(tasks, res, v.endpointScope())
+	return clusterread.AnalyzeEndpoints(tasks, res), ""
 }
 
 // endpointScope is the endpoint analysis's view of v. A task counts only
 // when its service is visible (an unknown one, "", does not: fail closed); an
 // endpoint is dropped when it names a service that exists and is hidden.
-func (v *mcpView) endpointScope() swarmops.EndpointScope {
-	return swarmops.EndpointScope{
+func (v *mcpView) endpointScope() clusterread.EndpointScope {
+	return clusterread.EndpointScope{
 		Visible: v.has,
 		Hidden:  func(svc string) bool { return v.hidden[svc] },
 	}
@@ -743,13 +746,13 @@ const mcpStaleNote = "stale candidates are a heuristic: an address a node still 
 	"A task that started or stopped during the check can show for a moment; call again to confirm."
 
 // endpointsRow redacts one network's analysis for the caller.
-func endpointsRow(e *swarmops.NetEndpoints, v *mcpView) *mcpEndpoints {
+func endpointsRow(e *clusterread.NetEndpoints, v *mcpView) *mcpEndpoints {
 	if e == nil {
 		return &mcpEndpoints{}
 	}
 	name := func(n, svc string) string {
 		if svc == "" {
-			svc = swarmops.TaskServiceName(n)
+			svc = clusterread.TaskServiceName(n)
 		}
 		if svc != "" && v.has(svc) {
 			return n
@@ -758,7 +761,7 @@ func endpointsRow(e *swarmops.NetEndpoints, v *mcpView) *mcpEndpoints {
 	}
 	r := &mcpEndpoints{Running: e.Running, Addresses: e.Addrs, LoadBalancers: e.LB}
 	for _, n := range e.Nodes {
-		if n.State == swarmops.NodeNotOnNetwork && n.Expected == 0 {
+		if n.State == clusterread.NodeNotOnNetwork && n.Expected == 0 {
 			continue
 		}
 		r.Nodes = append(r.Nodes, mcpEndpointNode{Node: n.Node, State: n.State.String(), RunningTasks: n.Expected,
@@ -772,7 +775,7 @@ func endpointsRow(e *swarmops.NetEndpoints, v *mcpView) *mcpEndpoints {
 		r.Stale = append(r.Stale, mcpStale{IP: st.IP, MAC: st.MAC, Name: name(st.Name, st.Service), Owner: owner,
 			SeenBy: st.SeenBy, Orphan: st.Orphan})
 	}
-	dups := func(ds []swarmops.Duplicate) []mcpDuplicate {
+	dups := func(ds []clusterread.Duplicate) []mcpDuplicate {
 		var out []mcpDuplicate
 		for _, d := range ds {
 			md := mcpDuplicate{Addr: d.Addr}
@@ -785,7 +788,7 @@ func endpointsRow(e *swarmops.NetEndpoints, v *mcpView) *mcpEndpoints {
 	}
 	r.DuplicateIPs, r.DuplicateMACs = dups(e.DupIPs), dups(e.DupMACs)
 	if e.Warn() {
-		r.Note, r.Remedy = mcpStaleNote, swarmops.StaleRemedy
+		r.Note, r.Remedy = mcpStaleNote, clusterread.StaleRemedy
 	}
 	return r
 }
@@ -1102,11 +1105,11 @@ func (s *Server) toolReport(ctx context.Context, in mcpCtxIn) (string, error) {
 		return "", err
 	}
 	scans := make([]secscan.ServiceScan, 0, len(v.services))
-	hostNets := swarmops.HostNetworks(ctx, c.dcli)
+	hostNets := clusterread.HostNetworks(ctx, c.dcli)
 	for _, ms := range v.services {
 		scans = append(scans, secscan.ServiceScan{Name: ms.svc.Spec.Name, Findings: secscan.ScanWithHostNetworks(ms.svc, hostNets)})
 	}
-	cluster, err := swarmops.GatherCluster(ctx, c.dcli)
+	cluster, err := clusterread.GatherCluster(ctx, c.dcli)
 	if err != nil {
 		return "", err
 	}
@@ -1114,7 +1117,7 @@ func (s *Server) toolReport(ctx context.Context, in mcpCtxIn) (string, error) {
 	cluster.ClientVersion, cluster.ClientProto = s.opts.ClientVersion, s.opts.ClientProto
 	if ac, aerr := c.agents(); aerr == nil {
 		if nodes, nerr := c.r.Nodes(ctx); nerr == nil {
-			swarmops.ApplyAgentVersions(ctx, &cluster, ac, nodes, s.connectTimeout)
+			clusterread.ApplyAgentVersions(ctx, &cluster, ac, nodes, s.connectTimeout)
 		}
 	}
 	meta := secscan.ReportMeta{Context: c.label, Generated: time.Now(), Tool: "swarmexec " + s.opts.ClientVersion + " (mcp)"}
@@ -1187,7 +1190,7 @@ func (s *Server) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error) {
 		return "", err
 	}
 	for _, r := range ac.Versions(ctx, nodes, s.connectTimeout) {
-		st, ver, proto, ok := swarmops.ClassifyNode(r, s.opts.ClientVersion, s.opts.ClientProto)
+		st, ver, proto, ok := clusterread.ClassifyNode(r, s.opts.ClientVersion, s.opts.ClientProto)
 		if !ok {
 			out.Healthy = false
 		}
@@ -1277,9 +1280,9 @@ func execTarget(service string, cands []resolve.Candidate, slot int, node string
 	var opts []string
 	for _, cd := range pick {
 		if cd.Slot > 0 {
-			opts = append(opts, fmt.Sprintf("slot %d on %s", cd.Slot, orDash(cd.NodeName)))
+			opts = append(opts, fmt.Sprintf("slot %d on %s", cd.Slot, dockerfmt.OrDash(cd.NodeName)))
 		} else {
-			opts = append(opts, "node "+orDash(cd.NodeName))
+			opts = append(opts, "node "+dockerfmt.OrDash(cd.NodeName))
 		}
 	}
 	return resolve.Candidate{}, fmt.Errorf("service %q has %d running containers; pass slot or node: %s",
@@ -1337,7 +1340,7 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 		return "", err
 	}
 	return jsonText(mcpExecResult{
-		Service: ms.svc.Spec.Name, Container: shortID(cd.ContainerID), Node: orDash(cd.NodeName),
+		Service: ms.svc.Spec.Name, Container: dockerfmt.ShortID(cd.ContainerID), Node: dockerfmt.OrDash(cd.NodeName),
 		ExitCode: code,
 		Stdout:   stdout.String(), Stderr: stderr.String(),
 		StdoutTruncated: stdout.Truncated(), StderrTruncated: stderr.Truncated(),

@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 )
@@ -61,7 +62,7 @@ func answerLabelPrompt(t *testing.T, u *ui, txt string, k tcell.Key) {
 // applying, and Esc closes.
 func TestNodeLabelEditorKeys(t *testing.T) {
 	u := tabsUI()
-	u.editNodeLabels(swarmops.NodeInfo{Hostname: "node-a", Labels: map[string]string{"zone": "a"}}, u.nodeTab().table, nil)
+	u.editNodeLabels(clusterread.NodeInfo{Hostname: "node-a", Labels: map[string]string{"zone": "a"}}, u.nodeTab().table, nil)
 	if !u.pages.HasPage(pageNodeLabels) {
 		t.Fatal("the editor did not open")
 	}
@@ -143,7 +144,7 @@ func TestNodeLabelEditorApplyFailure(t *testing.T) {
 	fs := editSwarm()
 	fs.Fail = map[string]bool{"POST /nodes/n1/update": true}
 	u, _, _ := editUI(t, fs)
-	onLoop(t, u, func() { u.editNodeLabels(swarmops.NodeInfo{ID: "n1", Hostname: "node-a"}, u.ctree, nil) })
+	onLoop(t, u, func() { u.editNodeLabels(clusterread.NodeInfo{ID: "n1", Hostname: "node-a"}, u.ctree, nil) })
 	waitFront(t, u, pageNodeLabels)
 	keyRune(t, u, 'w')
 	waitFront(t, u, pageConfirm)
@@ -163,7 +164,7 @@ func TestNodeLabelEditorApplies(t *testing.T) {
 	u, ls, _ := editUI(t, editSwarm())
 	refreshed := make(chan struct{}, 1)
 	onLoop(t, u, func() {
-		u.editNodeLabels(swarmops.NodeInfo{ID: "n1", Hostname: "node-a", Labels: map[string]string{"zone": "a"}},
+		u.editNodeLabels(clusterread.NodeInfo{ID: "n1", Hostname: "node-a", Labels: map[string]string{"zone": "a"}},
 			u.ctree, func() { refreshed <- struct{}{} })
 	})
 	waitFront(t, u, pageNodeLabels)
@@ -281,7 +282,7 @@ func TestTabKeysShared(t *testing.T) {
 func openNodeDetail(t *testing.T, u *ui) *tview.TextView {
 	t.Helper()
 	onLoop(t, u, func() {
-		u.nodeTab().showDetail(swarmops.NodeInfo{Hostname: "node-a", Labels: map[string]string{"zone": "a"}})
+		u.nodeTab().showDetail(clusterread.NodeInfo{Hostname: "node-a", Labels: map[string]string{"zone": "a"}})
 	})
 	waitFront(t, u, pageNodeDetail)
 	var tv *tview.TextView
@@ -417,7 +418,7 @@ func TestNetMembersRender(t *testing.T) {
 	}
 
 	v.swarmNet = true
-	u.netTab().endpoints().byNet = map[string]*swarmops.NetEndpoints{"id": {Nodes: []swarmops.NodeEndpoints{{Node: "node-a", State: swarmops.NodeEndpointsOK}}}}
+	u.netTab().endpoints().byNet = map[string]*clusterread.NetEndpoints{"id": {Nodes: []clusterread.NodeEndpoints{{Node: "node-a", State: clusterread.NodeEndpointsOK}}}}
 	v.render()
 	got := listItems(v.list)
 	if len(got) != len(want)+3 || !strings.Contains(got[len(got)-1], "node-a") || v.rowSvc[len(v.rowSvc)-1] != "" {

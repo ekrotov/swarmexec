@@ -16,11 +16,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // `stats` and `status` are the cli twins of the MCP tools `stats` and
@@ -97,7 +98,7 @@ func newStatsCmd(g *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&f.json, "json", false, "output JSON instead of a table")
 	cmd.Flags().DurationVar(&f.connectTimeout, "connect-timeout", 10*time.Second, "per-node connect timeout")
-	cmd.Flags().DurationVar(&f.wait, "wait", swarmops.StatsWaitDefault, "how long to wait for agents still warming up (0: ask once)")
+	cmd.Flags().DurationVar(&f.wait, "wait", clusterread.StatsWaitDefault, "how long to wait for agents still warming up (0: ask once)")
 	return cmd
 }
 
@@ -119,12 +120,12 @@ func runStats(cmd *cobra.Command, g *globalFlags, f *statsFlags, args []string) 
 	for _, a := range args {
 		wanted[a] = true
 	}
-	rows, err := swarmops.GatherStats(c.ctx, c.r, ac, func(svc string) bool { return len(wanted) == 0 || wanted[svc] },
-		swarmops.StatsPoll{ConnectTimeout: f.connectTimeout, Wait: f.wait, Interval: swarmops.StatsPollDefault})
+	rows, err := clusterread.GatherStats(c.ctx, c.r, ac, func(svc string) bool { return len(wanted) == 0 || wanted[svc] },
+		clusterread.StatsPoll{ConnectTimeout: f.connectTimeout, Wait: f.wait, Interval: clusterread.StatsPollDefault})
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}
-	if swarmops.NoAgentAnswered(rows) {
+	if clusterread.NoAgentAnswered(rows) {
 		// Every row says "unavailable": an empty reading is not a measurement.
 		return &cliError{code: exitTransport, err: errors.New("no node agent answered the stats request: the usage is unknown (swarmexec doctor shows why)")}
 	}
@@ -162,7 +163,7 @@ func checkServicesExist(ctx context.Context, dcli *client.Client, names []string
 
 // printStats is the table, then — once each, on stderr — what "warming up"
 // and "unavailable" mean, so the rows stay one line each.
-func printStats(out, errOut io.Writer, rows []swarmops.StatsRow) error {
+func printStats(out, errOut io.Writer, rows []clusterread.StatsRow) error {
 	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, "SERVICE\tSLOT\tNODE\tCONTAINER\tCPU\tMEMORY\tHEALTH")
 	notes := map[string]bool{}
@@ -172,7 +173,7 @@ func printStats(out, errOut io.Writer, rows []swarmops.StatsRow) error {
 		if r.Slot > 0 {
 			slot = fmt.Sprint(r.Slot)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Service, slot, r.Node, r.Container, r.CPU, r.Memory, orDash(r.Health))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Service, slot, r.Node, r.Container, r.CPU, r.Memory, dockerfmt.OrDash(r.Health))
 		if r.Note != "" && !notes[r.Note] {
 			notes[r.Note] = true
 			order = append(order, r.Note)
@@ -223,10 +224,10 @@ func runStatus(cmd *cobra.Command, g *globalFlags, f *statusFlags) error {
 	defer c.dcli.Close()
 	usage := map[string]agentcall.ContainerUsage{}
 	if ac, aerr := c.agents(); aerr == nil {
-		usage = swarmops.ClusterUsage(c.ctx, c.r, ac, f.connectTimeout)
+		usage = clusterread.ClusterUsage(c.ctx, c.r, ac, f.connectTimeout)
 		ac.Close()
 	}
-	ov, err := swarmops.GatherOverview(c.ctx, c.dcli, c.r, c.label, usage, nil)
+	ov, err := clusterread.GatherOverview(c.ctx, c.dcli, c.r, c.label, usage, nil)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}
@@ -236,8 +237,8 @@ func runStatus(cmd *cobra.Command, g *globalFlags, f *statusFlags) error {
 	return printStatus(cmd.OutOrStdout(), cmd.ErrOrStderr(), ov)
 }
 
-func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
-	fmt.Fprintf(out, "context %s · manager %s · engine %s\n\n", ov.Context, orDash(ov.Manager), orDash(ov.Engine))
+func printStatus(out, errOut io.Writer, ov clusterread.Overview) error {
+	fmt.Fprintf(out, "context %s · manager %s · engine %s\n\n", ov.Context, dockerfmt.OrDash(ov.Manager), dockerfmt.OrDash(ov.Engine))
 	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, "NODE\tROLE\tSTATE\tAVAIL\tENGINE")
 	for _, n := range ov.Nodes {
@@ -245,7 +246,7 @@ func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
 		if n.Leader {
 			name += " (leader)"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, orDash(n.Role), orDash(n.State), orDash(n.Availability), orDash(n.Engine))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, dockerfmt.OrDash(n.Role), dockerfmt.OrDash(n.State), dockerfmt.OrDash(n.Availability), dockerfmt.OrDash(n.Engine))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -257,8 +258,8 @@ func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
 		w = tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 		fmt.Fprintln(w, "SERVICE\tSTACK\tMODE\tREPLICAS\tHEALTH\tUPDATE")
 		for _, s := range ov.Services {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, orDash(s.Stack), orDash(s.Mode), s.Replicas,
-				healthTallyText(s.Health), orDash(s.UpdateState))
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, dockerfmt.OrDash(s.Stack), dockerfmt.OrDash(s.Mode), s.Replicas,
+				healthTallyText(s.Health), dockerfmt.OrDash(s.UpdateState))
 		}
 		if err := w.Flush(); err != nil {
 			return err
@@ -274,7 +275,7 @@ func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
 
 // healthTallyText renders a service's health counts, only the non-zero ones:
 // "2 healthy, 1 unhealthy". "-" when the agents gave no health at all.
-func healthTallyText(h *swarmops.HealthTally) string {
+func healthTallyText(h *clusterread.HealthTally) string {
 	if h == nil {
 		return "-"
 	}

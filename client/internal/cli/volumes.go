@@ -14,7 +14,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	units "github.com/docker/go-units"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
@@ -22,6 +21,7 @@ import (
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 	pb "swarmexec/internal/pb"
 )
 
@@ -211,7 +211,7 @@ func (l volumeListing) writeTable(out io.Writer) {
 			if s, ok := l.sizes[v.Name]; ok {
 				sz = s
 			}
-			row += "\t" + humanBytes(sz)
+			row += "\t" + dockerfmt.Bytes(sz)
 		}
 		fmt.Fprintln(w, row)
 	}
@@ -304,14 +304,6 @@ func noAgentIfAllDown(ctx context.Context, dcli *client.Client, nodes []resolve.
 		return &cliError{code: exitTransport, err: errNoAgent}
 	}
 	return nil
-}
-
-// humanBytes renders a byte count for display, or "-" when unknown (negative).
-func humanBytes(n int64) string {
-	if n < 0 {
-		return "-"
-	}
-	return units.HumanSize(float64(n))
 }
 
 // volumeAge renders an object's creation time as a compact relative age

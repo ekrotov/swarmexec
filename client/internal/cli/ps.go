@@ -12,6 +12,7 @@ import (
 
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 )
 
 func newPsCmd(g *globalFlags) *cobra.Command {
@@ -98,14 +99,7 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 			slot = fmt.Sprintf("%d", c.Slot)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			orDash(c.Service), slot, shortID(c.ContainerID), orDash(c.NodeName), orDash(c.NodeAddr), uptime(c.Uptime))
+			dockerfmt.OrDash(c.Service), slot, dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.NodeName), dockerfmt.OrDash(c.NodeAddr), uptime(c.Uptime))
 	}
 	return w.Flush()
-}
-
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }

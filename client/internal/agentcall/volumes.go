@@ -50,7 +50,7 @@ func (c *Client) Volumes(ctx context.Context, nodes []resolve.Node, connectTimeo
 	for i, n := range nodes {
 		out[i] = res{node: n, err: fanout.ErrSkipped}
 	}
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		vs, err := c.listNodeVolumes(ctx, n, false, connectTimeout)
 		out[i] = res{node: n, vols: vs, err: err}
 	})
@@ -133,7 +133,7 @@ func (c *Client) listNodeVolumesNow(ctx context.Context, n resolve.Node, withSiz
 // the map (callers render them as "-"). Unreachable nodes are skipped.
 func (c *Client) VolumeSizes(ctx context.Context, nodes []resolve.Node, connectTimeout time.Duration) map[string]int64 {
 	per := make([][]*pb.VolumeInfo, len(nodes))
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) { // best effort: unreached nodes are skipped
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) { // best effort: unreached nodes are skipped
 		vs, err := c.listNodeVolumes(ctx, n, true, connectTimeout)
 		if err != nil {
 			return
@@ -163,7 +163,7 @@ func (c *Client) VolumeUsage(ctx context.Context, nodes []resolve.Node, connectT
 		containers []*pb.ContainerInfo
 	}
 	out := make([]res, len(nodes))
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) { // best effort, like unreachable nodes
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) { // best effort, like unreachable nodes
 		cs, err := c.listNodeContainers(ctx, n, connectTimeout)
 		if err != nil {
 			return // leave out[i].containers nil
@@ -224,7 +224,7 @@ func skippedResults(nodes []resolve.Node) []NodeResult {
 // RemoveVolume removes the volume on each node concurrently.
 func (c *Client) RemoveVolume(ctx context.Context, nodes []resolve.Node, name string, force bool, connectTimeout time.Duration) []NodeResult {
 	out := skippedResults(nodes)
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		out[i] = NodeResult{Node: n, Err: c.removeNodeVolume(ctx, n, name, force, connectTimeout)}
 	})
 	return out
@@ -247,7 +247,7 @@ func (c *Client) removeNodeVolume(ctx context.Context, n resolve.Node, name stri
 // are node-local).
 func (c *Client) CreateVolume(ctx context.Context, nodes []resolve.Node, req *pb.CreateVolumeRequest, connectTimeout time.Duration) []NodeResult {
 	out := skippedResults(nodes)
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		out[i] = NodeResult{Node: n, Err: c.createNodeVolume(ctx, n, req, connectTimeout)}
 	})
 	return out

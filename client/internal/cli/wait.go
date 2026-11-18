@@ -18,9 +18,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // `swarmexec wait` closes the gap `stack deploy` leaves: swarm accepting a
@@ -91,7 +92,7 @@ type waitSnapshot struct {
 	updateMessage string
 	updateDone    time.Time // UpdateStatus.CompletedAt
 	taskErr       string    // the latest reason a task of this service failed or is stuck
-	health        *swarmops.ServiceHealth
+	health        *clusterread.ServiceHealth
 	healthUnknown []string // nodes whose agent could not report health
 }
 
@@ -138,12 +139,12 @@ func judgeUpdate(s waitSnapshot, since time.Time) (v waitVerdict, why string, de
 	switch s.updateState {
 	case string(swarm.UpdateStatePaused):
 		return waitFailed, fmt.Sprintf("its update paused (%s) — it runs a mix of old and new tasks; `docker service update %s` resumes it",
-			orDash(s.updateMessage), s.name), true
+			dockerfmt.OrDash(s.updateMessage), s.name), true
 	case string(swarm.UpdateStateRollbackPaused):
-		return waitFailed, fmt.Sprintf("its rollback paused (%s)", orDash(s.updateMessage)), true
+		return waitFailed, fmt.Sprintf("its rollback paused (%s)", dockerfmt.OrDash(s.updateMessage)), true
 	case string(swarm.UpdateStateRollbackCompleted):
 		if !s.updateDone.Before(since) {
-			return waitFailed, fmt.Sprintf("it was rolled back during the wait (%s) — the deploy did not take", orDash(s.updateMessage)), true
+			return waitFailed, fmt.Sprintf("it was rolled back during the wait (%s) — the deploy did not take", dockerfmt.OrDash(s.updateMessage)), true
 		}
 	case string(swarm.UpdateStateUpdating), string(swarm.UpdateStateRollbackStarted):
 		return waitPending, progressText(s) + ", " + strings.ReplaceAll(s.updateState, "_", " "), true
@@ -192,7 +193,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 		r = resolve.New(dcli, addrModeOf(cfg))
 		ac := agentcall.New(cfg)
 		defer ac.Close()
-		health = func(ctx context.Context, svcs []string) (map[string]swarmops.ServiceHealth, map[string][]string, error) {
+		health = func(ctx context.Context, svcs []string) (map[string]clusterread.ServiceHealth, map[string][]string, error) {
 			return waitHealth(ctx, r, ac, svcs, f.connectTimeout)
 		}
 	}
@@ -227,7 +228,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 
 // waitHealthFunc reports per service its container health and the nodes whose
 // agent could not say (--healthy).
-type waitHealthFunc = func(context.Context, []string) (map[string]swarmops.ServiceHealth, map[string][]string, error)
+type waitHealthFunc = func(context.Context, []string) (map[string]clusterread.ServiceHealth, map[string][]string, error)
 
 // waitProgress is what a wait carries from poll to poll: since when each
 // service has held a converged verdict, and the last line printed for it.
@@ -329,7 +330,7 @@ func waitTargets(ctx context.Context, r *resolve.Resolver, args []string, stack 
 
 // waitPoll takes one snapshot of every service.
 func waitPoll(ctx context.Context, dcli serviceTaskLister, r *resolve.Resolver, names []string,
-	health func(context.Context, []string) (map[string]swarmops.ServiceHealth, map[string][]string, error)) ([]waitSnapshot, error) {
+	health func(context.Context, []string) (map[string]clusterread.ServiceHealth, map[string][]string, error)) ([]waitSnapshot, error) {
 	svcs, err := r.Services(ctx)
 	if err != nil {
 		return nil, err
@@ -348,7 +349,7 @@ func waitPoll(ctx context.Context, dcli serviceTaskLister, r *resolve.Resolver, 
 		rawByName[s.Spec.Name] = s
 	}
 
-	var hs map[string]swarmops.ServiceHealth
+	var hs map[string]clusterread.ServiceHealth
 	var unknown map[string][]string
 	if health != nil {
 		if hs, unknown, err = health(ctx, names); err != nil {
@@ -426,20 +427,20 @@ func latestTaskError(ctx context.Context, dcli serviceTaskLister, serviceID stri
 // waitHealth asks the agents for health and maps it onto the services. A node
 // whose agent did not answer is reported per service as unknown, so --healthy
 // cannot pass on a node it could not see.
-func waitHealth(ctx context.Context, r *resolve.Resolver, ac *agentcall.Client, names []string, connectTimeout time.Duration) (map[string]swarmops.ServiceHealth, map[string][]string, error) {
+func waitHealth(ctx context.Context, r *resolve.Resolver, ac *agentcall.Client, names []string, connectTimeout time.Duration) (map[string]clusterread.ServiceHealth, map[string][]string, error) {
 	nodes, err := r.Nodes(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	usage, nodeUse := ac.Usage(ctx, nodes, connectTimeout)
-	out := map[string]swarmops.ServiceHealth{}
+	out := map[string]clusterread.ServiceHealth{}
 	unknown := map[string][]string{}
 	for _, n := range names {
 		cands, err := r.Candidates(ctx, n)
 		if err != nil {
 			continue
 		}
-		out[n] = swarmops.HealthOf(usage, cands, n)
+		out[n] = clusterread.HealthOf(usage, cands, n)
 		for _, c := range cands {
 			if _, ok := nodeUse[c.NodeName]; !ok {
 				if !slices.Contains(unknown[n], c.NodeName) {

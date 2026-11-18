@@ -208,25 +208,13 @@ func TestRolloutLine(t *testing.T) {
 	}
 }
 
-// dockerTo builds a manager client pointed at a fake swarm.
-func dockerTo(t *testing.T, f *swarmfake.Swarm) *client.Client {
-	t.Helper()
-	api := swarmfake.Serve(t, f)
-	c, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Close() })
-	return c
-}
-
 // Docker secrets are immutable: an existing one is reused as-is, and that is
 // what makes `init --force` safe to re-run. Creating a second secret with the
 // same name would fail; silently replacing it would lock out every agent that
 // already mounted the old one.
 func TestEnsureSecretReusesAnExistingOne(t *testing.T) {
 	f := &swarmfake.Swarm{}
-	dcli := dockerTo(t, f)
+	dcli := swarmfake.Client(t, f)
 	ctx := context.Background()
 
 	id, created, err := EnsureSecret(ctx, dcli, deploy.SecretName, "first")
@@ -253,7 +241,7 @@ func TestEnsureSecretReusesAnExistingOne(t *testing.T) {
 // one, and the service update is what points the agents at it.
 func TestEnsurePolicyConfigIsContentAddressed(t *testing.T) {
 	f := &swarmfake.Swarm{}
-	dcli := dockerTo(t, f)
+	dcli := swarmfake.Client(t, f)
 	ctx := context.Background()
 
 	ref, err := EnsurePolicyConfig(ctx, dcli, []byte("rules: []\n"))
@@ -324,7 +312,7 @@ func TestInspectServiceImageReadsBackTheResolvedImage(t *testing.T) {
 	svc.ID = "svc1"
 	svc.Spec.Name = "swarmexec_agent"
 	svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{Image: "reg/agent:1@sha256:abc"}
-	dcli := dockerTo(t, &swarmfake.Swarm{Services: []swarm.Service{svc}})
+	dcli := swarmfake.Client(t, &swarmfake.Swarm{Services: []swarm.Service{svc}})
 
 	if got := InspectServiceImage(context.Background(), dcli, "svc1"); got != "reg/agent:1@sha256:abc" {
 		t.Errorf("image = %q, want the resolved one", got)
@@ -344,7 +332,7 @@ func TestWaitRolloutReportsAndStopsWhenEveryTaskRuns(t *testing.T) {
 		tk.DesiredState, tk.Status.State = swarm.TaskStateRunning, state
 		return tk
 	}
-	dcli := dockerTo(t, &swarmfake.Swarm{
+	dcli := swarmfake.Client(t, &swarmfake.Swarm{
 		Tasks: []swarm.Task{task(swarm.TaskStateRunning), task(swarm.TaskStateRunning)},
 	})
 

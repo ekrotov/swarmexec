@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/swarmops"
 
 	"github.com/rivo/tview"
@@ -52,7 +53,7 @@ func TestNetworkType(t *testing.T) {
 }
 
 func TestNodeResourceSection(t *testing.T) {
-	n := swarmops.NodeInfo{
+	n := clusterread.NodeInfo{
 		Hostname: "host-a", NanoCPUs: 4 * nanoCPU, MemoryBytes: 8 << 30,
 		ReservedNanoCPUs: 2 * nanoCPU, ReservedMemoryBytes: 4 << 30,
 	}
@@ -66,13 +67,13 @@ func TestNodeResourceSection(t *testing.T) {
 	}
 
 	// A node reporting no capacity must say so rather than divide by zero.
-	empty := nodeResourceSection(swarmops.NodeInfo{Hostname: "x"})
+	empty := nodeResourceSection(clusterread.NodeInfo{Hostname: "x"})
 	if !strings.Contains(empty, "no capacity") {
 		t.Errorf("a capacity-less node should be called out:\n%s", empty)
 	}
 
 	// Over-commitment must be visible, and "free" must not go negative.
-	over := nodeResourceSection(swarmops.NodeInfo{
+	over := nodeResourceSection(clusterread.NodeInfo{
 		Hostname: "host-b", NanoCPUs: nanoCPU, MemoryBytes: 1 << 30,
 		ReservedNanoCPUs: 3 * nanoCPU, ReservedMemoryBytes: 3 << 30,
 	})
@@ -84,7 +85,7 @@ func TestNodeResourceSection(t *testing.T) {
 	}
 
 	// Unreserved tasks are called out, so 0%% does not read as "idle".
-	withBare := nodeResourceSection(swarmops.NodeInfo{
+	withBare := nodeResourceSection(clusterread.NodeInfo{
 		Hostname: "host-c", NanoCPUs: 4 * nanoCPU, MemoryBytes: 8 << 30,
 		TasksWithoutReservation: 3,
 	})

@@ -17,6 +17,7 @@ import (
 	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 )
 
 // logDefaults resolves the log view's initial format+filter from config,
@@ -169,7 +170,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 			state = "off"
 		}
 		tv.SetTitle(fmt.Sprintf(" logs %s on %s — follow:%s · %s ",
-			shortID(c.ContainerID), orDash(c.NodeName), state, lv.status()))
+			dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.NodeName), state, lv.status()))
 	}
 	tv.SetBorder(true)
 	setTitle()
@@ -259,7 +260,7 @@ func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, bySe
 		// the new container/node.
 		prefix := fmt.Sprintf("[slot %d] ", c.Slot)
 		if c.Slot == 0 {
-			prefix = fmt.Sprintf("[%s] ", orDash(c.NodeName))
+			prefix = fmt.Sprintf("[%s] ", dockerfmt.OrDash(c.NodeName))
 		}
 		tail := uint32(200)
 		if byService {

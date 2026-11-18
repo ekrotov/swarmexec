@@ -13,6 +13,8 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
+
+	"swarmexec/client/internal/swarmlabel"
 )
 
 // ServiceFromSpec reduces a swarm service spec to the compose shape. It is the
@@ -155,7 +157,7 @@ func stackLabels(in map[string]string) map[string]string {
 	}
 	out := map[string]string{}
 	for k, v := range in {
-		if k == "com.docker.stack.namespace" || k == "com.docker.stack.image" {
+		if k == swarmlabel.StackNamespace || k == swarmlabel.StackImage {
 			continue
 		}
 		out[k] = v

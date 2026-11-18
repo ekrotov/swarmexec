@@ -15,6 +15,7 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/moby/moby/api/types/mount"
@@ -123,7 +124,7 @@ func (t *volumesTab) yank(b *strings.Builder) {
 		if s, ok := st.sizes[v.Name]; ok {
 			size = s
 		}
-		fmt.Fprintf(b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, orDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), humanBytes(size))
+		fmt.Fprintf(b, "%s\t%s\t%d: %s\t%s\t%s\t%s\n", v.Name, dockerfmt.OrDash(v.Driver), len(v.Nodes), joinNodes(v.Nodes), used, volumeAge(v.Created), dockerfmt.Bytes(size))
 	}
 }
 
@@ -297,7 +298,7 @@ func (t *volumesTab) renderRow(st *volumesState, row int, v swarmVolume) {
 		if s, ok := st.sizes[v.Name]; ok {
 			size, color = s, tcell.ColorWhite
 		}
-		sizeCell = tview.NewTableCell(humanBytes(size)).SetTextColor(color).SetExpansion(1)
+		sizeCell = tview.NewTableCell(dockerfmt.Bytes(size)).SetTextColor(color).SetExpansion(1)
 	}
 	mark, nameColor := "  ", tcell.ColorWhite
 	if st.selected[v.Name] {
@@ -308,7 +309,7 @@ func (t *volumesTab) renderRow(st *volumesState, row int, v swarmVolume) {
 	t.table.SetCell(row, 1, sizeCell)
 	t.table.SetCell(row, 2, tview.NewTableCell(nodes).SetExpansion(1).SetMaxWidth(volNodesMaxWidth))
 	t.table.SetCell(row, 3, usedCell)
-	t.table.SetCell(row, 4, tview.NewTableCell(orDash(v.Driver)).SetExpansion(1))
+	t.table.SetCell(row, 4, tview.NewTableCell(dockerfmt.OrDash(v.Driver)).SetExpansion(1))
 	t.table.SetCell(row, 5, tview.NewTableCell(volumeAge(v.Created)).SetExpansion(1))
 }
 
@@ -635,15 +636,15 @@ func (t *volumesTab) showConsumers(v swarmVolume) {
 	} else {
 		svcW, contW := 0, 0
 		for _, c := range consumers {
-			if w := len(orDash(c.Service)); w > svcW {
+			if w := len(dockerfmt.OrDash(c.Service)); w > svcW {
 				svcW = w
 			}
-			if w := len(orDash(c.Container)); w > contW {
+			if w := len(dockerfmt.OrDash(c.Container)); w > contW {
 				contW = w
 			}
 		}
 		for _, c := range consumers {
-			list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, orDash(c.Service), contW, orDash(c.Container), orDash(c.Node)), "", 0, nil)
+			list.AddItem(fmt.Sprintf("%-*s  %-*s  on %s", svcW, dockerfmt.OrDash(c.Service), contW, dockerfmt.OrDash(c.Container), dockerfmt.OrDash(c.Node)), "", 0, nil)
 		}
 	}
 	ov := u.overlayFor(pageVolUsers, t.table, footerKeys("j/k", "move", "Esc", "back"))

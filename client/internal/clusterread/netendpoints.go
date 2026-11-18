@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -18,6 +18,8 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/fanout"
+	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 )
 
@@ -318,7 +320,7 @@ func collectVIPs(id string, nodes []agentcall.NodeNetworkEndpoints) map[string]b
 			continue
 		}
 		for _, s := range ni.GetServices() {
-			if v := StripMask(s.GetVip()); v != "" {
+			if v := swarmops.StripMask(s.GetVip()); v != "" {
 				vips[v] = true
 			}
 		}
@@ -357,7 +359,7 @@ func (b addrBook) note(addr, key, name string) {
 		b[addr] = map[string]string{}
 	}
 	if name == "" {
-		name = shortID(key)
+		name = dockerfmt.ShortID(key)
 	}
 	b[addr][key] = name
 }
@@ -476,7 +478,7 @@ func (s *netScan) scanNode(n agentcall.NodeNetworkEndpoints) NodeEndpoints {
 func (s *netScan) scanLocal(ne *NodeEndpoints, ni *pb.NetworkEndpointsInfo, node string, nodeStale map[string]bool) {
 	macs := map[string]bool{}
 	for _, l := range ni.GetLocalEndpoints() {
-		ip := StripMask(l.GetIpv4Address())
+		ip := swarmops.StripMask(l.GetIpv4Address())
 		key := endpointKey(l.GetEndpointId(), ip, l.GetName())
 		mac := strings.ToLower(l.GetMacAddress())
 		if mac != "" {
@@ -527,7 +529,7 @@ func (s *netScan) scanNetworkDB(ne *NodeEndpoints, ni *pb.NetworkEndpointsInfo, 
 // dbTask records one networkdb task entry filed under service, as seen by
 // node; it returns the entry's key and whether it is a stale candidate.
 func (s *netScan) dbTask(service string, t *pb.NetworkTaskEndpoint, peerName map[string]string, node string) (string, bool) {
-	ip := StripMask(t.GetEndpointIp())
+	ip := swarmops.StripMask(t.GetEndpointIp())
 	key := endpointKey(t.GetEndpointId(), ip, t.GetName())
 	s.ipOwners.note(ip, key, t.GetName())
 	if service == "" {
@@ -744,7 +746,7 @@ func (f endpointFilter) scopeNetwork(ni *pb.NetworkEndpointsInfo) {
 	hid := f.hiddenIPs[ni.GetId()]
 	var locals []*pb.NetworkLocalEndpoint
 	for _, l := range ni.GetLocalEndpoints() {
-		if !l.GetLoadBalancer() && (f.hiddenName("", l.GetName()) || hid[StripMask(l.GetIpv4Address())]) {
+		if !l.GetLoadBalancer() && (f.hiddenName("", l.GetName()) || hid[swarmops.StripMask(l.GetIpv4Address())]) {
 			continue
 		}
 		locals = append(locals, l)
@@ -754,7 +756,7 @@ func (f endpointFilter) scopeNetwork(ni *pb.NetworkEndpointsInfo) {
 		var ts []*pb.NetworkTaskEndpoint
 		for _, t := range s.GetTasks() {
 			lb := s.GetName() == "" && lbTaskName(t.GetName())
-			if !lb && (f.hiddenName(s.GetName(), t.GetName()) || hid[StripMask(t.GetEndpointIp())]) {
+			if !lb && (f.hiddenName(s.GetName(), t.GetName()) || hid[swarmops.StripMask(t.GetEndpointIp())]) {
 				continue
 			}
 			ts = append(ts, t)

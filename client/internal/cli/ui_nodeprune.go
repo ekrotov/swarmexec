@@ -15,7 +15,9 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -26,7 +28,7 @@ import (
 // opens the prune dialog. The figures come from the agent's memory, so this is
 // a round trip, not a scan. An agent that predates the RPC gets the old
 // two-choice image menu instead — it can still do that much.
-func (u *ui) openNodePrune(n swarmops.NodeInfo, back tview.Primitive, after func()) {
+func (u *ui) openNodePrune(n clusterread.NodeInfo, back tview.Primitive, after func()) {
 	u.flash(fmt.Sprintf(" [gray]asking %s's agent…[white]", n.Hostname))
 	u.loadNodeReclaim(n.Hostname, false, func(resp *pb.ReclaimStatsResponse, err error) {
 		switch {
@@ -50,7 +52,7 @@ func (u *ui) openNodePrune(n swarmops.NodeInfo, back tview.Primitive, after func
 // apply (run) — the same split scheduleEditor has.
 type pruneDialog struct {
 	u      *ui
-	node   swarmops.NodeInfo
+	node   clusterread.NodeInfo
 	stats  *pb.ReclaimStatsResponse
 	after  func()
 	choice pruneChoice
@@ -63,7 +65,7 @@ type pruneDialog struct {
 // showPruneDialog is the category checklist. Volumes sit last, unticked and
 // red, and "all" (a) leaves them alone: they are data, and the only way to
 // prune them is to tick them on purpose.
-func (u *ui) showPruneDialog(n swarmops.NodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
+func (u *ui) showPruneDialog(n clusterread.NodeInfo, stats *pb.ReclaimStatsResponse, back tview.Primitive, after func()) {
 	d := &pruneDialog{u: u, node: n, stats: stats, after: after, choice: defaultPruneChoice()}
 	d.table = tview.NewTable().SetSelectable(true, false)
 	d.table.SetBorder(true).SetTitle(fmt.Sprintf(" prune — %s ", n.Hostname))
@@ -378,7 +380,7 @@ func schedPreview(s prunesched.Schedule, now time.Time) string {
 		fmt.Fprintf(&b, " [red]cannot save:[-] %s\n", escapeTags(err.Error()))
 		return b.String()
 	}
-	fmt.Fprintf(&b, " runs at %s %s on %s\n", strings.Join(swarmops.RunTimes(s), ", "), s.TZ, orDash(prunesched.FormatDays(s.Days)))
+	fmt.Fprintf(&b, " runs at %s %s on %s\n", strings.Join(swarmops.RunTimes(s), ", "), s.TZ, dockerfmt.OrDash(prunesched.FormatDays(s.Days)))
 	if !s.Enabled {
 		b.WriteString(" [gray]disabled — saving keeps these settings but runs nothing[-]\n")
 		return b.String()

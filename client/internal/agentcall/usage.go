@@ -7,7 +7,6 @@ import (
 	"context"
 	"time"
 
-	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
@@ -82,7 +81,7 @@ func (c *Client) Usage(ctx context.Context, nodes []resolve.Node, connectTimeout
 	results := make([]result, len(nodes))
 	// Best effort: a node not reached before ctx ended contributes nothing,
 	// exactly like an unreachable one.
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		resp, err := c.Stats(ctx, n, connectTimeout)
 		if err != nil {
 			return

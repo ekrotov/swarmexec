@@ -39,7 +39,7 @@ func (c *Client) NodesNetworkEndpoints(ctx context.Context, nodes []resolve.Node
 	for i, n := range nodes {
 		out[i] = NodeNetworkEndpoints{Node: n, Err: fanout.ErrSkipped}
 	}
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		resp, err := c.NetworkEndpoints(ctx, n, networkIDs, connectTimeout)
 		out[i] = NodeNetworkEndpoints{Node: n, Resp: resp, Err: err}
 	})

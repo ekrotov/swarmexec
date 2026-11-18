@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/moby/moby/api/types/container"
+
+	"swarmexec/internal/dockerfmt"
 )
 
 // ContainerInspectViews turns the node-local `docker container inspect`
@@ -30,7 +32,7 @@ func ContainerInspectViews(raw []byte) ([]InspectLine, string, error) {
 
 func formatContainerInspect(c container.InspectResponse) []InspectLine {
 	var b inspBuilder
-	b.title(fmt.Sprintf("CONTAINER  %s  %s", shortID(c.ID), strings.TrimPrefix(c.Name, "/")))
+	b.title(fmt.Sprintf("CONTAINER  %s  %s", dockerfmt.ShortID(c.ID), strings.TrimPrefix(c.Name, "/")))
 
 	b.section("STATE")
 	containerStateLines(&b, c)

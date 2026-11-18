@@ -5,21 +5,21 @@
 // early when the caller's context ends.
 //
 // It is the cli's node fan-out (one agent RPC per swarm node), pulled out of
-// package cli because it knows nothing about the TUI: the first piece of the
-// data layer that stands on its own, and a seed for the agent-call package the
-// architecture review proposes (A-01).
+// package cli because it knows nothing about the TUI — and, since the review's
+// ARC-02, it knows nothing about a swarm node either: the typed wrapper lives
+// with the calls it serves, in agentcall.
 package fanout
 
 import (
 	"context"
 	"errors"
 	"sync"
-
-	"swarmexec/client/internal/resolve"
 )
 
 // NodeLimit caps how many node agents the cli dials concurrently, so a large
-// swarm does not open hundreds of TLS connections at once.
+// swarm does not open hundreds of TLS connections at once. The node fan-out
+// that uses it lives in agentcall (agentcall.PerNode): this package is a
+// concurrency helper and must not know what a swarm node is.
 const NodeLimit = 16
 
 // ErrSkipped marks an item Each never started because the context ended
@@ -66,9 +66,4 @@ func Each[T any](ctx context.Context, items []T, limit int, fn func(ctx context.
 		}()
 	}
 	return nil
-}
-
-// Nodes is Each over swarm nodes at NodeLimit.
-func Nodes(ctx context.Context, nodes []resolve.Node, fn func(ctx context.Context, i int, n resolve.Node)) error {
-	return Each(ctx, nodes, NodeLimit, fn)
 }

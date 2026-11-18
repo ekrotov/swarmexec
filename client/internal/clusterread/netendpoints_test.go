@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmfake"
+	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 )
 
@@ -375,7 +376,7 @@ func TestNetworkTaskAddrsOverTheAPI(t *testing.T) {
 	tk.NetworksAttachments = []swarm.NetworkAttachment{{Network: swarm.Network{ID: "net"}, Addresses: []netip.Prefix{netip.MustParsePrefix("10.0.0.5/24")}}}
 	var svc swarm.Service
 	svc.ID, svc.Spec.Name = "s1", "web"
-	got, err := NetworkTaskAddrs(context.Background(), fakeDocker(t, &swarmfake.Swarm{Tasks: []swarm.Task{tk}, Services: []swarm.Service{svc}}))
+	got, err := NetworkTaskAddrs(context.Background(), swarmfake.Client(t, &swarmfake.Swarm{Tasks: []swarm.Task{tk}, Services: []swarm.Service{svc}}))
 	if err != nil || len(got) != 1 || got[0].Service != "web" || got[0].IPs[0] != "10.0.0.5" {
 		t.Errorf("NetworkTaskAddrs = %+v, %v", got, err)
 	}
@@ -390,14 +391,14 @@ func TestMembersToleratesTaskWithoutContainer(t *testing.T) {
 	var svc swarm.Service
 	svc.ID, svc.Spec.Name = "s1", "web"
 	svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{Secrets: []*swarm.SecretReference{{SecretID: "sec", SecretName: "pw"}}}
-	dcli := fakeDocker(t, &swarmfake.Swarm{Tasks: []swarm.Task{tk}, Services: []swarm.Service{svc}})
-	ms := NetworkMembers(context.Background(), dcli, Network{ID: "net", Name: "netname", Services: []string{"web"}})
+	dcli := swarmfake.Client(t, &swarmfake.Swarm{Tasks: []swarm.Task{tk}, Services: []swarm.Service{svc}})
+	ms := swarmops.NetworkMembers(context.Background(), dcli, swarmops.Network{ID: "net", Name: "netname", Services: []string{"web"}})
 	if len(ms) != 1 || len(ms[0].Containers) != 1 || ms[0].Containers[0].ID != "" {
 		t.Errorf("NetworkMembers = %+v", ms)
 	}
-	ss := SecretMembers(context.Background(), dcli, Secret{ID: "sec", Name: "pw"})
+	ss := swarmops.SecretMembers(context.Background(), dcli, swarmops.Secret{ID: "sec", Name: "pw"})
 	if len(ss) != 1 || len(ss[0].Containers) != 1 {
-		t.Errorf("SecretMembers = %+v", ss)
+		t.Errorf("swarmops.SecretMembers = %+v", ss)
 	}
 }
 

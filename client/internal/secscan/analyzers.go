@@ -9,6 +9,8 @@ import (
 
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
+
+	"swarmexec/client/internal/imageref"
 )
 
 // rootUserAnalyzer flags services whose container is not pinned to a non-root
@@ -378,7 +380,7 @@ func (imagePinAnalyzer) Analyze(svc swarm.Service) []Finding {
 	if ref == "" || strings.Contains(ref, "@sha256:") {
 		return nil // digest-pinned: exactly reproducible
 	}
-	tag := imageTagOf(ref)
+	tag := imageref.Tag(ref)
 	if tag != "" && tag != "latest" {
 		return nil
 	}
@@ -392,19 +394,6 @@ func (imagePinAnalyzer) Analyze(svc swarm.Service) []Finding {
 		Detail:   what + " — the running version can change without a spec change, so a deploy is not reproducible",
 		Severity: SevLow,
 	}}
-}
-
-// imageTagOf returns an image reference's tag, or "" when it carries none. A
-// colon inside the registry host's port (registry:5000/img) is not a tag.
-func imageTagOf(ref string) string {
-	i := strings.LastIndexByte(ref, ':')
-	if i < 0 {
-		return ""
-	}
-	if strings.ContainsRune(ref[i+1:], '/') {
-		return "" // the colon belonged to a host:port, not a tag
-	}
-	return ref[i+1:]
 }
 
 // Describe implementations — the list the UI shows as "what was checked".

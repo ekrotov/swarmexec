@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/clusterread"
 
 	"github.com/moby/moby/client"
 
@@ -49,9 +49,9 @@ func TestJudge(t *testing.T) {
 		{"job not done", waitSnapshot{isJob: true, have: 1, want: 3}, false, waitPending, "1/3 completed"},
 		{"job done", waitSnapshot{isJob: true, have: 3, want: 3}, false, waitConverged, "3/3 completed"},
 		{"missing", waitSnapshot{missing: true}, false, waitFailed, "no such service"},
-		{"healthy", waitSnapshot{have: 2, want: 2, health: &swarmops.ServiceHealth{Healthy: 2}}, true, waitConverged, "2/2 running"},
-		{"unhealthy", waitSnapshot{have: 2, want: 2, health: &swarmops.ServiceHealth{Healthy: 1, Unhealthy: 1}}, true, waitPending, "1 unhealthy"},
-		{"health starting", waitSnapshot{have: 2, want: 2, health: &swarmops.ServiceHealth{Starting: 2}}, true, waitPending, "2 starting"},
+		{"healthy", waitSnapshot{have: 2, want: 2, health: &clusterread.ServiceHealth{Healthy: 2}}, true, waitConverged, "2/2 running"},
+		{"unhealthy", waitSnapshot{have: 2, want: 2, health: &clusterread.ServiceHealth{Healthy: 1, Unhealthy: 1}}, true, waitPending, "1 unhealthy"},
+		{"health starting", waitSnapshot{have: 2, want: 2, health: &clusterread.ServiceHealth{Starting: 2}}, true, waitPending, "2 starting"},
 		// The rule that keeps --healthy honest: no verdict is not a green one.
 		{"health unknown", waitSnapshot{have: 2, want: 2, healthUnknown: []string{"node-3"}}, true, waitPending, "health unknown on node-3"},
 		{"health not asked", waitSnapshot{have: 2, want: 2, healthUnknown: []string{"node-3"}}, false, waitConverged, "2/2 running"},

@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/internal/dockerfmt"
 	pb "swarmexec/internal/pb"
 )
 
@@ -386,7 +387,7 @@ func newFwdDialog(c resolve.Candidate) *fwdDialog {
 	d.header = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	d.header.SetBorderPadding(0, 0, fwdPadX, fwdPadX)
 	d.header.SetText(fmt.Sprintf("[%s]%-*s[-]%s", palette.textDim.CSS(), fwdLabelWidth, "Service",
-		tview.Escape(fmt.Sprintf("%s · %s · node %s", orDash(c.Service), orDash(shortID(c.ContainerID)), orDash(c.NodeName)))))
+		tview.Escape(fmt.Sprintf("%s · %s · node %s", dockerfmt.OrDash(c.Service), dockerfmt.OrDash(dockerfmt.ShortID(c.ContainerID)), dockerfmt.OrDash(c.NodeName)))))
 
 	// k9s's order: what to reach, where to listen, on which address.
 	d.cport = newFwdField("Container Port", 12)
@@ -433,7 +434,7 @@ func (u *ui) portPrompt(c resolve.Candidate) {
 	u.openForwardForm(c, func(spec forwardSpec) {
 		u.startForward(c, spec.address, spec.local, spec.remote)
 		u.flash(fmt.Sprintf(" [green]forwarding[white] %s → %s:%d",
-			net.JoinHostPort(spec.address, strconv.FormatUint(uint64(spec.local), 10)), shortID(c.ContainerID), spec.remote))
+			net.JoinHostPort(spec.address, strconv.FormatUint(uint64(spec.local), 10)), dockerfmt.ShortID(c.ContainerID), spec.remote))
 	})
 }
 

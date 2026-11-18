@@ -17,6 +17,7 @@ import (
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmlabel"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -164,7 +165,7 @@ func completeStacks(g *globalFlags) completeFunc {
 		seen := map[string]bool{}
 		var out []string
 		for _, s := range svcs {
-			if st := s.Spec.Labels["com.docker.stack.namespace"]; st != "" && !seen[st] {
+			if st := s.Spec.Labels[swarmlabel.StackNamespace]; st != "" && !seen[st] {
 				seen[st] = true
 				out = append(out, st)
 			}

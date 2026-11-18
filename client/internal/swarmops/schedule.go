@@ -11,6 +11,7 @@ import (
 
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/internal/deploy"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/prunesched"
 
 	"github.com/moby/moby/api/types/swarm"
@@ -100,7 +101,7 @@ func DescribeSchedule(s prunesched.Schedule, now time.Time, upcoming int) string
 		state = "enabled"
 	}
 	fmt.Fprintf(&b, "schedule:          %s\n", state)
-	fmt.Fprintf(&b, "days:              %s\n", orDash(prunesched.FormatDays(s.Days)))
+	fmt.Fprintf(&b, "days:              %s\n", dockerfmt.OrDash(prunesched.FormatDays(s.Days)))
 	fmt.Fprintf(&b, "runs at:           %s (%s)\n", strings.Join(RunTimes(s), ", "), s.TZ)
 	fmt.Fprintf(&b, "categories:        %s\n", strings.Join(s.Categories, ", "))
 	fmt.Fprintf(&b, "containers kept:   %s after they stop\n", prunesched.FormatUntil(s.ContainersUntil))

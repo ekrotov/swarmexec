@@ -481,13 +481,8 @@ func TestServicesUsesServiceStatus(t *testing.T) {
 		t.Fatalf("got %d services, want %d: %+v", len(got), len(want), got)
 	}
 	for i, w := range want {
-		// Risks are the security scan's business and have their own tests; the
-		// scan flags informational findings on almost any spec, so asserting on
-		// them here would make this test fail whenever a check is added.
-		g := got[i]
-		g.Risks = nil
-		if !reflect.DeepEqual(g, w) {
-			t.Errorf("service[%d] = %+v, want %+v", i, g, w)
+		if !reflect.DeepEqual(got[i], w) {
+			t.Errorf("service[%d] = %+v, want %+v", i, got[i], w)
 		}
 	}
 }
@@ -806,5 +801,37 @@ func TestLastExitedNoContainerGivesReason(t *testing.T) {
 	}
 	if reason != "rejected: No such image: nope:1" {
 		t.Errorf("reason = %q", reason)
+	}
+}
+
+// Services must not run the security scanner. Most of its callers never read a
+// finding, and the scan used to be computed for all of them on every refresh;
+// the choice now belongs to the call site.
+func TestOnlyServicesWithRisksScans(t *testing.T) {
+	var svc swarm.Service
+	svc.ID = "s1"
+	svc.Spec.Name = "web"
+	// Something every analyzer set flags: no user, no resource limits, a
+	// floating tag.
+	svc.Spec.TaskTemplate.ContainerSpec = &swarm.ContainerSpec{Image: "nginx:latest"}
+	svc.Spec.Mode.Global = &swarm.GlobalService{}
+	f := newFake()
+	f.services = []swarm.Service{svc}
+	r := New(f, AddrHostname)
+
+	plain, err := r.Services(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain) != 1 || len(plain[0].Risks) != 0 {
+		t.Errorf("Services filled Risks: %+v", plain)
+	}
+
+	scanned, err := r.ServicesWithRisks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scanned) != 1 || len(scanned[0].Risks) == 0 {
+		t.Errorf("ServicesWithRisks returned no findings for %+v", scanned)
 	}
 }

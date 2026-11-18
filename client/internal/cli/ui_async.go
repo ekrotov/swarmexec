@@ -72,7 +72,7 @@ func async[T any](u *ui, op string, work func(ctx context.Context) (T, error), a
 	if cs.dcli != nil {
 		dcli = cs.dcli
 	}
-	auth := agenterr.AuthOf(cs.cfg)
+	auth := agenterr.AuthOf(cs.cfg.SecretMode())
 	go func() {
 		start := time.Now()
 		v, err := work(ctx)
@@ -119,7 +119,7 @@ func mutate[T any](u *ui, op, label string, work func(ctx context.Context) (T, e
 	if cs.dcli != nil {
 		dcli = cs.dcli
 	}
-	auth := agenterr.AuthOf(cs.cfg)
+	auth := agenterr.AuthOf(cs.cfg.SecretMode())
 	end := u.muts.begin(label + " on " + name)
 	go func() {
 		defer cancel()

@@ -9,8 +9,8 @@ import (
 
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/swarmops"
 )
 
 // The pieces the tree render is made of, one at a time. The render tests in
@@ -291,9 +291,9 @@ func TestRemarkUsageKeepsTheTree(t *testing.T) {
 	leaf := web.GetChildren()[0]
 	before := leaf.GetText()
 
-	u.usage = map[string]containerUsage{"aaa111": {Health: swarmops.HealthUnhealthy}}
+	u.usage = map[string]containerUsage{"aaa111": {Health: clusterread.HealthUnhealthy}}
 	tt.remarkUsage()
-	if got := leaf.GetText(); got != before+containerHealthBadge(swarmops.HealthUnhealthy) {
+	if got := leaf.GetText(); got != before+containerHealthBadge(clusterread.HealthUnhealthy) {
 		t.Errorf("re-marked leaf = %q", got)
 	}
 	if !web.IsExpanded() || tt.root.GetChildren()[0] != web {

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
@@ -120,7 +121,7 @@ func NodeAddrs(nodes []swarm.Node) []NodeAddr {
 	for _, n := range nodes {
 		name := n.Description.Hostname
 		if name == "" {
-			name = shortID(n.ID)
+			name = dockerfmt.ShortID(n.ID)
 		}
 		add(name, n.Status.Addr)
 		if n.ManagerStatus != nil {

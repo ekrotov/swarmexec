@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // This is the mapping layer between what the manager returns and what the
@@ -72,15 +74,15 @@ func HostNetworks(ctx context.Context, dcli swarmapi.Client) map[string]bool {
 // not read" and "autolock is off" are different statements and only one of them
 // is true.
 func GatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, error) {
-	nets, err := ListNetworks(ctx, dcli, nil)
+	nets, err := swarmops.ListNetworks(ctx, dcli, nil)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list networks: %w", err)
 	}
-	secrets, err := ListSecrets(ctx, dcli)
+	secrets, err := swarmops.ListSecrets(ctx, dcli)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list secrets: %w", err)
 	}
-	configs, err := ListConfigs(ctx, dcli)
+	configs, err := swarmops.ListConfigs(ctx, dcli)
 	if err != nil {
 		return secscan.Cluster{}, fmt.Errorf("list configs: %w", err)
 	}
@@ -136,7 +138,7 @@ func NodeDisplayName(hostname, id string) string {
 	if hostname != "" {
 		return hostname
 	}
-	return shortID(id)
+	return dockerfmt.ShortID(id)
 }
 
 // contextLabel names the cluster the report ran against. The docker context

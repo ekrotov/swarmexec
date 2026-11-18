@@ -653,3 +653,17 @@ func Serve(t testing.TB, f *Swarm) *httptest.Server {
 	})
 	return srv
 }
+
+// Client serves f and returns a Docker client pointed at it, with both closed
+// at cleanup. Every package that tests against a fake swarm needs this and
+// each had written its own copy.
+func Client(t testing.TB, f *Swarm) *client.Client {
+	t.Helper()
+	api := Serve(t, f)
+	c, err := client.New(client.WithHost("tcp://" + strings.TrimPrefix(api.URL, "http://")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return c
+}

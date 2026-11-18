@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	cliconfig "github.com/docker/cli/cli/config"
@@ -32,6 +31,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 
+	"swarmexec/client/internal/imageref"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/prunesched"
@@ -331,12 +331,6 @@ func EncodedRegistryAuth(image string) (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// RegistryHost extracts the registry hostname from an image reference, or
-// "docker.io" for Docker Hub images.
-func RegistryHost(image string) string {
-	parts := strings.SplitN(image, "/", 2)
-	if len(parts) == 2 && (strings.ContainsAny(parts[0], ".:") || parts[0] == "localhost") {
-		return parts[0]
-	}
-	return "docker.io"
-}
+// RegistryHost is the registry an image is pulled from, which is the key the
+// local credentials for it are stored under.
+func RegistryHost(image string) string { return imageref.Domain(image) }

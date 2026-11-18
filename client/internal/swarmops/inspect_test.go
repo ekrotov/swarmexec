@@ -11,6 +11,8 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
+
+	"swarmexec/internal/dockerfmt"
 )
 
 func joinInspLines(lines []InspectLine) string {
@@ -339,7 +341,7 @@ func TestServiceNetDNS_DNSRRHasNoVIP(t *testing.T) {
 func TestTaskDisplayName(t *testing.T) {
 	var global swarm.Task
 	global.NodeID = "nodeabcdef0123"
-	if got := taskDisplayName("agent", global); got != "agent."+shortID("nodeabcdef0123") {
+	if got := taskDisplayName("agent", global); got != "agent."+dockerfmt.ShortID("nodeabcdef0123") {
 		t.Errorf("global task name = %q", got)
 	}
 	if got := taskDisplayName("web", swarm.Task{Slot: 3}); got != "web.3" {

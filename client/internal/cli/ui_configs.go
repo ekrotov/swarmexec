@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -84,7 +85,7 @@ func (t *configsTab) showCreate() {
 func (t *configsTab) yank(b *strings.Builder) {
 	fmt.Fprintln(b, "CONFIG\tUSED BY\tSIZE\tAGE\tUPDATED\tLABELS")
 	for _, c := range t.rows() {
-		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%d\n", c.Name, len(c.Services), humanBytes(int64(c.Size)),
+		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%d\n", c.Name, len(c.Services), dockerfmt.Bytes(int64(c.Size)),
 			volumeAge(c.Created), volumeAge(c.Updated), len(c.Labels))
 	}
 }
@@ -100,7 +101,7 @@ func (t *configsTab) renderRow(r int, c swarmops.Config) {
 	}
 	t.table.SetCell(r, 0, tview.NewTableCell(c.Name).SetExpansion(1))
 	t.table.SetCell(r, 1, used)
-	t.table.SetCell(r, 2, tview.NewTableCell(humanBytes(int64(c.Size))).SetExpansion(1))
+	t.table.SetCell(r, 2, tview.NewTableCell(dockerfmt.Bytes(int64(c.Size))).SetExpansion(1))
 	t.table.SetCell(r, 3, tview.NewTableCell(volumeAge(c.Created)).SetExpansion(1))
 	t.table.SetCell(r, 4, tview.NewTableCell(volumeAge(c.Updated)).SetExpansion(1))
 	t.table.SetCell(r, 5, labels)
@@ -121,7 +122,7 @@ func (t *configsTab) showDetail(c swarmops.Config) {
 	kv := func(k, v string) { fmt.Fprintf(&b, "  [gray]%-10s[-] %s\n", k, tview.Escape(v)) }
 	kv("name", c.Name)
 	kv("id", c.ID)
-	kv("size", humanBytes(int64(c.Size)))
+	kv("size", dockerfmt.Bytes(int64(c.Size)))
 	kv("created", volumeAge(c.Created))
 	kv("updated", volumeAge(c.Updated))
 
@@ -194,12 +195,12 @@ const (
 // note rather than silently cut. Binary content is reported, not dumped.
 func indentConfigContent(data []byte) string {
 	if !isProbablyText(data) {
-		return fmt.Sprintf("    [gray](binary content, %s — not shown)[-]\n", humanBytes(int64(len(data))))
+		return fmt.Sprintf("    [gray](binary content, %s — not shown)[-]\n", dockerfmt.Bytes(int64(len(data))))
 	}
 	truncated := ""
 	if len(data) > configContentLimit {
 		data = data[:configContentLimit]
-		truncated = "… truncated at " + humanBytes(configContentLimit)
+		truncated = "… truncated at " + dockerfmt.Bytes(configContentLimit)
 	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	if len(lines) > configContentMaxLines {

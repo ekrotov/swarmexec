@@ -23,6 +23,7 @@ import (
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dial"
+	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
 )
@@ -129,7 +130,7 @@ func (c *Client) Conn(ctx context.Context, host string) (*Conn, error) {
 // Client's auth mode. Whether an agent is deployed at all is the fan-out
 // caller's question, asked once rather than per node, so it is not asked here.
 func (c *Client) Explain(ctx context.Context, err error) error {
-	return agenterr.Explain(ctx, err, agenterr.Options{Auth: agenterr.AuthOf(c.cfg)})
+	return agenterr.Explain(ctx, err, agenterr.Options{Auth: agenterr.AuthOf(c.cfg.SecretMode())})
 }
 
 // AddrMode is the node address the configuration dials agents on: the node's
@@ -139,4 +140,15 @@ func AddrMode(cfg config.Config) resolve.AddrMode {
 		return resolve.AddrIP
 	}
 	return resolve.AddrHostname
+}
+
+// PerNode runs fn for every swarm node, at most fanout.NodeLimit at a time,
+// and stops starting new ones once ctx ends.
+//
+// It lives here rather than in fanout because fanout is a concurrency helper:
+// it had one typed wrapper, for a swarm node, which made a generic utility
+// depend on the cluster model for the sake of a three-line function. Every
+// caller of that wrapper is an agent call.
+func PerNode(ctx context.Context, nodes []resolve.Node, fn func(ctx context.Context, i int, n resolve.Node)) error {
+	return fanout.Each(ctx, nodes, fanout.NodeLimit, fn)
 }

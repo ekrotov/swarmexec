@@ -18,6 +18,7 @@ import (
 	"swarmexec/agent/internal/audit"
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/prunecat"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -284,7 +285,7 @@ func (s *Server) pruneContainers(ctx context.Context, opts pruneOptions) (freed,
 		// the list and now is refused by the daemon, and anonymous volumes are
 		// the volumes category's business.
 		if _, rerr := s.docker.ContainerRemove(ctx, c.id, client.ContainerRemoveOptions{}); rerr != nil {
-			errs = append(errs, fmt.Errorf("remove container %s: %w", shortID(c.id), rerr))
+			errs = append(errs, fmt.Errorf("remove container %s: %w", dockerfmt.ShortID(c.id), rerr))
 			continue
 		}
 		freed += c.size
@@ -390,11 +391,4 @@ func firstErr(errs []error) error {
 	default:
 		return fmt.Errorf("%w (and %d more)", errs[0], len(errs)-1)
 	}
-}
-
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
 }

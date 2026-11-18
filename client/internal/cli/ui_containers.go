@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -370,8 +372,8 @@ func (t *treeTab) measure(st *treeState) {
 func serviceWidths(svcs []resolve.Service, suffix func(resolve.Service) string) svcColumns {
 	var w svcColumns
 	for _, s := range svcs {
-		w.name = max(w.name, len(orDash(s.Name)))
-		w.mode = max(w.mode, len(orDash(s.Mode)))
+		w.name = max(w.name, len(dockerfmt.OrDash(s.Name)))
+		w.mode = max(w.mode, len(dockerfmt.OrDash(s.Mode)))
 		w.repl = max(w.repl, len(progressCount(s)))
 		// The image cell renders image+suffix (the "↑ 2.12.0" annotation), so the
 		// width has to measure both. Measuring only the image let the suffix
@@ -391,7 +393,7 @@ type leafColumns struct{ node, slot int }
 func leafColumnsOf(cands []resolve.Candidate) leafColumns {
 	var w leafColumns
 	for _, c := range cands {
-		w.node = max(w.node, len(orDash(c.NodeName)))
+		w.node = max(w.node, len(dockerfmt.OrDash(c.NodeName)))
 		w.slot = max(w.slot, len(slotText(c)))
 	}
 	return w
@@ -409,9 +411,9 @@ func slotText(c resolve.Candidate) string {
 // when some task has a slot.
 func (w leafColumns) label(c resolve.Candidate) string {
 	if w.slot > 0 {
-		return fmt.Sprintf("%-12s  %-*s  %-*s  up %s", shortID(c.ContainerID), w.node, orDash(c.NodeName), w.slot, slotText(c), uptime(c.Uptime))
+		return fmt.Sprintf("%-12s  %-*s  %-*s  up %s", dockerfmt.ShortID(c.ContainerID), w.node, dockerfmt.OrDash(c.NodeName), w.slot, slotText(c), uptime(c.Uptime))
 	}
-	return fmt.Sprintf("%-12s  %-*s  up %s", shortID(c.ContainerID), w.node, orDash(c.NodeName), uptime(c.Uptime))
+	return fmt.Sprintf("%-12s  %-*s  up %s", dockerfmt.ShortID(c.ContainerID), w.node, dockerfmt.OrDash(c.NodeName), uptime(c.Uptime))
 }
 
 // shownService is a service row the "/" filter keeps, with the containers to
@@ -671,7 +673,7 @@ func sortCands(cands []resolve.Candidate) {
 // from u here, off the loop, they would be whichever cluster is visible by the
 // time the goroutine runs.
 func fetchTree(ctx context.Context, r *resolve.Resolver) ([]resolve.Service, []resolve.Candidate, error) {
-	svcs, cands, err := swarmops.ServicesAndContainers(ctx, r, "ui.containers")
+	svcs, cands, err := clusterread.ServicesAndContainers(ctx, r, "ui.containers")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -789,7 +791,7 @@ func (u *ui) openTerminal(c resolve.Candidate, command []string, tty bool, user 
 	if user != "" {
 		asUser = " as " + user
 	}
-	tv.SetTitle(fmt.Sprintf(" %v%s · %s · %s on %s — Ctrl-] detach ", command, asUser, orDash(c.Service), shortID(c.ContainerID), orDash(c.NodeName)))
+	tv.SetTitle(fmt.Sprintf(" %v%s · %s · %s on %s — Ctrl-] detach ", command, asUser, dockerfmt.OrDash(c.Service), dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.NodeName)))
 	// While the shell is open, turn OFF tview's mouse capture so the local
 	// terminal emulator's native click-drag selection / copy works on the
 	// pane's output — tcell's mouse reporting otherwise suppresses it, and the
@@ -845,7 +847,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 	ac, f, ctree := u.agents, u.f, u.ctree
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	list := tview.NewList().ShowSecondaryText(false)
-	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", orDash(c.Service), orDash(c.NodeName)))
+	list.SetBorder(true).SetTitle(fmt.Sprintf(" %s on %s — checking shells… ", dockerfmt.OrDash(c.Service), dockerfmt.OrDash(c.NodeName)))
 	ov := u.overlayFor(pageMenu, ctree, footerKeys("j/k", "move", "Enter", "select", "Esc", "cancel"))
 	closeMenu := ov.Close
 
@@ -906,7 +908,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 		return [2]bool{b, s}, nil
 	}, func(ok [2]bool, _ error) {
 		bashOK, shOK, probed = ok[0], ok[1], true
-		list.SetTitle(fmt.Sprintf(" %s on %s — actions ", orDash(c.Service), orDash(c.NodeName)))
+		list.SetTitle(fmt.Sprintf(" %s on %s — actions ", dockerfmt.OrDash(c.Service), dockerfmt.OrDash(c.NodeName)))
 		render()
 	})
 
@@ -920,7 +922,7 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 // never logged: it carries the container's environment.
 func (u *ui) inspectContainer(c resolve.Candidate, ep resolve.Endpoint) {
 	ac, ctx, timeout := u.agents, u.ctx, u.f.connectTimeout
-	u.showInspect(fmt.Sprintf("container %s (%s) on %s", shortID(c.ContainerID), orDash(c.Service), orDash(c.NodeName)),
+	u.showInspect(fmt.Sprintf("container %s (%s) on %s", dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.Service), dockerfmt.OrDash(c.NodeName)),
 		"ui.inspect.container", "", statsSubject{containerID: c.ContainerID},
 		func() ([]swarmops.InspectLine, string, error) {
 			raw, err := ac.InspectContainer(ctx, ep, timeout)
@@ -948,10 +950,10 @@ func (u *ui) confirmKillTask(c resolve.Candidate, ep resolve.Endpoint) {
 	ac, timeout := u.agents, u.f.connectTimeout
 	msg := fmt.Sprintf("Kill task container %s of %s on %s?\n\n"+
 		"It gets SIGKILL now; Swarm then starts a replacement task per the "+
-		"service's restart policy.", shortID(c.ContainerID), orDash(c.Service), orDash(c.NodeName))
+		"service's restart policy.", dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.Service), dockerfmt.OrDash(c.NodeName))
 	u.confirm(msg, "Kill", u.ctree, func() {
 		u.app.SetFocus(u.ctree)
-		u.flash(" killing " + shortID(c.ContainerID) + "…")
+		u.flash(" killing " + dockerfmt.ShortID(c.ContainerID) + "…")
 		mutateDo(u, "ui.containers.kill", "container kill", func(ctx context.Context) error {
 			return ac.KillContainer(ctx, ep, timeout)
 		}, func(err error) {
@@ -959,7 +961,7 @@ func (u *ui) confirmKillTask(c resolve.Candidate, ep resolve.Endpoint) {
 				u.info("Kill failed: " + err.Error())
 				return
 			}
-			u.flash(" [green]✓ killed " + shortID(c.ContainerID) + " — swarm reschedules the task[white]")
+			u.flash(" [green]✓ killed " + dockerfmt.ShortID(c.ContainerID) + " — swarm reschedules the task[white]")
 			u.treeTab().load()
 		})
 	})
@@ -976,7 +978,7 @@ func (t *treeTab) svcUsageBadge(service string) string {
 	// Health leads: it is the marker that contradicts the running/desired count
 	// standing right next to it, so it should not sit behind the resource
 	// numbers when the row is long.
-	badge := healthBadge(swarmops.HealthOf(u.usage, st.cands, service))
+	badge := healthBadge(clusterread.HealthOf(u.usage, st.cands, service))
 	if agg, ok := serviceUsage(u.usage, st.cands, service); ok {
 		badge += usageBadge(agg)
 	}
@@ -985,15 +987,15 @@ func (t *treeTab) svcUsageBadge(service string) string {
 
 // stackHealth folds the healthcheck verdicts of every container under a stack
 // into one count.
-func (t *treeTab) stackHealth(services []resolve.Service) swarmops.ServiceHealth {
+func (t *treeTab) stackHealth(services []resolve.Service) clusterread.ServiceHealth {
 	st := t.st()
 	u := t.u
-	var out swarmops.ServiceHealth
+	var out clusterread.ServiceHealth
 	if len(u.usage) == 0 {
 		return out
 	}
 	for _, svc := range services {
-		h := swarmops.HealthOf(u.usage, st.cands, svc.Name)
+		h := clusterread.HealthOf(u.usage, st.cands, svc.Name)
 		out.Healthy += h.Healthy
 		out.Unhealthy += h.Unhealthy
 		out.Starting += h.Starting
@@ -1011,7 +1013,7 @@ func (t *treeTab) svcColor(s resolve.Service) tcell.Color {
 	if len(u.usage) == 0 {
 		return base
 	}
-	return healthColor(base, swarmops.HealthOf(u.usage, st.cands, s.Name))
+	return healthColor(base, clusterread.HealthOf(u.usage, st.cands, s.Name))
 }
 
 // loadUsage refreshes the live resource readings in the background and re-marks
