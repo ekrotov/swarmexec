@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 	pb "swarmexec/internal/pb"
@@ -276,7 +277,7 @@ func runVolumeRm(cmd *cobra.Command, g *globalFlags, f *volumeFlags, args []stri
 // volumeSetup resolves the agent client + manager client + the swarm node
 // list. On success the caller owns the agent client and must Close it.
 func volumeSetup(cmd *cobra.Command, g *globalFlags) (*agentcall.Client, context.Context, *client.Client, []resolve.Node, error) {
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return nil, nil, nil, nil, &cliError{code: exitUsage, err: err}
@@ -285,7 +286,7 @@ func volumeSetup(cmd *cobra.Command, g *globalFlags) (*agentcall.Client, context
 		return nil, nil, nil, nil, &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return nil, ctx, nil, nil, &cliError{code: exitTransport, err: err}
 	}

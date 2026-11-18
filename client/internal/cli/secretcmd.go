@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -173,7 +174,7 @@ func runSecretRotate(cmd *cobra.Command, g *globalFlags, f *secretRotateFlags, n
 		return &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
-	dcli, err := newDockerClient(ctx, g.dockerContext)
+	dcli, err := endpoint.NewClient(ctx, g.dockerContext)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

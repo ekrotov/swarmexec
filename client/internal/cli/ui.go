@@ -20,6 +20,7 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/swarmapi"
@@ -302,7 +303,7 @@ type clusterLink struct {
 // change (ctxOverride is fixed when the cluster is created), so it is safe off
 // the UI goroutine.
 func (u *ui) dialCluster(ctxOverride string) (*clusterLink, error) {
-	ep := resolveEndpoint(ctxOverride)
+	ep := endpoint.Resolve(ctxOverride)
 	cfg, err := u.g.resolveConfig(u.cmd, ep)
 	if err != nil {
 		return nil, &cliError{code: exitUsage, err: err}
@@ -310,7 +311,7 @@ func (u *ui) dialCluster(ctxOverride string) (*clusterLink, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, &cliError{code: exitUsage, err: err}
 	}
-	dcli, err := ep.connect(u.runCtx)
+	dcli, err := ep.Connect(u.runCtx)
 	if err != nil {
 		return nil, &cliError{code: exitTransport, err: err}
 	}
@@ -565,8 +566,8 @@ func (u *ui) runScreen() error {
 	// From here ssh asks through a dialog instead of the terminal, which tview
 	// is about to own. Before this line — the first cluster's connection and
 	// load — the terminal is still the operator's, and ssh asks there.
-	setAskpassPrompter(u.askpassPrompt)
-	defer setAskpassPrompter(nil)
+	endpoint.SetPrompter(u.askpassPrompt)
+	defer endpoint.SetPrompter(nil)
 
 	// SIGTERM / SIGHUP cancel the command's context: leave the screen properly
 	// (the terminal restored) instead of being cut off by the grace timer.

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/logfmt"
 	"swarmexec/client/internal/logstream"
 	"swarmexec/client/internal/resolve"
@@ -82,7 +83,7 @@ global --client-log-level.`,
 }
 
 func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) error {
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
@@ -93,7 +94,7 @@ func runLogs(cmd *cobra.Command, g *globalFlags, f *logsFlags, args []string) er
 
 	ctx := cmdContext(cmd)
 
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

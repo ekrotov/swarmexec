@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
@@ -77,7 +78,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	target := args[0]
 	command := args[1:]
 
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
@@ -97,7 +98,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	}
 
 	// Resolve node + container via the manager.
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

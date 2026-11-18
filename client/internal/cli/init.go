@@ -29,6 +29,7 @@ import (
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
@@ -156,7 +157,7 @@ func connectInitManager(ctx context.Context, out io.Writer, g *globalFlags) (*cl
 	if cerr != nil {
 		return nil, "", cerr
 	}
-	dcli, err := newDockerClient(ctx, tctx.Name)
+	dcli, err := endpoint.NewClient(ctx, tctx.Name)
 	if err != nil {
 		return nil, "", &cliError{code: exitUsage, err: err}
 	}

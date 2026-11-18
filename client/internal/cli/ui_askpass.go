@@ -12,16 +12,18 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+
+	"swarmexec/client/internal/endpoint"
 )
 
 // askpassPrompt is the TUI's promptFunc: ssh's question as a dialog. It runs
 // on the askpass server's goroutine and waits for the operator; the dialog
 // itself is built on the UI goroutine.
-func (u *ui) askpassPrompt(req askpassRequest) (string, bool) {
-	ch := make(chan askpassResponse, 1)
+func (u *ui) askpassPrompt(req endpoint.Request) (string, bool) {
+	ch := make(chan endpoint.Response, 1)
 	reply := func(answer string, ok bool) {
 		select {
-		case ch <- askpassResponse{OK: ok, Answer: answer}:
+		case ch <- endpoint.Response{OK: ok, Answer: answer}:
 		default:
 		}
 	}
@@ -37,7 +39,7 @@ func (u *ui) askpassPrompt(req askpassRequest) (string, bool) {
 }
 
 // openAskpass shows one ssh question. UI goroutine.
-func (u *ui) openAskpass(req askpassRequest, reply func(string, bool)) {
+func (u *ui) openAskpass(req endpoint.Request, reply func(string, bool)) {
 	app := u.app
 	back := app.GetFocus()
 	prompt := strings.TrimSpace(req.Prompt)
@@ -60,7 +62,7 @@ func (u *ui) openAskpass(req askpassRequest, reply func(string, bool)) {
 
 	text := tview.NewTextView().SetText(prompt).SetWordWrap(true)
 	in := tview.NewInputField()
-	if !askpassEchoes(prompt) {
+	if !endpoint.EchoesPrompt(prompt) {
 		in.SetMaskCharacter('•')
 	}
 	box := tview.NewFlex().SetDirection(tview.FlexRow).
@@ -88,29 +90,29 @@ func (u *ui) openAskpass(req askpassRequest, reply func(string, bool)) {
 // refreshes every ten seconds and must not bring the offer back each time.
 // Reports whether it took the error.
 func (u *ui) offerSSHAdd(c *clusterState, err error, retry func()) bool {
-	if c == nil || c.sshAddOffered || askpassActive() || !isSSHAuthError(err) {
+	if c == nil || c.sshAddOffered || endpoint.Active() || !endpoint.IsAuthError(err) {
 		return false
 	}
 	c.sshAddOffered = true
 	// Off the UI goroutine: resolving the endpoint reads the Docker context
 	// and `ssh -G` runs once per hop.
 	go func() {
-		ep := resolveEndpoint(c.ctxOverride)
+		ep := endpoint.Resolve(c.ctxOverride)
 		if !strings.HasPrefix(ep.Host, "ssh://") {
 			return
 		}
-		argv := sshAddCommand(ep.Host, ep.ProxyJump)
+		argv := endpoint.AddCommand(ep.Host, ep.ProxyJump)
 		u.app.QueueUpdateDraw(func() { u.showSSHAddOffer(c, argv, retry) })
 	}()
 	return true
 }
 
 func (u *ui) showSSHAddOffer(c *clusterState, argv []string, retry func()) {
-	why := askpassUnavailable()
+	why := endpoint.Unavailable()
 	if why == "" {
 		why = "swarmexec could not set up asking"
 	}
-	if !sshAgentRunning() {
+	if !endpoint.AgentRunning() {
 		u.info(fmt.Sprintf("SSH sign-in to %q failed.\n\nIf your key has a passphrase: ssh cannot ask for it here (%s), "+
 			"and no ssh-agent is running to hold it. Start one (eval \"$(ssh-agent)\"), load the key with ssh-add, "+
 			"and start swarmexec again from that shell.", c.name, why))

@@ -15,6 +15,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
@@ -55,7 +56,7 @@ type clusterState struct {
 	name        string
 	ctxOverride string
 
-	// The two channels to this cluster, from one resolution (see dockerEndpoint).
+	// The two channels to this cluster, from one resolution (see endpoint.Docker).
 	dcli swarmapi.Client
 	r    *resolve.Resolver
 	cfg  config.Config
@@ -160,7 +161,7 @@ func (u *ui) switchCluster(name string) {
 		return
 	}
 	u.switching = true
-	resetAskpassDeclines() // a deliberate switch may ask ssh's questions again
+	endpoint.ResetDeclines() // a deliberate switch may ask ssh's questions again
 	u.flash(" [aqua]connecting[white] to " + name + " …")
 	go func() {
 		link, err := u.dialCluster(target.ctxOverride)
@@ -343,7 +344,7 @@ const clusterProbeTimeout = 15 * time.Second
 // cluster there? A refusal here is not a failure of the tool — it is the switch
 // declining to happen, which is why it is worth waiting for.
 func reachManager(parent context.Context, dcli swarmapi.Client) error {
-	ctx, cancel := promptAwareTimeout(parent, clusterProbeTimeout)
+	ctx, cancel := endpoint.PromptAwareTimeout(parent, clusterProbeTimeout)
 	defer cancel()
 	_, err := dcli.Ping(ctx, client.PingOptions{})
 	return err

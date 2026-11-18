@@ -18,6 +18,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 )
@@ -42,13 +43,13 @@ type clusterConn struct {
 
 // connectCluster resolves the endpoint and config and connects the manager.
 func connectCluster(cmd *cobra.Command, g *globalFlags) (*clusterConn, error) {
-	ep := resolveEndpoint(g.dockerContext)
+	ep := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, ep)
 	if err != nil {
 		return nil, &cliError{code: exitUsage, err: err}
 	}
 	ctx := cmdContext(cmd)
-	dcli, err := ep.connect(ctx)
+	dcli, err := ep.Connect(ctx)
 	if err != nil {
 		return nil, &cliError{code: exitTransport, err: err}
 	}

@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"bytes"
@@ -44,19 +44,19 @@ func TestAskpassScriptQuotesThePath(t *testing.T) {
 }
 
 func TestAskpassEchoesOnlyTheHostKeyQuestion(t *testing.T) {
-	if askpassEchoes("Enter passphrase for key '/home/u/.ssh/id_ed25519': ") {
+	if EchoesPrompt("Enter passphrase for key '/home/u/.ssh/id_ed25519': ") {
 		t.Error("a passphrase must not be echoed")
 	}
-	if askpassEchoes("u@host's password: ") {
+	if EchoesPrompt("u@host's password: ") {
 		t.Error("a password must not be echoed")
 	}
-	if !askpassEchoes("Are you sure you want to continue connecting (yes/no/[fingerprint])? ") {
+	if !EchoesPrompt("Are you sure you want to continue connecting (yes/no/[fingerprint])? ") {
 		t.Error("the host-key question should be echoed")
 	}
 }
 
 // newTestAskpass serves a socket answered by p, and points the helper at it.
-func newTestAskpass(t *testing.T, p promptFunc) *askpassServer {
+func newTestAskpass(t *testing.T, p PromptFunc) *server {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("askpass is not used on Windows")
@@ -70,25 +70,25 @@ func newTestAskpass(t *testing.T, p promptFunc) *askpassServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &askpassServer{ln: ln, dir: dir, inflight: map[string]*askpassCall{}, cancelled: map[int]bool{}}
+	s := &server{ln: ln, dir: dir, inflight: map[string]*call{}, cancelled: map[int]bool{}}
 	go s.serve()
 	t.Cleanup(s.close)
 	t.Setenv(askpassSockEnv, sock)
 	t.Setenv("SSH_ASKPASS_PROMPT", "")
-	setAskpassPrompter(p)
-	t.Cleanup(func() { setAskpassPrompter(nil) })
+	SetPrompter(p)
+	t.Cleanup(func() { SetPrompter(nil) })
 	return s
 }
 
 func helper(prompt string) (string, int) {
 	var out bytes.Buffer
-	code := runAskpassHelper([]string{prompt}, &out)
+	code := RunHelper([]string{prompt}, &out)
 	return out.String(), code
 }
 
 func TestAskpassHelperCarriesTheAnswer(t *testing.T) {
 	var asked string
-	newTestAskpass(t, func(req askpassRequest) (string, bool) {
+	newTestAskpass(t, func(req Request) (string, bool) {
 		asked = req.Prompt
 		return "s3cret", true
 	})
@@ -103,7 +103,7 @@ func TestAskpassHelperCarriesTheAnswer(t *testing.T) {
 
 func TestAskpassConfirmIsTheExitStatus(t *testing.T) {
 	answer := true
-	newTestAskpass(t, func(req askpassRequest) (string, bool) {
+	newTestAskpass(t, func(req Request) (string, bool) {
 		if req.Kind != "confirm" {
 			t.Errorf("kind = %q, want confirm", req.Kind)
 		}
@@ -124,7 +124,7 @@ func TestAskpassConfirmIsTheExitStatus(t *testing.T) {
 func TestAskpassSameQuestionIsAskedOnce(t *testing.T) {
 	var calls atomic.Int32
 	release := make(chan struct{})
-	newTestAskpass(t, func(askpassRequest) (string, bool) {
+	newTestAskpass(t, func(Request) (string, bool) {
 		calls.Add(1)
 		<-release
 		return "pw", true
@@ -164,7 +164,7 @@ func TestAskpassSameQuestionIsAskedOnce(t *testing.T) {
 // next question — only by an explicit reload.
 func TestAskpassDeclineSticksUntilReset(t *testing.T) {
 	var calls atomic.Int32
-	s := newTestAskpass(t, func(askpassRequest) (string, bool) {
+	s := newTestAskpass(t, func(Request) (string, bool) {
 		calls.Add(1)
 		return "", false
 	})
@@ -178,7 +178,7 @@ func TestAskpassDeclineSticksUntilReset(t *testing.T) {
 	}
 	s.resetDeclined()
 	// A new ssh (the helpers above all share this test's pid as "their ssh").
-	s.answer(askpassRequest{Prompt: "Enter passphrase for key 'k': ", SSHPID: os.Getppid() + 1})
+	s.answer(Request{Prompt: "Enter passphrase for key 'k': ", SSHPID: os.Getppid() + 1})
 	if n := calls.Load(); n != 2 {
 		t.Errorf("asked %d times after reset, want 2", n)
 	}
@@ -193,11 +193,11 @@ func TestAskpassHelperWithoutServerDeclines(t *testing.T) {
 
 // The probe's budget must not run out while the operator is typing.
 func TestPromptAwareTimeoutWaitsForTheOperator(t *testing.T) {
-	s := &askpassServer{}
-	askpassSrv.Store(s)
-	t.Cleanup(func() { askpassSrv.Store(nil) })
+	s := &server{}
+	srv.Store(s)
+	t.Cleanup(func() { srv.Store(nil) })
 	s.pending.Add(1)
-	ctx, cancel := promptAwareTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := PromptAwareTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	time.Sleep(100 * time.Millisecond)
 	if ctx.Err() != nil {
@@ -218,16 +218,16 @@ func TestIsSSHAuthError(t *testing.T) {
 		"Received disconnect from 1.2.3.4 port 22:2: Too many authentication failures",
 	}
 	for _, s := range yes {
-		if !isSSHAuthError(errors.New(s)) {
+		if !IsAuthError(errors.New(s)) {
 			t.Errorf("not recognised: %q", s)
 		}
 	}
 	for _, s := range []string{"ssh: connect to host x port 22: Connection refused", "context deadline exceeded"} {
-		if isSSHAuthError(errors.New(s)) {
+		if IsAuthError(errors.New(s)) {
 			t.Errorf("wrongly recognised: %q", s)
 		}
 	}
-	if isSSHAuthError(nil) {
+	if IsAuthError(nil) {
 		t.Error("nil is not an auth error")
 	}
 }
@@ -260,21 +260,21 @@ func TestSplitJumpHop(t *testing.T) {
 // its next question — only a new ssh is asked.
 func TestAskpassCancelledSSHStaysCancelledAfterReset(t *testing.T) {
 	var calls atomic.Int32
-	s := newTestAskpass(t, func(askpassRequest) (string, bool) {
+	s := newTestAskpass(t, func(Request) (string, bool) {
 		calls.Add(1)
 		return "", false
 	})
-	if _, ok := s.answer(askpassRequest{Prompt: "passphrase: ", SSHPID: 41}); ok {
+	if _, ok := s.answer(Request{Prompt: "passphrase: ", SSHPID: 41}); ok {
 		t.Fatal("declined")
 	}
 	s.resetDeclined()
-	if _, ok := s.answer(askpassRequest{Prompt: "password: ", SSHPID: 41}); ok {
+	if _, ok := s.answer(Request{Prompt: "password: ", SSHPID: 41}); ok {
 		t.Fatal("the cancelled ssh must stay cancelled")
 	}
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("operator asked %d times, want 1", n)
 	}
-	s.answer(askpassRequest{Prompt: "passphrase: ", SSHPID: 42})
+	s.answer(Request{Prompt: "passphrase: ", SSHPID: 42})
 	if n := calls.Load(); n != 2 {
 		t.Errorf("a new ssh after the reset was not asked (calls=%d)", n)
 	}

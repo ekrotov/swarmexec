@@ -14,6 +14,7 @@ import (
 
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 )
 
 func newConfigCmd(g *globalFlags) *cobra.Command {
@@ -62,7 +63,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 		Short: "Print the effective client configuration (secret masked)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := g.resolveConfig(cmd, resolveEndpoint(g.dockerContext))
+			cfg, err := g.resolveConfig(cmd, endpoint.Resolve(g.dockerContext))
 			if err != nil {
 				return &cliError{code: exitUsage, err: err}
 			}

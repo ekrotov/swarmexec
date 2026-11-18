@@ -13,6 +13,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/config"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -73,7 +74,7 @@ func (f *securityFlags) reportOptions(g *globalFlags, cfg config.Config, context
 }
 
 func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) error {
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
@@ -83,7 +84,7 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 	}
 	ctx := cmdContext(cmd)
 
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

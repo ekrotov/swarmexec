@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"bufio"
@@ -21,10 +21,10 @@ import (
 // recognise that situation and build the ssh-add for it, so the TUI can run it
 // in place and the CLI can name it exactly.
 
-// isSSHAuthError reports whether err is ssh failing to authenticate — as
+// IsAuthError reports whether err is ssh failing to authenticate — as
 // opposed to a host that is down or a daemon that refused. commandconn puts
 // ssh's stderr into the error, which is where these come from.
-func isSSHAuthError(err error) bool {
+func IsAuthError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -41,11 +41,11 @@ func isSSHAuthError(err error) bool {
 	return false
 }
 
-// sshAddCommand is the ssh-add that loads the keys this endpoint signs in
+// AddCommand is the ssh-add that loads the keys this endpoint signs in
 // with: the identity files ssh itself would use for the host and each jump
 // host (`ssh -G`), those that exist. None found means plain `ssh-add`, which
 // loads the default keys.
-func sshAddCommand(host, proxyJump string) []string {
+func AddCommand(host, proxyJump string) []string {
 	var files []string
 	seen := map[string]bool{}
 	add := func(args []string) {
@@ -133,29 +133,29 @@ func parseIdentityFiles(out string) []string {
 	return files
 }
 
-// sshAgentRunning reports whether there is an agent for ssh-add to load into.
-func sshAgentRunning() bool {
+// AgentRunning reports whether there is an agent for ssh-add to load into.
+func AgentRunning() bool {
 	return strings.TrimSpace(os.Getenv("SSH_AUTH_SOCK")) != ""
 }
 
-// sshAuthHint is what the CLI adds to an ssh sign-in failure: the ssh-add that
+// AuthHint is what the CLI adds to an ssh sign-in failure: the ssh-add that
 // gets past it, or why asking did not happen.
-func sshAuthHint(err error, host, proxyJump string) string {
-	if !isSSHAuthError(err) || !strings.HasPrefix(host, "ssh://") {
+func AuthHint(err error, host, proxyJump string) string {
+	if !IsAuthError(err) || !strings.HasPrefix(host, "ssh://") {
 		return ""
 	}
-	if !sshAgentRunning() {
+	if !AgentRunning() {
 		return "\n\nssh could not sign in, and no ssh-agent is running. If your key has a passphrase, start an agent " +
 			"(`eval \"$(ssh-agent)\"`), load the key with `ssh-add`, and run swarmexec again from that shell."
 	}
-	if askpassActive() {
+	if Active() {
 		return "\n\nssh could not sign in. If it asked for a passphrase, it was declined or wrong; " +
-			"or load the key once with `" + strings.Join(sshAddCommand(host, proxyJump), " ") + "`."
+			"or load the key once with `" + strings.Join(AddCommand(host, proxyJump), " ") + "`."
 	}
-	why := askpassUnavailable()
+	why := Unavailable()
 	if why == "" {
 		why = "swarmexec could not set up asking"
 	}
 	return "\n\nssh could not sign in — a key with a passphrase cannot be asked for here (" + why + "). " +
-		"Load it into your ssh-agent and run again:\n  " + strings.Join(sshAddCommand(host, proxyJump), " ")
+		"Load it into your ssh-agent and run again:\n  " + strings.Join(AddCommand(host, proxyJump), " ")
 }

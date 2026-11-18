@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/prunesched"
 )
@@ -40,7 +41,7 @@ func newPruneScheduleCmd(g *globalFlags, path string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmdContext(cmd)
 			out := cmd.OutOrStdout()
-			dcli, err := newDockerClient(ctx, g.dockerContext)
+			dcli, err := endpoint.NewClient(ctx, g.dockerContext)
 			if err != nil {
 				return &cliError{code: exitUsage, err: err}
 			}
@@ -146,7 +147,7 @@ func runPruneScheduleSet(cmd *cobra.Command, g *globalFlags, f *pruneScheduleSet
 	if cerr != nil {
 		return cerr
 	}
-	dcli, err := newDockerClient(ctx, tctx.Name)
+	dcli, err := endpoint.NewClient(ctx, tctx.Name)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
 	}

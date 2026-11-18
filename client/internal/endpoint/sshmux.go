@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"crypto/sha256"
@@ -150,19 +150,19 @@ func sshMuxDir() string {
 	return dir
 }
 
-// sshEndpointOpts is the full set of ssh flags for reaching one endpoint: the
+// SSHOpts is the full set of ssh flags for reaching one endpoint: the
 // jump hosts it must hop through, and the sharing that keeps those hops from
 // being paid again.
 //
 // Both channels to a cluster go through here — the Docker API's connection
 // helper and the agent tunnel — which is what lets them share a transport
 // instead of opening one each. They already route identically by construction
-// (dockerEndpoint); now they connect identically too.
+// (Docker); now they connect identically too.
 //
 // A host that will not parse yields the jump flags alone rather than an error:
 // the endpoint is unusable for other reasons and will say so in a moment, and
 // declining to share is never the interesting failure.
-func sshEndpointOpts(host, proxyJump string) []string {
+func SSHOpts(host, proxyJump string) []string {
 	flags := append(proxyJumpFlags(proxyJump), sshBatchOpts()...)
 	sp, err := ssh.ParseURL(host)
 	if err != nil {
@@ -171,15 +171,25 @@ func sshEndpointOpts(host, proxyJump string) []string {
 	return append(flags, sshMuxOpts(sp, proxyJump)...)
 }
 
-// sshNonInteractive makes every ssh this process starts refuse to prompt.
+// nonInteractive makes every ssh this process starts refuse to prompt.
 // Shell completion sets it: a completion runs while the operator's shell
 // waits on it, without a terminal of its own, so a password prompt there
 // does not get answered — it freezes the shell. Failing fast and offering
-// nothing is the only acceptable outcome.
-var sshNonInteractive atomic.Bool
+// nothing is the only acceptable outcome. The MCP server sets it for the same
+// reason: its stdin carries the protocol, so a prompt would read a JSON frame
+// as the answer.
+var nonInteractive atomic.Bool
+
+// SetNonInteractive turns prompting off for the rest of the process. There is
+// no way back on purpose: the callers that set it (completion, MCP) have no
+// terminal for the whole run, and a later "it is fine now" would be a lie.
+func SetNonInteractive() { nonInteractive.Store(true) }
+
+// NonInteractive reports whether ssh may ask the operator anything.
+func NonInteractive() bool { return nonInteractive.Load() }
 
 func sshBatchOpts() []string {
-	if !sshNonInteractive.Load() {
+	if !nonInteractive.Load() {
 		return nil
 	}
 	return []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=3"}

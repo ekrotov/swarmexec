@@ -18,6 +18,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	pb "swarmexec/internal/pb"
 )
@@ -58,7 +59,7 @@ func newPortForwardCmd(g *globalFlags) *cobra.Command {
 }
 
 func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, args []string) error {
-	dockerEP := resolveEndpoint(g.dockerContext)
+	dockerEP := endpoint.Resolve(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
 		return &cliError{code: exitUsage, err: err}
@@ -80,7 +81,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 
 	ctx := cmdContext(cmd)
 
-	dcli, err := dockerEP.connect(ctx)
+	dcli, err := dockerEP.Connect(ctx)
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}

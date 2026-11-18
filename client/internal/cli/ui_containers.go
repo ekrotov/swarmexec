@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 
@@ -685,7 +686,7 @@ func (t *treeTab) apply(svcs []resolve.Service, cands []resolve.Candidate, err e
 	st.fetchErr = err
 	if err != nil {
 		nodes := []*tview.TreeNode{tview.NewTreeNode(errorText(err)).SetColor(tcell.ColorRed).SetSelectable(false)}
-		if askpassActive() && isSSHAuthError(err) {
+		if endpoint.Active() && endpoint.IsAuthError(err) {
 			// After a cancelled sign-in nothing asks again on its own; say how.
 			nodes = append(nodes, tview.NewTreeNode(fmt.Sprintf("ssh could not sign in — press %c to be asked again", u.km.Refresh)).
 				SetColor(tcell.ColorYellow).SetSelectable(false))
@@ -721,7 +722,7 @@ func (t *treeTab) load() {
 	st := t.st()
 	u := t.u
 	st.resetCols = true
-	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
+	endpoint.ResetDeclines() // an explicit reload may ask ssh's questions again
 	gen, ctx, r := u.generation(), u.ctx, u.r
 	if r == nil || ctx == nil {
 		return // no cluster connected: nothing to list

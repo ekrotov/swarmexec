@@ -46,6 +46,7 @@ import (
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
+	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/mcpaccess"
 	"swarmexec/client/internal/resolve"
 )
@@ -107,9 +108,6 @@ type Options struct {
 	// configuration that goes with it. The name is never "": the server
 	// passes DockerContext for its own context.
 	Dial func(ctx context.Context, contextName string) (Endpoint, error)
-	// IsSSHAuthError reports whether err is ssh failing to sign in, which
-	// gets an explanation of its own (nil: never).
-	IsSSHAuthError func(error) bool
 }
 
 // Endpoint is a docker context reached through Options.Dial.
@@ -534,7 +532,7 @@ func (s *Server) result(tool string, start time.Time, out string, err error) *sd
 // The one that needs it most is ssh: this server cannot ask for a passphrase,
 // so a key that is not in the agent fails, and the fix is outside the session.
 func (s *Server) explain(err error) string {
-	if s.opts.IsSSHAuthError != nil && s.opts.IsSSHAuthError(err) {
+	if endpoint.IsAuthError(err) {
 		return "ssh could not sign in to the cluster. This server cannot ask for a passphrase " +
 			"(stdin and stdout carry the protocol), so the key must be loaded in ssh-agent: run " +
 			"`ssh-add` in a shell whose SSH_AUTH_SOCK the assistant's host inherits, then retry.\n\n" + err.Error()

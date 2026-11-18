@@ -1,12 +1,13 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package cli
+package endpoint
 
 import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,8 +47,8 @@ func TestBothChannelsShareOneSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := optValue(sshEndpointOpts(host, jump), "ControlPath")
-	tunnel := optValue(sshForwardArgs(sp, "node-1:9443", jump), "ControlPath")
+	api := optValue(SSHOpts(host, jump), "ControlPath")
+	tunnel := optValue(ForwardArgs(sp, "node-1:9443", jump), "ControlPath")
 
 	if api == "" || tunnel == "" {
 		t.Fatalf("both channels should share: api=%q tunnel=%q", api, tunnel)
@@ -164,10 +165,10 @@ func TestOptOutRemovesEverything(t *testing.T) {
 		if opts := sshMuxOpts(sp, ""); opts != nil {
 			t.Errorf("%s=%q should switch sharing off, got %v", sshMuxEnv, v, opts)
 		}
-		for _, arg := range sshForwardArgs(sp, "node-1:9443", "") {
+		for _, arg := range ForwardArgs(sp, "node-1:9443", "") {
 			if arg == "-o" {
 				t.Errorf("%s=%q should leave the plain argv, got %v",
-					sshMuxEnv, v, sshForwardArgs(sp, "node-1:9443", ""))
+					sshMuxEnv, v, ForwardArgs(sp, "node-1:9443", ""))
 				break
 			}
 		}
@@ -186,5 +187,30 @@ func TestMasterHasABoundedLifetime(t *testing.T) {
 	}
 	if optValue(opts, "ServerAliveInterval") == "" {
 		t.Error("a shared master that stops answering blocks every later channel; it needs a keepalive")
+	}
+}
+
+// Non-interactive mode is the one thing that makes ssh safe where nobody can
+// type: shell completion runs while the operator's shell waits on it, and the
+// MCP server's stdin carries the protocol. Both channels have to carry the
+// flags, or the one that does not will be the one that hangs.
+func TestNonInteractiveSSHNeverPrompts(t *testing.T) {
+	sp := &ssh.Spec{Host: "manager"}
+	prev := nonInteractive.Load()
+	t.Cleanup(func() { nonInteractive.Store(prev) })
+
+	nonInteractive.Store(false)
+	if a := ForwardArgs(sp, "node:9443", ""); slices.Contains(a, "BatchMode=yes") {
+		t.Fatal("ordinary commands must keep interactive ssh")
+	}
+
+	SetNonInteractive()
+	for name, a := range map[string][]string{
+		"agent tunnel": ForwardArgs(sp, "node:9443", ""),
+		"docker api":   SSHOpts("ssh://manager", ""),
+	} {
+		if !slices.Contains(a, "BatchMode=yes") || !slices.Contains(a, "ConnectTimeout=3") {
+			t.Errorf("%s: ssh may prompt where nobody can answer: %v", name, a)
+		}
 	}
 }
