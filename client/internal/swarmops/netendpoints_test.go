@@ -371,7 +371,7 @@ func TestTaskAddrs(t *testing.T) {
 
 func TestNetworkTaskAddrsOverTheAPI(t *testing.T) {
 	var tk swarm.Task
-	tk.ServiceID, tk.NodeID, tk.Status.State = "s1", "n1", swarm.TaskStateRunning
+	tk.ServiceID, tk.NodeID, tk.DesiredState, tk.Status.State = "s1", "n1", swarm.TaskStateRunning, swarm.TaskStateRunning
 	tk.NetworksAttachments = []swarm.NetworkAttachment{{Network: swarm.Network{ID: "net"}, Addresses: []netip.Prefix{netip.MustParsePrefix("10.0.0.5/24")}}}
 	var svc swarm.Service
 	svc.ID, svc.Spec.Name = "s1", "web"
@@ -385,7 +385,7 @@ func TestNetworkTaskAddrsOverTheAPI(t *testing.T) {
 // ContainerStatus; the members views must not dereference it.
 func TestMembersToleratesTaskWithoutContainer(t *testing.T) {
 	var tk swarm.Task
-	tk.ServiceID, tk.Status.State = "s1", swarm.TaskStateRunning
+	tk.ServiceID, tk.DesiredState, tk.Status.State = "s1", swarm.TaskStateRunning, swarm.TaskStateRunning
 	tk.NetworksAttachments = []swarm.NetworkAttachment{{Network: swarm.Network{ID: "net"}}}
 	var svc swarm.Service
 	svc.ID, svc.Spec.Name = "s1", "web"

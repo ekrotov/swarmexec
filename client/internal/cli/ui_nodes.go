@@ -112,8 +112,8 @@ func (t *nodesTab) yank(b *strings.Builder) {
 			name += " (leader)"
 		}
 		use, known := t.u.nodeUse[n.Hostname]
-		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\n", name, orDash(n.Role), orDash(n.Availability),
-			orDash(n.State), nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known), orDash(n.EngineVersion), n.Tasks, len(n.Labels))
+		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", name, orDash(n.Role), orDash(n.Availability),
+			orDash(n.State), nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known), orDash(n.EngineVersion), n.TaskCount(), len(n.Labels))
 	}
 }
 
@@ -135,7 +135,7 @@ func (t *nodesTab) renderRow(r int, n swarmops.NodeInfo) {
 	t.table.SetCell(r, 3, tview.NewTableCell(orDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
 	t.table.SetCell(r, 4, tview.NewTableCell(cpu).SetTextColor(usagePercentColor(cpu)).SetExpansion(1))
 	t.table.SetCell(r, 5, tview.NewTableCell(mem).SetTextColor(usagePercentColor(mem)).SetExpansion(1))
-	t.table.SetCell(r, 6, tview.NewTableCell(fmt.Sprintf("%d", n.Tasks)).SetExpansion(1))
+	t.table.SetCell(r, 6, tview.NewTableCell(n.TaskCount()).SetExpansion(1))
 	t.table.SetCell(r, 7, tview.NewTableCell(volStr).SetExpansion(1))
 	t.table.SetCell(r, 8, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
 	t.table.SetCell(r, 9, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
@@ -425,8 +425,8 @@ func (u *ui) openNodeAvailability(n swarmops.NodeInfo, back tview.Primitive, aft
 	add("active", "schedule tasks here normally", swarm.NodeAvailabilityActive, "")
 	add("pause", "keep running tasks, place no new ones", swarm.NodeAvailabilityPause, "")
 	add("[red]drain[-]", "move every task off this node", swarm.NodeAvailabilityDrain,
-		fmt.Sprintf("Drain %q?\n\nSwarm will stop this node's %d running task(s) and reschedule them on other nodes. Services whose tasks cannot be placed elsewhere will go unschedulable.",
-			n.Hostname, n.Tasks))
+		fmt.Sprintf("Drain %q?\n\nSwarm will stop this node's %s running task(s) and reschedule them on other nodes. Services whose tasks cannot be placed elsewhere will go unschedulable.",
+			n.Hostname, n.TaskCount()))
 	list.AddItem("cancel", "", 0, closeMenu)
 	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {
@@ -631,7 +631,7 @@ func (t *nodesTab) detailHead(n swarmops.NodeInfo) string {
 	kv("platform", orDash(strings.Trim(n.OS+"/"+n.Arch, "/")))
 	kv("cpus", swarmops.FormatCPUCores(n.NanoCPUs))
 	kv("memory", swarmops.FormatMemBytes(n.MemoryBytes))
-	kv("tasks", fmt.Sprintf("%d running", n.Tasks))
+	kv("tasks", n.TaskCount()+" running")
 	b.WriteString(nodeResourceSection(n))
 	use, known := u.nodeUse[n.Hostname]
 	b.WriteString(nodeUsageSection(n, use, known))
