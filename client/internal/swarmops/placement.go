@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"swarmexec/client/internal/swarmapi"
@@ -318,11 +319,24 @@ func nodeExclusionReason(n swarm.Node, constraints []string, platforms []swarm.P
 	return "", false, unevaluated
 }
 
+// normalizeArch maps the spellings the scheduler treats as one architecture
+// (swarmkit's platform filter): uname reports x86_64 and aarch64, image
+// platforms say amd64 and arm64.
+func normalizeArch(a string) string {
+	switch strings.ToLower(a) {
+	case "x86_64", "x86-64":
+		return "amd64"
+	case "aarch64":
+		return "arm64"
+	}
+	return strings.ToLower(a)
+}
+
 // nodeMatchesPlatform reports whether the node's OS/arch satisfies any of the
 // service's supported platforms (an empty field matches anything).
 func nodeMatchesPlatform(n swarm.Node, platforms []swarm.Platform) bool {
 	for _, p := range platforms {
-		archOK := p.Architecture == "" || p.Architecture == n.Description.Platform.Architecture
+		archOK := p.Architecture == "" || normalizeArch(p.Architecture) == normalizeArch(n.Description.Platform.Architecture)
 		osOK := p.OS == "" || p.OS == n.Description.Platform.OS
 		if archOK && osOK {
 			return true

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -1018,7 +1019,9 @@ func ParseCPUCores(s string) (int64, error) {
 		return 0, nil
 	}
 	cores, err := strconv.ParseFloat(s, 64)
-	if err != nil || cores < 0 {
+	// NaN and +-Inf parse without error, and a float beyond int64 converts to
+	// the minimum value: both would reach the manager as a nonsense limit.
+	if err != nil || cores < 0 || math.IsNaN(cores) || cores >= math.MaxInt64/1e9 {
 		return 0, fmt.Errorf("invalid CPU value %q (use cores, e.g. 0.5 or 2)", s)
 	}
 	return int64(cores * 1e9), nil
@@ -1084,11 +1087,11 @@ func ParseServicePort(s string) (swarm.PortConfig, error) {
 	if len(pt) != 2 {
 		return swarm.PortConfig{}, fmt.Errorf("port must be PUBLISHED:TARGET[/proto], e.g. 8080:80/tcp")
 	}
-	pub, err := strconv.ParseUint(strings.TrimSpace(pt[0]), 10, 32)
+	pub, err := strconv.ParseUint(strings.TrimSpace(pt[0]), 10, 16)
 	if err != nil || pub == 0 {
 		return swarm.PortConfig{}, fmt.Errorf("invalid published port %q", pt[0])
 	}
-	tgt, err := strconv.ParseUint(strings.TrimSpace(pt[1]), 10, 32)
+	tgt, err := strconv.ParseUint(strings.TrimSpace(pt[1]), 10, 16)
 	if err != nil || tgt == 0 {
 		return swarm.PortConfig{}, fmt.Errorf("invalid target port %q", pt[1])
 	}
