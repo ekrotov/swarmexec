@@ -268,6 +268,7 @@ func addHiddenFlagAliases(fs *pflag.FlagSet, aliases map[string]string) {
 		alias.DefValue = f.DefValue
 		alias.NoOptDefVal = f.NoOptDefVal
 		alias.Hidden = true
+		markRenamed(alias, "--"+cur)
 	}
 }
 
@@ -282,6 +283,19 @@ func parseLogLevel(s string) (string, error) {
 	return "", fmt.Errorf("--client-log-level %q: want debug, info, warn, error or off", s)
 }
 
+// renamedAnnotation is clidocs.RenamedAnnotation (cli cannot import clidocs:
+// its tests import cli); a test pins the two equal.
+const renamedAnnotation = "swarmexec/renamed-to"
+
+// markRenamed records on a hidden flag what replaced it, for the "Renamed
+// names" table of the CLI reference (renamedAnnotation).
+func markRenamed(f *pflag.Flag, now string) {
+	if f.Annotations == nil {
+		f.Annotations = map[string][]string{}
+	}
+	f.Annotations[renamedAnnotation] = []string{now}
+}
+
 // initLogging sets up the shared logger for every subcommand: an in-memory ring
 // (fed to the TUI viewer) and, unless disabled, a log file. "--client-log-level off"
 // leaves the no-op logger in place. A log-file open failure is non-fatal — it
@@ -292,7 +306,7 @@ func (g *globalFlags) initLogging() error {
 		return nil
 	}
 	if _, err := parseLogLevel(g.logLevel); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	path := g.logFile
 	if path == "" {

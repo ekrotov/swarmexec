@@ -139,7 +139,7 @@ func TestInvalidLogLevelIsAUsageError(t *testing.T) {
 		g := &globalFlags{logLevel: bad}
 		err := g.initLogging()
 		var ce *cliError
-		if err == nil || !errors.As(err, &ce) || ce.code != usageExitCode || !strings.Contains(err.Error(), bad) {
+		if err == nil || !errors.As(err, &ce) || ce.code != exitUsage || !strings.Contains(err.Error(), bad) {
 			t.Errorf("%q: err = %v", bad, err)
 		}
 	}

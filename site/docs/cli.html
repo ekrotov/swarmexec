@@ -165,6 +165,7 @@
           <li class="d1"><a href="#wait">swarmexec wait</a></li>
           <li class="d0"><a href="#global-flags">Global flags</a></li>
           <li class="d0"><a href="#connection-flags">Connection flags</a></li>
+          <li class="d0"><a href="#renamed">Renamed names</a></li>
         </ol>
       </div>
 
@@ -953,6 +954,22 @@ swarmexec volume [command]</div>
           <tr><td><code>--operator string</code></td><td>—</td><td>operator identity reported for audit (default: OS username)</td></tr>
           <tr><td><code>--port int</code></td><td><code>0</code></td><td>agent port (default 9443)</td></tr>
           <tr><td><code>--server-name string</code></td><td>—</td><td>override TLS server name for agent verification</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="renamed">Renamed names</h2>
+      <p>
+        These old names still work, unchanged, and are left out of the help. Prefer
+        the new name in new scripts.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Old</th><th>Now</th></tr></thead>
+        <tbody>
+          <tr><td><code>swarmexec --log-file</code></td><td><code>--client-log-file</code></td></tr>
+          <tr><td><code>swarmexec --log-level</code></td><td><code>--client-log-level</code></td></tr>
+          <tr><td><code>swarmexec prune-schedule</code></td><td><code>swarmexec node prune-schedule</code></td></tr>
+          <tr><td><code>swarmexec stack deploy --force</code></td><td><code>--despite-findings</code></td></tr>
+          <tr><td><code>swarmexec stack diff --format</code></td><td><code>--json (--format json)</code></td></tr>
         </tbody>
       </table></div>
 

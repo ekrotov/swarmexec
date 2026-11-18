@@ -450,7 +450,15 @@ func (s *Server) toolLogs(ctx context.Context, in mcpLogsIn) (string, error) {
 	params := logstream.Params{Tail: uint32(logTail(in.Tail)), Since: since, ConnectTimeout: s.connectTimeout}
 	serr := logstream.StreamMany(lctx, logstream.Run{Agents: ac, Resolver: c.r, Params: params, Stdout: buf, Stderr: buf},
 		sources, false, logFilterWrap(format, filter, logstream.FormatAuto(formatName)))
-	return logOutput(note, buf, lctx.Err() != nil && ctx.Err() == nil, serr), nil
+	out := logOutput(note, buf, lctx.Err() != nil && ctx.Err() == nil, serr)
+	// Every stream failing is a failed call, not a result: the assistant (and
+	// a client checking isError) must not read "logs_read succeeded" off an
+	// answer that holds nothing but error notes. The notes stay in the text.
+	var sf *logstream.StreamsFailedError
+	if errors.As(serr, &sf) && len(sf.Failed) == sf.Total && !buf.Truncated() {
+		return "", errors.New(strings.TrimSpace(out))
+	}
+	return out, nil
 }
 
 // logTail is the requested tail, defaulted and capped.

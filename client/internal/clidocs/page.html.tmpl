@@ -106,6 +106,9 @@
 {{- end}}
           <li class="d0"><a href="#global-flags">Global flags</a></li>
           <li class="d0"><a href="#connection-flags">Connection flags</a></li>
+{{- if .Renamed}}
+          <li class="d0"><a href="#renamed">Renamed names</a></li>
+{{- end}}
         </ol>
       </div>
 {{range .Commands}}
@@ -186,6 +189,23 @@
 {{- end}}
         </tbody>
       </table></div>
+
+{{- if .Renamed}}
+
+      <h2 id="renamed">Renamed names</h2>
+      <p>
+        These old names still work, unchanged, and are left out of the help. Prefer
+        the new name in new scripts.
+      </p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Old</th><th>Now</th></tr></thead>
+        <tbody>
+{{- range .Renamed}}
+          <tr><td><code>{{.Old}}</code></td><td><code>{{.New}}</code></td></tr>
+{{- end}}
+        </tbody>
+      </table></div>
+{{- end}}
 
       <nav class="pager" aria-label="Previous and next page">
         <a class="prev" href="/docs/tui-nodes" rel="prev"><span class="lbl">← Previous</span>TUI: the Nodes tab</a>

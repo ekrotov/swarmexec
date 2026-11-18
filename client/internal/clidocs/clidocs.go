@@ -26,6 +26,12 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// RenamedAnnotation marks a hidden command or flag as the old name of
+// something that was renamed; its value is what to use now. The reference
+// lists these in one table (the names still work, which a hidden entry would
+// otherwise never tell anyone), derived from the tree so it cannot drift.
+const RenamedAnnotation = "swarmexec/renamed-to"
+
 // PageName is the docs topic the reference is served as (/docs/cli).
 const PageName = "cli"
 
@@ -40,6 +46,12 @@ type Page struct {
 	Commands    []Command
 	Global      []Flag // the root's persistent flags, connection group aside
 	Connection  []Flag
+	Renamed     []Renamed
+}
+
+// Renamed is an old name that still works, and what replaced it.
+type Renamed struct {
+	Old, New string
 }
 
 // Command is one section of the page.
@@ -96,6 +108,7 @@ func Render(w io.Writer, root *cobra.Command, nav, docnav string) error {
 	})
 	p.Global, p.Connection = flagRows(global), flagRows(conn)
 	p.Commands = collect(root, 0)
+	collectRenamed(root, &p.Renamed)
 	return tmpl.Execute(w, p)
 }
 
@@ -347,4 +360,27 @@ func dedent(s string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// collectRenamed gathers the annotated hidden commands and flags, in tree
+// order. A renamed command is not descended into: its children carry the old
+// name as a prefix and are renamed along with it.
+func collectRenamed(c *cobra.Command, out *[]Renamed) {
+	path := displayPath(c)
+	each := func(fs *pflag.FlagSet) {
+		fs.VisitAll(func(f *pflag.Flag) {
+			if to := f.Annotations[RenamedAnnotation]; len(to) > 0 {
+				*out = append(*out, Renamed{Old: path + " --" + f.Name, New: to[0]})
+			}
+		})
+	}
+	each(c.PersistentFlags())
+	each(c.LocalNonPersistentFlags())
+	for _, s := range c.Commands() {
+		if to := s.Annotations[RenamedAnnotation]; to != "" {
+			*out = append(*out, Renamed{Old: displayPath(s), New: to})
+			continue
+		}
+		collectRenamed(s, out)
+	}
 }
