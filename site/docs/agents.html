@@ -236,6 +236,16 @@ swarmexec stats --json web</div>
         endpoint is plain HTTP and carries <strong>counts only</strong> — no names, ids or
         payload — but publish it only where your scraper can reach it.
       </p>
+      <p>
+        <strong>Strict configuration.</strong> A set-but-invalid <code>SWARMEXEC_*</code>
+        environment value (<code>SWARMEXEC_ALLOW_LEGACY_SECRET=flase</code>, a duration without
+        a unit, a non-numeric port) stops the agent at startup with an error naming the
+        variable, as an invalid flag does; it no longer falls back to the default silently.
+        A shared secret under 16 characters is accepted but logged as a warning at startup
+        (its length, never its value). When the agent cannot inspect a container it refuses
+        the request after authorizing and auditing it, because a policy rule scoped to
+        <code>services</code> cannot be applied to a container whose service is unknown.
+      </p>
       <div class="tablewrap"><table>
         <thead><tr><th>Metric</th><th>Meaning</th></tr></thead>
         <tbody>

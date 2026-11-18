@@ -6,6 +6,7 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -97,36 +98,59 @@ func env(key, def string) string {
 	return def
 }
 
-// envDuration parses a duration env var, falling back to def on unset/invalid.
-func envDuration(key string, def time.Duration) time.Duration {
-	if v, ok := os.LookupEnv(key); ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
+// envReader reads typed environment variables. A variable that is set but
+// cannot be parsed is not silently replaced by the default — for a security
+// switch such as SWARMEXEC_ALLOW_LEGACY_SECRET, "flase" meant the unsafe default
+// stayed on without a word. The error is recorded and Parse refuses to start,
+// as it does for an invalid flag.
+type envReader struct{ errs []error }
+
+func (r *envReader) bad(key, v, want string) {
+	r.errs = append(r.errs, fmt.Errorf("invalid %s=%q: %s", key, v, want))
 }
 
-// envInt parses an integer env var, falling back to def on unset/invalid.
-func envInt(key string, def int) int {
-	if v, ok := os.LookupEnv(key); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return n
-		}
+// duration parses a duration env var; unset means def, invalid is an error.
+func (r *envReader) duration(key string, def time.Duration) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
 	}
-	return def
+	d, err := time.ParseDuration(strings.TrimSpace(v))
+	if err != nil {
+		r.bad(key, v, "want a duration such as 30s or 5m")
+		return def
+	}
+	return d
 }
 
-// envBool parses a boolean env var (1/true/yes/on), falling back to def.
-func envBool(key string, def bool) bool {
-	if v, ok := os.LookupEnv(key); ok {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "1", "true", "yes", "on":
-			return true
-		case "0", "false", "no", "off":
-			return false
-		}
+// int parses an integer env var; unset means def, invalid is an error.
+func (r *envReader) int(key string, def int) int {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
 	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		r.bad(key, v, "want an integer")
+		return def
+	}
+	return n
+}
+
+// bool parses a boolean env var (1/true/yes/on, 0/false/no/off); unset means
+// def, anything else is an error.
+func (r *envReader) bool(key string, def bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	r.bad(key, v, "want one of 1/true/yes/on or 0/false/no/off")
 	return def
 }
 
@@ -138,30 +162,31 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.SetOutput(out)
 
 	c := &Config{}
+	ev := &envReader{}
 	// The flags named from deploy.Flag* are the ones `swarmexec init` writes:
 	// they are a contract with the client, not just this binary's interface.
 	// The literal ones below are the agent's own.
-	fs.IntVar(&c.Port, deploy.FlagPort, envInt("SWARMEXEC_PORT", DefaultPort), "gRPC listen port (env SWARMEXEC_PORT)")
+	fs.IntVar(&c.Port, deploy.FlagPort, ev.int("SWARMEXEC_PORT", DefaultPort), "gRPC listen port (env SWARMEXEC_PORT)")
 	fs.StringVar(&c.ListenAddr, "listen", env("SWARMEXEC_LISTEN", ""), "gRPC listen address; overrides -port when set, e.g. \":9443\" (env SWARMEXEC_LISTEN)")
 	fs.StringVar(&c.CACert, "ca-cert", env("SWARMEXEC_CA_CERT", ""), "path to CA certificate for verifying client certs (env SWARMEXEC_CA_CERT)")
 	fs.StringVar(&c.ServerCert, "server-cert", env("SWARMEXEC_SERVER_CERT", ""), "path to server certificate (env SWARMEXEC_SERVER_CERT)")
 	fs.StringVar(&c.ServerKey, "server-key", env("SWARMEXEC_SERVER_KEY", ""), "path to server private key (env SWARMEXEC_SERVER_KEY)")
-	fs.BoolVar(&c.SelfSigned, deploy.FlagSelfSigned, envBool("SWARMEXEC_SELF_SIGNED", false), "generate a self-signed server cert at startup (no server cert/key needed) (env SWARMEXEC_SELF_SIGNED)")
+	fs.BoolVar(&c.SelfSigned, deploy.FlagSelfSigned, ev.bool("SWARMEXEC_SELF_SIGNED", false), "generate a self-signed server cert at startup (no server cert/key needed) (env SWARMEXEC_SELF_SIGNED)")
 	fs.StringVar(&c.CertSANs, "cert-sans", env("SWARMEXEC_CERT_SANS", ""), "extra SANs for the self-signed cert, e.g. \"DNS:swarmexec-agent,IP:10.0.0.5\" (env SWARMEXEC_CERT_SANS)")
 	fs.StringVar(&c.AgentSecret, "agent-secret", env("SWARMEXEC_AGENT_SECRET", ""), "shared secret clients must present; empty disables (env SWARMEXEC_AGENT_SECRET)")
 	fs.StringVar(&c.AgentSecretFile, deploy.FlagAgentSecretFile, env("SWARMEXEC_AGENT_SECRET_FILE", ""), "file to read the shared secret from, e.g. a Docker secret (env SWARMEXEC_AGENT_SECRET_FILE)")
-	fs.BoolVar(&c.AllowLegacySecret, deploy.FlagAllowLegacySecret, envBool("SWARMEXEC_ALLOW_LEGACY_SECRET", true), "accept the raw shared secret from clients predating connection-bound auth; disable once clients are upgraded (env SWARMEXEC_ALLOW_LEGACY_SECRET)")
+	fs.BoolVar(&c.AllowLegacySecret, deploy.FlagAllowLegacySecret, ev.bool("SWARMEXEC_ALLOW_LEGACY_SECRET", true), "accept the raw shared secret from clients predating connection-bound auth; disable once clients are upgraded (env SWARMEXEC_ALLOW_LEGACY_SECRET)")
 	fs.StringVar(&c.DockerHost, deploy.FlagDockerHost, env("SWARMEXEC_DOCKER_HOST", deploy.SocketURL), "docker daemon endpoint (env SWARMEXEC_DOCKER_HOST)")
-	fs.DurationVar(&c.DrainTimeout, deploy.FlagDrainTimeout, envDuration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
+	fs.DurationVar(&c.DrainTimeout, deploy.FlagDrainTimeout, ev.duration("SWARMEXEC_DRAIN_TIMEOUT", 5*time.Second), "graceful shutdown drain window (env SWARMEXEC_DRAIN_TIMEOUT)")
 	// Non-zero by default. These used to be 0/disabled, which meant an exec
 	// session that nobody ever closed lived as long as the agent — a forgotten
 	// shell on a production node, holding a docker attach, indefinitely. The
 	// values are deliberately generous: they end abandoned sessions, they do not
 	// ration working ones. Set them to 0 to turn the checks off again.
-	fs.DurationVar(&c.IdleTimeout, "idle-timeout", envDuration("SWARMEXEC_IDLE_TIMEOUT", DefaultIdleTimeout), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
-	fs.DurationVar(&c.MaxSessionTime, "max-session", envDuration("SWARMEXEC_MAX_SESSION", DefaultMaxSessionTime), "per-session max duration, 0=disabled (env SWARMEXEC_MAX_SESSION)")
-	fs.IntVar(&c.MaxStreams, "max-streams", envInt("SWARMEXEC_MAX_STREAMS", 0), "max concurrent exec/logs/port-forward streams, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_STREAMS)")
-	fs.IntVar(&c.MaxForwardSidecars, "max-forward-sidecars", envInt("SWARMEXEC_MAX_FORWARD_SIDECARS", 0), "max live port-forward sidecar containers, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_FORWARD_SIDECARS)")
+	fs.DurationVar(&c.IdleTimeout, "idle-timeout", ev.duration("SWARMEXEC_IDLE_TIMEOUT", DefaultIdleTimeout), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
+	fs.DurationVar(&c.MaxSessionTime, "max-session", ev.duration("SWARMEXEC_MAX_SESSION", DefaultMaxSessionTime), "per-session max duration, 0=disabled (env SWARMEXEC_MAX_SESSION)")
+	fs.IntVar(&c.MaxStreams, "max-streams", ev.int("SWARMEXEC_MAX_STREAMS", 0), "max concurrent exec/logs/port-forward streams, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_STREAMS)")
+	fs.IntVar(&c.MaxForwardSidecars, "max-forward-sidecars", ev.int("SWARMEXEC_MAX_FORWARD_SIDECARS", 0), "max live port-forward sidecar containers, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_FORWARD_SIDECARS)")
 	fs.StringVar(&c.ForwardImage, "forward-image", env("SWARMEXEC_FORWARD_IMAGE", ""), "image for port-forward sidecars; empty = the agent's own image (env SWARMEXEC_FORWARD_IMAGE)")
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")
 	fs.StringVar(&c.LogFormat, deploy.FlagLogFormat, env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")
@@ -172,6 +197,9 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
+	}
+	if len(ev.errs) > 0 && !c.ShowVersion {
+		return nil, errors.Join(ev.errs...)
 	}
 	// -listen (or SWARMEXEC_LISTEN) takes precedence; otherwise derive the
 	// address from -port so the port is a first-class, simple knob.
@@ -216,6 +244,20 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("missing required TLS configuration: %v (or use -self-signed)", missing)
 	}
 	return nil
+}
+
+// MinSecretLength is the length under which a shared secret is called weak at
+// startup. It is a warning threshold, not a refusal: see WeakSecret.
+const MinSecretLength = 16
+
+// WeakSecret reports whether a configured shared secret is shorter than
+// MinSecretLength. The agent warns and carries on rather than refusing to
+// start: a refusal would take an existing deployment's agents down on upgrade
+// for a secret that has worked until now, while the guessing it makes possible
+// is already counted and logged (failed-auth metric and log). `swarmexec init`
+// generates 32 random bytes, so only a hand-set secret can trip this.
+func WeakSecret(secret string) bool {
+	return secret != "" && len(secret) < MinSecretLength
 }
 
 // AgentSecretValue resolves the shared secret: the contents of AgentSecretFile

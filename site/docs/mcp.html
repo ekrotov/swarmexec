@@ -216,7 +216,11 @@ services:
           <strong>A service that can reach the Docker daemon is never exec'd into</strong>,
           whatever its labels say: the Docker socket bound in (the security scan's rule),
           a bind of the directory it lives in, the Windows pipe, and the swarmexec agent
-          itself. Through the socket, anything could relabel any service. The agent's own
+          itself. A service that reaches the daemon another way is refused too: a
+          <code>DOCKER_HOST</code> in its environment (current or previous spec), or a network
+          shared with a Docker socket proxy (an image named <code>socket-proxy</code> or
+          <code>docker-proxy</code>; hidden services count). Through the socket, anything could
+          relabel any service. The agent's own
           <a href="/docs/authentication#policy">authorization policy</a> still applies on top.
         </li>
         <li>
@@ -227,8 +231,15 @@ services:
         </li>
         <li>
           <strong>Data goes to the model provider.</strong> Whatever a tool returns is sent
-          to the assistant's model. Environment values whose names look like credentials
-          (the scan's <em>secret in environment variable</em> rule) are masked, secrets and
+          to the assistant's model. Masking is wider than the scan's rule: values of
+          environment variables and labels whose names look like credentials
+          (<code>PASSWORD</code>, <code>TOKEN</code>, <code>KEY</code>, <code>DSN</code>,
+          <code>AUTH</code>, <code>basicauth</code>, …, <code>_URL</code> included) are masked,
+          and so is the credential part of any value that looks like one — the password in
+          <code>scheme://user:pass@host</code> (the rest stays), a JWT, a PEM private key, an
+          htpasswd hash, a <code>password=…</code> pair — in env, labels, commands and
+          arguments (<code>--requirepass x</code>). It works from shapes, so an unusual
+          format can still get through. Secrets and
           configs are listed by name only, and every result is capped in size and says
           when it was cut — but log lines and command output are passed as they are.
         </li>
@@ -239,6 +250,13 @@ services:
           diff and check results protects nothing on a service with
           <code>swarmexec.mcp.exec</code>. Grant <code>exec</code> only where the
           assistant — and the model provider — may see everything the container sees.
+        </li>
+        <li>
+          <strong>The labels and <code>--contexts</code> limit the MCP channel, not the
+          machine.</strong> An assistant that also has a shell on the operator's machine
+          (the documented setup is <code>claude mcp add …</code> for Claude Code) can run
+          <code>swarmexec exec</code> or <code>docker --context …</code> itself, with the
+          operator's credentials. Restrict that shell separately if it matters.
         </li>
         <li>
           <strong>Audit.</strong> The operator reported to the agents is

@@ -364,6 +364,9 @@ type mcpView struct {
 	// hidden names the services that exist but the caller may not see; only
 	// for filtering what would otherwise be attributed to them, never shown.
 	hidden map[string]bool
+	// proxyNets are the networks a Docker socket proxy is attached to, over
+	// every service the manager lists (a hidden proxy still counts).
+	proxyNets map[string]bool
 }
 
 // view lists the services and keeps the visible ones.
@@ -372,7 +375,7 @@ func (s *Server) view(ctx context.Context, c *mcpCluster) (*mcpView, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := &mcpView{byName: map[string]mcpService{}, hidden: map[string]bool{}}
+	v := &mcpView{byName: map[string]mcpService{}, hidden: map[string]bool{}, proxyNets: mcpaccess.SocketProxyNetworks(res.Items)}
 	for _, svc := range res.Items {
 		a := s.evaluate(svc)
 		if !a.Visible {

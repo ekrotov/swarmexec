@@ -88,9 +88,24 @@ func Checks() []string {
 
 // Scan runs every analyzer over svc and returns the findings, highest severity
 // first (stable within a severity, ordered by rule then title).
-func Scan(svc swarm.Service) []Finding {
+func Scan(svc swarm.Service) []Finding { return ScanWithHostNetworks(svc, nil) }
+
+// hostNetworkAware is an analyzer that needs to know which network ids and
+// names are the host network.
+type hostNetworkAware interface {
+	AnalyzeWith(svc swarm.Service, hostNets map[string]bool) []Finding
+}
+
+// ScanWithHostNetworks is Scan for a deployed service: hostNets holds the ids
+// and names of the cluster's host-driver networks, because the manager may
+// replace the literal "host" in a service's attachment with the network id.
+func ScanWithHostNetworks(svc swarm.Service, hostNets map[string]bool) []Finding {
 	var out []Finding
 	for _, a := range registry {
+		if h, ok := a.(hostNetworkAware); ok {
+			out = append(out, h.AnalyzeWith(svc, hostNets)...)
+			continue
+		}
 		out = append(out, a.Analyze(svc)...)
 	}
 	sort.SliceStable(out, func(i, j int) bool {

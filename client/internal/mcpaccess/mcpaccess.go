@@ -157,8 +157,10 @@ func Reserved(key string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), marker)
 }
 
-// Strip returns labels without the access-control ones. It always returns a
-// copy, so a caller can never strip a map the Docker client still holds.
+// Strip returns labels without the access-control ones, with credential-shaped
+// values masked (a Traefik basic-auth hash, a URL with a password). It always
+// returns a copy, so a caller can never strip a map the Docker client still
+// holds.
 func Strip(labels map[string]string) map[string]string {
 	if labels == nil {
 		return nil
@@ -166,7 +168,7 @@ func Strip(labels map[string]string) map[string]string {
 	out := make(map[string]string, len(labels))
 	for k, v := range labels {
 		if !Reserved(k) {
-			out[k] = v
+			out[k] = MaskValue(k, v)
 		}
 	}
 	return out
@@ -200,8 +202,9 @@ func Scrub(s string) string {
 // Masked replaces a credential's value wherever one is shown.
 const Masked = "<masked>"
 
-// MaskEnv masks the value of every KEY=VALUE whose key names a credential, by
-// the rule the security scan's secret-in-env check uses. The key stays
+// MaskEnv masks credentials in KEY=VALUE pairs: the whole value when the key
+// names one (MaskValue, a wider rule than the scan's), otherwise just the
+// credential-shaped part of it (a URL's password, a JWT). The key stays
 // visible: knowing that DB_PASSWORD is set is useful, its value is not ours to
 // hand to a model provider.
 func MaskEnv(env []string) []string {
@@ -210,12 +213,12 @@ func MaskEnv(env []string) []string {
 	}
 	out := make([]string, len(env))
 	for i, kv := range env {
-		k, _, ok := strings.Cut(kv, "=")
-		if ok && secscan.IsCredentialEnvKey(k) {
-			out[i] = k + "=" + Masked
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			out[i] = MaskText(kv)
 			continue
 		}
-		out[i] = kv
+		out[i] = k + "=" + MaskValue(k, v)
 	}
 	return out
 }
@@ -227,10 +230,7 @@ func MaskEnvMap(env map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(env))
 	for k, v := range env {
-		if secscan.IsCredentialEnvKey(k) {
-			v = Masked
-		}
-		out[k] = v
+		out[k] = MaskValue(k, v)
 	}
 	return out
 }
@@ -344,4 +344,58 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// ReachesDockerAPI reports whether a service's environment points its
+// containers at a Docker API over the network (DOCKER_HOST=tcp://…, ssh://…,
+// or a unix socket in a path a mount may not show). Such a service can relabel
+// any service exactly as one with the socket mounted can, so the exec gate
+// treats the two alike.
+func ReachesDockerAPI(spec swarm.ServiceSpec) bool {
+	cs := spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return false
+	}
+	for _, kv := range cs.Env {
+		if k, v, ok := strings.Cut(kv, "="); ok && strings.EqualFold(strings.TrimSpace(k), "DOCKER_HOST") && strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSocketProxyImage reports whether an image is a well-known Docker socket
+// proxy. A proxy hands out (a filtered slice of) the Docker API to everything
+// on its network, so a service that shares a network with one has the same
+// reach as DOCKER_HOST.
+func IsSocketProxyImage(image string) bool {
+	i := strings.ToLower(image)
+	return strings.Contains(i, "socket-proxy") || strings.Contains(i, "docker-proxy") || strings.Contains(i, "dockersocketproxy")
+}
+
+// SocketProxyNetworks returns the network targets (ids or names) of every
+// service whose image is a Docker socket proxy.
+func SocketProxyNetworks(svcs []swarm.Service) map[string]bool {
+	out := map[string]bool{}
+	for _, s := range svcs {
+		if cs := s.Spec.TaskTemplate.ContainerSpec; cs == nil || !IsSocketProxyImage(cs.Image) {
+			continue
+		}
+		for _, n := range s.Spec.TaskTemplate.Networks {
+			if t := strings.TrimSpace(n.Target); t != "" {
+				out[t] = true
+			}
+		}
+	}
+	return out
+}
+
+// SharesNetwork reports whether the service is attached to any of nets.
+func SharesNetwork(spec swarm.ServiceSpec, nets map[string]bool) bool {
+	for _, n := range spec.TaskTemplate.Networks {
+		if nets[strings.TrimSpace(n.Target)] {
+			return true
+		}
+	}
+	return false
 }

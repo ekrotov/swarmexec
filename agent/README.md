@@ -135,6 +135,18 @@ build and protocol version.
 | `-metrics-addr` | `SWARMEXEC_METRICS_ADDR` | — (disabled) | Prometheus listen addr, e.g. `:9100` |
 | `-healthcheck` | — | — | run the container health probe instead of the agent and exit 0/1 (see [Health check](#health-check)) |
 
+An environment variable that is set but invalid (`SWARMEXEC_ALLOW_LEGACY_SECRET=flase`,
+`SWARMEXEC_DRAIN_TIMEOUT=5` without a unit, a non-numeric port or limit) stops the agent
+at startup with an error naming the variable, like an invalid flag — it no longer falls
+back to the default silently. Booleans accept `1/true/yes/on` and `0/false/no/off`.
+
+A shared secret shorter than 16 characters is accepted but logged as a `WARN` at startup
+(length only, never the value); `swarmexec init` generates a 32-byte one.
+
+If the agent cannot inspect a container, it refuses the exec, logs, port-forward, kill and
+inspect request after authorizing and auditing it: the container's service is then unknown,
+so a policy rule scoped to `services` could not have been applied.
+
 ### Shared-secret authentication
 
 The client does not send the secret. It sends a proof computed from the secret

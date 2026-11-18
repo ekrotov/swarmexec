@@ -307,9 +307,10 @@ func effectiveExecUser(requested string, cfg *container.Config) string {
 // inspect the container once, authorize req — whose action-specific fields
 // (Action, ContainerID, and any of Cmd/User/TTY/Port) the caller has already
 // set — audit the decision, and count a denial. It fills req.Identity,
-// req.Service and, for an exec, req.EffectiveUser. The inspect is best effort:
-// a failure leaves the service empty so authorization and audit still proceed
-// (a rule on services then does not match). On failure it returns a ready gRPC
+// req.Service and, for an exec, req.EffectiveUser. A failed inspect
+// is still authorized and audited (so a denial stays a denial and an unknown
+// container is no oracle), but an allow is then turned into the inspect error:
+// the service is unknown, so the policy cannot be applied in full. On failure it returns a ready gRPC
 // status error so callers just `return err`.
 // Keeping the sequence in one place stops the authorize/audit/deny order —
 // and the audit of denied requests — from drifting between handlers.
@@ -335,6 +336,14 @@ func (s *Server) authorize(ctx context.Context, req auth.Request) (authed, error
 	req.ClientAddr = peerAddr(ctx)
 	if reason, ok := s.decide(ctx, req); !ok {
 		return authed{}, status.Errorf(codes.PermissionDenied, "authorization denied: %s", reason)
+	}
+	// Fail closed: with the service unknown, a rule scoped to services could
+	// not have matched, so "allowed" above only means the rules that need no
+	// service allowed it. The container could not be inspected, so the action
+	// cannot take place anyway — say so instead of going on on a guess. The
+	// decision was audited first, so a denial still reads as a denial.
+	if a.InspectErr != nil {
+		return authed{}, dockerStatus(a.InspectErr, "inspect container")
 	}
 	return a, nil
 }

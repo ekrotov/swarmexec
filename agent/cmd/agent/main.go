@@ -179,6 +179,11 @@ func buildServer(cfg *config.Config, d deps) (*agent, error) {
 		return nil, err
 	}
 
+	if config.WeakSecret(secret) {
+		log.Warn("the shared secret is shorter than the recommended minimum; it can be guessed — use a generated one (swarmexec init) of at least 16 characters",
+			"length", len(secret), "minimum", config.MinSecretLength)
+	}
+
 	// Build the TLS config: either a self-signed cert generated here (SANs from
 	// the Docker node info) or a provisioned server cert + client CA.
 	var tlsCfg *tls.Config
