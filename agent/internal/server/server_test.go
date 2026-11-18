@@ -89,7 +89,7 @@ func newTestServer(d DockerClient, az auth.Authorizer, opts Options) (*Server, *
 	m := &testMetrics{}
 	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	al := audit.New(slog.New(slog.NewJSONHandler(io.Discard, nil)), true)
-	s := New(d, az, al, log, m, opts)
+	s := trackServer(New(d, az, al, log, m, opts))
 	s.identityFn = func(context.Context) (string, error) { return "test-user", nil }
 	return s, m
 }
@@ -100,7 +100,7 @@ func newTestServer(d DockerClient, az auth.Authorizer, opts Options) (*Server, *
 func auditedTestServer(d DockerClient, az auth.Authorizer) (*Server, *syncBuffer) {
 	buf := &syncBuffer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	s := New(d, az, audit.New(slog.New(slog.NewJSONHandler(buf, nil)), true), log, &testMetrics{}, Options{})
+	s := trackServer(New(d, az, audit.New(slog.New(slog.NewJSONHandler(buf, nil)), true), log, &testMetrics{}, Options{}))
 	s.identityFn = func(context.Context) (string, error) { return "test-user", nil }
 	return s, buf
 }

@@ -158,7 +158,8 @@ func TestForwardMux_SidecarDeathEndsEveryConnection(t *testing.T) {
 	d := newFakeDocker()
 	srv, _ := forwardTestServer(d, auth.AllowAll{})
 
-	_, mux, _ := startForward(t, srv, d, "target-abc", 8080)
+	_, mux, stop := startForward(t, srv, d, "target-abc", 8080)
+	t.Cleanup(stop) // the first forward ends with its sidecar; its stream must still be released
 	mux.acceptOpen()
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
