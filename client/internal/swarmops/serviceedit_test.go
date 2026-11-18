@@ -167,7 +167,7 @@ func TestResourceParseFormat(t *testing.T) {
 	if n, err := ParseCPUCores(""); err != nil || n != 0 {
 		t.Errorf("empty CPU should parse to 0, got %d, %v", n, err)
 	}
-	for _, bad := range []string{"abc", "-1"} {
+	for _, bad := range []string{"abc", "-1", "nan", "inf", "9227000000", "1e30"} { // nan, and amounts that overflow int64 NanoCPUs
 		if _, err := ParseCPUCores(bad); err == nil {
 			t.Errorf("parseCPUCores(%q) should have errored", bad)
 		}
