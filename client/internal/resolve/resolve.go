@@ -333,6 +333,12 @@ func (r *Resolver) serviceNames(ctx context.Context) (map[string]string, error) 
 	return m, nil
 }
 
+// runningTasks lists the tasks that are running: desired to run AND reported
+// running by their node. The desired-state filter only narrows the request —
+// it is what the orchestrator wants, so a task still starting, or one that has
+// failed and awaits its replacement, passes it. Treating those as running made
+// a service with one dead and one live task "ambiguous" and let exec / logs
+// aim at a container that is not there.
 func (r *Resolver) runningTasks(ctx context.Context, serviceID string) ([]swarm.Task, error) {
 	f := make(client.Filters)
 	if serviceID != "" {
@@ -340,7 +346,16 @@ func (r *Resolver) runningTasks(ctx context.Context, serviceID string) ([]swarm.
 	}
 	f.Add("desired-state", "running")
 	res, err := r.cli.TaskList(ctx, client.TaskListOptions{Filters: f})
-	return res.Items, err
+	if err != nil {
+		return nil, err
+	}
+	var out []swarm.Task
+	for _, t := range res.Items {
+		if t.Status.State == swarm.TaskStateRunning {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 func (r *Resolver) resolveService(ctx context.Context, svc *swarm.Service) (*Endpoint, error) {
