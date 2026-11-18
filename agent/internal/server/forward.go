@@ -28,6 +28,7 @@ import (
 	"swarmexec/agent/internal/auth"
 	"swarmexec/agent/internal/muxpool"
 	"swarmexec/internal/deploy"
+	"swarmexec/internal/forwardmux"
 	"swarmexec/internal/pb"
 )
 
@@ -230,12 +231,12 @@ func (s *Server) openForwardChannel(ctx context.Context, containerID string, por
 }
 
 // sidecarChannel bridges to a container joined to the target's network
-// namespace. Its stdout carries payload bytes; its stderr is an out-of-band
-// control channel (see agent -forward-to). The attach stream is NOT a TTY, so
-// docker multiplexes the two with stdcopy framing and binary payloads survive
-// intact — a TTY would apply line-discipline translation and corrupt them.
-// The demux runs exactly once for the channel's lifetime: stdout is piped to
-// CopyTo, stderr is parsed for the readiness line and then logged. Demuxing
+// namespace. Its stdout carries mux FRAMES; its stderr is an out-of-band
+// control channel (see agent -forward-mux-to). The attach stream is NOT a TTY,
+// so docker multiplexes the two with stdcopy framing and binary payloads
+// survive intact — a TTY would apply line-discipline translation and corrupt
+// them. The demux runs exactly once for the channel's lifetime: stdout is piped
+// to Read, stderr is parsed for the readiness line and then logged. Demuxing
 // twice would consume the payload the second reader is waiting for.
 type sidecarChannel struct {
 	docker DockerClient
@@ -243,7 +244,7 @@ type sidecarChannel struct {
 	attach client.HijackedResponse
 	log    *slog.Logger
 
-	// stdoutR carries payload from the demux goroutine to CopyTo.
+	// stdoutR carries frames from the demux goroutine to Read.
 	stdoutR *io.PipeReader
 	// ready delivers the sidecar's first control line exactly once.
 	ready chan error
@@ -258,24 +259,10 @@ type sidecarChannel struct {
 
 func (c *sidecarChannel) Write(p []byte) (int, error) { return c.attach.Conn.Write(p) }
 
-func (c *sidecarChannel) CloseWrite() {
-	if c.attach.Conn == nil {
-		return
-	}
-	if err := c.attach.CloseWrite(); err != nil {
-		c.log.Debug("sidecar close-write failed", "sidecar", c.id, "err", err)
-	}
-}
-
 // Read consumes the sidecar's stdout, already separated from its stderr by the
 // stdcopy demux. In mux mode those bytes are FRAMES, not payload — the reader
 // is internal/forwardmux, not a copier.
 func (c *sidecarChannel) Read(p []byte) (int, error) { return c.stdoutR.Read(p) }
-
-func (c *sidecarChannel) CopyTo(w io.Writer) error {
-	_, err := io.Copy(w, c.stdoutR)
-	return err
-}
 
 // startDemux splits the attach stream once: stdout is payload, stderr is the
 // control channel (one readiness line, then diagnostics for the agent log).
@@ -462,7 +449,11 @@ func (w *sidecarControl) Write(p []byte) (int, error) {
 		w.once.Do(func() {
 			reported = true
 			switch {
-			case line == "ok", line == "mux ok":
+			// Only the mux line. The retired single-connection sidecar said
+			// "ok", and accepting both defeated the reason the lines differ:
+			// a mismatched pair is meant to fail at the handshake, not by one
+			// side reading the other's payload as frames.
+			case line == forwardmux.ReadyLine:
 				w.ready <- nil
 			case strings.HasPrefix(line, "error: "):
 				w.ready <- errors.New(strings.TrimPrefix(line, "error: "))

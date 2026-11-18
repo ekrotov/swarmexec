@@ -129,10 +129,6 @@ var clusterRegistry = []ClusterAnalyzer{
 	unusedConfigAnalyzer{},
 }
 
-// RegisterCluster appends a cluster analyzer, for extensions outside this
-// package. Not safe for concurrent use with ScanCluster.
-func RegisterCluster(a ClusterAnalyzer) { clusterRegistry = append(clusterRegistry, a) }
-
 // ClusterChecks returns what the cluster analyzers look for, in registry order,
 // so a report can state what was examined rather than leaving "nothing found"
 // to stand on its own.

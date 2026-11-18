@@ -40,8 +40,6 @@ type fakeDocker struct {
 
 	inspects       int
 	imageDiskUsage client.ImagesDiskUsage
-	images         []image.Summary
-	imageListErr   error
 	pruneReport    image.PruneReport
 	pruneErr       error
 	pruneFilters   []client.Filters
@@ -410,12 +408,6 @@ func (f *fakeDocker) ContainerStats(_ context.Context, id string, opts client.Co
 		return client.ContainerStatsResult{}, err
 	}
 	return client.ContainerStatsResult{Body: io.NopCloser(bytes.NewReader(body))}, nil
-}
-
-func (f *fakeDocker) ImageList(_ context.Context, _ client.ImageListOptions) (client.ImageListResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return client.ImageListResult{Items: f.images}, f.imageListErr
 }
 
 // ImagePrune records what it was asked for, so a test can prove the safe mode

@@ -131,9 +131,6 @@ func probeArgs(own []string, cmdline func() ([]byte, error)) (args []string, sid
 		return nil, false
 	}
 	args = argv[1:]
-	if _, ok := forwardTarget(args); ok {
-		return nil, true
-	}
 	if _, ok := forwardMuxTarget(args); ok {
 		return nil, true
 	}
