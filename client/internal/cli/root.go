@@ -1,9 +1,10 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cli implements the swarmexec command surface (exec, ps, version) on
-// top of cobra, wires flags/env/config into a resolved configuration, and maps
-// outcomes to process exit codes (REQUIREMENTS §3, §6, §8).
+// Package cli implements the swarmexec command surface (exec, logs,
+// port-forward, ps, volume, secret, node, stack, doctor, init, ui, …) on top of
+// cobra and the terminal UI, wires flags/env/config into a resolved
+// configuration, and maps outcomes to process exit codes.
 package cli
 
 import (

@@ -25,7 +25,8 @@ import (
 // Swarm workload sharing that machine, from a client that only ever spoke the
 // protocol correctly.
 const (
-	// DefaultMaxStreams caps Exec + Logs + PortForward streams in flight at once.
+	// DefaultMaxStreams caps streams in flight at once: Exec, Logs, PortForward
+	// and WatchContainerEvents, every streaming RPC (streamgate.go).
 	DefaultMaxStreams = 256
 	// DefaultMaxForwardSidecars caps live port-forward sidecar CONTAINERS, which
 	// are far more expensive than a stream and are what actually exhausts a node.

@@ -38,7 +38,8 @@ const (
 
 // Config is the fully resolved client configuration.
 type Config struct {
-	// TLS material (mTLS is mandatory — REQUIREMENTS §7).
+	// TLS material: the CA verifies the agent, and Cert/Key are the client
+	// certificate. Optional against a self-signed agent (see AgentSecret).
 	CA   string `yaml:"ca"`
 	Cert string `yaml:"cert"`
 	Key  string `yaml:"key"`

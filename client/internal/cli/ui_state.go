@@ -81,9 +81,9 @@ const (
 )
 
 // ui holds one UI session's ambient state: the run-wide infrastructure, the
-// shared widgets and the per-tab caches that the (formerly closure) methods
-// capture. runUI builds it and hands off to (*ui).run; the closures still living
-// in run() reference these fields, and the infra methods are methods on *ui.
+// shared widgets and the visited clusters. runUI builds it and hands off to
+// (*ui).run; the tabs (one type each, holding a *ui) and the overlays reach it
+// through these fields, and the infrastructure is methods on *ui.
 type ui struct {
 	// The visible cluster. Embedded by pointer so `u.dcli`, `u.ctx`
 	// and friends keep resolving; switching cluster assigns this one field.

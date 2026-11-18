@@ -74,9 +74,10 @@ Follow `CONTRACT.md` §5 exactly.
   watch `stream.Context().Done()`.
 - **Backpressure**: respect gRPC flow control; do not unboundedly buffer output
   if the client is slow.
-- **Timeouts**: configurable idle timeout per session (default: disabled, since
-  interactive shells idle legitimately). Configurable max session duration
-  (default: disabled).
+- **Timeouts**: configurable idle timeout per exec session (default 30 minutes
+  of silence in both directions; `-idle-timeout`) and max session duration
+  (default 12 hours; `-max-session`). Both are meant to end abandoned sessions,
+  not ration working ones, and `0` turns either check off.
 - **Graceful shutdown**: on SIGTERM, stop accepting new streams (exec, logs,
   port-forward, event watches), allow existing ones a short drain window
   (configurable, default 5s), then `GracefulStop` bounded to 2s (falling back to
