@@ -120,15 +120,15 @@ func describeContainerEvent(ev *pb.ContainerEvent) string {
 	if h := ev.GetHealth(); h != "" {
 		switch h {
 		case "healthy":
-			return "[green]● healthcheck passing[-]"
+			return "● healthcheck passing"
 		case "unhealthy":
 			// The one an operator most needs beside the output: the container
 			// is running, says nothing, and the manager still calls it healthy.
-			return "[red]● healthcheck FAILING[-]"
+			return "● healthcheck FAILING"
 		case "starting":
-			return "[gray]● healthcheck starting[-]"
+			return "● healthcheck starting"
 		default:
-			return "[gray]● healthcheck: " + h + "[-]"
+			return "● healthcheck: " + h
 		}
 	}
 
@@ -140,22 +140,22 @@ func describeContainerEvent(ev *pb.ContainerEvent) string {
 		// Named explicitly because the usual evidence is a bare exit 137 and a
 		// silent log, which reads like a crash of the program rather than the
 		// kernel taking it away.
-		return "[red]✖ killed: out of memory[-]"
+		return "✖ killed: out of memory"
 	case "die":
 		if code := ev.GetExitCode(); code != 0 {
-			return fmt.Sprintf("[red]✖ exited with code %d[-]", code)
+			return fmt.Sprintf("✖ exited with code %d", code)
 		}
-		return "[yellow]✖ exited (code 0)[-]"
+		return "✖ exited (code 0)"
 	case "kill":
-		return "[yellow]✖ killed[-]"
+		return "✖ killed"
 	case "start":
-		return "[green]▶ started[-]"
+		return "▶ started"
 	case "restart":
-		return "[yellow]↻ restarted[-]"
+		return "↻ restarted"
 	case "stop":
-		return "[yellow]■ stopped[-]"
+		return "■ stopped"
 	case "pause", "unpause":
-		return "[gray]" + strings.ToUpper(action[:1]) + action[1:] + "d[-]"
+		return strings.ToUpper(action[:1]) + action[1:] + "d"
 	}
 	return ""
 }
