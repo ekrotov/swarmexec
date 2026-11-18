@@ -37,17 +37,23 @@ func (c *Client) Versions(ctx context.Context, nodes []resolve.Node, connectTime
 	return out
 }
 
+// versionCallTimeout is the time the Version RPC itself gets on top of the
+// connect budget. It does no work on the node, so a few seconds is plenty.
+const versionCallTimeout = 10 * time.Second
+
 // Version asks one node's agent for its build and protocol version. The error
 // is returned as the agent sent it, unexplained: callers classify it.
 func (c *Client) Version(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (version, proto string, err error) {
-	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := c.Conn(dctx, n.DialHost)
-	cancel()
+	// One deadline for the dial and the call: the dial context alone left the
+	// RPC unbounded, so an agent that accepted and then stalled hung `doctor`.
+	cctx, cancel := context.WithTimeout(ctx, connectTimeout+versionCallTimeout)
+	defer cancel()
+	conn, err := c.Conn(cctx, n.DialHost)
 	if err != nil {
 		return "", "", err
 	}
 	defer conn.Close()
-	resp, err := conn.Agent().Version(ctx, &pb.VersionRequest{})
+	resp, err := conn.Agent().Version(cctx, &pb.VersionRequest{})
 	conn.done(err)
 	if err != nil {
 		return "", "", err

@@ -46,6 +46,9 @@ type fakeAgent struct {
 	failMu sync.Mutex
 	fail   map[string]error
 	byRPC  map[string]int // calls served, per RPC
+	// bounded records, per RPC, whether the last call arrived with a deadline
+	// (gRPC carries the client's context deadline to the server).
+	bounded map[string]bool
 
 	calls     atomic.Int64
 	badBind   atomic.Int64 // calls whose binding did not match this agent's cert
@@ -69,6 +72,10 @@ func (a *fakeAgent) check(ctx context.Context, rpc string) error {
 		a.byRPC = map[string]int{}
 	}
 	a.byRPC[rpc]++
+	if a.bounded == nil {
+		a.bounded = map[string]bool{}
+	}
+	_, a.bounded[rpc] = ctx.Deadline()
 	if a.unimplemented[rpc] {
 		return status.Errorf(codes.Unimplemented, "unknown method %s", rpc)
 	}
