@@ -45,6 +45,8 @@ type listEditor struct {
 
 	list *tview.List
 	ov   *overlay
+
+	applying bool // an update is running; a second apply would repeat it
 }
 
 // newListEditor builds the editor and renders its entries; show puts it on
@@ -242,6 +244,12 @@ func (e *listEditor) leave() {
 // Shared by `w` and the "unapplied changes" reminder shown when leaving.
 func (e *listEditor) apply() {
 	u := e.u
+	if e.applying {
+		// The first update is still running: a second w would send the same
+		// staged list again, and a second rolling update behind the first.
+		u.flash(" [gray]update already in progress[white]")
+		return
+	}
 	text := fmt.Sprintf("%s?\n\nThis triggers a rolling update of the service.", e.cfg.applyVerb)
 	if e.cfg.confirmNote != nil {
 		if note := e.cfg.confirmNote(e.cur); note != "" {
@@ -250,10 +258,12 @@ func (e *listEditor) apply() {
 	}
 	u.confirm(text, "Apply", e.list, func() {
 		staged := slices.Clone(e.cur) // cur keeps changing on the UI goroutine; work gets its own
+		e.applying = true
 		onApply, after := e.cfg.onApply, e.cfg.after
 		mutateDo(u, "ui.serviceedit.apply", "service update", func(ctx context.Context) error {
 			return onApply(ctx, staged)
 		}, func(err error) {
+			e.applying = false
 			if err != nil {
 				u.info("update failed: " + err.Error())
 				u.app.SetFocus(e.list)

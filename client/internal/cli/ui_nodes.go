@@ -196,7 +196,11 @@ func usagePercentColor(cell string) tcell.Color {
 // each is an agent fan-out — the image footprints and volume counts.
 func (t *nodesTab) reload() {
 	u := t.u
-	r, ac, dcli, f := u.r, u.agents, u.dcli, u.f
+	v, ok := u.connected()
+	if !ok {
+		return
+	}
+	r, ac, dcli, f := v.r, v.ac, v.dcli, v.f
 	ex := t.extra()
 	// VOLS goes back to "…" for the new load. Reset here, at the start, not
 	// when the list arrives: the counts may well arrive first.

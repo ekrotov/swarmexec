@@ -33,6 +33,12 @@ type fakeDocker struct {
 	statsOpts   []client.ContainerStatsOptions
 	info        system.Info
 	infoCalls   int
+
+	// inspectNoDeadline counts inspects that arrived with no deadline;
+	// statsPanic makes ContainerStats panic, the way a surprise in a Docker
+	// reply would.
+	inspectNoDeadline int
+	statsPanic        bool
 }
 
 func (f *fakeDocker) ContainerList(_ context.Context, opts client.ContainerListOptions) (client.ContainerListResult, error) {
@@ -44,10 +50,13 @@ func (f *fakeDocker) ContainerList(_ context.Context, opts client.ContainerListO
 	return client.ContainerListResult{Items: append([]container.Summary(nil), f.containers...)}, nil
 }
 
-func (f *fakeDocker) ContainerInspect(_ context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+func (f *fakeDocker) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.inspects++
+	if _, ok := ctx.Deadline(); !ok {
+		f.inspectNoDeadline++
+	}
 	if c, ok := f.inspect[id]; ok {
 		return client.ContainerInspectResult{Container: c}, nil
 	}
@@ -57,6 +66,9 @@ func (f *fakeDocker) ContainerInspect(_ context.Context, id string, _ client.Con
 func (f *fakeDocker) ContainerStats(_ context.Context, id string, opts client.ContainerStatsOptions) (client.ContainerStatsResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.statsPanic {
+		panic("unexpected docker reply")
+	}
 	f.statsOpts = append(f.statsOpts, opts)
 	frames := f.statsFrames[id]
 	if len(frames) == 0 {

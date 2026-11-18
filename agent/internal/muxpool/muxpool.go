@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"swarmexec/agent/internal/safego"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -183,8 +184,8 @@ func (p *Pool) acquire(ctx context.Context, key muxKey) (*muxSidecar, bool, erro
 	p.subs[key] = sc
 	p.mu.Unlock()
 
-	go sc.demux()
-	go sc.writer()
+	safego.Go(nil, "mux demux", sc.demux)
+	safego.Go(nil, "mux writer", sc.writer)
 	sc.armIdle()
 	return sc, true, nil
 }

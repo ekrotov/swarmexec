@@ -221,3 +221,24 @@ func TestForwardRegistry_ConcurrentAccess(t *testing.T) {
 		t.Errorf("total = %d after all removed, want 0", total)
 	}
 }
+
+// The warning marker is "the last connection failed": once a connection works
+// again it has to go, or it stays for the life of the forward.
+func TestForwardRegistry_ConnErrorClearsOnSuccess(t *testing.T) {
+	r := newForwardRegistry()
+	e := r.add("cs", cand("abc", "api", "n1"), 9090, 8080, func() {})
+	r.markActive(e.id, "127.0.0.1:9090")
+	if r.clearConnError(e.id) {
+		t.Error("cleared an error that was never there")
+	}
+	r.noteConnError(e.id, errors.New("boom"))
+	if !r.clearConnError(e.id) {
+		t.Fatal("a success did not clear the recorded failure")
+	}
+	if r.list()[0].connErr != nil {
+		t.Error("connErr survived a successful connection")
+	}
+	if !r.noteConnError(e.id, errors.New("again")) {
+		t.Error("a failure after a success must announce itself again")
+	}
+}

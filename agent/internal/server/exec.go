@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"swarmexec/agent/internal/safego"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -114,21 +115,23 @@ func (s *Server) runSession(stream pb.Agent_ExecServer, se *pb.StartExec, a auth
 
 	// Closing the hijacked conn unblocks the output reader on cancellation
 	// (client disconnect, timeout) so io.Copy/StdCopy returns promptly.
-	go func() {
+	safego.Go(s.log, "exec closer", func() {
 		<-ctx.Done()
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			maxHit.Store(true)
 		}
 		closeAttach()
-	}()
+	}, cancel, closeAttach)
 
 	if s.opts.IdleTimeout > 0 {
-		go s.idleMonitor(ctx, &lastActivity, &idleHit, cancel)
+		safego.Go(s.log, "exec idle monitor", func() { s.idleMonitor(ctx, &lastActivity, &idleHit, cancel) })
 	}
 
 	// Client -> container pump (stdin + resize). Runs until the client
 	// half-closes, disconnects, or the session context is cancelled.
-	go s.pumpInput(ctx, stream, &attach.HijackedResponse, execID, bytesIn, touch, cancel)
+	safego.Go(s.log, "exec input pump", func() {
+		s.pumpInput(ctx, stream, &attach.HijackedResponse, execID, bytesIn, touch, cancel)
+	}, cancel)
 
 	// Container -> client copy. Blocks until output ends or the conn is closed.
 	copyErr := copyOutput(stream, se.GetTty(), attach.Reader, bytesOut, touch)

@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"swarmexec/agent/internal/safego"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -163,7 +164,7 @@ func New(docker DockerClient, authz auth.Authorizer, auditLog *audit.Logger, log
 // scan, then reactive (volume create/destroy) and periodic refreshes, until ctx
 // is cancelled. Call it once after New.
 func (s *Server) StartVolumeSizeCache(ctx context.Context) {
-	go s.sizeCache.Run(ctx)
+	safego.Go(s.log, "volume size cache", func() { s.sizeCache.Run(ctx) })
 }
 
 // StartStatsCache launches the background container-stats sampler. Unlike the
@@ -171,13 +172,13 @@ func (s *Server) StartVolumeSizeCache(ctx context.Context) {
 // (see statsampler), so an agent nobody is watching stays idle. Call it once
 // after New.
 func (s *Server) StartStatsCache(ctx context.Context) {
-	go s.statsCache.Run(ctx)
+	safego.Go(s.log, "stats sampler", func() { s.statsCache.Run(ctx) })
 }
 
 // StartReclaimCache launches the background reclaim measurement: once shortly
 // after start, then hourly, and after every prune. Call it once after New.
 func (s *Server) StartReclaimCache(ctx context.Context) {
-	go s.reclaim.Run(ctx)
+	safego.Go(s.log, "reclaim cache", func() { s.reclaim.Run(ctx) })
 }
 
 // StartPruneScheduler reads the schedule from the agent's own container labels

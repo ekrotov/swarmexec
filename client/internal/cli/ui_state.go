@@ -205,6 +205,9 @@ type ui struct {
 	// The inspect view sets it while open so its STATS view follows the
 	// readings instead of freezing on the ones it opened with.
 	onUsage func()
+	// onUsageOwner is who set onUsage, so a close only clears its own hook and
+	// not one a newer owner installed since.
+	onUsageOwner any
 
 	// switching guards the window between asking for a cluster and having it:
 	// the connect runs off the UI goroutine, and a second switch started in the

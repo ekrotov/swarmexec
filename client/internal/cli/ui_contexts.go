@@ -234,6 +234,7 @@ func (u *ui) deleteContext(c dockerctx.Context) {
 			u.info("remove failed: " + err.Error())
 			return
 		}
+		u.forgetCluster(c.Name)
 		u.loadContexts()
 		u.flash(" [green]removed[white] context " + c.Name)
 	})

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"swarmexec/agent/internal/safego"
 	"sync"
 	"time"
 
@@ -85,7 +86,7 @@ func New(docker Docker, prune PruneFunc, afterRun func(), log *slog.Logger) *Sch
 // until ctx ends, in its own goroutine. Invalid labels are logged and disable
 // the schedule; they never stop the agent. Call it once.
 func (p *Scheduler) Start(ctx context.Context) {
-	go func() {
+	safego.Go(p.log, "prune scheduler", func() {
 		labels, err := p.selfLabels(ctx)
 		if err != nil {
 			p.log.Warn("prune schedule: cannot read the agent's own labels; schedule off", "err", err)
@@ -94,7 +95,7 @@ func (p *Scheduler) Start(ctx context.Context) {
 		}
 		p.Load(labels)
 		p.run(ctx)
-	}()
+	})
 }
 
 // selfLabels returns the labels of the container this agent runs in, found by
@@ -196,6 +197,11 @@ func (p *Scheduler) waitUntil(ctx context.Context, t time.Time) bool {
 	}
 }
 
+// scheduledPruneTimeout caps one scheduled prune run. Generous: pruning images
+// on a node with many layers is slow. It exists to release the prune lock when
+// the Docker daemon stops answering.
+const scheduledPruneTimeout = 30 * time.Minute
+
 // RunOnce performs one scheduled prune and records it as the last run.
 func (p *Scheduler) RunOnce(ctx context.Context, sched prunesched.Schedule) *pb.PruneRun {
 	cats, err := prunecat.FromNames(sched.Categories)
@@ -204,7 +210,11 @@ func (p *Scheduler) RunOnce(ctx context.Context, sched prunesched.Schedule) *pb.
 		run.Error = err.Error() // Parse rejects these; belt and braces
 	} else {
 		p.log.Info("scheduled prune starting", "categories", prunecat.Names(cats))
-		run.Results = p.prune(ctx, Identity, "schedule", cats, sched.ContainersUntil, sched.LabelFilters)
+		// A hung Docker call would otherwise hold the prune lock for good, and
+		// every manual prune with it.
+		pctx, cancel := context.WithTimeout(ctx, scheduledPruneTimeout)
+		defer cancel()
+		run.Results = p.prune(pctx, Identity, "schedule", cats, sched.ContainersUntil, sched.LabelFilters)
 		var freed int64
 		for _, r := range run.Results {
 			freed += r.GetFreedBytes()

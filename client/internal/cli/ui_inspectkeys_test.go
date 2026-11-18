@@ -294,3 +294,22 @@ func TestInspectActionsMenuLetters(t *testing.T) {
 		t.Error("the menu stayed open under the placement menu")
 	}
 }
+
+// A cluster switch closes the overlays of the cluster it leaves without going
+// through their owner's close method. The inspect view's usage hook must go
+// with its overlay either way, or every usage pass keeps refilling a dead view.
+func TestClusterSwitchClosingInspectReleasesTheUsageHook(t *testing.T) {
+	u := inspectUI(t)
+	openInspectView(t, u, "web")
+	onLoop(t, u, func() {
+		if u.onUsage == nil {
+			t.Fatal("the open inspect view should have set the usage hook")
+		}
+		if n := u.closeClusterOverlays(); n == 0 {
+			t.Fatal("the switch closed no overlay")
+		}
+		if u.onUsage != nil {
+			t.Error("the usage hook outlived its overlay")
+		}
+	})
+}

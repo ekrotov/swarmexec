@@ -154,6 +154,7 @@ type forwarder struct {
 	containerID string
 	remotePort  uint32
 	auth        agenterr.Auth // which credential an Unauthenticated is about
+	onConnOK    func()        // see setOnConnOK
 }
 
 // startForwarder binds the local port and dials the agent. On success the
@@ -189,6 +190,11 @@ func startForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoi
 
 // LocalAddr is the address actually bound, which is what to show the operator:
 // with local port 0 the kernel picks one, and only this reports which.
+// onConnOK, when set before Serve, is called for each connection that ended
+// cleanly. The TUI uses it to take the failure marker off a forward that works
+// again.
+func (f *forwarder) setOnConnOK(fn func()) { f.onConnOK = fn }
+
 func (f *forwarder) LocalAddr() net.Addr { return f.ln.Addr() }
 
 func (f *forwarder) Close() error {
@@ -224,7 +230,11 @@ func (f *forwarder) Serve(ctx context.Context, onConnErr func(error)) error {
 		go func() {
 			defer wg.Done()
 			defer local.Close()
-			if ferr := forwardConn(ctx, client, local, f.containerID, f.remotePort); ferr != nil && onConnErr != nil {
+			ferr := forwardConn(ctx, client, local, f.containerID, f.remotePort)
+			if ferr == nil && f.onConnOK != nil {
+				f.onConnOK()
+			}
+			if ferr != nil && onConnErr != nil {
 				// Against an agent that predates PortForward every single
 				// connection fails, so leaving the raw "unknown method
 				// PortForward" to repeat in the operator's face would bury

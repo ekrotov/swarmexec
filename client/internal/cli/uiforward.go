@@ -198,6 +198,21 @@ func (r *forwardRegistry) noteConnError(id int, err error) (first bool) {
 	return first
 }
 
+// clearConnError forgets the last per-connection failure once a connection
+// succeeds. Without it the warning marker stayed on a forward for as long as it
+// lived, long after the problem (a restarting container, a flapping bastion)
+// was gone. It reports whether there was one to clear, so the caller redraws
+// only on a change.
+func (r *forwardRegistry) clearConnError(id int) (cleared bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.entries[id]; ok && e.connErr != nil {
+		e.connErr = nil
+		cleared = true
+	}
+	return cleared
+}
+
 // remove stops the forward and drops it from the registry.
 func (r *forwardRegistry) remove(id int) {
 	r.mu.Lock()

@@ -37,6 +37,7 @@ type treeTab struct {
 	groupByStack bool
 
 	per perCluster[treeState]
+	seq loadSeq // orders overlapping loads and polls (see loadSeq)
 	// shownFor is the cluster whose services the tree holds, nil while it
 	// shows an error. A render for another cluster first saves this one's
 	// position — that is how a switch back lands where the operator was.
@@ -722,9 +723,17 @@ func (t *treeTab) load() {
 	st.resetCols = true
 	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
 	gen, ctx, r := u.generation(), u.ctx, u.r
+	if r == nil || ctx == nil {
+		return // no cluster connected: nothing to list
+	}
+	id := t.seq.start()
 	go func() {
 		svcs, cands, err := fetchTree(ctx, r)
-		u.onCluster(gen, func() { t.apply(svcs, cands, err) })
+		u.onCluster(gen, func() {
+			if t.seq.fresh(id) {
+				t.apply(svcs, cands, err)
+			}
+		})
 	}()
 }
 
@@ -741,6 +750,9 @@ func (t *treeTab) load() {
 func (t *treeTab) autoRefresh() {
 	u := t.u
 	ctx, r := u.ctx, u.r
+	if r == nil || ctx == nil {
+		return
+	}
 	// Cheap gate: skip the fetch when an overlay is known to be open. Best
 	// effort by design — the invariant is enforced below, on the UI goroutine.
 	busy := &u.autoRefreshBusy // this cluster's flag, taken here: the goroutine must not look u.clusterState up
@@ -748,6 +760,7 @@ func (t *treeTab) autoRefresh() {
 		return
 	}
 	gen := u.generation()
+	id := t.seq.start()
 	go func() {
 		defer busy.Store(false)
 		svcs, cands, err := fetchTree(ctx, r)
@@ -758,7 +771,7 @@ func (t *treeTab) autoRefresh() {
 			// The gate that matters, asked where the answer is exact: an
 			// overlay may have opened while we were fetching, and rebuilding
 			// the tree underneath one is what pulls its focus away.
-			if u.overlayOpen() {
+			if u.overlayOpen() || !t.seq.fresh(id) {
 				return
 			}
 			t.apply(svcs, cands, nil)
@@ -1009,7 +1022,11 @@ func (t *treeTab) svcColor(s resolve.Service) tcell.Color {
 // and an agent too old to know the RPC would then break the view instead of
 // just leaving the badges off.
 func (u *ui) loadUsage() {
-	ctx, ac, r, timeout := u.ctx, u.agents, u.r, u.f.connectTimeout
+	v, ok := u.connected()
+	if !ok {
+		return
+	}
+	ctx, ac, r, timeout := v.ctx, v.ac, v.r, v.f.connectTimeout
 	// Fetched even while an overlay is open: the inspect STATS view shows these
 	// readings and promises to refresh, and the history must not have a hole
 	// for every minute someone spends in a dialog. The fan-out runs off the

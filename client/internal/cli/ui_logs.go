@@ -156,7 +156,7 @@ func (u *ui) logPage(tv *tview.TextView, follow *atomic.Bool) (tview.Primitive, 
 }
 
 func (u *ui) showLogs(c resolve.Candidate) {
-	app, ctree := u.app, u.ctree
+	ctree := u.ctree
 	ac, r, ctx, f := u.agents, u.r, u.ctx, u.f
 	ep := resolve.Endpoint{DialHost: c.DialHost, ContainerID: c.ContainerID, NodeID: c.NodeID, NodeName: c.NodeName}
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
@@ -200,7 +200,7 @@ func (u *ui) showLogs(c resolve.Candidate) {
 			Params: logstream.Params{Follow: true, Tail: 1000, ConnectTimeout: f.connectTimeout, Wake: wake},
 			Stdout: &logIngest{v: lv}, Stderr: &logIngest{v: lv, stderr: true}}, target, ep, lv.addNote)
 		if lerr != nil && lctx.Err() == nil {
-			app.QueueUpdateDraw(func() { fmt.Fprintf(tv, "\n[red]error: %s[-]\n", tview.Escape(lerr.Error())) })
+			lv.addError("error: " + lerr.Error())
 		}
 	}()
 	ov.show(page, tv)
@@ -223,7 +223,7 @@ const stackLogLimit = 64
 // tail, so opening a stack does not begin with thousands of old lines. A
 // non-empty note heads the view, above the first line.
 func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, byService bool, note string) {
-	app, ctree := u.app, u.ctree
+	ctree := u.ctree
 	ac, r, ctx, f := u.agents, u.r, u.ctx, u.f
 	tv := tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	follow := &atomic.Bool{}
@@ -274,9 +274,7 @@ func (u *ui) showMemberLogs(kind, name string, members []resolve.Candidate, bySe
 				Stderr: &logIngest{v: lv, prefix: prefix, stderr: true}},
 				target, ep, func(msg string) { lv.addNote(prefix + msg) })
 			if lerr != nil && lctx.Err() == nil {
-				app.QueueUpdateDraw(func() {
-					fmt.Fprintf(tv, "[red]%serror: %s[-]\n", prefix, tview.Escape(lerr.Error()))
-				})
+				lv.addError(prefix + "error: " + lerr.Error())
 			}
 		}(ep, target, prefix)
 	}

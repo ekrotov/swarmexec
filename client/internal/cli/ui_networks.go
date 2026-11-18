@@ -171,7 +171,8 @@ type netEndpointsResult struct {
 // open detail overlay repaint when it lands.
 func (t *networksTab) loadEndpoints() {
 	u := t.u
-	if u.r == nil || u.agents == nil || u.f == nil || u.dcli == nil {
+	v, ok := u.connected()
+	if !ok {
 		return // no agents to ask (a cluster not connected yet)
 	}
 	st := t.endpoints()
@@ -179,7 +180,7 @@ func (t *networksTab) loadEndpoints() {
 		return
 	}
 	st.loading = time.Now()
-	r, ac, dcli, timeout := u.r, u.agents, u.dcli, u.f.connectTimeout
+	r, ac, dcli, timeout := v.r, v.ac, v.dcli, v.f.connectTimeout
 	async(u, "ui.networks.endpoints", func(ctx context.Context) (netEndpointsResult, error) {
 		return fetchNetEndpoints(ctx, r, ac, dcli, timeout)
 	}, func(res netEndpointsResult, err error) {

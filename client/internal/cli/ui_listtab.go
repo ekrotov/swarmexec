@@ -26,6 +26,7 @@ type listTab[T any] struct {
 	row     func(r int, item T)      // paint table row r
 	empty   func() string            // the empty-state text, read at render time (it names live keys)
 	per     perCluster[listState[T]] // what each cluster shows
+	seq     loadSeq                  // orders overlapping loads (see loadSeq)
 	// shownFor is the cluster whose rows the table holds, nil while it shows
 	// a loading or error state; see volumesTab.shownFor.
 	shownFor *clusterState
@@ -101,7 +102,11 @@ func (l *listTab[T]) render() {
 func (l *listTab[T]) load(op string, fetch func(ctx context.Context) ([]T, error)) {
 	st := l.st()
 	l.placeholder(loadingCell())
+	id := l.seq.start()
 	async(l.u, op, fetch, func(list []T, err error) {
+		if !l.seq.fresh(id) {
+			return // a later load already answered
+		}
 		if err != nil {
 			l.placeholder(errorCell(err))
 			return

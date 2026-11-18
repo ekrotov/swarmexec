@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/events"
 
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/swarmapi"
 )
 
 // The tree has always learned about background changes by re-listing on a
@@ -82,7 +83,7 @@ var defaultTopologyTiming = topologyTiming{debounce: topologyDebounce, minInterv
 // same mechanism the polling uses, and for the same reason: "only the visible
 // cluster costs anything" should be enforced by the context a worker already
 // takes, not by a flag each one has to remember to check.
-func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
+func (u *ui) watchTopology(ctx context.Context, c *clusterState, dcli swarmapi.Client) {
 	// Services carry rolling updates, scaling, creation and removal. Nodes
 	// carry availability and drain. There is deliberately no "task" filter:
 	// Docker emits no task events at all, which is why the trigger is a service
@@ -100,7 +101,7 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
 		// Bounded, so a connection that died without saying so is replaced
 		// instead of being trusted forever.
 		sctx, scancel := context.WithTimeout(ctx, topologyResubscribe)
-		connected := u.streamTopology(sctx, c, f)
+		connected := u.streamTopology(sctx, c, dcli, f)
 		expired := sctx.Err() != nil && ctx.Err() == nil
 		scancel()
 		if ctx.Err() != nil {
@@ -133,8 +134,8 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState) {
 // beyond opening the stream lives in consumeTopology, which takes channels
 // rather than a Docker client — the coalescing is the part with decisions in
 // it, and a rule that cannot be tested without a live swarm would not be.
-func (u *ui) streamTopology(ctx context.Context, c *clusterState, f client.Filters) bool {
-	sub := c.dcli.Events(ctx, client.EventsListOptions{Filters: f})
+func (u *ui) streamTopology(ctx context.Context, c *clusterState, dcli swarmapi.Client, f client.Filters) bool {
+	sub := dcli.Events(ctx, client.EventsListOptions{Filters: f})
 	msgs, errs := sub.Messages, sub.Err
 	// Subscribed without error: from here the poll may take the slow rate.
 	// Dialling is what fails on a cluster where this does not work at all — an

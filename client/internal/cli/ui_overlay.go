@@ -34,6 +34,7 @@ type overlay struct {
 	release func()          // the refresh entry
 	restore func()          // the footer, if this overlay took it
 	help    string          // its footer keys as last set, which ? lists first
+	onClose func()          // the owner's own cleanup, run by every exit (see Close)
 	once    sync.Once
 }
 
@@ -151,11 +152,20 @@ func (o *overlay) setHelp(markup string) {
 // the footer back before the page goes, take the page away before moving focus
 // to whatever was behind it.
 //
+// onClose is how an owner hangs its cleanup on every exit at once. A cluster
+// switch closes overlays without going through their owner's close method
+// (closeClusterOverlays sets back to nil and calls Close), so anything the
+// owner undoes only in its own close — the inspect view's usage hook, say — was
+// skipped and kept working on a dead view.
+//
 // Idempotent, and that is not politeness: a modal's done func and the caller
 // that also tidies up both reach for it, and a second close used to pop a
 // footer belonging to somebody else.
 func (o *overlay) Close() {
 	o.once.Do(func() {
+		if o.onClose != nil {
+			o.onClose()
+		}
 		if o.restore != nil {
 			o.restore()
 		}

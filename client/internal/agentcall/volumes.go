@@ -86,6 +86,10 @@ func (c *Client) Volumes(ctx context.Context, nodes []resolve.Node, connectTimeo
 	return vols, errs
 }
 
+// volumeCallTimeout is the time a plain volume or container-list call gets on
+// top of the connect budget. Sizing has its own, longer one below.
+const volumeCallTimeout = 30 * time.Second
+
 // volumeSizeTimeout bounds a with_size ListVolumes call: the agent runs a
 // du-style disk-usage scan that can take a while, far longer than a connect.
 const volumeSizeTimeout = 2 * time.Minute
@@ -191,14 +195,14 @@ func (c *Client) VolumeUsage(ctx context.Context, nodes []resolve.Node, connectT
 }
 
 func (c *Client) listNodeContainers(ctx context.Context, n resolve.Node, connectTimeout time.Duration) ([]*pb.ContainerInfo, error) {
-	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := c.Conn(dctx, n.DialHost)
-	cancel()
+	cctx, cancel := context.WithTimeout(ctx, connectTimeout+volumeCallTimeout)
+	defer cancel()
+	conn, err := c.Conn(cctx, n.DialHost)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	resp, err := conn.Agent().ListContainers(ctx, &pb.ListRequest{})
+	resp, err := conn.Agent().ListContainers(cctx, &pb.ListRequest{})
 	conn.done(err)
 	if err != nil {
 		return nil, c.Explain(ctx, err)
@@ -227,14 +231,14 @@ func (c *Client) RemoveVolume(ctx context.Context, nodes []resolve.Node, name st
 }
 
 func (c *Client) removeNodeVolume(ctx context.Context, n resolve.Node, name string, force bool, connectTimeout time.Duration) error {
-	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := c.Conn(dctx, n.DialHost)
-	cancel()
+	cctx, cancel := context.WithTimeout(ctx, connectTimeout+volumeCallTimeout)
+	defer cancel()
+	conn, err := c.Conn(cctx, n.DialHost)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	_, err = conn.Agent().RemoveVolume(ctx, &pb.RemoveVolumeRequest{Name: name, Force: force})
+	_, err = conn.Agent().RemoveVolume(cctx, &pb.RemoveVolumeRequest{Name: name, Force: force})
 	conn.done(err)
 	return c.Explain(ctx, err)
 }
@@ -250,14 +254,14 @@ func (c *Client) CreateVolume(ctx context.Context, nodes []resolve.Node, req *pb
 }
 
 func (c *Client) createNodeVolume(ctx context.Context, n resolve.Node, req *pb.CreateVolumeRequest, connectTimeout time.Duration) error {
-	dctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	conn, err := c.Conn(dctx, n.DialHost)
-	cancel()
+	cctx, cancel := context.WithTimeout(ctx, connectTimeout+volumeCallTimeout)
+	defer cancel()
+	conn, err := c.Conn(cctx, n.DialHost)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	_, err = conn.Agent().CreateVolume(ctx, req)
+	_, err = conn.Agent().CreateVolume(cctx, req)
 	conn.done(err)
 	return c.Explain(ctx, err)
 }

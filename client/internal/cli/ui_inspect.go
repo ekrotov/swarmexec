@@ -401,9 +401,19 @@ func (iv *inspectView) copyLine() {
 }
 
 func (iv *inspectView) close() {
-	iv.u.onUsage = nil
 	if iv.ov != nil {
-		iv.ov.Close()
+		iv.ov.Close() // runs releaseUsage
+	} else {
+		iv.releaseUsage()
+	}
+}
+
+// releaseUsage stops the usage pass feeding this view. It hangs on the overlay's
+// onClose so that a cluster switch, which closes the overlay without calling
+// close, ends it too.
+func (iv *inspectView) releaseUsage() {
+	if iv.u.onUsageOwner == iv {
+		iv.u.onUsage, iv.u.onUsageOwner = nil, nil
 	}
 }
 
@@ -773,11 +783,12 @@ func (iv *inspectView) open() {
 	table.SetSelectionChangedFunc(func(int, int) { iv.setFooter("") })
 	table.SetInputCapture(iv.handleKey)
 	iv.ov = u.overlayFor(pageInspect, u.ctree, iv.keysText())
-	u.onUsage = func() {
+	u.onUsage, u.onUsageOwner = func() {
 		if iv.mode == inspModeStats {
 			iv.populate()
 		}
-	}
+	}, iv
+	iv.ov.onClose = iv.releaseUsage
 	iv.setHelp = iv.ov.setHelp
 	iv.populate() // shows "loading…"
 	iv.ov.show(centered(iv.frame, 110, 40), table)

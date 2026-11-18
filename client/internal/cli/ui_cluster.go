@@ -163,7 +163,7 @@ func (u *ui) switchCluster(name string) {
 	resetAskpassDeclines() // a deliberate switch may ask ssh's questions again
 	u.flash(" [aqua]connecting[white] to " + name + " …")
 	go func() {
-		err := u.connectCluster(target)
+		link, err := u.dialCluster(target.ctxOverride)
 		if err == nil {
 			// And then actually reach it. Building a client does not dial, and
 			// the version check inside connect deliberately forgives a failed
@@ -174,15 +174,25 @@ func (u *ui) switchCluster(name string) {
 			// not exist, and the operator lands on an empty screen whose only
 			// clue is "cluster: unreachable" in the footer. Measured against a
 			// context pointing at a nonexistent host — the switch went through.
-			if err = target.reach(); err != nil {
+			if err = link.reach(u.runCtx); err != nil {
 				// Leave nothing half-built: an unreachable cluster that kept its
 				// client would look connected to the next attempt and switch
-				// instantly into the same dead end.
-				target.close()
+				// instantly into the same dead end. The link was never the
+				// cluster's, so closing it is all there is to undo.
+				link.close()
 			}
 		}
 		u.app.QueueUpdateDraw(func() {
 			u.switching = false
+			if u.clusters[name] != target {
+				// The context was deleted while we were connecting: what
+				// connected is the old endpoint, and nobody wants it.
+				if err == nil {
+					link.close()
+				}
+				u.info(fmt.Sprintf("context %q was removed while connecting", name))
+				return
+			}
 			if err != nil {
 				// Deliberately not fatal, and deliberately not a flash: a switch
 				// that did not happen has to be unmissable, and the operator is
@@ -195,6 +205,7 @@ func (u *ui) switchCluster(name string) {
 				u.info(fmt.Sprintf("cannot switch to context %q:\n\n%v", name, err))
 				return
 			}
+			u.install(target, link)
 			u.activateCluster(target)
 		})
 	}()
@@ -219,7 +230,7 @@ func (u *ui) activateCluster(c *clusterState) {
 	c.agents.Resume() // pool agent connections again (see leaveCluster)
 	// One topology watcher per activation, on this cluster's context — so it
 	// dies with the switch away, exactly like the polling does.
-	go u.watchTopology(c.ctx, c)
+	go u.watchTopology(c.ctx, c, c.dcli)
 	u.activeCtx = c.name
 
 	// The switch is the TUI's own business: docker's stored current context —
@@ -285,6 +296,11 @@ func (u *ui) activateCluster(c *clusterState) {
 // is already gone.
 func (u *ui) leaveCluster() int {
 	closed := u.closeClusterOverlays()
+	// A cluster whose context was deleted while it was visible is no longer in
+	// the map, so nothing else will ever close it.
+	if u.clusterState != nil && u.clusters[u.name] != u.clusterState {
+		defer u.clusterState.close()
+	}
 	if u.cancel != nil {
 		u.cancel()
 	}
@@ -295,6 +311,26 @@ func (u *ui) leaveCluster() int {
 	return closed
 }
 
+// connView is the visible cluster's connections as a loader captures them.
+type connView struct {
+	r    *resolve.Resolver
+	ac   *agentcall.Client
+	dcli swarmapi.Client
+	f    *uiFlags
+	ctx  context.Context
+}
+
+// connected captures the visible cluster's connections on the UI goroutine and
+// reports whether there is a cluster to talk to. A cluster that was closed (a
+// deleted context's, left behind) or never connected has nil connections, and a
+// loader that handed those to its worker goroutine took the whole TUI down with
+// a nil dereference. Every loader that reads them starts with this and returns
+// when it is false.
+func (u *ui) connected() (connView, bool) {
+	v := connView{r: u.r, ac: u.agents, dcli: u.dcli, f: u.f, ctx: u.ctx}
+	return v, v.r != nil && v.ac != nil && v.dcli != nil && v.f != nil && v.ctx != nil
+}
+
 // clusterProbeTimeout bounds the reachability check on a switch.
 //
 // Generous enough for an ssh handshake through a bastion — and since T1 that is
@@ -303,13 +339,13 @@ func (u *ui) leaveCluster() int {
 // connect timeout while they wait to be told it did not work.
 const clusterProbeTimeout = 15 * time.Second
 
-// reach answers the only question a switch actually cares about: is this
+// reachManager answers the only question a switch actually cares about: is this
 // cluster there? A refusal here is not a failure of the tool — it is the switch
 // declining to happen, which is why it is worth waiting for.
-func (c *clusterState) reach() error {
-	ctx, cancel := promptAwareTimeout(c.ctx, clusterProbeTimeout)
+func reachManager(parent context.Context, dcli swarmapi.Client) error {
+	ctx, cancel := promptAwareTimeout(parent, clusterProbeTimeout)
 	defer cancel()
-	_, err := c.dcli.Ping(ctx, client.PingOptions{})
+	_, err := dcli.Ping(ctx, client.PingOptions{})
 	return err
 }
 
@@ -337,6 +373,25 @@ func (c *clusterState) close() {
 // operator as ssh processes outliving the tool they started them with.
 func (u *ui) closeClusters() {
 	for _, c := range u.clusters {
+		c.close()
+	}
+	if u.clusterState != nil {
+		u.clusterState.close() // a deleted context's cluster, still visible
+	}
+}
+
+// forgetCluster drops what a deleted context left behind: the entry, so a
+// context created later under the same name connects afresh instead of being
+// entered over the old endpoint, and the connections of a cluster nobody is
+// looking at. The visible one stays up until the operator leaves it
+// (leaveCluster). UI goroutine only.
+func (u *ui) forgetCluster(name string) {
+	c, ok := u.clusters[name]
+	if !ok {
+		return
+	}
+	delete(u.clusters, name)
+	if c != u.clusterState {
 		c.close()
 	}
 }
