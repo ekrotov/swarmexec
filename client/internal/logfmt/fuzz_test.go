@@ -37,6 +37,6 @@ func FuzzFormatsParse(f *testing.F) {
 		if got, ok := Detect([]string{line, line, line, line, line, line, line, line, line, line}); ok && got == nil {
 			t.Fatal("Detect reached a verdict without a format")
 		}
-		ParseLevel(strings.TrimSpace(line))
+		_ = ParseLevel(strings.TrimSpace(line))
 	})
 }
