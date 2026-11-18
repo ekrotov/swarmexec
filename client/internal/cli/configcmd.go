@@ -51,6 +51,8 @@ type configView struct {
 	SyncDockerContext bool `json:"sync_docker_context"`
 	// CheckUpdates is ui.check_updates after SWARMEXEC_NO_UPDATE_CHECK.
 	CheckUpdates bool `json:"check_updates"`
+	// CheckRegistry is ui.check_registry after SWARMEXEC_NO_REGISTRY_CHECK.
+	CheckRegistry bool `json:"check_registry"`
 }
 
 func newConfigShowCmd(g *globalFlags) *cobra.Command {
@@ -94,6 +96,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			}
 			fmt.Fprintf(w, "sync docker context:\t%v\n", v.SyncDockerContext)
 			fmt.Fprintf(w, "check updates:\t%v\n", v.CheckUpdates)
+			fmt.Fprintf(w, "check registry:\t%v\n", v.CheckRegistry)
 			return w.Flush()
 		},
 	}
@@ -142,6 +145,7 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 		ConfirmSwitch:     cfg.ConfirmSwitch(ctxName),
 		SyncDockerContext: cfg.UI.SyncDockerContext,
 		CheckUpdates:      cfg.UI.UpdateChecks(),
+		CheckRegistry:     cfg.UI.RegistryChecks(),
 	}
 }
 

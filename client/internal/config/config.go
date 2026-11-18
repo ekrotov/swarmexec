@@ -219,6 +219,12 @@ type UIConfig struct {
 	// means on; a pointer so that Save never writes the default into a file
 	// and a written false survives. Read it through UpdateChecks.
 	CheckUpdates *bool `yaml:"check_updates,omitempty"`
+
+	// CheckRegistry lets the TUI look up the registry for the version behind
+	// a service's image and for a newer one (swarmops.RegistryCache). Unset
+	// means on; a pointer for the same reason as CheckUpdates. Read it
+	// through RegistryChecks.
+	CheckRegistry *bool `yaml:"check_registry,omitempty"`
 }
 
 // EnvNoUpdateCheck switches the release check off whatever the file says.
@@ -229,6 +235,17 @@ const EnvNoUpdateCheck = "SWARMEXEC_NO_UPDATE_CHECK"
 // (overlayEnv folds the variable into CheckUpdates).
 func (u UIConfig) UpdateChecks() bool {
 	return u.CheckUpdates == nil || *u.CheckUpdates
+}
+
+// EnvNoRegistryCheck switches the registry version check off whatever the
+// file says.
+const EnvNoRegistryCheck = "SWARMEXEC_NO_REGISTRY_CHECK"
+
+// RegistryChecks reports whether the TUI may query image registries for
+// versions: on unless ui.check_registry is false or SWARMEXEC_NO_REGISTRY_CHECK
+// is set (overlayEnv folds the variable into CheckRegistry).
+func (u UIConfig) RegistryChecks() bool {
+	return u.CheckRegistry == nil || *u.CheckRegistry
 }
 
 // Default returns the built-in defaults.
@@ -394,6 +411,10 @@ func overlayEnv(cfg *Config) {
 	if noUpdateCheck(os.Getenv(EnvNoUpdateCheck)) {
 		off := false
 		cfg.UI.CheckUpdates = &off
+	}
+	if noUpdateCheck(os.Getenv(EnvNoRegistryCheck)) {
+		off := false
+		cfg.UI.CheckRegistry = &off
 	}
 	if v := os.Getenv("SWARMEXEC_UI_DIM"); v != "" {
 		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {

@@ -299,14 +299,19 @@ func (u *ui) connectCluster(c *clusterState) error {
 	// lands. It belongs to the cluster whose images it resolved, and the guard
 	// is pointer identity: if that cluster is no longer the visible one, the
 	// rows on screen are not its rows.
-	c.regCache = swarmops.NewRegistryCache(func() {
-		u.app.QueueUpdateDraw(func() {
-			if u.clusterState != c {
-				return
-			}
-			u.treeTab().remarkServices()
+	// ui.check_registry: off means no cache at all, so nothing ever calls out
+	// (both users of regCache treat nil as "no version information").
+	c.regCache = nil
+	if cfg.UI.RegistryChecks() {
+		c.regCache = swarmops.NewRegistryCache(func() {
+			u.app.QueueUpdateDraw(func() {
+				if u.clusterState != c {
+					return
+				}
+				u.treeTab().remarkServices()
+			})
 		})
-	})
+	}
 	c.err = nil
 	return nil
 }

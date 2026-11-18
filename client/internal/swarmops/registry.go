@@ -330,6 +330,16 @@ func checkVersionTag(ctx context.Context, resolver imageResolver, repo, tag stri
 	return st
 }
 
+// Limits of the registry cache (PRF-03). The check runs in the background of a
+// raw-mode TUI, so it is bounded in both memory and concurrency: at most
+// maxRegistryEntries images are remembered (the least recently fetched is
+// evicted first) and at most maxRegistryFetches lookups run at once; a ref
+// that finds every slot busy is simply asked again on the next render.
+const (
+	maxRegistryEntries = 256
+	maxRegistryFetches = 4
+)
+
 // RegistryCache memoises image checks so the tree's periodic re-render (and many
 // services sharing an image) don't hammer the registry. Successful lookups are
 // cached for successTTL, failures for the shorter failTTL (to retry sooner).
@@ -340,6 +350,9 @@ type RegistryCache struct {
 	failTTL    time.Duration
 	resolver   imageResolver
 	onUpdate   func() // called (off the lock) when a fetch produced a usable result
+	maxEntries int
+	maxFetches int
+	inflight   int // lookups running in the background, under mu
 }
 
 type regEntry struct {
@@ -356,7 +369,47 @@ func NewRegistryCache(onUpdate func()) *RegistryCache {
 		failTTL:    1 * time.Minute,
 		resolver:   craneResolver{},
 		onUpdate:   onUpdate,
+		maxEntries: maxRegistryEntries,
+		maxFetches: maxRegistryFetches,
 	}
+}
+
+// evictLocked makes room for one more entry: while the cache is full, the
+// entry fetched longest ago goes. Entries with a lookup in flight stay (their
+// result is about to replace them). The caller holds c.mu.
+func (c *RegistryCache) evictLocked() {
+	for len(c.entries) >= c.maxEntries {
+		oldest, victim := time.Time{}, ""
+		for ref, e := range c.entries {
+			if e.inflight {
+				continue
+			}
+			if victim == "" || e.fetchedAt.Before(oldest) {
+				oldest, victim = e.fetchedAt, ref
+			}
+		}
+		if victim == "" {
+			return
+		}
+		delete(c.entries, victim)
+	}
+}
+
+// storeLocked records the outcome of a lookup for specRef. A failure never
+// replaces a good earlier result (a flaky registry must not blank a row that
+// was annotated a moment ago); the good result stays and is retried after
+// failTTL rather than successTTL. The caller holds c.mu.
+func (c *RegistryCache) storeLocked(specRef string, st ImageStatus) {
+	now := time.Now()
+	if old := c.entries[specRef]; old != nil && old.status.ok && !st.ok {
+		old.inflight = false
+		old.fetchedAt = now.Add(c.failTTL - c.successTTL)
+		return
+	}
+	if c.entries[specRef] == nil {
+		c.evictLocked()
+	}
+	c.entries[specRef] = &regEntry{status: st, fetchedAt: now, attempted: true}
 }
 
 // Status returns the best-known Status for a spec image ref and, when the entry
@@ -380,11 +433,21 @@ func (c *RegistryCache) Status(ctx context.Context, specRef string) ImageStatus 
 	if e != nil && time.Since(e.fetchedAt) < ttl {
 		return e.status
 	}
+	if c.inflight >= c.maxFetches {
+		// Every slot is busy: answer from what is known and ask again on the
+		// next render, instead of queueing one goroutine per image.
+		if e == nil {
+			return ImageStatus{}
+		}
+		return e.status
+	}
 	if e == nil {
+		c.evictLocked()
 		e = &regEntry{}
 		c.entries[specRef] = e
 	}
 	e.inflight = true
+	c.inflight++
 	go c.fetch(ctx, specRef)
 	return e.status
 }
@@ -407,7 +470,9 @@ func (c *RegistryCache) statusNow(ctx context.Context, specRef string, timeout t
 	defer cancel()
 	st := checkImageStatus(fctx, c.resolver, specRef)
 	c.mu.Lock()
-	c.entries[specRef] = &regEntry{status: st, fetchedAt: time.Now(), attempted: true}
+	if ctx.Err() == nil {
+		c.storeLocked(specRef, st)
+	}
 	c.mu.Unlock()
 	return st
 }
@@ -417,7 +482,17 @@ func (c *RegistryCache) fetch(ctx context.Context, specRef string) {
 	defer cancel()
 	st := checkImageStatus(fctx, c.resolver, specRef)
 	c.mu.Lock()
-	c.entries[specRef] = &regEntry{status: st, fetchedAt: time.Now(), attempted: true}
+	c.inflight--
+	if ctx.Err() != nil {
+		// Cancelled (a cluster switch, quitting): the failure says nothing
+		// about the registry. Drop the marker so the next render asks again.
+		if e := c.entries[specRef]; e != nil {
+			e.inflight = false
+		}
+		c.mu.Unlock()
+		return
+	}
+	c.storeLocked(specRef, st)
 	c.mu.Unlock()
 	if st.ok && c.onUpdate != nil {
 		c.onUpdate()

@@ -72,6 +72,7 @@ flags**.
 | Ask before a TUI switch (per context) | — | —         | `contexts.<name>.confirm_switch` |
 | TUI switch also sets docker's context | — | —         | `ui.sync_docker_context` |
 | Daily check for a newer release | — | `SWARMEXEC_NO_UPDATE_CHECK=1` (off) | `ui.check_updates` |
+| Registry version lookups in the TUI (on by default) | — | `SWARMEXEC_NO_REGISTRY_CHECK=1` (off) | `ui.check_registry` |
 
 The flags in this table (plus `--agent-secret`, `--agent-secret-file`,
 `--insecure` and `--operator`) are the **connection flags**. Every command
