@@ -12,6 +12,9 @@
 # listed file that is renamed or deleted fails the check until this list
 # follows.
 
+# What init writes to a cluster: a spec, a secret, a policy config.
+client/internal/agentdeploy/agentdeploy.go 80
+
 # The port-forward data path: an operator's bytes go through these.
 client/internal/portfwd/forwarder.go   72
 client/internal/portfwd/registry.go    85

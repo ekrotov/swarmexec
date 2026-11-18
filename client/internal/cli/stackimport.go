@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/agentdeploy"
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/stackfile"
 )
@@ -117,7 +118,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 func applyOptions(f *stackDeployFlags) stackfile.ApplyOptions {
 	opts := stackfile.ApplyOptions{Prune: f.prune}
 	if f.registryAuth {
-		opts.RegistryAuth = encodedRegistryAuth
+		opts.RegistryAuth = agentdeploy.EncodedRegistryAuth
 	}
 	return opts
 }

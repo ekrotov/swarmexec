@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 
+	"swarmexec/client/internal/agentdeploy"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
@@ -308,9 +309,9 @@ func TestScheduleEditorImagesAndPreview(t *testing.T) {
 // carries, has to survive it.
 func TestInitForceCarriesTheSchedule(t *testing.T) {
 	f := &initFlags{image: "reg/agent:2", serviceName: "swarmexec_agent", port: 9443}
-	spec := agentServiceSpec(f, "sec")
+	spec := agentSpecFor(f, "sec")
 	existing := agentSvc(map[string]string{prunesched.LabelEnabled: "true", prunesched.LabelStart: "03:00", "handmade": "x"})
-	if !carryPruneSchedule(&spec, &existing) {
+	if !agentdeploy.CarryPruneSchedule(&spec, &existing) {
 		t.Fatal("schedule labels not carried")
 	}
 	got := spec.TaskTemplate.ContainerSpec.Labels
@@ -320,8 +321,8 @@ func TestInitForceCarriesTheSchedule(t *testing.T) {
 	if _, ok := got["handmade"]; ok {
 		t.Error("init writes its own spec; only the schedule is carried")
 	}
-	fresh := agentServiceSpec(f, "sec")
-	if carryPruneSchedule(&fresh, nil) || carryPruneSchedule(&fresh, &swarm.Service{Spec: agentSvc(nil).Spec}) {
+	fresh := agentSpecFor(f, "sec")
+	if agentdeploy.CarryPruneSchedule(&fresh, nil) || agentdeploy.CarryPruneSchedule(&fresh, &swarm.Service{Spec: agentSvc(nil).Spec}) {
 		t.Error("nothing to carry must report false")
 	}
 	if fresh.TaskTemplate.ContainerSpec.Labels != nil {

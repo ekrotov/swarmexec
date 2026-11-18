@@ -5,11 +5,6 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -17,15 +12,11 @@ import (
 	"strings"
 	"time"
 
-	cliconfig "github.com/docker/cli/cli/config"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
+	"swarmexec/client/internal/agentdeploy"
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
@@ -33,7 +24,6 @@ import (
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
-	"swarmexec/internal/prunesched"
 )
 
 // The deployment vocabulary lives in internal/deploy, which the agent imports
@@ -134,13 +124,13 @@ func runInit(cmd *cobra.Command, g *globalFlags, f *initFlags) error {
 	if err != nil {
 		return err
 	}
-	if img := inspectServiceImage(ctx, dcli, serviceID); img != "" {
+	if img := agentdeploy.InspectServiceImage(ctx, dcli, serviceID); img != "" {
 		fmt.Fprintf(out, "        image: %s\n", img)
 	}
 	if f.wait { // [3/3]
 		d.step(3, "starting agents")
 		fmt.Fprintln(out)
-		waitRollout(ctx, dcli, serviceID, out, f.rolloutTimeout)
+		agentdeploy.WaitRollout(ctx, dcli, serviceID, out, f.rolloutTimeout)
 	}
 	if f.saveConfig {
 		d.saveClientConfig(g.configPath, ctxName, secret)
@@ -204,7 +194,7 @@ func planInit(ctx context.Context, dcli swarmops.ServiceLister, f *initFlags) (i
 	}
 	p.newSecret = f.secret
 	if p.newSecret == "" {
-		p.newSecret = generateSecret()
+		p.newSecret = agentdeploy.GenerateSecret()
 	}
 	return p, nil
 }
@@ -215,13 +205,13 @@ func checkInitPorts(ctx context.Context, dcli swarmops.ServiceLister, f *initFla
 	if f.metricsPort == f.port {
 		return &cliError{code: exitUsage, err: fmt.Errorf("--metrics-port %d is the agent port; pick another", f.metricsPort)}
 	}
-	if other, ok := portConflict(ctx, dcli, f.port, f.serviceName); ok {
+	if other, ok := agentdeploy.PortConflict(ctx, dcli, f.port, f.serviceName); ok {
 		return &cliError{code: exitUsage, err: fmt.Errorf(
 			"host port %d is already published by service %q — remove it (`docker service rm %s`, or `swarmexec down` if it's an old swarmexec agent) or pick another --port",
 			f.port, other, other)}
 	}
 	if f.metricsPort > 0 {
-		if other, ok := portConflict(ctx, dcli, f.metricsPort, f.serviceName); ok {
+		if other, ok := agentdeploy.PortConflict(ctx, dcli, f.metricsPort, f.serviceName); ok {
 			return &cliError{code: exitUsage, err: fmt.Errorf(
 				"host port %d is already published by service %q — pick another --metrics-port", f.metricsPort, other)}
 		}
@@ -264,7 +254,7 @@ type initSecret struct {
 // sharedSecret is step 1: create the shared secret, or reuse the one there.
 func (d *initDeploy) sharedSecret() (initSecret, error) {
 	d.step(1, "shared secret")
-	id, created, err := ensureSecret(d.ctx, d.dcli, agentSecretName, d.plan.newSecret)
+	id, created, err := agentdeploy.EnsureSecret(d.ctx, d.dcli, agentSecretName, d.plan.newSecret)
 	if err != nil {
 		return initSecret{}, d.failed(exitTransport, err)
 	}
@@ -290,9 +280,9 @@ func (d *initDeploy) sharedSecret() (initSecret, error) {
 // the existing one's spec. Returns the service's id.
 func (d *initDeploy) agentService(secretID string) (string, error) {
 	d.step(2, fmt.Sprintf("agent service on port %d", d.f.port))
-	spec := agentServiceSpec(d.f, secretID)
+	spec := agentSpecFor(d.f, secretID)
 	if d.plan.policy != nil {
-		ref, err := ensurePolicyConfig(d.ctx, d.dcli, d.plan.policy)
+		ref, err := agentdeploy.EnsurePolicyConfig(d.ctx, d.dcli, d.plan.policy)
 		if err != nil {
 			return "", d.failed(exitTransport, err)
 		}
@@ -315,7 +305,7 @@ func (d *initDeploy) agentService(secretID string) (string, error) {
 		fmt.Fprintf(d.out, "created (%q, global)\n", d.f.serviceName)
 		return resp.ID, nil
 	case d.f.force:
-		if carryPruneSchedule(&spec, existing) {
+		if agentdeploy.CarryPruneSchedule(&spec, existing) {
 			fmt.Fprint(d.out, "(keeping the prune schedule) ")
 		}
 		if _, err := d.dcli.ServiceUpdate(d.ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true}); err != nil {
@@ -336,8 +326,8 @@ func (d *initDeploy) registryAuth() (string, error) {
 	if !d.f.registryAuth {
 		return "", nil
 	}
-	auth, err := encodedRegistryAuth(d.f.image)
-	host := registryHost(d.f.image)
+	auth, err := agentdeploy.EncodedRegistryAuth(d.f.image)
+	host := agentdeploy.RegistryHost(d.f.image)
 	switch {
 	case err != nil:
 		// Don't deploy blind: without distributed credentials the manager may
@@ -367,6 +357,20 @@ func (d *initDeploy) saveClientConfig(path, ctxName string, s initSecret) {
 	} else {
 		fmt.Fprintf(d.out, "client config: %s\n", written)
 	}
+}
+
+// agentSpecFor is init's flags said as a deployment. The translation lives
+// here rather than in agentdeploy: the flags are this command's, the spec is
+// the cluster's, and only one of the two should know about cobra.
+func agentSpecFor(f *initFlags, secretID string) swarm.ServiceSpec {
+	return agentdeploy.Spec(agentdeploy.Options{
+		Image:             f.image,
+		ServiceName:       f.serviceName,
+		Port:              f.port,
+		MetricsPort:       f.metricsPort,
+		AllowLegacySecret: f.allowLegacy,
+		WithPolicy:        f.policyFile != "",
+	}, secretID)
 }
 
 // resolveContext decides which Docker context to act on, informing the user and
@@ -456,291 +460,6 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
-// waitRollout polls the service's tasks until every desired task is running (or
-// the timeout elapses), printing the running/desired count as it changes.
-func waitRollout(ctx context.Context, dcli *client.Client, serviceID string, out io.Writer, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	last := ""
-	for {
-		tasksRes, err := dcli.TaskList(ctx, client.TaskListOptions{
-			Filters: make(client.Filters).Add("service", serviceID),
-		})
-		tasks := tasksRes.Items
-		if err != nil {
-			fmt.Fprintf(out, "      (could not query tasks: %v)\n", err)
-			return
-		}
-		msg, done := rolloutLine(tasks)
-		if msg != last {
-			fmt.Fprintf(out, "      agents: %s\n", msg)
-			last = msg
-		}
-		if done {
-			return
-		}
-		if time.Now().After(deadline) {
-			fmt.Fprintf(out, "      (timeout; check `docker service ps %s`)\n", serviceID)
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(1500 * time.Millisecond):
-		}
-	}
-}
-
-// rolloutLine is the rollout's progress line — running/desired, and while it
-// is short, the latest failed task's reason — and whether every desired task
-// runs.
-func rolloutLine(tasks []swarm.Task) (msg string, done bool) {
-	desired, running := 0, 0
-	var taskErr string
-	for _, t := range tasks {
-		if t.DesiredState == swarm.TaskStateRunning {
-			desired++
-		}
-		switch t.Status.State {
-		case swarm.TaskStateRunning:
-			running++
-		case swarm.TaskStateRejected, swarm.TaskStateFailed:
-			if t.Status.Err != "" {
-				taskErr = t.Status.Err
-			} else if t.Status.Message != "" {
-				taskErr = t.Status.Message
-			}
-		}
-	}
-	msg = fmt.Sprintf("%d/%d running", running, desired)
-	if taskErr != "" && running < desired {
-		msg += " — " + taskErr // surface e.g. "port already in use" instead of a silent timeout
-	}
-	return msg, desired > 0 && running >= desired
-}
-
-// ensureSecret returns the id of the named secret, creating it with createWith
-// if it does not exist (Docker secrets are immutable, so an existing one is
-// reused as-is).
-func ensureSecret(ctx context.Context, dcli *client.Client, name, createWith string) (id string, created bool, err error) {
-	listRes, err := dcli.SecretList(ctx, client.SecretListOptions{
-		Filters: make(client.Filters).Add("name", name),
-	})
-	list := listRes.Items
-	if err != nil {
-		return "", false, fmt.Errorf("list secrets: %w", err)
-	}
-	for _, s := range list {
-		if s.Spec.Name == name {
-			return s.ID, false, nil
-		}
-	}
-	resp, err := dcli.SecretCreate(ctx, client.SecretCreateOptions{Spec: swarm.SecretSpec{
-		Annotations: swarm.Annotations{Name: name, Labels: map[string]string{agentRoleLabel: agentRoleValue}},
-		Data:        []byte(createWith),
-	}})
-	if err != nil {
-		return "", false, fmt.Errorf("create secret: %w", err)
-	}
-	return resp.ID, true, nil
-}
-
-// policyConfigPrefix names the Docker configs holding agent policies. Configs
-// are immutable, so each distinct policy is its own config, named by its
-// content hash: re-running init with the same file reuses it, a changed file
-// becomes a new one, and the service update points the agents at it.
-const policyConfigPrefix = "swarmexec_agent_policy_"
-
-func ensurePolicyConfig(ctx context.Context, dcli *client.Client, data []byte) (*swarm.ConfigReference, error) {
-	sum := sha256.Sum256(data)
-	name := policyConfigPrefix + hex.EncodeToString(sum[:])[:12]
-	listRes, err := dcli.ConfigList(ctx, client.ConfigListOptions{Filters: make(client.Filters).Add("name", name)})
-	list := listRes.Items
-	if err != nil {
-		return nil, fmt.Errorf("list configs: %w", err)
-	}
-	id := ""
-	for _, c := range list {
-		if c.Spec.Name == name {
-			id = c.ID
-		}
-	}
-	if id == "" {
-		resp, err := dcli.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: swarm.ConfigSpec{
-			Annotations: swarm.Annotations{Name: name, Labels: map[string]string{agentRoleLabel: agentRoleValue}},
-			Data:        data,
-		}})
-		if err != nil {
-			return nil, fmt.Errorf("create policy config: %w", err)
-		}
-		id = resp.ID
-	}
-	return &swarm.ConfigReference{
-		ConfigID:   id,
-		ConfigName: name,
-		File:       &swarm.ConfigReferenceFileTarget{Name: deploy.PolicyPath, UID: "0", GID: "0", Mode: 0o444},
-	}, nil
-}
-
-// agentServiceSpec is the service `swarmexec init` deploys.
-//
-// It is the same agent as agent/deploy/agent-stack-selfsigned.yml provisions,
-// not the same spec: the stack file binds with -listen=:9443 and attaches an
-// overlay network, this publishes -port in host mode. The command line comes
-// from internal/deploy, which the agent parses its flags from — see there for
-// why that is not decoration.
-func agentServiceSpec(f *initFlags, secretID string) swarm.ServiceSpec {
-	args := deploy.AgentArgs(deploy.AgentOptions{Port: f.port, AllowLegacySecret: f.allowLegacy, MetricsPort: f.metricsPort, Policy: f.policyFile != ""})
-	ports := []swarm.PortConfig{{
-		Protocol:      network.TCP,
-		TargetPort:    uint32(f.port),
-		PublishedPort: uint32(f.port),
-		PublishMode:   swarm.PortConfigPublishModeHost,
-	}}
-	if f.metricsPort > 0 {
-		// Host mode like the agent port: there is no overlay network to scrape
-		// over, so Prometheus reaches each node's agent at <node>:<port>.
-		ports = append(ports, swarm.PortConfig{
-			Protocol:      network.TCP,
-			TargetPort:    uint32(f.metricsPort),
-			PublishedPort: uint32(f.metricsPort),
-			PublishMode:   swarm.PortConfigPublishModeHost,
-		})
-	}
-	return swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Name:   f.serviceName,
-			Labels: map[string]string{agentRoleLabel: agentRoleValue},
-		},
-		Mode:         swarm.ServiceMode{Global: &swarm.GlobalService{}},
-		UpdateConfig: &swarm.UpdateConfig{Order: swarm.UpdateOrderStopFirst},
-		TaskTemplate: swarm.TaskSpec{
-			RestartPolicy: &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionAny},
-			ContainerSpec: &swarm.ContainerSpec{
-				Image: f.image,
-				Args:  args,
-				// Timings only: the probe command is the image's own HEALTHCHECK
-				// (see deploy.HealthInterval for why the spec must not name it).
-				Healthcheck: &container.HealthConfig{
-					Interval:    deploy.HealthInterval,
-					Timeout:     deploy.HealthTimeout,
-					StartPeriod: deploy.HealthStartPeriod,
-					Retries:     deploy.HealthRetries,
-				},
-				Mounts: []mount.Mount{{
-					Type:   mount.TypeBind,
-					Source: deploy.SocketPath,
-					Target: deploy.SocketPath,
-				}},
-				Secrets: []*swarm.SecretReference{{
-					SecretID:   secretID,
-					SecretName: agentSecretName,
-					File: &swarm.SecretReferenceFileTarget{
-						Name: agentSecretName,
-						UID:  "0",
-						GID:  "0",
-						Mode: 0o444,
-					},
-				}},
-			},
-		},
-		EndpointSpec: &swarm.EndpointSpec{Ports: ports},
-	}
-}
-
-// carryPruneSchedule copies the prune-schedule labels of the running agent
-// into the spec init is about to write, and reports whether there were any.
-// The schedule is set from the TUI or `prune-schedule set`, never from init's
-// flags, so a re-init that rebuilt the spec from flags alone would switch it
-// off without a word.
-func carryPruneSchedule(spec *swarm.ServiceSpec, existing *swarm.Service) bool {
-	if existing == nil || existing.Spec.TaskTemplate.ContainerSpec == nil || spec.TaskTemplate.ContainerSpec == nil {
-		return false
-	}
-	old := existing.Spec.TaskTemplate.ContainerSpec.Labels
-	if !prunesched.HasLabels(old) {
-		return false
-	}
-	spec.TaskTemplate.ContainerSpec.Labels = prunesched.Carry(old, spec.TaskTemplate.ContainerSpec.Labels)
-	return true
-}
-
-func generateSecret() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return base64.RawStdEncoding.EncodeToString(b)
-}
-
-// inspectServiceImage reads back a service's resolved image (Docker pins the
-// @sha256 digest on deploy when QueryRegistry is set).
-func inspectServiceImage(ctx context.Context, dcli *client.Client, serviceID string) string {
-	svcRes, err := dcli.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
-	svc := svcRes.Service
-	if err != nil || svc.Spec.TaskTemplate.ContainerSpec == nil {
-		return ""
-	}
-	return svc.Spec.TaskTemplate.ContainerSpec.Image
-}
-
-// portConflict reports whether a service other than ownName already publishes
-// the given host port, which would stop the global agent from binding it.
-func portConflict(ctx context.Context, dcli swarmops.ServiceLister, port int, ownName string) (string, bool) {
-	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
-	list := listRes.Items
-	if err != nil {
-		return "", false // can't check — let the rollout surface any problem
-	}
-	for _, s := range list {
-		if s.Spec.Name == ownName || s.Spec.EndpointSpec == nil {
-			continue
-		}
-		for _, p := range s.Spec.EndpointSpec.Ports {
-			if p.PublishMode == swarm.PortConfigPublishModeHost && int(p.PublishedPort) == port {
-				return s.Spec.Name, true
-			}
-		}
-	}
-	return "", false
-}
-
 // agentTooOld reports whether err is a gRPC Unimplemented status, i.e. the agent
 // predates an RPC this cli uses.
 func agentTooOld(err error) bool { return agenterr.TooOld(err) }
-
-// encodedRegistryAuth resolves local credentials for the image's registry and
-// encodes them for ServiceCreate (so nodes can pull a private image). Returns ""
-// when no credentials are configured.
-func encodedRegistryAuth(image string) (string, error) {
-	cf, err := cliconfig.Load("")
-	if err != nil {
-		return "", err
-	}
-	ac, err := cf.GetAuthConfig(registryHost(image))
-	if err != nil {
-		return "", err
-	}
-	if ac.Username == "" && ac.Password == "" && ac.Auth == "" && ac.IdentityToken == "" {
-		return "", nil
-	}
-	b, err := json.Marshal(registry.AuthConfig{
-		Username:      ac.Username,
-		Password:      ac.Password,
-		Auth:          ac.Auth,
-		ServerAddress: ac.ServerAddress,
-		IdentityToken: ac.IdentityToken,
-		RegistryToken: ac.RegistryToken,
-	})
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
-}
-
-// registryHost extracts the registry hostname from an image reference, or
-// "docker.io" for Docker Hub images.
-func registryHost(image string) string {
-	parts := strings.SplitN(image, "/", 2)
-	if len(parts) == 2 && (strings.ContainsAny(parts[0], ".:") || parts[0] == "localhost") {
-		return parts[0]
-	}
-	return "docker.io"
-}
