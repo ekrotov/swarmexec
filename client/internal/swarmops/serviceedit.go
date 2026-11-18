@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -395,9 +396,62 @@ func RollbackService(ctx context.Context, dcli swarmapi.Client, name string) err
 	if svc.PreviousSpec == nil {
 		return fmt.Errorf("service %q has no previous version to roll back to", name)
 	}
+	if gone, err := goneReferences(ctx, dcli, *svc.PreviousSpec); err != nil {
+		return err
+	} else if len(gone) > 0 {
+		return fmt.Errorf("cannot roll back %q: its previous version uses %s, which no longer exist(s) — "+
+			"a secret rotation or a deletion replaced it; nothing was changed. Edit the service to use the current object instead",
+			name, strings.Join(gone, ", "))
+	}
 	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{
 		Version: svc.Version, Spec: svc.Spec, Rollback: "previous"})
 	return err
+}
+
+// goneReferences lists the secrets and configs a spec mounts that the cluster
+// no longer has ("secret \"db_rotating\""). Swarm checks only the current spec
+// when an object is removed, and a rollback copies PreviousSpec without looking
+// — so the rollback would start tasks that can never get their files.
+func goneReferences(ctx context.Context, dcli swarmapi.Client, spec swarm.ServiceSpec) ([]string, error) {
+	cs := spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return nil, nil
+	}
+	var gone []string
+	if len(cs.Secrets) > 0 {
+		res, err := dcli.SecretList(ctx, client.SecretListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("list secrets: %w", err)
+		}
+		have := idSet(res.Items, func(s swarm.Secret) string { return s.ID })
+		for _, r := range cs.Secrets {
+			if r != nil && !have[r.SecretID] {
+				gone = append(gone, fmt.Sprintf("secret %q", r.SecretName))
+			}
+		}
+	}
+	if len(cs.Configs) > 0 {
+		res, err := dcli.ConfigList(ctx, client.ConfigListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("list configs: %w", err)
+		}
+		have := idSet(res.Items, func(c swarm.Config) string { return c.ID })
+		for _, r := range cs.Configs {
+			if r != nil && r.ConfigID != "" && !have[r.ConfigID] {
+				gone = append(gone, fmt.Sprintf("config %q", r.ConfigName))
+			}
+		}
+	}
+	return gone, nil
+}
+
+// idSet collects the IDs of items.
+func idSet[T any](items []T, id func(T) string) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[id(it)] = true
+	}
+	return m
 }
 
 // UpdateServiceImage sets a service's image (read-modify-write ServiceUpdate,
@@ -1018,7 +1072,9 @@ func ParseCPUCores(s string) (int64, error) {
 		return 0, nil
 	}
 	cores, err := strconv.ParseFloat(s, 64)
-	if err != nil || cores < 0 {
+	// NaN and +-Inf parse without error, and a float beyond int64 converts to
+	// the minimum value: both would reach the manager as a nonsense limit.
+	if err != nil || cores < 0 || math.IsNaN(cores) || cores >= math.MaxInt64/1e9 {
 		return 0, fmt.Errorf("invalid CPU value %q (use cores, e.g. 0.5 or 2)", s)
 	}
 	return int64(cores * 1e9), nil
@@ -1084,11 +1140,11 @@ func ParseServicePort(s string) (swarm.PortConfig, error) {
 	if len(pt) != 2 {
 		return swarm.PortConfig{}, fmt.Errorf("port must be PUBLISHED:TARGET[/proto], e.g. 8080:80/tcp")
 	}
-	pub, err := strconv.ParseUint(strings.TrimSpace(pt[0]), 10, 32)
+	pub, err := strconv.ParseUint(strings.TrimSpace(pt[0]), 10, 16)
 	if err != nil || pub == 0 {
 		return swarm.PortConfig{}, fmt.Errorf("invalid published port %q", pt[0])
 	}
-	tgt, err := strconv.ParseUint(strings.TrimSpace(pt[1]), 10, 32)
+	tgt, err := strconv.ParseUint(strings.TrimSpace(pt[1]), 10, 16)
 	if err != nil || tgt == 0 {
 		return swarm.PortConfig{}, fmt.Errorf("invalid target port %q", pt[1])
 	}

@@ -489,6 +489,10 @@ func (f *Swarm) updateService(c *call, id string) {
 			return
 		}
 		f.RegistryAuth = append(f.RegistryAuth, c.r.Header.Get("X-Registry-Auth"))
+		// As the manager does: the spec being replaced becomes the one a
+		// rollback goes back to.
+		prev := s.Spec
+		s.PreviousSpec = &prev
 		s.Spec = spec
 		s.Version.Index++
 		c.reply(swarm.ServiceUpdateResponse{Warnings: f.Warnings})

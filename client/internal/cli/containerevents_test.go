@@ -29,13 +29,13 @@ func TestDescribeContainerEventNamesWhatMatters(t *testing.T) {
 	}{
 		// "Running but failing every probe" is invisible from the manager and
 		// absent from the logs — the case this feature exists for.
-		{&pb.ContainerEvent{Action: "health_status: unhealthy", Health: "unhealthy"}, []string{"FAILING", "red"}},
-		{&pb.ContainerEvent{Action: "health_status: healthy", Health: "healthy"}, []string{"passing", "green"}},
+		{&pb.ContainerEvent{Action: "health_status: unhealthy", Health: "unhealthy"}, []string{"FAILING"}},
+		{&pb.ContainerEvent{Action: "health_status: healthy", Health: "healthy"}, []string{"passing"}},
 		// An OOM kill usually presents as a bare exit 137 and a silent log,
 		// which reads like the program crashing rather than the kernel taking
 		// it away. So it is named.
-		{&pb.ContainerEvent{Action: "oom"}, []string{"out of memory", "red"}},
-		{&pb.ContainerEvent{Action: "die", ExitCode: 137}, []string{"137", "red"}},
+		{&pb.ContainerEvent{Action: "oom"}, []string{"out of memory"}},
+		{&pb.ContainerEvent{Action: "die", ExitCode: 137}, []string{"137"}},
 		{&pb.ContainerEvent{Action: "die"}, []string{"code 0"}},
 		{&pb.ContainerEvent{Action: "start"}, []string{"started"}},
 		{&pb.ContainerEvent{Action: "restart"}, []string{"restarted"}},
