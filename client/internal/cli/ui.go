@@ -18,9 +18,11 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clientlog"
+	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
+	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
 )
@@ -277,22 +279,60 @@ func ctxStatusLabel(name string) string {
 // decided here and nowhere else, which is what keeps a switch from leaving one
 // channel pointed at the cluster we just left (the B4 bug, one level up).
 func (u *ui) connectCluster(c *clusterState) error {
-	ep := resolveEndpoint(c.ctxOverride)
+	link, err := u.dialCluster(c.ctxOverride)
+	if err != nil {
+		return err
+	}
+	u.install(c, link)
+	return nil
+}
+
+// clusterLink is a cluster's connections, built but not yet anyone's. dialCluster
+// makes one off the UI goroutine (it can take as long as an ssh handshake), and
+// the loop installs it: the clusterState's fields are read on the loop, so they
+// are written there too, never from the connecting goroutine.
+type clusterLink struct {
+	cfg    config.Config
+	dcli   swarmapi.Client
+	agents *agentcall.Client
+	r      *resolve.Resolver
+}
+
+// dialCluster resolves and connects a context. It reads nothing a switch can
+// change (ctxOverride is fixed when the cluster is created), so it is safe off
+// the UI goroutine.
+func (u *ui) dialCluster(ctxOverride string) (*clusterLink, error) {
+	ep := resolveEndpoint(ctxOverride)
 	cfg, err := u.g.resolveConfig(u.cmd, ep)
 	if err != nil {
-		return &cliError{code: exitUsage, err: err}
+		return nil, &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: exitUsage, err: err}
+		return nil, &cliError{code: exitUsage, err: err}
 	}
 	dcli, err := ep.connect(u.runCtx)
 	if err != nil {
-		return &cliError{code: exitTransport, err: err}
+		return nil, &cliError{code: exitTransport, err: err}
 	}
-	c.cfg = cfg
-	c.agents = agentcall.New(cfg)
-	c.dcli = dcli
-	c.r = resolve.New(dcli, addrModeOf(cfg))
+	return &clusterLink{cfg: cfg, dcli: dcli, agents: agentcall.New(cfg), r: resolve.New(dcli, addrModeOf(cfg))}, nil
+}
+
+// reach answers whether the cluster is there (see clusterState.reach).
+func (l *clusterLink) reach(ctx context.Context) error { return reachManager(ctx, l.dcli) }
+
+// close releases a link that never became a cluster's.
+func (l *clusterLink) close() {
+	_ = l.dcli.Close()
+	l.agents.Close()
+}
+
+// install makes the link c's connections. UI goroutine only (or startup, before
+// there is a loop).
+func (u *ui) install(c *clusterState, l *clusterLink) {
+	c.cfg = l.cfg
+	c.agents = l.agents
+	c.dcli = l.dcli
+	c.r = l.r
 	c.ctx, c.cancel = context.WithCancel(u.runCtx)
 	// The registry cache re-marks service rows when a background version check
 	// lands. It belongs to the cluster whose images it resolved, and the guard
@@ -301,7 +341,7 @@ func (u *ui) connectCluster(c *clusterState) error {
 	// ui.check_registry: off means no cache at all, so nothing ever calls out
 	// (both users of regCache treat nil as "no version information").
 	c.regCache = nil
-	if cfg.UI.RegistryChecks() {
+	if c.cfg.UI.RegistryChecks() {
 		c.regCache = swarmops.NewRegistryCache(func() {
 			u.app.QueueUpdateDraw(func() {
 				if u.clusterState != c {
@@ -312,7 +352,7 @@ func (u *ui) connectCluster(c *clusterState) error {
 		})
 	}
 	c.err = nil
-	return nil
+	return
 }
 
 // run drives one UI session over the infrastructure runUI prepared on u, in
@@ -484,7 +524,7 @@ func (u *ui) startSession(keyWarnings []string) {
 	// rolling update or a scaled service in well under a second instead of
 	// somewhere within the poll interval. Started here for the cluster the UI
 	// opened on; every later cluster gets its own in activateCluster.
-	go u.watchTopology(u.ctx, u.clusterState)
+	go u.watchTopology(u.ctx, u.clusterState, u.dcli)
 
 	// And poll anyway. The client learns topology from the manager; the agents
 	// are node-local and cannot push such events. This is the net under the

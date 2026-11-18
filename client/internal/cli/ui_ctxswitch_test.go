@@ -109,3 +109,41 @@ func TestSidebarSwitchConfirmsWhenConfigured(t *testing.T) {
 		t.Fatalf("active %q after confirming, want ops", got)
 	}
 }
+
+// A deleted context must not stay connected: a context created later under the
+// same name has to dial its own endpoint, not be entered over the old one.
+func TestDeletedContextForgetsItsCluster(t *testing.T) {
+	u := switchUI(t, config.Default())
+	onLoop(t, u, func() {
+		old := u.clusters["ops"]
+		u.forgetCluster("ops")
+		if _, ok := u.clusters["ops"]; ok {
+			t.Error("the deleted context's cluster is still in the session")
+		}
+		if old.dcli != nil {
+			t.Error("the deleted context's connection was left open")
+		}
+		if fresh := u.cluster("ops", "ops"); fresh == old || fresh.dcli != nil {
+			t.Error("a context re-created under the same name must start unconnected")
+		}
+	})
+}
+
+// Deleting the context the operator is looking at keeps it usable until they
+// leave it, and closes it then: nothing else holds a reference any more.
+func TestDeletedActiveContextClosesOnLeaving(t *testing.T) {
+	u := switchUI(t, config.Default())
+	sidebarSwitch(t, u, "ops")
+	waitFooter(t, u, "TUI only")
+	onLoop(t, u, func() {
+		ops := u.clusterState
+		u.forgetCluster("ops")
+		if ops.dcli == nil {
+			t.Fatal("the visible cluster was closed under the operator")
+		}
+		u.activateCluster(u.clusters["a"])
+		if ops.dcli != nil {
+			t.Error("the deleted cluster was not closed when the operator left it")
+		}
+	})
+}
