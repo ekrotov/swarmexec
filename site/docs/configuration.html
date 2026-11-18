@@ -191,7 +191,10 @@ contexts:
         <code>agent_secret</code> or <code>agent_secret_file</code> replaces
         <em>both</em> global spellings, so it is never shadowed by a global
         <code>agent_secret_file</code>. An explicit <code>insecure: false</code> in a
-        context overrides a global <code>true</code>.
+        context overrides a global <code>true</code>. The secret's two spellings are one
+        setting at every level: <code>--agent-secret</code> or
+        <code>SWARMEXEC_AGENT_SECRET</code> beats an <code>agent_secret_file</code> from
+        the file, and the other way round.
       </p>
       <p>
         The <code>logs:</code> section sets defaults for format-aware log parsing and
@@ -201,6 +204,21 @@ contexts:
       <div class="cmd">logs:
   format: auto        <span class="k"># auto | classic | json | logfmt | gelf | raw</span>
   min_level: warn     <span class="k"># trace..fatal; omit for no level filter</span></div>
+      <p id="strict-keys">
+        <strong>A misspelled key is an error, not a silent no-op.</strong> A key that
+        looks like a real one (<code>confirmSwitch</code>, <code>agent_secrt</code>,
+        <code>addr-mode</code>) stops the command and names the key you probably meant,
+        because a setting that quietly does nothing is worse than a refusal:
+        <code>confirmSwitch: true</code> would leave the production prompt off while the
+        file reads as if it were on. A key that is nothing like any setting is most
+        likely a newer version's, so it is ignored with one
+        <code>warning: ... unknown key</code> line on stderr and the file keeps working.
+        An environment variable that does not parse
+        (<code>SWARMEXEC_PORT=80a0</code>, <code>SWARMEXEC_INSECURE=maybe</code>,
+        <code>SWARMEXEC_UI_DIM=x</code>) and an unknown
+        <code>--client-log-level</code> are errors too (exit 2 for the flag), not a quiet
+        fall back to the default.
+      </p>
       <p>Inspect the effective, merged configuration (secret masked) with:</p>
       <div class="prompt"><span class="c">$</span> swarmexec config show          <span class="o"># or: --json</span></div>
 
@@ -229,7 +247,7 @@ contexts:
           <tr><td><code>SWARMEXEC_UI_DIM</code></td><td>overlay backdrop dim (<code>ui.dim</code>)</td></tr>
           <tr><td><code>SWARMEXEC_NO_UPDATE_CHECK</code></td><td><code>1</code> (any value but <code>0</code>/<code>false</code>/<code>no</code>/<code>off</code>) switches the daily release check off, whatever <a href="#check-updates"><code>ui.check_updates</code></a> says</td></tr>
           <tr><td><code>SWARMEXEC_NO_REGISTRY_CHECK</code></td><td><code>1</code> (any value but <code>0</code>/<code>false</code>/<code>no</code>/<code>off</code>) switches the TUI's registry version lookups off, whatever <a href="#check-registry"><code>ui.check_registry</code></a> says</td></tr>
-          <tr><td><code>SWARMEXEC_KEYS</code></td><td>path to the TUI keymap file (default <code>keys.yaml</code> next to the config)</td></tr>
+          <tr><td><code>SWARMEXEC_KEYS</code></td><td>path to the TUI keymap file (default <code>keys.yaml</code> next to the config file in use, so <code>--config</code> moves it too)</td></tr>
           <tr><td><code>SWARMEXEC_SSH_MULTIPLEX</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> switches ssh connection sharing off (see <a href="/docs/contexts#sshsharing">ssh connection sharing</a>)</td></tr>
           <tr><td><code>SWARMEXEC_SSH_ASKPASS</code></td><td><code>0</code>/<code>off</code>/<code>false</code>/<code>no</code> stops ssh from asking through swarmexec (see <a href="/docs/contexts#sshprompt">ssh passphrases and questions</a>)</td></tr>
           <tr><td><code>DOCKER_CONTEXT</code></td><td>Docker context for the manager API</td></tr>

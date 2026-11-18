@@ -101,6 +101,10 @@ type Config struct {
 	// dial the node directly.
 	ProxyDialer func(ctx context.Context, addr string) (net.Conn, error) `yaml:"-"`
 
+	// Warnings are things Load noticed but tolerated (an unknown config key
+	// that is not a near miss of a real one). The cli prints them, once.
+	Warnings []string `yaml:"-"`
+
 	// src records where each credential/dial key got its value, for
 	// `config show` (see Source). Never from YAML.
 	src map[string]string
@@ -289,7 +293,9 @@ func Load(path string) (Config, error) {
 			return cfg, err
 		}
 	}
-	overlayEnv(&cfg)
+	if err := overlayEnv(&cfg); err != nil {
+		return cfg, err
+	}
 	cfg.src = loadSources(path)
 	// Default the audited operator identity to the local OS username.
 	if cfg.Operator == "" {
@@ -372,13 +378,48 @@ func overlayFile(cfg *Config, path string) error {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("parse config file %s: %w", path, err)
 	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err == nil {
+		warns, err := checkUnknownKeys(path, &root)
+		if err != nil {
+			return err
+		}
+		cfg.Warnings = append(cfg.Warnings, warns...)
+	}
 	if err := cfg.validateContexts(); err != nil {
 		return fmt.Errorf("config file %s: %w", path, err)
 	}
 	return nil
 }
 
-func overlayEnv(cfg *Config) {
+// overlayEnvTyped applies the variables that are not plain strings, each of
+// which can fail to parse. Split out of overlayEnv to keep that function under
+// the complexity gate.
+func overlayEnvTyped(cfg *Config) error {
+	if v := os.Getenv("SWARMEXEC_PORT"); v != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("SWARMEXEC_PORT=%q is not a port number (1-65535)", v)
+		}
+		cfg.Port = n
+	}
+	if v := os.Getenv("SWARMEXEC_INSECURE"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			cfg.Insecure = true
+		case "0", "false", "no", "off":
+			cfg.Insecure = false
+		default:
+			return fmt.Errorf("SWARMEXEC_INSECURE=%q is not a boolean (use true or false)", v)
+		}
+	}
+	return nil
+}
+
+// overlayEnv applies the SWARMEXEC_* variables. A value that does not parse is
+// an error naming the variable: it used to fall back to the default silently,
+// so SWARMEXEC_PORT=80a0 dialed the default port and nobody found out why.
+func overlayEnv(cfg *Config) error {
 	for _, ev := range []struct {
 		name string
 		dst  *string
@@ -396,18 +437,15 @@ func overlayEnv(cfg *Config) {
 			*ev.dst = v
 		}
 	}
-	if v := os.Getenv("SWARMEXEC_PORT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.Port = n
-		}
+	// The secret is one setting spelled two ways, and AgentSecretValue prefers
+	// the file. An exported SWARMEXEC_AGENT_SECRET must therefore replace an
+	// agent_secret_file from the config file, or the file would beat the
+	// environment (the documented order is flag, env, file).
+	if os.Getenv("SWARMEXEC_AGENT_SECRET") != "" && os.Getenv("SWARMEXEC_AGENT_SECRET_FILE") == "" {
+		cfg.AgentSecretFile = ""
 	}
-	if v := os.Getenv("SWARMEXEC_INSECURE"); v != "" {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "1", "true", "yes", "on":
-			cfg.Insecure = true
-		case "0", "false", "no", "off":
-			cfg.Insecure = false
-		}
+	if err := overlayEnvTyped(cfg); err != nil {
+		return err
 	}
 	if noUpdateCheck(os.Getenv(EnvNoUpdateCheck)) {
 		off := false
@@ -418,10 +456,13 @@ func overlayEnv(cfg *Config) {
 		cfg.UI.CheckRegistry = &off
 	}
 	if v := os.Getenv("SWARMEXEC_UI_DIM"); v != "" {
-		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
-			cfg.UI.Dim = f
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return fmt.Errorf("SWARMEXEC_UI_DIM=%q is not a number (0 to 1)", v)
 		}
+		cfg.UI.Dim = f
 	}
+	return nil
 }
 
 // noUpdateCheck reads SWARMEXEC_NO_UPDATE_CHECK: any value but empty or an

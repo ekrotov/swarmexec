@@ -214,7 +214,9 @@ func TestOverlayEnvEveryVariable(t *testing.T) {
 		t.Setenv(k, v)
 	}
 	c := Default()
-	overlayEnv(&c)
+	if err := overlayEnv(&c); err != nil {
+		t.Fatal(err)
+	}
 	got := []string{c.CA, c.Cert, c.Key, c.AddrMode, c.ServerName, c.AgentSecret, c.AgentSecretFile, c.Operator}
 	want := []string{"/e/ca", "/e/cert", "/e/key", "ip", "agent.example", "s3", "/e/secret", "alice"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
@@ -225,16 +227,7 @@ func TestOverlayEnvEveryVariable(t *testing.T) {
 	}
 
 	t.Setenv("SWARMEXEC_INSECURE", "off")
-	t.Setenv("SWARMEXEC_PORT", "notaport")
-	t.Setenv("SWARMEXEC_UI_DIM", "dim")
-	overlayEnv(&c)
-	if c.Insecure || c.Port != 9001 || c.UI.Dim != 0.5 {
-		t.Errorf("after off/garbage: port/insecure/dim = %d/%v/%v, want 9001/false/0.5", c.Port, c.Insecure, c.UI.Dim)
-	}
-	t.Setenv("SWARMEXEC_INSECURE", "maybe")
-	c.Insecure = true
-	overlayEnv(&c)
-	if !c.Insecure {
-		t.Error("an unrecognised SWARMEXEC_INSECURE must leave the value alone")
+	if err := overlayEnv(&c); err != nil || c.Insecure {
+		t.Errorf("off: err %v insecure %v", err, c.Insecure)
 	}
 }

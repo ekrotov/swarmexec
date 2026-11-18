@@ -126,6 +126,7 @@ func newStackDiffCmd(g *globalFlags) *cobra.Command {
 	// (review C-06); it stays for scripts, out of the help.
 	cmd.Flags().StringVar(&f.format, "format", "text", "output format: text | json")
 	_ = cmd.Flags().MarkHidden("format")
+	markRenamed(cmd.Flags().Lookup("format"), "--json (--format json)")
 	cmd.Flags().StringSliceVar(&f.ignore, "ignore", nil, "leave this field path out of both sides, e.g. services.*.deploy.replicas (repeatable)")
 	return cmd
 }

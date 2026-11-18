@@ -88,6 +88,7 @@ func newPruneScheduleCmd(g *globalFlags, path string) *cobra.Command {
 func newHiddenPruneScheduleCmd(g *globalFlags) *cobra.Command {
 	cmd := newPruneScheduleCmd(g, "swarmexec node prune-schedule")
 	cmd.Hidden = true
+	cmd.Annotations = map[string]string{renamedAnnotation: "swarmexec node prune-schedule"}
 	return cmd
 }
 

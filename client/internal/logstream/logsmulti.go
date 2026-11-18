@@ -233,6 +233,17 @@ func sourcePrefixes(sources []Source, color bool) []string {
 // dst unchanged when no filtering is asked for.
 type FilterFactory func(dst io.Writer) (io.Writer, func())
 
+// StreamsFailedError is StreamMany's error: which sources failed, out of how
+// many, so a caller can tell "one of three" from "all of them".
+type StreamsFailedError struct {
+	Failed []string // labels, sorted
+	Total  int
+}
+
+func (e *StreamsFailedError) Error() string {
+	return fmt.Sprintf("%d of %d log streams failed: %s", len(e.Failed), e.Total, strings.Join(e.Failed, ", "))
+}
+
 // StreamMany follows every source concurrently into the run's stdout and
 // Stderr, each line prefixed with its source (coloured when color is set) and
 // passed through the filter chain wrap builds. A source that fails is reported
@@ -273,7 +284,7 @@ func StreamMany(ctx context.Context, run Run, sources []Source, color bool, wrap
 	wg.Wait()
 	if len(failed) > 0 {
 		sort.Strings(failed)
-		return fmt.Errorf("%d of %d log streams failed: %s", len(failed), len(sources), strings.Join(failed, ", "))
+		return &StreamsFailedError{Failed: failed, Total: len(sources)}
 	}
 	return nil
 }

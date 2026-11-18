@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -36,6 +37,7 @@ type Version struct {
 
 // globalFlags hold settings shared by all subcommands.
 type globalFlags struct {
+	warned          map[string]bool // config warnings already printed (reportConfigWarnings)
 	configPath      string
 	ca              string
 	cert            string
@@ -267,7 +269,32 @@ func addHiddenFlagAliases(fs *pflag.FlagSet, aliases map[string]string) {
 		alias.DefValue = f.DefValue
 		alias.NoOptDefVal = f.NoOptDefVal
 		alias.Hidden = true
+		markRenamed(alias, "--"+cur)
 	}
+}
+
+// parseLogLevel checks --client-log-level. clientlog quietly maps anything it
+// does not know to info, so a typo (`--client-log-level debg`) used to give
+// the wrong verbosity with no word about it.
+func parseLogLevel(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug", "info", "warn", "warning", "error", "off":
+		return s, nil
+	}
+	return "", fmt.Errorf("--client-log-level %q: want debug, info, warn, error or off", s)
+}
+
+// renamedAnnotation is clidocs.RenamedAnnotation (cli cannot import clidocs:
+// its tests import cli); a test pins the two equal.
+const renamedAnnotation = "swarmexec/renamed-to"
+
+// markRenamed records on a hidden flag what replaced it, for the "Renamed
+// names" table of the CLI reference (renamedAnnotation).
+func markRenamed(f *pflag.Flag, now string) {
+	if f.Annotations == nil {
+		f.Annotations = map[string][]string{}
+	}
+	f.Annotations[renamedAnnotation] = []string{now}
 }
 
 // initLogging sets up the shared logger for every subcommand: an in-memory ring
@@ -278,6 +305,9 @@ func addHiddenFlagAliases(fs *pflag.FlagSet, aliases map[string]string) {
 func (g *globalFlags) initLogging() error {
 	if g.logLevel == "off" {
 		return nil
+	}
+	if _, err := parseLogLevel(g.logLevel); err != nil {
+		return &cliError{code: exitUsage, err: err}
 	}
 	path := g.logFile
 	if path == "" {
@@ -311,6 +341,7 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 	if err != nil {
 		return cfg, err
 	}
+	g.reportConfigWarnings(cmd, cfg.Warnings)
 	// The context's own credentials, over the global ones and under the
 	// environment (config.ForContext); flags then win over everything.
 	cfg = cfg.ForContext(dockerctx.ResolveName(ep.Context))
@@ -327,8 +358,11 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 	flag("port", config.KeyPort, func() { cfg.Port = g.port })
 	flag("addr-mode", config.KeyAddrMode, func() { cfg.AddrMode = g.addrMode })
 	flag("server-name", config.KeyServerName, func() { cfg.ServerName = g.serverName })
-	flag("agent-secret", config.KeyAgentSecret, func() { cfg.AgentSecret = g.agentSecret })
-	flag("agent-secret-file", config.KeyAgentSecret, func() { cfg.AgentSecretFile = g.agentSecretFile })
+	// The secret is one setting spelled two ways and AgentSecretValue prefers
+	// the file, so a flag has to clear the other spelling or an
+	// agent_secret_file from the config would beat --agent-secret.
+	flag("agent-secret", config.KeyAgentSecret, func() { cfg.AgentSecret, cfg.AgentSecretFile = g.agentSecret, "" })
+	flag("agent-secret-file", config.KeyAgentSecret, func() { cfg.AgentSecret, cfg.AgentSecretFile = "", g.agentSecretFile })
 	flag("insecure", config.KeyInsecure, func() { cfg.Insecure = g.insecure })
 	if pf.Changed("operator") {
 		cfg.Operator = g.operator
@@ -343,6 +377,25 @@ func (g *globalFlags) resolveConfig(cmd *cobra.Command, ep dockerEndpoint) (conf
 	cfg.ProxyDialer = dialer
 
 	return cfg, nil
+}
+
+// reportConfigWarnings prints what Load tolerated, once per process (a TUI
+// session resolves the config on every cluster switch). In the TUI the screen
+// is owned by tview, so there it goes to the client log only.
+func (g *globalFlags) reportConfigWarnings(cmd *cobra.Command, warnings []string) {
+	for _, w := range warnings {
+		if g.warned[w] {
+			continue
+		}
+		if g.warned == nil {
+			g.warned = map[string]bool{}
+		}
+		g.warned[w] = true
+		clientlog.L().Warn(w)
+		if cmd.Name() != "ui" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
+		}
+	}
 }
 
 func addrModeOf(cfg config.Config) resolve.AddrMode { return agentcall.AddrMode(cfg) }
