@@ -193,8 +193,13 @@ func copyOutput(stream pb.Agent_ExecServer, tty bool, r io.Reader, bytesOut *ato
 		_, err := io.Copy(out, r)
 		return err
 	}
-	errOut := &msgWriter{stream: stream, stderr: true, count: bytesOut, touch: touch}
-	_, err := stdcopy.StdCopy(out, errOut, r)
+	b := newOutBatcher(func(stderr bool, p []byte) error {
+		return (&msgWriter{stream: stream, stderr: stderr, count: bytesOut, touch: touch}).send(p)
+	})
+	_, err := stdcopy.StdCopy(b.writer(false), b.writer(true), r)
+	if cerr := b.Close(); err == nil {
+		err = cerr
+	}
 	return err
 }
 
@@ -334,6 +339,14 @@ type msgWriter struct {
 func (w *msgWriter) Write(p []byte) (int, error) {
 	buf := make([]byte, len(p))
 	copy(buf, p)
+	if err := w.send(buf); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// send emits buf, which the message takes ownership of, as one message.
+func (w *msgWriter) send(buf []byte) error {
 
 	var msg *pb.ServerMessage
 	if w.stderr {
@@ -342,11 +355,11 @@ func (w *msgWriter) Write(p []byte) (int, error) {
 		msg = &pb.ServerMessage{Payload: &pb.ServerMessage_Stdout{Stdout: buf}}
 	}
 	if err := w.stream.Send(msg); err != nil {
-		return 0, err
+		return err
 	}
 	if w.touch != nil {
 		w.touch()
 	}
-	w.count.Add(int64(len(p)))
-	return len(p), nil
+	w.count.Add(int64(len(buf)))
+	return nil
 }

@@ -29,7 +29,7 @@ const auditSecret = "s3cret-value"
 // rawClient dials the agent with no client library in between, so a test
 // chooses exactly which credential (if any) each call carries. cred is the
 // metadata sent; empty sends none.
-func rawClient(t *testing.T, a *agenttest.Agent, md map[string]string) (pb.AgentClient, context.Context) {
+func rawClient(t testing.TB, a *agenttest.Agent, md map[string]string) (pb.AgentClient, context.Context) {
 	t.Helper()
 	pem, err := os.ReadFile(a.CAFile)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/swarmapi"
@@ -38,6 +39,9 @@ type NodeInfo struct {
 	Labels        map[string]string
 	Version       swarm.Version // for NodeUpdate (optimistic concurrency)
 	Tasks         int           // running tasks scheduled on this node
+	// TasksKnown is false when the task list could not be read: Tasks (and
+	// the booked-resource figures) are then not "0" but unknown.
+	TasksKnown bool
 
 	// Resources booked on this node by the tasks scheduled to it — the sum of
 	// their spec RESERVATIONS, which is what the swarm scheduler subtracts from
@@ -176,9 +180,31 @@ func ListNodes(ctx context.Context, dcli swarmapi.Client) ([]NodeInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Task counts are best-effort: a TaskList error just leaves them at zero.
-	tasks, _ := dcli.TaskList(ctx, client.TaskListOptions{})
-	return buildNodeInfos(nodes, tasks.Items), nil
+	// Task counts are best-effort, but a failed lookup is not "no tasks": the
+	// nodes come back with TasksKnown false so the UI can say "unknown".
+	// Only tasks the swarm wants running matter for the count and for the
+	// resources booked; the history (up to five dead tasks per slot) is left
+	// on the manager.
+	tasks, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: desiredRunning()})
+	infos := buildNodeInfos(nodes, tasks.Items)
+	for i := range infos {
+		infos[i].TasksKnown = err == nil
+	}
+	return infos, nil
+}
+
+// desiredRunning filters a TaskList to the tasks the swarm wants running,
+// which leaves out the task history.
+func desiredRunning() client.Filters {
+	return make(client.Filters).Add("desired-state", "running")
+}
+
+// TaskCount is the node's running-task count for display: "?" when unknown.
+func (n NodeInfo) TaskCount() string {
+	if !n.TasksKnown {
+		return "?"
+	}
+	return strconv.Itoa(n.Tasks)
 }
 
 // VolumeCountsByNode counts, per node hostname, the volumes that node holds.

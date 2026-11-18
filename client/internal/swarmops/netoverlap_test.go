@@ -181,14 +181,14 @@ func TestListNetworksSubnetsContainersAndOverlaps(t *testing.T) {
 	running := func(id string, nets ...string) swarm.Task {
 		var tk swarm.Task
 		tk.ID = id
-		tk.Status.State = swarm.TaskStateRunning
+		tk.DesiredState, tk.Status.State = swarm.TaskStateRunning, swarm.TaskStateRunning
 		for _, n := range nets {
 			tk.NetworksAttachments = append(tk.NetworksAttachments, swarm.NetworkAttachment{Network: swarm.Network{ID: n}})
 		}
 		return tk
 	}
 	stopped := running("t-old", "db")
-	stopped.Status.State = swarm.TaskStateShutdown
+	stopped.DesiredState, stopped.Status.State = swarm.TaskStateShutdown, swarm.TaskStateShutdown
 	f := &swarmfake.Swarm{
 		Networks: []network.Summary{ipamNet("db", "dbnet", "10.0.1.0/24", "10.0.1.1"), ipamNet("app", "appnet", "10.100.1.0/24", "")},
 		Nodes:    []swarm.Node{node("n2", "docker2v2", "10.0.1.2", "")},

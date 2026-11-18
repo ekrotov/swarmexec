@@ -144,7 +144,7 @@ func ListNetworks(ctx context.Context, dcli swarmapi.Client, underlay []netip.Pr
 // runningTasksPerNetwork counts running tasks per attached network ID from a
 // single cluster-wide TaskList. Best effort: an error yields an empty map.
 func runningTasksPerNetwork(ctx context.Context, dcli swarmapi.Client) map[string]int {
-	res, err := dcli.TaskList(ctx, client.TaskListOptions{})
+	res, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: desiredRunning()})
 	if err != nil {
 		return map[string]int{}
 	}
@@ -479,7 +479,7 @@ func NetworkMembers(ctx context.Context, dcli swarmapi.Client, net Network) []Ne
 	}
 
 	byService := map[string][]netContainer{}
-	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{}); err == nil {
+	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: desiredRunning()}); err == nil {
 		for _, t := range tasks.Items {
 			if t.Status.State != swarm.TaskStateRunning || !taskOnNetwork(t, net.ID) {
 				continue
@@ -791,7 +791,7 @@ func SecretMembers(ctx context.Context, dcli swarmapi.Client, secret Secret) []N
 	nodeName := nodeHostnames(ctx, dcli)
 
 	byService := map[string][]netContainer{}
-	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{}); err == nil {
+	if tasks, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: desiredRunning()}); err == nil {
 		for _, t := range tasks.Items {
 			if t.Status.State != swarm.TaskStateRunning || !usingIDs[t.ServiceID] {
 				continue

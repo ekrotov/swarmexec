@@ -62,6 +62,7 @@ type nodeRow struct {
 	NanoCPUs     int64             `json:"nano_cpus,omitempty"`
 	MemoryBytes  int64             `json:"memory_bytes,omitempty"`
 	Tasks        int               `json:"tasks"`
+	TasksKnown   bool              `json:"tasks_known"`
 	Volumes      *int              `json:"volumes"`
 	Labels       map[string]string `json:"labels,omitempty"`
 }
@@ -143,7 +144,7 @@ func nodeRowOf(n swarmops.NodeInfo, vols map[string]int) nodeRow {
 		Availability: n.Availability, State: n.State, Addr: n.Addr,
 		Engine: n.EngineVersion, OS: n.OS, Arch: n.Arch,
 		NanoCPUs: n.NanoCPUs, MemoryBytes: n.MemoryBytes,
-		Tasks: n.Tasks, Labels: n.Labels,
+		Tasks: n.Tasks, TasksKnown: n.TasksKnown, Labels: n.Labels,
 	}
 	if v, ok := vols[n.Hostname]; ok {
 		row.Volumes = &v
@@ -163,8 +164,12 @@ func printNodes(out io.Writer, rows []nodeRow) error {
 		if r.Volumes != nil {
 			vols = fmt.Sprint(*r.Volumes)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%d\n", name, orDash(r.Role), orDash(r.Availability),
-			orDash(r.State), orDash(r.Engine), r.Tasks, vols, len(r.Labels))
+		tasks := "?"
+		if r.TasksKnown {
+			tasks = fmt.Sprint(r.Tasks)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", name, orDash(r.Role), orDash(r.Availability),
+			orDash(r.State), orDash(r.Engine), tasks, vols, len(r.Labels))
 	}
 	return w.Flush()
 }
@@ -428,8 +433,8 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 // setAvailability applies one availability, behind the drain confirm.
 func (c *clusterConn) setAvailability(out, errOut io.Writer, n swarmops.NodeInfo, to swarm.NodeAvailability, yes bool) error {
 	if to == swarm.NodeAvailabilityDrain && !yes {
-		fmt.Fprintf(out, "Draining %q stops its %d running task(s) and reschedules them on other nodes.\n"+
-			"Services whose tasks cannot be placed elsewhere will go unschedulable.\n", n.Hostname, n.Tasks)
+		fmt.Fprintf(out, "Draining %q stops its %s running task(s) and reschedules them on other nodes.\n"+
+			"Services whose tasks cannot be placed elsewhere will go unschedulable.\n", n.Hostname, n.TaskCount())
 		if !confirm("Drain?") {
 			fmt.Fprintln(errOut, "aborted — the node was not changed (non-interactive runs need --yes)")
 			return &cliError{code: exitTransport, silent: true}
