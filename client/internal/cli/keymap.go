@@ -193,12 +193,18 @@ func defaultKeybinds() keybinds {
 	return k
 }
 
-// defaultKeysPath is keys.yaml next to config.yaml (or $SWARMEXEC_KEYS).
-func defaultKeysPath() string {
+// keysPathFor is keys.yaml next to the config file in use — the --config
+// path when one was given, else the default location — or $SWARMEXEC_KEYS,
+// which wins as every environment variable does. It used to ignore --config,
+// so `--config /etc/team.yaml` read the team config and the personal keys.
+func keysPathFor(configPath string) string {
 	if p := os.Getenv("SWARMEXEC_KEYS"); p != "" {
 		return p
 	}
-	cfg := config.DefaultFilePath()
+	cfg := configPath
+	if cfg == "" {
+		cfg = config.DefaultFilePath()
+	}
 	if cfg == "" {
 		return ""
 	}
@@ -233,7 +239,7 @@ func keyLabel(r rune) string {
 func loadKeybinds(path string) (keybinds, []string) {
 	k := defaultKeybinds()
 	if path == "" {
-		path = defaultKeysPath()
+		path = keysPathFor("")
 	}
 	var warnings []string
 

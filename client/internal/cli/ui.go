@@ -205,7 +205,7 @@ func runUI(cmd *cobra.Command, g *globalFlags, f *uiFlags, args []string) error 
 
 	// Configurable shortcut keys (keys.yaml). Never fails: invalid/conflicting
 	// bindings fall back to defaults with a warning shown once on startup.
-	km, keyWarnings := loadKeybinds("")
+	km, keyWarnings := loadKeybinds(keysPathFor(g.configPath))
 
 	u := &ui{
 		overlays:  map[string]bool{},
