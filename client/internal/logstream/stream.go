@@ -18,6 +18,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 	pb "swarmexec/internal/pb"
 )
 
@@ -157,7 +158,7 @@ func Follow(ctx context.Context, run Run, t resolve.FollowTarget, ep resolve.End
 			// A new container: all of its log is unseen.
 			cur.Params.Tail, cur.Params.Since = 0, 0
 			if notify != nil {
-				notify(fmt.Sprintf("── container replaced; reconnected to %s on %s ──", shortID(c.ContainerID), orDash(c.NodeName)))
+				notify(fmt.Sprintf("── container replaced; reconnected to %s on %s ──", dockerfmt.ShortID(c.ContainerID), dockerfmt.OrDash(c.NodeName)))
 			}
 		}
 		lastCID = c.ContainerID

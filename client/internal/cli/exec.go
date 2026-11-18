@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/session"
 	cterm "swarmexec/client/internal/term"
+	"swarmexec/internal/dockerfmt"
 	pb "swarmexec/internal/pb"
 )
 
@@ -261,7 +262,7 @@ func pickCandidate(amb *resolve.AmbiguousError, interactive bool, w io.Writer) (
 	fmt.Fprintf(w, "service %q has %d running tasks:\n", amb.Service, len(amb.Candidates))
 	for i, c := range amb.Candidates {
 		fmt.Fprintf(w, "  [%d] %s.%d  node=%s  container=%s  up=%s\n",
-			i+1, amb.Service, c.Slot, c.NodeName, shortID(c.ContainerID), uptime(c.Uptime))
+			i+1, amb.Service, c.Slot, c.NodeName, dockerfmt.ShortID(c.ContainerID), uptime(c.Uptime))
 	}
 	line, ok := promptLine(fmt.Sprintf("select [1-%d]: ", len(amb.Candidates)))
 	if !ok {

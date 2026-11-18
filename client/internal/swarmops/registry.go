@@ -15,6 +15,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+
+	"swarmexec/client/internal/imageref"
 )
 
 // Registry version checks: a swarm service deployed from `repo:latest` has its
@@ -49,24 +51,8 @@ type ImageStatus struct {
 // when it is pinned on the ":latest" tag — the case we can check. Returns ok=false
 // for any other tag, or when there is no @sha256 digest.
 func parsePinnedLatest(ref string) (repo, digest string, ok bool) {
-	at := strings.IndexByte(ref, '@')
-	if at < 0 {
-		return "", "", false
-	}
-	name, dig := ref[:at], ref[at+1:]
-	if !strings.HasPrefix(dig, "sha256:") {
-		return "", "", false
-	}
-	colon := strings.LastIndexByte(name, ':')
-	if colon < 0 {
-		return "", "", false
-	}
-	// A registry-port colon (host:5000/repo) is before the last '/', not a tag.
-	if slash := strings.LastIndexByte(name, '/'); slash > colon {
-		return "", "", false
-	}
-	repo, tag := name[:colon], name[colon+1:]
-	if tag != "latest" || repo == "" {
+	repo, tag, dig := imageref.Split(ref)
+	if !strings.HasPrefix(dig, "sha256:") || tag != "latest" || repo == "" {
 		return "", "", false
 	}
 	return repo, dig, true
@@ -83,19 +69,7 @@ func computeNewer(pinned, latest string) bool {
 // @digest is optional. Returns ok=false for a :latest tag (handled by
 // parsePinnedLatest), an untagged ref, or a digest-only ref.
 func parsePinnedVersion(ref string) (repo, tag string, ok bool) {
-	name := ref
-	if at := strings.IndexByte(ref, '@'); at >= 0 {
-		name = ref[:at]
-	}
-	colon := strings.LastIndexByte(name, ':')
-	if colon < 0 {
-		return "", "", false
-	}
-	// A registry-port colon (host:5000/repo) is before the last '/', not a tag.
-	if slash := strings.LastIndexByte(name, '/'); slash > colon {
-		return "", "", false
-	}
-	repo, tag = name[:colon], name[colon+1:]
+	repo, tag, _ = imageref.Split(ref)
 	if repo == "" || tag == "" || tag == "latest" {
 		return "", "", false
 	}

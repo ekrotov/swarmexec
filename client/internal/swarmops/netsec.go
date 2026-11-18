@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -486,10 +487,10 @@ func NetworkMembers(ctx context.Context, dcli swarmapi.Client, net Network) []Ne
 			}
 			name := idName[t.ServiceID]
 			if name == "" {
-				name = shortID(t.ServiceID)
+				name = dockerfmt.ShortID(t.ServiceID)
 			}
 			byService[name] = append(byService[name], netContainer{
-				ID:   shortID(taskContainerID(t)),
+				ID:   dockerfmt.ShortID(taskContainerID(t)),
 				Node: nodeName[t.NodeID],
 				IPv4: taskIPv4(t, net.ID),
 			})
@@ -798,10 +799,10 @@ func SecretMembers(ctx context.Context, dcli swarmapi.Client, secret Secret) []N
 			}
 			name := idName[t.ServiceID]
 			if name == "" {
-				name = shortID(t.ServiceID)
+				name = dockerfmt.ShortID(t.ServiceID)
 			}
 			byService[name] = append(byService[name], netContainer{
-				ID:   shortID(taskContainerID(t)),
+				ID:   dockerfmt.ShortID(taskContainerID(t)),
 				Node: nodeName[t.NodeID],
 			})
 		}

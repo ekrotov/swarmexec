@@ -23,7 +23,7 @@ import (
 // included, may mean no agent is deployed, so dcli is asked about that.
 func explainSession(ctx context.Context, cfg config.Config, dcli swarmops.ServiceLister, err error) error {
 	return agenterr.Explain(ctx, err, agenterr.Options{
-		Auth:          agenterr.AuthOf(cfg),
+		Auth:          agenterr.AuthOf(cfg.SecretMode()),
 		AgentDeployed: deployedProbe(dcli),
 		Session:       true,
 	})

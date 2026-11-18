@@ -18,6 +18,7 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/fanout"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 )
 
@@ -357,7 +358,7 @@ func (b addrBook) note(addr, key, name string) {
 		b[addr] = map[string]string{}
 	}
 	if name == "" {
-		name = shortID(key)
+		name = dockerfmt.ShortID(key)
 	}
 	b[addr][key] = name
 }

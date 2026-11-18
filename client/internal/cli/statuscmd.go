@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // `stats` and `status` are the cli twins of the MCP tools `stats` and
@@ -172,7 +173,7 @@ func printStats(out, errOut io.Writer, rows []swarmops.StatsRow) error {
 		if r.Slot > 0 {
 			slot = fmt.Sprint(r.Slot)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Service, slot, r.Node, r.Container, r.CPU, r.Memory, orDash(r.Health))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Service, slot, r.Node, r.Container, r.CPU, r.Memory, dockerfmt.OrDash(r.Health))
 		if r.Note != "" && !notes[r.Note] {
 			notes[r.Note] = true
 			order = append(order, r.Note)
@@ -237,7 +238,7 @@ func runStatus(cmd *cobra.Command, g *globalFlags, f *statusFlags) error {
 }
 
 func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
-	fmt.Fprintf(out, "context %s · manager %s · engine %s\n\n", ov.Context, orDash(ov.Manager), orDash(ov.Engine))
+	fmt.Fprintf(out, "context %s · manager %s · engine %s\n\n", ov.Context, dockerfmt.OrDash(ov.Manager), dockerfmt.OrDash(ov.Engine))
 	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, "NODE\tROLE\tSTATE\tAVAIL\tENGINE")
 	for _, n := range ov.Nodes {
@@ -245,7 +246,7 @@ func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
 		if n.Leader {
 			name += " (leader)"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, orDash(n.Role), orDash(n.State), orDash(n.Availability), orDash(n.Engine))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, dockerfmt.OrDash(n.Role), dockerfmt.OrDash(n.State), dockerfmt.OrDash(n.Availability), dockerfmt.OrDash(n.Engine))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -257,8 +258,8 @@ func printStatus(out, errOut io.Writer, ov swarmops.Overview) error {
 		w = tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 		fmt.Fprintln(w, "SERVICE\tSTACK\tMODE\tREPLICAS\tHEALTH\tUPDATE")
 		for _, s := range ov.Services {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, orDash(s.Stack), orDash(s.Mode), s.Replicas,
-				healthTallyText(s.Health), orDash(s.UpdateState))
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, dockerfmt.OrDash(s.Stack), dockerfmt.OrDash(s.Mode), s.Replicas,
+				healthTallyText(s.Health), dockerfmt.OrDash(s.UpdateState))
 		}
 		if err := w.Flush(); err != nil {
 			return err

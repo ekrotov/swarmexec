@@ -16,6 +16,7 @@ import (
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 )
 
 type portForwardFlags struct {
@@ -117,7 +118,7 @@ func runForwarder(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint
 	defer fw.Close()
 
 	fmt.Fprintf(stdout, "forwarding %s -> %s:%d (%s) — press Ctrl-C to stop\n",
-		fw.LocalAddr(), shortID(ep.ContainerID), p.RemotePort, ep.NodeName)
+		fw.LocalAddr(), dockerfmt.ShortID(ep.ContainerID), p.RemotePort, ep.NodeName)
 
 	return fw.Serve(ctx, func(cerr error) {
 		fmt.Fprintf(stderr, "swarmexec: forward connection failed: %v\n", cerr)

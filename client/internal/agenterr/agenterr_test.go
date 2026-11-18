@@ -12,18 +12,15 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"swarmexec/client/internal/config"
 )
 
+// Which configurations count as secret mode is config.SecretMode's question
+// and has its own tests there; this package only maps the answer.
 func TestAuthOf(t *testing.T) {
-	if AuthOf(config.Config{AgentSecret: "s"}) != AuthSecret {
-		t.Error("an inline secret is shared-secret mode")
+	if AuthOf(true) != AuthSecret {
+		t.Error("a configured secret is shared-secret mode")
 	}
-	if AuthOf(config.Config{AgentSecretFile: "/f"}) != AuthSecret {
-		t.Error("a secret file is shared-secret mode")
-	}
-	if AuthOf(config.Config{CA: "/ca", Cert: "/c", Key: "/k"}) != AuthMTLS {
+	if AuthOf(false) != AuthMTLS {
 		t.Error("no secret is mTLS mode")
 	}
 }

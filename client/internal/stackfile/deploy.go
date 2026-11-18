@@ -14,6 +14,8 @@ import (
 	composetypes "github.com/docker/cli/cli/compose/types"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
+
+	"swarmexec/client/internal/swarmlabel"
 )
 
 // Deploying a stack is CLIENT-side work: the engine has no "deploy a stack"
@@ -170,7 +172,7 @@ func prefixed(service string, warnings []string) []string {
 
 // deployedServices maps a stack's current services by their full name.
 func deployedServices(ctx context.Context, cli DeployClient, stackName string) (map[string]swarm.Service, error) {
-	f := make(client.Filters).Add("label", stackLabel+"="+stackName)
+	f := make(client.Filters).Add("label", swarmlabel.StackNamespace+"="+stackName)
 	svcsRes, err := cli.ServiceList(ctx, client.ServiceListOptions{Filters: f})
 	svcs := svcsRes.Items
 	if err != nil {

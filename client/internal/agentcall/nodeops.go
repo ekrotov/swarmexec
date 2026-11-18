@@ -30,7 +30,7 @@ func (c *Client) Versions(ctx context.Context, nodes []resolve.Node, connectTime
 	for i, n := range nodes {
 		out[i] = NodeVersion{Node: n, Err: fanout.ErrSkipped}
 	}
-	_ = fanout.Nodes(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
+	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
 		v, p, err := c.Version(ctx, n, connectTimeout)
 		out[i] = NodeVersion{Node: n, Version: v, Proto: p, Err: err}
 	})

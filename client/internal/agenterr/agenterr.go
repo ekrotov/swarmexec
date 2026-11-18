@@ -25,8 +25,6 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"swarmexec/client/internal/config"
 )
 
 // Auth is how this client authenticates to its agents.
@@ -43,11 +41,16 @@ const (
 	AuthMTLS
 )
 
-// AuthOf reports the auth mode a client configuration selects. The rule is
-// the one dial.Dial applies: a configured secret is sent; otherwise only the
-// client certificate speaks for the operator.
-func AuthOf(cfg config.Config) Auth {
-	if cfg.SecretMode() {
+// AuthOf reports the auth mode a client selects. The rule is the one dial.Dial
+// applies: a configured secret is sent; otherwise only the client certificate
+// speaks for the operator.
+//
+// It takes the answer, not the configuration it came from. This package
+// explains errors; it imported the whole client configuration for this one
+// question, which is the sort of edge that turns a leaf package into part of
+// everything.
+func AuthOf(secretMode bool) Auth {
+	if secretMode {
 		return AuthSecret
 	}
 	return AuthMTLS

@@ -19,6 +19,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/client/internal/updatecheck"
+	"swarmexec/internal/dockerfmt"
 )
 
 type doctorFlags struct {
@@ -202,9 +203,9 @@ func printDoctorTable(out io.Writer, r doctorReport, swarmNodes int) {
 	}
 	fmt.Fprintln(w, head)
 	for _, row := range r.Nodes {
-		line := fmt.Sprintf("%s\t%s\t%s\t%s", row.Node, row.Status, orDash(row.Version), orDash(row.Proto))
+		line := fmt.Sprintf("%s\t%s\t%s\t%s", row.Node, row.Status, dockerfmt.OrDash(row.Version), dockerfmt.OrDash(row.Proto))
 		if withErr {
-			line += "\t" + orDash(row.Error)
+			line += "\t" + dockerfmt.OrDash(row.Error)
 		}
 		fmt.Fprintln(w, line)
 	}

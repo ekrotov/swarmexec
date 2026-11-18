@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
+
+	"swarmexec/client/internal/swarmlabel"
 )
 
 // Removing a stack is the most destructive thing this program does: it is the
@@ -24,11 +26,9 @@ import (
 // be its own kind of surprise — and the operator's mental model of what a stack
 // *is* comes from that command.
 
-// StackLabelKey is the only link between an object and its stack: swarm has no
-// stack object, and `docker stack deploy` stamps this label on everything it
-// creates. Docker's own constant, not ours, which is why a local copy is not
-// the kind of duplication that drifts.
-const StackLabelKey = "com.docker.stack.namespace"
+// StackLabelKey is swarmlabel.StackNamespace under the name this package's
+// callers already use.
+const StackLabelKey = swarmlabel.StackNamespace
 
 // StackAPI is the slice of the Docker client a stack removal needs.
 // *client.Client satisfies it.

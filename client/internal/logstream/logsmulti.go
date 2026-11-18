@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 )
 
 // One `logs` invocation can follow several sources at once: several targets,
@@ -35,7 +36,7 @@ func SourceFromCandidate(c resolve.Candidate) Source {
 			Target: resolve.FollowTarget{Service: c.Service, Slot: c.Slot}}
 	}
 	// A global service has no slots; one task per node is its identity.
-	return Source{Label: c.Service + "@" + orDash(c.NodeName), Endpoint: ep,
+	return Source{Label: c.Service + "@" + dockerfmt.OrDash(c.NodeName), Endpoint: ep,
 		Target: resolve.FollowTarget{Service: c.Service, NodeID: c.NodeID}}
 }
 

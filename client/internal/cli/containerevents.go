@@ -11,6 +11,7 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 	pb "swarmexec/internal/pb"
 )
 
@@ -80,7 +81,7 @@ func watchContainerEvents(ctx context.Context, ac *agentcall.Client, ep resolve.
 			// output the operator actually came for.
 			reported = true
 			if agentTooOld(err) {
-				note("container events unavailable — the agent on "+orDash(ep.NodeName)+
+				note("container events unavailable — the agent on "+dockerfmt.OrDash(ep.NodeName)+
 					" predates this feature (swarmexec init --force)", toneNeutral)
 			} else {
 				note("container events unavailable: "+err.Error(), toneNeutral)

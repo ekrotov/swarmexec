@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 
 	"swarmexec/client/internal/swarmfake"
+	"swarmexec/client/internal/swarmlabel"
 )
 
 // Prune removes the stack's services the file no longer declares — and only
@@ -21,7 +22,7 @@ func TestApplyPrune(t *testing.T) {
 	stackSvc := func(id, name, stack string) swarm.Service {
 		s := swarm.Service{ID: id}
 		s.Spec.Name = name
-		s.Spec.Labels = map[string]string{stackLabel: stack}
+		s.Spec.Labels = map[string]string{swarmlabel.StackNamespace: stack}
 		return s
 	}
 	fresh := func() *swarmfake.Swarm {

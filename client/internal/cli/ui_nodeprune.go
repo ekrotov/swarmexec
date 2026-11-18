@@ -16,6 +16,7 @@ import (
 	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -378,7 +379,7 @@ func schedPreview(s prunesched.Schedule, now time.Time) string {
 		fmt.Fprintf(&b, " [red]cannot save:[-] %s\n", escapeTags(err.Error()))
 		return b.String()
 	}
-	fmt.Fprintf(&b, " runs at %s %s on %s\n", strings.Join(swarmops.RunTimes(s), ", "), s.TZ, orDash(prunesched.FormatDays(s.Days)))
+	fmt.Fprintf(&b, " runs at %s %s on %s\n", strings.Join(swarmops.RunTimes(s), ", "), s.TZ, dockerfmt.OrDash(prunesched.FormatDays(s.Days)))
 	if !s.Enabled {
 		b.WriteString(" [gray]disabled — saving keeps these settings but runs nothing[-]\n")
 		return b.String()

@@ -14,9 +14,10 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/rivo/tview"
 
-	"swarmexec/client/internal/fanout"
+	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 )
 
@@ -112,8 +113,8 @@ func (t *nodesTab) yank(b *strings.Builder) {
 			name += " (leader)"
 		}
 		use, known := t.u.nodeUse[n.Hostname]
-		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", name, orDash(n.Role), orDash(n.Availability),
-			orDash(n.State), nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known), orDash(n.EngineVersion), n.TaskCount(), len(n.Labels))
+		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", name, dockerfmt.OrDash(n.Role), dockerfmt.OrDash(n.Availability),
+			dockerfmt.OrDash(n.State), nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known), dockerfmt.OrDash(n.EngineVersion), n.TaskCount(), len(n.Labels))
 	}
 }
 
@@ -130,14 +131,14 @@ func (t *nodesTab) renderRow(r int, n swarmops.NodeInfo) {
 	use, known := t.u.nodeUse[n.Hostname]
 	cpu, mem := nodeCPUPercent(n, use, known), nodeMemPercent(n, use, known)
 	t.table.SetCell(r, 0, tview.NewTableCell(name).SetTextColor(nameColor).SetExpansion(2))
-	t.table.SetCell(r, 1, tview.NewTableCell(orDash(n.Role)).SetExpansion(1))
-	t.table.SetCell(r, 2, tview.NewTableCell(orDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
-	t.table.SetCell(r, 3, tview.NewTableCell(orDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
+	t.table.SetCell(r, 1, tview.NewTableCell(dockerfmt.OrDash(n.Role)).SetExpansion(1))
+	t.table.SetCell(r, 2, tview.NewTableCell(dockerfmt.OrDash(n.Availability)).SetTextColor(nodeAvailColor(n.Availability)).SetExpansion(1))
+	t.table.SetCell(r, 3, tview.NewTableCell(dockerfmt.OrDash(n.State)).SetTextColor(nodeStateColor(n.State)).SetExpansion(1))
 	t.table.SetCell(r, 4, tview.NewTableCell(cpu).SetTextColor(usagePercentColor(cpu)).SetExpansion(1))
 	t.table.SetCell(r, 5, tview.NewTableCell(mem).SetTextColor(usagePercentColor(mem)).SetExpansion(1))
 	t.table.SetCell(r, 6, tview.NewTableCell(n.TaskCount()).SetExpansion(1))
 	t.table.SetCell(r, 7, tview.NewTableCell(volStr).SetExpansion(1))
-	t.table.SetCell(r, 8, tview.NewTableCell(orDash(n.EngineVersion)).SetExpansion(1))
+	t.table.SetCell(r, 8, tview.NewTableCell(dockerfmt.OrDash(n.EngineVersion)).SetExpansion(1))
 	t.table.SetCell(r, 9, tview.NewTableCell(fmt.Sprintf("%d", len(n.Labels))).SetExpansion(1))
 }
 
@@ -213,7 +214,7 @@ func (t *nodesTab) reload() {
 		if ns, nerr := r.Nodes(ctx); nerr == nil {
 			per := make([]nodeImages, len(ns))
 			ok := make([]bool, len(ns))
-			_ = fanout.Nodes(ctx, ns, func(ctx context.Context, i int, n resolve.Node) {
+			_ = agentcall.PerNode(ctx, ns, func(ctx context.Context, i int, n resolve.Node) {
 				ni, ierr := ac.Images(ctx, n, f.connectTimeout)
 				per[i], ok[i] = ni, ierr == nil
 			})
@@ -637,12 +638,12 @@ func (t *nodesTab) detailHead(n swarmops.NodeInfo) string {
 	}
 	kv("hostname", n.Hostname)
 	kv("id", n.ID)
-	kv("role", orDash(role))
-	kv("availability", orDash(n.Availability))
-	kv("state", orDash(n.State))
-	kv("address", orDash(n.Addr))
-	kv("engine", orDash(n.EngineVersion))
-	kv("platform", orDash(strings.Trim(n.OS+"/"+n.Arch, "/")))
+	kv("role", dockerfmt.OrDash(role))
+	kv("availability", dockerfmt.OrDash(n.Availability))
+	kv("state", dockerfmt.OrDash(n.State))
+	kv("address", dockerfmt.OrDash(n.Addr))
+	kv("engine", dockerfmt.OrDash(n.EngineVersion))
+	kv("platform", dockerfmt.OrDash(strings.Trim(n.OS+"/"+n.Arch, "/")))
 	kv("cpus", swarmops.FormatCPUCores(n.NanoCPUs))
 	kv("memory", swarmops.FormatMemBytes(n.MemoryBytes))
 	kv("tasks", n.TaskCount()+" running")

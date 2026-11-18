@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/endpoint"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // `swarmexec wait` closes the gap `stack deploy` leaves: swarm accepting a
@@ -138,12 +139,12 @@ func judgeUpdate(s waitSnapshot, since time.Time) (v waitVerdict, why string, de
 	switch s.updateState {
 	case string(swarm.UpdateStatePaused):
 		return waitFailed, fmt.Sprintf("its update paused (%s) — it runs a mix of old and new tasks; `docker service update %s` resumes it",
-			orDash(s.updateMessage), s.name), true
+			dockerfmt.OrDash(s.updateMessage), s.name), true
 	case string(swarm.UpdateStateRollbackPaused):
-		return waitFailed, fmt.Sprintf("its rollback paused (%s)", orDash(s.updateMessage)), true
+		return waitFailed, fmt.Sprintf("its rollback paused (%s)", dockerfmt.OrDash(s.updateMessage)), true
 	case string(swarm.UpdateStateRollbackCompleted):
 		if !s.updateDone.Before(since) {
-			return waitFailed, fmt.Sprintf("it was rolled back during the wait (%s) — the deploy did not take", orDash(s.updateMessage)), true
+			return waitFailed, fmt.Sprintf("it was rolled back during the wait (%s) — the deploy did not take", dockerfmt.OrDash(s.updateMessage)), true
 		}
 	case string(swarm.UpdateStateUpdating), string(swarm.UpdateStateRollbackStarted):
 		return waitPending, progressText(s) + ", " + strings.ReplaceAll(s.updateState, "_", " "), true

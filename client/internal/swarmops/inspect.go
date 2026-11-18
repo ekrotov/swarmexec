@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
@@ -537,7 +538,7 @@ func (b *inspBuilder) serviceSpecSections(svc swarm.Service, cs *swarm.Container
 func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []InspectLine {
 	var b inspBuilder
 	cs := task.Spec.ContainerSpec
-	b.title(fmt.Sprintf("TASK  %s  (slot %d)", shortID(task.ID), task.Slot))
+	b.title(fmt.Sprintf("TASK  %s  (slot %d)", dockerfmt.ShortID(task.ID), task.Slot))
 
 	b.section("NETWORKS")
 	nets := taskNetDNS(task, owning, info)
@@ -574,7 +575,7 @@ func formatTaskInspect(task swarm.Task, owning *swarm.Service, info netInfo) []I
 	b.section("PLACEMENT")
 	node := info.nodeNames[task.NodeID]
 	if node == "" {
-		node = shortID(task.NodeID)
+		node = dockerfmt.ShortID(task.NodeID)
 	}
 	b.kv("node", node)
 	b.kv("slot", fmt.Sprintf("%d", task.Slot))
@@ -717,7 +718,7 @@ func taskNetDNS(task swarm.Task, owning *swarm.Service, info netInfo) []netDNS {
 			if n := info.names[a.Network.ID]; n != "" {
 				name = n
 			} else {
-				name = shortID(a.Network.ID)
+				name = dockerfmt.ShortID(a.Network.ID)
 			}
 		}
 		nd := netDNS{
@@ -751,7 +752,7 @@ func implicitNets(svc swarm.Service, info netInfo, vips map[string]string, addrs
 	for _, v := range svc.Endpoint.VirtualIPs {
 		name := info.names[v.NetworkID]
 		if name == "" {
-			name = shortID(v.NetworkID)
+			name = dockerfmt.ShortID(v.NetworkID)
 		}
 		if !v.Addr.IsValid() || seen[name] {
 			continue
@@ -896,15 +897,15 @@ func pickAddrs(m map[string][]netTaskAddr, target, name string) []netTaskAddr {
 func taskDisplayName(svcName string, t swarm.Task) string {
 	base := svcName
 	if base == "" {
-		base = shortID(t.ServiceID)
+		base = dockerfmt.ShortID(t.ServiceID)
 	}
 	switch {
 	case t.Slot > 0:
 		return fmt.Sprintf("%s.%d", base, t.Slot)
 	case t.NodeID != "":
-		return base + "." + shortID(t.NodeID)
+		return base + "." + dockerfmt.ShortID(t.NodeID)
 	default:
-		return base + "." + shortID(t.ID)
+		return base + "." + dockerfmt.ShortID(t.ID)
 	}
 }
 
@@ -975,7 +976,7 @@ func SpecMounts(cs *swarm.ContainerSpec) []string {
 	}
 	var out []string
 	for _, m := range cs.Mounts {
-		line := fmt.Sprintf("%s -> %s", orDash(m.Source), m.Target)
+		line := fmt.Sprintf("%s -> %s", dockerfmt.OrDash(m.Source), m.Target)
 		if m.Type != mount.TypeVolume {
 			line += fmt.Sprintf(" (%s)", m.Type)
 		}
@@ -1112,7 +1113,7 @@ func resStr(nanoCPU, memBytes int64) string {
 		parts = append(parts, fmt.Sprintf("%.2f CPU", float64(nanoCPU)/1e9))
 	}
 	if memBytes > 0 {
-		parts = append(parts, humanBytes(memBytes))
+		parts = append(parts, dockerfmt.Bytes(memBytes))
 	}
 	return strings.Join(parts, ", ")
 }

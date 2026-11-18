@@ -14,6 +14,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -346,7 +347,7 @@ func (t *networksTab) yank(b *strings.Builder) {
 			overlap = s.String()
 		}
 		fmt.Fprintf(b, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-			n.Name, orDash(n.Driver), orDash(n.Scope), networkType(n), subnetText(n), len(n.Services),
+			n.Name, dockerfmt.OrDash(n.Driver), dockerfmt.OrDash(n.Scope), networkType(n), subnetText(n), len(n.Services),
 			t.containersText(n), overlap, volumeAge(n.Created))
 	}
 }
@@ -374,8 +375,8 @@ func (t *networksTab) renderRow(r int, n swarmops.Network) {
 		encCell = tview.NewTableCell("🔒 yes").SetTextColor(tcell.ColorGreen).SetExpansion(1)
 	}
 	t.table.SetCell(r, 0, tview.NewTableCell(n.Name).SetTextColor(typeColor).SetExpansion(1))
-	t.table.SetCell(r, 1, tview.NewTableCell(orDash(n.Driver)).SetExpansion(1))
-	t.table.SetCell(r, 2, tview.NewTableCell(orDash(n.Scope)).SetExpansion(1))
+	t.table.SetCell(r, 1, tview.NewTableCell(dockerfmt.OrDash(n.Driver)).SetExpansion(1))
+	t.table.SetCell(r, 2, tview.NewTableCell(dockerfmt.OrDash(n.Scope)).SetExpansion(1))
 	t.table.SetCell(r, 3, tview.NewTableCell(networkType(n)).SetTextColor(typeColor).SetExpansion(1))
 	t.table.SetCell(r, 4, subnetCell)
 	t.table.SetCell(r, 5, encCell)
@@ -615,7 +616,7 @@ func (v *netMembersView) addServiceRows() {
 			}
 		}
 		for _, c := range s.Containers {
-			v.addRow(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, orDash(c.Node), orDash(c.IPv4)), s.Name)
+			v.addRow(fmt.Sprintf("    %-*s  %-*s  %s", idW, c.ID, nodeW, dockerfmt.OrDash(c.Node), dockerfmt.OrDash(c.IPv4)), s.Name)
 		}
 	}
 }
@@ -627,7 +628,7 @@ func memberColumns(members []swarmops.NetService) (idW, nodeW int) {
 	for _, s := range members {
 		for _, c := range s.Containers {
 			idW = max(idW, len(c.ID))
-			nodeW = max(nodeW, len(orDash(c.Node)))
+			nodeW = max(nodeW, len(dockerfmt.OrDash(c.Node)))
 		}
 	}
 	return idW, nodeW
@@ -773,7 +774,7 @@ func endpointNodeRow(n swarmops.NodeEndpoints, nodeW int) (string, bool) {
 // staleEndpointRow is one stale candidate: address, MAC, endpoint name, and
 // where it was found.
 func staleEndpointRow(s swarmops.StaleEndpoint) string {
-	line := fmt.Sprintf("    %-15s %-17s %s", s.IP, orDash(s.MAC), tview.Escape(orDash(s.Name)))
+	line := fmt.Sprintf("    %-15s %-17s %s", s.IP, dockerfmt.OrDash(s.MAC), tview.Escape(dockerfmt.OrDash(s.Name)))
 	var where []string
 	if s.Owner != "" {
 		where = append(where, "on "+tview.Escape(s.Owner))
@@ -809,7 +810,7 @@ func duplicateRows(title string, ds []swarmops.Duplicate) []string {
 func endpointFixRows(netName string, width int) []string {
 	rows := []string{"",
 		"[gray]fix:[-] on a node that lists the entry, remove the leftover endpoint:",
-		"       docker network disconnect -f " + tview.Escape(orDash(netName)) + " <endpoint name>"}
+		"       docker network disconnect -f " + tview.Escape(dockerfmt.OrDash(netName)) + " <endpoint name>"}
 	for _, l := range tview.WordWrap("or restart Docker on the node that held it. Refresh first: a task that "+
 		"just started or stopped shows here for a moment.", width-6) {
 		rows = append(rows, "     [gray]"+tview.Escape(l)+"[-]")

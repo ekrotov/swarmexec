@@ -21,30 +21,4 @@
 // agent side lives in agentcall, the error wording in agenterr.
 package swarmops
 
-import (
-	units "github.com/docker/go-units"
-)
-
-// shortID is the 12-character form Docker shows ids in.
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
-}
-
-// orDash renders an empty value as "-".
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
-}
-
-// humanBytes renders a byte count for display, or "-" when unknown (negative).
-func humanBytes(n int64) string {
-	if n < 0 {
-		return "-"
-	}
-	return units.HumanSize(float64(n))
-}
+import ()

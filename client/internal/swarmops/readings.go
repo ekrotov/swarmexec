@@ -108,7 +108,7 @@ func HealthOf(usage map[string]agentcall.ContainerUsage, cands []resolve.Candida
 // asked.
 func ServicesAndContainers(ctx context.Context, r *resolve.Resolver, op string) ([]resolve.Service, []resolve.Candidate, error) {
 	start := time.Now()
-	svcs, err := r.Services(ctx)
+	svcs, err := r.ServicesWithRisks(ctx)
 	clientlog.Timed(op+".Services", start, err)
 	if err != nil {
 		return nil, nil, err

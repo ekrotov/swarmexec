@@ -9,6 +9,7 @@ import (
 	"strings"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/endpoint"
+	"swarmexec/internal/dockerfmt"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -226,7 +227,7 @@ func (u *ui) deleteContext(c dockerctx.Context) {
 		return
 	}
 	force := c.Name == dockerctx.Current()
-	msg := fmt.Sprintf("Remove context %q?\n%s", c.Name, orDash(c.Host))
+	msg := fmt.Sprintf("Remove context %q?\n%s", c.Name, dockerfmt.OrDash(c.Host))
 	if force {
 		msg += "\n\nIt is the current context — its selection resets to \"default\"."
 	}
@@ -255,7 +256,7 @@ func (u *ui) activateContext(c dockerctx.Context) {
 	// first would leave `docker` pointed at a cluster the UI just declined to go
 	// to, and the footer and the shell would disagree.
 	if !u.switching && u.cfg.ConfirmSwitch(c.Name) {
-		msg := fmt.Sprintf("Switch to context %q?\n%s\n\n(contexts.%s.confirm_switch is set)", c.Name, orDash(c.Host), c.Name)
+		msg := fmt.Sprintf("Switch to context %q?\n%s\n\n(contexts.%s.confirm_switch is set)", c.Name, dockerfmt.OrDash(c.Host), c.Name)
 		u.confirm(msg, "Switch", u.cxtable, func() { u.switchCluster(c.Name) })
 		return
 	}
@@ -270,7 +271,7 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "name:         %s\n", tview.Escape(c.Name))
-	fmt.Fprintf(&b, "docker host:  %s\n", tview.Escape(orDash(c.Host)))
+	fmt.Fprintf(&b, "docker host:  %s\n", tview.Escape(dockerfmt.OrDash(c.Host)))
 	fmt.Fprintf(&b, "active:       %s", active)
 	if c.Current {
 		b.WriteString("\n\n[gray]stored current docker context[-]")

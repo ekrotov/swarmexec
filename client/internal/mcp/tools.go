@@ -28,7 +28,9 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/stackfile"
+	"swarmexec/client/internal/swarmlabel"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 )
 
 // The tools. Descriptions are what the model reads to decide what to call, so
@@ -247,7 +249,7 @@ func (s *Server) toolServices(ctx context.Context, in mcpOptServiceIn) (string, 
 	byService := map[string][]mcpContainerRow{}
 	for _, cd := range cands {
 		byService[cd.Service] = append(byService[cd.Service], mcpContainerRow{
-			Slot: cd.Slot, Container: shortID(cd.ContainerID), Node: orDash(cd.NodeName), Uptime: swarmops.FormatUptime(cd.Uptime),
+			Slot: cd.Slot, Container: dockerfmt.ShortID(cd.ContainerID), Node: dockerfmt.OrDash(cd.NodeName), Uptime: swarmops.FormatUptime(cd.Uptime),
 		})
 	}
 	rows := []mcpServiceRow{}
@@ -331,7 +333,7 @@ func (s *Server) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service
 	out := mcpInspect{
 		Name:      svc.Spec.Name,
 		ID:        svc.ID,
-		Stack:     svc.Spec.Labels["com.docker.stack.namespace"],
+		Stack:     svc.Spec.Labels[swarmlabel.StackNamespace],
 		Mode:      swarmops.ServiceModeStr(svc),
 		Labels:    mcpaccess.Strip(svc.Spec.Labels),
 		Mounts:    swarmops.SpecMounts(cs),
@@ -381,12 +383,12 @@ func (s *Server) inspectOf(ctx context.Context, c *mcpCluster, svc swarm.Service
 		}
 		for _, t := range items {
 			row := mcpTaskRow{
-				ID: shortID(t.ID), Slot: t.Slot, Node: firstNonEmpty(nodeNames[t.NodeID], shortID(t.NodeID)),
+				ID: dockerfmt.ShortID(t.ID), Slot: t.Slot, Node: firstNonEmpty(nodeNames[t.NodeID], dockerfmt.ShortID(t.NodeID)),
 				State: string(t.Status.State), Desired: string(t.DesiredState),
 				Message: t.Status.Message, Error: t.Status.Err, Since: swarmops.FormatTime(t.Status.Timestamp),
 			}
 			if st := t.Status.ContainerStatus; st != nil {
-				row.Container, row.ExitCode = shortID(st.ContainerID), st.ExitCode
+				row.Container, row.ExitCode = dockerfmt.ShortID(st.ContainerID), st.ExitCode
 			}
 			out.Tasks = append(out.Tasks, row)
 		}
@@ -1277,9 +1279,9 @@ func execTarget(service string, cands []resolve.Candidate, slot int, node string
 	var opts []string
 	for _, cd := range pick {
 		if cd.Slot > 0 {
-			opts = append(opts, fmt.Sprintf("slot %d on %s", cd.Slot, orDash(cd.NodeName)))
+			opts = append(opts, fmt.Sprintf("slot %d on %s", cd.Slot, dockerfmt.OrDash(cd.NodeName)))
 		} else {
-			opts = append(opts, "node "+orDash(cd.NodeName))
+			opts = append(opts, "node "+dockerfmt.OrDash(cd.NodeName))
 		}
 	}
 	return resolve.Candidate{}, fmt.Errorf("service %q has %d running containers; pass slot or node: %s",
@@ -1337,7 +1339,7 @@ func (s *Server) toolExec(ctx context.Context, in mcpExecIn) (string, error) {
 		return "", err
 	}
 	return jsonText(mcpExecResult{
-		Service: ms.svc.Spec.Name, Container: shortID(cd.ContainerID), Node: orDash(cd.NodeName),
+		Service: ms.svc.Spec.Name, Container: dockerfmt.ShortID(cd.ContainerID), Node: dockerfmt.OrDash(cd.NodeName),
 		ExitCode: code,
 		Stdout:   stdout.String(), Stderr: stderr.String(),
 		StdoutTruncated: stdout.Truncated(), StderrTruncated: stderr.Truncated(),

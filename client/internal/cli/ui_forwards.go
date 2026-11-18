@@ -11,6 +11,7 @@ import (
 	"strings"
 	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/internal/dockerfmt"
 	"sync"
 	"time"
 
@@ -34,11 +35,11 @@ func (u *ui) portConflict(local uint32) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	what := orDash(e.Cand.Service)
+	what := dockerfmt.OrDash(e.Cand.Service)
 	if e.Cand.Service == "" {
-		what = shortID(e.Cand.ContainerID)
+		what = dockerfmt.ShortID(e.Cand.ContainerID)
 	}
-	return fmt.Sprintf("port %d is already forwarded to %s on cluster %s", local, what, orDash(e.Cluster)), true
+	return fmt.Sprintf("port %d is already forwarded to %s on cluster %s", local, what, dockerfmt.OrDash(e.Cluster)), true
 }
 
 // startForward brings a forward up off the UI goroutine: dialling the agent
@@ -127,7 +128,7 @@ func (u *ui) startForward(c resolve.Candidate, address string, local, remote uin
 func (u *ui) userPrompt(c resolve.Candidate, open func(user string)) {
 	ctree := u.ctree
 	input := tview.NewInputField().SetLabel(" user: ").SetFieldWidth(28)
-	input.SetBorder(true).SetTitle(fmt.Sprintf(" shell into %s on %s as… ", orDash(c.Service), orDash(c.NodeName)))
+	input.SetBorder(true).SetTitle(fmt.Sprintf(" shell into %s on %s as… ", dockerfmt.OrDash(c.Service), dockerfmt.OrDash(c.NodeName)))
 	input.SetPlaceholder("  name or UID[:GID] — e.g. root, 1000, 1000:1000")
 	ov := u.overlayFor(pageUserPrompt, ctree, "")
 	closePrompt := ov.Close
@@ -203,8 +204,8 @@ func (t *forwardsTab) yank(b *strings.Builder) {
 			local = e.LocalEndpoint()
 		}
 		fmt.Fprintf(b, "%s\t%d\t%s\t%s\t%s\t%s\n",
-			local, e.Remote, shortID(e.Cand.ContainerID),
-			orDash(e.Cand.Service), orDash(e.Cand.NodeName), e.State)
+			local, e.Remote, dockerfmt.ShortID(e.Cand.ContainerID),
+			dockerfmt.OrDash(e.Cand.Service), dockerfmt.OrDash(e.Cand.NodeName), e.State)
 	}
 }
 
@@ -253,13 +254,13 @@ func (t *forwardsTab) render() {
 		}
 		ftable.SetCell(row, 0, lcell)
 		ftable.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", e.Remote)))
-		ftable.SetCell(row, 2, tview.NewTableCell(shortID(e.Cand.ContainerID)))
-		ftable.SetCell(row, 3, tview.NewTableCell(orDash(e.Cand.Service)))
-		ftable.SetCell(row, 4, tview.NewTableCell(orDash(e.Cand.NodeName)))
+		ftable.SetCell(row, 2, tview.NewTableCell(dockerfmt.ShortID(e.Cand.ContainerID)))
+		ftable.SetCell(row, 3, tview.NewTableCell(dockerfmt.OrDash(e.Cand.Service)))
+		ftable.SetCell(row, 4, tview.NewTableCell(dockerfmt.OrDash(e.Cand.NodeName)))
 		// The cluster column is dimmed for the one you are looking at and plain
 		// for the others, so a glance answers "is any of this somewhere else?"
 		// without reading names.
-		ccell := tview.NewTableCell(orDash(e.Cluster))
+		ccell := tview.NewTableCell(dockerfmt.OrDash(e.Cluster))
 		if e.Cluster == u.activeCtx {
 			ccell.SetTextColor(tcell.ColorGray)
 		}
@@ -311,9 +312,9 @@ func (t *forwardsTab) showDetail() {
 		b.WriteString("            [yellow]not loopback: reachable from your network[-]\n")
 	}
 	fmt.Fprintf(&b, "remote:     %d\n", e.Remote)
-	fmt.Fprintf(&b, "container:  %s\n", esc(shortID(e.Cand.ContainerID)))
-	fmt.Fprintf(&b, "service:    %s\n", esc(orDash(e.Cand.Service)))
-	fmt.Fprintf(&b, "node:       %s\n", esc(orDash(e.Cand.NodeName)))
+	fmt.Fprintf(&b, "container:  %s\n", esc(dockerfmt.ShortID(e.Cand.ContainerID)))
+	fmt.Fprintf(&b, "service:    %s\n", esc(dockerfmt.OrDash(e.Cand.Service)))
+	fmt.Fprintf(&b, "node:       %s\n", esc(dockerfmt.OrDash(e.Cand.NodeName)))
 	fmt.Fprintf(&b, "state:      %s", esc(e.State.String()))
 	if e.Err != nil {
 		fmt.Fprintf(&b, "\n\n[red]failed:[-] %s", esc(e.Err.Error()))
@@ -333,7 +334,7 @@ func (t *forwardsTab) showDetail() {
 		forwards.Remove(e.ID)
 		closeDetail()
 		u.refreshForwardViews()
-		u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.Cand.ContainerID), e.Remote))
+		u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", dockerfmt.ShortID(e.Cand.ContainerID), e.Remote))
 	})
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyEnter {
@@ -377,7 +378,7 @@ func (t *forwardsTab) keys(ev *tcell.EventKey) *tcell.EventKey {
 			if e, ok := t.selected(); ok {
 				forwards.Remove(e.ID)
 				u.refreshForwardViews()
-				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.Cand.ContainerID), e.Remote))
+				u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", dockerfmt.ShortID(e.Cand.ContainerID), e.Remote))
 			}
 			return nil
 		case km.FwdCopyURL:

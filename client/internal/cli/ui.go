@@ -27,6 +27,7 @@ import (
 	"swarmexec/client/internal/swarmapi"
 	"swarmexec/client/internal/swarmops"
 	cterm "swarmexec/client/internal/term"
+	"swarmexec/internal/dockerfmt"
 )
 
 type uiFlags struct {
@@ -676,7 +677,7 @@ func networkType(n swarmops.Network) string {
 	case n.Driver == "overlay":
 		return "overlay"
 	default:
-		return orDash(n.Driver)
+		return dockerfmt.OrDash(n.Driver)
 	}
 }
 
@@ -940,11 +941,11 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix, usage string) stri
 	// port list pushes the end of the row past the right edge.
 	b.WriteString(securityBadge(s.Risks))
 	fmt.Fprintf(&b, "%-*s  %-*s  %-*s",
-		c.name, orDash(s.Name), c.mode, orDash(s.Mode), c.repl, progressCount(s))
+		c.name, dockerfmt.OrDash(s.Name), c.mode, dockerfmt.OrDash(s.Mode), c.repl, progressCount(s))
 	if c.image > 0 {
 		// The resolved-version / ↑ annotation sits inside the image cell so it
 		// reads right next to the image URI, not far off in the ports column.
-		fmt.Fprintf(&b, "  %-*s", c.image, orDash(s.Image)+imageSuffix)
+		fmt.Fprintf(&b, "  %-*s", c.image, dockerfmt.OrDash(s.Image)+imageSuffix)
 	}
 	if s.Ports != "" {
 		fmt.Fprintf(&b, "  %s", s.Ports)
@@ -1953,7 +1954,7 @@ func (u *ui) yankContexts(b *strings.Builder) {
 		if c.Name == u.activeCtx {
 			mark = "*"
 		}
-		fmt.Fprintf(b, "%s\t%s\t%s\n", c.Name, orDash(c.Host), mark)
+		fmt.Fprintf(b, "%s\t%s\t%s\n", c.Name, dockerfmt.OrDash(c.Host), mark)
 	}
 }
 

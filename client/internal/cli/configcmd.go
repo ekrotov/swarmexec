@@ -15,6 +15,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/endpoint"
+	"swarmexec/internal/dockerfmt"
 )
 
 func newConfigCmd(g *globalFlags) *cobra.Command {
@@ -72,7 +73,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 				return printJSON(os.Stdout, v)
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-			fmt.Fprintf(w, "config file:\t%s\n", orDash(v.ConfigFile))
+			fmt.Fprintf(w, "config file:\t%s\n", dockerfmt.OrDash(v.ConfigFile))
 			fmt.Fprintf(w, "docker context:\t%s\n", v.DockerContext)
 			fmt.Fprintf(w, "manager host:\t%s\n", hostOrDefault(v.ManagerHost))
 			from := func(key string) string { return "  (" + v.Sources[key] + ")" }
@@ -80,7 +81,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			fmt.Fprintf(w, "addr mode:\t%s%s\n", v.AddrMode, from(config.KeyAddrMode))
 			fmt.Fprintf(w, "auth mode:\t%s\n", v.AuthMode)
 			if v.CA != "" {
-				fmt.Fprintf(w, "ca / cert / key:\t%s / %s / %s  (%s / %s / %s)\n", v.CA, orDash(v.Cert), orDash(v.Key),
+				fmt.Fprintf(w, "ca / cert / key:\t%s / %s / %s  (%s / %s / %s)\n", v.CA, dockerfmt.OrDash(v.Cert), dockerfmt.OrDash(v.Key),
 					v.Sources[config.KeyCA], v.Sources[config.KeyCert], v.Sources[config.KeyKey])
 			}
 			if v.ServerName != "" {
@@ -88,7 +89,7 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			}
 			fmt.Fprintf(w, "insecure:\t%v%s\n", v.Insecure, from(config.KeyInsecure))
 			fmt.Fprintf(w, "agent secret:\t%s%s\n", v.AgentSecret, from(config.KeyAgentSecret))
-			fmt.Fprintf(w, "operator:\t%s\n", orDash(v.Operator))
+			fmt.Fprintf(w, "operator:\t%s\n", dockerfmt.OrDash(v.Operator))
 			if len(v.Underlay) > 0 {
 				fmt.Fprintf(w, "underlay:\t%s\n", strings.Join(v.Underlay, ", "))
 			}

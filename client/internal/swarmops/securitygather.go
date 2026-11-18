@@ -15,6 +15,7 @@ import (
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
 	"swarmexec/client/internal/swarmapi"
+	"swarmexec/internal/dockerfmt"
 )
 
 // This is the mapping layer between what the manager returns and what the
@@ -136,7 +137,7 @@ func NodeDisplayName(hostname, id string) string {
 	if hostname != "" {
 		return hostname
 	}
-	return shortID(id)
+	return dockerfmt.ShortID(id)
 }
 
 // contextLabel names the cluster the report ran against. The docker context

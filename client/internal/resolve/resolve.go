@@ -24,7 +24,9 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 
+	"swarmexec/client/internal/imageref"
 	"swarmexec/client/internal/secscan"
+	"swarmexec/client/internal/swarmlabel"
 )
 
 // DockerClient is the subset of the Docker SDK the resolver needs. The real
@@ -127,9 +129,10 @@ type Service struct {
 	// mid-update.
 	UpdateState string
 
-	// Risks holds the static security-scan findings for this service (empty when
-	// none). Computed from the spec during the list fetch, so the UI can mark a
-	// risky service and list its findings without a second call.
+	// Risks holds the static security-scan findings for this service, and only
+	// ServicesWithRisks fills it. Plain Services leaves it empty: most callers
+	// — wait, the log picker, every lookup — never read a finding, and the scan
+	// used to run for all of them on every refresh.
 	Risks []secscan.Finding
 
 	// Completed and JobTotal track a job's progress: how many tasks of its
@@ -169,11 +172,6 @@ func (s Service) Progress() (have, want int) {
 	}
 	return s.Running, s.Desired
 }
-
-// stackNamespaceLabel is the label `docker stack deploy` stamps on every service
-// it creates, naming the stack. It is the only link between a service and its
-// stack — swarm has no stack object.
-const stackNamespaceLabel = "com.docker.stack.namespace"
 
 // AmbiguousError is returned when a bare service name has more than one running
 // task and the caller must disambiguate (slot or interactive pick).
@@ -741,8 +739,25 @@ func (r *Resolver) Candidates(ctx context.Context, service string) ([]Candidate,
 // Services lists every swarm service with its running/desired task counts.
 // It asks the manager for the ServiceStatus shortcut (Status: true) so it does
 // not have to list tasks per service; if the manager does not populate it, it
-// falls back to counting tasks. Results are sorted by name.
+// falls back to counting tasks. Results are sorted by name. Risks is empty.
 func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
+	return r.services(ctx, false)
+}
+
+// ServicesWithRisks is Services plus the static security scan of each spec.
+//
+// It is a second entry point rather than a flag inside Services because the
+// scan is a rule library's verdict, not part of a service: only the tree, the
+// Security tab and the MCP report read it, and every other caller was paying
+// for it on every refresh. The scan cannot move to the caller outright — the
+// raw spec exists only inside this listing, and fetching it again would be the
+// extra manager round trip the tree refresh was just rid of — so the choice is
+// made at the call site instead.
+func (r *Resolver) ServicesWithRisks(ctx context.Context) ([]Service, error) {
+	return r.services(ctx, true)
+}
+
+func (r *Resolver) services(ctx context.Context, withRisks bool) ([]Service, error) {
 	svcsRes, err := r.cli.ServiceList(ctx, client.ServiceListOptions{Status: true})
 	svcs := svcsRes.Items
 	if err != nil {
@@ -757,7 +772,7 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 			Image:    serviceImage(s.Spec.TaskTemplate.ContainerSpec),
 			ImageRef: serviceImageRef(s.Spec.TaskTemplate.ContainerSpec),
 			Ports:    servicePorts(servicePortConfigs(s)),
-			Stack:    s.Spec.Labels[stackNamespaceLabel],
+			Stack:    s.Spec.Labels[swarmlabel.StackNamespace],
 		}
 		if st := s.ServiceStatus; st != nil {
 			svc.Running = int(st.RunningTasks)
@@ -770,7 +785,9 @@ func (r *Resolver) Services(ctx context.Context) ([]Service, error) {
 		if us := s.UpdateStatus; us != nil {
 			svc.UpdateState = string(us.State)
 		}
-		svc.Risks = secscan.Scan(s)
+		if withRisks {
+			svc.Risks = secscan.Scan(s)
+		}
 		out = append(out, svc)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -886,11 +903,7 @@ func serviceImage(cs *swarm.ContainerSpec) string {
 	if cs == nil {
 		return ""
 	}
-	img := cs.Image
-	if i := strings.IndexByte(img, '@'); i >= 0 {
-		img = img[:i]
-	}
-	return img
+	return imageref.Name(cs.Image)
 }
 
 // serviceImageRef returns the service's container image exactly as pinned in the

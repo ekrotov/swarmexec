@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"swarmexec/client/internal/resolve"
 )
 
 func TestEachVisitsEveryItemWithinTheLimit(t *testing.T) {
@@ -78,7 +76,7 @@ func TestEachWithAnEndedContextStartsNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	called := false
-	err := Nodes(ctx, []resolve.Node{{Name: "n1"}}, func(context.Context, int, resolve.Node) { called = true })
+	err := Each(ctx, []string{"n1"}, NodeLimit, func(context.Context, int, string) { called = true })
 	if !errors.Is(err, context.Canceled) || called {
 		t.Fatalf("err=%v called=%v, want context.Canceled and no call", err, called)
 	}

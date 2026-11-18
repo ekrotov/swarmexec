@@ -18,6 +18,7 @@ import (
 
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/swarmops"
+	"swarmexec/internal/dockerfmt"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
 )
@@ -168,8 +169,8 @@ func printNodes(out io.Writer, rows []nodeRow) error {
 		if r.TasksKnown {
 			tasks = fmt.Sprint(r.Tasks)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", name, orDash(r.Role), orDash(r.Availability),
-			orDash(r.State), orDash(r.Engine), tasks, vols, len(r.Labels))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", name, dockerfmt.OrDash(r.Role), dockerfmt.OrDash(r.Availability),
+			dockerfmt.OrDash(r.State), dockerfmt.OrDash(r.Engine), tasks, vols, len(r.Labels))
 	}
 	return w.Flush()
 }
