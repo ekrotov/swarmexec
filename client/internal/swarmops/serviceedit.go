@@ -396,9 +396,62 @@ func RollbackService(ctx context.Context, dcli swarmapi.Client, name string) err
 	if svc.PreviousSpec == nil {
 		return fmt.Errorf("service %q has no previous version to roll back to", name)
 	}
+	if gone, err := goneReferences(ctx, dcli, *svc.PreviousSpec); err != nil {
+		return err
+	} else if len(gone) > 0 {
+		return fmt.Errorf("cannot roll back %q: its previous version uses %s, which no longer exist(s) — "+
+			"a secret rotation or a deletion replaced it; nothing was changed. Edit the service to use the current object instead",
+			name, strings.Join(gone, ", "))
+	}
 	_, err = dcli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{
 		Version: svc.Version, Spec: svc.Spec, Rollback: "previous"})
 	return err
+}
+
+// goneReferences lists the secrets and configs a spec mounts that the cluster
+// no longer has ("secret \"db_rotating\""). Swarm checks only the current spec
+// when an object is removed, and a rollback copies PreviousSpec without looking
+// — so the rollback would start tasks that can never get their files.
+func goneReferences(ctx context.Context, dcli swarmapi.Client, spec swarm.ServiceSpec) ([]string, error) {
+	cs := spec.TaskTemplate.ContainerSpec
+	if cs == nil {
+		return nil, nil
+	}
+	var gone []string
+	if len(cs.Secrets) > 0 {
+		res, err := dcli.SecretList(ctx, client.SecretListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("list secrets: %w", err)
+		}
+		have := idSet(res.Items, func(s swarm.Secret) string { return s.ID })
+		for _, r := range cs.Secrets {
+			if r != nil && !have[r.SecretID] {
+				gone = append(gone, fmt.Sprintf("secret %q", r.SecretName))
+			}
+		}
+	}
+	if len(cs.Configs) > 0 {
+		res, err := dcli.ConfigList(ctx, client.ConfigListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("list configs: %w", err)
+		}
+		have := idSet(res.Items, func(c swarm.Config) string { return c.ID })
+		for _, r := range cs.Configs {
+			if r != nil && r.ConfigID != "" && !have[r.ConfigID] {
+				gone = append(gone, fmt.Sprintf("config %q", r.ConfigName))
+			}
+		}
+	}
+	return gone, nil
+}
+
+// idSet collects the IDs of items.
+func idSet[T any](items []T, id func(T) string) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[id(it)] = true
+	}
+	return m
 }
 
 // UpdateServiceImage sets a service's image (read-modify-write ServiceUpdate,

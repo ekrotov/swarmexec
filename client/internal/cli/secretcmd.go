@@ -141,7 +141,8 @@ func rotateConfirmText(p swarmops.RotatePlan) string {
 			b.WriteString("\nEach service restarts twice (two rolling updates).\n")
 		}
 	}
-	b.WriteString("No rollback to the old content: the old secret object is deleted.\n")
+	b.WriteString("No rollback to the old content: the old secret object is deleted, and a service\n" +
+		"rollback afterwards is refused (its previous version names the deleted " + p.Temp + ").\n")
 	if p.Stack != "" {
 		fmt.Fprintf(&b, "\nHint: %s belongs to stack %q. If the stack file defines it with `file:`,\n"+
 			"put the new content in that file too, or the next stack deploy fails.\n", p.Name, p.Stack)

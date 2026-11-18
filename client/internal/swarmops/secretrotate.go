@@ -213,6 +213,9 @@ func loadRotateState(ctx context.Context, api SecretRotateAPI, name string) (rot
 		}
 	}
 	if st.orig != nil {
+		if st.orig.Spec.Driver != nil {
+			return st, fmt.Errorf("secret %q is served by the %q secret driver: its content is not held by swarm, so there is nothing to rotate here", name, st.orig.Spec.Driver.Name)
+		}
 		if of, ok := st.orig.Spec.Labels[RotateMarkerLabel]; ok {
 			return st, fmt.Errorf("%q is the temporary secret of an interrupted rotation of %q — rotate %q to finish it", name, of, of)
 		}
@@ -371,7 +374,7 @@ func (r *rotation) run(ctx context.Context) error {
 		}
 		labels[RotateMarkerLabel] = r.name
 		r.progress("", "creating %s", r.temp)
-		temp, err := r.create(ctx, r.temp, labels)
+		temp, err := r.create(ctx, r.temp, labels, st.keptTemplating())
 		if err != nil {
 			return r.fail(err)
 		}
@@ -399,7 +402,7 @@ func (r *rotation) run(ctx context.Context) error {
 	if st.orig == nil {
 		r.step = 4
 		r.progress("", "creating %s with the new content", r.name)
-		orig, err := r.create(ctx, r.name, keep)
+		orig, err := r.create(ctx, r.name, keep, st.keptTemplating())
 		if err != nil {
 			return r.fail(err)
 		}
@@ -423,9 +426,27 @@ func (r *rotation) run(ctx context.Context) error {
 	return nil
 }
 
-// create makes a secret with the rotation's content.
-func (r *rotation) create(ctx context.Context, name string, labels map[string]string) (*swarm.Secret, error) {
-	spec := swarm.SecretSpec{Annotations: swarm.Annotations{Name: name, Labels: labels}, Data: r.data}
+// keptTemplating is the templating driver NAME has, and gets back in step 4:
+// like the labels, the stand-in is its record once it exists, so a run resumed
+// after the original's removal still knows it.
+func (s rotateState) keptTemplating() *swarm.Driver {
+	src := s.orig
+	if s.temp != nil {
+		src = s.temp
+	}
+	if src == nil || src.Spec.Templating == nil {
+		return nil
+	}
+	d := *src.Spec.Templating
+	d.Options = maps.Clone(d.Options)
+	return &d
+}
+
+// create makes a secret with the rotation's content. templating is the
+// original's: without it a secret that is rendered per task (`{{ ... }}`) would
+// come back as a plain one, and the services would read the template source.
+func (r *rotation) create(ctx context.Context, name string, labels map[string]string, templating *swarm.Driver) (*swarm.Secret, error) {
+	spec := swarm.SecretSpec{Annotations: swarm.Annotations{Name: name, Labels: labels}, Data: r.data, Templating: templating}
 	res, err := r.api.SecretCreate(ctx, client.SecretCreateOptions{Spec: spec})
 	if err != nil {
 		return nil, fmt.Errorf("create secret %s: %w", name, err)
