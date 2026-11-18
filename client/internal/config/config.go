@@ -391,6 +391,30 @@ func overlayFile(cfg *Config, path string) error {
 	return nil
 }
 
+// overlayEnvTyped applies the variables that are not plain strings, each of
+// which can fail to parse. Split out of overlayEnv to keep that function under
+// the complexity gate.
+func overlayEnvTyped(cfg *Config) error {
+	if v := os.Getenv("SWARMEXEC_PORT"); v != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("SWARMEXEC_PORT=%q is not a port number (1-65535)", v)
+		}
+		cfg.Port = n
+	}
+	if v := os.Getenv("SWARMEXEC_INSECURE"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			cfg.Insecure = true
+		case "0", "false", "no", "off":
+			cfg.Insecure = false
+		default:
+			return fmt.Errorf("SWARMEXEC_INSECURE=%q is not a boolean (use true or false)", v)
+		}
+	}
+	return nil
+}
+
 // overlayEnv applies the SWARMEXEC_* variables. A value that does not parse is
 // an error naming the variable: it used to fall back to the default silently,
 // so SWARMEXEC_PORT=80a0 dialed the default port and nobody found out why.
@@ -419,22 +443,8 @@ func overlayEnv(cfg *Config) error {
 	if os.Getenv("SWARMEXEC_AGENT_SECRET") != "" && os.Getenv("SWARMEXEC_AGENT_SECRET_FILE") == "" {
 		cfg.AgentSecretFile = ""
 	}
-	if v := os.Getenv("SWARMEXEC_PORT"); v != "" {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil || n < 1 || n > 65535 {
-			return fmt.Errorf("SWARMEXEC_PORT=%q is not a port number (1-65535)", v)
-		}
-		cfg.Port = n
-	}
-	if v := os.Getenv("SWARMEXEC_INSECURE"); v != "" {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "1", "true", "yes", "on":
-			cfg.Insecure = true
-		case "0", "false", "no", "off":
-			cfg.Insecure = false
-		default:
-			return fmt.Errorf("SWARMEXEC_INSECURE=%q is not a boolean (use true or false)", v)
-		}
+	if err := overlayEnvTyped(cfg); err != nil {
+		return err
 	}
 	if noUpdateCheck(os.Getenv(EnvNoUpdateCheck)) {
 		off := false
