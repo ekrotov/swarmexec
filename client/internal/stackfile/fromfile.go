@@ -221,6 +221,16 @@ func UnsupportedProperties(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The loader type-asserts every service to a mapping and panics on one
+	// that is not (`services:\n  web:` with no body is a null). The schema
+	// check in loadComposeFile rejects it properly, so say the same here.
+	if services, ok := dict["services"].(map[string]any); ok {
+		for name, s := range services {
+			if _, ok := s.(map[string]any); !ok {
+				return nil, fmt.Errorf("service %q must be a mapping", name)
+			}
+		}
+	}
 	return loader.GetUnsupportedProperties(dict), nil
 }
 

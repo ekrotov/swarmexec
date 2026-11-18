@@ -1064,6 +1064,9 @@ func SetServiceResources(ctx context.Context, dcli swarmapi.Client, name string,
 	})
 }
 
+// maxCores is the most cores whose NanoCPUs still fit an int64.
+const maxCores = math.MaxInt64 / 1e9
+
 // ParseCPUCores parses a CPU amount in cores ("0.5", "2") into NanoCPUs. An
 // Empty string means "unset" (0).
 func ParseCPUCores(s string) (int64, error) {
@@ -1074,7 +1077,7 @@ func ParseCPUCores(s string) (int64, error) {
 	cores, err := strconv.ParseFloat(s, 64)
 	// NaN and +-Inf parse without error, and a float beyond int64 converts to
 	// the minimum value: both would reach the manager as a nonsense limit.
-	if err != nil || cores < 0 || math.IsNaN(cores) || cores >= math.MaxInt64/1e9 {
+	if err != nil || cores < 0 || math.IsNaN(cores) || cores >= maxCores {
 		return 0, fmt.Errorf("invalid CPU value %q (use cores, e.g. 0.5 or 2)", s)
 	}
 	return int64(cores * 1e9), nil

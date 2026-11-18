@@ -132,28 +132,6 @@ var dialogRunes = map[rune]bool{
 	'Z': true,
 }
 
-// overlayKeysets are the overlays that answer to configurable actions next to
-// fixed keys of their own. An action bound onto one of those fixed keys would
-// work on its tab and be dead inside the overlay: the overlay's own case comes
-// first and wins. So a keys.yaml remap onto one is refused like a tab clash.
-// Each overlay declares its fixed keys here, in one place, and
-// TestOverlayKeysetsMatchTheSource keeps every entry equal to the runes its
-// key handler checks.
-type overlayKeyset struct {
-	name    string   // how the warning names the overlay
-	handler string   // the func holding its key handler, for the source test
-	fixed   string   // the runes it handles itself (j/k are reserved anyway)
-	actions []string // the configurable actions it also answers to
-}
-
-var overlayKeysets = []overlayKeyset{
-	{"node detail", "nodeDetail.keys", "Mil", []string{"node_prune", "node_prune_schedule"}},
-	{"context detail", "ui.showContextDetail", "i", []string{"context_use"}},
-	{"forward detail", "forwardsTab.showDetail", "i", []string{"forward_stop"}},
-	{"log view", "ui.logViewKeys", "fFal/", []string{"toggle_mouse"}},
-	{"client log viewer", "ui.openLogView", "`w", []string{"toggle_mouse"}},
-}
-
 // overlayClash names the overlay in which r is a fixed key, if action is one
 // that overlay also answers to.
 func overlayClash(action string, r rune) (string, bool) {

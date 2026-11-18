@@ -142,7 +142,12 @@ func TestAskpassSameQuestionIsAskedOnce(t *testing.T) {
 	for calls.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(100 * time.Millisecond) // let the others join
+	// Let the other two helpers reach the wait on the shared answer. A helper
+	// parked there is not observable (it blocks inside answer on the call's
+	// done channel), so this is time, not a condition — and it can only fail
+	// the test, never pass it falsely: a helper that arrives after release
+	// finds no question in flight and asks again, which the count below catches.
+	time.Sleep(100 * time.Millisecond)
 	close(release)
 	wg.Wait()
 	if n := calls.Load(); n != 1 {

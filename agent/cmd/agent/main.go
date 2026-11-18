@@ -1,8 +1,11 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-// Command agent is the swarmexec Swarm agent: a long-running mTLS gRPC server
-// that proxies interactive exec sessions into containers on its own node.
+// Command agent is the swarmexec Swarm agent: a long-running gRPC server over
+// TLS — mutual TLS, or a self-signed certificate plus a shared secret — that
+// proxies exec, logs, container events, port-forward, volume, image, prune and
+// stats requests to the Docker daemon of its own node. With -healthcheck it
+// instead probes a running agent and exits (the container HEALTHCHECK).
 package main
 
 import (

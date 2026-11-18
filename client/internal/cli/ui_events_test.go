@@ -55,7 +55,9 @@ func TestConsumeTopologyCoalescesABurst(t *testing.T) {
 	}
 	waitFor(t, "the burst to produce a refresh", func() bool { return refreshes.Load() >= 1 })
 
-	// Nothing further may arrive from those same twenty events.
+	// Nothing further may arrive from those same twenty events. This is a wait
+	// for something NOT to happen, so there is no condition to poll: it waits
+	// out four debounce windows, which is what a second refresh would need.
 	time.Sleep(4 * fastTopology.debounce)
 	if got := refreshes.Load(); got != 1 {
 		t.Errorf("20 events in a burst produced %d refreshes, want 1", got)
@@ -121,9 +123,20 @@ func TestConsumeTopologyReportsWhetherItDelivered(t *testing.T) {
 			msgs <- svcEvent()
 		}
 		done := make(chan bool, 1)
-		go func() { done <- consumeTopology(ctx, msgs, errs, fastTopology, nil, func() {}) }()
-		// Let a queued event be consumed before the stream ends.
-		time.Sleep(2 * fastTopology.debounce)
+		seen := make(chan struct{}, 1)
+		go func() {
+			done <- consumeTopology(ctx, msgs, errs, fastTopology, func(events.Message) { seen <- struct{}{} }, func() {})
+		}()
+		// The stream ends only once the queued event has been consumed: with
+		// both ready, select would pick either, and the answer would depend
+		// on the scheduler. observe is called as the event is taken.
+		if send {
+			select {
+			case <-seen:
+			case <-time.After(2 * time.Second):
+				t.Fatal("the queued event was never consumed")
+			}
+		}
 		errs <- errors.New("connection reset")
 		select {
 		case got := <-done:

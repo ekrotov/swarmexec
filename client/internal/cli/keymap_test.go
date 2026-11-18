@@ -158,14 +158,25 @@ func TestLoadKeybinds_DialogKeysAreRefusedForQuitAndCopy(t *testing.T) {
 	}
 }
 
-// The last alternative is the inspect view's action list (serviceActions),
-// whose keys handleKey looks up rather than comparing one by one.
-var runeLiteral = regexp.MustCompile(`ev\.Rune\(\) == '(.)'|case '(.)'|ev\.Rune\(\) >= '(.)' && ev\.Rune\(\) <= '(.)'|add\('(.)', `)
+// The alternatives: a rune compared with ==, a switch case, a range, the
+// inspect view's action list (serviceActions, whose keys handleKey looks up
+// rather than comparing one by one) and a fixed runeCase of an overlay. The
+// event variable is not named, so renaming it does not blind the test.
+var runeLiteral = regexp.MustCompile(`\.Rune\(\) == '(.)'|case '(.)'|\.Rune\(\) >= '(.)' && \w+\.Rune\(\) <= '(.)'|add\('(.)', |\{'(.)', ""`)
 
 // dialogRunes is a claim about the source — "these are the keys the UI
 // handles itself" — so it is checked against the source. A fixed key added to
 // a dialog without being listed would let quit or copy be remapped onto it;
 // a listed key nothing uses any more only narrows the choice for nothing.
+//
+// This is the one source-reading test that stays, because it cannot be
+// expressed otherwise. The overlays with configurable keys now declare theirs
+// as data (overlayKeysets), but the other dialogs are free-form input
+// captures: there is no table to derive the set from and no way to ask a
+// closure which runes it answers to. Driving every dialog with every rune
+// would run their side effects. The check is deliberately loose (any rune
+// literal compared against a key event in ui*.go) so a refactor of a handler
+// does not break it, and it errs towards a new fixed key being reported.
 func TestDialogRunesMatchTheSource(t *testing.T) {
 	files, _ := filepath.Glob("ui*.go")
 	used := map[rune]bool{}
@@ -184,7 +195,7 @@ func TestDialogRunesMatchTheSource(t *testing.T) {
 				}
 				continue
 			}
-			used[[]rune(m[1] + m[2] + m[5])[0]] = true
+			used[[]rune(m[1] + m[2] + m[5] + m[6])[0]] = true
 		}
 	}
 	for r := range used {

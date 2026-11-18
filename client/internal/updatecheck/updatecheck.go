@@ -9,8 +9,10 @@
 // The request is a plain GET without a query string or headers of its own:
 // it carries nothing about the operator, the machine or the cluster. Every
 // failure is silent — an offline machine just never sees a notice — and a
-// failed fetch is remembered too, so such a machine does not retry on every
-// start. Non-release builds (dev, review-…, prereleases) never ask.
+// failed fetch is remembered for as long as a successful one, so the promise
+// holds on a bad day too: one request per day, not one per start and not a
+// quicker retry. An offline start therefore delays the notice by up to a day.
+// Non-release builds (dev, review-…, prereleases) never ask.
 package updatecheck
 
 import (
@@ -38,9 +40,8 @@ const CacheFile = "update-check.json"
 
 // Defaults for Checker's zero fields.
 const (
-	defaultTTL      = 24 * time.Hour
-	defaultRetryTTL = 6 * time.Hour
-	defaultTimeout  = 3 * time.Second
+	defaultTTL     = 24 * time.Hour
+	defaultTimeout = 3 * time.Second
 	// maxBody bounds what is read from the response: the real answer is a
 	// few dozen bytes.
 	maxBody = 4 << 10
@@ -49,12 +50,11 @@ const (
 // Checker is the check with its dependencies spelled out; the zero value
 // asks DefaultURL with the defaults above. Tests set URL, Client and Now.
 type Checker struct {
-	URL      string
-	Client   *http.Client
-	Now      func() time.Time
-	TTL      time.Duration // how long a successful answer is kept
-	RetryTTL time.Duration // how long a failed fetch is kept
-	Timeout  time.Duration // the whole request, connect to body
+	URL     string
+	Client  *http.Client
+	Now     func() time.Time
+	TTL     time.Duration // how long an answer is kept, a failed fetch included
+	Timeout time.Duration // the whole request, connect to body
 }
 
 // cacheEntry is the file CacheFile holds. Latest is empty after a failed
@@ -105,12 +105,8 @@ func (c Checker) cached(path string, now time.Time) (cacheEntry, bool) {
 	if err != nil || json.Unmarshal(b, &e) != nil || e.CheckedAt.IsZero() {
 		return cacheEntry{}, false
 	}
-	ttl := c.ttl()
-	if e.Latest == "" {
-		ttl = c.retryTTL()
-	}
 	age := now.Sub(e.CheckedAt)
-	return e, age >= 0 && age < ttl
+	return e, age >= 0 && age < c.ttl()
 }
 
 // fetch asks the site for the newest release.
@@ -215,13 +211,6 @@ func (c Checker) ttl() time.Duration {
 		return c.TTL
 	}
 	return defaultTTL
-}
-
-func (c Checker) retryTTL() time.Duration {
-	if c.RetryTTL > 0 {
-		return c.RetryTTL
-	}
-	return defaultRetryTTL
 }
 
 func (c Checker) timeout() time.Duration {

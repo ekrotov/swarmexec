@@ -575,10 +575,34 @@ func (d *nodeDetail) measure() {
 	d.t.u.loadNodeReclaim(d.n.Hostname, true, d.apply)
 }
 
-// keys is the detail's input capture. The dialog keys close the detail first:
-// the dialog takes its place over the nodes table.
-func (d *nodeDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
+// cases is the detail's rune keys, from the live keymap. The dialog keys close
+// the detail first: the dialog takes its place over the nodes table.
+func (d *nodeDetail) cases() []runeCase {
 	u, t := d.t.u, d.t
+	return []runeCase{
+		{u.km.Quit, "quit", d.close},
+		{'i', "", d.close},
+		// Capital M: m toggles the mouse on every tab, and an overlay does not
+		// give a global key a second meaning (review T-10).
+		{'M', "", d.measure},
+		{u.km.NodePrune, "node_prune", func() {
+			d.close()
+			u.openNodePrune(d.n, d.back, t.reload)
+		}},
+		{u.km.NodePruneSched, "node_prune_schedule", func() {
+			d.close()
+			u.openPruneSchedule(d.back)
+		}},
+		{'l', "", func() {
+			d.close()
+			u.editNodeLabels(d.n, d.back, t.reload)
+		}},
+	}
+}
+
+// keys is the detail's input capture: Esc, the cases above, and j/k as the
+// arrows.
+func (d *nodeDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Key() == tcell.KeyEscape {
 		d.close()
 		return nil
@@ -586,30 +610,16 @@ func (d *nodeDetail) keys(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Key() != tcell.KeyRune {
 		return ev
 	}
+	if runRune(ev, d.cases()) {
+		return nil
+	}
 	switch ev.Rune() {
-	case u.km.Quit, 'i':
-		d.close()
-	case 'M':
-		// Capital M: m toggles the mouse on every tab, and an overlay does not
-		// give a global key a second meaning (review T-10).
-		d.measure()
-	case u.km.NodePrune:
-		d.close()
-		u.openNodePrune(d.n, d.back, t.reload)
-	case u.km.NodePruneSched:
-		d.close()
-		u.openPruneSchedule(d.back)
-	case 'l':
-		d.close()
-		u.editNodeLabels(d.n, d.back, t.reload)
 	case 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case 'k':
 		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
-	default:
-		return ev
 	}
-	return nil
+	return ev
 }
 
 // detailHead is everything in the node detail above the reclaim block.

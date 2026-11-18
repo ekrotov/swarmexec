@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -20,9 +21,11 @@ import (
 
 // No test in this package asks the real site: every run of the release
 // check goes to a stub that knows no newer release, unless a test installs
-// its own (stubUpdate).
-func init() {
+// its own (stubUpdate, which puts this default back when the test ends). Set
+// in TestMain rather than init, so it is visible where the test binary starts.
+func TestMain(m *testing.M) {
 	checkForUpdate = func(context.Context, string, string) (string, bool) { return "", false }
+	os.Exit(m.Run())
 }
 
 // shownText is markup as the screen shows it, trimmed.

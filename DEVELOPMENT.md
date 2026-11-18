@@ -25,6 +25,7 @@ make agent           # agent only    -> ./bin/agent
 make agent-image     # agent container image (swarmexec-agent:<version>)
 make test            # unit tests for the whole module
 make cover           # race + shuffled tests + coverage; fails below COVER_MIN or a per-file floor (CI job `test`)
+make fuzz            # every fuzz target for FUZZTIME (default 15s) each; not in CI — `make cover` replays their seeds and saved corpus
 make mod-check       # go.mod/go.sum must be tidy: `go mod tidy -diff` (CI job `test`)
 make lint            # staticcheck at the pinned STATICCHECK_VERSION + `make cyclo` (no function over complexity 15) (CI job `lint`)
 make ci-tools        # every pinned tool: buf + plugins, staticcheck, gocyclo, govulncheck, scip-go
@@ -61,6 +62,21 @@ on branches and tags against the newest release tag. `buf breaking` uses the
 strict `FILE` rules: a removed or renumbered field fails the pipeline, as
 CONTRACT.md §7 asks. The lint exceptions in `buf.yaml` are wire names that
 cannot change without breaking deployed agents.
+
+### Test hygiene
+
+- **Fuzz targets** (`FuzzXxx`, next to the parser they exercise) cover what
+  reads untrusted input: log formats, forward frames, policy files, prune
+  schedule labels, the env editor text, port specs, service-edit strings, stack
+  files and target resolution. They are seeded, so plain `go test` replays them
+  in milliseconds; `make fuzz` explores for `FUZZTIME` each. An input that breaks
+  one lands in the package's `testdata/fuzz/`: fix the code and commit the file.
+- **Goroutine leaks:** packages that start goroutines call
+  `leakcheck.Main(m)` from `TestMain` (`internal/leakcheck`), which fails the run
+  if one outlives the tests. Add it to a new package of that kind.
+- **Global state** a test replaces (the client logger, a stubbed function) is put
+  back with `t.Cleanup` (`clientlog.Save()` for the logger), and CI runs the
+  suites with `-shuffle=on`, so an order dependence fails there.
 
 ### Testing the client against the real agent (`agenttest`)
 

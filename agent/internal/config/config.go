@@ -185,7 +185,7 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	// ration working ones. Set them to 0 to turn the checks off again.
 	fs.DurationVar(&c.IdleTimeout, "idle-timeout", ev.duration("SWARMEXEC_IDLE_TIMEOUT", DefaultIdleTimeout), "per-session idle timeout, 0=disabled (env SWARMEXEC_IDLE_TIMEOUT)")
 	fs.DurationVar(&c.MaxSessionTime, "max-session", ev.duration("SWARMEXEC_MAX_SESSION", DefaultMaxSessionTime), "per-session max duration, 0=disabled (env SWARMEXEC_MAX_SESSION)")
-	fs.IntVar(&c.MaxStreams, "max-streams", ev.int("SWARMEXEC_MAX_STREAMS", 0), "max concurrent exec/logs/port-forward streams, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_STREAMS)")
+	fs.IntVar(&c.MaxStreams, "max-streams", ev.int("SWARMEXEC_MAX_STREAMS", 0), "max concurrent streams (exec, logs, port-forward, event watches), 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_STREAMS)")
 	fs.IntVar(&c.MaxForwardSidecars, "max-forward-sidecars", ev.int("SWARMEXEC_MAX_FORWARD_SIDECARS", 0), "max live port-forward sidecar containers, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_FORWARD_SIDECARS)")
 	fs.StringVar(&c.ForwardImage, "forward-image", env("SWARMEXEC_FORWARD_IMAGE", ""), "image for port-forward sidecars; empty = the agent's own image (env SWARMEXEC_FORWARD_IMAGE)")
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")

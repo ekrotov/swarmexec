@@ -2050,21 +2050,16 @@ func (u *ui) openLogView() {
 		tv.ScrollToEnd()
 	}
 	refresh()
+	cases := u.clientLogCases(u.closeLogView, func() {
+		wrap = !wrap
+		tv.SetWrap(wrap)
+	})
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == '`' || ev.Rune() == u.km.Quit)) {
+		if ev.Key() == tcell.KeyEscape {
 			u.closeLogView()
 			return nil
 		}
-		if ev.Key() == tcell.KeyRune && ev.Rune() == 'w' {
-			wrap = !wrap
-			tv.SetWrap(wrap)
-			return nil
-		}
-		// The configured mouse key, as on the tabs: with the mouse handed back
-		// the terminal can select a log line to paste into a bug report. Its
-		// flash lands on the footer, which this floating overlay leaves visible.
-		if ev.Key() == tcell.KeyRune && ev.Rune() == u.km.ToggleMouse {
-			u.toggleMouse()
+		if runRune(ev, cases) {
 			return nil
 		}
 		return ev
@@ -2075,6 +2070,19 @@ func (u *ui) openLogView() {
 	// so the keys it names were never on screen.
 	u.logViewOverlay.show(centeredGrow(tv, 100, 20, 0.92), tv)
 	go refreshLogViewEvery(ctx, stop, app, refresh)
+}
+
+// clientLogCases is the client log viewer's rune keys. The mouse key is the
+// configured one, as on the tabs: with the mouse handed back the terminal can
+// select a log line to paste into a bug report. Its flash lands on the footer,
+// which this floating overlay leaves visible.
+func (u *ui) clientLogCases(closeView, toggleWrap func()) []runeCase {
+	return []runeCase{
+		{'`', "", closeView},
+		{u.km.Quit, "quit", closeView},
+		{'w', "", toggleWrap},
+		{u.km.ToggleMouse, "toggle_mouse", u.toggleMouse},
+	}
 }
 
 // clientLogText is the client log ring as the log view shows it, colored,

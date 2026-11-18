@@ -30,7 +30,7 @@ const ringCap = 2000
 
 // std and ring are swapped by Init while other goroutines may be logging
 // (the tests re-Init between UIs whose background work is still finishing),
-// so they are atomic.
+// so they are atomic. Tests that call Init restore the previous pair with Save.
 var (
 	std  atomic.Pointer[slog.Logger]
 	ring atomic.Pointer[Ring]
@@ -91,6 +91,18 @@ func Init(level, filePath string) (*Ring, error) {
 	std.Store(slog.New(h))
 	ring.Store(r)
 	return r, nil
+}
+
+// Save returns a function that puts the logger and the ring back as they are
+// now. A test that calls Init changes process-wide state; it registers Save's
+// result (t.Cleanup(clientlog.Save())) before Init, so the next test does not
+// inherit its level, its ring or its file.
+func Save() (restore func()) {
+	l, r := std.Load(), ring.Load()
+	return func() {
+		std.Store(l)
+		ring.Store(r)
+	}
 }
 
 // L returns the global logger — a no-op logger until Init runs, so callers never

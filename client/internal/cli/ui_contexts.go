@@ -261,7 +261,7 @@ func (u *ui) activateContext(c dockerctx.Context) {
 }
 
 func (u *ui) showContextDetail(c dockerctx.Context) {
-	km, cxtable := u.km, u.cxtable
+	cxtable := u.cxtable
 	active := "no"
 	if c.Name == u.activeCtx {
 		active = "yes (this session)"
@@ -275,21 +275,30 @@ func (u *ui) showContextDetail(c dockerctx.Context) {
 	}
 	tv := tview.NewTextView().SetDynamicColors(true).SetText(b.String())
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" context %s ", c.Name))
-	ov := u.overlayFor(pageCtxDetail, cxtable, footerKeys(keyLabel(km.CtxUse), "use", "Esc", "back"))
+	ov := u.overlayFor(pageCtxDetail, cxtable, footerKeys(keyLabel(u.km.CtxUse), "use", "Esc", "back"))
 	closeDetail := ov.Close
+	cases := u.contextDetailCases(closeDetail, func() { u.activateContext(c) })
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape || (ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i')):
+		if ev.Key() == tcell.KeyEscape {
 			closeDetail()
 			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == km.CtxUse:
-			closeDetail()
-			u.activateContext(c)
+		}
+		if runRune(ev, cases) {
 			return nil
 		}
 		return ev
 	})
 	ov.show(centered(tv, 64, 8), tv)
+}
+
+// contextDetailCases is the context detail's rune keys. use switches to the
+// context after the detail has closed.
+func (u *ui) contextDetailCases(closeDetail, use func()) []runeCase {
+	return []runeCase{
+		{u.km.Quit, "quit", closeDetail},
+		{'i', "", closeDetail},
+		{u.km.CtxUse, "context_use", func() { closeDetail(); use() }},
+	}
 }
 
 // contextKeys is the key handler of the context sidebar.

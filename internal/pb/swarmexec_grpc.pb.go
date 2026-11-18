@@ -74,7 +74,7 @@ type AgentClient interface {
 	// every node and aggregates the results.
 	ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error)
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
-	// in use unless force is set.
+	// in use; force does not override that (see RemoveVolumeRequest.force).
 	RemoveVolume(ctx context.Context, in *RemoveVolumeRequest, opts ...grpc.CallOption) (*RemoveVolumeResponse, error)
 	// Create a volume on THIS node (authorized + audited). Volumes are node-local,
 	// so the cli targets a specific node's agent.
@@ -361,7 +361,7 @@ type AgentServer interface {
 	// every node and aggregates the results.
 	ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error)
 	// Remove a volume on THIS node (authorized + audited). Fails if the volume is
-	// in use unless force is set.
+	// in use; force does not override that (see RemoveVolumeRequest.force).
 	RemoveVolume(context.Context, *RemoveVolumeRequest) (*RemoveVolumeResponse, error)
 	// Create a volume on THIS node (authorized + audited). Volumes are node-local,
 	// so the cli targets a specific node's agent.

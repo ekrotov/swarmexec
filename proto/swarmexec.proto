@@ -39,7 +39,7 @@ service Agent {
   rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
 
   // Remove a volume on THIS node (authorized + audited). Fails if the volume is
-  // in use unless force is set.
+  // in use; force does not override that (see RemoveVolumeRequest.force).
   rpc RemoveVolume(RemoveVolumeRequest) returns (RemoveVolumeResponse);
 
   // Create a volume on THIS node (authorized + audited). Volumes are node-local,
@@ -224,7 +224,10 @@ message VolumeInfo {
 
 message RemoveVolumeRequest {
   string name = 1;
-  bool force = 2;  // remove even with the "force" flag (does not override in-use)
+  // Passed to the Engine's volume remove: a volume that is already gone is not
+  // an error, and one its driver fails to remove is dropped anyway. It does
+  // NOT override in-use — a volume a container still references is refused.
+  bool force = 2;
 }
 
 message RemoveVolumeResponse {}

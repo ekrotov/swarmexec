@@ -23,6 +23,7 @@ func TestRingCap(t *testing.T) {
 }
 
 func TestInitLevelFilter(t *testing.T) {
+	t.Cleanup(Save())
 	ring, err := Init("info", "")
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +40,7 @@ func TestInitLevelFilter(t *testing.T) {
 }
 
 func TestTimedLevels(t *testing.T) {
+	t.Cleanup(Save())
 	ring, err := Init("debug", "")
 	if err != nil {
 		t.Fatal(err)
@@ -58,5 +60,30 @@ func TestTimedLevels(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("log missing %q in:\n%s", want, joined)
 		}
+	}
+}
+
+// Save puts back the logger and the ring a test replaced with Init.
+func TestSaveRestoresTheGlobalLogger(t *testing.T) {
+	t.Cleanup(Save())
+	outer, err := Init("info", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := Save()
+	inner, err := Init("debug", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if RingBuffer() != inner || inner == outer {
+		t.Fatal("Init must install a fresh ring")
+	}
+	restore()
+	if RingBuffer() != outer {
+		t.Error("Save's restore must put the previous ring back")
+	}
+	L().Info("after-restore")
+	if !strings.Contains(strings.Join(outer.Lines(), "\n"), "after-restore") {
+		t.Error("the restored logger must feed the restored ring")
 	}
 }

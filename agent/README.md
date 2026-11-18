@@ -127,7 +127,7 @@ build and protocol version.
 | `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` disables) | per-session idle timeout |
 | `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` disables) | per-session max duration |
 | `-allow-legacy-secret` | `SWARMEXEC_ALLOW_LEGACY_SECRET` | `true` | accept the raw shared secret from pre-binding clients |
-| `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent exec/logs/port-forward streams; negative = unlimited |
+| `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent streams (exec, logs, port-forward, event watches); negative = unlimited |
 | `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers (one per forward, not per connection); negative = unlimited |
 | `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |

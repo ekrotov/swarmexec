@@ -321,21 +321,20 @@ func (t *forwardsTab) showDetail() {
 	tv.SetBorder(true).SetTitle(fmt.Sprintf(" forward #%d ", e.id))
 	ov := u.overlayFor(pageFwdDetail, ftable, "")
 	closeDetail := ov.Close
+	cases := u.forwardDetailCases(closeDetail, func() {
+		// Stop straight from the detail view — the operator is already
+		// looking at what they are about to kill. Same key as the table.
+		forwards.remove(e.id)
+		closeDetail()
+		u.refreshForwardViews()
+		u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+	})
 	tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch {
-		case ev.Key() == tcell.KeyEscape, ev.Key() == tcell.KeyEnter:
+		if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyEnter {
 			closeDetail()
 			return nil
-		case ev.Key() == tcell.KeyRune && (ev.Rune() == u.km.Quit || ev.Rune() == 'i'):
-			closeDetail()
-			return nil
-		case ev.Key() == tcell.KeyRune && ev.Rune() == u.km.FwdStop:
-			// Stop straight from the detail view — the operator is already
-			// looking at what they are about to kill. Same key as the table.
-			forwards.remove(e.id)
-			closeDetail()
-			u.refreshForwardViews()
-			u.flash(fmt.Sprintf(" [green]stopped[white] forward to %s:%d", shortID(e.cand.ContainerID), e.remote))
+		}
+		if runRune(ev, cases) {
 			return nil
 		}
 		return ev
@@ -344,6 +343,16 @@ func (t *forwardsTab) showDetail() {
 	// failed one grows to fit its reason.
 	lines := strings.Count(b.String(), "\n") + 1
 	ov.show(centered(tv, 66, lines+2), tv)
+}
+
+// forwardDetailCases is the forward detail's rune keys. stop removes the
+// forward, closes the detail and reports it.
+func (u *ui) forwardDetailCases(closeDetail, stop func()) []runeCase {
+	return []runeCase{
+		{u.km.Quit, "quit", closeDetail},
+		{'i', "", closeDetail},
+		{u.km.FwdStop, "forward_stop", stop},
+	}
 }
 
 // keys is the key handler of the Forwards table.

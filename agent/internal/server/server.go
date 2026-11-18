@@ -67,7 +67,7 @@ type Options struct {
 	// also the resolution of every CPU percentage, which is a delta between two
 	// of them. Zero uses the default (statsampler.DefaultInterval).
 	StatsInterval time.Duration
-	// MaxStreams caps concurrent Exec + Logs + PortForward streams on this node.
+	// MaxStreams caps concurrent streams on this node: Exec, Logs, PortForward and WatchContainerEvents.
 	// Zero uses the default (limits.DefaultMaxStreams); negative disables the cap.
 	MaxStreams int
 	// MaxForwardSidecars caps live port-forward sidecar containers on this node.

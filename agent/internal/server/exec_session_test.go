@@ -25,7 +25,7 @@ func sessionServer(d DockerClient, opts Options) (*Server, *testMetrics, *syncBu
 	buf := &syncBuffer{}
 	m := &testMetrics{}
 	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	s := New(d, auth.AllowAll{}, audit.New(slog.New(slog.NewJSONHandler(buf, nil)), true), log, m, opts)
+	s := trackServer(New(d, auth.AllowAll{}, audit.New(slog.New(slog.NewJSONHandler(buf, nil)), true), log, m, opts))
 	s.identityFn = func(context.Context) (string, error) { return "test-user", nil }
 	return s, m, buf
 }

@@ -1,10 +1,12 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-// Package auth defines the authorization hook invoked before every exec and a
-// default policy. The interface is intentionally narrow so a richer policy
-// (per-user/per-service allowlists, deny root, command allowlists) can be
-// dropped in without touching the exec bridge.
+// Package auth defines the authorization hook every RPC passes before it acts
+// (Version alone is exempt, CONTRACT.md §7) and its two implementations:
+// AllowAll, the default, and Policy, which evaluates the rule file of
+// internal/policy (the -policy-file flag). The interface is intentionally
+// narrow: Request.Action names what is being asked, and a policy never touches
+// the exec bridge or any other handler.
 package auth
 
 import "context"
@@ -56,16 +58,18 @@ type Decision struct {
 	Reason string
 }
 
-// Authorizer decides whether a given client may start a given exec. It is
-// called after mTLS has already verified the client certificate chain, so the
-// Identity in the request is authenticated.
+// Authorizer decides whether a given client may perform a given action (an
+// exec, a log stream, a prune, …). It is called after transport authentication
+// — the mTLS client certificate or the shared secret — has succeeded. The
+// Identity is verified only when a client certificate was required: with a
+// shared secret and no client CA it is whatever the client claims, which is why
+// the policy refuses rules on identities there.
 type Authorizer interface {
 	Authorize(ctx context.Context, req Request) Decision
 }
 
-// AllowAll is the v1 default policy: any client whose certificate was verified
-// against the trusted CA (i.e. anyone who reaches this far) is allowed. mTLS
-// verification has already happened at the transport layer.
+// AllowAll is the default policy, used when no rule file is given: anyone who
+// passed transport authentication is allowed.
 type AllowAll struct{}
 
 // Authorize implements Authorizer.

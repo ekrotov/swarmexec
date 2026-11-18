@@ -90,49 +90,55 @@ func (u *ui) logFooterText(following bool) string {
 // cycle format (F) / auto-detect it (a) / min-level (l), grep (/) and mouse
 // capture (the configured toggle_mouse key).
 func (u *ui) logViewKeys(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) func(*tcell.EventKey) *tcell.EventKey {
+	cases := u.logViewCases(lv, follow, tv, closeLogs, setTitle, refreshHint)
 	return func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() == tcell.KeyEscape {
 			closeLogs()
 			return nil
 		}
-		if ev.Key() != tcell.KeyRune {
-			return ev
+		if runRune(ev, cases) {
+			return nil
 		}
-		// The keymap's keys are variables, so the first matching case wins —
-		// the order is the precedence when keys.yaml binds one of them to f.
-		switch ev.Rune() {
-		case u.km.Quit:
-			closeLogs()
-		case 'f':
+		return ev
+	}
+}
+
+// logViewCases is the log view's rune keys. The keymap's keys are variables,
+// so the first matching case wins — the order is the precedence when keys.yaml
+// binds one of them to f.
+func (u *ui) logViewCases(lv *logViewer, follow *atomic.Bool, tv *tview.TextView, closeLogs, setTitle, refreshHint func()) []runeCase {
+	return []runeCase{
+		{u.km.Quit, "quit", closeLogs},
+		{'f', "", func() {
 			follow.Store(!follow.Load())
 			if follow.Load() {
 				tv.ScrollToEnd() // re-enabling: jump to the newest line
 			}
 			setTitle()
 			refreshHint() // the footer names the state too, not just the title
-		case 'F':
+		}},
+		{'F', "", func() {
 			lv.cycleFormat()
 			setTitle()
-		case 'a':
-			// Five formats and no way to know which one this container uses is
-			// a question the output can answer better than the operator can.
+		}},
+		// Five formats and no way to know which one this container uses is
+		// a question the output can answer better than the operator can.
+		{'a', "", func() {
 			u.info(lv.autoDetectNow())
 			setTitle()
-		case 'l':
+		}},
+		{'l', "", func() {
 			lv.cycleLevel()
 			setTitle()
-		case '/':
-			u.logGrepPrompt(lv, tv, setTitle)
-		case u.km.ToggleMouse:
-			// Same mouse toggle as the tabs, but the tabs' flash lands on the
-			// footer hidden behind this overlay, so reflect the state in the
-			// log footer instead.
+		}},
+		{'/', "", func() { u.logGrepPrompt(lv, tv, setTitle) }},
+		// Same mouse toggle as the tabs, but the tabs' flash lands on the
+		// footer hidden behind this overlay, so reflect the state in the
+		// log footer instead.
+		{u.km.ToggleMouse, "toggle_mouse", func() {
 			u.toggleMouse()
 			refreshHint()
-		default:
-			return ev
-		}
-		return nil
+		}},
 	}
 }
 
