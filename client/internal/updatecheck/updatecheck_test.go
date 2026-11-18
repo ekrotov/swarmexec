@@ -119,7 +119,7 @@ func TestNonReleaseBuildsNeverAsk(t *testing.T) {
 	}
 }
 
-func TestFailuresAreSilentAndRetriedAfterSixHours(t *testing.T) {
+func TestFailuresAreSilentAndNotRetriedWithinADay(t *testing.T) {
 	for name, tc := range map[string]struct {
 		status int
 		body   string
@@ -138,15 +138,17 @@ func TestFailuresAreSilentAndRetriedAfterSixHours(t *testing.T) {
 			if got, ok := checker(s, c).Latest(context.Background(), "v1.0.0", dir); ok {
 				t.Fatalf("reported %q", got)
 			}
-			c.t = c.t.Add(5 * time.Hour)
+			// "At most once a day" is what the docs and the privacy pages
+			// promise, so a failure is not retried any sooner than a success.
+			c.t = c.t.Add(23 * time.Hour)
 			checker(s, c).Latest(context.Background(), "v1.0.0", dir)
 			if n := s.hits.Load(); n != 1 {
-				t.Fatalf("%d requests within the retry window, want 1", n)
+				t.Fatalf("%d requests within a day of a failure, want 1", n)
 			}
 			c.t = c.t.Add(2 * time.Hour)
 			checker(s, c).Latest(context.Background(), "v1.0.0", dir)
 			if n := s.hits.Load(); n != 2 {
-				t.Fatalf("%d requests after the retry window, want 2", n)
+				t.Fatalf("%d requests a day after a failure, want 2", n)
 			}
 		})
 	}
@@ -240,7 +242,7 @@ func TestCacheEdgeCases(t *testing.T) {
 func TestDefaults(t *testing.T) {
 	var c Checker
 	if c.url() != DefaultURL || c.client() != http.DefaultClient || c.ttl() != 24*time.Hour ||
-		c.retryTTL() != 6*time.Hour || c.timeout() != 3*time.Second || c.now().IsZero() {
+		c.timeout() != 3*time.Second || c.now().IsZero() {
 		t.Fatalf("zero Checker defaults are off")
 	}
 	// The package-level Latest is the zero Checker: a dev build returns at
