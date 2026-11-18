@@ -10,32 +10,68 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"swarmexec/internal/forwardmux"
 )
 
-// forwardMuxFlag selects multiplexing sidecar mode: one container serves every
-// connection of one forward instead of one container per connection.
+// forwardMuxFlag selects sidecar mode. The agent binary doubles as the
+// port-forward sidecar: the image is already on every node, so a forward never
+// waits on a registry pull (DESIGN-port-forward.md §3). One container serves
+// every connection of one forward.
 //
-// The old single-connection mode (-forward-to) stays, and not only for
-// compatibility: it is the simpler thing to reason about, and a sidecar that
-// somehow cannot speak the framing can still be run by hand.
+// There used to be a second, single-connection mode behind -forward-to. The
+// agent stopped starting it when muxpool landed, nothing else ever did, and
+// code only reachable by hand is code nobody tests — so it is gone, along with
+// the "ok" readiness line it used.
 const forwardMuxFlag = "-forward-mux-to"
 
-// muxReadyLine is what the agent waits for on stderr. Distinct from the
-// single-connection mode's "ok" so a mismatched pair is caught at handshake
-// rather than by one side misreading the other's payload.
-const muxReadyLine = "mux ok"
+// forwardDialTimeout bounds the dial to the target port. The sidecar shares the
+// target's network namespace, so this is a loopback connect — a slow one means
+// nothing is listening behind a firewall rule, not a slow network.
+const forwardDialTimeout = 10 * time.Second
 
-// forwardMuxTarget returns the address to forward to when args select mux mode.
+// forwardMuxTarget returns the address to forward to when args select sidecar
+// mode. It parses args before the real flag set exists: getting it wrong would
+// either break sidecar mode or, worse, make a normal agent start silently
+// forward instead of serving.
 func forwardMuxTarget(args []string) (string, bool) {
 	return flagValue(args, forwardMuxFlag)
 }
 
+// flagValue finds "name value" or "name=value" in args. The presence of the
+// flag is reported separately from its value so an empty one is a reported
+// error rather than "not in sidecar mode", which would silently start a second
+// agent.
+func flagValue(args []string, name string) (string, bool) {
+	for i, a := range args {
+		switch {
+		case a == name:
+			if i+1 < len(args) {
+				return args[i+1], true
+			}
+			return "", true
+		case len(a) > len(name)+1 && a[:len(name)+1] == name+"=":
+			return a[len(name)+1:], true
+		}
+	}
+	return "", false
+}
+
+// dialReason strips the net.OpError wrapping so the message the operator sees
+// is the reason ("connection refused"), not the plumbing.
+func dialReason(err error) string {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Err != nil {
+		return opErr.Err.Error()
+	}
+	return err.Error()
+}
+
 // runForwardMuxSidecar serves many connections to addr over one stdio.
 //
-// stderr carries exactly one control line before anything else ("mux ok" or
-// "error: <reason>"), as in single-connection mode. stdout then carries FRAMES,
+// stderr carries exactly one control line before anything else (ReadyLine or
+// "error: <reason>"). stdout then carries FRAMES,
 // not payload — see internal/forwardmux. That is the one thing about this mode
 // that must not be forgotten: the bytes on stdout are no longer the target's
 // bytes, and a reader expecting raw payload would find plausible-looking
@@ -55,7 +91,7 @@ func runForwardMuxSidecar(addr string) error {
 	}
 	_ = probe.Close()
 
-	fmt.Fprintln(os.Stderr, muxReadyLine)
+	fmt.Fprintln(os.Stderr, forwardmux.ReadyLine)
 
 	m := &muxSidecar{addr: addr, conns: map[uint32]*muxTarget{}}
 	return m.serve(os.Stdin, os.Stdout)

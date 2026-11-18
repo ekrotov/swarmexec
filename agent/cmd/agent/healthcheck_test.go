@@ -200,7 +200,6 @@ func TestProbeArgs(t *testing.T) {
 		{"no proc", nil, noCmdline, nil, false},
 		{"foreign pid 1", nil, cmdline("/bin/sh", "-c", "x"), nil, false},
 		{"mux sidecar", nil, cmdline("/agent", "-forward-mux-to", "127.0.0.1:5432"), nil, true},
-		{"legacy sidecar", nil, cmdline("/agent", "-forward-to=127.0.0.1:5432"), nil, true},
 	}
 	for _, c := range cases {
 		got, sidecar := probeArgs(c.own, c.pid1)

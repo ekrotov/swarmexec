@@ -189,14 +189,16 @@ func TestActionable(t *testing.T) {
 	}
 }
 
-// Register must make a new analyzer visible to Scan.
-func TestRegister(t *testing.T) {
+// The registry drives Scan: an analyzer appended to it must be run. This
+// stands in for the retired Register hook — the registry is package-private
+// and nothing outside this package ever added to it.
+func TestRegistryDrivesScan(t *testing.T) {
 	before := len(Scan(svcWith("1000"))) // a clean service: no findings
-	Register(stubAnalyzer{})
+	registry = append(registry, stubAnalyzer{})
 	defer func() { registry = registry[:len(registry)-1] }() // undo for other tests
 	after := Scan(svcWith("1000"))
 	if len(after) != before+1 {
-		t.Errorf("registered analyzer not run: before=%d after=%d", before, len(after))
+		t.Errorf("appended analyzer not run: before=%d after=%d", before, len(after))
 	}
 }
 

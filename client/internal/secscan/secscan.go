@@ -65,10 +65,6 @@ var registry = []Analyzer{
 	imagePinAnalyzer{},
 }
 
-// Register appends an analyzer to the registry, for extensions outside this
-// package. Not safe for concurrent use with Scan; call it during init/setup.
-func Register(a Analyzer) { registry = append(registry, a) }
-
 // Describer lets an analyzer say, in a few words, what it looks for. The UI
 // lists these so "no risks found" can state what was actually checked, and so
 // that list cannot drift from the registry the way a hardcoded one does.

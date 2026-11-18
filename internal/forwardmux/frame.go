@@ -39,6 +39,13 @@ const (
 	KindClose uint8 = 6
 )
 
+// ReadyLine is the sidecar's readiness line on stderr, the last thing it says
+// before its stdout turns into frames. It lives here, next to the framing it
+// announces, because both sides must agree on it for the same reason they must
+// agree on the frame kinds: a sidecar that answered anything else would have
+// its frames read as something they are not.
+const ReadyLine = "mux ok"
+
 // HeaderLen is connection id (4) + kind (1) + payload length (4).
 const HeaderLen = 9
 

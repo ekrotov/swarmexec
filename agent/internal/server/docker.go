@@ -41,9 +41,10 @@ type DockerClient interface {
 	// previous reading itself, which is what a CPU percentage needs, and a
 	// stream per container would cost far more than it buys at our resolution.
 	ContainerStats(ctx context.Context, containerID string, options client.ContainerStatsOptions) (client.ContainerStatsResult, error)
-	// Images are node-local and invisible to the manager; these two back the
-	// per-node image view and its cleanup.
-	ImageList(ctx context.Context, options client.ImageListOptions) (client.ImageListResult, error)
+	// Images are node-local and invisible to the manager; this backs the
+	// per-node image cleanup. The view itself reads DiskUsage, not ImageList
+	// (see images.go), so no listing call belongs in this interface — every
+	// method here has to be implemented by every fake.
 	ImagePrune(ctx context.Context, options client.ImagePruneOptions) (client.ImagePruneResult, error)
 	// The prune categories beyond images (see prune.go). There is deliberately
 	// no NetworksPrune here: on a manager the Engine's networks/prune also

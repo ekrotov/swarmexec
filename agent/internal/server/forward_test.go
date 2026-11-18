@@ -599,9 +599,13 @@ func TestSidecarControl_ParsesReadinessLine(t *testing.T) {
 		line    string
 		wantErr string
 	}{
-		{"ok", "ok\n", ""},
+		{"mux ok", forwardmux.ReadyLine + "\n", ""},
 		{"error", "error: connection refused\n", "connection refused"},
 		{"garbage", "what?\n", `unexpected readiness line "what?"`},
+		// The retired single-connection sidecar said "ok". Accepting it would
+		// let a mismatched pair get past the handshake and read each other's
+		// payload as frames.
+		{"retired single-connection line", "ok\n", `unexpected readiness line "ok"`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -630,7 +634,7 @@ func TestSidecarControl_ParsesReadinessLine(t *testing.T) {
 func TestSidecarControl_ReportsOnlyOnce(t *testing.T) {
 	ready := make(chan error, 2)
 	w := &sidecarControl{log: discardLogger(), id: "s1", ready: ready}
-	if _, err := w.Write([]byte("ok\nerror: too late\n")); err != nil {
+	if _, err := w.Write([]byte(forwardmux.ReadyLine + "\nerror: too late\n")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if err := <-ready; err != nil {
