@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 )
 
 func newPsCmd(g *globalFlags) *cobra.Command {
@@ -44,7 +43,7 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	ctx := cmdContext(cmd)
@@ -56,12 +55,12 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
 	cands, err := r.Candidates(ctx, service)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	if asJSON {
 		rows := make([]psRow, 0, len(cands))
@@ -71,12 +70,20 @@ func runPs(cmd *cobra.Command, g *globalFlags, args []string, asJSON bool) error
 				Node: c.NodeName, IP: c.NodeAddr, UptimeSecs: int64(c.Uptime.Seconds()),
 			})
 		}
-		return printJSON(os.Stdout, rows)
+		if err := printJSON(os.Stdout, rows); err != nil {
+			return err
+		}
+		// Same outcome as the text mode below: a named service with no
+		// running task is a failure, not an empty answer.
+		if len(rows) == 0 && service != "" {
+			return &cliError{code: exitTransport, err: fmt.Errorf("no running tasks for service %q", service)}
+		}
+		return nil
 	}
 
 	if len(cands) == 0 {
 		if service != "" {
-			return &cliError{code: session.TransportFailure, err: fmt.Errorf("no running tasks for service %q", service)}
+			return &cliError{code: exitTransport, err: fmt.Errorf("no running tasks for service %q", service)}
 		}
 		fmt.Fprintln(os.Stderr, "no running tasks")
 		return nil

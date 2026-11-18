@@ -62,15 +62,15 @@ func newMCPCmd(g *globalFlags) *cobra.Command {
 func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 	def, err := mcpaccess.ParseDefault(f.defaultAccess)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	allowReport, err := mcp.ParseAllow(f.allow)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	extra, err := mcp.ParseContexts(f.contexts)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	// From here on stdout carries the protocol and nothing else. A stray line
@@ -101,7 +101,7 @@ func runMCP(cmd *cobra.Command, g *globalFlags, f *mcpFlags) error {
 	defer s.Close()
 
 	if err := s.Serve(cmdContext(cmd), os.Stdin, protocol); err != nil {
-		return &cliError{code: 1, err: err}
+		return &cliError{code: exitNo, err: err}
 	}
 	return nil
 }

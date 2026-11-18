@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/stackfile"
 )
 
@@ -65,20 +64,20 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 	ctx := cmdContext(cmd)
 	dcli, err := newDockerClient(ctx, g.dockerContext)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 
 	plan, err := stackfile.PlanFile(ctx, dcli, path, name)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	stackfile.WritePlanReport(out, plan)
 
 	if f.check {
 		if plan.Actionable() {
 			// A checking mode that always exits 0 cannot gate anything.
-			return &cliError{code: 1, silent: true}
+			return &cliError{code: exitNo, silent: true}
 		}
 		return nil
 	}
@@ -86,7 +85,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 	if plan.Actionable() && !f.despiteFindings {
 		if !f.yes && !confirmDeploy(cmd, plan) {
 			fmt.Fprintln(errOut, "aborted — nothing was deployed")
-			return &cliError{code: 1, silent: true}
+			return &cliError{code: exitNo, silent: true}
 		}
 		if f.yes {
 			// --yes means "do not ask", not "ignore what you found". Saying
@@ -94,7 +93,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 			// time someone put it in CI.
 			fmt.Fprintln(errOut, "refusing to deploy: the check found something above informational.")
 			fmt.Fprintln(errOut, "Fix the file, or deploy deliberately with --despite-findings.")
-			return &cliError{code: 1, silent: true}
+			return &cliError{code: exitNo, silent: true}
 		}
 	}
 
@@ -105,7 +104,7 @@ func runStackDeploy(cmd *cobra.Command, g *globalFlags, f *stackDeployFlags, arg
 		if s := res.Summary(); s != "nothing to do" {
 			fmt.Fprintf(errOut, "partially applied before the failure: %s\n", s)
 		}
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	for _, n := range res.Notes() {
 		fmt.Fprintln(errOut, n)

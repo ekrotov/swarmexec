@@ -193,6 +193,13 @@ func ValidateRotateValue(data []byte) error {
 	return nil
 }
 
+// ManagerError marks a failure to reach the manager, as opposed to a refusal
+// based on what it said: callers map it to the transport exit code.
+type ManagerError struct{ Err error }
+
+func (e *ManagerError) Error() string { return e.Err.Error() }
+func (e *ManagerError) Unwrap() error { return e.Err }
+
 // loadRotateState reads the two secrets and every service. A NAME_rotating
 // this tool did not create for NAME is refused, as is asking to rotate the
 // stand-in itself.
@@ -200,7 +207,7 @@ func loadRotateState(ctx context.Context, api SecretRotateAPI, name string) (rot
 	st := rotateState{name: name}
 	secs, err := api.SecretList(ctx, client.SecretListOptions{})
 	if err != nil {
-		return st, fmt.Errorf("list secrets: %w", err)
+		return st, &ManagerError{fmt.Errorf("list secrets: %w", err)}
 	}
 	temp := RotateTempName(name)
 	for i := range secs.Items {
@@ -226,7 +233,7 @@ func loadRotateState(ctx context.Context, api SecretRotateAPI, name string) (rot
 	}
 	svcs, err := api.ServiceList(ctx, client.ServiceListOptions{})
 	if err != nil {
-		return st, fmt.Errorf("list services: %w", err)
+		return st, &ManagerError{fmt.Errorf("list services: %w", err)}
 	}
 	st.services = svcs.Items
 	return st, nil

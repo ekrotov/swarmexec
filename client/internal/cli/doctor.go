@@ -16,7 +16,6 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/client/internal/updatecheck"
 )
@@ -73,7 +72,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	// An incomplete agent config does not stop doctor: it is the command for
 	// exactly that situation, and "agent: NOT DEPLOYED" is the answer on a
@@ -87,14 +86,14 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 
 	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
 	info := infoRes.Info
 	if err != nil {
 		printManagerUnreachable(out, g.version, latest(), f.json, err)
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitTransport, silent: true}
 	}
 
 	agentDep := swarmops.AgentDeployed(ctx, dcli)
@@ -102,7 +101,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 
 	nodes, err := resolve.New(dcli, addrModeOf(cfg)).Nodes(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("list swarm nodes: %w", err)}
 	}
 	var rows []doctorNode
 	nodesOK, configError := true, ""
@@ -125,7 +124,7 @@ func runDoctor(cmd *cobra.Command, g *globalFlags, f *doctorFlags) error {
 		printDoctorTable(out, report, info.Swarm.Nodes)
 	}
 	if !report.Healthy {
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitTransport, silent: true}
 	}
 	return nil
 }

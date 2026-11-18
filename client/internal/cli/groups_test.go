@@ -41,8 +41,8 @@ func TestGroupsRejectUnknownSubcommand(t *testing.T) {
 			fresh.SetErr(&bytes.Buffer{})
 			err := fresh.Execute()
 			code := reportError(&errBuf, err, &globalFlags{})
-			if code != usageExitCode {
-				t.Fatalf("exit = %d, want %d (stderr %q)", code, usageExitCode, errBuf.String())
+			if code != exitUsage {
+				t.Fatalf("exit = %d, want %d (stderr %q)", code, exitUsage, errBuf.String())
 			}
 			if !strings.Contains(errBuf.String(), `unknown command "chekc"`) {
 				t.Errorf("stderr = %q, want unknown command", errBuf.String())

@@ -19,7 +19,6 @@ import (
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	pb "swarmexec/internal/pb"
 )
 
@@ -62,15 +61,15 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	localPort, remotePort, err := parsePortSpec(args[1])
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	if !isLoopbackAddr(f.address) {
@@ -83,7 +82,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
 	ep, err := r.Resolve(ctx, resolve.Request{Target: args[0], NodeHint: f.node})
@@ -92,7 +91,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 			ep, err = pickCandidate(amb, false, cmd.ErrOrStderr())
 		}
 		if err != nil {
-			return &cliError{code: session.TransportFailure, err: err}
+			return &cliError{code: exitTransport, err: err}
 		}
 	}
 
@@ -105,7 +104,7 @@ func runPortForward(cmd *cobra.Command, g *globalFlags, f *portForwardFlags, arg
 		connectTimeout: f.connectTimeout,
 	}, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: explainSession(ctx, cfg, dcli, err)}
+		return &cliError{code: exitTransport, err: explainSession(ctx, cfg, dcli, err)}
 	}
 	return nil
 }

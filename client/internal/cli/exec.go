@@ -80,10 +80,10 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	dockerEP := resolveEndpoint(g.dockerContext)
 	cfg, err := g.resolveConfig(cmd, dockerEP)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	if err := cfg.Validate(); err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	ctx := cmdContext(cmd)
@@ -99,7 +99,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 	// Resolve node + container via the manager.
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	r := resolve.New(dcli, addrModeOf(cfg))
 	ep, err := r.Resolve(ctx, resolve.Request{Target: target, NodeHint: f.node})
@@ -108,7 +108,7 @@ func runExec(cmd *cobra.Command, g *globalFlags, f *execFlags, args []string) er
 			ep, err = pickCandidate(amb, stdinIsTerm, cmd.ErrOrStderr())
 		}
 		if err != nil {
-			return &cliError{code: session.TransportFailure, err: err}
+			return &cliError{code: exitTransport, err: err}
 		}
 	}
 
@@ -209,9 +209,9 @@ func execInto(ctx context.Context, ac *agentcall.Client, ep resolve.Endpoint, p 
 		defer close(done)
 		go func() {
 			select {
-			case <-sigCh:
+			case s := <-sigCh:
 				restorer.Restore()
-				os.Exit(session.TransportFailure)
+				os.Exit(exitCodeForSignal(s))
 			case <-done:
 			}
 		}()

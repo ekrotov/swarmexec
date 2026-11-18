@@ -129,7 +129,7 @@ func TestStackCheckAndSecurityCheck(t *testing.T) {
 		t.Error("a check deployed something")
 	}
 	_, _, err := runCmd(t, newStackCheckCmd(g), filepath.Join(dir, "missing.yml"))
-	if exitCode(err) != usageExitCode {
+	if exitCode(err) != exitUsage {
 		t.Errorf("missing file: %v", err)
 	}
 }

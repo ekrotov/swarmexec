@@ -86,7 +86,7 @@ func TestWaitRun(t *testing.T) {
 		t.Errorf("healthy: %q, %v", out, err)
 	}
 
-	if _, err = run("--stack", "nostack"); exit(err) != usageExitCode || err.Error() != `no services in stack "nostack"` {
+	if _, err = run("--stack", "nostack"); exit(err) != exitUsage || err.Error() != `no services in stack "nostack"` {
 		t.Errorf("empty stack: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestWaitRun(t *testing.T) {
 	if err := os.WriteFile(bad.configPath, []byte("port: [\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runCmd(t, newWaitCmd(&bad), "--healthy", "shop_web"); exit(err) != usageExitCode {
+	if _, _, err := runCmd(t, newWaitCmd(&bad), "--healthy", "shop_web"); exit(err) != exitUsage {
 		t.Errorf("bad config: %v", err)
 	}
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/prunesched"
 )
@@ -43,11 +42,11 @@ func newPruneScheduleCmd(g *globalFlags, path string) *cobra.Command {
 			out := cmd.OutOrStdout()
 			dcli, err := newDockerClient(ctx, g.dockerContext)
 			if err != nil {
-				return &cliError{code: usageExitCode, err: err}
+				return &cliError{code: exitUsage, err: err}
 			}
 			svc, err := swarmops.FindAgentService(ctx, dcli)
 			if err != nil {
-				return &cliError{code: session.TransportFailure, err: err}
+				return &cliError{code: exitTransport, err: err}
 			}
 			s, perr := swarmops.AgentSchedule(svc)
 			if perr != nil {
@@ -148,11 +147,11 @@ func runPruneScheduleSet(cmd *cobra.Command, g *globalFlags, f *pruneScheduleSet
 	}
 	dcli, err := newDockerClient(ctx, tctx.Name)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	svc, err := swarmops.FindAgentService(ctx, dcli)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	// A current spec with broken labels is no reason to refuse: the defaults
 	// stand in for it, and this save is what repairs it.
@@ -163,17 +162,17 @@ func runPruneScheduleSet(cmd *cobra.Command, g *globalFlags, f *pruneScheduleSet
 	}
 	s, err := applyScheduleFlags(cur, f, cmd.Flags().Changed)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	fmt.Fprintf(out, "agent service %q on context %q:\n\n", svc.Spec.Name, tctx.Name)
 	fmt.Fprint(out, swarmops.DescribeSchedule(s, time.Now(), 3))
 	fmt.Fprintf(out, "\n%s\n", swarmops.ScheduleRestartWarning)
 	if !f.yes && !confirm("Save?") {
 		fmt.Fprintln(out, "aborted (non-interactive runs need --yes)")
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitTransport, silent: true}
 	}
 	if err := swarmops.SaveAgentSchedule(ctx, dcli, svc, s); err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	fmt.Fprintln(out, "✓ saved — the agents pick it up as they restart")
 	return nil

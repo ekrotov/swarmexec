@@ -167,7 +167,7 @@ func TestSecretRotateRun(t *testing.T) {
 		} {
 			f := rotateSwarm()
 			_, _, err := run(f, c.stdin, c.args...)
-			if exitCode(err) != usageExitCode || !strings.Contains(err.Error(), c.want) {
+			if exitCode(err) != exitUsage || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("%s: err = %v, want usage error containing %q", c.name, err, c.want)
 			}
 			if string(secretByName(f, "db").Spec.Data) != "old" {
@@ -215,14 +215,14 @@ func TestSecretRotateRun(t *testing.T) {
 		f := rotateSwarm()
 		q := usePrompts(t, "y\n", false)
 		_, _, err := run(f, "", "db", "--from-file", path)
-		if exitCode(err) != usageExitCode || !strings.Contains(err.Error(), "pass --yes") || q.String() != "" {
+		if exitCode(err) != exitUsage || !strings.Contains(err.Error(), "pass --yes") || q.String() != "" {
 			t.Errorf("no terminal: err %v asked %q", err, q.String())
 		}
 		// --from-stdin on a terminal: stdin is the value, so it cannot also
 		// carry the answer.
 		usePrompts(t, "y\n", true)
 		_, _, err = run(f, value, "db", "--from-stdin")
-		if exitCode(err) != usageExitCode || !strings.Contains(err.Error(), "pass --yes") {
+		if exitCode(err) != exitUsage || !strings.Contains(err.Error(), "pass --yes") {
 			t.Errorf("--from-stdin: err %v", err)
 		}
 		if string(secretByName(f, "db").Spec.Data) != "old" {

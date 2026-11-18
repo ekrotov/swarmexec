@@ -259,7 +259,7 @@ func TestPortForwardRun(t *testing.T) {
 
 	t.Run("a bad port spec is a usage error", func(t *testing.T) {
 		for _, spec := range []string{"0", "http", "9090:0"} {
-			if _, _, err := runIO(t, newPortForwardCmd(g), "", "shop_web", spec); exitCode(err) != usageExitCode {
+			if _, _, err := runIO(t, newPortForwardCmd(g), "", "shop_web", spec); exitCode(err) != exitUsage {
 				t.Errorf("spec %q: %v", spec, err)
 			}
 		}

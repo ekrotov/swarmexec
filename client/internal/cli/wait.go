@@ -19,7 +19,6 @@ import (
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 )
 
@@ -175,7 +174,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 	dockerEP := resolveEndpoint(g.dockerContext)
 	dcli, err := dockerEP.connect(ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	// Without --healthy nothing dials an agent, so the address mode is moot
 	// and no agent configuration is needed: wait works with Docker access alone.
@@ -184,10 +183,10 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 	if f.healthy {
 		cfg, err := g.resolveConfig(cmd, dockerEP)
 		if err != nil {
-			return &cliError{code: usageExitCode, err: err}
+			return &cliError{code: exitUsage, err: err}
 		}
 		if err := cfg.Validate(); err != nil {
-			return &cliError{code: usageExitCode, err: err}
+			return &cliError{code: exitUsage, err: err}
 		}
 		r = resolve.New(dcli, addrModeOf(cfg))
 		ac := agentcall.New(cfg)
@@ -199,7 +198,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 
 	names, err := waitTargets(ctx, r, args, f.stack)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 
 	w := &waitProgress{out: cmd.ErrOrStderr(), since: time.Now(), healthy: f.healthy,
@@ -208,7 +207,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 	for {
 		snaps, err := waitPoll(ctx, dcli, r, names, health)
 		if err != nil {
-			return &cliError{code: session.TransportFailure, err: err}
+			return &cliError{code: exitTransport, err: err}
 		}
 		now := time.Now()
 		if done, err := w.step(snaps, now); done || err != nil {
@@ -219,7 +218,7 @@ func runWait(cmd *cobra.Command, g *globalFlags, f *waitFlags, args []string) er
 		}
 		select {
 		case <-ctx.Done():
-			return &cliError{code: 1, err: ctx.Err()}
+			return &cliError{code: exitNo, err: ctx.Err()}
 		case <-time.After(waitPollInterval):
 		}
 	}
@@ -250,9 +249,9 @@ func (w *waitProgress) step(snaps []waitSnapshot, now time.Time) (bool, error) {
 			// The failure is the command's error, with the swarmexec:
 			// prefix every other command's error has (review C-08).
 			if s.missing {
-				return false, &cliError{code: 1, err: fmt.Errorf("no such service %q", s.name)}
+				return false, &cliError{code: exitNo, err: fmt.Errorf("no such service %q", s.name)}
 			}
-			return false, &cliError{code: 1, err: fmt.Errorf("%s: %s", s.name, why)}
+			return false, &cliError{code: exitNo, err: fmt.Errorf("%s: %s", s.name, why)}
 		}
 		if v == waitConverged {
 			if w.settledSince[s.name].IsZero() {
@@ -295,7 +294,7 @@ func (w *waitProgress) timedOut(snaps []waitSnapshot, now time.Time, timeout tim
 	for _, s := range stuck {
 		fmt.Fprintf(w.out, "✗ %s\n", s)
 	}
-	return &cliError{code: 1, err: fmt.Errorf("timed out after %s waiting for %d service(s)", timeout, len(stuck))}
+	return &cliError{code: exitNo, err: fmt.Errorf("timed out after %s waiting for %d service(s)", timeout, len(stuck))}
 }
 
 // waitTargets resolves the named services and the stack into service names.

@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/resolve"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/pb"
 	"swarmexec/internal/prunesched"
@@ -95,7 +94,7 @@ func runNodeLs(cmd *cobra.Command, g *globalFlags, f *nodeLsFlags) error {
 	defer c.dcli.Close()
 	nodes, err := swarmops.ListNodes(c.ctx, c.dcli)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	var vols map[string]int
 	if !f.skipAgents {
@@ -187,9 +186,9 @@ func matchNode[T any](items []T, ref string, id, name func(T) string) (T, error)
 	case 1:
 		return prefixed[0], nil
 	case 0:
-		return zero, &cliError{code: session.TransportFailure, err: fmt.Errorf("no node %q in the swarm", ref)}
+		return zero, &cliError{code: exitTransport, err: fmt.Errorf("no node %q in the swarm", ref)}
 	}
-	return zero, &cliError{code: usageExitCode, err: fmt.Errorf("node id prefix %q is ambiguous; give more of it, or the hostname", ref)}
+	return zero, &cliError{code: exitUsage, err: fmt.Errorf("node id prefix %q is ambiguous; give more of it, or the hostname", ref)}
 }
 
 // --- node prune --------------------------------------------------------------
@@ -263,7 +262,7 @@ func pruneChoiceFromFlags(categories, until string) (pruneChoice, error) {
 func runNodePrune(cmd *cobra.Command, g *globalFlags, f *nodePruneFlags, ref string) error {
 	choice, err := pruneChoiceFromFlags(f.categories, f.until)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	c, err := connectCluster(cmd, g)
 	if err != nil {
@@ -277,7 +276,7 @@ func runNodePrune(cmd *cobra.Command, g *globalFlags, f *nodePruneFlags, ref str
 	defer ac.Close()
 	ns, err := c.r.Nodes(c.ctx)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("list swarm nodes: %w", err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("list swarm nodes: %w", err)}
 	}
 	target, err := matchNode(ns, ref, func(n resolve.Node) string { return n.ID }, func(n resolve.Node) string { return n.Name })
 	if err != nil {
@@ -295,16 +294,16 @@ func runNodePrune(cmd *cobra.Command, g *globalFlags, f *nodePruneFlags, ref str
 	fmt.Fprint(out, strings.ReplaceAll(plainText(pruneConfirmBody(target.Name, choice, stats)), " — …\n", " — no figure\n"))
 	if !f.yes && !confirm("Prune?") {
 		fmt.Fprintln(errOut, "aborted — nothing was pruned (non-interactive runs need --yes)")
-		return &cliError{code: session.TransportFailure, silent: true}
+		return &cliError{code: exitTransport, silent: true}
 	}
 	resp, err := ac.Prune(c.ctx, target, choice.request(), f.connectTimeout)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("prune on %s: %w", target.Name, err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("prune on %s: %w", target.Name, err)}
 	}
 	fmt.Fprint(out, "\n"+plainText(pruneResultText(target.Name, resp)))
 	for _, r := range resp.GetResults() {
 		if r.GetError() != "" {
-			return &cliError{code: session.TransportFailure, silent: true}
+			return &cliError{code: exitTransport, silent: true}
 		}
 	}
 	return nil
@@ -384,13 +383,13 @@ func parseAvailability(s string) (swarm.NodeAvailability, error) {
 func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref string) error {
 	fl := cmd.Flags()
 	if !fl.Changed("availability") && len(f.labelAdd) == 0 && len(f.labelRm) == 0 {
-		return &cliError{code: usageExitCode, err: errors.New("nothing to change: give --availability, --label-add or --label-rm")}
+		return &cliError{code: exitUsage, err: errors.New("nothing to change: give --availability, --label-add or --label-rm")}
 	}
 	var avail swarm.NodeAvailability
 	if fl.Changed("availability") {
 		a, err := parseAvailability(f.availability)
 		if err != nil {
-			return &cliError{code: usageExitCode, err: err}
+			return &cliError{code: exitUsage, err: err}
 		}
 		avail = a
 	}
@@ -401,7 +400,7 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 	defer c.dcli.Close()
 	nodes, err := swarmops.ListNodes(c.ctx, c.dcli)
 	if err != nil {
-		return &cliError{code: session.TransportFailure, err: err}
+		return &cliError{code: exitTransport, err: err}
 	}
 	n, err := matchNode(nodes, ref, func(n swarmops.NodeInfo) string { return n.ID }, func(n swarmops.NodeInfo) string { return n.Hostname })
 	if err != nil {
@@ -409,7 +408,7 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 	}
 	labels, err := nodeLabelsAfter(n.Labels, f.labelAdd, f.labelRm)
 	if err != nil {
-		return &cliError{code: usageExitCode, err: err}
+		return &cliError{code: exitUsage, err: err}
 	}
 	out := cmd.OutOrStdout()
 	if avail != "" {
@@ -419,7 +418,7 @@ func runNodeUpdate(cmd *cobra.Command, g *globalFlags, f *nodeUpdateFlags, ref s
 	}
 	if len(f.labelAdd) > 0 || len(f.labelRm) > 0 {
 		if err := swarmops.SetNodeLabels(c.ctx, c.dcli, n.ID, n.Version, labels); err != nil {
-			return &cliError{code: session.TransportFailure, err: err}
+			return &cliError{code: exitTransport, err: err}
 		}
 		fmt.Fprintf(out, "%s: labels %s\n", n.Hostname, labelsText(labels))
 	}
@@ -433,11 +432,11 @@ func (c *clusterConn) setAvailability(out, errOut io.Writer, n swarmops.NodeInfo
 			"Services whose tasks cannot be placed elsewhere will go unschedulable.\n", n.Hostname, n.Tasks)
 		if !confirm("Drain?") {
 			fmt.Fprintln(errOut, "aborted — the node was not changed (non-interactive runs need --yes)")
-			return &cliError{code: session.TransportFailure, silent: true}
+			return &cliError{code: exitTransport, silent: true}
 		}
 	}
 	if err := swarmops.SetNodeAvailability(c.ctx, c.dcli, n.ID, n.Version, to); err != nil {
-		return &cliError{code: session.TransportFailure, err: fmt.Errorf("set %s to %s: %w", n.Hostname, to, err)}
+		return &cliError{code: exitTransport, err: fmt.Errorf("set %s to %s: %w", n.Hostname, to, err)}
 	}
 	fmt.Fprintf(out, "%s: availability %s\n", n.Hostname, to)
 	return nil

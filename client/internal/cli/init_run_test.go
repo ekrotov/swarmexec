@@ -249,8 +249,8 @@ func TestInitRefusesAnExistingAgentWithoutForce(t *testing.T) {
 	f := manager()
 	existingAgent(f)
 	r := runInitOn(t, f, "", "--wait=false")
-	if c := r.code(t); c != usageExitCode {
-		t.Errorf("exit code %d, want %d", c, usageExitCode)
+	if c := r.code(t); c != exitUsage {
+		t.Errorf("exit code %d, want %d", c, exitUsage)
 	}
 	if want := `service "swarmexec_agent" already exists; re-run with --force to update it`; r.err.Error() != want {
 		t.Errorf("error = %q, want %q", r.err, want)
@@ -398,8 +398,8 @@ func TestInitRegistryAuth(t *testing.T) {
 	const image = "reg.example/agent:2"
 
 	r := runInitOn(t, manager(), "", "--image", image, "--wait=false")
-	if c := r.code(t); c != usageExitCode {
-		t.Errorf("no credentials: exit %d, want %d", c, usageExitCode)
+	if c := r.code(t); c != exitUsage {
+		t.Errorf("no credentials: exit %d, want %d", c, exitUsage)
 	}
 	if !strings.Contains(r.err.Error(), "no registry credentials for reg.example found") ||
 		!strings.HasSuffix(r.out, "[2/3] agent service on port 9443 … failed\n") {
@@ -466,8 +466,8 @@ func TestInitPreflightRefusals(t *testing.T) {
 				f.Services = []swarm.Service{publishing("web", c.taken)}
 			}
 			r := runInitOn(t, f, "", append([]string{"--wait=false"}, c.args...)...)
-			if code := r.code(t); code != usageExitCode {
-				t.Errorf("exit %d, want %d", code, usageExitCode)
+			if code := r.code(t); code != exitUsage {
+				t.Errorf("exit %d, want %d", code, exitUsage)
 			}
 			if !strings.HasPrefix(r.err.Error(), c.wantErr) {
 				t.Errorf("error = %q, want it to start %q", r.err, c.wantErr)

@@ -12,6 +12,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -81,7 +85,64 @@ func Execute(v Version) int {
 	g := &globalFlags{version: v}
 	root := newRootCmd(g, v)
 
-	return reportError(os.Stderr, root.Execute(), g)
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigs)
+	return runWithSignals(root, g, sigs, os.Stderr)
+}
+
+// stopGrace is how long a command gets, after the first stop signal, to notice
+// its cancelled context, run its cleanups and return. Past it the process
+// ends anyway: a command stuck in a blocking read must not make Ctrl-C a
+// no-op now that the default "die at once" is gone.
+var stopGrace = 5 * time.Second
+
+// hardExit ends the process without waiting for the command. A variable so a
+// test can watch it instead of dying.
+var hardExit = os.Exit
+
+// runWithSignals runs root with a context that the first stop signal on sigs
+// cancels (CLI-02). The command sees ctx.Done(), returns, its deferred
+// cleanups run (the askpass socket, agent connections, a port-forward's
+// sidecar, log filter flushes) and the process exits with 128+signal. A second
+// signal, or the command not returning within stopGrace, ends the process at
+// once, after the askpass cleanup.
+func runWithSignals(root *cobra.Command, g *globalFlags, sigs <-chan os.Signal, w io.Writer) int {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	finished := make(chan struct{})
+	var got atomic.Value // os.Signal, set before ctx is cancelled
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-finished:
+			return
+		case s := <-sigs:
+			got.Store(s)
+			cancel()
+			timer := time.NewTimer(stopGrace)
+			defer timer.Stop()
+			select {
+			case <-finished:
+				return
+			case <-sigs:
+			case <-timer.C:
+			}
+			stopAskpass()
+			hardExit(exitCodeForSignal(s))
+		}
+	}()
+
+	err := root.ExecuteContext(ctx)
+	code := reportError(w, err, g)
+	close(finished)
+	<-watcherDone
+	if s, ok := got.Load().(os.Signal); ok {
+		return exitCodeForSignal(s)
+	}
+	return code
 }
 
 // reportError prints a command's failure to w and returns the exit code.
@@ -103,7 +164,7 @@ func reportError(w io.Writer, err error, g *globalFlags) int {
 	if errors.As(err, &ae) {
 		fmt.Fprintln(w, "usage: "+ae.usage)
 	}
-	return usageExitCode
+	return exitUsage
 }
 
 // sshAuthHintFor names the way past an ssh sign-in failure on the endpoint
@@ -187,6 +248,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newConnectionHelpTopic(root))
 	registerCompletions(root, g)
 	usageOnArgErrors(root)
+	runtimeErrors(root)
 	return root
 }
 

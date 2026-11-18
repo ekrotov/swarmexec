@@ -271,10 +271,10 @@ func TestNodePruneRefusals(t *testing.T) {
 		msg  string
 	}{
 		{[]string{"nope", "--yes"}, 125, `no node "nope"`},
-		{[]string{"n", "--yes"}, usageExitCode, "ambiguous"},
-		{[]string{"n1", "--categories", "images,dangling-images"}, usageExitCode, "name one of them"},
-		{[]string{"n1", "--categories", "bogus"}, usageExitCode, "not a category"},
-		{[]string{"n1", "--containers-until", "soon"}, usageExitCode, "duration"},
+		{[]string{"n", "--yes"}, exitUsage, "ambiguous"},
+		{[]string{"n1", "--categories", "images,dangling-images"}, exitUsage, "name one of them"},
+		{[]string{"n1", "--categories", "bogus"}, exitUsage, "not a category"},
+		{[]string{"n1", "--containers-until", "soon"}, exitUsage, "duration"},
 	} {
 		_, _, err := runCmd(t, newNodePruneCmd(g), c.args...)
 		if exitCode(err) != c.code || !strings.Contains(err.Error(), c.msg) {
@@ -324,9 +324,9 @@ func TestNodeUpdateRefusals(t *testing.T) {
 		code int
 		msg  string
 	}{
-		{[]string{"n1"}, usageExitCode, "nothing to change"},
-		{[]string{"n1", "--availability", "off"}, usageExitCode, "active, pause or drain"},
-		{[]string{"n1", "--label-add", "novalue"}, usageExitCode, "key=value"},
+		{[]string{"n1"}, exitUsage, "nothing to change"},
+		{[]string{"n1", "--availability", "off"}, exitUsage, "active, pause or drain"},
+		{[]string{"n1", "--label-add", "novalue"}, exitUsage, "key=value"},
 		{[]string{"nope", "--availability", "pause"}, 125, `no node "nope"`},
 	} {
 		_, _, err := runCmd(t, newNodeUpdateCmd(g), c.args...)

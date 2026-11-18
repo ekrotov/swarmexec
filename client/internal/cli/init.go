@@ -29,7 +29,6 @@ import (
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
-	"swarmexec/client/internal/session"
 	"swarmexec/client/internal/swarmops"
 	"swarmexec/internal/deploy"
 	"swarmexec/internal/policy"
@@ -159,17 +158,17 @@ func connectInitManager(ctx context.Context, out io.Writer, g *globalFlags) (*cl
 	}
 	dcli, err := newDockerClient(ctx, tctx.Name)
 	if err != nil {
-		return nil, "", &cliError{code: usageExitCode, err: err}
+		return nil, "", &cliError{code: exitUsage, err: err}
 	}
 	fmt.Fprintf(out, "deploying agents into Docker context %q (%s)\n", tctx.Name, hostOrDefault(tctx.Host))
 
 	infoRes, err := dcli.Info(ctx, client.InfoOptions{})
 	info := infoRes.Info
 	if err != nil {
-		return nil, "", &cliError{code: session.TransportFailure, err: fmt.Errorf("query Docker manager: %w", err)}
+		return nil, "", &cliError{code: exitTransport, err: fmt.Errorf("query Docker manager: %w", err)}
 	}
 	if !info.Swarm.ControlAvailable {
-		return nil, "", &cliError{code: usageExitCode, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
+		return nil, "", &cliError{code: exitUsage, err: fmt.Errorf("context %q is not a Swarm manager (pick a manager context, or set --context)", tctx.Name)}
 	}
 	fmt.Fprintf(out, "manager: %s (%s)\n", info.Name, plural(info.Swarm.Nodes, "node"))
 	return dcli, tctx.Name, nil
@@ -192,10 +191,10 @@ func planInit(ctx context.Context, dcli swarmops.ServiceLister, f *initFlags) (i
 	if f.policyFile != "" {
 		b, err := os.ReadFile(f.policyFile)
 		if err != nil {
-			return p, &cliError{code: usageExitCode, err: fmt.Errorf("read --policy-file: %w", err)}
+			return p, &cliError{code: exitUsage, err: fmt.Errorf("read --policy-file: %w", err)}
 		}
 		if _, err := policy.Parse(b, false); err != nil {
-			return p, &cliError{code: usageExitCode, err: fmt.Errorf("--policy-file %s: %w", f.policyFile, err)}
+			return p, &cliError{code: exitUsage, err: fmt.Errorf("--policy-file %s: %w", f.policyFile, err)}
 		}
 		p.policy = b
 	}
@@ -213,16 +212,16 @@ func planInit(ctx context.Context, dcli swarmops.ServiceLister, f *initFlags) (i
 // created: the global agent could not bind a port another service publishes.
 func checkInitPorts(ctx context.Context, dcli swarmops.ServiceLister, f *initFlags) error {
 	if f.metricsPort == f.port {
-		return &cliError{code: usageExitCode, err: fmt.Errorf("--metrics-port %d is the agent port; pick another", f.metricsPort)}
+		return &cliError{code: exitUsage, err: fmt.Errorf("--metrics-port %d is the agent port; pick another", f.metricsPort)}
 	}
 	if other, ok := portConflict(ctx, dcli, f.port, f.serviceName); ok {
-		return &cliError{code: usageExitCode, err: fmt.Errorf(
+		return &cliError{code: exitUsage, err: fmt.Errorf(
 			"host port %d is already published by service %q — remove it (`docker service rm %s`, or `swarmexec down` if it's an old swarmexec agent) or pick another --port",
 			f.port, other, other)}
 	}
 	if f.metricsPort > 0 {
 		if other, ok := portConflict(ctx, dcli, f.metricsPort, f.serviceName); ok {
-			return &cliError{code: usageExitCode, err: fmt.Errorf(
+			return &cliError{code: exitUsage, err: fmt.Errorf(
 				"host port %d is already published by service %q — pick another --metrics-port", f.metricsPort, other)}
 		}
 	}
@@ -266,7 +265,7 @@ func (d *initDeploy) sharedSecret() (initSecret, error) {
 	d.step(1, "shared secret")
 	id, created, err := ensureSecret(d.ctx, d.dcli, agentSecretName, d.plan.newSecret)
 	if err != nil {
-		return initSecret{}, d.failed(session.TransportFailure, err)
+		return initSecret{}, d.failed(exitTransport, err)
 	}
 	s := initSecret{id: id, value: d.plan.newSecret, known: created || d.f.secret != ""}
 	if created {
@@ -294,7 +293,7 @@ func (d *initDeploy) agentService(secretID string) (string, error) {
 	if d.plan.policy != nil {
 		ref, err := ensurePolicyConfig(d.ctx, d.dcli, d.plan.policy)
 		if err != nil {
-			return "", d.failed(session.TransportFailure, err)
+			return "", d.failed(exitTransport, err)
 		}
 		spec.TaskTemplate.ContainerSpec.Configs = []*swarm.ConfigReference{ref}
 	}
@@ -304,13 +303,13 @@ func (d *initDeploy) agentService(secretID string) (string, error) {
 	}
 	existing, err := swarmops.ServiceByName(d.ctx, d.dcli, d.f.serviceName)
 	if err != nil {
-		return "", d.failed(session.TransportFailure, err)
+		return "", d.failed(exitTransport, err)
 	}
 	switch {
 	case existing == nil:
 		resp, err := d.dcli.ServiceCreate(d.ctx, client.ServiceCreateOptions{Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true})
 		if err != nil {
-			return "", d.failed(session.TransportFailure, fmt.Errorf("create agent service: %w", err))
+			return "", d.failed(exitTransport, fmt.Errorf("create agent service: %w", err))
 		}
 		fmt.Fprintf(d.out, "created (%q, global)\n", d.f.serviceName)
 		return resp.ID, nil
@@ -319,13 +318,13 @@ func (d *initDeploy) agentService(secretID string) (string, error) {
 			fmt.Fprint(d.out, "(keeping the prune schedule) ")
 		}
 		if _, err := d.dcli.ServiceUpdate(d.ctx, existing.ID, client.ServiceUpdateOptions{Version: existing.Version, Spec: spec, EncodedRegistryAuth: auth, QueryRegistry: true}); err != nil {
-			return "", d.failed(session.TransportFailure, fmt.Errorf("update agent service: %w", err))
+			return "", d.failed(exitTransport, fmt.Errorf("update agent service: %w", err))
 		}
 		fmt.Fprintf(d.out, "updated (%q)\n", d.f.serviceName)
 		return existing.ID, nil
 	default:
 		fmt.Fprintln(d.out, "already exists")
-		return "", &cliError{code: usageExitCode, err: fmt.Errorf("service %q already exists; re-run with --force to update it", d.f.serviceName)}
+		return "", &cliError{code: exitUsage, err: fmt.Errorf("service %q already exists; re-run with --force to update it", d.f.serviceName)}
 	}
 }
 
@@ -343,9 +342,9 @@ func (d *initDeploy) registryAuth() (string, error) {
 		// Don't deploy blind: without distributed credentials the manager may
 		// pull fine (image cached / logged in) while every worker reports the
 		// image as unavailable.
-		return "", d.failed(usageExitCode, fmt.Errorf("read local registry credentials for %s: %w — run `docker login %s` on THIS machine (where you run swarmexec, not the manager); init distributes them to the swarm nodes. Or pass --registry-auth=false for a public image", host, err, host))
+		return "", d.failed(exitUsage, fmt.Errorf("read local registry credentials for %s: %w — run `docker login %s` on THIS machine (where you run swarmexec, not the manager); init distributes them to the swarm nodes. Or pass --registry-auth=false for a public image", host, err, host))
 	case auth == "" && host != "docker.io":
-		return "", d.failed(usageExitCode, fmt.Errorf("no registry credentials for %s found in this machine's Docker config — init reads your LOCAL `docker login` (not the manager's) and distributes it to the swarm nodes so they can pull the private image %q. Run `docker login %s` here, or pass --registry-auth=false for a public image", host, d.f.image, host))
+		return "", d.failed(exitUsage, fmt.Errorf("no registry credentials for %s found in this machine's Docker config — init reads your LOCAL `docker login` (not the manager's) and distributes it to the swarm nodes so they can pull the private image %q. Run `docker login %s` here, or pass --registry-auth=false for a public image", host, d.f.image, host))
 	}
 	return auth, nil
 }
@@ -437,7 +436,7 @@ func chooseContext(out io.Writer, contexts []dockerctx.Context, current string) 
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 1 || n > len(contexts) {
-		return dockerctx.Context{}, &cliError{code: usageExitCode, err: fmt.Errorf("invalid selection %q", s)}
+		return dockerctx.Context{}, &cliError{code: exitUsage, err: fmt.Errorf("invalid selection %q", s)}
 	}
 	return contexts[n-1], nil
 }

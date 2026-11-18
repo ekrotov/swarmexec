@@ -47,15 +47,15 @@ func newContextCreateCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if host == "" {
-				return &cliError{code: usageExitCode, err: fmt.Errorf("--docker-host is required (e.g. ssh://ops@manager)")}
+				return &cliError{code: exitUsage, err: fmt.Errorf("--docker-host is required (e.g. ssh://ops@manager)")}
 			}
 			if err := dockerctx.Create(dockerctx.CreateOptions{Name: args[0], Host: host, Description: description, ProxyJump: sshJump}); err != nil {
-				return &cliError{code: usageExitCode, err: err}
+				return &cliError{code: exitUsage, err: err}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "created context %q -> %s\n", args[0], host)
 			if useIt {
 				if err := dockerctx.Use(args[0]); err != nil {
-					return &cliError{code: usageExitCode, err: err}
+					return &cliError{code: exitUsage, err: err}
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "current context is now %q\n", args[0])
 			}
@@ -80,7 +80,7 @@ func newContextLsCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctxs, err := dockerctx.List()
 			if err != nil {
-				return &cliError{code: usageExitCode, err: err}
+				return &cliError{code: exitUsage, err: err}
 			}
 			if asJSON {
 				return printJSON(cmd.OutOrStdout(), ctxs)
@@ -108,7 +108,7 @@ func newContextUseCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := dockerctx.Use(args[0]); err != nil {
-				return &cliError{code: usageExitCode, err: err}
+				return &cliError{code: exitUsage, err: err}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "current context is now %q\n", args[0])
 			return nil
@@ -127,7 +127,7 @@ func newContextRmCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, name := range args {
 				if err := dockerctx.Remove(name, force); err != nil {
-					return &cliError{code: usageExitCode, err: err}
+					return &cliError{code: exitUsage, err: err}
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "removed context %q\n", name)
 			}

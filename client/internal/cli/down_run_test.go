@@ -140,21 +140,20 @@ func TestDownRun(t *testing.T) {
 		out, _, err = run(f, "")
 		return out, q.String(), err
 	}
-	abortedSilently := func(t *testing.T, err error) {
+	// A declined confirmation is the command's "no", not a transport failure
+	// (review CLI-03): exit 1, and reportError prints "swarmexec: aborted".
+	aborted := func(t *testing.T, err error) {
 		t.Helper()
 		var ce *cliError
-		if !errors.As(err, &ce) || ce.code != session.TransportFailure || !ce.silent {
-			t.Errorf("err = %#v, want a silent failure with the transport code", err)
+		if !errors.As(err, &ce) || ce.code != exitNo || ce.err == nil || ce.err.Error() != "aborted" {
+			t.Errorf("err = %#v, want exit %d with \"aborted\"", err, exitNo)
 		}
 	}
 
 	t.Run("without --yes the operator is asked, and no removes nothing", func(t *testing.T) {
 		f := agentSwarm()
-		out, asked, err := ask(f, "n\n", true)
-		abortedSilently(t, err)
-		if !strings.Contains(out, "aborted") {
-			t.Errorf("output:\n%s", out)
-		}
+		_, asked, err := ask(f, "n\n", true)
+		aborted(t, err)
 		if want := `Remove service "swarmexec_agent" and secret "swarmexec_agent_secret" on context`; !strings.Contains(asked, want) || !strings.HasSuffix(asked, "[y/N]: ") {
 			t.Errorf("asked %q, want it to name %q", asked, want)
 		}
@@ -166,7 +165,7 @@ func TestDownRun(t *testing.T) {
 	t.Run("an empty answer is no", func(t *testing.T) {
 		f := agentSwarm()
 		_, _, err := ask(f, "\n", true)
-		abortedSilently(t, err)
+		aborted(t, err)
 		if remaining(f) != untouched {
 			t.Error("removed on an empty answer")
 		}
@@ -195,7 +194,7 @@ func TestDownRun(t *testing.T) {
 	t.Run("without a terminal it refuses rather than guess", func(t *testing.T) {
 		f := agentSwarm()
 		_, asked, err := ask(f, "y\n", false)
-		abortedSilently(t, err)
+		aborted(t, err)
 		if asked != "" || remaining(f) != untouched {
 			t.Errorf("asked %q, left %s: a piped \"y\" must not remove anything", asked, remaining(f))
 		}
