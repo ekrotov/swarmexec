@@ -93,7 +93,7 @@ anything else; in a text field it is a character.
 
 ## 7. How conflicts are kept out
 
-Three tables in `keymap.go`, each checked against the source by a test:
+Three tables in `keymap.go` and `overlaykeys.go`, kept honest by tests:
 
 - **`keyActions`** — every configurable action: its yaml name, the scopes
   (tabs) it is active in, its default rune. `loadKeybinds` refuses a
@@ -106,14 +106,16 @@ Three tables in `keymap.go`, each checked against the source by a test:
   answer with its own action). `TestDialogRunesMatchTheSource` greps the
   `ui*.go` rune literals: a fixed key added without being listed fails, and so
   does a listed key nothing uses any more. It also refuses a literal `'q'` or
-  `'y'` — use `u.km.Quit` / `u.km.Copy` so a remap reaches the dialog.
+  `'y'` — use `u.km.Quit` / `u.km.Copy` so a remap reaches the dialog. It is
+  the one test that reads source: dialogs are free-form input captures, so
+  there is no table to derive the set from.
 - **`overlayKeysets`** — overlays that answer to configurable actions **next
   to** fixed keys of their own (the node detail answers to `node_prune` and has
   a fixed `M`). An action remapped onto one of that overlay's fixed keys is
-  refused, because inside the overlay the fixed key wins.
-  `TestOverlayKeysetsMatchTheSource` parses each declared handler with
-  `go/ast` and compares its rune literals and the `km.*` fields it reads with
-  the declaration, in both directions.
+  refused, because inside the overlay the fixed key wins. Each such overlay
+  declares its rune keys once, as a `[]runeCase` (`overlaykeys.go`), and its
+  handler dispatches through the same table with `runRune`; the keyset is
+  derived from the table, so it cannot drift from the handler.
 
 ## 8. Adding a tab or an overlay
 
@@ -125,7 +127,8 @@ Three tables in `keymap.go`, each checked against the source by a test:
    `u.km.<Field>` everywhere (handler, footer, `helpSection`, empty state).
    Keys inside an overlay are fixed; add every new rune to `dialogRunes`.
 3. **Overlay that also answers to a configurable action:** declare it in
-   `overlayKeysets` (handler func name, fixed runes, actions).
+   `overlayKeysets` (add the overlay's `runeCase` table there and dispatch
+   with `runRune`; fixed keys have an empty action name).
 4. **Open it with `u.overlayFor`**, show it with `centered`/`centeredGrow`,
    give it a `footerKeys` footer that includes Esc. If it edits, apply with
    `Ctrl-S` (and `w` where free) behind a confirm.

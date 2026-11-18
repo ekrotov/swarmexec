@@ -4,14 +4,12 @@
 package cli
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 // An action an overlay answers to may not be remapped onto one of that
@@ -41,101 +39,64 @@ func TestLoadKeybinds_OverlayFixedKeysAreRefused(t *testing.T) {
 	}
 }
 
-// uiFuncs parses the non-test ui*.go files and returns every func by name,
-// methods as Recv.Name.
-func uiFuncs(t *testing.T) map[string]*ast.FuncDecl {
-	t.Helper()
-	fset := token.NewFileSet()
-	funcs := map[string]*ast.FuncDecl{}
-	files, _ := filepath.Glob("ui*.go")
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		af, err := parser.ParseFile(fset, f, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, d := range af.Decls {
-			fd, ok := d.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			name := fd.Name.Name
-			if fd.Recv != nil && len(fd.Recv.List) == 1 {
-				recv := fd.Recv.List[0].Type
-				if st, ok := recv.(*ast.StarExpr); ok {
-					recv = st.X
-				}
-				if id, ok := recv.(*ast.Ident); ok {
-					name = id.Name + "." + name
-				}
-			}
-			funcs[name] = fd
-		}
+// What each overlay handles itself is derived from the table its key handler
+// dispatches through (overlaykeys.go), so there is no source to compare it
+// with. This pins the result instead: the sets are what keys.yaml is allowed
+// to collide with, and changing one is a decision, not a side effect.
+func TestOverlayKeysets(t *testing.T) {
+	want := map[string]overlayKeyset{
+		"node detail":       {fixed: "iMl", actions: []string{"node_prune", "node_prune_schedule"}},
+		"context detail":    {fixed: "i", actions: []string{"context_use"}},
+		"forward detail":    {fixed: "i", actions: []string{"forward_stop"}},
+		"log view":          {fixed: "fFal/", actions: []string{"toggle_mouse"}},
+		"client log viewer": {fixed: "`w", actions: []string{"toggle_mouse"}},
 	}
-	return funcs
-}
-
-// keybindsFields maps each keybinds field name to its yaml action name.
-func keybindsFields() map[string]string {
-	fields := map[string]string{}
-	for _, a := range keyActions {
-		var k keybinds
-		*a.field(&k) = 1
-		v := reflect.ValueOf(k)
-		for i := 0; i < v.NumField(); i++ {
-			if v.Field(i).Int() == 1 {
-				fields[v.Type().Field(i).Name] = a.name
-			}
-		}
+	if len(overlayKeysets) != len(want) {
+		t.Fatalf("want %d keysets, got %d", len(want), len(overlayKeysets))
 	}
-	return fields
-}
-
-// Every overlayKeysets entry lists exactly the rune literals its key handler
-// checks (minus the reserved j/k), and its handler answers to every action it
-// names — so a key added to an overlay without being declared fails here,
-// not in front of an operator whose remap went dead.
-func TestOverlayKeysetsMatchTheSource(t *testing.T) {
-	funcs, fields := uiFuncs(t), keybindsFields()
 	for _, o := range overlayKeysets {
-		fd := funcs[o.handler]
-		if fd == nil {
-			t.Errorf("%s: handler %s not found", o.name, o.handler)
-			continue
+		w, ok := want[o.name]
+		if !ok || o.fixed != w.fixed || !reflect.DeepEqual(o.actions, w.actions) {
+			t.Errorf("%s: fixed %q actions %v, want %q %v", o.name, o.fixed, o.actions, w.fixed, w.actions)
 		}
-		runes, actions := map[rune]bool{}, map[string]bool{}
-		ast.Inspect(fd.Body, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.BasicLit:
-				if x.Kind != token.CHAR {
-					break
-				}
-				// Control runes are text ('\n'), not keys.
-				if s, err := strconv.Unquote(x.Value); err == nil && []rune(s)[0] >= ' ' && !reservedRunes[[]rune(s)[0]] {
-					runes[[]rune(s)[0]] = true
-				}
-			case *ast.SelectorExpr:
-				if a, ok := fields[x.Sel.Name]; ok {
-					actions[a] = true
+	}
+}
+
+// The behaviour the keysets exist for, through the real loader: every action
+// an overlay answers to is refused on every fixed key of that overlay, so no
+// remap can go dead inside it.
+func TestLoadKeybinds_EveryOverlayFixedKeyIsRefused(t *testing.T) {
+	for _, o := range overlayKeysets {
+		for _, action := range o.actions {
+			for _, r := range o.fixed {
+				_, warns := loadKeybinds(writeKeys(t, action+": "+strconv.Quote(string(r))+"\n"))
+				if len(warns) != 1 || !strings.Contains(warns[0], o.name) {
+					t.Errorf("%s=%q should be refused as a fixed key of the %s, got %v", action, r, o.name, warns)
 				}
 			}
-			return true
-		})
-		for _, r := range o.fixed {
-			if !runes[r] {
-				t.Errorf("%s declares %q, which its handler no longer checks", o.name, r)
-			}
-			delete(runes, r)
 		}
-		for r := range runes {
-			t.Errorf("%s handles %q but does not declare it in overlayKeysets", o.name, r)
-		}
-		for _, a := range o.actions {
-			if !actions[a] {
-				t.Errorf("%s declares action %s, which its handler does not use", o.name, a)
-			}
-		}
+	}
+}
+
+// A handler that goes through its table answers exactly to the table: the
+// first case bound to a rune runs, anything else is passed on.
+func TestRunRune(t *testing.T) {
+	var ran []string
+	cases := []runeCase{
+		{'a', "", func() { ran = append(ran, "first") }},
+		{'a', "x", func() { ran = append(ran, "shadowed") }},
+		{'b', "", func() { ran = append(ran, "b") }},
+	}
+	if !runRune(rune_('a'), cases) || !runRune(rune_('b'), cases) {
+		t.Error("a bound rune must run its case")
+	}
+	if runRune(rune_('c'), cases) {
+		t.Error("an unbound rune must be passed on")
+	}
+	if !reflect.DeepEqual(ran, []string{"first", "b"}) {
+		t.Errorf("ran %v, want the first case for a, then b", ran)
+	}
+	if runRune(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), cases) {
+		t.Error("a non-rune key must not match")
 	}
 }

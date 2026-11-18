@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -63,23 +64,11 @@ func TestUIGoOnlyAddsTheBasePage(t *testing.T) {
 	var raw []string
 	for i, line := range strings.Split(string(src), "\n") {
 		if strings.Contains(line, "pages.AddPage(") || strings.Contains(line, "pages.RemovePage(") {
-			raw = append(raw, strings.TrimSpace(line)+" (line "+itoa(i+1)+")")
+			raw = append(raw, strings.TrimSpace(line)+" (line "+strconv.Itoa(i+1)+")")
 		}
 	}
 	if len(raw) != 1 || !strings.Contains(raw[0], "pageMain") {
 		t.Errorf("ui.go should hold exactly one raw page call, the base page; got:\n  %s",
 			strings.Join(raw, "\n  "))
 	}
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var b []byte
-	for i > 0 {
-		b = append([]byte{byte('0' + i%10)}, b...)
-		i /= 10
-	}
-	return string(b)
 }
