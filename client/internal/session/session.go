@@ -91,9 +91,13 @@ func Run(ctx context.Context, stream Stream, opts Options) (int, error) {
 		_ = snd.closeSend()
 	}
 
-	// resize → agent.
+	// resize → agent. The events channel belongs to the caller and may never be
+	// closed (the TUI's pane keeps one for its whole life), so the pump ends
+	// with Run, not with the channel.
 	if opts.ResizeEvents != nil && opts.SizeFn != nil {
-		go pumpResize(opts.ResizeEvents, opts.SizeFn, snd)
+		stop := make(chan struct{})
+		defer close(stop)
+		go pumpResize(opts.ResizeEvents, opts.SizeFn, snd, stop)
 	}
 
 	// agent → local stdout/stderr; ends on exit_code or error.
@@ -152,8 +156,13 @@ func pumpStdin(r io.Reader, snd *sender) {
 	}
 }
 
-func pumpResize(events <-chan os.Signal, sizeFn func() (uint32, uint32, error), snd *sender) {
-	for range events {
+func pumpResize(events <-chan os.Signal, sizeFn func() (uint32, uint32, error), snd *sender, stop <-chan struct{}) {
+	for {
+		select {
+		case <-events:
+		case <-stop:
+			return
+		}
 		w, h, err := sizeFn()
 		if err != nil {
 			continue
