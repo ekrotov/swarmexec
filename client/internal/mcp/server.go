@@ -149,8 +149,14 @@ type Server struct {
 	// session — the same reuse the ui's clusterState gives a cluster switch.
 	// An assistant asks many small questions; an ssh handshake through a
 	// bastion for each would make every one of them slow.
+	//
+	// mu guards only the maps; it is never held across a connect, which can
+	// take mcpProbeTimeout and would stall every tool, including those for
+	// contexts that are long connected.
 	mu       sync.Mutex
 	clusters map[string]*mcpCluster
+	dialing  map[string]*dial // connects in progress, one per context
+	closed   bool
 
 	warnMu sync.Mutex
 	warned map[string]bool
@@ -179,6 +185,7 @@ func New(o Options) *Server {
 	s := &Server{
 		opts: o, policy: o.Policy, allowReport: o.AllowReport, connectTimeout: o.ConnectTimeout,
 		clusters:  map[string]*mcpCluster{},
+		dialing:   map[string]*dial{},
 		warned:    map[string]bool{},
 		statsWait: mcpStatsWait,
 		statsPoll: mcpStatsPoll,
@@ -221,16 +228,22 @@ func errUnknownContext(name string) error {
 // Close drops the session's connections.
 func (s *Server) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, c := range s.clusters {
-		if c.dcli != nil {
-			c.dcli.Close()
-		}
-		if c.agent != nil {
-			c.agent.Close()
-		}
-	}
+	s.closed = true
+	old := s.clusters
 	s.clusters = map[string]*mcpCluster{}
+	s.mu.Unlock()
+	for _, c := range old {
+		c.close()
+	}
+}
+
+func (c *mcpCluster) close() {
+	if c.dcli != nil {
+		c.dcli.Close()
+	}
+	if c.agent != nil {
+		c.agent.Close()
+	}
 }
 
 // mcpOperator is the identity reported to the agents' audit log: the
@@ -261,18 +274,50 @@ func (s *Server) cluster(ctx context.Context, name string) (*mcpCluster, error) 
 		return nil, errUnknownContext(name)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if c, ok := s.clusters[name]; ok {
+		s.mu.Unlock()
 		return c, nil
 	}
-	c, err := s.connect(ctx, name)
-	if err != nil {
-		// Not cached: the next call tries again, which is what an assistant
-		// that was just told to load its ssh key will do.
-		return nil, err
+	if d, ok := s.dialing[name]; ok {
+		// Someone is already connecting this context: wait for that, not for a
+		// second ssh handshake.
+		s.mu.Unlock()
+		select {
+		case <-d.done:
+			return d.c, d.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	s.clusters[name] = c
-	return c, nil
+	d := &dial{done: make(chan struct{})}
+	s.dialing[name] = d
+	s.mu.Unlock()
+
+	c, err := s.connect(ctx, name)
+
+	s.mu.Lock()
+	delete(s.dialing, name)
+	if err == nil && s.closed {
+		// Close ran while we were connecting; do not resurrect the session.
+		c.close()
+		c, err = nil, errors.New("mcp server closed")
+	}
+	if err == nil {
+		s.clusters[name] = c
+	}
+	// A failure is not cached: the next call tries again, which is what an
+	// assistant that was just told to load its ssh key will do.
+	s.mu.Unlock()
+	d.c, d.err = c, err
+	close(d.done)
+	return c, err
+}
+
+// dial is one connect in progress; callers for the same context share it.
+type dial struct {
+	done chan struct{}
+	c    *mcpCluster
+	err  error
 }
 
 // mcpProbeTimeout bounds reaching a context's manager: the dial (an ssh
