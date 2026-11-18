@@ -316,7 +316,11 @@ func (t *volumesTab) renderRow(st *volumesState, row int, v swarmVolume) {
 // first, then the sizes, which come from a slow du-style scan.
 func (t *volumesTab) load() {
 	u := t.u
-	r, ac, dcli, f, ctx := u.r, u.agents, u.dcli, u.f, u.ctx
+	v, ok := u.connected()
+	if !ok {
+		return
+	}
+	r, ac, dcli, f, ctx := v.r, v.ac, v.dcli, v.f, v.ctx
 	st := t.st()
 	t.placeholder(loadingCell())
 	gen := u.generation()
@@ -336,11 +340,8 @@ func (t *volumesTab) load() {
 			}
 		}
 		clientlog.Timed("ui.loadVolumes", start, nerr, "nodes", len(nodes), "vols", len(vs))
-		fresh := make(chan bool, 1)
 		u.onCluster(gen, func() {
-			ok := t.seq.fresh(id)
-			fresh <- ok
-			if !ok {
+			if !t.seq.fresh(id) {
 				return // a later load already answered
 			}
 			st.vols, st.usage, st.errs, st.sizes = vs, usage, errs, nil
@@ -354,15 +355,10 @@ func (t *volumesTab) load() {
 			}
 			t.render()
 		})
-		// The sizes belong to the list just applied; for a stale answer they
-		// would be sized against volumes the screen no longer shows. If the
-		// apply never ran (the cluster switched), there is nothing to size.
-		select {
-		case ok := <-fresh:
-			if ok && nerr == nil && !noAgent {
-				t.loadSizes(gen, st, nodes, ac, f.connectTimeout, ctx, id)
-			}
-		case <-ctx.Done():
+		if nerr == nil && !noAgent {
+			// The sizes belong to the list this load applied: loadSizes writes
+			// them only while id is still the newest applied load.
+			t.loadSizes(gen, st, nodes, ac, f.connectTimeout, ctx, id)
 		}
 	}()
 }

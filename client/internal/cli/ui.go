@@ -352,7 +352,6 @@ func (u *ui) install(c *clusterState, l *clusterLink) {
 		})
 	}
 	c.err = nil
-	return
 }
 
 // run drives one UI session over the infrastructure runUI prepared on u, in
@@ -1854,7 +1853,11 @@ func (u *ui) searchTab() tabSearcher {
 // summary. The agent probe (a Version RPC per node) can be slow, so it runs
 // off the UI goroutine and pushes the result back via QueueUpdateDraw.
 func (u *ui) refreshCluster() {
-	r, ac, f := u.r, u.agents, u.f
+	v, ok := u.connected()
+	if !ok {
+		return
+	}
+	r, ac, f := v.r, v.ac, v.f
 	type census struct{ nodes, agents int }
 	async(u, "ui.refreshCluster", func(ctx context.Context) (census, error) {
 		nodes, err := r.Nodes(ctx)

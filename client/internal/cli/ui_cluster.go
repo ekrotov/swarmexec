@@ -311,6 +311,26 @@ func (u *ui) leaveCluster() int {
 	return closed
 }
 
+// connView is the visible cluster's connections as a loader captures them.
+type connView struct {
+	r    *resolve.Resolver
+	ac   *agentcall.Client
+	dcli swarmapi.Client
+	f    *uiFlags
+	ctx  context.Context
+}
+
+// connected captures the visible cluster's connections on the UI goroutine and
+// reports whether there is a cluster to talk to. A cluster that was closed (a
+// deleted context's, left behind) or never connected has nil connections, and a
+// loader that handed those to its worker goroutine took the whole TUI down with
+// a nil dereference. Every loader that reads them starts with this and returns
+// when it is false.
+func (u *ui) connected() (connView, bool) {
+	v := connView{r: u.r, ac: u.agents, dcli: u.dcli, f: u.f, ctx: u.ctx}
+	return v, v.r != nil && v.ac != nil && v.dcli != nil && v.f != nil && v.ctx != nil
+}
+
 // clusterProbeTimeout bounds the reachability check on a switch.
 //
 // Generous enough for an ssh handshake through a bastion — and since T1 that is

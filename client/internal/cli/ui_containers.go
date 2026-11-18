@@ -723,6 +723,9 @@ func (t *treeTab) load() {
 	st.resetCols = true
 	resetAskpassDeclines() // an explicit reload may ask ssh's questions again
 	gen, ctx, r := u.generation(), u.ctx, u.r
+	if r == nil || ctx == nil {
+		return // no cluster connected: nothing to list
+	}
 	id := t.seq.start()
 	go func() {
 		svcs, cands, err := fetchTree(ctx, r)
@@ -747,6 +750,9 @@ func (t *treeTab) load() {
 func (t *treeTab) autoRefresh() {
 	u := t.u
 	ctx, r := u.ctx, u.r
+	if r == nil || ctx == nil {
+		return
+	}
 	// Cheap gate: skip the fetch when an overlay is known to be open. Best
 	// effort by design — the invariant is enforced below, on the UI goroutine.
 	busy := &u.autoRefreshBusy // this cluster's flag, taken here: the goroutine must not look u.clusterState up
@@ -1016,7 +1022,11 @@ func (t *treeTab) svcColor(s resolve.Service) tcell.Color {
 // and an agent too old to know the RPC would then break the view instead of
 // just leaving the badges off.
 func (u *ui) loadUsage() {
-	ctx, ac, r, timeout := u.ctx, u.agents, u.r, u.f.connectTimeout
+	v, ok := u.connected()
+	if !ok {
+		return
+	}
+	ctx, ac, r, timeout := v.ctx, v.ac, v.r, v.f.connectTimeout
 	// Fetched even while an overlay is open: the inspect STATS view shows these
 	// readings and promises to refresh, and the history must not have a hole
 	// for every minute someone spends in a dialog. The fan-out runs off the
