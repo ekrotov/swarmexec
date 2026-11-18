@@ -46,7 +46,7 @@ COVER_MIN  ?= 81.2
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
 
-.PHONY: all cli-docs cli-docs-check tools ci-tools tool-gocyclo cyclo mod-check tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover vet lint release clean
+.PHONY: all cli-docs cli-docs-check tools ci-tools tool-gocyclo cyclo mod-check tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover fuzz vet lint release clean
 
 all: generate build-all
 
@@ -146,6 +146,26 @@ cover:
 		sub("%", "", $$3); printf "total coverage %s%% (minimum %s%%)\n", $$3, min; \
 		if ($$3 + 0 < min + 0) { print "coverage is below the minimum"; exit 1 } }'
 	@sh ci/cover-floors.sh coverage.out
+
+## fuzz: run every fuzz target for FUZZTIME each (not in CI: `go test` already replays the seeds and any saved testdata/fuzz corpus)
+# An input that breaks one is written to the package's testdata/fuzz/ — commit
+# it, and it is a regression test in every later run.
+FUZZTIME ?= 15s
+FUZZ_TARGETS = \
+	./client/internal/logfmt:FuzzFormatsParse \
+	./client/internal/resolve:FuzzResolveTarget \
+	./client/internal/stackfile:FuzzLoadComposeFile \
+	./client/internal/swarmops:FuzzServiceEditParsers \
+	./client/internal/cli:FuzzParseEnvText \
+	./client/internal/cli:FuzzPortSpecs \
+	./internal/forwardmux:FuzzRead \
+	./internal/policy:FuzzParse \
+	./internal/prunesched:FuzzParseLabels
+fuzz:
+	@for t in $(FUZZ_TARGETS); do \
+		pkg=$${t%%:*}; fn=$${t##*:}; echo "== $$fn ($$pkg)"; \
+		go test $$pkg -run '^$$' -fuzz "^$$fn\$$" -fuzztime $(FUZZTIME) || exit 1; \
+	done
 
 ## lint: staticcheck at the pinned version, plus the complexity gate (CI: lint)
 lint: tool-staticcheck cyclo

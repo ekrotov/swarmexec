@@ -25,6 +25,7 @@ make agent           # agent only    -> ./bin/agent
 make agent-image     # agent container image (swarmexec-agent:<version>)
 make test            # unit tests for the whole module
 make cover           # race + shuffled tests + coverage; fails below COVER_MIN or a per-file floor (CI job `test`)
+make fuzz            # every fuzz target for FUZZTIME (default 15s) each; not in CI — `make cover` replays their seeds and saved corpus
 make mod-check       # go.mod/go.sum must be tidy: `go mod tidy -diff` (CI job `test`)
 make lint            # staticcheck at the pinned STATICCHECK_VERSION + `make cyclo` (no function over complexity 15) (CI job `lint`)
 make ci-tools        # every pinned tool: buf + plugins, staticcheck, gocyclo, govulncheck, scip-go
