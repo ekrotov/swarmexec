@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
+	"swarmexec/client/internal/swarmops"
 )
 
 // Nodes are swarm-scoped (managed by the manager), so their general info and
@@ -141,7 +142,7 @@ func taskHoldsResources(t swarm.Task) bool {
 // rolling update). Draining reschedules the node's tasks elsewhere.
 //
 // loaded is the node's Version from when the caller read it (NodeInfo.Version);
-// the write is refused with a *ConflictError if the node changed since (KOR-05).
+// the write is refused with a *swarmops.ConflictError if the node changed since (KOR-05).
 func SetNodeAvailability(ctx context.Context, dcli swarmapi.Client, nodeID string, loaded swarm.Version, availability swarm.NodeAvailability) error {
 	return updateNode(ctx, dcli, nodeID, loaded, func(spec *swarm.NodeSpec) { spec.Availability = availability })
 }
@@ -160,12 +161,12 @@ func updateNode(ctx context.Context, dcli swarmapi.Client, nodeID string, loaded
 		name = nodeID
 	}
 	if node.Version.Index != loaded.Index {
-		return &ConflictError{Kind: "node", Name: name, Loaded: loaded.Index, Current: node.Version.Index}
+		return &swarmops.ConflictError{Kind: "node", Name: name, Loaded: loaded.Index, Current: node.Version.Index}
 	}
 	spec := node.Spec
 	mutate(&spec)
 	if _, err := dcli.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{Version: loaded, Spec: spec}); err != nil {
-		if c := asConflict("node", name, err); c != err {
+		if c := swarmops.AsConflict("node", name, err); c != err {
 			return c
 		}
 		return fmt.Errorf("update node %s: %w", nodeID, err)
@@ -185,18 +186,12 @@ func ListNodes(ctx context.Context, dcli swarmapi.Client) ([]NodeInfo, error) {
 	// Only tasks the swarm wants running matter for the count and for the
 	// resources booked; the history (up to five dead tasks per slot) is left
 	// on the manager.
-	tasks, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: desiredRunning()})
+	tasks, err := dcli.TaskList(ctx, client.TaskListOptions{Filters: swarmapi.DesiredRunning()})
 	infos := buildNodeInfos(nodes, tasks.Items)
 	for i := range infos {
 		infos[i].TasksKnown = err == nil
 	}
 	return infos, nil
-}
-
-// desiredRunning filters a TaskList to the tasks the swarm wants running,
-// which leaves out the task history.
-func desiredRunning() client.Filters {
-	return make(client.Filters).Add("desired-state", "running")
 }
 
 // TaskCount is the node's running-task count for display: "?" when unknown.

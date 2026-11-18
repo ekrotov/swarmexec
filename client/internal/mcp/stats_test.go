@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/clusterread"
 )
 
 // Characterization of the stats tool beyond the warm-up tests: the
@@ -35,7 +35,7 @@ func TestMCPStatsScopeAndPartialReadings(t *testing.T) {
 		t.Fatalf("rows = %+v", rows)
 	}
 	for _, r := range rows {
-		if r.CPU != swarmops.StatsWarmingUp || r.Note != swarmops.StatsWarmingUpNote || !strings.HasPrefix(r.Memory, "64MiB / 256MiB") || r.Health != "healthy" {
+		if r.CPU != clusterread.StatsWarmingUp || r.Note != clusterread.StatsWarmingUpNote || !strings.HasPrefix(r.Memory, "64MiB / 256MiB") || r.Health != "healthy" {
 			t.Errorf("row %+v: want a memory reading with CPU warming up", r)
 		}
 	}

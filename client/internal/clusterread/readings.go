@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"swarmexec/client/internal/agenterr"
 	"swarmexec/client/internal/clientlog"
 	"swarmexec/client/internal/resolve"
+	"swarmexec/client/internal/swarmops"
 )
 
 // The readings both front-ends show the same way — the TUI and the MCP
@@ -53,14 +54,14 @@ func FormatCPUUsage(u agentcall.ContainerUsage) string {
 // reports binary, and the node detail already shows the same figures that way —
 // the same number must not read differently in two places.
 func FormatMemUsage(u agentcall.ContainerUsage) string {
-	used := FormatMemBytes(u.MemBytes)
+	used := swarmops.FormatMemBytes(u.MemBytes)
 	if used == "" {
 		used = "0B" // FormatMemBytes yields "" at zero; a table cell needs a value
 	}
 	if u.MemLimitBytes <= 0 {
 		return used
 	}
-	return fmt.Sprintf("%s / %s (%s)", used, FormatMemBytes(u.MemLimitBytes), FormatRatio(u.MemRatio))
+	return fmt.Sprintf("%s / %s (%s)", used, swarmops.FormatMemBytes(u.MemLimitBytes), FormatRatio(u.MemRatio))
 }
 
 // FormatRatio renders a 0..1 ratio as a whole percentage.

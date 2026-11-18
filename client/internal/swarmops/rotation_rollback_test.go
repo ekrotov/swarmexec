@@ -34,7 +34,7 @@ func dbSecretCluster() *swarmfake.Swarm {
 // RollbackService must say so instead, and write nothing.
 func TestRollbackAfterRotationIsRefused(t *testing.T) {
 	f := dbSecretCluster()
-	d := fakeDocker(t, f)
+	d := swarmfake.Client(t, f)
 	ctx := context.Background()
 	if err := RotateSecret(ctx, d, "db", []byte("new"), RotateOptions{Poll: 1}); err != nil {
 		t.Fatalf("rotate: %v", err)
@@ -113,7 +113,7 @@ func TestRollbackChecksSecretsAndConfigs(t *testing.T) {
 			tc.prev(&cs)
 			f.Services[0].PreviousSpec = &prev
 
-			err := RollbackService(context.Background(), fakeDocker(t, f), "shop_api")
+			err := RollbackService(context.Background(), swarmfake.Client(t, f), "shop_api")
 			switch {
 			case tc.wantErr == "" && err != nil:
 				t.Errorf("rollback refused: %v", err)
@@ -129,7 +129,7 @@ func TestRollbackChecksSecretsAndConfigs(t *testing.T) {
 // carried to the stand-in and to the new secret.
 func TestRotateKeepsTemplating(t *testing.T) {
 	f := dbSecretCluster()
-	if err := RotateSecret(context.Background(), fakeDocker(t, f), "db", []byte("{{ .x }}"), RotateOptions{Poll: 1}); err != nil {
+	if err := RotateSecret(context.Background(), swarmfake.Client(t, f), "db", []byte("{{ .x }}"), RotateOptions{Poll: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.Secrets) != 1 {
@@ -162,7 +162,7 @@ func TestRotateResumeKeepsTemplating(t *testing.T) {
 func TestRotateRefusesDriverSecret(t *testing.T) {
 	f := dbSecretCluster()
 	f.Secrets[0].Spec.Driver = &swarm.Driver{Name: "vault"}
-	d := fakeDocker(t, f)
+	d := swarmfake.Client(t, f)
 	ctx := context.Background()
 	err := RotateSecret(ctx, d, "db", []byte("new"), RotateOptions{Poll: 1})
 	if err == nil || !strings.Contains(err.Error(), `"vault" secret driver`) {

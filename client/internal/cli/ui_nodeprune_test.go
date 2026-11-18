@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/internal/pb"
 )
 
@@ -64,7 +64,7 @@ func openPruneDialog(t *testing.T, a *pruneAgent) (*ui, *tview.Table, *tview.Tex
 	u, _, _ := editUIWith(t, editSwarm(), map[string]pb.AgentServer{"node-a": a})
 	afters := new(int)
 	onLoop(t, u, func() {
-		u.openNodePrune(swarmops.NodeInfo{Hostname: "node-a"}, u.ctree, func() { *afters++ })
+		u.openNodePrune(clusterread.NodeInfo{Hostname: "node-a"}, u.ctree, func() { *afters++ })
 	})
 	waitFront(t, u, pageNodePrune)
 	var table *tview.Table
@@ -244,10 +244,10 @@ func TestPruneDialogNothingTickedAndNotMeasured(t *testing.T) {
 // notice that no image figures are known for the node.
 func TestNodePruneOnAnOldAgent(t *testing.T) {
 	u, _, ring := editUIWith(t, editSwarm(), map[string]pb.AgentServer{"node-a": &pruneAgent{}})
-	onLoop(t, u, func() { u.openNodePrune(swarmops.NodeInfo{Hostname: "node-a"}, u.ctree, nil) })
+	onLoop(t, u, func() { u.openNodePrune(clusterread.NodeInfo{Hostname: "node-a"}, u.ctree, nil) })
 	waitForLog(t, ring, "ui notice", "No image information")
 
 	// A node with no agent at all: the error is the notice.
-	onLoop(t, u, func() { u.openNodePrune(swarmops.NodeInfo{Hostname: "node-b"}, u.ctree, nil) })
+	onLoop(t, u, func() { u.openNodePrune(clusterread.NodeInfo{Hostname: "node-b"}, u.ctree, nil) })
 	waitForLog(t, ring, "ui notice", "prune: ")
 }

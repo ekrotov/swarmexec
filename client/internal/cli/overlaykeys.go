@@ -8,7 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/clusterread"
 )
 
 // runeCase is one rune key of an overlay: what it does, and which
@@ -75,7 +75,7 @@ var overlayKeysets = func() []overlayKeyset {
 	u := &ui{km: defaultKeybinds()}
 	noop := func() {}
 	return []overlayKeyset{
-		keysetOf("node detail", (&nodeDetail{t: &nodesTab{listTab: &listTab[swarmops.NodeInfo]{u: u}}}).cases()),
+		keysetOf("node detail", (&nodeDetail{t: &nodesTab{listTab: &listTab[clusterread.NodeInfo]{u: u}}}).cases()),
 		keysetOf("context detail", u.contextDetailCases(noop, noop)),
 		keysetOf("forward detail", u.forwardDetailCases(noop, noop)),
 		keysetOf("log view", u.logViewCases(nil, nil, nil, noop, noop, noop)),

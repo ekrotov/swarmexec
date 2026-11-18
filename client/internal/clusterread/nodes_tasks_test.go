@@ -1,7 +1,7 @@
 // Copyright 2026 Cloud Surfers GmbH
 // SPDX-License-Identifier: Apache-2.0
 
-package swarmops
+package clusterread
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func TestListNodesTaskCountFiltersHistoryAndFlagsFailure(t *testing.T) {
 		Nodes: []swarm.Node{mkNode("n1", "node-1", "worker", "active", "ready", false, nil)},
 		Tasks: []swarm.Task{running, dead},
 	}
-	dcli := fakeDocker(t, f)
+	dcli := swarmfake.Client(t, f)
 
 	got, err := ListNodes(context.Background(), dcli)
 	if err != nil || len(got) != 1 {

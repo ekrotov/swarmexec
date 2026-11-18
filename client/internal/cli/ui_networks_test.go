@@ -16,6 +16,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/rivo/tview"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/swarmops"
 )
@@ -120,7 +121,7 @@ func TestNetworksTabShowsSubnetOverlapAndContainers(t *testing.T) {
 	onLoop(t, u, func() {
 		st := nt.endpoints()
 		st.loaded = true
-		st.byNet = map[string]*swarmops.NetEndpoints{"id-dbnet": {Answered: 1, Addrs: 3, Stale: []swarmops.StaleEndpoint{{IP: "10.0.1.9"}}}}
+		st.byNet = map[string]*clusterread.NetEndpoints{"id-dbnet": {Answered: 1, Addrs: 3, Stale: []clusterread.StaleEndpoint{{IP: "10.0.1.9"}}}}
 		nt.render()
 	})
 	waitForTable(t, u, nt.table, "2 · 3 addr ⚠1 stale")

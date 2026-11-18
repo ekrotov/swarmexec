@@ -12,8 +12,8 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/swarmfake"
-	"swarmexec/client/internal/swarmops"
 	pb "swarmexec/internal/pb"
 )
 
@@ -91,12 +91,12 @@ func TestStatsTableAndJSON(t *testing.T) {
 	if !strings.Contains(out, "SERVICE") || !strings.Contains(out, "64MiB / 256MiB") || !strings.Contains(out, "healthy") {
 		t.Errorf("table:\n%s", out)
 	}
-	if !strings.Contains(out, swarmops.StatsNoAgent) || !strings.Contains(errOut, "note: "+swarmops.StatsNoAgentNote) {
+	if !strings.Contains(out, clusterread.StatsNoAgent) || !strings.Contains(errOut, "note: "+clusterread.StatsNoAgentNote) {
 		t.Errorf("the dead node's container should say unavailable, once, with a note: %q / %q", out, errOut)
 	}
 
 	out, _, err = runCmd(t, newStatsCmd(g), "--json", "--wait", "0", "web")
-	var rows []swarmops.StatsRow
+	var rows []clusterread.StatsRow
 	if jerr := json.Unmarshal([]byte(out), &rows); err != nil || jerr != nil || len(rows) != 1 || rows[0].Service != "web" || rows[0].Node != agentNodeHost {
 		t.Errorf("json web: %q %v %v", out, err, jerr)
 	}
@@ -140,7 +140,7 @@ func TestStatusTablesAndJSON(t *testing.T) {
 	}
 
 	out, _, err = runCmd(t, newStatusCmd(g), "--json")
-	var ov swarmops.Overview
+	var ov clusterread.Overview
 	if jerr := json.Unmarshal([]byte(out), &ov); err != nil || jerr != nil || len(ov.Nodes) != 2 || len(ov.Services) != 2 || ov.Services[0].Health == nil {
 		t.Errorf("json: %q %v %v", out, err, jerr)
 	}
@@ -154,20 +154,20 @@ func TestStatusWithoutAgentsAndEmpty(t *testing.T) {
 	g := cliCluster(t, f, nil)
 	out, errOut, err := runCmd(t, newStatusCmd(g))
 	if err != nil || !strings.Contains(out, "0 service(s)") || !strings.Contains(errOut, "no services") ||
-		!strings.Contains(errOut, "note: "+swarmops.OverviewNoHealth) {
+		!strings.Contains(errOut, "note: "+clusterread.OverviewNoHealth) {
 		t.Errorf("%q %q %v", out, errOut, err)
 	}
 }
 
 func TestHealthTallyText(t *testing.T) {
 	for _, c := range []struct {
-		h    *swarmops.HealthTally
+		h    *clusterread.HealthTally
 		want string
 	}{
 		{nil, "-"},
-		{&swarmops.HealthTally{}, "-"},
-		{&swarmops.HealthTally{Healthy: 2, Unhealthy: 1, NoCheck: 3}, "2 healthy, 1 unhealthy, 3 no check"},
-		{&swarmops.HealthTally{Starting: 1}, "1 starting"},
+		{&clusterread.HealthTally{}, "-"},
+		{&clusterread.HealthTally{Healthy: 2, Unhealthy: 1, NoCheck: 3}, "2 healthy, 1 unhealthy, 3 no check"},
+		{&clusterread.HealthTally{Starting: 1}, "1 starting"},
 	} {
 		if got := healthTallyText(c.h); got != c.want {
 			t.Errorf("%+v = %q, want %q", c.h, got, c.want)

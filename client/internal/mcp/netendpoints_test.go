@@ -8,25 +8,25 @@ import (
 	"strings"
 	"testing"
 
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/clusterread"
 )
 
 // The endpoint view names a node by hostname only, an endpoint only when its
 // service is visible, and drops node addresses and agent error texts.
 func TestEndpointsRowRedacts(t *testing.T) {
 	v := &mcpView{byName: map[string]mcpService{"shop_web": {}}}
-	e := &swarmops.NetEndpoints{
+	e := &clusterread.NetEndpoints{
 		Running: 2, Addrs: 4, LB: 1,
-		Nodes: []swarmops.NodeEndpoints{
-			{Node: "node-a", State: swarmops.NodeEndpointsOK, Expected: 2, Containers: 2, LB: 1, MACs: 3, Known: 5, Stale: 2},
-			{Node: "node-b", State: swarmops.NodeUnreachable, Err: "dial tcp 192.168.7.2:7000: refused"},
-			{Node: "idle", State: swarmops.NodeNotOnNetwork},
+		Nodes: []clusterread.NodeEndpoints{
+			{Node: "node-a", State: clusterread.NodeEndpointsOK, Expected: 2, Containers: 2, LB: 1, MACs: 3, Known: 5, Stale: 2},
+			{Node: "node-b", State: clusterread.NodeUnreachable, Err: "dial tcp 192.168.7.2:7000: refused"},
+			{Node: "idle", State: clusterread.NodeNotOnNetwork},
 		},
-		Stale: []swarmops.StaleEndpoint{
+		Stale: []clusterread.StaleEndpoint{
 			{IP: "10.0.1.30", Name: "shop_web.3.0000000000000000000000001", Service: "shop_web", Owner: "192.168.7.2", OwnerIP: "192.168.7.2"},
 			{IP: "10.0.1.31", Name: "secret_svc.1.0000000000000000000000002", Owner: "node-a", OwnerIP: "192.168.7.1", Orphan: true},
 		},
-		DupIPs: []swarmops.Duplicate{{Addr: "10.0.1.5", Endpoints: []string{"shop_web.1.0000000000000000000000003", "secret_svc.2.0000000000000000000000004"}}},
+		DupIPs: []clusterread.Duplicate{{Addr: "10.0.1.5", Endpoints: []string{"shop_web.1.0000000000000000000000003", "secret_svc.2.0000000000000000000000004"}}},
 	}
 	b, _ := json.Marshal(endpointsRow(e, v))
 	out := string(b)

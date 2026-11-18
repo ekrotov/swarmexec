@@ -9,14 +9,14 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"swarmexec/client/internal/swarmops"
+	"swarmexec/client/internal/clusterread"
 )
 
 // T-18: the Nodes tab's CPU% and MEM% come from the usage pass the tree
 // already polls, as a share of the node's capacity; a node without an agent
 // reading shows "–", never a confident 0%.
 func TestNodeUsagePercentCells(t *testing.T) {
-	n := swarmops.NodeInfo{Hostname: "a", NanoCPUs: 4e9, MemoryBytes: 8 << 30}
+	n := clusterread.NodeInfo{Hostname: "a", NanoCPUs: 4e9, MemoryBytes: 8 << 30}
 	for _, c := range []struct {
 		name     string
 		use      nodeUsage
@@ -35,7 +35,7 @@ func TestNodeUsagePercentCells(t *testing.T) {
 			t.Errorf("%s: MEM%% = %q, want %q", c.name, got, c.mem)
 		}
 	}
-	unsized := swarmops.NodeInfo{Hostname: "b"}
+	unsized := clusterread.NodeInfo{Hostname: "b"}
 	if got := nodeCPUPercent(unsized, nodeUsage{CPUReady: true, CPUPercent: 50}, true); got != "–" {
 		t.Errorf("CPU%% without a core count = %q", got)
 	}
@@ -54,7 +54,7 @@ func TestNodeUsagePercentCells(t *testing.T) {
 func TestNodesTabShowsUsageColumns(t *testing.T) {
 	u := tabsUI()
 	nt := u.nodeTab()
-	nt.st().rows = []swarmops.NodeInfo{
+	nt.st().rows = []clusterread.NodeInfo{
 		{Hostname: "node-a", Role: "manager", Leader: true, NanoCPUs: 2e9, MemoryBytes: 4 << 30},
 		{Hostname: "node-b", Role: "worker", NanoCPUs: 2e9, MemoryBytes: 4 << 30},
 	}

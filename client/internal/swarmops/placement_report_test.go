@@ -80,3 +80,19 @@ func TestBuildPlaceReport_ReplicatedNotYetScheduled(t *testing.T) {
 		t.Errorf("no replicas = %+v", rep)
 	}
 }
+
+// mkNode builds a swarm node for the placement tests. clusterread has its own
+// copy for its own tests; a shared one would tie this package to that one.
+func mkNode(id, host, role, avail, state string, leader bool, labels map[string]string) swarm.Node {
+	var n swarm.Node
+	n.ID = id
+	n.Description.Hostname = host
+	n.Spec.Role = swarm.NodeRole(role)
+	n.Spec.Availability = swarm.NodeAvailability(avail)
+	n.Spec.Annotations.Labels = labels
+	n.Status.State = swarm.NodeState(state)
+	if leader {
+		n.ManagerStatus = &swarm.ManagerStatus{Leader: true}
+	}
+	return n
+}

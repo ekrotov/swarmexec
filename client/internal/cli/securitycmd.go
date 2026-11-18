@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/endpoint"
-	"swarmexec/client/internal/swarmops"
 )
 
 // The security report is the scan the ui already shows under "!", written out
@@ -61,8 +61,8 @@ func newSecurityReportCmd(g *globalFlags) *cobra.Command {
 }
 
 // reportOptions is the report run these flags ask for.
-func (f *securityFlags) reportOptions(g *globalFlags, cfg config.Config, contextName string) swarmops.SecurityReportOptions {
-	return swarmops.SecurityReportOptions{
+func (f *securityFlags) reportOptions(g *globalFlags, cfg config.Config, contextName string) clusterread.SecurityReportOptions {
+	return clusterread.SecurityReportOptions{
 		ContextName:    contextName,
 		ClientVersion:  g.version.Binary,
 		ClientProto:    g.version.Proto,
@@ -91,7 +91,7 @@ func runSecurityReport(cmd *cobra.Command, g *globalFlags, f *securityFlags) err
 
 	ac := agentcall.New(cfg)
 	defer ac.Close()
-	report, err := swarmops.GatherSecurityReport(ctx, dcli, ac, f.reportOptions(g, cfg, dockerEP.Context))
+	report, err := clusterread.GatherSecurityReport(ctx, dcli, ac, f.reportOptions(g, cfg, dockerEP.Context))
 	if err != nil {
 		return &cliError{code: exitTransport, err: err}
 	}
