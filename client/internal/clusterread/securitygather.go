@@ -6,8 +6,10 @@ package clusterread
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 
 	"swarmexec/client/internal/agentcall"
@@ -108,7 +110,20 @@ func GatherCluster(ctx context.Context, dcli swarmapi.Client) (secscan.Cluster, 
 			Attachable: n.Attachable,
 			Encrypted:  n.Encrypted,
 			Services:   n.Services,
+			Subnets:    n.Subnets,
 		})
+	}
+	// The services' configuration TEXT, for the checks that read a spec
+	// against the cluster around it (a pinned overlay address). Best effort:
+	// without it those checks stay quiet, which is better than failing the
+	// whole report over one list.
+	if res, err := dcli.ServiceList(ctx, client.ServiceListOptions{}); err == nil {
+		for _, svc := range res.Items {
+			c.Services = append(c.Services, secscan.ServiceSpecText{
+				Name: svc.Spec.Name,
+				Text: specText(svc),
+			})
+		}
 	}
 	for _, s := range secrets {
 		c.Secrets = append(c.Secrets, secscan.Credential{Name: s.Name, Services: s.Services})
@@ -241,4 +256,35 @@ func ApplyAgentVersions(ctx context.Context, c *secscan.Cluster, ac *agentcall.C
 		}
 	}
 	c.AgentsChecked = true
+}
+
+// specText joins the strings a service's configuration is written in:
+// environment, command, arguments and labels. Deliberately not the mounts or
+// the image — an address in a bind path or a registry host is a different
+// thing — and never any secret or config CONTENT, which the Docker API does
+// not return anyway.
+func specText(svc swarm.Service) string {
+	var b strings.Builder
+	cs := svc.Spec.TaskTemplate.ContainerSpec
+	if cs != nil {
+		for _, e := range cs.Env {
+			b.WriteString(e)
+			b.WriteByte('\n')
+		}
+		for _, a := range cs.Command {
+			b.WriteString(a)
+			b.WriteByte('\n')
+		}
+		for _, a := range cs.Args {
+			b.WriteString(a)
+			b.WriteByte('\n')
+		}
+		for k, v := range cs.Labels {
+			b.WriteString(k + "=" + v + "\n")
+		}
+	}
+	for k, v := range svc.Spec.Labels {
+		b.WriteString(k + "=" + v + "\n")
+	}
+	return b.String()
 }

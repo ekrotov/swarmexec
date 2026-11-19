@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 
 	"swarmexec/client/internal/swarmapi"
@@ -277,12 +278,86 @@ func isOverlayDriver(d string) bool {
 	return d == "" || d == "overlay"
 }
 
+// NetworkPlan is what a create should be told before it runs: what is wrong
+// with the addressing it asked for, and what would be right instead.
+type NetworkPlan struct {
+	// Findings are the overlaps of the requested subnet (or of the default
+	// pool, when none was given).
+	Findings []OverlapFinding
+	// Subnet is a proposal, set only when the request had no subnet of its
+	// own or the one it had overlaps something. Invalid means none is offered.
+	Subnet SubnetAdvice
+	// MTU advises on framing; empty when the underlay's MTU is unknown.
+	MTU MTUAdvice
+}
+
+// Advise is the sentence pair a form or a command prints: what is wrong, and
+// what to do. Empty when there is nothing to say.
+func (p NetworkPlan) Advise() []string {
+	var out []string
+	for _, f := range p.Findings {
+		out = append(out, f.Severity.String()+": "+f.Message)
+	}
+	if p.Subnet.Subnet.IsValid() {
+		out = append(out, p.Subnet.Describe())
+	}
+	if p.MTU.Problem != "" {
+		out = append(out, "mtu: "+p.MTU.Problem)
+	}
+	if p.MTU.Option > 0 {
+		out = append(out, fmt.Sprintf(
+			"set --opt %s so containers get %d bytes, the most this underlay carries",
+			p.MTU.OptionFlag(), p.MTU.Inside))
+	}
+	return out
+}
+
+// PlanNetworkCreate is PreflightNetworkCreate plus the two things the operator
+// actually needs in order to decide: a subnet that collides with nothing, and
+// the MTU the overlay has to be told about.
+//
+// It proposes; it never substitutes. Whether to accept an overlap is the
+// operator's judgement — a lab cluster may legitimately want its overlays in
+// the host range — and a tool that quietly picked for them would hide the
+// decision rather than inform it.
+func PlanNetworkCreate(ctx context.Context, dcli swarmapi.Client, o NewNetworkOpts, underlay []netip.Prefix, underlayMTU int) NetworkPlan {
+	nodes, nets, pool, size := networkFacts(ctx, dcli, o)
+	plan := NetworkPlan{
+		Findings: CheckNewNetwork(o, nodes, underlay, nets, pool, size),
+		MTU:      AdviseMTU(underlayMTU, atoiSafe(o.MTU)),
+	}
+	if WorstSeverity(plan.Findings) > OverlapNone || strings.TrimSpace(o.Subnet) == "" {
+		bits := 24
+		if size > 0 && size <= 30 {
+			bits = int(size)
+		}
+		plan.Subnet = SuggestSubnet(bits, nodes, underlay, nets, pool)
+	}
+	return plan
+}
+
+func atoiSafe(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // PreflightNetworkCreate gathers what CheckNewNetwork needs — node addresses,
 // the existing networks' subnets and, when no subnet is given, the swarm's
 // default address pool — and runs it. Best effort: a failed lookup drops that
 // part of the check rather than blocking the create (the daemon is the
 // authority on whether the network can be created at all).
 func PreflightNetworkCreate(ctx context.Context, dcli swarmapi.Client, o NewNetworkOpts, underlay []netip.Prefix) []OverlapFinding {
+	nodes, nets, pool, size := networkFacts(ctx, dcli, o)
+	return CheckNewNetwork(o, nodes, underlay, nets, pool, size)
+}
+
+// networkFacts reads what both the check and the proposal need. Best effort: a
+// failed lookup drops that part rather than blocking the create, since the
+// daemon remains the authority on whether the network can be made at all.
+func networkFacts(ctx context.Context, dcli swarmapi.Client, o NewNetworkOpts) ([]NodeAddr, []Network, []netip.Prefix, uint32) {
 	var nodes []NodeAddr
 	if res, err := dcli.NodeList(ctx, client.NodeListOptions{}); err == nil {
 		nodes = NodeAddrs(res.Items)
@@ -296,12 +371,12 @@ func PreflightNetworkCreate(ctx context.Context, dcli swarmapi.Client, o NewNetw
 	}
 	var pool []netip.Prefix
 	var size uint32
-	if strings.TrimSpace(o.Subnet) == "" && isOverlayDriver(o.Driver) {
+	if isOverlayDriver(o.Driver) {
 		if res, err := dcli.SwarmInspect(ctx, client.SwarmInspectOptions{}); err == nil {
 			pool, size = res.Swarm.DefaultAddrPool, res.Swarm.SubnetSize
 		}
 	}
-	return CheckNewNetwork(o, nodes, underlay, nets, pool, size)
+	return nodes, nets, pool, size
 }
 
 // ipamSubnets returns a network's configured subnets and gateways (gateways

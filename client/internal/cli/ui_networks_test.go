@@ -193,13 +193,39 @@ func TestMembersOverlayCarriesTheHeader(t *testing.T) {
 	}
 }
 
-func TestCreateOverlapMessage(t *testing.T) {
-	fs := []swarmops.OverlapFinding{{Message: "10.0.1.0/24 contains host IPs: 10.0.1.2 (a)"}}
-	msg := createOverlapMessage(swarmops.NewNetworkOpts{Name: " db ", Subnet: "10.0.1.0/24"}, fs)
-	for _, want := range []string{`Network "db"`, "⚠ 10.0.1.0/24 contains host IPs", "10.100.1.0/24", "Create anyway?"} {
+func TestCreatePlanMessage(t *testing.T) {
+	plan := swarmops.NetworkPlan{
+		Findings: []swarmops.OverlapFinding{{Message: "10.0.1.0/24 contains host IPs: 10.0.1.2 (a)"}},
+		Subnet:   swarmops.SuggestSubnet(24, nil, nil, nil, nil),
+		MTU:      swarmops.AdviseMTU(1450, 0),
+	}
+	msg := createPlanMessage(swarmops.NewNetworkOpts{Name: " db ", Subnet: "10.0.1.0/24"}, plan)
+	for _, want := range []string{
+		`Network "db"`,
+		"⚠ 10.0.1.0/24 contains host IPs",
+		"suggested subnet",
+		"set MTU 1450",
+		"Create anyway?",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message lacks %q:\n%s", want, msg)
 		}
+	}
+}
+
+// With no underlay MTU configured the form must say the framing was NOT
+// checked, rather than implying a clean bill of health.
+func TestCreatePlanMessageSaysWhenTheMTUIsUnknown(t *testing.T) {
+	plan := swarmops.NetworkPlan{
+		Findings: []swarmops.OverlapFinding{{Message: "overlaps the underlay"}},
+		MTU:      swarmops.AdviseMTU(0, 0),
+	}
+	msg := createPlanMessage(swarmops.NewNetworkOpts{Name: "db"}, plan)
+	if !strings.Contains(msg, "underlay's MTU is unknown") || !strings.Contains(msg, "underlay_mtu") {
+		t.Errorf("message must name the missing config key:\n%s", msg)
+	}
+	if strings.Contains(msg, "set MTU") {
+		t.Errorf("no MTU may be proposed without knowing the underlay:\n%s", msg)
 	}
 }
 
