@@ -257,6 +257,21 @@
         that pool which may overlap the hosts, and suggests an explicit subnet — you can
         still create after confirming.
       </p>
+      <p>
+        The dialog also <strong>proposes</strong> rather than merely objects: a concrete
+        free subnet, drawn from a range clear of the node addresses, the underlay, every
+        existing network and the swarm's default pool — and, when
+        <a href="/docs/configuration"><code>contexts.&lt;name&gt;.underlay_mtu</code></a>
+        is set, the MTU the overlay should carry. That second one is easy to get wrong in
+        a way nothing reports: <code>com.docker.network.driver.mtu</code> states the
+        <em>underlay's</em> MTU and Docker subtracts 50 bytes of VXLAN overhead from it,
+        so its default of 1500 on a 1450-byte link produces frames that are dropped in
+        silence — which reads as a slow or flaky connection rather than a broken one.
+        Set the option to the link's own MTU and containers get exactly what fits.
+        Both are suggestions: whether to accept an overlap is your call, and the moment
+        after the network exists is the moment it can no longer be changed without
+        detaching every service from it.
+      </p>
       <h3 id="tui-network-endpoints">Endpoints and stale addresses</h3>
       <p>
         Every node's daemon keeps its own copy (networkdb) of an overlay network's

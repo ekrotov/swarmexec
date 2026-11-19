@@ -128,6 +128,18 @@ type ContextConfig struct {
 	// overlap it. Without it only the nodes' own addresses are checked.
 	Underlay []string `yaml:"underlay,omitempty"`
 
+	// UnderlayMTU is the MTU of that host network, e.g. 1450 on a Hetzner
+	// private network. Optional, and there is deliberately no default: Docker
+	// already assumes 1500 for every overlay it creates, and that assumption
+	// is exactly what this value exists to correct. Guessing it here would
+	// reproduce the bug in the tool that reports it.
+	//
+	// It is configured rather than measured because the agent cannot see it:
+	// its container has its own network namespace, so it would read 1500 from
+	// its own veth and not the link the nodes actually talk over. Read it off
+	// a node once (`ip -o link show <iface>`) and write it down.
+	UnderlayMTU int `yaml:"underlay_mtu,omitempty"`
+
 	// ConfirmSwitch makes the TUI ask before switching TO this context — for
 	// production clusters, where a stray Enter in the contexts sidebar should
 	// not be enough to put every following keystroke on them.
@@ -169,6 +181,13 @@ func (c Config) Underlay(contextName string) []netip.Prefix {
 		}
 	}
 	return out
+}
+
+// UnderlayMTU returns the host network's MTU configured for a context, or 0
+// when it is not known. Callers must treat 0 as "say nothing" rather than as
+// a default.
+func (c Config) UnderlayMTU(contextName string) int {
+	return c.Contexts[contextName].UnderlayMTU
 }
 
 // parseUnderlay parses one underlay entry as a CIDR, normalised to its

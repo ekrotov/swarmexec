@@ -284,6 +284,11 @@ func (t *networksTab) endpointNote(n swarmops.Network) (string, tcell.Color) {
 // contexts.<name>.underlay); nil when none is set.
 func (u *ui) underlay() []netip.Prefix { return u.cfg.Underlay(u.name) }
 
+// underlayMTU is the host network's MTU for this context, 0 when unconfigured.
+// Zero means "unknown", never 1500: assuming the default is exactly the
+// assumption that makes an overlay drop packets on a cloud network.
+func (u *ui) underlayMTU() int { return u.cfg.UnderlayMTU(u.name) }
+
 // subnetText is the SUBNET cell: the network's subnets, comma-joined.
 func subnetText(n swarmops.Network) string {
 	if len(n.Subnets) == 0 {
@@ -995,15 +1000,21 @@ func (t *networksTab) showCreate() {
 		// underlay and the existing networks (or, without a subnet, the pool
 		// Docker will pick one from). A hit asks; a clean check creates.
 		checking = true
-		async(u, "ui.networks.precheck", func(ctx context.Context) ([]swarmops.OverlapFinding, error) {
-			return swarmops.PreflightNetworkCreate(ctx, dcli, opts, underlay), nil
-		}, func(fs []swarmops.OverlapFinding, _ error) {
+		mtu := u.underlayMTU()
+		async(u, "ui.networks.precheck", func(ctx context.Context) (swarmops.NetworkPlan, error) {
+			return swarmops.PlanNetworkCreate(ctx, dcli, opts, underlay, mtu), nil
+		}, func(plan swarmops.NetworkPlan, _ error) {
 			checking = false
-			if len(fs) == 0 {
+			// A clean plan with nothing to advise creates straight away. An
+			// MTU proposal alone is still worth stopping for: the default is
+			// silently wrong on any link below 1500, and the moment after the
+			// network exists is the moment it can no longer be changed
+			// without detaching every service from it.
+			if len(plan.Findings) == 0 && plan.MTU.Problem == "" {
 				create(opts)
 				return
 			}
-			u.confirm(createOverlapMessage(opts, fs), "Create anyway", form, func() { create(opts) })
+			u.confirm(createPlanMessage(opts, plan), "Create anyway", form, func() { create(opts) })
 		})
 	})
 	form.AddButton("Cancel", closeForm)
@@ -1017,16 +1028,32 @@ func (t *networksTab) showCreate() {
 	ov.show(centered(form, formWidth, 22), form)
 }
 
-// createOverlapMessage is the create-anyway question: what the address check
-// found for the new network, and how to avoid it.
-func createOverlapMessage(o swarmops.NewNetworkOpts, fs []swarmops.OverlapFinding) string {
+// createPlanMessage is the create-anyway question: what the address and MTU
+// checks found, and what to use instead.
+//
+// It proposes rather than corrects. Whether an overlap is acceptable is the
+// operator's call — a lab cluster may well want its overlays inside the host
+// range — and a form that silently substituted its own answer would hide the
+// decision instead of informing it.
+func createPlanMessage(o swarmops.NewNetworkOpts, plan swarmops.NetworkPlan) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Network %q: address check\n\n", strings.TrimSpace(o.Name))
-	for _, f := range fs {
+	fmt.Fprintf(&b, "Network %q: address and MTU check\n\n", strings.TrimSpace(o.Name))
+	for _, f := range plan.Findings {
 		fmt.Fprintf(&b, "⚠ %s\n", f.Message)
 	}
-	if strings.TrimSpace(o.Subnet) != "" {
-		b.WriteString("\nPick a subnet outside the hosts' network (e.g. 10.100.1.0/24).")
+	if plan.MTU.Problem != "" {
+		fmt.Fprintf(&b, "⚠ %s\n", plan.MTU.Problem)
+	}
+	if plan.Subnet.Subnet.IsValid() {
+		fmt.Fprintf(&b, "\n→ %s", plan.Subnet.Describe())
+	}
+	if plan.MTU.Option > 0 {
+		fmt.Fprintf(&b, "\n→ set MTU %d (the underlay's own), which gives containers %d bytes",
+			plan.MTU.Option, plan.MTU.Inside)
+	}
+	if plan.MTU.UnderlayMTU == 0 {
+		b.WriteString("\n\nThe underlay's MTU is unknown, so the framing was not checked. " +
+			"Set contexts.<name>.underlay_mtu in the config to have it verified.")
 	}
 	b.WriteString("\n\nCreate anyway?")
 	return b.String()

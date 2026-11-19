@@ -4,6 +4,7 @@
 package secscan
 
 import (
+	"net/netip"
 	"sort"
 )
 
@@ -58,6 +59,28 @@ type Network struct {
 	Attachable bool
 	Encrypted  bool     // data-plane encryption is on
 	Services   []string // services attached, by name
+
+	// Subnets are the network's configured CIDRs. They are here so a check can
+	// tell an address that belongs to an overlay from one that does not.
+	Subnets []netip.Prefix
+}
+
+// ServiceSpecText is one service reduced to the strings its configuration is
+// written in: environment, command, arguments and labels.
+//
+// It exists because of a real outage. A service had its database address
+// written into its configuration as a literal overlay IP rather than as the
+// network alias; recreating that network reassigned every address, the literal
+// stopped resolving to anything, and the service crash-looped with "no route
+// to host" while every other service — all of which used aliases — came back
+// untouched. Nothing in the tool could have warned about it, because nothing
+// looked at the text of a spec against the addresses of the cluster.
+type ServiceSpecText struct {
+	Name string
+	// Text is every configuration string of the service, already joined. Only
+	// values the Docker API returns in the spec; no secret or config CONTENT,
+	// which is not readable anyway.
+	Text string
 }
 
 // Credential is a secret or a config: only its name and who uses it. Secret
@@ -95,6 +118,10 @@ type SwarmInfo struct {
 // is itself a finding.
 type Cluster struct {
 	Networks []Network
+	// Services carries each service's configuration text, for the checks that
+	// compare a spec against the cluster around it. Empty when the caller did
+	// not gather it; the checks then stay quiet.
+	Services []ServiceSpecText
 	Secrets  []Credential
 	Configs  []Credential
 	Nodes    []Node
@@ -125,6 +152,7 @@ var clusterRegistry = []ClusterAnalyzer{
 	networkEncryptionAnalyzer{},
 	autolockAnalyzer{},
 	agentVersionAnalyzer{},
+	pinnedOverlayAddressAnalyzer{},
 	unusedSecretAnalyzer{},
 	unusedConfigAnalyzer{},
 }
