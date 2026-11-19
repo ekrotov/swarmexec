@@ -50,6 +50,22 @@ const (
 	SocketPath = "/var/run/docker.sock"
 	SocketURL  = "unix://" + SocketPath
 
+	// HostSysfsPath and HostSysfsMount are the node's sysfs, bind-mounted
+	// READ-ONLY so the agent can report the node's own link MTUs.
+	//
+	// It is a mount rather than something the agent reads directly because a
+	// swarm service has its own network namespace — swarm has no
+	// `network_mode: host` — so the agent's own interfaces are a veth pair
+	// into a bridge and would report 1500 for a node whose link carries 1450.
+	// 1500 is the number Docker already assumes, so reporting it again would
+	// confirm the mistake rather than find it.
+	//
+	// Read-only, and only link metadata is read (name, mtu, operstate, type);
+	// sysfs carries no addresses. An agent without the mount reports no links
+	// and the client says the underlay is unknown.
+	HostSysfsPath  = "/sys"
+	HostSysfsMount = "/host/sys"
+
 	// RoleLabel marks the objects swarmexec creates, so an operator (and
 	// `swarmexec down`) can find them without guessing from an image name.
 	// RoleAgent is on the agent service, RoleForward on a port-forward sidecar:

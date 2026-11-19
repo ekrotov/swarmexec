@@ -326,3 +326,21 @@ func TestCreateNetworkWithoutSubnetChecksTheDefaultPool(t *testing.T) {
 	pressEnter(u)
 	waitCreated(t, m, "auto2")
 }
+
+// The create dialog's MTU comes from the config when it is set, and from what
+// the agents reported otherwise. Never from a default: 1500 is the assumption
+// the whole check exists to question.
+func TestUnderlayMTUPrefersTheConfigThenTheAgents(t *testing.T) {
+	cs := &clusterState{name: "prod"}
+	u := &ui{clusterState: cs}
+	if got := u.underlayMTU(); got != 0 {
+		t.Errorf("with nothing known: %d, want 0 (unknown)", got)
+	}
+
+	cs.cfg = config.Config{Contexts: map[string]config.ContextConfig{
+		"prod": {UnderlayMTU: 1400},
+	}}
+	if got := u.underlayMTU(); got != 1400 {
+		t.Errorf("configured: %d, want 1400, which must beat anything discovered", got)
+	}
+}

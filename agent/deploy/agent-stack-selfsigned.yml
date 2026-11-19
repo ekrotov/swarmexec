@@ -85,6 +85,12 @@ services:
       - swarmexec_agent_secret
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # The node's sysfs, READ-ONLY: the agent reads link MTUs from it so the
+      # client can size an overlay for the link that actually carries it. A
+      # swarm service has its own network namespace, so without this the agent
+      # would report its own veth's 1500 — which is the number Docker already
+      # assumes, and the one that silently drops packets on a 1450 link.
+      - /sys:/host/sys:ro
     networks:
       - swarmexec
     ports:

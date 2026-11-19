@@ -764,3 +764,28 @@ func (f endpointFilter) scopeNetwork(ni *pb.NetworkEndpointsInfo) {
 		s.Tasks = ts
 	}
 }
+
+// HostLinksOf collects the node interfaces the agents reported, for working
+// out the underlay's MTU (swarmops.DetermineUnderlayMTU).
+//
+// An agent that predates the field, or one deployed without the read-only
+// /sys mount, simply contributes nothing — which the caller must read as
+// "unknown", never as a default.
+func HostLinksOf(res []agentcall.NodeNetworkEndpoints) []swarmops.NodeLink {
+	var out []swarmops.NodeLink
+	for _, n := range res {
+		if n.Err != nil || n.Resp == nil {
+			continue
+		}
+		for _, l := range n.Resp.GetHostLinks() {
+			out = append(out, swarmops.NodeLink{
+				Node:      n.Node.Name,
+				Name:      l.GetName(),
+				MTU:       int(l.GetMtu()),
+				Operstate: l.GetOperstate(),
+				ARPType:   int(l.GetArpType()),
+			})
+		}
+	}
+	return out
+}

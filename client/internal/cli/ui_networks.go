@@ -50,6 +50,10 @@ type netEndpointsState struct {
 	byNet   map[string]*clusterread.NetEndpoints // by network ID
 	failed  int                                  // nodes that could not answer
 	err     error                                // the whole load failed (node or task list)
+	// underlay is what the nodes' own links say the host network carries.
+	// Zero MTU means unknown; the create form then says so rather than
+	// implying the framing was checked.
+	underlay swarmops.UnderlayMTU
 }
 
 // endpointsStuck is how long a load may be in flight before another one is
@@ -163,8 +167,9 @@ func (t *networksTab) endpoints() *netEndpointsState { return t.ep.of(t.u.cluste
 
 // netEndpointsResult is what one endpoint load hands to the UI goroutine.
 type netEndpointsResult struct {
-	byNet  map[string]*clusterread.NetEndpoints
-	failed int
+	byNet    map[string]*clusterread.NetEndpoints
+	failed   int
+	underlay swarmops.UnderlayMTU
 }
 
 // loadEndpoints asks every node's agent for its view of the overlay networks
@@ -205,7 +210,13 @@ func fetchNetEndpoints(ctx context.Context, r *resolve.Resolver, ac *agentcall.C
 	if err != nil {
 		return netEndpointsResult{}, err
 	}
-	out := netEndpointsResult{byNet: clusterread.AnalyzeEndpoints(tasks, res)}
+	out := netEndpointsResult{
+		byNet: clusterread.AnalyzeEndpoints(tasks, res),
+		// The nodes' own links come back on the same call, so the underlay's
+		// MTU costs no extra round trip: it is read where the overlays it
+		// constrains are already being looked at.
+		underlay: swarmops.DetermineUnderlayMTU(clusterread.HostLinksOf(res)),
+	}
 	for _, n := range res {
 		if n.Err != nil {
 			out.failed++
@@ -221,7 +232,7 @@ func (t *networksTab) endpointsLoaded(st *netEndpointsState, res netEndpointsRes
 	st.loading = time.Time{}
 	st.loaded, st.err = true, err
 	if err == nil {
-		st.byNet, st.failed = res.byNet, res.failed
+		st.byNet, st.failed, st.underlay = res.byNet, res.failed, res.underlay
 	}
 	if t.shownFor == u.clusterState {
 		t.render()
@@ -284,10 +295,23 @@ func (t *networksTab) endpointNote(n swarmops.Network) (string, tcell.Color) {
 // contexts.<name>.underlay); nil when none is set.
 func (u *ui) underlay() []netip.Prefix { return u.cfg.Underlay(u.name) }
 
-// underlayMTU is the host network's MTU for this context, 0 when unconfigured.
-// Zero means "unknown", never 1500: assuming the default is exactly the
+// underlayMTU is the host network's MTU for this context: what the config
+// says, or else what the nodes' own links reported on the last endpoints load.
+// Zero means "unknown", never 1500 — assuming the default is exactly the
 // assumption that makes an overlay drop packets on a cloud network.
-func (u *ui) underlayMTU() int { return u.cfg.UnderlayMTU(u.name) }
+//
+// The configured value wins on purpose. Discovery reads each node's sysfs and
+// applies a rule (swarmops.DetermineUnderlayMTU); an operator who has written
+// the number down has looked at the actual topology, which no rule can do.
+func (u *ui) underlayMTU() int {
+	if m := u.cfg.UnderlayMTU(u.name); m > 0 {
+		return m
+	}
+	if st := u.netTab().endpoints(); st != nil {
+		return st.underlay.MTU
+	}
+	return 0
+}
 
 // subnetText is the SUBNET cell: the network's subnets, comma-joined.
 func subnetText(n swarmops.Network) string {

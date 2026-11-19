@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"swarmexec/internal/deploy"
+
+	"swarmexec/agent/internal/hostlink"
 )
 
 // DefaultPort is the agent's gRPC/TLS port (CONTRACT.md §2).
@@ -69,6 +71,13 @@ type Config struct {
 	// ForwardImage overrides the image port-forward sidecars run from; empty
 	// means the agent's own image, found by self-inspection.
 	ForwardImage string
+
+	// SysfsPath is where the host's sysfs is bind-mounted read-only, so the
+	// agent can report the node's own link MTUs. The deployment mounts it;
+	// without the mount the agent reports no links and the client treats the
+	// underlay as unknown rather than guessing 1500 — which is the number
+	// that causes the problem it is trying to detect.
+	SysfsPath string
 
 	DrainTimeout   time.Duration // graceful-shutdown drain window
 	IdleTimeout    time.Duration // per-session idle timeout (0 = disabled)
@@ -188,6 +197,7 @@ func Parse(args []string, out io.Writer) (*Config, error) {
 	fs.IntVar(&c.MaxStreams, "max-streams", ev.int("SWARMEXEC_MAX_STREAMS", 0), "max concurrent streams (exec, logs, port-forward, event watches), 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_STREAMS)")
 	fs.IntVar(&c.MaxForwardSidecars, "max-forward-sidecars", ev.int("SWARMEXEC_MAX_FORWARD_SIDECARS", 0), "max live port-forward sidecar containers, 0=built-in default, negative=unlimited (env SWARMEXEC_MAX_FORWARD_SIDECARS)")
 	fs.StringVar(&c.ForwardImage, "forward-image", env("SWARMEXEC_FORWARD_IMAGE", ""), "image for port-forward sidecars; empty = the agent's own image (env SWARMEXEC_FORWARD_IMAGE)")
+	fs.StringVar(&c.SysfsPath, "sysfs-path", env("SWARMEXEC_SYSFS_PATH", hostlink.DefaultSysfs), "where the host's sysfs is mounted read-only, for the node's link MTUs; empty disables it (env SWARMEXEC_SYSFS_PATH)")
 	fs.StringVar(&c.LogLevel, "log-level", env("SWARMEXEC_LOG_LEVEL", "info"), "log level: debug|info|warn|error (env SWARMEXEC_LOG_LEVEL)")
 	fs.StringVar(&c.LogFormat, deploy.FlagLogFormat, env("SWARMEXEC_LOG_FORMAT", "json"), "log format: json|text (env SWARMEXEC_LOG_FORMAT)")
 	fs.StringVar(&c.AuditDest, deploy.FlagAuditDest, env("SWARMEXEC_AUDIT_DEST", "stdout"), "audit log destination: stdout|stderr|<file path> (env SWARMEXEC_AUDIT_DEST)")

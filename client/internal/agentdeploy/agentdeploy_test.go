@@ -91,8 +91,17 @@ func TestAgentServiceSpec(t *testing.T) {
 	if len(cs.Secrets) != 1 || cs.Secrets[0].SecretID != "sec-123" {
 		t.Errorf("secret ref wrong: %+v", cs.Secrets)
 	}
-	if len(cs.Mounts) != 1 || cs.Mounts[0].Source != "/var/run/docker.sock" {
+	if len(cs.Mounts) != 2 || cs.Mounts[0].Source != "/var/run/docker.sock" {
 		t.Errorf("socket mount wrong: %+v", cs.Mounts)
+	}
+	// The host's sysfs, read-only: the agent reads link MTUs from it so the
+	// client can size an overlay for the link that carries it. Read-only is
+	// part of the contract, not an incidental flag — the agent has no reason
+	// to write to the node's sysfs and must not be able to.
+	sysfs := cs.Mounts[1]
+	if sysfs.Source != deploy.HostSysfsPath || sysfs.Target != deploy.HostSysfsMount || !sysfs.ReadOnly {
+		t.Errorf("sysfs mount = %+v, want %s -> %s read-only",
+			sysfs, deploy.HostSysfsPath, deploy.HostSysfsMount)
 	}
 	// Health timings, but the command left to the image: a spec naming
 	// `-healthcheck` would restart-loop an agent rolled back to an image

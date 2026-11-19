@@ -316,6 +316,16 @@ no longer knows about. The agent reads that copy through the Docker API only —
 the kernel FDB itself would need capabilities the agent does not have.
 
 - Authorized as `network.inspect`. Read-only.
+- `host_links` reports the NODE'S OWN interfaces — the underlay the overlays
+  ride on — read from the host's sysfs bind-mounted read-only at `/host/sys`
+  (`-sysfs-path`, default `/host/sys`; empty disables it). Name, MTU,
+  `operstate` and the sysfs `type` only: sysfs carries no addresses, and the
+  agent has neither the host's network namespace nor its `/proc`. An agent
+  without the mount reports **no links**, which callers must read as "unknown",
+  never as a default — the agent's own namespace would say 1500, and 1500 is
+  already what Docker assumes when it sizes an overlay. Which link is the
+  underlay is the CLIENT's conclusion, drawn from these facts and shown with
+  its reasoning.
 - Empty `network_ids`: every **swarm-scope** network this node has **joined**
   — listed with `scope=swarm` and inspected with `verbose=true, scope=swarm`. A
   network the daemon lists but has not instantiated (a manager lists every swarm
