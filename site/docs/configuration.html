@@ -257,6 +257,15 @@ contexts:
         </tbody>
       </table></div>
 
+      <p class="note">
+        These configure the <strong>client</strong>, the binary you run. The agent on
+        each node reads its own <code>SWARMEXEC_*</code> variables, and several names
+        overlap — <code>SWARMEXEC_PORT</code> and <code>SWARMEXEC_AGENT_SECRET</code>
+        mean one thing in your shell and another in the agent's container. The agent's
+        side is listed under
+        <a href="/docs/agents#flags">the agent's own flags and environment variables</a>.
+      </p>
+
       <h2 id="global">Global flags</h2>
       <p>These persistent flags apply to every command. Each command's
         <code>--help</code> lists the everyday ones; the connection flags (TLS, the

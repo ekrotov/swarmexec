@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>swarmexec agents — init, down, doctor, monitoring and re-rolling</title>
-  <meta name="description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.">
+  <title>swarmexec agents — init, down, doctor, flags, monitoring and re-rolling</title>
+  <meta name="description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents, re-roll them without changing the secret, and set the agent's own flags and environment variables.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/agents">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
-  <meta property="og:title" content="swarmexec agents — init, down, doctor, monitoring and re-rolling">
-  <meta property="og:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.">
+  <meta property="og:title" content="swarmexec agents — init, down, doctor, flags, monitoring and re-rolling">
+  <meta property="og:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents, re-roll them without changing the secret, and set the agent's own flags and environment variables.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/agents">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -20,8 +20,8 @@
   <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="swarmexec agents — init, down, doctor, monitoring and re-rolling">
-  <meta name="twitter:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.">
+  <meta name="twitter:title" content="swarmexec agents — init, down, doctor, flags, monitoring and re-rolling">
+  <meta name="twitter:description" content="Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents, re-roll them without changing the secret, and set the agent's own flags and environment variables.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
@@ -30,8 +30,8 @@
     "@graph": [
       {
         "@type": "TechArticle",
-        "headline": "swarmexec agents — init, down, doctor, monitoring and re-rolling",
-        "description": "Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents and re-roll them without changing the secret.",
+        "headline": "swarmexec agents — init, down, doctor, flags, monitoring and re-rolling",
+        "description": "Provision the swarmexec agents as a global Docker Swarm service with init, remove them with down, diagnose the swarm with doctor, see it at a glance with status and stats, monitor the agents, re-roll them without changing the secret, and set the agent's own flags and environment variables.",
         "url": "https://swarm-exec.cloud-surfers.net/docs/agents",
         "inLanguage": "en",
         "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
@@ -113,6 +113,7 @@
           <li><a href="#stats">stats — live CPU and memory per container</a></li>
           <li><a href="#monitoring">Monitoring the agents</a></li>
           <li><a href="#reroll">Re-rolling the agents without changing the secret</a></li>
+          <li><a href="#flags">The agent's own flags and environment variables</a></li>
         </ol>
       </div>
 
@@ -360,6 +361,75 @@ swarmexec stats --json web</div>
         a new connection is asked again.
       </p>
       <div class="prompt"><span class="c">$</span> swarmexec doctor</div>
+
+      <h2 id="flags">The agent's own flags and environment variables</h2>
+      <p>
+        <code>init</code> deploys the agent with everything it needs, so on a swarm
+        provisioned that way you never pass any of these. They matter when you run the
+        agent yourself &mdash; from the stack file in
+        <a href="https://github.com/ekrotov/swarmexec/tree/main/agent/deploy">agent/deploy</a>,
+        under systemd, or in a test &mdash; and when you want to know what
+        <code>init</code> actually set. Every flag has an environment variable of the
+        same name; the flag wins when both are given.
+      </p>
+      <div class="prompt"><span class="c">$</span> docker run --rm logleio/swarmexec-agent:latest --version</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Env</th><th>Default</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>-port</code></td><td><code>SWARMEXEC_PORT</code></td><td><code>9443</code></td><td>gRPC listen port; <code>-listen</code> overrides it when set</td></tr>
+          <tr><td><code>-listen</code></td><td><code>SWARMEXEC_LISTEN</code></td><td>derived from <code>-port</code></td><td>gRPC listen address, e.g. <code>:9443</code></td></tr>
+          <tr><td><code>-ca-cert</code></td><td><code>SWARMEXEC_CA_CERT</code></td><td>—</td><td>CA that verifies client certificates — see <a href="/docs/authentication#auth">mutual TLS</a></td></tr>
+          <tr><td><code>-server-cert</code></td><td><code>SWARMEXEC_SERVER_CERT</code></td><td>—</td><td>server certificate</td></tr>
+          <tr><td><code>-server-key</code></td><td><code>SWARMEXEC_SERVER_KEY</code></td><td>—</td><td>server private key</td></tr>
+          <tr><td><code>-self-signed</code></td><td><code>SWARMEXEC_SELF_SIGNED</code></td><td><code>false</code></td><td>generate the server certificate at startup; then needs <code>-ca-cert</code> or a shared secret. This is what <code>init</code> deploys</td></tr>
+          <tr><td><code>-cert-sans</code></td><td><code>SWARMEXEC_CERT_SANS</code></td><td>—</td><td>extra SANs for the self-signed certificate, e.g. <code>DNS:swarmexec-agent,IP:10.0.0.5</code></td></tr>
+          <tr><td><code>-agent-secret</code></td><td><code>SWARMEXEC_AGENT_SECRET</code></td><td>—</td><td>the shared secret itself; prefer the file form, so it is not in the service spec</td></tr>
+          <tr><td><code>-agent-secret-file</code></td><td><code>SWARMEXEC_AGENT_SECRET_FILE</code></td><td>—</td><td>read the shared secret from a file, e.g. a Docker secret at <code>/run/secrets/…</code></td></tr>
+          <tr><td><code>-allow-legacy-secret</code></td><td><code>SWARMEXEC_ALLOW_LEGACY_SECRET</code></td><td><code>true</code></td><td>also accept the raw shared secret from clients predating connection-bound auth; each agent logs a warning once when it does. Turn it off once every client is rolled forward</td></tr>
+          <tr><td><code>-policy-file</code></td><td><code>SWARMEXEC_POLICY_FILE</code></td><td>—</td><td>authorization rule file; empty allows every authenticated request — see <a href="/docs/authentication#policy">authorization policy</a></td></tr>
+          <tr><td><code>-docker-host</code></td><td><code>SWARMEXEC_DOCKER_HOST</code></td><td><code>unix:///var/run/docker.sock</code></td><td>the Docker endpoint the agent proxies into</td></tr>
+          <tr><td><code>-forward-image</code></td><td><code>SWARMEXEC_FORWARD_IMAGE</code></td><td>the agent's own image</td><td>image used for <a href="/docs/port-forward">port-forward</a> sidecars</td></tr>
+          <tr><td><code>-sysfs-path</code></td><td><code>SWARMEXEC_SYSFS_PATH</code></td><td><code>/host/sys</code></td><td>where the host's sysfs is bind-mounted <strong>read-only</strong>, for the node's link MTUs. Empty disables it. Without the mount the agent reports no links and the client calls the underlay unknown — the honest answer, since a swarm service has its own network namespace and would otherwise report its own veth's 1500</td></tr>
+          <tr><td><code>-drain-timeout</code></td><td><code>SWARMEXEC_DRAIN_TIMEOUT</code></td><td><code>5s</code></td><td>graceful-shutdown drain window</td></tr>
+          <tr><td><code>-idle-timeout</code></td><td><code>SWARMEXEC_IDLE_TIMEOUT</code></td><td><code>30m</code></td><td>per-session idle timeout; <code>0</code> disables it</td></tr>
+          <tr><td><code>-max-session</code></td><td><code>SWARMEXEC_MAX_SESSION</code></td><td><code>12h</code></td><td>per-session maximum duration; <code>0</code> disables it</td></tr>
+          <tr><td><code>-max-streams</code></td><td><code>SWARMEXEC_MAX_STREAMS</code></td><td><code>256</code></td><td>concurrent streams (exec, logs, port-forward, event watches). <code>0</code> means this built-in default, negative means unlimited</td></tr>
+          <tr><td><code>-max-forward-sidecars</code></td><td><code>SWARMEXEC_MAX_FORWARD_SIDECARS</code></td><td><code>64</code></td><td>live port-forward sidecar containers — one per forward, not per connection. <code>0</code> means this built-in default, negative means unlimited</td></tr>
+          <tr><td><code>-log-level</code></td><td><code>SWARMEXEC_LOG_LEVEL</code></td><td><code>info</code></td><td><code>debug</code> / <code>info</code> / <code>warn</code> / <code>error</code></td></tr>
+          <tr><td><code>-log-format</code></td><td><code>SWARMEXEC_LOG_FORMAT</code></td><td><code>json</code></td><td><code>json</code> or <code>text</code></td></tr>
+          <tr><td><code>-audit-dest</code></td><td><code>SWARMEXEC_AUDIT_DEST</code></td><td><code>stdout</code></td><td><code>stdout</code>, <code>stderr</code> or a file path; the audit log never contains stdin/stdout payloads</td></tr>
+          <tr><td><code>-metrics-addr</code></td><td><code>SWARMEXEC_METRICS_ADDR</code></td><td>— (off)</td><td>Prometheus listen address, e.g. <code>:9100</code> — see <a href="#monitoring">monitoring the agents</a></td></tr>
+          <tr><td><code>-healthcheck</code></td><td>—</td><td>—</td><td>run the container <a href="#healthcheck">health probe</a> instead of the agent and exit 0/1</td></tr>
+          <tr><td><code>-version</code></td><td>—</td><td>—</td><td>print the build and protocol version and exit</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        An environment variable that is <em>set but invalid</em> —
+        <code>SWARMEXEC_ALLOW_LEGACY_SECRET=flase</code>, a
+        <code>SWARMEXEC_DRAIN_TIMEOUT=5</code> without a unit, a non-numeric port or
+        limit — stops the agent at startup with an error naming the variable, exactly as
+        an invalid flag would. It does not fall back to the default silently, because a
+        silent fallback is how a cap you believed in turns out never to have been set.
+        Booleans accept <code>1/true/yes/on</code> and <code>0/false/no/off</code>.
+      </div>
+      <p>
+        A shared secret shorter than 16 characters is accepted but logged as a
+        <code>WARN</code> at startup — its length only, never the value.
+        <code>init</code> generates a 32-byte one.
+      </p>
+      <p>
+        The four limits bound what a single node can be made to do; they are blast
+        radius, not rationing. A port-forward creates a <strong>container</strong> on the
+        node, one per target port, so without a cap a client that only ever spoke the
+        protocol correctly could exhaust the node's PIDs and memory and take down every
+        Swarm workload sharing that machine. Over a cap the agent answers
+        <code>ResourceExhausted</code> and names the flag to raise: it refuses rather than
+        queues, because a queue turns a resource limit into an unbounded wait that the
+        person at the other end cannot tell apart from a hang. The session timeouts end
+        <em>abandoned</em> sessions — half an hour of silence in both directions is not
+        someone thinking. Logs and port-forwards deliberately have <strong>no</strong>
+        maximum lifetime; following a log for hours is the normal way to use it.
+      </p>
 
       <nav class="pager" aria-label="Previous and next page">
         <a class="prev" href="/docs/mcp" rel="prev"><span class="lbl">← Previous</span>MCP server for AI assistants</a>
