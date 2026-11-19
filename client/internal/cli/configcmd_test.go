@@ -129,3 +129,51 @@ func TestConfigShowPerContextCredentialsAndSources(t *testing.T) {
 		t.Errorf("config show:\n%s", out)
 	}
 }
+
+// `config show` has to report underlay_mtu: it decides whether an overlay's
+// framing is checked at all, and a key the command does not print is a key
+// nobody can confirm is in effect. Unset prints nothing rather than a zero,
+// which would read as a measured MTU of 0.
+func TestConfigShowReportsTheUnderlayMTU(t *testing.T) {
+	isolatedDockerConfig(t)
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "insecure: true\ncontexts:\n  default:\n    underlay: [10.0.0.0/16]\n    underlay_mtu: 1450\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	g := &globalFlags{configPath: path}
+	out, _, err := runCmd(t, newConfigCmd(g), "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAll(out, "underlay:", "10.0.0.0/16", "underlay mtu:", "1450") {
+		t.Errorf("config show lacks the underlay MTU:\n%s", out)
+	}
+
+	out, _, err = runCmd(t, newConfigCmd(g), "show", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v configView
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if v.UnderlayMTU != 1450 {
+		t.Errorf("json underlay_mtu = %d, want 1450", v.UnderlayMTU)
+	}
+
+	// Without the key: no line, and no zero in the JSON.
+	bare := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(bare, []byte("insecure: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = runCmd(t, newConfigCmd(&globalFlags{configPath: bare}), "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "underlay mtu") {
+		t.Errorf("an unset MTU was printed:\n%s", out)
+	}
+}

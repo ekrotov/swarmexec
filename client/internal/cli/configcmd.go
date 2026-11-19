@@ -47,6 +47,11 @@ type configView struct {
 	Sources map[string]string `json:"sources"`
 	// Underlay is the resolved context's contexts.<name>.underlay.
 	Underlay []string `json:"underlay,omitempty"`
+	// UnderlayMTU is the resolved context's contexts.<name>.underlay_mtu, 0
+	// when unset. Zero means the agents' own report decides; it is never a
+	// default, because the default an overlay would otherwise assume is the
+	// one that drops packets.
+	UnderlayMTU int `json:"underlay_mtu,omitempty"`
 	// ConfirmSwitch is the resolved context's contexts.<name>.confirm_switch.
 	ConfirmSwitch bool `json:"confirm_switch"`
 	// SyncDockerContext is ui.sync_docker_context.
@@ -92,6 +97,9 @@ func newConfigShowCmd(g *globalFlags) *cobra.Command {
 			fmt.Fprintf(w, "operator:\t%s\n", dockerfmt.OrDash(v.Operator))
 			if len(v.Underlay) > 0 {
 				fmt.Fprintf(w, "underlay:\t%s\n", strings.Join(v.Underlay, ", "))
+			}
+			if v.UnderlayMTU > 0 {
+				fmt.Fprintf(w, "underlay mtu:\t%d (overrides what the agents report)\n", v.UnderlayMTU)
 			}
 			if v.ConfirmSwitch {
 				fmt.Fprintf(w, "confirm switch:\t%v (the TUI asks before switching to %s)\n", v.ConfirmSwitch, v.DockerContext)
@@ -144,6 +152,7 @@ func buildConfigView(g *globalFlags, cfg config.Config) configView {
 		CA: cfg.CA, Cert: cfg.Cert, Key: cfg.Key, ServerName: cfg.ServerName,
 		Insecure: cfg.Insecure, AgentSecret: secret, Operator: cfg.Operator,
 		Underlay:          underlayStrings(cfg.Underlay(ctxName)),
+		UnderlayMTU:       cfg.UnderlayMTU(ctxName),
 		ConfirmSwitch:     cfg.ConfirmSwitch(ctxName),
 		SyncDockerContext: cfg.UI.SyncDockerContext,
 		CheckUpdates:      cfg.UI.UpdateChecks(),

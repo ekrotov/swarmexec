@@ -300,6 +300,15 @@ swarmexec stats --json web</div>
         <code>--force</code> — nothing is changed.
       </p>
       <p>
+        A release that changes the agent's <strong>service spec</strong> needs
+        <code>init --force</code> too, and an image update from the TUI is <em>not</em>
+        enough for it. v1.30.0 is such a release: the agent gained a read-only
+        <code>/sys</code> bind mount so it can report the node's own link MTUs, and a
+        mount lives in the spec, not in the image. Until the re-roll the agents run
+        fine and simply report no links, so the Networks tab says the underlay's MTU is
+        unknown instead of checking an overlay's framing.
+      </p>
+      <p>
         The &ldquo;missing RPC&rdquo; message is what a feature newer than the agent reports:
         the container menu's <a href="/docs/tui-services#tui-action-menu"><em>inspect
         container (node-local)</em> and <em>kill task</em></a>, for instance, need an agent

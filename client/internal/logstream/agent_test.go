@@ -39,6 +39,13 @@ func testRunSwarm(t *testing.T, p Params, sw *swarmfake.Swarm, out, errOut io.Wr
 		d.AddContainer(agenttest.Container{ID: id, Service: "web"})
 		d.SetLogs(id, "hello from "+id+"\nERR oops in "+id+"\nbye from "+id+"\n")
 	}
+	return testRunWith(t, p, sw, d, out, errOut)
+}
+
+// testRunWith is testRunSwarm with the node's fake daemon supplied by the
+// caller, for a test that needs its own log streams.
+func testRunWith(t *testing.T, p Params, sw *swarmfake.Swarm, d *agenttest.Docker, out, errOut io.Writer) (Run, *agenttest.Agent) {
+	t.Helper()
 	agent := agenttest.Start(t, agenttest.Options{Secret: "s3cret", Docker: d})
 
 	api := swarmfake.Serve(t, sw)

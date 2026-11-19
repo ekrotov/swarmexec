@@ -71,7 +71,8 @@ type Run struct {
 
 // Stream dials the agent and streams the container's logs into the run's
 // Stdout/Stderr. It is shared by the `logs` command and the interactive `ui`.
-// Returns nil when the stream ends or ctx is cancelled.
+// Returns nil when the stream ends, or when ctx ends — cancelled OR past its
+// deadline; both are the caller saying stop.
 func Stream(ctx context.Context, run Run, ep resolve.Endpoint) error {
 	p, stdout, stderr := run.Params, run.Stdout, run.Stderr
 	dctx, dcancel := context.WithTimeout(ctx, p.ConnectTimeout)
@@ -96,7 +97,15 @@ func Stream(ctx context.Context, run Run, ep resolve.Endpoint) error {
 	for {
 		chunk, err := stream.Recv()
 		if err != nil {
-			if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
+			// The caller's context ending is an END, not a failure, however
+			// it ended. Cancellation was already handled; a DEADLINE was not,
+			// and that is the same event from the caller's side — a log view
+			// closed, a Ctrl-C, a bounded follow. Checking ctx rather than the
+			// error's code is what makes the two alike: the error is only a
+			// consequence of the context, and under load it arrives in
+			// whichever form the transport chose.
+			if ctx.Err() != nil ||
+				errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
 				return nil
 			}
 			return agenterr.Readable(err)
@@ -127,6 +136,15 @@ func Follow(ctx context.Context, run Run, t resolve.FollowTarget, ep resolve.End
 		err := Stream(ctx, cur, ep)
 		ended := time.Now()
 		if err != nil {
+			// The caller stopped us: Ctrl-C, a closed view, an expired
+			// deadline. Whatever the stream reported is a consequence of that,
+			// not something the operator can act on, so this is an END and not
+			// a failure — the same rule the port-forward path applies when the
+			// client goes away. Without it a cancelled follow exits non-zero
+			// and prints a transport error for a stream nobody was reading.
+			if ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
 		if !p.Follow || ctx.Err() != nil || t.Service == "" {
