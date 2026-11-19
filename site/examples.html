@@ -455,7 +455,8 @@
         <p>
           Markdown with the cluster, time and build it ran with, findings by severity per
           service, the cluster-level checks (unencrypted overlay networks, managers without
-          autolock, agent version skew, unused secrets and configs), and a
+          autolock, agent version skew, overlay addresses hardcoded into a service's
+          configuration, unused secrets and configs), and a
           <em>Not covered</em> section for anything it could not reach.
         </p>
         <h3>Pitfalls</h3>
@@ -493,7 +494,7 @@
         <ul>
           <li>Contexts live in docker's own store: <code>context use</code> changes the current context for the <code>docker</code> CLI too. Prefer <code>--context</code> for one-off commands against production. A switch in the TUI sidebar does <em>not</em> change it (unless <code>ui.sync_docker_context: true</code>); put <code>contexts.prod.confirm_switch: true</code> in the config to be asked before the TUI switches to production.</li>
           <li>The first switch to a cluster takes as long as connecting to it; if it fails you stay where you were.</li>
-          <li>Each cluster needs its own agents, but there is <strong>one client config</strong> for all contexts, so every cluster's agents must accept the same credentials. With the shared secret, provision the next cluster with the one you already have — <code>swarmexec --context staging init --secret "$SECRET"</code>. Without <code>--secret</code>, <code>init</code> generates a new secret and writes it to your client config, which the first cluster's agents do not accept. With mTLS, one CA covers them all.</li>
+          <li>Each cluster needs its own agents, and each gets <strong>its own block</strong> in the client config: <code>init</code> writes the secret, port and address mode under <code>contexts.&lt;name&gt;</code>, so a second cluster no longer replaces the first one's credentials. Without <code>--secret</code> it generates a fresh secret for that cluster alone. Pass <code>--secret "$SECRET"</code> only when you deliberately want several clusters to share one — with mTLS, one CA covers them all. Keys you leave unset fall back to the global ones (<a href="/docs/configuration#context-precedence">precedence</a>).</li>
         </ul>
         <p class="more">More in the docs: <a href="/docs/contexts#context-cmd"><code>context</code></a> · <a href="/docs/tui#tui-contexts">context sidebar</a> · <a href="/docs/contexts">Docker context &amp; SSH</a></p>
       </article>

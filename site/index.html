@@ -262,6 +262,52 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     <figcaption>A forward to a task on another node, then plain <code>curl localhost</code> through it.</figcaption>
   </figure>
 
+  <!-- 4 · network addressing and MTU -->
+  <article class="claim" id="claim-network">
+    <div class="claim-text">
+      <p class="claim-cmd"><span class="p">$</span> swarmexec ui &nbsp;<span class="c-dim">→ Networks → n</span></p>
+      <h3>The two overlay mistakes nothing else reports</h3>
+      <p>
+        Docker addresses a new overlay out of <code>10.0.0.0/8</code> and sizes it for a
+        1500-byte link. On a cloud private network both are wrong at once: the nodes
+        already live in <code>10.0.x.y</code>, and the link carries 1450. Neither failure
+        announces itself. The first hands a container an address a node already owns; the
+        second drops exactly the packets too big to fit, which reads as a slow connection
+        rather than a broken one.
+      </p>
+      <p>
+        Before it creates anything, swarmexec proposes a subnet that collides with nothing
+        — not the node addresses, not the configured underlay, not an existing network,
+        not the swarm's default pool — and the MTU the overlay should carry. The agents
+        report their nodes' own link MTUs, so the number is read off the wire rather than
+        assumed.
+      </p>
+      <p class="claim-why">
+        <code>com.docker.network.driver.mtu</code> states the <em>underlay's</em> MTU and
+        Docker subtracts 50 bytes of VXLAN overhead from it — so writing in what you want
+        inside costs 50 bytes a packet and looks right. It proposes and does not
+        substitute: whether an overlap is acceptable is your call, but the moment after
+        the network exists is the moment it can no longer be changed without detaching
+        every service from it.
+      </p>
+    </div>
+    <div class="toy toy-static" id="network-toy">
+      <div class="term">
+        <div class="term-bar"><span class="term-title">Network "db": address and MTU check</span></div>
+        <pre>⚠ 10.0.1.0/24 contains host IPs: 10.0.1.2 (node-1), 10.0.1.3 (node-2)
+⚠ frames of 1500 bytes (1450 inside the overlay) do not fit a
+  1450-byte underlay: the packets that exceed it are dropped
+  without an error
+
+<span class="c-dim">→ suggested subnet 10.40.0.0/24 — clear of 3 node address(es),
+  the configured underlay, 11 existing network(s)
+→ set MTU 1450 (the underlay's own), which gives containers 1400 bytes</span>
+
+Create anyway?</pre>
+      </div>
+    </div>
+  </article>
+
   <p class="footnote">
     The agent runs as a global service, one task per node, and swarmexec reaches it through
     your Docker context, including an <code>ssh://</code> one behind a jump host. Operators
@@ -273,12 +319,12 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
 
 <section id="alone" class="band" aria-labelledby="alone-title">
   <div class="band-head">
-    <h2 id="alone-title">Three things you will not find elsewhere</h2>
+    <h2 id="alone-title">Four things you will not find elsewhere</h2>
     <p class="band-lead">
       Exec by itself is no longer rare — Portainer and Komodo have it in the browser,
       <a href="https://github.com/jr-k/d4s">d4s</a> over an SSH tunnel, and
       <a href="https://github.com/Eldara-Tech/swarmcli">swarmcli</a>'s Business Edition
-      behind an mTLS proxy. These three have not turned up in any of them, nor in Swarmpit,
+      behind an mTLS proxy. These four have not turned up in any of them, nor in Swarmpit,
       Arcane or Dockhand.
     </p>
   </div>
@@ -355,8 +401,9 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
         anyway you type <code>--despite-findings</code>.
       </p>
       <p class="claim-why">
-        <code>security report</code> adds four checks no single service can answer:
+        <code>security report</code> adds six checks no single service can answer:
         unencrypted overlay networks, managers without autolock, agent version skew,
+        overlay addresses hardcoded into a service's configuration,
         secrets and configs nobody references — and names what it could <em>not</em> reach,
         because silence in a security report reads as an all-clear.
       </p>
@@ -456,6 +503,8 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
         <dt>logs -f &lt;target&gt;</dt><dd>follow across replacement; <code>--log-format auto</code>, <code>--min-level</code>, <code>--grep</code></dd>
         <dt>port-forward &lt;target&gt;</dt><dd>a local port onto a container port that is published nowhere</dd>
         <dt>ps</dt><dd>every task and the node it runs on, from the manager alone</dd>
+        <dt>status</dt><dd>one screenful: nodes, services and what is not converged</dd>
+        <dt>stats</dt><dd>live CPU and memory per container, measured on the node itself</dd>
         <dt>mcp</dt><dd>an MCP server: your AI assistant reads status, logs and stack diffs of the services you label</dd>
       </dl>
     </div>
@@ -464,6 +513,8 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <dl>
         <dt>volume ls</dt><dd>volumes across all nodes, with which nodes hold each and who uses it</dd>
         <dt>volume rm</dt><dd>remove a volume on every node that holds it, or on the nodes you name</dd>
+        <dt>node ls / update</dt><dd>every node with its reserved CPU and memory; set labels and availability</dd>
+        <dt>node prune</dt><dd>reclaim images, containers, volumes and build cache per node — and <code>prune-schedule</code> to have the nodes do it on their own</dd>
         <dt>context</dt><dd>create, list and switch Docker contexts, in docker's own store</dd>
         <dt>config show</dt><dd>the effective merged config, secret masked</dd>
       </dl>
@@ -474,8 +525,11 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
         <dt>stack export</dt><dd>read a deployed stack back out as compose-shaped YAML</dd>
         <dt>stack diff</dt><dd>compare a file against what is deployed; exits 1 on a difference</dd>
         <dt>stack deploy</dt><dd>check the file, then apply it; <code>--check</code> gates a pipeline</dd>
+        <dt>stack ls / rm</dt><dd>the stacks in the cluster; remove one with everything labelled into it</dd>
         <dt>wait</dt><dd>block until a deploy has converged — <code>--healthy</code> too; exits 1 on a paused update or a rollback</dd>
+        <dt>security check</dt><dd>gate a stack file before it is deployed; exits non-zero on a finding</dd>
         <dt>security report</dt><dd>a Markdown audit of services, networks, secrets and nodes</dd>
+        <dt>secret rotate</dt><dd>roll a Docker secret through the services that use it, one at a time, with a rollback when one does not come up</dd>
       </dl>
     </div>
   </div>
@@ -638,6 +692,7 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <tr><th scope="row">network-unencrypted</th><td><span class="sev med">medium</span></td><td>Swarm tunnels traffic between nodes over VXLAN in the clear unless the network was created <code>--opt encrypted</code>. Empty networks are not flagged, nor is ingress, which cannot be encrypted at all.</td></tr>
       <tr><th scope="row">autolock-disabled</th><td><span class="sev med">medium</span></td><td>the raft store holds every secret, every config and the cluster CA key, and its key sits on the same disk. Unreadable configuration is reported as <em>unknown</em>, not guessed.</td></tr>
       <tr><th scope="row">agent skew</th><td><span class="sev high">high</span> <span class="sev med">medium</span> <span class="sev low">low</span></td><td>the agent enforces authorization, so one older than your client may not enforce a rule the client assumes. An agent that did not answer is a gap, not a pass.</td></tr>
+      <tr><th scope="row">pinned-overlay-address</th><td><span class="sev high">high</span></td><td>a service spec naming a literal IP from one of the swarm's overlay networks. Those addresses move whenever the network is recreated, and the service then fails with “no route to host” long after the change that caused it. Aliases survive; addresses do not.</td></tr>
       <tr><th scope="row">unused-secret / -config</th><td><span class="sev low">low</span></td><td>still distributed through raft and readable by anything that reaches a manager — usually a credential someone rotated and never removed.</td></tr>
     </tbody>
   </table>
@@ -667,7 +722,10 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       <p>
         Yes, and for the same reason: whatever reaches the socket controls the node. The
         agent needs it to exec, read logs and forward ports on its node, as Portainer's agent
-        does. What fences it: it answers no request it cannot authenticate (mutual TLS, or a
+        does. It also mounts the node's <code>/sys</code> <strong>read-only</strong>, which
+        is a far smaller thing: it reads link MTUs from it and nothing else — sysfs carries
+        no addresses — so an overlay can be sized for the link that actually carries it.
+        What fences the socket: it answers no request it cannot authenticate (mutual TLS, or a
         secret bound to the connection); a <a href="/docs/authentication#policy">policy file</a> can
         deny <code>exec</code>, <code>portforward</code> or volume actions per service, port
         and user; every request lands in its audit log; <code>swarmexec down</code> removes

@@ -134,10 +134,11 @@ type ContextConfig struct {
 	// is exactly what this value exists to correct. Guessing it here would
 	// reproduce the bug in the tool that reports it.
 	//
-	// It is configured rather than measured because the agent cannot see it:
-	// its container has its own network namespace, so it would read 1500 from
-	// its own veth and not the link the nodes actually talk over. Read it off
-	// a node once (`ip -o link show <iface>`) and write it down.
+	// Usually unnecessary: the agents report their nodes' link MTUs from a
+	// read-only /sys mount and clusterread/swarmops work the underlay out from
+	// those. This key overrides that — an operator who wrote the number down
+	// has looked at the actual topology, which no rule can — and covers a
+	// cluster whose agents predate the reporting.
 	UnderlayMTU int `yaml:"underlay_mtu,omitempty"`
 
 	// ConfirmSwitch makes the TUI ask before switching TO this context — for

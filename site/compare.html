@@ -377,7 +377,8 @@
       <h2 id="wrong-pick">When swarmexec is the wrong pick</h2>
       <ul>
         <li><strong>You want nothing deployed on the cluster.</strong> swarmexec needs one agent per
-          node, and that agent mounts the Docker socket — the same thing its own security scan
+          node, and that agent mounts the Docker socket (plus the node's <code>/sys</code>
+          read-only, for link MTUs) — the same thing its own security scan
           flags in your services. It is fenced (authenticated requests only, an audit log, an
           optional policy) and <code>swarmexec down</code> removes it, but it is there. SSH or d4s
           deploy nothing.</li>
