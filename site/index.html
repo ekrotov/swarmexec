@@ -472,7 +472,7 @@ Create anyway?</pre>
     </div>
   </article>
 
-  <p class="footnote">Compared against the projects' own repositories, READMEs and documentation on 2026-10-27.</p>
+  <p class="footnote">Compared against the projects' own repositories, READMEs and documentation on 2026-11-19.</p>
 </section>
 
 <section id="commands" class="band" aria-labelledby="cmd-title">
@@ -622,9 +622,9 @@ Create anyway?</pre>
     </thead>
     <tbody>
       <tr><th scope="row">Exec into a task on any node, without SSH to it</th>
-        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b> an account per node</td><td><b class="m-y">✔</b> in the browser</td><td><b class="m-p"><span class="vh">partly</span></b> over SSH</td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td></tr>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b> an account per node</td><td><b class="m-y">✔</b> in the browser</td><td><b class="m-p"><span class="vh">partly</span></b> over SSH</td><td><b class="m-p"><span class="vh">partly</span></b> BE, free up to 3 nodes</td></tr>
       <tr><th scope="row">Port-forward to a port published nowhere</th>
-        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b> publish it or add a sidecar</td><td><b class="m-n">✖</b> Kubernetes only</td><td><b class="m-y">✔</b> over SSH</td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td></tr>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b> publish it or add a sidecar</td><td><b class="m-n">✖</b> Kubernetes only</td><td><b class="m-y">✔</b> over SSH</td><td><b class="m-p"><span class="vh">partly</span></b> BE, free up to 3 nodes</td></tr>
       <tr><th scope="row">Logs that follow a replaced container</th>
         <td class="us"><b class="m-y">✔</b></td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td><td><b class="m-u">–</b></td></tr>
       <tr><th scope="row">Several clusters in one session</th>
@@ -634,7 +634,7 @@ Create anyway?</pre>
       <tr><th scope="row">Security gate before <code>stack deploy</code></th>
         <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td><td><b class="m-n">✖</b></td></tr>
       <tr><th scope="row">Deny rules per action and an audit line per operator</th>
-        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> BE only</td></tr>
+        <td class="us"><b class="m-y">✔</b></td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> BE, free up to 3 nodes</td><td><b class="m-n">✖</b></td><td><b class="m-p"><span class="vh">partly</span></b> BE, free up to 3 nodes</td></tr>
       <tr class="against"><th scope="row">Nothing to deploy on the cluster</th>
         <td class="us"><b class="m-n">✖</b> one agent per node</td><td><b class="m-y">✔</b></td><td><b class="m-n">✖</b> agent</td><td><b class="m-y">✔</b></td><td><b class="m-p"><span class="vh">partly</span></b> CE yes, BE agent</td></tr>
       <tr class="against"><th scope="row">A web UI for colleagues without a terminal</th>
@@ -649,11 +649,13 @@ Create anyway?</pre>
 
   <p class="footnote">
     <b class="m-y">✔</b> yes · <b class="m-p"><span class="vh">partly</span></b> partly, or only in the paid edition ·
-    <b class="m-n">✖</b> no · <b class="m-u">–</b> not documented. Checked on 2026-10-27 against
+    <b class="m-n">✖</b> no · <b class="m-u">–</b> not documented. Checked on 2026-11-19 against
     each project's README, documentation and pricing page
     (<a href="https://www.portainer.io/pricing">portainer.io/pricing</a>,
     <a href="https://github.com/jr-k/d4s">d4s</a>,
-    <a href="https://swarmcli.io">swarmcli.io</a>). Arcane and Komodo are web platforms with
+    <a href="https://swarmcli.io">swarmcli.io</a>). Portainer and swarmcli both license their
+    paid features free of charge on a swarm of up to three nodes, which is why the cost row
+    asks what happens beyond that. Arcane and Komodo are web platforms with
     Swarm support; exec and port-forward into tasks on other nodes are not documented there.
     Something out of date? <a href="https://github.com/ekrotov/swarmexec/issues">Tell us</a>.
   </p>
