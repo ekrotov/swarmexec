@@ -64,6 +64,13 @@ type Options struct {
 	// VolumeSizeInterval sets the volume-size cache's periodic rescan interval.
 	// Zero uses the default (volsize.DefaultInterval).
 	VolumeSizeInterval time.Duration
+	// SysfsPath is where the host's sysfs is mounted, read-only, so the agent
+	// can report the node's own link MTUs (hostlink.DefaultSysfs). Empty, or a
+	// path that is not there, means the agent reports no links and every
+	// caller treats the underlay as unknown — which is the honest answer: the
+	// agent's own namespace would say 1500, and 1500 is already what Docker
+	// assumes.
+	SysfsPath string
 	// StatsInterval sets how often the container-stats sampler takes a reading —
 	// also the resolution of every CPU percentage, which is a delta between two
 	// of them. Zero uses the default (statsampler.DefaultInterval).

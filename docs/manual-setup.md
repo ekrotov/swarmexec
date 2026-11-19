@@ -128,7 +128,8 @@ docker stack deploy --with-registry-auth -c agent/deploy/agent-stack.yml swarmex
 > tasks fail with a pull/authentication error.
 
 This creates a `global` service `swarmexec_agent` (one task per node), mounts
-`/var/run/docker.sock` read-write, attaches the secrets, and publishes `9443`
+`/var/run/docker.sock` read-write and `/sys` read-only (link MTUs only; sysfs
+carries no addresses), attaches the secrets, and publishes `9443`
 with **`mode: host`** so `node:9443` always reaches the agent **on that node**
 (the direct-routing model the cli relies on — not the routing mesh).
 
@@ -414,6 +415,7 @@ non-interactive, lists the candidates and exits).
 | `-server-cert` | `SWARMEXEC_SERVER_CERT` | *(required)* | server certificate |
 | `-server-key` | `SWARMEXEC_SERVER_KEY` | *(required)* | server private key |
 | `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
+| `-sysfs-path` | `SWARMEXEC_SYSFS_PATH` | `/host/sys` | where the host's sysfs is bind-mounted **read-only**, for the node's link MTUs. Empty disables it |
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
 | `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` = off) | per-session idle timeout |
 | `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` = off) | per-session max duration |

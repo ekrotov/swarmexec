@@ -231,6 +231,15 @@ func Spec(o Options, secretID string) swarm.ServiceSpec {
 					Type:   mount.TypeBind,
 					Source: deploy.SocketPath,
 					Target: deploy.SocketPath,
+				}, {
+					// The node's sysfs, read-only: the agent reads link MTUs
+					// from it and nothing else. Without it the underlay's MTU
+					// is unknown, which is better than the 1500 the agent's
+					// own namespace would report.
+					Type:     mount.TypeBind,
+					Source:   deploy.HostSysfsPath,
+					Target:   deploy.HostSysfsMount,
+					ReadOnly: true,
 				}},
 				Secrets: []*swarm.SecretReference{{
 					SecretID:   secretID,

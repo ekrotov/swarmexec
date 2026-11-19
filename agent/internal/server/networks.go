@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/agent/internal/auth"
+	"swarmexec/agent/internal/hostlink"
 	"swarmexec/internal/pb"
 )
 
@@ -80,7 +81,29 @@ func (s *Server) NetworkEndpoints(ctx context.Context, req *pb.NetworkEndpointsR
 	slices.SortStableFunc(out.Networks, func(a, b *pb.NetworkEndpointsInfo) int {
 		return cmp.Or(cmp.Compare(a.GetName(), b.GetName()), cmp.Compare(a.GetId(), b.GetId()))
 	})
+	out.HostLinks = s.hostLinks()
 	return out, nil
+}
+
+// hostLinks reports the node's own interfaces, or nothing when the host's
+// sysfs is not mounted. It rides on this RPC because it answers a question
+// about these networks: an overlay frame has to fit the link beneath it, and
+// Docker sizes overlays for a link it never looked at.
+func (s *Server) hostLinks() []*pb.HostLink {
+	links := hostlink.Read(s.opts.SysfsPath)
+	if len(links) == 0 {
+		return nil
+	}
+	out := make([]*pb.HostLink, 0, len(links))
+	for _, l := range links {
+		out = append(out, &pb.HostLink{
+			Name:      l.Name,
+			Mtu:       l.MTU,
+			Operstate: l.Operstate,
+			ArpType:   l.ARPType,
+		})
+	}
+	return out
 }
 
 // inspectFailure decides what a failed inspect of target id means: a fatal

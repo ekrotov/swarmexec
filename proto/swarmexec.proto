@@ -493,6 +493,34 @@ message NetworkEndpointsRequest {
 
 message NetworkEndpointsResponse {
   repeated NetworkEndpointsInfo networks = 1;  // sorted by name
+
+  // host_links are the node's OWN network interfaces — the underlay the
+  // overlays above ride on — sorted by name. Empty when the agent cannot see
+  // them (it needs the host's sysfs mounted read-only; see HostLink).
+  //
+  // They are here, on a networks call, rather than in an RPC of their own
+  // because they answer a question about these networks: an overlay frame has
+  // to fit the link that carries it, and Docker sizes overlays for a 1500-byte
+  // link whether or not that is what the node has. A 1450-byte underlay with
+  // the default overlay silently drops every full-size packet.
+  repeated HostLink host_links = 2;
+}
+
+// HostLink is one interface of the node itself, read from the host's sysfs.
+//
+// Only what sysfs offers, which is deliberately little: no addresses, because
+// sysfs has none and reading them would mean the host's network namespace or
+// its /proc, neither of which the agent has or should get for this. Picking
+// which link is "the underlay" is therefore the CLIENT's job, from these
+// facts, and it says which one it chose.
+message HostLink {
+  string name = 1;       // interface name, e.g. "enp7s0"
+  uint32 mtu = 2;        // bytes
+  string operstate = 3;  // "up", "down", "unknown" — sysfs operstate, verbatim
+  // arp_type is sysfs "type": 1 is Ethernet, 772 loopback, and everything else
+  // is something more exotic (a tunnel, wireguard). Carried raw so the client
+  // can filter without this file deciding what counts.
+  uint32 arp_type = 4;
 }
 
 // NetworkEndpointsInfo is one network as THIS node's daemon sees it.

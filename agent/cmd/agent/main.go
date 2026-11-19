@@ -236,6 +236,7 @@ func buildServer(cfg *config.Config, d deps) (*agent, error) {
 		MaxSessionTime:     cfg.MaxSessionTime,
 		SecretAuth:         secretAuthIdentity,
 		ForwardImage:       cfg.ForwardImage,
+		SysfsPath:          cfg.SysfsPath,
 		MaxStreams:         cfg.MaxStreams,
 		MaxForwardSidecars: cfg.MaxForwardSidecars,
 	})

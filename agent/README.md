@@ -123,6 +123,7 @@ build and protocol version.
 | `-policy-file` | `SWARMEXEC_POLICY_FILE` | — | authorization rule file (YAML); empty = every authenticated request is allowed |
 | `-forward-image` | `SWARMEXEC_FORWARD_IMAGE` | — (the agent's own image) | image for port-forward sidecars |
 | `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
+| `-sysfs-path` | `SWARMEXEC_SYSFS_PATH` | `/host/sys` | where the host's sysfs is bind-mounted **read-only**, for the node's link MTUs. Empty disables it. Without the mount the agent reports no links and the client calls the underlay unknown — which is the honest answer, since a swarm service has its own network namespace and would otherwise report its own veth's 1500 |
 | `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
 | `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` disables) | per-session idle timeout |
 | `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` disables) | per-session max duration |

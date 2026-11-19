@@ -2972,6 +2972,16 @@ type NetworkEndpointsResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	Networks []*NetworkEndpointsInfo `protobuf:"bytes,1,rep,name=networks,proto3" json:"networks,omitempty"` // sorted by name
+	// host_links are the node's OWN network interfaces — the underlay the
+	// overlays above ride on — sorted by name. Empty when the agent cannot see
+	// them (it needs the host's sysfs mounted read-only; see HostLink).
+	//
+	// They are here, on a networks call, rather than in an RPC of their own
+	// because they answer a question about these networks: an overlay frame has
+	// to fit the link that carries it, and Docker sizes overlays for a 1500-byte
+	// link whether or not that is what the node has. A 1450-byte underlay with
+	// the default overlay silently drops every full-size packet.
+	HostLinks []*HostLink `protobuf:"bytes,2,rep,name=host_links,json=hostLinks,proto3" json:"host_links,omitempty"`
 }
 
 func (x *NetworkEndpointsResponse) Reset() {
@@ -3013,6 +3023,94 @@ func (x *NetworkEndpointsResponse) GetNetworks() []*NetworkEndpointsInfo {
 	return nil
 }
 
+func (x *NetworkEndpointsResponse) GetHostLinks() []*HostLink {
+	if x != nil {
+		return x.HostLinks
+	}
+	return nil
+}
+
+// HostLink is one interface of the node itself, read from the host's sysfs.
+//
+// Only what sysfs offers, which is deliberately little: no addresses, because
+// sysfs has none and reading them would mean the host's network namespace or
+// its /proc, neither of which the agent has or should get for this. Picking
+// which link is "the underlay" is therefore the CLIENT's job, from these
+// facts, and it says which one it chose.
+type HostLink struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Name      string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`           // interface name, e.g. "enp7s0"
+	Mtu       uint32 `protobuf:"varint,2,opt,name=mtu,proto3" json:"mtu,omitempty"`            // bytes
+	Operstate string `protobuf:"bytes,3,opt,name=operstate,proto3" json:"operstate,omitempty"` // "up", "down", "unknown" — sysfs operstate, verbatim
+	// arp_type is sysfs "type": 1 is Ethernet, 772 loopback, and everything else
+	// is something more exotic (a tunnel, wireguard). Carried raw so the client
+	// can filter without this file deciding what counts.
+	ArpType uint32 `protobuf:"varint,4,opt,name=arp_type,json=arpType,proto3" json:"arp_type,omitempty"`
+}
+
+func (x *HostLink) Reset() {
+	*x = HostLink{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_swarmexec_proto_msgTypes[42]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *HostLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostLink) ProtoMessage() {}
+
+func (x *HostLink) ProtoReflect() protoreflect.Message {
+	mi := &file_swarmexec_proto_msgTypes[42]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostLink.ProtoReflect.Descriptor instead.
+func (*HostLink) Descriptor() ([]byte, []int) {
+	return file_swarmexec_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *HostLink) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *HostLink) GetMtu() uint32 {
+	if x != nil {
+		return x.Mtu
+	}
+	return 0
+}
+
+func (x *HostLink) GetOperstate() string {
+	if x != nil {
+		return x.Operstate
+	}
+	return ""
+}
+
+func (x *HostLink) GetArpType() uint32 {
+	if x != nil {
+		return x.ArpType
+	}
+	return 0
+}
+
 // NetworkEndpointsInfo is one network as THIS node's daemon sees it.
 type NetworkEndpointsInfo struct {
 	state         protoimpl.MessageState
@@ -3042,7 +3140,7 @@ type NetworkEndpointsInfo struct {
 func (x *NetworkEndpointsInfo) Reset() {
 	*x = NetworkEndpointsInfo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[42]
+		mi := &file_swarmexec_proto_msgTypes[43]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3055,7 +3153,7 @@ func (x *NetworkEndpointsInfo) String() string {
 func (*NetworkEndpointsInfo) ProtoMessage() {}
 
 func (x *NetworkEndpointsInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[42]
+	mi := &file_swarmexec_proto_msgTypes[43]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3068,7 +3166,7 @@ func (x *NetworkEndpointsInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkEndpointsInfo.ProtoReflect.Descriptor instead.
 func (*NetworkEndpointsInfo) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{42}
+	return file_swarmexec_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *NetworkEndpointsInfo) GetId() string {
@@ -3148,7 +3246,7 @@ type NetworkLocalEndpoint struct {
 func (x *NetworkLocalEndpoint) Reset() {
 	*x = NetworkLocalEndpoint{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[43]
+		mi := &file_swarmexec_proto_msgTypes[44]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3161,7 +3259,7 @@ func (x *NetworkLocalEndpoint) String() string {
 func (*NetworkLocalEndpoint) ProtoMessage() {}
 
 func (x *NetworkLocalEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[43]
+	mi := &file_swarmexec_proto_msgTypes[44]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3174,7 +3272,7 @@ func (x *NetworkLocalEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkLocalEndpoint.ProtoReflect.Descriptor instead.
 func (*NetworkLocalEndpoint) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{43}
+	return file_swarmexec_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *NetworkLocalEndpoint) GetContainerId() string {
@@ -3241,7 +3339,7 @@ type NetworkServiceEndpoints struct {
 func (x *NetworkServiceEndpoints) Reset() {
 	*x = NetworkServiceEndpoints{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[44]
+		mi := &file_swarmexec_proto_msgTypes[45]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3254,7 +3352,7 @@ func (x *NetworkServiceEndpoints) String() string {
 func (*NetworkServiceEndpoints) ProtoMessage() {}
 
 func (x *NetworkServiceEndpoints) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[44]
+	mi := &file_swarmexec_proto_msgTypes[45]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3267,7 +3365,7 @@ func (x *NetworkServiceEndpoints) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkServiceEndpoints.ProtoReflect.Descriptor instead.
 func (*NetworkServiceEndpoints) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{44}
+	return file_swarmexec_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *NetworkServiceEndpoints) GetName() string {
@@ -3305,7 +3403,7 @@ type NetworkTaskEndpoint struct {
 func (x *NetworkTaskEndpoint) Reset() {
 	*x = NetworkTaskEndpoint{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[45]
+		mi := &file_swarmexec_proto_msgTypes[46]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3318,7 +3416,7 @@ func (x *NetworkTaskEndpoint) String() string {
 func (*NetworkTaskEndpoint) ProtoMessage() {}
 
 func (x *NetworkTaskEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[45]
+	mi := &file_swarmexec_proto_msgTypes[46]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3331,7 +3429,7 @@ func (x *NetworkTaskEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkTaskEndpoint.ProtoReflect.Descriptor instead.
 func (*NetworkTaskEndpoint) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{45}
+	return file_swarmexec_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *NetworkTaskEndpoint) GetName() string {
@@ -3374,7 +3472,7 @@ type NetworkPeer struct {
 func (x *NetworkPeer) Reset() {
 	*x = NetworkPeer{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[46]
+		mi := &file_swarmexec_proto_msgTypes[47]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3387,7 +3485,7 @@ func (x *NetworkPeer) String() string {
 func (*NetworkPeer) ProtoMessage() {}
 
 func (x *NetworkPeer) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[46]
+	mi := &file_swarmexec_proto_msgTypes[47]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3400,7 +3498,7 @@ func (x *NetworkPeer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPeer.ProtoReflect.Descriptor instead.
 func (*NetworkPeer) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{46}
+	return file_swarmexec_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *NetworkPeer) GetName() string {
@@ -3428,7 +3526,7 @@ type KillContainerRequest struct {
 func (x *KillContainerRequest) Reset() {
 	*x = KillContainerRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[47]
+		mi := &file_swarmexec_proto_msgTypes[48]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3441,7 +3539,7 @@ func (x *KillContainerRequest) String() string {
 func (*KillContainerRequest) ProtoMessage() {}
 
 func (x *KillContainerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[47]
+	mi := &file_swarmexec_proto_msgTypes[48]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3454,7 +3552,7 @@ func (x *KillContainerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KillContainerRequest.ProtoReflect.Descriptor instead.
 func (*KillContainerRequest) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{47}
+	return file_swarmexec_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *KillContainerRequest) GetContainerId() string {
@@ -3473,7 +3571,7 @@ type KillContainerResponse struct {
 func (x *KillContainerResponse) Reset() {
 	*x = KillContainerResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[48]
+		mi := &file_swarmexec_proto_msgTypes[49]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3486,7 +3584,7 @@ func (x *KillContainerResponse) String() string {
 func (*KillContainerResponse) ProtoMessage() {}
 
 func (x *KillContainerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[48]
+	mi := &file_swarmexec_proto_msgTypes[49]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3499,7 +3597,7 @@ func (x *KillContainerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KillContainerResponse.ProtoReflect.Descriptor instead.
 func (*KillContainerResponse) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{48}
+	return file_swarmexec_proto_rawDescGZIP(), []int{49}
 }
 
 type InspectContainerRequest struct {
@@ -3513,7 +3611,7 @@ type InspectContainerRequest struct {
 func (x *InspectContainerRequest) Reset() {
 	*x = InspectContainerRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[49]
+		mi := &file_swarmexec_proto_msgTypes[50]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3526,7 +3624,7 @@ func (x *InspectContainerRequest) String() string {
 func (*InspectContainerRequest) ProtoMessage() {}
 
 func (x *InspectContainerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[49]
+	mi := &file_swarmexec_proto_msgTypes[50]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3539,7 +3637,7 @@ func (x *InspectContainerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectContainerRequest.ProtoReflect.Descriptor instead.
 func (*InspectContainerRequest) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{49}
+	return file_swarmexec_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *InspectContainerRequest) GetContainerId() string {
@@ -3562,7 +3660,7 @@ type InspectContainerResponse struct {
 func (x *InspectContainerResponse) Reset() {
 	*x = InspectContainerResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_swarmexec_proto_msgTypes[50]
+		mi := &file_swarmexec_proto_msgTypes[51]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3575,7 +3673,7 @@ func (x *InspectContainerResponse) String() string {
 func (*InspectContainerResponse) ProtoMessage() {}
 
 func (x *InspectContainerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_swarmexec_proto_msgTypes[50]
+	mi := &file_swarmexec_proto_msgTypes[51]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3588,7 +3686,7 @@ func (x *InspectContainerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectContainerResponse.ProtoReflect.Descriptor instead.
 func (*InspectContainerResponse) Descriptor() ([]byte, []int) {
-	return file_swarmexec_proto_rawDescGZIP(), []int{50}
+	return file_swarmexec_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *InspectContainerResponse) GetInspectJson() []byte {
@@ -3928,12 +4026,22 @@ var file_swarmexec_proto_rawDesc = []byte{
 	0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52,
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72,
 	0x6b, 0x5f, 0x69, 0x64, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0a, 0x6e, 0x65, 0x74,
-	0x77, 0x6f, 0x72, 0x6b, 0x49, 0x64, 0x73, 0x22, 0x57, 0x0a, 0x18, 0x4e, 0x65, 0x74, 0x77, 0x6f,
-	0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x12, 0x3b, 0x0a, 0x08, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x73, 0x18,
-	0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65,
-	0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e,
-	0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x08, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x73,
+	0x77, 0x6f, 0x72, 0x6b, 0x49, 0x64, 0x73, 0x22, 0x8b, 0x01, 0x0a, 0x18, 0x4e, 0x65, 0x74, 0x77,
+	0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3b, 0x0a, 0x08, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x73,
+	0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78,
+	0x65, 0x63, 0x2e, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70, 0x6f, 0x69,
+	0x6e, 0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x08, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b,
+	0x73, 0x12, 0x32, 0x0a, 0x0a, 0x68, 0x6f, 0x73, 0x74, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73, 0x18,
+	0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x73, 0x77, 0x61, 0x72, 0x6d, 0x65, 0x78, 0x65,
+	0x63, 0x2e, 0x48, 0x6f, 0x73, 0x74, 0x4c, 0x69, 0x6e, 0x6b, 0x52, 0x09, 0x68, 0x6f, 0x73, 0x74,
+	0x4c, 0x69, 0x6e, 0x6b, 0x73, 0x22, 0x69, 0x0a, 0x08, 0x48, 0x6f, 0x73, 0x74, 0x4c, 0x69, 0x6e,
+	0x6b, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x6d, 0x74, 0x75, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x0d, 0x52, 0x03, 0x6d, 0x74, 0x75, 0x12, 0x1c, 0x0a, 0x09, 0x6f, 0x70, 0x65, 0x72, 0x73,
+	0x74, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x6f, 0x70, 0x65, 0x72,
+	0x73, 0x74, 0x61, 0x74, 0x65, 0x12, 0x19, 0x0a, 0x08, 0x61, 0x72, 0x70, 0x5f, 0x74, 0x79, 0x70,
+	0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x07, 0x61, 0x72, 0x70, 0x54, 0x79, 0x70, 0x65,
 	0x22, 0xba, 0x02, 0x0a, 0x14, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x45, 0x6e, 0x64, 0x70,
 	0x6f, 0x69, 0x6e, 0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18,
 	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d,
@@ -4122,7 +4230,7 @@ func file_swarmexec_proto_rawDescGZIP() []byte {
 }
 
 var file_swarmexec_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_swarmexec_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
+var file_swarmexec_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
 var file_swarmexec_proto_goTypes = []any{
 	(PruneCategory)(0),                  // 0: swarmexec.PruneCategory
 	(*ListRequest)(nil),                 // 1: swarmexec.ListRequest
@@ -4167,27 +4275,28 @@ var file_swarmexec_proto_goTypes = []any{
 	(*PruneResponse)(nil),               // 40: swarmexec.PruneResponse
 	(*NetworkEndpointsRequest)(nil),     // 41: swarmexec.NetworkEndpointsRequest
 	(*NetworkEndpointsResponse)(nil),    // 42: swarmexec.NetworkEndpointsResponse
-	(*NetworkEndpointsInfo)(nil),        // 43: swarmexec.NetworkEndpointsInfo
-	(*NetworkLocalEndpoint)(nil),        // 44: swarmexec.NetworkLocalEndpoint
-	(*NetworkServiceEndpoints)(nil),     // 45: swarmexec.NetworkServiceEndpoints
-	(*NetworkTaskEndpoint)(nil),         // 46: swarmexec.NetworkTaskEndpoint
-	(*NetworkPeer)(nil),                 // 47: swarmexec.NetworkPeer
-	(*KillContainerRequest)(nil),        // 48: swarmexec.KillContainerRequest
-	(*KillContainerResponse)(nil),       // 49: swarmexec.KillContainerResponse
-	(*InspectContainerRequest)(nil),     // 50: swarmexec.InspectContainerRequest
-	(*InspectContainerResponse)(nil),    // 51: swarmexec.InspectContainerResponse
-	nil,                                 // 52: swarmexec.VolumeInfo.LabelsEntry
-	nil,                                 // 53: swarmexec.CreateVolumeRequest.LabelsEntry
-	nil,                                 // 54: swarmexec.CreateVolumeRequest.DriverOptsEntry
+	(*HostLink)(nil),                    // 43: swarmexec.HostLink
+	(*NetworkEndpointsInfo)(nil),        // 44: swarmexec.NetworkEndpointsInfo
+	(*NetworkLocalEndpoint)(nil),        // 45: swarmexec.NetworkLocalEndpoint
+	(*NetworkServiceEndpoints)(nil),     // 46: swarmexec.NetworkServiceEndpoints
+	(*NetworkTaskEndpoint)(nil),         // 47: swarmexec.NetworkTaskEndpoint
+	(*NetworkPeer)(nil),                 // 48: swarmexec.NetworkPeer
+	(*KillContainerRequest)(nil),        // 49: swarmexec.KillContainerRequest
+	(*KillContainerResponse)(nil),       // 50: swarmexec.KillContainerResponse
+	(*InspectContainerRequest)(nil),     // 51: swarmexec.InspectContainerRequest
+	(*InspectContainerResponse)(nil),    // 52: swarmexec.InspectContainerResponse
+	nil,                                 // 53: swarmexec.VolumeInfo.LabelsEntry
+	nil,                                 // 54: swarmexec.CreateVolumeRequest.LabelsEntry
+	nil,                                 // 55: swarmexec.CreateVolumeRequest.DriverOptsEntry
 }
 var file_swarmexec_proto_depIdxs = []int32{
 	3,  // 0: swarmexec.ListResponse.containers:type_name -> swarmexec.ContainerInfo
 	5,  // 1: swarmexec.ClientMessage.start:type_name -> swarmexec.StartExec
 	6,  // 2: swarmexec.ClientMessage.resize:type_name -> swarmexec.Resize
 	14, // 3: swarmexec.ListVolumesResponse.volumes:type_name -> swarmexec.VolumeInfo
-	52, // 4: swarmexec.VolumeInfo.labels:type_name -> swarmexec.VolumeInfo.LabelsEntry
-	53, // 5: swarmexec.CreateVolumeRequest.labels:type_name -> swarmexec.CreateVolumeRequest.LabelsEntry
-	54, // 6: swarmexec.CreateVolumeRequest.driver_opts:type_name -> swarmexec.CreateVolumeRequest.DriverOptsEntry
+	53, // 4: swarmexec.VolumeInfo.labels:type_name -> swarmexec.VolumeInfo.LabelsEntry
+	54, // 5: swarmexec.CreateVolumeRequest.labels:type_name -> swarmexec.CreateVolumeRequest.LabelsEntry
+	55, // 6: swarmexec.CreateVolumeRequest.driver_opts:type_name -> swarmexec.CreateVolumeRequest.DriverOptsEntry
 	14, // 7: swarmexec.CreateVolumeResponse.volume:type_name -> swarmexec.VolumeInfo
 	19, // 8: swarmexec.ForwardClientMessage.start:type_name -> swarmexec.StartForward
 	21, // 9: swarmexec.ForwardServerMessage.ready:type_name -> swarmexec.ForwardReady
@@ -4202,50 +4311,51 @@ var file_swarmexec_proto_depIdxs = []int32{
 	0,  // 18: swarmexec.PruneRequest.categories:type_name -> swarmexec.PruneCategory
 	0,  // 19: swarmexec.PruneCategoryResult.category:type_name -> swarmexec.PruneCategory
 	39, // 20: swarmexec.PruneResponse.results:type_name -> swarmexec.PruneCategoryResult
-	43, // 21: swarmexec.NetworkEndpointsResponse.networks:type_name -> swarmexec.NetworkEndpointsInfo
-	44, // 22: swarmexec.NetworkEndpointsInfo.local_endpoints:type_name -> swarmexec.NetworkLocalEndpoint
-	45, // 23: swarmexec.NetworkEndpointsInfo.services:type_name -> swarmexec.NetworkServiceEndpoints
-	47, // 24: swarmexec.NetworkEndpointsInfo.peers:type_name -> swarmexec.NetworkPeer
-	46, // 25: swarmexec.NetworkServiceEndpoints.tasks:type_name -> swarmexec.NetworkTaskEndpoint
-	1,  // 26: swarmexec.Agent.ListContainers:input_type -> swarmexec.ListRequest
-	4,  // 27: swarmexec.Agent.Exec:input_type -> swarmexec.ClientMessage
-	8,  // 28: swarmexec.Agent.Logs:input_type -> swarmexec.LogsRequest
-	9,  // 29: swarmexec.Agent.WatchContainerEvents:input_type -> swarmexec.WatchContainerEventsRequest
-	12, // 30: swarmexec.Agent.ListVolumes:input_type -> swarmexec.ListVolumesRequest
-	15, // 31: swarmexec.Agent.RemoveVolume:input_type -> swarmexec.RemoveVolumeRequest
-	17, // 32: swarmexec.Agent.CreateVolume:input_type -> swarmexec.CreateVolumeRequest
-	20, // 33: swarmexec.Agent.PortForward:input_type -> swarmexec.ForwardClientMessage
-	25, // 34: swarmexec.Agent.Stats:input_type -> swarmexec.StatsRequest
-	28, // 35: swarmexec.Agent.ListImages:input_type -> swarmexec.ListImagesRequest
-	31, // 36: swarmexec.Agent.PruneImages:input_type -> swarmexec.PruneImagesRequest
-	33, // 37: swarmexec.Agent.ReclaimStats:input_type -> swarmexec.ReclaimStatsRequest
-	38, // 38: swarmexec.Agent.Prune:input_type -> swarmexec.PruneRequest
-	41, // 39: swarmexec.Agent.NetworkEndpoints:input_type -> swarmexec.NetworkEndpointsRequest
-	48, // 40: swarmexec.Agent.KillContainer:input_type -> swarmexec.KillContainerRequest
-	50, // 41: swarmexec.Agent.InspectContainer:input_type -> swarmexec.InspectContainerRequest
-	23, // 42: swarmexec.Agent.Version:input_type -> swarmexec.VersionRequest
-	2,  // 43: swarmexec.Agent.ListContainers:output_type -> swarmexec.ListResponse
-	7,  // 44: swarmexec.Agent.Exec:output_type -> swarmexec.ServerMessage
-	11, // 45: swarmexec.Agent.Logs:output_type -> swarmexec.LogChunk
-	10, // 46: swarmexec.Agent.WatchContainerEvents:output_type -> swarmexec.ContainerEvent
-	13, // 47: swarmexec.Agent.ListVolumes:output_type -> swarmexec.ListVolumesResponse
-	16, // 48: swarmexec.Agent.RemoveVolume:output_type -> swarmexec.RemoveVolumeResponse
-	18, // 49: swarmexec.Agent.CreateVolume:output_type -> swarmexec.CreateVolumeResponse
-	22, // 50: swarmexec.Agent.PortForward:output_type -> swarmexec.ForwardServerMessage
-	26, // 51: swarmexec.Agent.Stats:output_type -> swarmexec.StatsResponse
-	29, // 52: swarmexec.Agent.ListImages:output_type -> swarmexec.ListImagesResponse
-	32, // 53: swarmexec.Agent.PruneImages:output_type -> swarmexec.PruneImagesResponse
-	35, // 54: swarmexec.Agent.ReclaimStats:output_type -> swarmexec.ReclaimStatsResponse
-	40, // 55: swarmexec.Agent.Prune:output_type -> swarmexec.PruneResponse
-	42, // 56: swarmexec.Agent.NetworkEndpoints:output_type -> swarmexec.NetworkEndpointsResponse
-	49, // 57: swarmexec.Agent.KillContainer:output_type -> swarmexec.KillContainerResponse
-	51, // 58: swarmexec.Agent.InspectContainer:output_type -> swarmexec.InspectContainerResponse
-	24, // 59: swarmexec.Agent.Version:output_type -> swarmexec.VersionResponse
-	43, // [43:60] is the sub-list for method output_type
-	26, // [26:43] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	44, // 21: swarmexec.NetworkEndpointsResponse.networks:type_name -> swarmexec.NetworkEndpointsInfo
+	43, // 22: swarmexec.NetworkEndpointsResponse.host_links:type_name -> swarmexec.HostLink
+	45, // 23: swarmexec.NetworkEndpointsInfo.local_endpoints:type_name -> swarmexec.NetworkLocalEndpoint
+	46, // 24: swarmexec.NetworkEndpointsInfo.services:type_name -> swarmexec.NetworkServiceEndpoints
+	48, // 25: swarmexec.NetworkEndpointsInfo.peers:type_name -> swarmexec.NetworkPeer
+	47, // 26: swarmexec.NetworkServiceEndpoints.tasks:type_name -> swarmexec.NetworkTaskEndpoint
+	1,  // 27: swarmexec.Agent.ListContainers:input_type -> swarmexec.ListRequest
+	4,  // 28: swarmexec.Agent.Exec:input_type -> swarmexec.ClientMessage
+	8,  // 29: swarmexec.Agent.Logs:input_type -> swarmexec.LogsRequest
+	9,  // 30: swarmexec.Agent.WatchContainerEvents:input_type -> swarmexec.WatchContainerEventsRequest
+	12, // 31: swarmexec.Agent.ListVolumes:input_type -> swarmexec.ListVolumesRequest
+	15, // 32: swarmexec.Agent.RemoveVolume:input_type -> swarmexec.RemoveVolumeRequest
+	17, // 33: swarmexec.Agent.CreateVolume:input_type -> swarmexec.CreateVolumeRequest
+	20, // 34: swarmexec.Agent.PortForward:input_type -> swarmexec.ForwardClientMessage
+	25, // 35: swarmexec.Agent.Stats:input_type -> swarmexec.StatsRequest
+	28, // 36: swarmexec.Agent.ListImages:input_type -> swarmexec.ListImagesRequest
+	31, // 37: swarmexec.Agent.PruneImages:input_type -> swarmexec.PruneImagesRequest
+	33, // 38: swarmexec.Agent.ReclaimStats:input_type -> swarmexec.ReclaimStatsRequest
+	38, // 39: swarmexec.Agent.Prune:input_type -> swarmexec.PruneRequest
+	41, // 40: swarmexec.Agent.NetworkEndpoints:input_type -> swarmexec.NetworkEndpointsRequest
+	49, // 41: swarmexec.Agent.KillContainer:input_type -> swarmexec.KillContainerRequest
+	51, // 42: swarmexec.Agent.InspectContainer:input_type -> swarmexec.InspectContainerRequest
+	23, // 43: swarmexec.Agent.Version:input_type -> swarmexec.VersionRequest
+	2,  // 44: swarmexec.Agent.ListContainers:output_type -> swarmexec.ListResponse
+	7,  // 45: swarmexec.Agent.Exec:output_type -> swarmexec.ServerMessage
+	11, // 46: swarmexec.Agent.Logs:output_type -> swarmexec.LogChunk
+	10, // 47: swarmexec.Agent.WatchContainerEvents:output_type -> swarmexec.ContainerEvent
+	13, // 48: swarmexec.Agent.ListVolumes:output_type -> swarmexec.ListVolumesResponse
+	16, // 49: swarmexec.Agent.RemoveVolume:output_type -> swarmexec.RemoveVolumeResponse
+	18, // 50: swarmexec.Agent.CreateVolume:output_type -> swarmexec.CreateVolumeResponse
+	22, // 51: swarmexec.Agent.PortForward:output_type -> swarmexec.ForwardServerMessage
+	26, // 52: swarmexec.Agent.Stats:output_type -> swarmexec.StatsResponse
+	29, // 53: swarmexec.Agent.ListImages:output_type -> swarmexec.ListImagesResponse
+	32, // 54: swarmexec.Agent.PruneImages:output_type -> swarmexec.PruneImagesResponse
+	35, // 55: swarmexec.Agent.ReclaimStats:output_type -> swarmexec.ReclaimStatsResponse
+	40, // 56: swarmexec.Agent.Prune:output_type -> swarmexec.PruneResponse
+	42, // 57: swarmexec.Agent.NetworkEndpoints:output_type -> swarmexec.NetworkEndpointsResponse
+	50, // 58: swarmexec.Agent.KillContainer:output_type -> swarmexec.KillContainerResponse
+	52, // 59: swarmexec.Agent.InspectContainer:output_type -> swarmexec.InspectContainerResponse
+	24, // 60: swarmexec.Agent.Version:output_type -> swarmexec.VersionResponse
+	44, // [44:61] is the sub-list for method output_type
+	27, // [27:44] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_swarmexec_proto_init() }
@@ -4759,7 +4869,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[42].Exporter = func(v any, i int) any {
-			switch v := v.(*NetworkEndpointsInfo); i {
+			switch v := v.(*HostLink); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4771,7 +4881,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[43].Exporter = func(v any, i int) any {
-			switch v := v.(*NetworkLocalEndpoint); i {
+			switch v := v.(*NetworkEndpointsInfo); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4783,7 +4893,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[44].Exporter = func(v any, i int) any {
-			switch v := v.(*NetworkServiceEndpoints); i {
+			switch v := v.(*NetworkLocalEndpoint); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4795,7 +4905,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[45].Exporter = func(v any, i int) any {
-			switch v := v.(*NetworkTaskEndpoint); i {
+			switch v := v.(*NetworkServiceEndpoints); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4807,7 +4917,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[46].Exporter = func(v any, i int) any {
-			switch v := v.(*NetworkPeer); i {
+			switch v := v.(*NetworkTaskEndpoint); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4819,7 +4929,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[47].Exporter = func(v any, i int) any {
-			switch v := v.(*KillContainerRequest); i {
+			switch v := v.(*NetworkPeer); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4831,7 +4941,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[48].Exporter = func(v any, i int) any {
-			switch v := v.(*KillContainerResponse); i {
+			switch v := v.(*KillContainerRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4843,7 +4953,7 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[49].Exporter = func(v any, i int) any {
-			switch v := v.(*InspectContainerRequest); i {
+			switch v := v.(*KillContainerResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4855,6 +4965,18 @@ func file_swarmexec_proto_init() {
 			}
 		}
 		file_swarmexec_proto_msgTypes[50].Exporter = func(v any, i int) any {
+			switch v := v.(*InspectContainerRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_swarmexec_proto_msgTypes[51].Exporter = func(v any, i int) any {
 			switch v := v.(*InspectContainerResponse); i {
 			case 0:
 				return &v.state
@@ -4898,7 +5020,7 @@ func file_swarmexec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_swarmexec_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   54,
+			NumMessages:   55,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
