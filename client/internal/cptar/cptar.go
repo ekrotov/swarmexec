@@ -221,15 +221,41 @@ func safeJoin(root, name string) (string, error) {
 	return cur, nil
 }
 
-// linkTargetInside refuses a symlink that would point out of root. The link is
-// resolved against the directory it will live in, exactly as the OS would.
+// linkTargetInside refuses a symlink that would point out of root.
+//
+// It walks the target the way the OS resolves it — component by component from
+// the directory the link will live in — instead of cleaning the joined string
+// once. The difference matters when the destination already holds a symlink of
+// its own (`old -> /etc`, from an earlier copy or from the operator): a target
+// of "old/passwd" is below root by any textual comparison and resolves outside
+// it in fact. Such a link is refused, and so is one that leaves root at any
+// step, even if a later ".." would bring it back.
+//
+// An absolute target is refused outright: inside a container "/etc/ssl/certs"
+// means something, in the operator's destination directory it does not.
 func linkTargetInside(root, linkPath, target string) error {
-	resolved := target
-	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(filepath.Dir(linkPath), resolved)
+	if filepath.IsAbs(target) || path.IsAbs(target) {
+		return fmt.Errorf("%w: absolute link target", ErrEscape)
 	}
-	if !within(root, filepath.Clean(resolved)) {
-		return ErrEscape
+	cur := filepath.Dir(linkPath)
+	for _, part := range strings.Split(filepath.ToSlash(target), "/") {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+		default:
+			cur = filepath.Join(cur, part)
+		}
+		if !within(root, cur) {
+			return ErrEscape
+		}
+		// The final component usually does not exist yet (it may be a later
+		// entry of the same archive); only one that exists AND is a symlink
+		// can carry the resolution out of root.
+		if fi, err := os.Lstat(cur); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %q crosses a symlink", ErrEscape, target)
+		}
 	}
 	return nil
 }

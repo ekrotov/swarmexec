@@ -93,18 +93,9 @@ func parseCpSpec(arg string) cpSpec {
 }
 
 func runCp(cmd *cobra.Command, g *globalFlags, f *cpFlags, args []string) error {
-	src, dst := parseCpSpec(args[0]), parseCpSpec(args[1])
-	switch {
-	case !src.remote() && !dst.remote():
-		return &cliError{code: exitUsage, err: fmt.Errorf("neither side names a container; this is a job for cp(1)")}
-	case src.path == "" || dst.path == "":
-		return &cliError{code: exitUsage, err: fmt.Errorf("both sides need a path")}
-	case src.path == "-" || dst.path == "-":
-		return &cliError{code: exitUsage, err: fmt.Errorf(`"-" (stdin/stdout) is not supported; name a file`)}
-	}
-	maxBytes, err := units.RAMInBytes(f.maxSize)
-	if err != nil || maxBytes <= 0 {
-		return &cliError{code: exitUsage, err: fmt.Errorf("--max-size %q: not a size", f.maxSize)}
+	src, dst, maxBytes, err := cpArgs(f, args)
+	if err != nil {
+		return err
 	}
 
 	dockerEP := endpoint.Resolve(g.dockerContext)
@@ -124,19 +115,37 @@ func runCp(cmd *cobra.Command, g *globalFlags, f *cpFlags, args []string) error 
 	ac := agentcall.New(cfg)
 	defer ac.Close()
 
-	c := &cpRun{ac: ac, r: r, f: f, maxBytes: uint64(maxBytes), out: cmd.ErrOrStderr(), stdinIsTerm: cterm.IsTerminal(os.Stdin.Fd())}
+	c := &cpRun{ac: ac, r: r, f: f, maxBytes: maxBytes, out: cmd.ErrOrStderr(), stdinIsTerm: cterm.IsTerminal(os.Stdin.Fd())}
 	switch {
 	case src.remote() && dst.remote():
-		err = c.betweenContainers(ctx, src, dst)
+		return c.betweenContainers(ctx, src, dst)
 	case src.remote():
-		err = c.fromContainer(ctx, src, dst.path)
+		return c.fromContainer(ctx, src, dst.path)
 	default:
-		err = c.toContainer(ctx, src.path, dst)
+		return c.toContainer(ctx, src.path, dst)
 	}
-	if err != nil {
-		return err
+}
+
+// cpArgs checks the two sides and the size flag. Every refusal here is a usage
+// error: it is about what was typed, not about what the cluster answered.
+func cpArgs(f *cpFlags, args []string) (src, dst cpSpec, maxBytes uint64, err error) {
+	src, dst = parseCpSpec(args[0]), parseCpSpec(args[1])
+	usage := func(msg string, a ...any) (cpSpec, cpSpec, uint64, error) {
+		return src, dst, 0, &cliError{code: exitUsage, err: fmt.Errorf(msg, a...)}
 	}
-	return nil
+	switch {
+	case !src.remote() && !dst.remote():
+		return usage("neither side names a container; this is a job for cp(1)")
+	case src.path == "" || dst.path == "":
+		return usage("both sides need a path")
+	case src.path == "-" || dst.path == "-":
+		return usage(`"-" (stdin/stdout) is not supported; name a file`)
+	}
+	size, serr := units.RAMInBytes(f.maxSize)
+	if serr != nil || size <= 0 {
+		return usage("--max-size %q: not a size", f.maxSize)
+	}
+	return src, dst, uint64(size), nil
 }
 
 // cpRun is one `cp` invocation: the pieces every direction needs.

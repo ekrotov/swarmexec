@@ -319,3 +319,58 @@ func mkdir(t *testing.T, p string) {
 		t.Fatal(err)
 	}
 }
+
+// A link target that is textually inside the destination but resolves outside
+// it, because the destination already holds a symlink of its own. Cleaning the
+// joined name once would accept this; resolving it component by component, as
+// the OS does, does not.
+func TestExtractRefusesALinkThroughAnExistingSymlink(t *testing.T) {
+	dst := t.TempDir()
+	if err := os.Symlink("/etc", filepath.Join(dst, "old")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	rep, err := Extract(archive(t, entry{name: "creds", typ: tar.TypeSymlink, link: "old/passwd"}), dst, ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if len(rep.Refused) != 1 || !strings.Contains(rep.Refused[0], "creds") {
+		t.Fatalf("Refused = %v, want the link named", rep.Refused)
+	}
+	if _, err := os.Lstat(filepath.Join(dst, "creds")); err == nil {
+		t.Errorf("the link into /etc was created")
+	}
+}
+
+// A link that walks up and back down inside the destination is ordinary
+// content: refusing every ".." would break a tree that uses relative links.
+func TestExtractKeepsALinkThatLeavesAndReturnsInside(t *testing.T) {
+	dst := t.TempDir()
+	rep, err := Extract(archive(t,
+		entry{name: "a/real", body: "hello"},
+		entry{name: "b/alias", typ: tar.TypeSymlink, link: "../a/real"},
+	), dst, ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if rep.Links != 1 || len(rep.Refused) != 0 {
+		t.Fatalf("report = %+v, want the link kept", rep)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "b", "alias"))
+	if err != nil || string(got) != "hello" {
+		t.Errorf("reading through the link gave %q, %v", got, err)
+	}
+}
+
+// An absolute target means something inside a container and nothing in the
+// operator's destination directory, so it is refused rather than recreated.
+func TestExtractRefusesAnAbsoluteLinkTarget(t *testing.T) {
+	dst := t.TempDir()
+	rep, err := Extract(archive(t, entry{name: "certs", typ: tar.TypeSymlink, link: "/etc/ssl/certs"}), dst, ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if len(rep.Refused) != 1 {
+		t.Errorf("Refused = %v, want the absolute link named", rep.Refused)
+	}
+}
