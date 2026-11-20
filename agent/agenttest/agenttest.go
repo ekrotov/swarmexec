@@ -166,6 +166,32 @@ func (a *Agent) AuditEvents(name string) []map[string]any {
 	return out
 }
 
+// WaitAuditEvents waits for at least n audit records with this event name and
+// returns them, failing the test if they do not arrive.
+//
+// An audit record is written when the AGENT's side of the work finishes, which
+// is not the moment the client's call returns: server/exec.go sends the exit
+// code and only then writes session_end, so a test that reads once can look
+// before that line exists. It passed on an idle machine and failed on a loaded
+// CI runner, which is the worst way for a test to be wrong — the assertion was
+// about the scheduler, not about the agent. Waiting makes it about the agent
+// again, and costs nothing when the record is already there.
+func (a *Agent) WaitAuditEvents(t testing.TB, name string, n int) []map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		recs := a.AuditEvents(name)
+		if len(recs) >= n {
+			return recs
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("agenttest: %d audit %q record(s) within 5s, want %d: %v", len(recs), name, n, recs)
+			return recs
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 type lockedWriter struct {
 	mu *sync.Mutex
 	w  io.Writer

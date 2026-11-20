@@ -70,13 +70,16 @@ func TestExecEndToEndOverGRPC(t *testing.T) {
 	if r.out != "ping-pong" {
 		t.Errorf("stdout = %q, want ping-pong", r.out)
 	}
-	// The same session as the operator's audit trail sees it.
+	// The same session as the operator's audit trail sees it. session_end is
+	// written after the agent has sent the exit code, so Run can return before
+	// that line exists — wait for it rather than reading once.
+	ends := a.WaitAuditEvents(t, "session_end", 1)
+	if len(ends) != 1 || ends[0]["exit_code"] != float64(0) {
+		t.Errorf("audit session_end = %v, want one record with exit code 0", ends)
+	}
 	starts := a.AuditEvents("session_start")
 	if len(starts) != 1 || starts[0]["container_id"] != "c1" || starts[0]["service"] != "web" {
 		t.Errorf("audit session_start = %v, want one record for c1 of service web", starts)
-	}
-	if ends := a.AuditEvents("session_end"); len(ends) != 1 || ends[0]["exit_code"] != float64(0) {
-		t.Errorf("audit session_end = %v, want one record with exit code 0", ends)
 	}
 }
 
