@@ -129,8 +129,11 @@ func forwardTestServer(d DockerClient, az auth.Authorizer) (*Server, *testMetric
 }
 
 // sidecarSpeak writes the sidecar's stdcopy-framed control line on stderr.
-// "mux ok" is what a multiplexing sidecar reports; the single-connection "ok"
-// is still accepted and still used by the tests that only need readiness.
+// "mux ok" (forwardmux.ReadyLine) is the ONLY line the agent accepts as
+// readiness — see sidecarControl.Write, which answers the retired
+// single-connection "ok" with "unexpected readiness line". Tests that want a
+// live forward use newMuxSide; a test that passes "ok" here is asking for a
+// readiness failure and should say so.
 func sidecarSpeak(t *testing.T, conn io.Writer, control string, _ []byte) {
 	t.Helper()
 	w := newStdWriter(conn, stdcopy.Stderr)
@@ -307,6 +310,9 @@ func TestPortForward_SidecarJoinsTargetNetnsWithoutPrivileges(t *testing.T) {
 	go func() { done <- srv.PortForward(stream) }()
 
 	conn := d.waitAttach()
+	// The claim here is about the container the agent ASKS for, which it has
+	// already asked for by now; the readiness line only ends the attempt, so
+	// the retired "ok" is the shortest way to end it.
 	sidecarSpeak(t, conn, "ok", nil)
 	_ = conn.Close()
 	<-done
@@ -517,8 +523,11 @@ func TestPortForward_RemovesSidecarOnTeardown(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- gatedForward(srv, stream) }()
 
+	// A forward that was really established, so this is the teardown of a live
+	// one and not of a sidecar that never passed its handshake.
 	conn := d.waitAttach()
-	sidecarSpeak(t, conn, "ok", nil)
+	mux := newMuxSide(t, conn)
+	mux.acceptOpen()
 	_ = conn.Close()
 	<-done
 
@@ -561,6 +570,15 @@ func TestPortForward_SidecarCreateFailureIsReported(t *testing.T) {
 
 // The forward must count toward the drain wait group, or a rolling agent update
 // would cut live forwards mid-connection. The stream gate does the counting.
+//
+// The forward here is a REAL one: the sidecar reports the mux readiness line
+// and answers the open, so the handler is bridging when the counter is read.
+// It used to send the retired single-connection "ok", which the agent has not
+// accepted since the mux handshake landed — the handler failed at readiness
+// every single time, and the test passed only while it sampled the counter
+// faster than the failing handler could unwind. On a loaded runner it lost
+// that race and reported "active = 0 during a forward", which was true and
+// said nothing about the drain.
 func TestPortForward_CountsAsActiveSession(t *testing.T) {
 	d := newFakeDocker()
 	srv, _ := forwardTestServer(d, auth.AllowAll{})
@@ -573,18 +591,22 @@ func TestPortForward_CountsAsActiveSession(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- gatedForward(srv, stream) }()
 
-	conn := d.waitAttach()
-	sidecarSpeak(t, conn, "ok", nil)
+	mux := newMuxSide(t, d.waitAttach())
+	id := mux.acceptOpen()
 
-	deadline := time.Now().Add(2 * time.Second)
-	for srv.active.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if srv.active.Load() != 1 {
-		t.Errorf("active = %d during a forward, want 1", srv.active.Load())
+	// No waiting: acceptOpen answered the open the HANDLER sent, so the gate
+	// has counted it and the handler cannot have returned.
+	if n := srv.active.Load(); n != 1 {
+		select {
+		case err := <-done:
+			t.Fatalf("active = %d: the forward had already ended: %v", n, err)
+		default:
+			t.Fatalf("active = %d while a forward is bridging, want 1", n)
+		}
 	}
 
-	_ = conn.Close()
+	// The target closes the connection, which ends the RPC.
+	mux.send(forwardmux.Frame{Conn: id, Kind: forwardmux.KindClose})
 	<-done
 	if srv.active.Load() != 0 {
 		t.Errorf("active = %d after teardown, want 0", srv.active.Load())
