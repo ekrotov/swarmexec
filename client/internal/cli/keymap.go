@@ -20,7 +20,7 @@ import (
 // j/k/g/G — are fixed and not remappable.
 type keybinds struct {
 	// global (every tab)
-	Quit, Refresh, Copy, ToggleMouse rune
+	Quit, Refresh, Copy, ToggleMouse, Activity rune
 	// containers + volumes
 	Search rune
 	// containers
@@ -61,6 +61,9 @@ var keyActions = []keyAction{
 	{"refresh", []string{"*"}, 'r', func(k *keybinds) *rune { return &k.Refresh }},
 	{"copy", []string{"*"}, 'y', func(k *keybinds) *rune { return &k.Copy }},
 	{"toggle_mouse", []string{"*"}, 'm', func(k *keybinds) *rune { return &k.ToggleMouse }},
+	// e = events: what the manager reported about this cluster. Global, because
+	// "when did what change?" is asked from wherever one happens to be standing.
+	{"activity", []string{"*"}, 'e', func(k *keybinds) *rune { return &k.Activity }},
 	{"search", []string{"containers", "volumes"}, '/', func(k *keybinds) *rune { return &k.Search }},
 	{"fold", []string{"containers"}, 'h', func(k *keybinds) *rune { return &k.Fold }},
 	{"unfold", []string{"containers"}, 'l', func(k *keybinds) *rune { return &k.Unfold }},

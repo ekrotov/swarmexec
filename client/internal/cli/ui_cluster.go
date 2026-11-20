@@ -100,6 +100,11 @@ type clusterState struct {
 	nodeUse   map[string]nodeUsage
 	usageBusy atomic.Bool
 
+	// activity is what the manager's event stream reported for this cluster,
+	// since the UI connected to it. The watcher writes it, the activity view
+	// reads it; see activity.go for why it is a ring and not a log.
+	activity *activityLog
+
 	clusterText string // last cluster-probe summary for the footer
 	// clusterShort is the same summary, compact ("3n · 2/3 ag"), for a
 	// status line too narrow for clusterText.
@@ -117,6 +122,7 @@ func newClusterState(name, ctxOverride string) *clusterState {
 	return &clusterState{
 		name:        name,
 		ctxOverride: ctxOverride,
+		activity:    &activityLog{},
 	}
 }
 

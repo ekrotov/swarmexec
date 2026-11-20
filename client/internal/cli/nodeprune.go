@@ -74,7 +74,14 @@ func ago(rfc string, now time.Time) string {
 	if err != nil {
 		return rfc
 	}
-	d := now.Sub(t)
+	return sinceText(now.Sub(t))
+}
+
+// sinceText is how this UI says "how long ago", in one place: the prune view
+// and the activity view have to agree, or the same gap reads as two different
+// ages depending on where it is shown. A negative duration — a manager whose
+// clock is ahead of ours — is "just now" rather than a negative number.
+func sinceText(d time.Duration) string {
 	switch {
 	case d < time.Minute:
 		return "just now"
