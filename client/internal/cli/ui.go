@@ -134,6 +134,7 @@ const (
 	pageConfirm          = "confirm"
 	pageHelp             = "help"
 	pageSecurity         = "security"
+	pageActivity         = "activity"
 	pageSecurityReport   = "securityreport"
 	pageStackFile        = "stackfile"
 	pageStackDiff        = "stackdiff"
@@ -1683,6 +1684,7 @@ func (u *ui) globalHelpSection(h *helpWriter) {
 	h.line(kl(km.Refresh), "refresh the current tab + cluster")
 	h.line(kl(km.Copy), "copy the current list to the clipboard")
 	h.line(kl(km.ToggleMouse), "toggle mouse on/off")
+	h.line(kl(km.Activity), "activity: what the manager reported about this cluster")
 	h.line("Tab", "next tab")
 	h.line(fmt.Sprintf("1–%d", len(uiTabList)), "jump to a tab by number")
 	h.line(kl(km.CtxFocus), "focus the contexts sidebar · Esc leaves")
@@ -2052,6 +2054,8 @@ func (u *ui) globalKey(r rune) bool {
 		u.yankCurrent()
 	case km.ToggleMouse:
 		u.toggleMouse()
+	case km.Activity:
+		u.showActivity()
 	case km.CtxFocus:
 		u.focusSidebar()
 	default:

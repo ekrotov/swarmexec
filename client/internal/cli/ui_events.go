@@ -66,6 +66,24 @@ const (
 	topologyResubscribe = 4 * time.Minute
 )
 
+// watchedEventTypes is what the subscription asks for. The first two drive the
+// tree; the rest are recorded for the activity view only (see refreshKinds).
+var watchedEventTypes = []events.Type{
+	events.ServiceEventType,
+	events.NodeEventType,
+	events.SecretEventType,
+	events.ConfigEventType,
+	events.NetworkEventType,
+}
+
+// refreshKinds are the event types that change the container tree. A secret or
+// a network changing does not, so re-listing for them would be the load spike
+// the debounce exists to avoid, paid for nothing.
+var refreshKinds = map[events.Type]bool{
+	events.ServiceEventType: true,
+	events.NodeEventType:    true,
+}
+
 // topologyTiming is the coalescing behaviour, injectable so the tests can drive
 // it in milliseconds instead of waiting out the production values.
 type topologyTiming struct {
@@ -89,12 +107,15 @@ func (u *ui) watchTopology(ctx context.Context, c *clusterState, dcli swarmapi.C
 	// Docker emits no task events at all, which is why the trigger is a service
 	// event and the answer still comes from re-listing tasks.
 	//
-	// Scoped on purpose — secrets, configs and networks have their own tabs
-	// that load on demand, and subscribing to them here would re-list the tree
-	// for changes it does not show.
+	// Secrets, configs and networks are subscribed too, but they do NOT
+	// re-list the tree — they are not in it. They are here for the activity
+	// view (activity.go), which answers "when did what change?" about the
+	// whole cluster. The two concerns are separated in consumeTopology:
+	// everything is recorded, only refreshKinds refreshes.
 	f := make(client.Filters)
-	f.Add("type", string(events.ServiceEventType))
-	f.Add("type", string(events.NodeEventType))
+	for _, t := range watchedEventTypes {
+		f.Add("type", string(t))
+	}
 
 	backoff := topologyRetryMin
 	for ctx.Err() == nil {
@@ -145,6 +166,7 @@ func (u *ui) streamTopology(ctx context.Context, c *clusterState, dcli swarmapi.
 	return consumeTopology(ctx, msgs, errs, defaultTopologyTiming, func(ev events.Message) {
 		clientlog.L().Debug("topology event",
 			"cluster", c.name, "type", ev.Type, "action", ev.Action)
+		c.activity.record(ev)
 	}, u.treeTab().autoRefresh)
 }
 
@@ -189,6 +211,12 @@ func consumeTopology(
 			delivered = true
 			if observe != nil {
 				observe(ev)
+			}
+			// Recorded above, refreshed here — and only for the types the tree
+			// actually shows. A secret or a network changing is worth seeing in
+			// the activity view and worth no manager calls at all.
+			if !refreshKinds[ev.Type] {
+				continue
 			}
 			if !pending {
 				pending = true
