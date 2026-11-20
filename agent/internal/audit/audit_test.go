@@ -108,6 +108,8 @@ var eventTable = map[string]func(*Logger){
 		l.AuthDecision(AuthRecord{Identity: "a", Action: "exec", ContainerID: "c", Service: "s", Reason: "no"})
 	},
 	"container_kill":    func(l *Logger) { l.ContainerKill("a", "c", "s", true, "") },
+	"copy_start":        func(l *Logger) { l.CopyStart("a", "c", "s", "from", "/etc/hosts", "addr") },
+	"copy_end":          func(l *Logger) { l.CopyEnd("a", "c", "from", time.Second, 12, true, "") },
 	"container_inspect": func(l *Logger) { l.ContainerInspect("a", "c", "s", true, "") },
 }
 

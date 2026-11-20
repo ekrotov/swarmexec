@@ -44,6 +44,9 @@ const (
 	Agent_NetworkEndpoints_FullMethodName     = "/swarmexec.Agent/NetworkEndpoints"
 	Agent_KillContainer_FullMethodName        = "/swarmexec.Agent/KillContainer"
 	Agent_InspectContainer_FullMethodName     = "/swarmexec.Agent/InspectContainer"
+	Agent_CopyFrom_FullMethodName             = "/swarmexec.Agent/CopyFrom"
+	Agent_StatPath_FullMethodName             = "/swarmexec.Agent/StatPath"
+	Agent_CopyTo_FullMethodName               = "/swarmexec.Agent/CopyTo"
 	Agent_Version_FullMethodName              = "/swarmexec.Agent/Version"
 )
 
@@ -125,6 +128,24 @@ type AgentClient interface {
 	// probe output, the container's network settings, its real mounts — because
 	// only the node's daemon has them. See CONTRACT.md §3.10.
 	InspectContainer(ctx context.Context, in *InspectContainerRequest, opts ...grpc.CallOption) (*InspectContainerResponse, error)
+	// Copy a file or directory OUT of a container on THIS node, as a tar stream
+	// (authorized as "copy.from" + audited). It is the read half of `swarmexec
+	// cp`: the Engine's own archive endpoint, so nothing — not even tar — has to
+	// exist inside the container. The first CopyChunk carries the source's stat,
+	// every later one payload. See CONTRACT.md §3.11.
+	CopyFrom(ctx context.Context, in *CopyFromRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CopyChunk], error)
+	// Stat one path inside a container on THIS node (authorized as "copy.from":
+	// it reads metadata out of the container). `swarmexec cp` asks before it
+	// writes, because "copy into /tmp" and "copy onto /tmp" differ only in
+	// whether /tmp is a directory — the same question `docker cp` answers with
+	// the same call. A client refused this falls back to the trailing-slash
+	// rule. See CONTRACT.md §3.11.
+	StatPath(ctx context.Context, in *StatPathRequest, opts ...grpc.CallOption) (*StatPathResponse, error)
+	// Copy a tar stream INTO a container on THIS node (authorized as "copy.to" +
+	// audited). The write half of `swarmexec cp`, and a distinctly sharper
+	// permission than copy.from: it writes into the container's filesystem. The
+	// first CopyToMessage MUST carry a StartCopyTo. See CONTRACT.md §3.11.
+	CopyTo(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[CopyToMessage, CopyToResponse], error)
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -324,6 +345,48 @@ func (c *agentClient) InspectContainer(ctx context.Context, in *InspectContainer
 	return out, nil
 }
 
+func (c *agentClient) CopyFrom(ctx context.Context, in *CopyFromRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CopyChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[4], Agent_CopyFrom_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[CopyFromRequest, CopyChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_CopyFromClient = grpc.ServerStreamingClient[CopyChunk]
+
+func (c *agentClient) StatPath(ctx context.Context, in *StatPathRequest, opts ...grpc.CallOption) (*StatPathResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatPathResponse)
+	err := c.cc.Invoke(ctx, Agent_StatPath_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentClient) CopyTo(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[CopyToMessage, CopyToResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[5], Agent_CopyTo_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[CopyToMessage, CopyToResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_CopyToClient = grpc.ClientStreamingClient[CopyToMessage, CopyToResponse]
+
 func (c *agentClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VersionResponse)
@@ -412,6 +475,24 @@ type AgentServer interface {
 	// probe output, the container's network settings, its real mounts — because
 	// only the node's daemon has them. See CONTRACT.md §3.10.
 	InspectContainer(context.Context, *InspectContainerRequest) (*InspectContainerResponse, error)
+	// Copy a file or directory OUT of a container on THIS node, as a tar stream
+	// (authorized as "copy.from" + audited). It is the read half of `swarmexec
+	// cp`: the Engine's own archive endpoint, so nothing — not even tar — has to
+	// exist inside the container. The first CopyChunk carries the source's stat,
+	// every later one payload. See CONTRACT.md §3.11.
+	CopyFrom(*CopyFromRequest, grpc.ServerStreamingServer[CopyChunk]) error
+	// Stat one path inside a container on THIS node (authorized as "copy.from":
+	// it reads metadata out of the container). `swarmexec cp` asks before it
+	// writes, because "copy into /tmp" and "copy onto /tmp" differ only in
+	// whether /tmp is a directory — the same question `docker cp` answers with
+	// the same call. A client refused this falls back to the trailing-slash
+	// rule. See CONTRACT.md §3.11.
+	StatPath(context.Context, *StatPathRequest) (*StatPathResponse, error)
+	// Copy a tar stream INTO a container on THIS node (authorized as "copy.to" +
+	// audited). The write half of `swarmexec cp`, and a distinctly sharper
+	// permission than copy.from: it writes into the container's filesystem. The
+	// first CopyToMessage MUST carry a StartCopyTo. See CONTRACT.md §3.11.
+	CopyTo(grpc.ClientStreamingServer[CopyToMessage, CopyToResponse]) error
 	// Report the agent's build and protocol version. Cheap, low-privilege probe
 	// used by `swarmexec doctor` and for client/agent skew detection. Calling it
 	// on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -474,6 +555,15 @@ func (UnimplementedAgentServer) KillContainer(context.Context, *KillContainerReq
 }
 func (UnimplementedAgentServer) InspectContainer(context.Context, *InspectContainerRequest) (*InspectContainerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InspectContainer not implemented")
+}
+func (UnimplementedAgentServer) CopyFrom(*CopyFromRequest, grpc.ServerStreamingServer[CopyChunk]) error {
+	return status.Errorf(codes.Unimplemented, "method CopyFrom not implemented")
+}
+func (UnimplementedAgentServer) StatPath(context.Context, *StatPathRequest) (*StatPathResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StatPath not implemented")
+}
+func (UnimplementedAgentServer) CopyTo(grpc.ClientStreamingServer[CopyToMessage, CopyToResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method CopyTo not implemented")
 }
 func (UnimplementedAgentServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -751,6 +841,42 @@ func _Agent_InspectContainer_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Agent_CopyFrom_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CopyFromRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServer).CopyFrom(m, &grpc.GenericServerStream[CopyFromRequest, CopyChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_CopyFromServer = grpc.ServerStreamingServer[CopyChunk]
+
+func _Agent_StatPath_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatPathRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).StatPath(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_StatPath_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).StatPath(ctx, req.(*StatPathRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Agent_CopyTo_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServer).CopyTo(&grpc.GenericServerStream[CopyToMessage, CopyToResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_CopyToServer = grpc.ClientStreamingServer[CopyToMessage, CopyToResponse]
+
 func _Agent_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VersionRequest)
 	if err := dec(in); err != nil {
@@ -825,6 +951,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Agent_InspectContainer_Handler,
 		},
 		{
+			MethodName: "StatPath",
+			Handler:    _Agent_StatPath_Handler,
+		},
+		{
 			MethodName: "Version",
 			Handler:    _Agent_Version_Handler,
 		},
@@ -850,6 +980,16 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "PortForward",
 			Handler:       _Agent_PortForward_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "CopyFrom",
+			Handler:       _Agent_CopyFrom_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "CopyTo",
+			Handler:       _Agent_CopyTo_Handler,
 			ClientStreams: true,
 		},
 	},

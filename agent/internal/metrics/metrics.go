@@ -14,7 +14,7 @@ import (
 
 // StreamMethods are the "method" label values of the per-stream series: the
 // agent's streaming RPCs. The server package checks it against its stream gate.
-var StreamMethods = []string{"Exec", "Logs", "PortForward", "WatchContainerEvents"}
+var StreamMethods = []string{"Exec", "Logs", "PortForward", "WatchContainerEvents", "CopyFrom", "CopyTo"}
 
 // Prometheus implements server.Metrics with Prometheus collectors.
 type Prometheus struct {

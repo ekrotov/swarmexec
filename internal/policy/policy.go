@@ -42,6 +42,12 @@ import (
 var Actions = []string{
 	"container.list", "container.events", "inspect", "kill",
 	"exec", "logs", "portforward", "stats.read",
+	// Copying is two actions on purpose (CONTRACT.md §3.11): "copy.from"
+	// reads a path out of a container, "copy.to" writes one into it. A policy
+	// must be able to allow pulling a log out without allowing a write into
+	// every container's filesystem. "copy.*" covers both and is new, so no
+	// policy written before they existed can grow this power by accident.
+	"copy.from", "copy.to",
 	"image.list", "image.prune", "image.prune.all",
 	"volume.list", "volume.create", "volume.remove", "network.inspect",
 	"reclaim.read", "container.prune", "buildcache.prune", "network.prune", "volume.prune",
@@ -66,6 +72,8 @@ var carries = map[string]Conditions{
 	"container.events": {Services: true},
 	"kill":             {Services: true},
 	"inspect":          {Services: true},
+	"copy.from":        {Services: true},
+	"copy.to":          {Services: true},
 	"volume.create":    {Volumes: true},
 	"volume.remove":    {Volumes: true},
 }

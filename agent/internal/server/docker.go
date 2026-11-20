@@ -61,6 +61,14 @@ type DockerClient interface {
 	// Events streams docker daemon events; the volume-size cache watches
 	// volume create/destroy to refresh reactively.
 	Events(ctx context.Context, options client.EventsListOptions) client.EventsResult
+	// The three below back CopyFrom/CopyTo (copy.go). They are the Engine's own
+	// archive endpoint, which is why `swarmexec cp` needs nothing inside the
+	// container — not even tar, which distroless and scratch images do not have.
+	// ContainerStatPath is what tells a file from a directory, and names a
+	// symlink's target, before a byte moves.
+	ContainerStatPath(ctx context.Context, containerID string, options client.ContainerStatPathOptions) (client.ContainerStatPathResult, error)
+	CopyFromContainer(ctx context.Context, containerID string, options client.CopyFromContainerOptions) (client.CopyFromContainerResult, error)
+	CopyToContainer(ctx context.Context, containerID string, options client.CopyToContainerOptions) (client.CopyToContainerResult, error)
 }
 
 // The real Docker client must keep satisfying the interface; this breaks the

@@ -64,6 +64,7 @@ func completionTargets(g *globalFlags) (map[string]completeFunc, map[string]map[
 	firstService := onlyFirstArg(completeServices(g, false))
 	stacks := completeStacks(g)
 	args := map[string]completeFunc{
+		"swarmexec cp":            completeCopyArgs(g),
 		"swarmexec exec":          firstService,
 		"swarmexec port-forward":  firstService,
 		"swarmexec logs":          completeServices(g, true),
@@ -136,6 +137,34 @@ func completeServices(g *globalFlags, slots bool) completeFunc {
 		sort.Strings(names)
 		return names, cobra.ShellCompDirectiveNoFileComp
 	}
+}
+
+// completeCopyArgs offers `cp` either a container target or a local path.
+// Either side of a copy can be either, so the word being typed decides: one
+// that already looks like a path (it starts with . or / or holds a separator)
+// gets the shell's own file completion, anything else gets service names with
+// the colon already attached — and no trailing space, because a path follows.
+func completeCopyArgs(g *globalFlags) completeFunc {
+	services := completeServices(g, false)
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) >= 2 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		if looksLocal(toComplete) {
+			return nil, cobra.ShellCompDirectiveDefault // the shell completes files
+		}
+		names, _ := services(cmd, args, toComplete)
+		for i, n := range names {
+			names[i] = n + ":"
+		}
+		return names, cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// looksLocal reports whether a half-typed word is already a local path.
+func looksLocal(s string) bool {
+	return strings.HasPrefix(s, ".") || strings.HasPrefix(s, "/") ||
+		strings.HasPrefix(s, "~") || strings.ContainsAny(s, `/\`)
 }
 
 func slotNames(cands []resolve.Candidate) []string {

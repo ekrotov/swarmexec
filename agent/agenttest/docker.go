@@ -69,6 +69,8 @@ type Docker struct {
 	execFn     ExecFunc
 	logCalls   []client.ContainerLogsOptions
 	logStreams map[string]func() io.ReadCloser
+	// files is the archive endpoint's filesystem, per container (copy.go).
+	files map[string]map[string]fakeFile
 }
 
 type execState struct {

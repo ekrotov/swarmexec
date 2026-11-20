@@ -21,7 +21,12 @@ type Request struct {
 	// each category on its own: "container.prune", "image.prune",
 	// "image.prune.all", "buildcache.prune", "network.prune", "volume.prune";
 	// its stats are "reclaim.read". NetworkEndpoints is "network.inspect".
-	// KillContainer is "kill", InspectContainer "inspect".
+	// KillContainer is "kill", InspectContainer "inspect". Copying is two
+	// actions, not one: "copy.from" reads a path out of a container,
+	// "copy.to" writes one into it. They are separated for the same reason
+	// "image.prune" and "image.prune.all" are — a policy must be able to allow
+	// pulling a log out without also allowing a write into every container's
+	// filesystem, which is the sharpest permission this agent has.
 	Action string
 	// Port is the target TCP port inside the container for "portforward".
 	// Forwarding is a distinct exposure class from exec — it lifts an internal
@@ -30,6 +35,12 @@ type Request struct {
 	Port uint32
 	// Volume is the target volume name for volume.* actions.
 	Volume string
+	// Path is the path inside the container for the copy.* actions: the source
+	// for copy.from, the destination directory for copy.to. It is carried for
+	// the audit record, which has to name what was copied — no rule matches on
+	// it. A path matcher in the policy language would need its own glob
+	// semantics and its own fuzzing, and belongs in its own change.
+	Path string
 	// Identity is the client certificate Common Name (the operator identity).
 	Identity string
 	// ContainerID is the full target container ID.

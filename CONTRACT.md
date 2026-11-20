@@ -387,6 +387,59 @@ real mounts).
   `UNIMPLEMENTED` (§7); these are explicit operator actions, so a client sends
   them every time and reports "agent too old" rather than remembering it.
 
+### 3.11 Copy semantics (normative)
+
+`CopyFrom`, `CopyTo` and `StatPath` move files between a client and ONE
+container on the agent's own node, and — by the client running both halves —
+between two containers. They go through the Engine's archive endpoint
+(`/containers/{id}/archive`), so **nothing has to exist inside the container**:
+no tar, no shell. That is the point of having them rather than running `tar`
+through `Exec`, which cannot work on a distroless or scratch image.
+
+- **Every container, not only swarm tasks.** Unlike kill and inspect (§3.10),
+  these are not restricted: copying is the second half of exec, and `Exec`
+  reaches every container on the node. A copy refused where an exec is allowed
+  would only send the operator back to `exec -- tar`.
+- **Authorization: two actions, not one.** `CopyFrom` and `StatPath` are
+  `copy.from`; `CopyTo` is `copy.to`. They are separate because they are
+  different powers: one reads a file out, the other writes into a container's
+  filesystem — the sharpest permission the agent has. A policy MUST be able to
+  grant the first without the second. `copy.*` covers both, deliberately: it
+  is a new namespace, so no policy written before these RPCs existed can grow
+  the power by accident. The container's service is resolved as for exec, so
+  a rule may name `services`. The path is carried to the authorizer and into
+  the audit record; no rule matches on it.
+- **Framing.** `CopyFrom` sends exactly one `CopyChunk` with a `stat` as its
+  FIRST message, then `data` chunks of at most 256 KiB, then ends the stream.
+  A client MUST treat a `data` chunk before the `stat` as a protocol error.
+  `CopyTo` is the mirror: exactly one `StartCopyTo` as the FIRST message, then
+  `data`; a second `StartCopyTo` is `INVALID_ARGUMENT`.
+- **Size cap.** Both carry `max_bytes`. 0 means the agent's default (1 GiB).
+  Exceeding it ends the stream with `RESOURCE_EXHAUSTED` — a copy of `/` must
+  fail rather than fill the operator's disk. The agent enforces it; a client
+  MUST NOT rely on its own counting alone.
+- **`StatPath`** answers `exists=false` for a path the container does not have.
+  That is an answer, not a failure: it is how a client tells "write this file"
+  from "write into this directory" — the same question `docker cp` asks. A
+  client refused `copy.from` MUST still be able to copy INTO a container; it
+  then decides from the destination's trailing slash.
+- **Symlinks.** `CopyFrom` with `follow_link` re-stats the source and copies
+  what the link points at, resolving a relative target against the link's own
+  directory. Without it, the link itself is copied, as a link entry.
+- **Extraction.** Into a container, the Engine extracts, and its refusal to
+  replace a directory with a file (and the reverse) stands unless the client
+  sets `allow_overwrite_dir_with_file`. Onto the client, **the client
+  extracts**, and that is where the danger is: the archive comes from a
+  container's filesystem. A client MUST refuse any entry whose resolved target
+  leaves the destination directory, including through a symlink the same
+  archive created, and MUST NOT silently rewrite such a name into a safe one.
+- **Audit.** `copy_start` (identity, container, service, direction, path,
+  client address) and `copy_end` (duration, bytes, ok, error). A copy that
+  fails mid-stream still writes `copy_end`, so a start without an end always
+  means "still running".
+- An agent that predates these RPCs answers `UNIMPLEMENTED` (§7). They are
+  explicit operator actions, so a client sends them every time.
+
 ## 4. Session Lifecycle (normative)
 
 1. Client opens the `Exec` stream.
@@ -447,7 +500,8 @@ that send the live read buffer are non-conformant.
   RPCs it issues on its own (stats, image list, reclaim stats, volume list,
   container events, network endpoints) and forgets it as soon as it opens a new connection to
   that agent, since a redeployed agent is a new connection. An operator's
-  explicit action is always sent.
+  explicit action is always sent — `CopyFrom`, `CopyTo` and `StatPath` (§3.11)
+  among them.
 
 ## 8. Deployment (normative)
 

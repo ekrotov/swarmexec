@@ -236,6 +236,7 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newConfigCmd(g))
 	root.AddCommand(newContextCmd(g))
 	root.AddCommand(newExecCmd(g))
+	root.AddCommand(newCpCmd(g))
 	root.AddCommand(newPsCmd(g))
 	root.AddCommand(newLogsCmd(g))
 	root.AddCommand(newPortForwardCmd(g))

@@ -30,6 +30,7 @@ var argContract = map[string][]int{
 	"swarmexec context ls":               {0},
 	"swarmexec context rm":               {1, 2, 3}, // removes every name given
 	"swarmexec context use":              {1},
+	"swarmexec cp":                       {2}, // src and dst, one of them a container
 	"swarmexec doctor":                   {0},
 	"swarmexec down":                     {0},
 	"swarmexec prune-schedule":           {0},

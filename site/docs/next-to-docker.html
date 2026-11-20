@@ -169,6 +169,7 @@
         </thead>
         <tbody>
           <tr><td>A shell in a task</td><td><code>swarmexec exec web -- sh</code></td><td><code>ssh node3</code>, then <code>docker exec</code></td></tr>
+          <tr><td>A file in or out of a task &mdash; or between two</td><td><code>swarmexec cp</code>, straight to the node that runs it, and between two containers on different nodes</td><td><code>ssh node3</code>, then <code>docker cp</code>; between two nodes it is two copies and a temp file</td></tr>
           <tr><td>Logs across every replica</td><td><code>swarmexec logs -f web</code></td><td><code>docker service logs</code>, or one node at a time for a container's own stream</td></tr>
           <tr><td>Reach a port nobody published</td><td><code>swarmexec port-forward</code></td><td><span class="pm-no">— not without publishing it or an SSH tunnel</span></td></tr>
           <tr><td>The daily round</td><td><code>swarmexec ui</code></td><td><code>docker service ls</code> and the commands after it</td></tr>

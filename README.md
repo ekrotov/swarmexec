@@ -22,6 +22,7 @@ hidden from `docker`, and nothing requires it to be absent.
 ## What it does
 
 - **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarm-exec.cloud-surfers.net/docs/exec)
+- **Copy files in, out and between containers** — `swarmexec cp ./patch.sql db:/tmp/`, and `web.1:/etc/nginx.conf db.2:/tmp/` across two nodes. Nothing is needed inside the container, not even tar. [cp →](https://swarm-exec.cloud-surfers.net/docs/exec#cp)
 - **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarm-exec.cloud-surfers.net/docs/logs)
 - **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs/port-forward) · [recipe: forward a database port](https://swarm-exec.cloud-surfers.net/examples#forward-db)
 - **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarm-exec.cloud-surfers.net/docs/tui#tui)
@@ -58,6 +59,7 @@ Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/
 swarmexec --context prod init      # deploy the agent to every node, write the client config
 swarmexec ps                       # what you can exec into, and on which node
 swarmexec exec web -- sh           # a shell in a task of the service "web"
+swarmexec cp web:/etc/app.conf .   # a file out of it, no tar needed in the image
 swarmexec ui                       # the terminal UI
 ```
 

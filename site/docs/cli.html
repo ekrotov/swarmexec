@@ -129,6 +129,7 @@
           <li class="d2"><a href="#context-ls">swarmexec context ls</a></li>
           <li class="d2"><a href="#context-rm">swarmexec context rm</a></li>
           <li class="d2"><a href="#context-use">swarmexec context use</a></li>
+          <li class="d1"><a href="#cp">swarmexec cp</a></li>
           <li class="d1"><a href="#doctor">swarmexec doctor</a></li>
           <li class="d1"><a href="#down">swarmexec down</a></li>
           <li class="d1"><a href="#exec">swarmexec exec</a></li>
@@ -186,6 +187,7 @@ swarmexec [command]</div>
         <li><a href="#config"><code>swarmexec config</code></a> — Inspect the resolved client configuration</li>
         <li><a href="#connection"><code>swarmexec help connection</code></a> — Flags for reaching the agents: TLS, the agent secret, node addressing</li>
         <li><a href="#context"><code>swarmexec context</code></a> — Manage Docker contexts used for the manager API</li>
+        <li><a href="#cp"><code>swarmexec cp</code></a> — Copy files and directories to, from and between containers in the swarm</li>
         <li><a href="#doctor"><code>swarmexec doctor</code></a> — Diagnose the swarm: manager, agent deployment, and per-node agent health</li>
         <li><a href="#down"><code>swarmexec down</code></a> — Remove the agent service (and secret) provisioned by `init`</li>
         <li><a href="#exec"><code>swarmexec exec</code></a> — Exec into a container running anywhere in the swarm</li>
@@ -385,6 +387,30 @@ swarmexec context [command]</div>
       <h3 id="context-use" class="clicmd"><code>swarmexec context use</code></h3>
       <p class="clishort">Set the current Docker context</p>
       <div class="cmd">swarmexec context use &lt;name&gt; [flags]</div>
+      <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
+
+      <h2 id="cp" class="clicmd"><code>swarmexec cp</code></h2>
+      <p class="clishort">Copy files and directories to, from and between containers in the swarm</p>
+      <div class="cmd">swarmexec cp [flags] &lt;src&gt; &lt;dst&gt;</div>
+      <p>Move files in or out of a container on whatever node of the swarm it runs — and between two containers, which may sit on different nodes.</p>
+      <p>Either side is a local path or &lt;target&gt;:&lt;path&gt;, where the target is what exec takes: a service, a service.slot, a task id or a container id. One side must name a container; two local paths are a job for cp(1).</p>
+      <p>Nothing has to exist inside the container — not even tar. The copy goes through the Engine&#39;s own archive endpoint on the node, so it works with distroless and scratch images, which is where it is needed most.</p>
+      <p>The destination rules are docker cp&#39;s: a path that is an existing directory receives the source under its own name, any other path IS the name. A copy between two containers never touches this machine&#39;s disk, but every byte does travel through it: there is no node-to-node path, by design.</p>
+      <p class="climeta">Examples</p>
+      <div class="cmd">swarmexec cp ./patch.sql db:/tmp/
+swarmexec cp web.1:/var/log/app.log ./app.log
+swarmexec cp web.1:/etc/nginx.conf db.2:/tmp/</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-a, --archive</code></td><td><code>false</code></td><td>keep the owner and group recorded in the archive</td></tr>
+          <tr><td><code>--connect-timeout duration</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+          <tr><td><code>-L, --follow-link</code></td><td><code>false</code></td><td>copy what a symlinked source points at, not the link</td></tr>
+          <tr><td><code>--max-size string</code></td><td><code>1G</code></td><td>refuse a copy larger than this (K/M/G, binary units)</td></tr>
+          <tr><td><code>--node string</code></td><td>—</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>-q, --quiet</code></td><td><code>false</code></td><td>no progress output</td></tr>
+        </tbody>
+      </table></div>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h2 id="doctor" class="clicmd"><code>swarmexec doctor</code></h2>
