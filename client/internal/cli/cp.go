@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -148,6 +149,25 @@ func cpArgs(f *cpFlags, args []string) (src, dst cpSpec, maxBytes uint64, err er
 	return src, dst, uint64(size), nil
 }
 
+// copyResult is what one copy moved, for the line the CLI prints and the notice
+// the TUI shows. Refused carries the archive entries that were not written —
+// an escaping path, an entry type that has no meaning here — because a file
+// silently missing from a copy is worse than a noisy one.
+type copyResult struct {
+	Name    string
+	Bytes   int64
+	Files   int
+	Refused []string
+}
+
+// The three failures that are not the agent's answer, so that both callers can
+// tell them apart: the CLI for its exit code, the TUI for its wording.
+var (
+	errNoSuchPath     = errors.New("no such path in the container")
+	errBadDestination = errors.New("the destination cannot take the source")
+	errBadSource      = errors.New("the source cannot be read")
+)
+
 // cpRun is one `cp` invocation: the pieces every direction needs.
 type cpRun struct {
 	ac          *agentcall.Client
@@ -175,22 +195,37 @@ func (c *cpRun) endpointOf(ctx context.Context, target string) (resolve.Endpoint
 	return *ep, nil
 }
 
-// fromContainer copies a path from a container onto this machine.
+// fromContainer copies a path from a container onto this machine: the command's
+// half, which resolves the target and prints what happened. The copy itself is
+// copyOut, which the TUI calls with the container it already has.
 func (c *cpRun) fromContainer(ctx context.Context, src cpSpec, localDst string) error {
 	ep, err := c.endpointOf(ctx, src.target)
 	if err != nil {
 		return err
 	}
-	stat, exists, err := c.ac.StatPath(ctx, ep, c.f.connectTimeout, src.path)
+	res, err := c.copyOut(ctx, ep, src.path, localDst)
 	if err != nil {
 		return copyError(err)
 	}
-	if !exists {
-		return &cliError{code: exitNo, err: fmt.Errorf("%s:%s does not exist", src.target, src.path)}
-	}
-	dir, opts, err := localDestination(localDst, stat.GetIsDir() || contentsOf(src.path))
+	c.report(res)
+	return nil
+}
+
+// copyOut streams one path out of a container and extracts it below localDst.
+// It is the shared core: no printing, no exit codes, no resolving — the caller
+// has the container, and gets back what was written.
+func (c *cpRun) copyOut(ctx context.Context, ep resolve.Endpoint, remotePath, localDst string) (copyResult, error) {
+	var out copyResult
+	stat, exists, err := c.ac.StatPath(ctx, ep, c.f.connectTimeout, remotePath)
 	if err != nil {
-		return &cliError{code: exitUsage, err: err}
+		return out, err
+	}
+	if !exists {
+		return out, fmt.Errorf("%s: %w", remotePath, errNoSuchPath)
+	}
+	dir, opts, err := localDestination(localDst, stat.GetIsDir() || contentsOf(remotePath))
+	if err != nil {
+		return out, fmt.Errorf("%w: %s", errBadDestination, err)
 	}
 	opts.MaxBytes = int64(c.maxBytes)
 
@@ -198,36 +233,45 @@ func (c *cpRun) fromContainer(ctx context.Context, src cpSpec, localDst string) 
 	done := make(chan error, 1)
 	go func() {
 		_, _, cerr := c.ac.CopyFrom(ctx, ep, c.f.connectTimeout, agentcall.CopyFromOptions{
-			Path: src.path, FollowLink: c.f.followLink, MaxBytes: c.maxBytes,
+			Path: remotePath, FollowLink: c.f.followLink, MaxBytes: c.maxBytes,
 		}, pw, c.progress())
 		_ = pw.CloseWithError(cerr)
 		done <- cerr
 	}()
 	rep, xerr := cptar.Extract(pr, dir, opts)
 	_ = pr.CloseWithError(xerr)
+	out = copyResult{Name: stat.GetName(), Bytes: rep.Bytes, Files: rep.Files, Refused: rep.Refused}
 	if cerr := <-done; cerr != nil {
-		return copyError(cerr)
+		return out, cerr
 	}
-	if xerr != nil {
-		return &cliError{code: exitNo, err: xerr}
-	}
-	c.report(rep, rep.Bytes)
-	return nil
+	return out, xerr
 }
 
-// toContainer copies a local path into a container.
+// toContainer copies a local path into a container: the command's half.
 func (c *cpRun) toContainer(ctx context.Context, localSrc string, dst cpSpec) error {
-	fi, err := os.Stat(localSrc)
-	if err != nil {
-		return &cliError{code: exitUsage, err: err}
-	}
 	ep, err := c.endpointOf(ctx, dst.target)
 	if err != nil {
 		return err
 	}
-	destDir, name, err := c.remoteDestination(ctx, ep, dst.path, filepath.Base(localSrc))
+	res, err := c.copyIn(ctx, ep, localSrc, dst.path)
 	if err != nil {
-		return err
+		return copyError(err)
+	}
+	c.done(res.Name, res.Bytes)
+	return nil
+}
+
+// copyIn packs a local path and streams it into a container. Shared with the
+// TUI, like copyOut.
+func (c *cpRun) copyIn(ctx context.Context, ep resolve.Endpoint, localSrc, remoteDst string) (copyResult, error) {
+	var out copyResult
+	fi, err := os.Stat(localSrc)
+	if err != nil {
+		return out, fmt.Errorf("%w: %s", errBadSource, err)
+	}
+	destDir, name, err := c.remoteDestination(ctx, ep, remoteDst, filepath.Base(localSrc))
+	if err != nil {
+		return out, err
 	}
 
 	pr, pw := io.Pipe()
@@ -242,13 +286,10 @@ func (c *cpRun) toContainer(ctx context.Context, localSrc string, dst cpSpec) er
 	}, pr, c.progress())
 	_ = pr.Close()
 	rep := <-packed
-	if err != nil {
-		return copyError(err)
-	}
 	// The file's own bytes, not the archive's: a 10-byte file in a tar is
 	// 2 KiB of padding, and reporting that would read as a wrong number.
-	c.done(fi.Name(), rep.Bytes)
-	return nil
+	out = copyResult{Name: fi.Name(), Bytes: rep.Bytes, Files: rep.Files, Refused: rep.Refused}
+	return out, err
 }
 
 // betweenContainers copies from one container to another. The archive is rewritten in
@@ -367,6 +408,12 @@ func localDestination(dest string, srcIsDir bool) (dir string, opts cptar.Extrac
 // (125): it says something true about the request, and a script should be
 // able to tell the two apart.
 func copyError(err error) error {
+	switch {
+	case errors.Is(err, errNoSuchPath):
+		return &cliError{code: exitNo, err: err}
+	case errors.Is(err, errBadDestination), errors.Is(err, errBadSource):
+		return &cliError{code: exitUsage, err: err}
+	}
 	switch status.Code(err) {
 	case codes.PermissionDenied, codes.ResourceExhausted, codes.NotFound,
 		codes.FailedPrecondition, codes.InvalidArgument:
@@ -406,12 +453,12 @@ func (c *cpRun) done(name string, n int64) {
 
 // report prints what an extraction onto this machine did, including anything
 // it refused — a file missing from a copy must never be silent.
-func (c *cpRun) report(rep cptar.Report, n int64) {
-	for _, r := range rep.Refused {
+func (c *cpRun) report(res copyResult) {
+	for _, r := range res.Refused {
 		fmt.Fprintf(c.out, "refused: %s\n", r)
 	}
 	if c.f.quiet {
 		return
 	}
-	fmt.Fprintf(c.out, "\r%s copied in %d file(s)\n", dockerfmt.Bytes(n), rep.Files)
+	fmt.Fprintf(c.out, "\r%s copied in %d file(s)\n", dockerfmt.Bytes(res.Bytes), res.Files)
 }

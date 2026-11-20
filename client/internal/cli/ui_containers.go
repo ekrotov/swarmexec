@@ -885,6 +885,11 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 			})
 		})
 		list.AddItem("port forward", "", 0, func() { closeMenu(); u.portPrompt(c) })
+		// The two halves of `swarmexec cp`, on the container the tree is
+		// pointing at. Container-to-container stays on the command line: it
+		// needs a second container picked, which this UI has nowhere else.
+		list.AddItem("copy file out of container…", "", 0, func() { closeMenu(); u.copyFilePrompt(c, ep, copyFromContainer) })
+		list.AddItem("copy file into container…", "", 0, func() { closeMenu(); u.copyFilePrompt(c, ep, copyIntoContainer) })
 		list.AddItem("inspect container (node-local)", "", 0, func() { closeMenu(); u.inspectContainer(c, ep) })
 		list.AddItem("copy container id", "", 0, func() { closeMenu(); u.copyToClipboard(c.ContainerID) })
 		// Red like every other destructive action (dangerKey, "remove service").
@@ -912,8 +917,8 @@ func (u *ui) containerMenu(c resolve.Candidate) {
 		render()
 	})
 
-	// Height tracks the item count: 9 items plus the border.
-	ov.show(centered(list, 48, 11), list)
+	// Height tracks the item count: 11 items plus the border.
+	ov.show(centered(list, 48, 13), list)
 }
 
 // inspectContainer opens the inspect overlay on the node-local `docker

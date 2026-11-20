@@ -163,6 +163,7 @@ const (
 	pageFwdPrompt        = "fwdprompt"
 	pageFwdDetail        = "fwddetail"
 	pageUserPrompt       = "userprompt"
+	pageCopyForm         = "copyform"
 	pageVolForm          = "volform"
 	pageVolNodes         = "volnodes"
 	pageVolUsers         = "volusers"

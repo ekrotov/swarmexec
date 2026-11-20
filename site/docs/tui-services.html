@@ -175,6 +175,17 @@
           <kbd>i</kbd> (table / stats / raw JSON). <kbd>i</kbd> on the tree shows the
           manager's task inspect, which cannot see any of that. The raw JSON includes the
           container's environment; the summary does not.</li>
+        <li><strong>copy file out of container&hellip;</strong> and
+          <strong>copy file into container&hellip;</strong> &mdash; the two halves of
+          <a href="/docs/exec#cp"><code>swarmexec cp</code></a> on the container the
+          cursor is on. Each asks two paths: what to copy, and where it goes. Nothing is
+          needed inside the container, not even <code>tar</code> &mdash; the copy goes
+          through the Engine's archive endpoint on the node, so it works with distroless
+          and scratch images. The destination rules are <code>docker cp</code>'s: an
+          existing directory receives the source under its own name, any other path
+          <strong>is</strong> the name. Copying <em>between two containers</em> is on the
+          command line only; picking a second container is a selection this UI has
+          nowhere else.</li>
         <li><strong>copy container id</strong> &mdash; the full id to the clipboard (OSC52,
           like <kbd>y</kbd>).</li>
         <li><span class="tc-red"><strong>kill task (swarm reschedules it)</strong></span>
@@ -183,6 +194,14 @@
           The answer to &ldquo;replica 2 hangs&rdquo; without a force-update of the whole
           service. Only swarm task containers can be killed.</li>
       </ul>
+      <p>
+        A copy larger than 1&nbsp;GiB is refused, the same cap
+        <code>cp --max-size</code> has; the command line is where a bigger one, an
+        owner-preserving <code>-a</code> or a followed symlink <code>-L</code> belongs.
+        There is no progress bar and no cancel key: the copy is bounded, and a progress
+        line that cannot be stopped would only be decoration &mdash; the notice says what
+        arrived.
+      </p>
       <p>
         Inspect and kill need an agent from the release that introduced them; an older
         agent answers with <em>agent is older than this client</em> &mdash; update it from
