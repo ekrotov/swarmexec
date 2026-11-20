@@ -60,17 +60,20 @@ var ErrEscape = errors.New("tar entry escapes the destination")
 // can be reported honestly.
 func Extract(r io.Reader, dstRoot string, opts ExtractOptions) (Report, error) {
 	var rep Report
-	root, err := filepath.Abs(dstRoot)
+	root, err := realRoot(dstRoot)
 	if err != nil {
 		return rep, err
 	}
+	var links []linkEntry
 	tr := tar.NewReader(r)
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
+			recheckLinks(root, links, &rep)
 			return rep, nil
 		}
 		if err != nil {
+			recheckLinks(root, links, &rep)
 			return rep, fmt.Errorf("read archive: %w", err)
 		}
 		name, keep := rename(h.Name, opts)
@@ -82,50 +85,103 @@ func Extract(r io.Reader, dstRoot string, opts ExtractOptions) (Report, error) {
 			rep.Refused = append(rep.Refused, fmt.Sprintf("%s (%v)", h.Name, err))
 			continue
 		}
-		if err := writeEntry(tr, h, root, target, &rep, opts); err != nil {
+		if l, err := writeEntry(tr, h, root, target, &rep, opts); err != nil {
+			recheckLinks(root, links, &rep)
 			return rep, err
+		} else if l != nil {
+			links = append(links, *l)
 		}
 	}
+}
+
+// linkEntry is a symlink that was created, kept so it can be checked again
+// once the whole archive is on disk.
+type linkEntry struct {
+	path, target, name string // where it is, what it points at, what the archive called it
+}
+
+// recheckLinks validates every symlink the archive created a SECOND time, now
+// that all of its entries exist.
+//
+// The first check can only see what is on disk at the time, and an archive
+// controls its own order: a link whose target walks through a path that is
+// nothing yet passes, and a later entry then turns that path into a symlink.
+// Chaining those (a link to the destination root, say, and another that steps
+// ".." out of it) resolves outside the destination although every single step
+// looked safe when it was taken. Re-walking afterwards sees the finished tree,
+// so such a link is removed and reported like any other refusal.
+//
+// Nothing was ever written through these links — writeEntry Lstats every path
+// component — so this removes a link that points out, not a file that leaked.
+func recheckLinks(root string, links []linkEntry, rep *Report) {
+	for _, l := range links {
+		if err := linkTargetInside(root, l.path, l.target); err == nil {
+			continue
+		}
+		if err := os.Remove(l.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			rep.Refused = append(rep.Refused, fmt.Sprintf("%s -> %s (escapes the destination, and could not be removed: %v)", l.name, l.target, err))
+			continue
+		}
+		rep.Links--
+		rep.Refused = append(rep.Refused, fmt.Sprintf("%s -> %s (%v: resolves outside once the archive is complete)", l.name, l.target, ErrEscape))
+	}
+}
+
+// realRoot is the destination with its own symlinks resolved, so a containment
+// check compares real paths. The directory may not exist yet (the caller
+// creates it for a directory copy), in which case the absolute path is used.
+func realRoot(dstRoot string) (string, error) {
+	abs, err := filepath.Abs(dstRoot)
+	if err != nil {
+		return "", err
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return real, nil
+	}
+	return abs, nil
 }
 
 // writeEntry puts one tar entry on disk. Everything that is not a regular
 // file, a directory or a safe symlink is refused by name: a device node or a
 // socket out of a container has no meaning on the operator's machine, and
 // quietly dropping it would be the kind of surprise a copy must not have.
-func writeEntry(tr io.Reader, h *tar.Header, root, target string, rep *Report, opts ExtractOptions) error {
+// It returns the symlink it created, if any, so Extract can check it again
+// once every entry of the archive exists (see recheckLinks).
+func writeEntry(tr io.Reader, h *tar.Header, root, target string, rep *Report, opts ExtractOptions) (*linkEntry, error) {
 	switch h.Typeflag {
 	case tar.TypeDir:
 		if err := os.MkdirAll(target, 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		rep.Dirs++
 	case tar.TypeReg:
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		n, err := writeFile(tr, target, perm(h.FileInfo().Mode()), opts.MaxBytes-rep.Bytes)
 		rep.Bytes += n
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rep.Files++
 	case tar.TypeSymlink:
 		if err := linkTargetInside(root, target, h.Linkname); err != nil {
 			rep.Refused = append(rep.Refused, fmt.Sprintf("%s -> %s (%v)", h.Name, h.Linkname, err))
-			return nil
+			return nil, nil
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		_ = os.Remove(target)
 		if err := os.Symlink(h.Linkname, target); err != nil {
-			return err
+			return nil, err
 		}
 		rep.Links++
+		return &linkEntry{path: target, target: h.Linkname, name: h.Name}, nil
 	default:
 		rep.Refused = append(rep.Refused, fmt.Sprintf("%s (unsupported entry type %q)", h.Name, string(rune(h.Typeflag))))
 	}
-	return nil
+	return nil, nil
 }
 
 // writeFile writes one regular file, stopping at left bytes when a cap is in

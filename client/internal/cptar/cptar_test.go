@@ -374,3 +374,30 @@ func TestExtractRefusesAnAbsoluteLinkTarget(t *testing.T) {
 		t.Errorf("Refused = %v, want the absolute link named", rep.Refused)
 	}
 }
+
+// The ordering attack: a link whose target walks through a path that is
+// nothing YET, and a later entry of the same archive turns that path into a
+// symlink. Every single step looked safe when it was taken; the finished tree
+// still holds a link out of the destination. The second pass catches it.
+func TestExtractRemovesALinkThatOnlyEscapesOnceTheArchiveIsComplete(t *testing.T) {
+	dst := t.TempDir()
+	rep, err := Extract(archive(t,
+		// "q" is written first, while "p" does not exist.
+		entry{name: "q", typ: tar.TypeSymlink, link: "p/../etc"},
+		// "p" then becomes a link to the destination itself, so "p/.." is its
+		// parent — outside.
+		entry{name: "p", typ: tar.TypeSymlink, link: "."},
+	), dst, ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dst, "q")); err == nil {
+		t.Errorf("the escaping link survived the extraction")
+	}
+	if len(rep.Refused) == 0 || !strings.Contains(strings.Join(rep.Refused, " "), "q") {
+		t.Errorf("Refused = %v, want the removed link named", rep.Refused)
+	}
+	if rep.Links != 1 {
+		t.Errorf("Links = %d, want 1 (only the honest link counts)", rep.Links)
+	}
+}
