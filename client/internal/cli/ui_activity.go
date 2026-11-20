@@ -106,4 +106,3 @@ func activityColor(action string) string {
 		return "white"
 	}
 }
-
