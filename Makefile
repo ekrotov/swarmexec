@@ -46,7 +46,7 @@ COVER_MIN  ?= 81.2
 # Git ref whose .proto `proto-check` compares against for breaking changes.
 BUF_AGAINST ?= origin/main
 
-.PHONY: all cli-docs cli-docs-check tools ci-tools tool-gocyclo cyclo mod-check tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover fuzz vet lint release clean
+.PHONY: all fmt-check cli-docs cli-docs-check tools ci-tools tool-gocyclo cyclo mod-check tool-buf tool-protoc-gen-go tool-protoc-gen-go-grpc tool-staticcheck tool-govulncheck tool-scip-go generate check-generate proto-check build agent agent-image build-all test cover fuzz vet lint release clean
 
 all: generate build-all
 
@@ -167,9 +167,25 @@ fuzz:
 		go test $$pkg -run '^$$' -fuzz "^$$fn\$$" -fuzztime $(FUZZTIME) || exit 1; \
 	done
 
-## lint: staticcheck at the pinned version, plus the complexity gate (CI: lint)
-lint: tool-staticcheck cyclo
+## lint: gofmt, staticcheck at the pinned version, and the complexity gate (CI: lint)
+lint: fmt-check tool-staticcheck cyclo
 	$(GOBIN)/staticcheck ./...
+
+## fmt-check: fail when any Go file is not gofmt'd (CI: lint + test)
+#
+# A make target rather than a block of shell in .gitlab-ci.yml, because that is
+# where it was: `make lint vet cover` passed locally while CI failed on a
+# trailing blank line, since gofmt ran only inside the test job's script. One
+# definition, both callers.
+#
+# The three Go roots are assigned first so a gofmt failure (a missing
+# directory, say) fails the target instead of vanishing on stderr.
+fmt-check:
+	@unformatted="$$(gofmt -l agent client internal)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "gofmt: the following files need formatting:"; echo "$$unformatted"; \
+		echo "run: gofmt -w $$unformatted"; exit 1; \
+	fi
 
 ## cyclo: fail on any non-test function with cyclomatic complexity over 15 (CI: lint)
 cyclo: tool-gocyclo
