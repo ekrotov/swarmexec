@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>swarmexec next to docker — what each one is for</title>
+  <meta name="description" content="swarmexec is the operator's day; the Docker CLI stays the primitive underneath. Which task each one answers, what still comes from the manager API, and what only the node itself can answer.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/next-to-docker">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="swarmexec">
+  <meta property="og:title" content="swarmexec next to docker — what each one is for">
+  <meta property="og:description" content="swarmexec is the operator's day; the Docker CLI stays the primitive underneath. Which task each one answers, what still comes from the manager API, and what only the node itself can answer.">
+  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/next-to-docker">
+  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="swarmexec next to docker — what each one is for">
+  <meta name="twitter:description" content="swarmexec is the operator's day; the Docker CLI stays the primitive underneath. Which task each one answers, what still comes from the manager API, and what only the node itself can answer.">
+  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="color-scheme" content="light dark">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "swarmexec next to docker — what each one is for",
+        "description": "swarmexec is the operator's day; the Docker CLI stays the primitive underneath. Which task each one answers, what still comes from the manager API, and what only the node itself can answer.",
+        "url": "https://swarm-exec.cloud-surfers.net/docs/next-to-docker",
+        "inLanguage": "en",
+        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "author": {
+          "@type": "Organization",
+          "name": "Cloud Surfers GmbH",
+          "url": "https://www.cloud-surfers.com/"
+        },
+        "about": {
+          "@type": "SoftwareApplication",
+          "name": "swarmexec",
+          "url": "https://swarm-exec.cloud-surfers.net/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "swarmexec",
+            "item": "https://swarm-exec.cloud-surfers.net/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Docs",
+            "item": "https://swarm-exec.cloud-surfers.net/docs"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Next to docker",
+            "item": "https://swarm-exec.cloud-surfers.net/docs/next-to-docker"
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preload" href="/fonts/archivo-latin-4c18bb.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
+  <link rel="stylesheet" href="/docs.css?v=__VERSION__">
+  <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+<header class="rail">
+  <a class="mark" href="/" aria-label="swarmexec home">
+    <svg viewBox="0 0 100 100" aria-hidden="true" width="22" height="22">
+      <path d="M28 33 L48 50 L28 67" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="54" y="61" width="26" height="9" rx="4.5" fill="currentColor"/>
+    </svg>
+    <span>swarmexec</span>
+  </a>
+  <nav class="rail-nav" aria-label="Main">
+    <a href="/docs" aria-current="true">Docs</a>
+    <a href="/examples">Examples</a>
+    <a class="rail-opt" href="/docker-swarm-exec-alternatives">Compare</a>
+    <a class="rail-opt" href="/releases">Releases</a>
+    <a class="gh" href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github"><svg class="gh-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="rail-cta" href="/#install">Install</a>
+  </nav>
+</header>
+  <main id="main">
+    <div class="card">
+      <p class="crumbs"><a href="/">swarmexec</a> › <a href="/docs">Docs</a> › Next to docker</p>
+      <h1>Next to docker<span class="cursor">_</span></h1>
+      <p class="tagline">What swarmexec is for, and what you keep the Docker CLI for.</p>
+
+      <p class="lead">
+        swarmexec is the operator's day; <code>docker</code> stays the primitive
+        underneath. Use it for the daily round — logs, a shell, a forwarded port, a
+        checked deploy — and keep <code>docker</code> for the canonical answer when you
+        need one.
+      </p>
+      <p>
+        swarmexec does not replace the Docker CLI and does not want to. Nothing it does
+        is hidden from <code>docker</code>, nothing it does requires <code>docker</code>
+        to be absent, and it writes no state of its own that the engine does not already
+        hold. This page says plainly which tool answers which question.
+      </p>
+
+      <div class="toc">
+        <p class="th">On this page</p>
+        <ol>
+          <li><a href="#split">What the manager knows, and what only the node knows</a></li>
+          <li><a href="#tasks">Task by task</a></li>
+          <li><a href="#canonical">The canonical answer</a></li>
+          <li><a href="#ssh">Why it still feels closer to the nodes</a></li>
+        </ol>
+      </div>
+
+      <h2 id="split">What the manager knows, and what only the node knows</h2>
+      <p>
+        The manager still answers what the manager knows: services, tasks, networks,
+        secrets, configs, nodes. What it cannot answer — a shell, a log stream, an
+        unpublished port, a volume's size on disk — comes from the node itself, through
+        the agent. That is the half that would otherwise cost you one SSH session per
+        node.
+      </p>
+      <p>
+        It is worth being precise about this, because the split is not
+        <em>swarmexec here, docker there</em>:
+      </p>
+      <ul>
+        <li>
+          <strong>Topology, specs, deploys, secrets and networks</strong> — swarmexec
+          asks the <strong>Swarm manager API</strong>, through your own Docker context.
+          Over an <code>ssh://</code> context that is the same SSH connection
+          <code>docker</code> would use (<a href="/docs/contexts">Docker contexts &amp;
+          SSH</a>).
+        </li>
+        <li>
+          <strong>exec, logs, port-forward, volumes, stats, prune, kill, container
+          inspect</strong> — these never go through the manager. The client resolves
+          which node runs the target, then dials <em>that node's</em> agent directly over
+          mTLS (<a href="/docs/authentication#auth">Authentication</a>). There is no
+          agent-to-agent mesh.
+        </li>
+      </ul>
+      <div class="cmd">operator terminal ──gRPC/mTLS──&gt; agent(nodeN) ──docker.sock──&gt; container
+        <span class="tc-grey">│</span>
+        <span class="tc-grey">└── Docker manager API (resolve node + container id)</span></div>
+
+      <h2 id="tasks">Task by task</h2>
+      <p>
+        Where both columns are filled, both work — the swarmexec form is usually the
+        shorter way round, not the only one.
+      </p>
+      <div class="tablewrap"><table class="parity">
+        <thead>
+          <tr><th>Task</th><th>swarmexec</th><th><code>docker</code></th></tr>
+        </thead>
+        <tbody>
+          <tr><td>A shell in a task</td><td><code>swarmexec exec web -- sh</code></td><td><code>ssh node3</code>, then <code>docker exec</code></td></tr>
+          <tr><td>Logs across every replica</td><td><code>swarmexec logs -f web</code></td><td><code>docker service logs</code>, or one node at a time for a container's own stream</td></tr>
+          <tr><td>Reach a port nobody published</td><td><code>swarmexec port-forward</code></td><td><span class="pm-no">— not without publishing it or an SSH tunnel</span></td></tr>
+          <tr><td>The daily round</td><td><code>swarmexec ui</code></td><td><code>docker service ls</code> and the commands after it</td></tr>
+          <tr><td>A deploy with a check in front of it</td><td><code>swarmexec stack check</code>, <code>stack diff</code>, then <code>docker stack deploy</code></td><td><code>docker stack deploy</code></td></tr>
+          <tr><td>What is deployed, as a file</td><td><code>swarmexec stack export</code></td><td><code>docker service inspect</code>, by hand</td></tr>
+          <tr><td>A service's full raw spec</td><td>inspect overlay, <kbd>3</kbd> <em>raw json</em></td><td><code>docker service inspect</code></td></tr>
+          <tr><td>The image digest a task actually runs</td><td>inspect overlay, <kbd>3</kbd> <em>raw json</em></td><td><code>docker service inspect --format</code></td></tr>
+          <tr><td>Rotate a secret in place</td><td><code>swarmexec secret rotate</code></td><td><span class="pm-no">— a <code>_v2</code> rename and an update per service</span></td></tr>
+          <tr><td>Disk usage and pruning per node</td><td><code>swarmexec node</code>, the Nodes tab</td><td><code>ssh node3</code>, then <code>docker system df</code> / <code>prune</code></td></tr>
+          <tr><td>Create the cluster, join a node</td><td><span class="pm-no">—</span></td><td><code>docker swarm init</code> / <code>join</code></td></tr>
+          <tr><td>Build or push an image</td><td><span class="pm-no">—</span></td><td><code>docker build</code> / <code>push</code></td></tr>
+          <tr><td>Anything swarmexec does not cover</td><td><span class="pm-no">—</span></td><td><code>docker</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="more">
+        The matrix of swarmexec's own three faces — CLI, TUI and MCP — is a different
+        table: <a href="/docs/parity">CLI · TUI · MCP: who does what</a>.
+      </p>
+
+      <h2 id="canonical">The canonical answer</h2>
+      <p>
+        swarmexec invents no truth of its own. Every figure, spec and state it shows
+        comes from the Docker Engine or the Swarm manager API, and the raw view shows
+        exactly what <code>docker inspect</code> shows — the same JSON, from the same
+        call. When a number here and a number in <code>docker</code> disagree, they were
+        read at different moments, not computed differently.
+      </p>
+      <p>
+        So you can treat <code>docker</code> as the canonical source without treating
+        swarmexec as a second, competing one. Two places where that comes up daily:
+      </p>
+      <ul>
+        <li>
+          <strong>The exact image digest</strong> of a running task — the inspect
+          overlay's <em>raw json</em> view
+          (<a href="/docs/tui-services-inspect#tui-inspect">inspect a service or task</a>).
+        </li>
+        <li>
+          <strong>The exact deployed spec</strong> — <code>swarmexec stack export</code>
+          writes it as a compose file you can diff or file away
+          (<a href="/docs/stack#stackfile">stack export &amp; diff</a>).
+        </li>
+      </ul>
+
+      <h2 id="ssh">Why it still feels closer to the nodes</h2>
+      <p>
+        The common way to describe the difference is that swarmexec runs things nearer to
+        the nodes while <code>docker</code> always talks to a manager. The intuition is
+        right, the wording is too broad: a <code>swarmexec ps</code> over an
+        <code>ssh://</code> context goes to the manager, over the very same SSH
+        connection.
+      </p>
+      <p>
+        What is genuinely nearer is the agent half — and it happens to be the half you
+        spend your day in. Without it, a shell in a replica, that replica's log stream, a
+        port that was never published and the size of a volume each mean finding the node
+        first and opening a session on it. With it, they are one command from your own
+        terminal, with one identity, one audit log and an optional
+        <a href="/docs/authentication#policy">policy file</a> in front of them, which is
+        more than an SSH key gives you.
+      </p>
+
+      <nav class="pager" aria-label="Previous and next page">
+        <a class="prev" href="/docs/parity" rel="prev"><span class="lbl">← Previous</span>CLI · TUI · MCP: who does what</a>
+      </nav>
+
+      <aside class="docside" aria-label="Documentation">
+        <form class="docsearch" role="search" hidden>
+          <label class="th" for="docsearch-q">Search the docs</label>
+          <input id="docsearch-q" type="search" name="q" placeholder="e.g. rotate secret" autocomplete="off" spellcheck="false">
+          <p class="docsearch-status" role="status" aria-live="polite"></p>
+          <ol class="docsearch-results"></ol>
+        </form>
+        <script src="/docsearch.js?v=__VERSION__" defer></script>
+        <nav class="toc docnav" aria-label="All documentation pages">
+          <p class="th">All docs pages</p>
+          <ol>
+            <li><a href="/docs">Overview &amp; how it works</a></li>
+            <li><a href="/docs/install">Install &amp; quick start</a></li>
+            <li><a href="/docs/exec">exec into any Swarm container</a></li>
+            <li><a href="/docs/logs">Logs of services and stacks</a></li>
+            <li><a href="/docs/port-forward">port-forward into the Swarm</a></li>
+            <li><a href="/docs/stack">Stack export, diff &amp; wait</a></li>
+            <li><a href="/docs/security-scan">Security scan &amp; report</a></li>
+            <li><a href="/docs/secrets">Rotate a secret, keep its name</a></li>
+            <li><a href="/docs/volumes">Volumes &amp; prune schedule</a></li>
+            <li><a href="/docs/mcp">MCP server for AI assistants</a></li>
+            <li><a href="/docs/agents">The agents: init, down, doctor</a></li>
+            <li><a href="/docs/authentication">Authentication &amp; policy</a></li>
+            <li><a href="/docs/contexts">Docker contexts &amp; SSH</a></li>
+            <li><a href="/docs/configuration">Configuration, flags &amp; exit codes</a></li>
+            <li><a href="/docs/tui">The TUI</a></li>
+            <li><a href="/docs/tui-services">TUI: the Stacks/Services tab</a></li>
+            <li><a href="/docs/tui-services-tree">TUI: the service tree — health, usage, stacks</a></li>
+            <li><a href="/docs/tui-services-security">TUI: the security-risks overlay</a></li>
+            <li><a href="/docs/tui-services-inspect">TUI: inspect a service or task</a></li>
+            <li><a href="/docs/tui-services-edit">TUI: edit a service &amp; the env editor</a></li>
+            <li><a href="/docs/tui-tabs">TUI: Volumes, Forwards, Networks, Secrets, Configs</a></li>
+            <li><a href="/docs/tui-nodes">TUI: the Nodes tab</a></li>
+            <li><a href="/docs/cli">CLI reference</a></li>
+            <li><a href="/docs/parity">CLI · TUI · MCP: who does what</a></li>
+            <li><a href="/docs/next-to-docker" aria-current="page">Next to docker: what each is for</a></li>
+          </ol>
+        </nav>
+      </aside>
+
+      <footer>
+        <span>Current release: <strong>__VERSION__</strong></span> ·
+        <a href="/docker-swarm-exec-alternatives">how it compares</a> ·
+        pull the agent: <code>docker pull logleio/swarmexec-agent:latest</code><br>
+        <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">github.com/ekrotov/swarmexec</a>
+        (mirrored from <a href="https://gitlab.logle.io/cs-public/swarm-remote-exec">gitlab.logle.io</a>)
+        · <a href="/">home</a><br>
+        Open source under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>
+        · © 2026 Cloud Surfers GmbH
+        <nav class="legal" aria-label="Legal">
+          <a href="https://www.cloud-surfers.com/impressum/">Impressum</a> ·
+          <a href="/datenschutz">Datenschutz</a> ·
+          <a href="https://www.cloud-surfers.com/kontakt/">Kontakt</a>
+        </nav>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

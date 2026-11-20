@@ -13,6 +13,12 @@ small agent on every node and asks it directly. The
 [website](https://swarm-exec.cloud-surfers.net) shows the mechanism as an animated
 scene: health, exec, port-forward and `logs -f`.
 
+swarmexec does not replace the Docker CLI and does not want to. It is the layer you
+live in on an ordinary day — logs, a shell, a forwarded port, a checked deploy;
+`docker` remains the primitive underneath and the canonical source. Nothing here is
+hidden from `docker`, and nothing requires it to be absent.
+[What each one is for →](https://swarm-exec.cloud-surfers.net/docs/next-to-docker)
+
 ## What it does
 
 - **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarm-exec.cloud-surfers.net/docs/exec)
