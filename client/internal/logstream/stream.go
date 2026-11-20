@@ -97,15 +97,7 @@ func Stream(ctx context.Context, run Run, ep resolve.Endpoint) error {
 	for {
 		chunk, err := stream.Recv()
 		if err != nil {
-			// The caller's context ending is an END, not a failure, however
-			// it ended. Cancellation was already handled; a DEADLINE was not,
-			// and that is the same event from the caller's side — a log view
-			// closed, a Ctrl-C, a bounded follow. Checking ctx rather than the
-			// error's code is what makes the two alike: the error is only a
-			// consequence of the context, and under load it arrives in
-			// whichever form the transport chose.
-			if ctx.Err() != nil ||
-				errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
+			if streamEnded(ctx, err) {
 				return nil
 			}
 			return agenterr.Readable(err)
@@ -119,6 +111,33 @@ func Stream(ctx context.Context, run Run, ep resolve.Endpoint) error {
 			return fmt.Errorf("agent: %s", pl.Error)
 		}
 	}
+}
+
+// streamEnded reports whether err, from an already-open log stream, is the
+// caller stopping rather than something to show the operator.
+//
+// The caller's context ending is an END, however it ended. Cancellation was
+// already handled; a DEADLINE is the same event from the caller's side — a log
+// view closed, a Ctrl-C, a bounded follow.
+//
+// Checking ctx alone was not enough, and that is a race worth naming: a
+// deadline is watched by two independent timers, the context's own and the one
+// gRPC derives from it for the stream. They fire at the same instant, in
+// whichever order the scheduler picks, so on a loaded machine the stream can
+// fail with DeadlineExceeded (as a RST_STREAM the transport then reports under
+// that code) a moment before ctx.Err() is set. Treating the code itself as an
+// end closes that window: once the stream is open, the only deadline the RPC
+// carries is the caller's — the dial has its own timeout and has already
+// returned, and the agent sets none of its own on Logs. CI hit this twice.
+func streamEnded(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, io.EOF) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.Canceled, codes.DeadlineExceeded:
+		return true
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // Follow follows a target's logs across container replacements. It
