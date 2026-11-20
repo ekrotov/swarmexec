@@ -58,7 +58,7 @@ type exitRow struct {
 // exitTable documents every exit code swarmexec returns, in display order.
 var exitTable = []exitRow{
 	{"0", `success`},
-	{"1", `a command-specific "no": <code>stack diff</code> found a difference (and <code>--json</code> still printed it), <code>stack deploy</code>/<code>stack check</code> found a problem, <code>wait</code> did not converge, <code>secret rotate</code> failed, <code>mcp</code> ended with an error, or you declined a confirmation (<code>down</code>, <code>volume rm</code>, <code>secret rotate</code>)`},
+	{"1", `a command-specific "no": <code>stack diff</code> found a difference (and <code>--json</code> still printed it), <code>stack deploy</code>/<code>stack check</code> found a problem, <code>wait</code> did not converge, <code>secret rotate</code> failed, <code>mcp</code> ended with an error, a <code>cp</code> the agent refused (policy, the size cap, no such path), or you declined a confirmation (<code>down</code>, <code>volume rm</code>, <code>secret rotate</code>)`},
 	{"2", `usage / flag / configuration error, a mistyped subcommand under a group (<code>swarmexec stack chekc</code>: <code>unknown command "chekc" for "swarmexec stack"</code>), or an invalid interactive selection. A wrong number of arguments also prints the command's usage line (<code>usage: swarmexec exec [flags] &lt;service|…&gt; …</code>)`},
 	{"125", `transport failure or any other runtime error — unreachable manager or agent, dial/TLS error, stream error, or a read command (<code>volume ls</code>, <code>stats</code>, <code>doctor</code>) that no agent answered, so an empty result cannot be mistaken for “nothing there” (mirrors Docker's <code>125</code>)`},
 	{"129", `stopped by SIGHUP (the terminal went away) while a command ran`},

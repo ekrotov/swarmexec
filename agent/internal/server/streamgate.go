@@ -33,6 +33,8 @@ var gatedStreams = map[string]gatedStream{
 	pb.Agent_Logs_FullMethodName:                 {method: "Logs", noun: "requests"},
 	pb.Agent_PortForward_FullMethodName:          {method: "PortForward", noun: "forwards"},
 	pb.Agent_WatchContainerEvents_FullMethodName: {method: "WatchContainerEvents", noun: "watches"},
+	pb.Agent_CopyFrom_FullMethodName:             {method: "CopyFrom", noun: "copies"},
+	pb.Agent_CopyTo_FullMethodName:               {method: "CopyTo", noun: "copies"},
 }
 
 // StreamInterceptor returns the gate every streaming RPC passes before its

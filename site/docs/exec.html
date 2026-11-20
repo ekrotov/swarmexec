@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>swarmexec exec — docker exec into a container on any Docker Swarm node</title>
-  <meta name="description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.">
+  <meta name="description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs, and copy files in, out and between containers with swarmexec cp: target selectors, swarmexec ps, and the exec and cp flags.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -12,7 +12,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
   <meta property="og:title" content="swarmexec exec — docker exec into a container on any Docker Swarm node">
-  <meta property="og:description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.">
+  <meta property="og:description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs, and copy files in, out and between containers with swarmexec cp: target selectors, swarmexec ps, and the exec and cp flags.">
   <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/exec">
   <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -21,7 +21,7 @@
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec exec — docker exec into a container on any Docker Swarm node">
-  <meta name="twitter:description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.">
+  <meta name="twitter:description" content="Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs, and copy files in, out and between containers with swarmexec cp: target selectors, swarmexec ps, and the exec and cp flags.">
   <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
@@ -31,7 +31,7 @@
       {
         "@type": "TechArticle",
         "headline": "swarmexec exec — docker exec into a container on any Docker Swarm node",
-        "description": "Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs: target selectors (service, service.slot, task id, container id), swarmexec ps and the exec flags.",
+        "description": "Open a shell or run a command in any container of a Docker Swarm, on whatever node it runs, and copy files in, out and between containers with swarmexec cp: target selectors, swarmexec ps, and the exec and cp flags.",
         "url": "https://swarm-exec.cloud-surfers.net/docs/exec",
         "inLanguage": "en",
         "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
@@ -109,6 +109,7 @@
           <li><a href="#targets">Target selectors</a></li>
           <li><a href="#ps">ps — list tasks</a></li>
           <li><a href="#exec">exec — run a command / open a shell</a></li>
+          <li><a href="#cp">cp — copy files in, out and between containers</a></li>
         </ol>
       </div>
 
@@ -191,6 +192,68 @@
 <span class="c">$</span> swarmexec exec web.2 -- cat /etc/hostname       <span class="o"># a specific replica</span>
 <span class="c">$</span> swarmexec exec -u root -w /app web -- ls -la
 <span class="c">$</span> swarmexec exec -e FOO=bar web -- env</div>
+
+      <h2 id="cp"><code>cp</code> &mdash; copy files in, out and between containers</h2>
+      <p>
+        The second half of <code>exec</code>: move a file or a directory between this
+        machine and a container anywhere in the swarm, or <strong>between two
+        containers</strong>, which may sit on different nodes. Either side is a local
+        path or <code>&lt;target&gt;:&lt;path&gt;</code>, with the same targets
+        <code>exec</code> takes.
+      </p>
+      <p>
+        <strong>Nothing has to exist inside the container</strong> &mdash; not even
+        <code>tar</code>. The copy goes through the Engine's own archive endpoint on the
+        node, so it works with distroless and scratch images, which is exactly where
+        <code>exec -- tar</code> fails and where a log or a core dump is hardest to get at.
+      </p>
+      <div class="cmd">swarmexec cp [flags] <span class="k">&lt;src&gt;</span> <span class="k">&lt;dst&gt;</span></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-a</code>, <code>--archive</code></td><td><code>false</code></td><td>keep the owner and group recorded in the archive</td></tr>
+          <tr><td><code>-L</code>, <code>--follow-link</code></td><td><code>false</code></td><td>copy what a symlinked source points at, not the link</td></tr>
+          <tr><td><code>--max-size</code></td><td><code>1G</code></td><td>refuse a copy larger than this (K/M/G, binary units)</td></tr>
+          <tr><td><code>-q</code>, <code>--quiet</code></td><td><code>false</code></td><td>no progress output</td></tr>
+          <tr><td><code>--node</code></td><td>&mdash;</td><td>node hint/override for container-id targets</td></tr>
+          <tr><td><code>--connect-timeout</code></td><td><code>10s</code></td><td>timeout for connecting to the agent</td></tr>
+        </tbody>
+      </table></div>
+      <div class="prompt"><span class="c">$</span> swarmexec cp ./patch.sql db:/tmp/              <span class="o"># in</span>
+<span class="c">$</span> swarmexec cp web.1:/var/log/app.log ./app.log   <span class="o"># out</span>
+<span class="c">$</span> swarmexec cp web.1:/etc/nginx.conf db.2:/tmp/   <span class="o"># between two containers</span>
+<span class="c">$</span> swarmexec cp -L web:/var/log/current .          <span class="o"># follow the symlink</span></div>
+      <h3 id="cp-destination">Which name the copy lands under</h3>
+      <p>
+        The rules are <code>docker cp</code>'s, so what you already know still holds: a
+        destination that is an <strong>existing directory</strong> receives the source
+        under its own name; any other path <strong>is</strong> the name. Into a
+        container the destination is checked on the node before anything is sent; where
+        a policy denies that check, a trailing <code>/</code> says "into this
+        directory".
+      </p>
+      <h3 id="cp-limits">What it will not do</h3>
+      <ul>
+        <li><strong>A copy between two containers travels through this machine.</strong>
+          There is no node-to-node path, by design: agents do not talk to each other.
+          Nothing is written to your disk on the way &mdash; the archive is re-framed in
+          flight &mdash; but every byte crosses your connection twice.</li>
+        <li><strong>An archive out of a container is not trusted.</strong> Any entry that
+          would land outside the destination directory is refused and named, never
+          quietly renamed into a safe one; the same goes for a symlink pointing out of
+          it. Set-user-ID bits are dropped on the way in.</li>
+        <li><strong>A size cap, on by default.</strong> <code>--max-size</code> (1&nbsp;GiB
+          unless you say otherwise) is enforced by the agent, not just here, so
+          <code>cp web:/ .</code> fails instead of filling your disk.</li>
+        <li><strong>No <code>-</code> for stdin/stdout</strong>, and no copying between
+          two clusters in one command.</li>
+      </ul>
+      <p>
+        The agent authorizes the two directions separately: <code>copy.from</code> reads
+        a path out of a container, <code>copy.to</code> writes one into it &mdash; the
+        sharpest permission the agent has. A policy can grant the first and refuse the
+        second. <a href="/docs/authentication#policy">Authorization policy &rarr;</a>
+      </p>
 
       <nav class="pager" aria-label="Previous and next page">
         <a class="prev" href="/docs/install" rel="prev"><span class="lbl">← Previous</span>Install &amp; quick start</a>

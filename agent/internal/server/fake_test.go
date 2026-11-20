@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -111,6 +112,17 @@ type fakeDocker struct {
 	killOpts   []client.ContainerKillOptions
 	killErr    error
 
+	// copy (copy.go)
+	statPaths   []string
+	statResult  map[string]container.PathStat
+	statErr     error
+	copyFrom    []byte // the archive CopyFromContainer hands back
+	copyFromErr error
+	copyToErr   error
+	copiedTo    []byte // what CopyToContainer was given
+	copyToOpts  []client.CopyToContainerOptions
+	copyFromOps []client.CopyFromContainerOptions
+
 	// port-forward sidecar state
 	createContainerErr error
 	startErr           error
@@ -122,6 +134,54 @@ type fakeDocker struct {
 
 func newFakeDocker() *fakeDocker {
 	return &fakeDocker{inspect: map[string]container.InspectResponse{}, attachedCh: make(chan net.Conn, 1)}
+}
+
+func (f *fakeDocker) ContainerStatPath(_ context.Context, _ string, opts client.ContainerStatPathOptions) (client.ContainerStatPathResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.statPaths = append(f.statPaths, opts.Path)
+	if f.statErr != nil {
+		return client.ContainerStatPathResult{}, f.statErr
+	}
+	return client.ContainerStatPathResult{Stat: f.statResult[opts.Path]}, nil
+}
+
+func (f *fakeDocker) CopyFromContainer(_ context.Context, _ string, opts client.CopyFromContainerOptions) (client.CopyFromContainerResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.copyFromOps = append(f.copyFromOps, opts)
+	if f.copyFromErr != nil {
+		return client.CopyFromContainerResult{}, f.copyFromErr
+	}
+	stat, ok := f.statResult[opts.SourcePath]
+	if !ok {
+		stat = container.PathStat{Name: path.Base(opts.SourcePath), Size: int64(len(f.copyFrom))}
+	}
+	return client.CopyFromContainerResult{
+		Content: io.NopCloser(bytes.NewReader(f.copyFrom)),
+		Stat:    stat,
+	}, nil
+}
+
+func (f *fakeDocker) CopyToContainer(_ context.Context, _ string, opts client.CopyToContainerOptions) (client.CopyToContainerResult, error) {
+	// Read first, lock after: the content is the agent's live gRPC stream, and
+	// holding the mutex across it would deadlock a test that inspects the fake
+	// while the copy runs.
+	var body []byte
+	var err error
+	if opts.Content != nil {
+		body, err = io.ReadAll(opts.Content)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	o := opts
+	o.Content = nil // keep no reference to the live stream
+	f.copyToOpts = append(f.copyToOpts, o)
+	f.copiedTo = body
+	if err != nil {
+		return client.CopyToContainerResult{}, err
+	}
+	return client.CopyToContainerResult{}, f.copyToErr
 }
 
 // waitAttach blocks until the agent attaches and returns the container side.

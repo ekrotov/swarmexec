@@ -101,6 +101,27 @@ service Agent {
   // only the node's daemon has them. See CONTRACT.md §3.10.
   rpc InspectContainer(InspectContainerRequest) returns (InspectContainerResponse);
 
+  // Copy a file or directory OUT of a container on THIS node, as a tar stream
+  // (authorized as "copy.from" + audited). It is the read half of `swarmexec
+  // cp`: the Engine's own archive endpoint, so nothing — not even tar — has to
+  // exist inside the container. The first CopyChunk carries the source's stat,
+  // every later one payload. See CONTRACT.md §3.11.
+  rpc CopyFrom(CopyFromRequest) returns (stream CopyChunk);
+
+  // Stat one path inside a container on THIS node (authorized as "copy.from":
+  // it reads metadata out of the container). `swarmexec cp` asks before it
+  // writes, because "copy into /tmp" and "copy onto /tmp" differ only in
+  // whether /tmp is a directory — the same question `docker cp` answers with
+  // the same call. A client refused this falls back to the trailing-slash
+  // rule. See CONTRACT.md §3.11.
+  rpc StatPath(StatPathRequest) returns (StatPathResponse);
+
+  // Copy a tar stream INTO a container on THIS node (authorized as "copy.to" +
+  // audited). The write half of `swarmexec cp`, and a distinctly sharper
+  // permission than copy.from: it writes into the container's filesystem. The
+  // first CopyToMessage MUST carry a StartCopyTo. See CONTRACT.md §3.11.
+  rpc CopyTo(stream CopyToMessage) returns (CopyToResponse);
+
   // Report the agent's build and protocol version. Cheap, low-privilege probe
   // used by `swarmexec doctor` and for client/agent skew detection. Calling it
   // on an agent that predates this RPC yields gRPC Unimplemented, which the cli
@@ -593,4 +614,76 @@ message InspectContainerResponse {
   // The Engine's container inspect document, verbatim (JSON). It includes
   // Config.Env, exactly as `docker container inspect` on the node would.
   bytes inspect_json = 1;
+}
+
+// --- Copy (CONTRACT.md §3.11) ----------------------------------------------
+
+message CopyFromRequest {
+  string container_id = 1; // full (or unique prefix) container ID
+  string path = 2;         // the path inside the container to read
+  // follow_link resolves a symlinked source to what it points at, like
+  // `docker cp -L`. Off, the link itself is copied as a link entry.
+  bool follow_link = 3;
+  // max_bytes caps the payload the agent will send; 0 means the agent's own
+  // default. Exceeding it ends the stream with ResourceExhausted — a client
+  // asking for "/" must fail, not fill the operator's disk.
+  uint64 max_bytes = 4;
+}
+
+message CopyChunk {
+  oneof payload {
+    CopyStat stat = 1; // exactly once, as the first message
+    bytes data = 2;    // tar payload
+    string error = 3;  // in-band failure after the stream opened
+  }
+}
+
+// CopyStat is what the Engine knows about the source path, as its archive
+// endpoint reports it. It lets the client decide file-vs-directory before a
+// single payload byte arrives, and show a percentage.
+message CopyStat {
+  string name = 1;        // base name of the source
+  int64 size = 2;         // bytes, as the Engine reports them
+  uint32 mode = 3;        // Go's fs.FileMode bits
+  bool is_dir = 4;
+  string link_target = 5; // non-empty when the source is a symlink
+  int64 mtime_unix = 6;   // modification time, seconds since the epoch
+}
+
+message StatPathRequest {
+  string container_id = 1; // full (or unique prefix) container ID
+  string path = 2;         // the path inside the container to stat
+}
+
+message StatPathResponse {
+  // exists is false for a path the container does not have. Asking about a
+  // path that is not there is a question, not a failure: it is how a client
+  // tells "create this file" from "put it in this directory".
+  bool exists = 1;
+  CopyStat stat = 2;
+}
+
+message StartCopyTo {
+  string container_id = 1; // full (or unique prefix) container ID
+  string dest_path = 2;    // the directory inside the container to extract into
+  // copy_uid_gid keeps the owner and group recorded in the tar, like
+  // `docker cp -a`. Off, the Engine applies the container's own ownership.
+  bool copy_uid_gid = 3;
+  // allow_overwrite_dir_with_file lifts the Engine's refusal to replace a
+  // directory with a file and vice versa. Off by default, deliberately: that
+  // refusal is the one guard the Engine offers against a careless destination.
+  bool allow_overwrite_dir_with_file = 4;
+  // max_bytes caps the payload the agent will accept; 0 means its default.
+  uint64 max_bytes = 5;
+}
+
+message CopyToMessage {
+  oneof payload {
+    StartCopyTo start = 1; // exactly once, as the first message
+    bytes data = 2;        // tar payload
+  }
+}
+
+message CopyToResponse {
+  int64 bytes_written = 1; // payload the agent handed to the Engine
 }

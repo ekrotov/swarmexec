@@ -137,6 +137,38 @@ func (l *Logger) ForwardEnd(identity, containerID string, port uint32, dur time.
 	)
 }
 
+// CopyStart records the beginning of a file copy (copy.go). direction is
+// "from" or "to"; path is the path inside the container. The path belongs in
+// the record: "who took what out of which container" is the question asked
+// afterwards, and the container id alone cannot answer it.
+func (l *Logger) CopyStart(identity, containerID, service, direction, path, clientAddr string) {
+	l.log.Info("copy_start",
+		"event", "copy_start",
+		"identity", identity,
+		"container_id", containerID,
+		"service", service,
+		"direction", direction,
+		"path", path,
+		"client_addr", clientAddr,
+	)
+}
+
+// CopyEnd records the end of a file copy, its size and its outcome. A copy
+// that was refused mid-stream (over the size cap, a failed extraction) ends
+// here with ok=false, so the log never shows a start without an end.
+func (l *Logger) CopyEnd(identity, containerID, direction string, dur time.Duration, bytes int64, ok bool, errMsg string) {
+	l.log.Info("copy_end",
+		"event", "copy_end",
+		"identity", identity,
+		"container_id", containerID,
+		"direction", direction,
+		"duration_ms", dur.Milliseconds(),
+		"bytes", bytes,
+		"ok", ok,
+		"error", errMsg,
+	)
+}
+
 // VolumeRemove records a volume deletion attempt and its outcome.
 func (l *Logger) VolumeRemove(identity, name string, ok bool, errMsg string) {
 	l.log.Info("volume_remove",
