@@ -210,7 +210,7 @@ func newNodePruneCmd(g *globalFlags) *cobra.Command {
 	f := &nodePruneFlags{}
 	cmd := &cobra.Command{
 		Use:   "prune <node>",
-		Short: "Free disk on one node: stopped containers, images, build cache, networks, volumes",
+		Short: "Free disk on one node: stopped containers, untagged images, build cache, unused networks (images and volumes only when named)",
 		Long: "Prune one node through its agent, the TUI's node prune. Without\n" +
 			"--categories it sweeps the safe ones: stopped containers, untagged images,\n" +
 			"build cache and unused local networks. \"images\" (every unused image,\n" +

@@ -523,7 +523,7 @@ swarmexec node [command]</div>
       <p class="climeta">Subcommands</p>
       <ul class="clisubs">
         <li><a href="#node-ls"><code>swarmexec node ls</code></a> — List the nodes: role, availability, state, engine, running tasks, volumes, labels</li>
-        <li><a href="#node-prune"><code>swarmexec node prune</code></a> — Free disk on one node: stopped containers, images, build cache, networks, volumes</li>
+        <li><a href="#node-prune"><code>swarmexec node prune</code></a> — Free disk on one node: stopped containers, untagged images, build cache, unused networks (images and volumes only when named)</li>
         <li><a href="#node-prune-schedule"><code>swarmexec node prune-schedule</code></a> — Show or set the cluster-wide prune schedule the agents run</li>
         <li><a href="#node-update"><code>swarmexec node update</code></a> — Set a node&#39;s availability (active, pause, drain) or its labels</li>
       </ul>
@@ -544,7 +544,7 @@ swarmexec node [command]</div>
       <p class="climeta">Also takes the <a href="#global-flags">global flags</a> and the <a href="#connection-flags">connection flags</a>.</p>
 
       <h3 id="node-prune" class="clicmd"><code>swarmexec node prune</code></h3>
-      <p class="clishort">Free disk on one node: stopped containers, images, build cache, networks, volumes</p>
+      <p class="clishort">Free disk on one node: stopped containers, untagged images, build cache, unused networks (images and volumes only when named)</p>
       <div class="cmd">swarmexec node prune &lt;node&gt; [flags]</div>
       <p>Prune one node through its agent, the TUI&#39;s node prune. Without --categories it sweeps the safe ones: stopped containers, untagged images, build cache and unused local networks. &#34;images&#34; (every unused image, including those of services scaled to zero) and &#34;volumes&#34; (DATA, named volumes included) are only ever pruned when named.</p>
       <p>Before pruning it shows what each category would free, as the agent last measured it, and asks; --yes answers in advance. Without a terminal and without --yes nothing is pruned.</p>
