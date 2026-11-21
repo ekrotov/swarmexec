@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"swarmexec/client/internal/clockskew"
 	"swarmexec/client/internal/fanout"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/internal/pb"
@@ -20,7 +21,10 @@ type NodeVersion struct {
 	Node    resolve.Node
 	Version string
 	Proto   string
-	Err     error
+	// Clock is the node's wall clock measured against ours over the same call.
+	// Not Known for an agent too old to send one.
+	Clock clockskew.Reading
+	Err   error
 }
 
 // Versions queries every node's agent Version RPC in parallel. A node the
@@ -31,8 +35,8 @@ func (c *Client) Versions(ctx context.Context, nodes []resolve.Node, connectTime
 		out[i] = NodeVersion{Node: n, Err: fanout.ErrSkipped}
 	}
 	_ = PerNode(ctx, nodes, func(ctx context.Context, i int, n resolve.Node) {
-		v, p, err := c.Version(ctx, n, connectTimeout)
-		out[i] = NodeVersion{Node: n, Version: v, Proto: p, Err: err}
+		v, p, clock, err := c.Version(ctx, n, connectTimeout)
+		out[i] = NodeVersion{Node: n, Version: v, Proto: p, Clock: clock, Err: err}
 	})
 	return out
 }
@@ -43,22 +47,27 @@ const versionCallTimeout = 10 * time.Second
 
 // Version asks one node's agent for its build and protocol version. The error
 // is returned as the agent sent it, unexplained: callers classify it.
-func (c *Client) Version(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (version, proto string, err error) {
+func (c *Client) Version(ctx context.Context, n resolve.Node, connectTimeout time.Duration) (version, proto string, clock clockskew.Reading, err error) {
 	// One deadline for the dial and the call: the dial context alone left the
 	// RPC unbounded, so an agent that accepted and then stalled hung `doctor`.
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout+versionCallTimeout)
 	defer cancel()
 	conn, err := c.Conn(cctx, n.DialHost)
 	if err != nil {
-		return "", "", err
+		return "", "", clockskew.Reading{}, err
 	}
 	defer conn.Close()
+	// The clock is measured around the RPC alone, never around the dial: a
+	// connection that took three seconds to establish would otherwise widen
+	// the window until any drift fits inside it.
+	sent := time.Now()
 	resp, err := conn.Agent().Version(cctx, &pb.VersionRequest{})
+	received := time.Now()
 	conn.done(err)
 	if err != nil {
-		return "", "", err
+		return "", "", clockskew.Reading{}, err
 	}
-	return resp.Version, resp.ProtoVersion, nil
+	return resp.Version, resp.ProtoVersion, clockskew.Measure(sent, received, resp.Now), nil
 }
 
 // NodeImages is one node's image footprint, as the node view renders it.

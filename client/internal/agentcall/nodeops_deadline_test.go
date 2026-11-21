@@ -21,7 +21,7 @@ func TestNodeCallsCarryADeadline(t *testing.T) {
 	ctx := context.Background() // no deadline of its own
 	n := fc.nodes[0]
 
-	if _, _, err := ac.Version(ctx, n, testTimeout); err != nil {
+	if _, _, _, err := ac.Version(ctx, n, testTimeout); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ac.listNodeContainers(ctx, n, testTimeout); err != nil {
