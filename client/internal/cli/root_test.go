@@ -225,3 +225,32 @@ func TestHelpGroupsConnectionFlags(t *testing.T) {
 		t.Errorf("completion bash printed no script")
 	}
 }
+
+// `help <topic> --help` prints the topic, not the help command's own page
+// (P2). Cobra parses the help command's flags before its argument, so the
+// trailing --help used to win and the reader got help about `help`.
+func TestHelpWithATopicIgnoresItsOwnHelpFlag(t *testing.T) {
+	topic := helpOf(t, "help", "connection")
+	for _, args := range [][]string{
+		{"help", "connection", "--help"},
+		{"help", "connection", "-h"},
+		{"connection", "--help"},
+	} {
+		if h := helpOf(t, args...); h != topic {
+			t.Errorf("%v printed something other than the connection topic:\n%s", args, h)
+		}
+	}
+	// A command behind the topic, and the topic behind a flag.
+	if h := helpOf(t, "help", "exec", "--help"); !strings.Contains(h, "swarmexec exec") ||
+		strings.Contains(h, "Help provides help for any command") {
+		t.Errorf("help exec --help:\n%s", h)
+	}
+	// Naming no topic still means help about `help` itself, as everywhere.
+	if h := helpOf(t, "help", "--help"); !strings.Contains(h, "Help provides help for any command") {
+		t.Errorf("help --help:\n%s", h)
+	}
+	// An unknown topic says so instead of printing a page the reader did not ask for.
+	if h := helpOf(t, "help", "nosuch", "--help"); !strings.Contains(h, `Unknown help topic "nosuch"`) {
+		t.Errorf("help nosuch --help:\n%s", h)
+	}
+}

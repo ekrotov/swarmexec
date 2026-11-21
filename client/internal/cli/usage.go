@@ -149,3 +149,64 @@ func writeFlags(w io.Writer, title string, fs *pflag.FlagSet) {
 	}
 	fmt.Fprintf(w, "\n\n%s:\n%s", title, strings.TrimRight(fs.FlagUsages(), " \n"))
 }
+
+// newHelpCommand is `swarmexec help [command]`: cobra's help command, with
+// one correction (P2). Cobra parses a command's own flags before it runs it,
+// and the help command's own --help wins over its argument, so `swarmexec
+// help connection --help` printed the help of `help` — the one page the
+// reader demonstrably did not ask for. Here flag parsing is off: -h/--help
+// among the arguments is dropped, because next to a topic it only repeats
+// what `help` already says. Alone it still means what it does everywhere
+// else, help about this command.
+func newHelpCommand(root *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:   "help [command]",
+		Short: "Help about any command",
+		Long: `Help provides help for any command in the application.
+Simply type ` + root.DisplayName() + ` help [path to command] for full details.`,
+		DisableFlagParsing: true,
+		ValidArgsFunction: func(c *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			target, _, err := c.Root().Find(args)
+			if err != nil || target == nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			var out []string
+			for _, sub := range target.Commands() {
+				if (sub.IsAvailableCommand() || sub.IsAdditionalHelpTopicCommand()) &&
+					strings.HasPrefix(sub.Name(), toComplete) {
+					out = append(out, sub.Name()+"\t"+sub.Short)
+				}
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		},
+		Run: func(c *cobra.Command, args []string) {
+			topic := helpTopic(args)
+			target := c // `help --help`: no topic named, so the topic is help itself
+			if len(topic) > 0 || len(args) == 0 {
+				var err error
+				if target, _, err = c.Root().Find(topic); err != nil || target == nil {
+					c.Printf("Unknown help topic %q\n", strings.Join(topic, " "))
+					cobra.CheckErr(c.Root().Usage())
+					return
+				}
+			}
+			target.InitDefaultHelpFlag()    // so the printed flag table has --help
+			target.InitDefaultVersionFlag() // ... and --version where there is one
+			cobra.CheckErr(target.Help())
+		},
+	}
+}
+
+// helpTopic is args without the flags: with flag parsing off the help
+// command sees them, and in `help connection --help` the words name the
+// topic.
+func helpTopic(args []string) []string {
+	topic := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") && a != "-" {
+			continue
+		}
+		topic = append(topic, a)
+	}
+	return topic
+}

@@ -251,6 +251,9 @@ func newRootCmd(g *globalFlags, v Version) *cobra.Command {
 	root.AddCommand(newUICmd(g))
 	root.AddCommand(newMCPCmd(g))
 	root.AddCommand(newConnectionHelpTopic(root))
+	helpCmd := newHelpCommand(root)
+	root.SetHelpCommand(helpCmd) // before AddCommand: cobra adds its own otherwise
+	root.AddCommand(helpCmd)
 	registerCompletions(root, g)
 	usageOnArgErrors(root)
 	runtimeErrors(root)
