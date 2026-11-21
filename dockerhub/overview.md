@@ -6,7 +6,7 @@ publishing a port. Plus a terminal UI across several clusters, volumes across al
 nodes, a content diff of deployed stacks, and a security gate before
 `docker stack deploy`. Apache-2.0, no node limit, no telemetry.
 
-🌐 **Website & documentation:** <https://swarm-exec.cloud-surfers.net> ·
+🌐 **Website & documentation:** <https://swarmshell.dev> ·
 📦 **Source:** <https://github.com/ekrotov/swarmexec>
 
 This image is the **agent**: it runs as a **global** Swarm service (one task per
@@ -99,13 +99,13 @@ your Docker log driver (`docker service logs swarmexec_agent`).
 
 ## Links
 
-- **Documentation:** <https://swarm-exec.cloud-surfers.net/docs> — install,
+- **Documentation:** <https://swarmshell.dev/docs> — install,
   quick start, configuration, authentication, every command, the TUI.
 - **Manual agent setup** with your own CA, troubleshooting, security notes:
   [docs/manual-setup.md](https://github.com/ekrotov/swarmexec/blob/main/docs/manual-setup.md).
 - **CLI binaries** (Linux / macOS / Windows) are attached to each
   [release](https://github.com/ekrotov/swarmexec/releases); or
-  `curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh`.
+  `curl -fsSL https://swarmshell.dev/install.sh | sh`.
 - **Source:** <https://github.com/ekrotov/swarmexec>, mirrored from
   <https://gitlab.logle.io/cs-public/swarm-remote-exec>.
 

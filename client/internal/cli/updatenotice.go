@@ -102,7 +102,7 @@ func updateNotice(newer string, width int) string {
 	if width == 0 || tview.TaggedStringWidth(full) <= width {
 		return full
 	}
-	return " [yellow]" + v + " available[white] — swarm-exec.cloud-surfers.net/docs/install"
+	return " [yellow]" + v + " available[white] — swarmshell.dev/docs/install"
 }
 
 // helpTitle is the ? overlay's title: it names the version, which a narrow

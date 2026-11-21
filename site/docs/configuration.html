@@ -8,13 +8,13 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="canonical" href="https://swarm-exec.cloud-surfers.net/docs/configuration">
+  <link rel="canonical" href="https://swarmshell.dev/docs/configuration">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="swarmexec">
   <meta property="og:title" content="swarmexec configuration — config file, global flags and exit codes">
   <meta property="og:description" content="The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.">
-  <meta property="og:url" content="https://swarm-exec.cloud-surfers.net/docs/configuration">
-  <meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta property="og:url" content="https://swarmshell.dev/docs/configuration">
+  <meta property="og:image" content="https://swarmshell.dev/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
@@ -22,7 +22,7 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="swarmexec configuration — config file, global flags and exit codes">
   <meta name="twitter:description" content="The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.">
-  <meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+  <meta name="twitter:image" content="https://swarmshell.dev/og-image.png">
   <meta name="color-scheme" content="light dark">
   <script type="application/ld+json">
   {
@@ -32,9 +32,9 @@
         "@type": "TechArticle",
         "headline": "swarmexec configuration — config file, global flags and exit codes",
         "description": "The swarmexec client config file, addr-mode and environment variables, the global flags, config show, and the exit codes scripts and CI can rely on.",
-        "url": "https://swarm-exec.cloud-surfers.net/docs/configuration",
+        "url": "https://swarmshell.dev/docs/configuration",
         "inLanguage": "en",
-        "image": "https://swarm-exec.cloud-surfers.net/og-image.png",
+        "image": "https://swarmshell.dev/og-image.png",
         "author": {
           "@type": "Organization",
           "name": "Cloud Surfers GmbH",
@@ -43,7 +43,7 @@
         "about": {
           "@type": "SoftwareApplication",
           "name": "swarmexec",
-          "url": "https://swarm-exec.cloud-surfers.net/"
+          "url": "https://swarmshell.dev/"
         }
       },
       {
@@ -53,19 +53,19 @@
             "@type": "ListItem",
             "position": 1,
             "name": "swarmexec",
-            "item": "https://swarm-exec.cloud-surfers.net/"
+            "item": "https://swarmshell.dev/"
           },
           {
             "@type": "ListItem",
             "position": 2,
             "name": "Docs",
-            "item": "https://swarm-exec.cloud-surfers.net/docs"
+            "item": "https://swarmshell.dev/docs"
           },
           {
             "@type": "ListItem",
             "position": 3,
             "name": "Configuration, flags & exit codes",
-            "item": "https://swarm-exec.cloud-surfers.net/docs/configuration"
+            "item": "https://swarmshell.dev/docs/configuration"
           }
         ]
       }
@@ -155,7 +155,7 @@
           <tr><td><code>logs.min_level</code></td><td>string</td><td>default minimum level: <code>trace</code>..<code>fatal</code> (omit for no level filter)</td></tr>
           <tr><td><code>ui.dim</code></td><td>float</td><td>how far the backdrop behind an open overlay is faded, a fraction <code>0</code>–<code>1</code> (default <code>0.6</code>; <code>0</code> = no dimming)</td></tr>
           <tr><td><code>ui.sync_docker_context</code></td><td>bool</td><td>a cluster switch in the TUI also makes that context docker's stored current one (<code>docker context use</code>), so your shells follow the TUI. Default <code>false</code>: the switch is the TUI's only, and <code>docker</code> in another terminal keeps going where it went. <code>swarmexec context use</code> always writes it — that command is an explicit choice</td></tr>
-          <tr><td id="check-updates"><code>ui.check_updates</code></td><td>bool</td><td>look for a newer release (default <code>true</code>). The TUI and <code>swarmexec doctor</code> ask <code>https://swarm-exec.cloud-surfers.net/latest.json</code> at most once a day; the request is a plain GET that sends nothing about you or your cluster, and the answer is cached in <code>update-check.json</code> next to the config file. A newer release shows in the TUI's status line (and in the <kbd>?</kbd> title) and as a line in <code>doctor</code>. Builds that are not a release (<code>dev</code>, <code>review-…</code>) never ask, and offline nothing is shown. <code>false</code>, or <code>SWARMEXEC_NO_UPDATE_CHECK=1</code>, turns it off</td></tr>
+          <tr><td id="check-updates"><code>ui.check_updates</code></td><td>bool</td><td>look for a newer release (default <code>true</code>). The TUI and <code>swarmexec doctor</code> ask <code>https://swarmshell.dev/latest.json</code> at most once a day; the request is a plain GET that sends nothing about you or your cluster, and the answer is cached in <code>update-check.json</code> next to the config file. A newer release shows in the TUI's status line (and in the <kbd>?</kbd> title) and as a line in <code>doctor</code>. Builds that are not a release (<code>dev</code>, <code>review-…</code>) never ask, and offline nothing is shown. <code>false</code>, or <code>SWARMEXEC_NO_UPDATE_CHECK=1</code>, turns it off</td></tr>
           <tr><td id="check-registry"><code>ui.check_registry</code></td><td>bool</td><td>look up image versions in the registry (default <code>true</code>). For a service on <code>repo:latest@sha256:…</code> or a version tag the TUI asks the image's registry, with your Docker credentials, which version runs and whether a newer one exists; the answer shows after the service name (<code>(1.2.3) ↑ 1.3.0</code>) and in the service details. At most four lookups run at once, the results of the last 256 images are remembered, and a registry that fails keeps the earlier answer. <code>false</code>, or <code>SWARMEXEC_NO_REGISTRY_CHECK=1</code>, turns it off: no registry is contacted and no version is shown</td></tr>
           <tr><td><code>contexts.&lt;name&gt;.underlay</code></td><td>list of CIDRs</td><td>optional, per Docker context: the hosts' own network (e.g. <code>[10.0.0.0/16]</code>). The <a href="/docs/tui-tabs#tui-networks">Networks tab</a>, the create-network check and the MCP <code>networks_list</code> then also flag overlay subnets that overlap it. Without it only the nodes' own addresses are checked. A malformed CIDR is a load error naming the key</td></tr>
           <tr><td><code>contexts.&lt;name&gt;.underlay_mtu</code></td><td>int</td><td>optional, per Docker context: the MTU of that host network (e.g. <code>1450</code> on a Hetzner private network). With it, the create-network check works out what an overlay should be told and warns when the current setting cannot fit: Docker assumes a 1500-byte underlay and subtracts 50 bytes of VXLAN overhead, so on a 1450 link its default produces frames that are silently dropped — which looks like a slow connection, not a broken one. There is deliberately <em>no default</em>: guessing 1500 is the very assumption this key exists to correct. Usually you do <strong>not</strong> need this key — the agents report their nodes' own link MTUs (from a read-only <code>/sys</code> mount) and swarmexec works the underlay out from those. Set it to override what they report, or for a cluster whose agents are older than that</td></tr>

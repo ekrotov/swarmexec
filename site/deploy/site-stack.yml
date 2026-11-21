@@ -1,4 +1,5 @@
-# swarmexec landing page — served at https://swarm-exec.cloud-surfers.net
+# swarmexec landing page — served at https://swarmshell.dev (the former
+# swarm-exec.cloud-surfers.net and www. redirect here permanently).
 #
 # Deploy (on a manager, with the image built & pushed by CI):
 #   docker stack deploy -c site/deploy/site-stack.yml swarmexec-site
@@ -43,15 +44,31 @@ services:
         # serves on 8080.
         - "traefik.enable=true"
         - "traefik.http.routers.swarmexec-site.entrypoints=https"
-        - "traefik.http.routers.swarmexec-site.rule=Host(`swarm-exec.cloud-surfers.net`)"
+        - "traefik.http.routers.swarmexec-site.rule=Host(`swarmshell.dev`)"
         - "traefik.http.routers.swarmexec-site.tls=true"
         - "traefik.http.routers.swarmexec-site.tls.certresolver=letsencrypt"
         - "traefik.http.services.swarmexec-site.loadbalancer.server.port=8080"
         # Redirect plain HTTP to HTTPS.
         - "traefik.http.routers.swarmexec-site-http.entrypoints=http"
-        - "traefik.http.routers.swarmexec-site-http.rule=Host(`swarm-exec.cloud-surfers.net`)"
+        - "traefik.http.routers.swarmexec-site-http.rule=Host(`swarmshell.dev`)"
         - "traefik.http.routers.swarmexec-site-http.middlewares=swarmexec-site-redirect"
         - "traefik.http.middlewares.swarmexec-site-redirect.redirectscheme.scheme=https"
+        # The former domain and www: permanently to the main one, path kept.
+        # $${1} survives `docker stack deploy`'s own interpolation and reaches
+        # Traefik as ${1}, the capture group of the regex above it.
+        - "traefik.http.middlewares.swarmexec-site-legacy.redirectregex.regex=^https?://[^/]+/(.*)"
+        - "traefik.http.middlewares.swarmexec-site-legacy.redirectregex.replacement=https://swarmshell.dev/$${1}"
+        - "traefik.http.middlewares.swarmexec-site-legacy.redirectregex.permanent=true"
+        - "traefik.http.routers.swarmexec-site-legacy-http.entrypoints=http"
+        - "traefik.http.routers.swarmexec-site-legacy-http.rule=Host(`swarm-exec.cloud-surfers.net`) || Host(`www.swarmshell.dev`)"
+        - "traefik.http.routers.swarmexec-site-legacy-http.middlewares=swarmexec-site-legacy"
+        - "traefik.http.routers.swarmexec-site-legacy-http.service=swarmexec-site"
+        - "traefik.http.routers.swarmexec-site-legacy.entrypoints=https"
+        - "traefik.http.routers.swarmexec-site-legacy.rule=Host(`swarm-exec.cloud-surfers.net`) || Host(`www.swarmshell.dev`)"
+        - "traefik.http.routers.swarmexec-site-legacy.tls=true"
+        - "traefik.http.routers.swarmexec-site-legacy.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.swarmexec-site-legacy.middlewares=swarmexec-site-legacy"
+        - "traefik.http.routers.swarmexec-site-legacy.service=swarmexec-site"
 
 networks:
   gateway:

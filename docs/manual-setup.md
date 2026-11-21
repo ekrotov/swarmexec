@@ -1,8 +1,8 @@
 # Manual setup, configuration reference and troubleshooting
 
-<!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarm-exec.cloud-surfers.net for the rest. -->
+<!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarmshell.dev for the rest. -->
 
-`swarmexec init` sets the agents up in one command — see [Quick start](https://swarm-exec.cloud-surfers.net/docs/install#quickstart). This page is the long way round: deploying the agent stack by hand with your own CA (mTLS), the agent and client flags, troubleshooting, production notes and tear-down.
+`swarmexec init` sets the agents up in one command — see [Quick start](https://swarmshell.dev/docs/install#quickstart). This page is the long way round: deploying the agent stack by hand with your own CA (mTLS), the agent and client flags, troubleshooting, production notes and tear-down.
 
 ## 3. Set up the agent (server side)
 
@@ -230,8 +230,8 @@ against the release's `SHA256SUMS`, refuses an unverified binary, and never uses
 sudo ([read it first](../site/install.sh)):
 
 ```sh
-curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
-curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   # a specific release
+curl -fsSL https://swarmshell.dev/install.sh | sh
+curl -fsSL https://swarmshell.dev/install.sh | SWARMEXEC_VERSION=v1.19.2 sh   # a specific release
 ```
 
 Or with a package manager, so `brew upgrade` / `scoop update` keep the client in
@@ -286,7 +286,7 @@ swarmexec answers ssh's `SSH_ASKPASS` and asks you — in the TUI as a dialog,
 otherwise on the terminal — for the passphrase, a password or an unknown host
 key. With older OpenSSH or on Windows the TUI offers to run `ssh-add` for you and
 the CLI prints the exact command. `SWARMEXEC_SSH_ASKPASS=0` switches asking off.
-See [ssh passphrases and questions](https://swarm-exec.cloud-surfers.net/docs/contexts#sshprompt).
+See [ssh passphrases and questions](https://swarmshell.dev/docs/contexts#sshprompt).
 
 ### Step 4.3 — Provide the mTLS material
 
@@ -368,7 +368,7 @@ swarmexec ui <service>       # open with the tree filtered to one service
   selects (**a** selects all), **X** deletes the selected (or highlighted) ones
   on every node that holds them — with a confirmation step.
 - The other tabs follow the same pattern; the full key reference is the
-  [TUI page of the site](https://swarm-exec.cloud-surfers.net/docs/tui).
+  [TUI page of the site](https://swarmshell.dev/docs/tui).
 
 ### Step 4.5 — Exec
 

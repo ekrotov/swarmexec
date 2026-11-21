@@ -1,6 +1,6 @@
 # How swarmexec compares
 
-<!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarm-exec.cloud-surfers.net for the rest. -->
+<!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarmshell.dev for the rest. -->
 
 
 Swarm has no built-in cluster-wide `docker exec`: containers, volumes and images

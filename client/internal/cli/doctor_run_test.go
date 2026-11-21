@@ -169,7 +169,7 @@ func TestDoctorReportsNewerRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v, want none: a newer release is not a failure", err)
 	}
-	want := "client:  1.2.3 (proto 7)\nupdate:  v1.27.0 is available — see https://swarm-exec.cloud-surfers.net/docs/install\nmanager: manager-1"
+	want := "client:  1.2.3 (proto 7)\nupdate:  v1.27.0 is available — see https://swarmshell.dev/docs/install\nmanager: manager-1"
 	if !strings.HasPrefix(out, want) || !strings.HasSuffix(out, "✓ all agents healthy\n") {
 		t.Errorf("stdout:\n%s", out)
 	}

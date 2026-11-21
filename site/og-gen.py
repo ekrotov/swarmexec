@@ -99,7 +99,7 @@ d.text((x, ty + 20), "# replica 2, any node", font=cmd, fill=T_DIM)
 # --- footer line -------------------------------------------------------------
 d.line([(M, 572), (W - M, 572)], fill=RULE, width=2)
 small = mono(22, 500)
-d.text((M, 584), "swarm-exec.cloud-surfers.net", font=small, fill=AQUA)
+d.text((M, 584), "swarmshell.dev", font=small, fill=AQUA)
 right = "Apache-2.0 · Docker Swarm"
 d.text((W - M - d.textlength(right, font=small), 584), right, font=small, fill=MUTED)
 
