@@ -30,7 +30,7 @@
 #                          linkedin-post-<tag>.txt, the artifact path in CI).
 #   LINKEDIN_LIFECYCLE     DRAFT (default) or PUBLISHED (skip the human gate).
 #   LINKEDIN_API_VERSION   LinkedIn-Version header, YYYYMM (default: this month).
-#   SITE_URL               link in the post (default swarm-exec.cloud-surfers.net);
+#   SITE_URL               link in the post (default swarmshell.dev);
 #                          utm_* tracking parameters are appended to it.
 #   LINKEDIN_DRY_RUN=1     build the artifact and print the payload, send nothing.
 #
@@ -48,7 +48,7 @@ esac
 
 . "$(dirname "$0")/release-post-lib.sh"
 
-SITE_URL="${SITE_URL:-https://swarm-exec.cloud-surfers.net}"
+SITE_URL="${SITE_URL:-https://swarmshell.dev}"
 RELEASE_URL="$CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG"
 SITE_LINK=$(tracked_link "$SITE_URL" linkedin)
 # A fixed path, not one carrying the tag: the tag is already in the artifact URL

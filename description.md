@@ -1,6 +1,6 @@
 # swarmexec — Component Description
 
-> **Historical (v1.0).** This file describes the first version, not the current behaviour; see `README.md`, `CONTRACT.md`, `agent/README.md`, `client/README.md` and the site docs (<https://swarm-exec.cloud-surfers.net/docs>) for what swarmexec does today.
+> **Historical (v1.0).** This file describes the first version, not the current behaviour; see `README.md`, `CONTRACT.md`, `agent/README.md`, `client/README.md` and the site docs (<https://swarmshell.dev/docs>) for what swarmexec does today.
 
 `swarmexec` is a cluster-wide `docker exec -it` (plus logs and volume management)
 for Docker Swarm. From a single workstation an operator can open an interactive

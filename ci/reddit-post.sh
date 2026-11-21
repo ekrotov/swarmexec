@@ -18,7 +18,7 @@
 #
 # Optional:
 #   REDDIT_POST_FILE  where to write it (default reddit-post-<tag>.md).
-#   SITE_URL          site link (default swarm-exec.cloud-surfers.net).
+#   SITE_URL          site link (default swarmshell.dev).
 set -eu
 
 : "${CI_COMMIT_TAG:?must run on a tag}"
@@ -30,7 +30,7 @@ esac
 
 . "$(dirname "$0")/release-post-lib.sh"
 
-SITE_URL="${SITE_URL:-https://swarm-exec.cloud-surfers.net}"
+SITE_URL="${SITE_URL:-https://swarmshell.dev}"
 RELEASE_URL="$CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG"
 # Fixed path — the tag is already in the artifact URL, and a constant path makes
 # the link for any release predictable. Its own directory keeps it clear of

@@ -2,7 +2,7 @@
 
 **`docker exec`, logs, port-forward and a terminal UI for any container in a Docker Swarm — from one terminal, without SSH to the node that runs it.**
 
-🌐 **Website and full documentation: [swarm-exec.cloud-surfers.net](https://swarm-exec.cloud-surfers.net)** — [docs](https://swarm-exec.cloud-surfers.net/docs) · [recipes](https://swarm-exec.cloud-surfers.net/examples) · [how it compares](https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives) · [release notes](https://swarm-exec.cloud-surfers.net/releases)
+🌐 **Website and full documentation: [swarmshell.dev](https://swarmshell.dev)** — [docs](https://swarmshell.dev/docs) · [recipes](https://swarmshell.dev/examples) · [how it compares](https://swarmshell.dev/docker-swarm-exec-alternatives) · [release notes](https://swarmshell.dev/releases)
 
 ![swarmexec vs docker exec: instead of docker node ls → find the node → ssh node-3 → docker exec, just run `swarmexec exec web -- sh`](site/demo.gif)
 
@@ -10,48 +10,48 @@ Docker Swarm schedules tasks from the manager, but a container's shell, its logs
 a port nobody published and the volume on its disk live on one node — and the
 manager API reaches none of them. swarmexec (also written *swarm-exec*) puts a
 small agent on every node and asks it directly. The
-[website](https://swarm-exec.cloud-surfers.net) shows the mechanism as an animated
+[website](https://swarmshell.dev) shows the mechanism as an animated
 scene: health, exec, port-forward and `logs -f`.
 
 swarmexec does not replace the Docker CLI and does not want to. It is the layer you
 live in on an ordinary day — logs, a shell, a forwarded port, a checked deploy;
 `docker` remains the primitive underneath and the canonical source. Nothing here is
 hidden from `docker`, and nothing requires it to be absent.
-[What each one is for →](https://swarm-exec.cloud-surfers.net/docs/next-to-docker)
+[What each one is for →](https://swarmshell.dev/docs/next-to-docker)
 
 ## What it does
 
-- **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarm-exec.cloud-surfers.net/docs/exec)
-- **Copy files in, out and between containers** — `swarmexec cp ./patch.sql db:/tmp/`, and `web.1:/etc/nginx.conf db.2:/tmp/` across two nodes. Nothing is needed inside the container, not even tar. [cp →](https://swarm-exec.cloud-surfers.net/docs/exec#cp)
-- **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarm-exec.cloud-surfers.net/docs/logs)
-- **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarm-exec.cloud-surfers.net/docs/port-forward) · [recipe: forward a database port](https://swarm-exec.cloud-surfers.net/examples#forward-db)
-- **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarm-exec.cloud-surfers.net/docs/tui#tui)
-- **Stack diff and a pre-deploy check for CI** — a content diff of a file against the deployed stack, and a security gate before `stack deploy`. [stack diff →](https://swarm-exec.cloud-surfers.net/docs/stack)
-- **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarm-exec.cloud-surfers.net/docs/tui-nodes#nodeprune)
-- **Secret rotation that keeps the name** — `swarmexec secret rotate NAME --from-file new.txt` gives a secret in use new content without a `_v2` rename; resumable if interrupted. [secret rotate →](https://swarm-exec.cloud-surfers.net/docs/secrets)
-- **A security report** of the whole cluster, as Markdown you can file and compare. [security report →](https://swarm-exec.cloud-surfers.net/docs/security-scan#securityreport)
-- **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only apart from an opt-in single command (`exec_run`, only where a service's labels allow it), labels hidden from the assistant. [mcp →](https://swarm-exec.cloud-surfers.net/docs/mcp)
-- **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarm-exec.cloud-surfers.net/docs/authentication)
+- **Exec anywhere** — `swarmexec exec web -- sh` opens a shell in the task, on whatever node it runs. [Targets →](https://swarmshell.dev/docs/exec)
+- **Copy files in, out and between containers** — `swarmexec cp ./patch.sql db:/tmp/`, and `web.1:/etc/nginx.conf db.2:/tmp/` across two nodes. Nothing is needed inside the container, not even tar. [cp →](https://swarmshell.dev/docs/exec#cp)
+- **Logs of a service or a whole stack** — every replica in one stream, following containers across replacement. [logs →](https://swarmshell.dev/docs/logs)
+- **Port-forward** to ports nobody published, without touching the stack. [port-forward →](https://swarmshell.dev/docs/port-forward) · [recipe: forward a database port](https://swarmshell.dev/examples#forward-db)
+- **A terminal UI** for services, volumes, networks, secrets, configs and nodes — across several clusters in one session, with live CPU/RAM and health. [The TUI →](https://swarmshell.dev/docs/tui#tui)
+- **Stack diff and a pre-deploy check for CI** — a content diff of a file against the deployed stack, and a security gate before `stack deploy`. [stack diff →](https://swarmshell.dev/docs/stack)
+- **Disk cleanup per node** — what stopped containers, images, build cache, networks and volumes cost on each node, a per-category prune that never touches swarm overlays, and a cluster-wide prune schedule the agents run themselves. [Pruning a node →](https://swarmshell.dev/docs/tui-nodes#nodeprune)
+- **Secret rotation that keeps the name** — `swarmexec secret rotate NAME --from-file new.txt` gives a secret in use new content without a `_v2` rename; resumable if interrupted. [secret rotate →](https://swarmshell.dev/docs/secrets)
+- **A security report** of the whole cluster, as Markdown you can file and compare. [security report →](https://swarmshell.dev/docs/security-scan#securityreport)
+- **An MCP server for AI assistants** — `swarmexec mcp` lets Claude Code and friends read status, logs and stack diffs of the services you opt in by label; read-only apart from an opt-in single command (`exec_run`, only where a service's labels allow it), labels hidden from the assistant. [mcp →](https://swarmshell.dev/docs/mcp)
+- **Its own identity and audit** — mTLS or a connection-bound shared secret, an audit log, an optional policy file. [Authentication →](https://swarmshell.dev/docs/authentication)
 
 Apache-2.0, self-hosted, no telemetry, no node limit. Docker Engine 19.03 or newer.
-The client asks swarm-exec.cloud-surfers.net/latest.json at most once a day
+The client asks swarmshell.dev/latest.json at most once a day
 whether a newer release exists, sending nothing about you or your cluster;
 `ui.check_updates: false` turns it off.
 
 Whole workflows — debugging a crash-looping service, shelling into one replica,
-gating a deploy in CI — are in the [recipes](https://swarm-exec.cloud-surfers.net/examples),
+gating a deploy in CI — are in the [recipes](https://swarmshell.dev/examples),
 CLI and TUI side by side.
 
 ## Install
 
 ```sh
-curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh   # Linux, macOS — verifies the checksum
+curl -fsSL https://swarmshell.dev/install.sh | sh   # Linux, macOS — verifies the checksum
 brew install ekrotov/swarmexec/swarmexec                         # macOS, Linux
 scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
 scoop install swarmexec                                          # Windows
 ```
 
-Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/releases/latest). [Install →](https://swarm-exec.cloud-surfers.net/docs/install) · [What changed in each release →](https://swarm-exec.cloud-surfers.net/releases)
+Or take a binary from the [latest release](https://github.com/ekrotov/swarmexec/releases/latest). [Install →](https://swarmshell.dev/docs/install) · [What changed in each release →](https://swarmshell.dev/releases)
 
 ## Quick start
 
@@ -63,7 +63,7 @@ swarmexec cp web:/etc/app.conf .   # a file out of it, no tar needed in the imag
 swarmexec ui                       # the terminal UI
 ```
 
-[Quick start →](https://swarm-exec.cloud-surfers.net/docs/install#quickstart)
+[Quick start →](https://swarmshell.dev/docs/install#quickstart)
 
 ## How it works
 
@@ -76,23 +76,23 @@ your terminal ──gRPC (mTLS or bound secret)──> agent on node N ──doc
 The **agent** runs as a global Swarm service, one task per node, with the node's
 Docker socket mounted. The **client** asks the manager where the target runs and
 connects straight to that node's agent — there is no mesh between agents.
-[How it works →](https://swarm-exec.cloud-surfers.net/docs#model)
+[How it works →](https://swarmshell.dev/docs#model)
 
 ## Documentation
 
-The full documentation lives at **[swarm-exec.cloud-surfers.net/docs](https://swarm-exec.cloud-surfers.net/docs)**:
-[configuration](https://swarm-exec.cloud-surfers.net/docs/configuration) ·
-[Docker contexts and SSH](https://swarm-exec.cloud-surfers.net/docs/contexts) ·
-[all commands](https://swarm-exec.cloud-surfers.net/docs/cli) ·
-[the TUI](https://swarm-exec.cloud-surfers.net/docs/tui#tui) ·
-[monitoring](https://swarm-exec.cloud-surfers.net/docs/agents#monitoring) ·
-[policy file](https://swarm-exec.cloud-surfers.net/docs/authentication#policy) ·
-[exit codes](https://swarm-exec.cloud-surfers.net/docs/configuration#exit)
+The full documentation lives at **[swarmshell.dev/docs](https://swarmshell.dev/docs)**:
+[configuration](https://swarmshell.dev/docs/configuration) ·
+[Docker contexts and SSH](https://swarmshell.dev/docs/contexts) ·
+[all commands](https://swarmshell.dev/docs/cli) ·
+[the TUI](https://swarmshell.dev/docs/tui#tui) ·
+[monitoring](https://swarmshell.dev/docs/agents#monitoring) ·
+[policy file](https://swarmshell.dev/docs/authentication#policy) ·
+[exit codes](https://swarmshell.dev/docs/configuration#exit)
 
 In this repository:
 
 - [`docs/manual-setup.md`](docs/manual-setup.md) — deploying the agent by hand with your own CA, the agent and client flags, troubleshooting, production notes.
-- [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts; the short version is the [comparison on the website](https://swarm-exec.cloud-surfers.net/docker-swarm-exec-alternatives) (SSH, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels, kubectl).
+- [`docs/related-work.md`](docs/related-work.md) — how swarmexec compares with d4s, swarmcli, Portainer, Swarmpit, Komodo and the older swarm-exec scripts; the short version is the [comparison on the website](https://swarmshell.dev/docker-swarm-exec-alternatives) (SSH, docker contexts, Portainer, Swarmpit, lazydocker, socat tunnels, kubectl).
 - [`DEVELOPMENT.md`](DEVELOPMENT.md) — building, tests, the documentation site, the release pipeline.
 - [`CONTRACT.md`](CONTRACT.md) and [`proto/swarmexec.proto`](proto/swarmexec.proto) — the wire protocol; [`agent/README.md`](agent/README.md), [`client/README.md`](client/README.md) — the two components' internals.
 

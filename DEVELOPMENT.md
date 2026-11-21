@@ -1,8 +1,8 @@
 # Developing and releasing swarmexec
 
-<!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarm-exec.cloud-surfers.net for the rest. -->
+<!-- Moved out of the top-level README, unchanged; the README now keeps the essentials and points to https://swarmshell.dev for the rest. -->
 
-Building from source, the documentation site and the release pipeline. For using swarmexec, see the [documentation](https://swarm-exec.cloud-surfers.net/docs).
+Building from source, the documentation site and the release pipeline. For using swarmexec, see the [documentation](https://swarmshell.dev/docs).
 
 ## Prerequisites
 

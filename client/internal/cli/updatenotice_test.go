@@ -135,9 +135,12 @@ func TestUpdateNoticeFitsTheFooter(t *testing.T) {
 	if full != "swarmexec v1.27.0 is available — see "+updatecheck.InstallURL {
 		t.Errorf("120 columns: %q", full)
 	}
-	short := updateNotice("v1.27.0", 80)
-	if w := tview.TaggedStringWidth(short); w > 80 || !strings.Contains(shownText(short), "v1.27.0 available") || !strings.Contains(short, "/docs/install") {
-		t.Errorf("80 columns (%d wide): %q", w, shownText(short))
+	// One column too narrow for the full line, whatever that line costs:
+	// a shorter site domain must not quietly retire the short form.
+	narrow := tview.TaggedStringWidth(updateNotice("v1.27.0", 0)) - 1
+	short := updateNotice("v1.27.0", narrow)
+	if w := tview.TaggedStringWidth(short); w > narrow || !strings.Contains(shownText(short), "v1.27.0 available") || !strings.Contains(short, "/docs/install") {
+		t.Errorf("%d columns (%d wide): %q", narrow, w, shownText(short))
 	}
 	if shownText(updateNotice("v1.27.0", 0)) != full {
 		t.Error("before the first frame the full notice is used")

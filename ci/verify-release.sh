@@ -38,7 +38,7 @@ set -u
 
 TAG="${1:?usage: verify-release.sh TAG}"
 SEMVER="${TAG#v}"
-SITE_URL="${SITE_URL:-https://swarm-exec.cloud-surfers.net}"
+SITE_URL="${SITE_URL:-https://swarmshell.dev}"
 GITLAB_PROJECT_URL="${GITLAB_PROJECT_URL:-${CI_PROJECT_URL:-https://gitlab.logle.io/cs-public/swarm-remote-exec}}"
 WAIT="${VERIFY_WAIT:-900}"
 BINARIES="swarmexec-linux-amd64 swarmexec-linux-arm64 swarmexec-darwin-amd64 swarmexec-darwin-arm64 swarmexec-windows-amd64.exe"

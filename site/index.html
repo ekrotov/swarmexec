@@ -9,13 +9,13 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="canonical" href="https://swarm-exec.cloud-surfers.net/">
+<link rel="canonical" href="https://swarmshell.dev/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="swarmexec">
 <meta property="og:title" content="swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm">
 <meta property="og:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
-<meta property="og:url" content="https://swarm-exec.cloud-surfers.net/">
-<meta property="og:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+<meta property="og:url" content="https://swarmshell.dev/">
+<meta property="og:image" content="https://swarmshell.dev/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="swarmexec — every container in your Swarm, one terminal away.">
@@ -23,7 +23,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="swarmexec (swarm-exec) — docker exec, logs and port-forward for Docker Swarm">
 <meta name="twitter:description" content="Exec, logs and port-forward into any container in a Docker Swarm, a content diff of deployed stacks and a security scan of service specs. One agent per node, no SSH.">
-<meta name="twitter:image" content="https://swarm-exec.cloud-surfers.net/og-image.png">
+<meta name="twitter:image" content="https://swarmshell.dev/og-image.png">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -31,7 +31,7 @@
   "name": "swarmexec",
   "alternateName": ["swarm-exec", "swarm exec"],
   "description": "For Docker Swarm: exec, logs and port-forward into any container through a small agent on every node, plus a content diff of deployed stacks and a security scan of service specs. Apache-2.0, no node limit.",
-  "url": "https://swarm-exec.cloud-surfers.net/",
+  "url": "https://swarmshell.dev/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -103,7 +103,7 @@
         <a href="https://github.com/ekrotov/swarmexec" data-umami-event="repo-github">Source on GitHub</a>
       </p>
       <div class="hero-install">
-        <pre class="sh" aria-label="Install command" data-copy="curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh" data-copy-label="Copy the install command"><span class="p" aria-hidden="true">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh</pre>
+        <pre class="sh" aria-label="Install command" data-copy="curl -fsSL https://swarmshell.dev/install.sh | sh" data-copy-label="Copy the install command"><span class="p" aria-hidden="true">$</span> curl -fsSL https://swarmshell.dev/install.sh | sh</pre>
         <p>Linux and macOS; checks the release checksum, never uses sudo
           (<a href="/install.sh">read it</a>). Homebrew, Scoop and Windows:
           <a href="#install">more ways to install</a>.</p>
@@ -754,7 +754,7 @@ Create anyway?</pre>
       <p>
         No telemetry, no licence check, no account. The client talks to your manager and
         your agents; the TUI also asks your images' registries whether a newer tag exists.
-        And it asks <code>swarm-exec.cloud-surfers.net/latest.json</code> at most once a day
+        And it asks <code>swarmshell.dev/latest.json</code> at most once a day
         whether a newer swarmexec release exists, sending nothing about you or your cluster;
         <code>ui.check_updates: false</code> turns it off
         (<a href="/docs/configuration#check-updates">configuration</a>).
@@ -778,7 +778,7 @@ Create anyway?</pre>
   <ol class="steps">
     <li>
       <h3>Take the binary</h3>
-      <pre class="sh"><span class="p">$</span> curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+      <pre class="sh"><span class="p">$</span> curl -fsSL https://swarmshell.dev/install.sh | sh
 <span class="p">$</span> brew install ekrotov/swarmexec/swarmexec        <span class="c-dim"># macOS, Linux</span>
 <span class="p">$</span> scoop bucket add swarmexec https://github.com/ekrotov/scoop-swarmexec
 <span class="p">$</span> scoop install swarmexec                          <span class="c-dim"># Windows</span></pre>

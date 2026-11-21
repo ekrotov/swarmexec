@@ -569,7 +569,7 @@ site-check:
     - sh site/nav.sh check
 
 # ----------------------------------------------------------------------------
-# site-image — build the swarm-exec.cloud-surfers.net landing page image (nginx). The
+# site-image — build the swarmshell.dev landing page image (nginx). The
 # deployed service tracks :latest (Watchtower auto-updates it). :latest is
 # refreshed both on a release (version baked in) and when site/ changes on the
 # default branch (version shown as "latest"; the release/download links are

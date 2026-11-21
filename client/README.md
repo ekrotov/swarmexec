@@ -106,7 +106,7 @@ next `swarmexec ui` starts — is left alone unless `ui.sync_docker_context: tru
 `swarmexec context use` is an explicit command and always sets it.
 
 `ui.check_updates` (default `true`): the TUI and `swarmexec doctor` ask
-`https://swarm-exec.cloud-surfers.net/latest.json` at most once a day whether
+`https://swarmshell.dev/latest.json` at most once a day whether
 a newer release exists, and say so (the TUI in the status line). The request
 is a plain GET that carries nothing about you or your cluster; the answer is
 cached in `update-check.json` next to the config. Builds that are not a
@@ -206,7 +206,7 @@ swarmexec --version
 `swarmexec mcp` is an MCP server on stdin/stdout for AI assistants
 (`claude mcp add swarmexec -- swarmexec mcp`); services opt in with the
 service label `swarmexec.mcp.enable=true`. See the
-[mcp docs](https://swarm-exec.cloud-surfers.net/docs/mcp).
+[mcp docs](https://swarmshell.dev/docs/mcp).
 
 Key `exec` flags: `-i/--stdin` (keep stdin open, default true), `-t/--tty`
 (allocate a TTY; default **auto** — true iff stdin is a terminal and no command

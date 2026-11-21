@@ -30,10 +30,10 @@ import (
 )
 
 // DefaultURL is where the site publishes the newest release (site/Dockerfile).
-const DefaultURL = "https://swarm-exec.cloud-surfers.net/latest.json"
+const DefaultURL = "https://swarmshell.dev/latest.json"
 
 // InstallURL is the page that says how to update.
-const InstallURL = "https://swarm-exec.cloud-surfers.net/docs/install"
+const InstallURL = "https://swarmshell.dev/docs/install"
 
 // CacheFile is the cache's name inside the config directory.
 const CacheFile = "update-check.json"

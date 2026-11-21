@@ -1,6 +1,6 @@
 # swarmexec website
 
-A small static site for the project, served at **https://swarm-exec.cloud-surfers.net**
+A small static site for the project, served at **https://swarmshell.dev**
 by nginx (non-root, port 8080) behind Traefik.
 
 | URL | File | What |
@@ -107,7 +107,7 @@ docker stack deploy -c site/deploy/site-stack.yml swarmexec-site
 ```
 
 The stack uses `${SWARMEXEC_SITE_IMAGE}`, by default the registry's `:latest`.
-Point a DNS record for `swarm-exec.cloud-surfers.net` at the swarm ingress; Traefik
+Point a DNS record for `swarmshell.dev` at the swarm ingress; Traefik
 requests the certificate via the `letsencrypt` resolver on first request.
 
 ## Hardening

@@ -2,7 +2,7 @@
 # swarmexec installer — downloads the client binary for this machine, verifies
 # it against the release's SHA256SUMS, and puts it on your PATH.
 #
-#   curl -fsSL https://swarm-exec.cloud-surfers.net/install.sh | sh
+#   curl -fsSL https://swarmshell.dev/install.sh | sh
 #
 # Read it first if you like; that is the point of keeping it short. Everything
 # below is a function, and nothing runs until the last line, so a download cut
