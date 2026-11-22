@@ -271,52 +271,6 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
     <figcaption>A forward to a task on another node, then plain <code>curl localhost</code> through it.</figcaption>
   </figure>
 
-  <!-- 4 · network addressing and MTU -->
-  <article class="claim" id="claim-network">
-    <div class="claim-text">
-      <p class="claim-cmd"><span class="p">$</span> swarmexec ui &nbsp;<span class="c-dim">→ Networks → n</span></p>
-      <h3>The two overlay mistakes nothing else reports</h3>
-      <p>
-        Docker addresses a new overlay out of <code>10.0.0.0/8</code> and sizes it for a
-        1500-byte link. On a cloud private network both are wrong at once: the nodes
-        already live in <code>10.0.x.y</code>, and the link carries 1450. Neither failure
-        announces itself. The first hands a container an address a node already owns; the
-        second drops exactly the packets too big to fit, which reads as a slow connection
-        rather than a broken one.
-      </p>
-      <p>
-        Before it creates anything, swarmexec proposes a subnet that collides with nothing
-        — not the node addresses, not the configured underlay, not an existing network,
-        not the swarm's default pool — and the MTU the overlay should carry. The agents
-        report their nodes' own link MTUs, so the number is read off the wire rather than
-        assumed.
-      </p>
-      <p class="claim-why">
-        <code>com.docker.network.driver.mtu</code> states the <em>underlay's</em> MTU and
-        Docker subtracts 50 bytes of VXLAN overhead from it — so writing in what you want
-        inside costs 50 bytes a packet and looks right. It proposes and does not
-        substitute: whether an overlap is acceptable is your call, but the moment after
-        the network exists is the moment it can no longer be changed without detaching
-        every service from it.
-      </p>
-    </div>
-    <div class="toy toy-static" id="network-toy">
-      <div class="term">
-        <div class="term-bar"><span class="term-title">Network "db": address and MTU check</span></div>
-        <pre>⚠ 10.0.1.0/24 contains host IPs: 10.0.1.2 (node-1), 10.0.1.3 (node-2)
-⚠ frames of 1500 bytes (1450 inside the overlay) do not fit a
-  1450-byte underlay: the packets that exceed it are dropped
-  without an error
-
-<span class="c-dim">→ suggested subnet 10.40.0.0/24 — clear of 3 node address(es),
-  the configured underlay, 11 existing network(s)
-→ set MTU 1450 (the underlay's own), which gives containers 1400 bytes</span>
-
-Create anyway?</pre>
-      </div>
-    </div>
-  </article>
-
   <p class="footnote">
     The agent runs as a global service, one task per node, and swarmexec reaches it through
     your Docker context, including an <code>ssh://</code> one behind a jump host. Operators
@@ -477,6 +431,52 @@ Create anyway?</pre>
 <span class="c-dim">── container replaced; reconnected to 7f3a2b1c9e04 on node-2 ──</span>
 10.0.1.7 - - "GET /healthz HTTP/1.1" 200 2
 10.0.1.4 - - "POST /api/cart HTTP/1.1" 201 64</pre>
+      </div>
+    </div>
+  </article>
+
+  <!-- 4 · network addressing and MTU -->
+  <article class="claim" id="claim-network">
+    <div class="claim-text">
+      <p class="claim-cmd"><span class="p">$</span> swarmexec ui &nbsp;<span class="c-dim">→ Networks → n</span></p>
+      <h3>The two overlay mistakes nothing else reports</h3>
+      <p>
+        Docker addresses a new overlay out of <code>10.0.0.0/8</code> and sizes it for a
+        1500-byte link. On a cloud private network both are wrong at once: the nodes
+        already live in <code>10.0.x.y</code>, and the link carries 1450. Neither failure
+        announces itself. The first hands a container an address a node already owns; the
+        second drops exactly the packets too big to fit, which reads as a slow connection
+        rather than a broken one.
+      </p>
+      <p>
+        Before it creates anything, swarmexec proposes a subnet that collides with nothing
+        — not the node addresses, not the configured underlay, not an existing network,
+        not the swarm's default pool — and the MTU the overlay should carry. The agents
+        report their nodes' own link MTUs, so the number is read off the wire rather than
+        assumed.
+      </p>
+      <p class="claim-why">
+        <code>com.docker.network.driver.mtu</code> states the <em>underlay's</em> MTU and
+        Docker subtracts 50 bytes of VXLAN overhead from it — so writing in what you want
+        inside costs 50 bytes a packet and looks right. It proposes and does not
+        substitute: whether an overlap is acceptable is your call, but the moment after
+        the network exists is the moment it can no longer be changed without detaching
+        every service from it.
+      </p>
+    </div>
+    <div class="toy toy-static" id="network-toy">
+      <div class="term">
+        <div class="term-bar"><span class="term-title">Network "db": address and MTU check</span></div>
+        <pre>⚠ 10.0.1.0/24 contains host IPs: 10.0.1.2 (node-1), 10.0.1.3 (node-2)
+⚠ frames of 1500 bytes (1450 inside the overlay) do not fit a
+  1450-byte underlay: the packets that exceed it are dropped
+  without an error
+
+<span class="c-dim">→ suggested subnet 10.40.0.0/24 — clear of 3 node address(es),
+  the configured underlay, 11 existing network(s)
+→ set MTU 1450 (the underlay's own), which gives containers 1400 bytes</span>
+
+Create anyway?</pre>
       </div>
     </div>
   </article>
