@@ -287,9 +287,15 @@ node-4  Up 3 days <span class="c-aqua">(healthy)</span></pre>
       Exec by itself is no longer rare — Portainer and Komodo have it in the browser,
       <a href="https://github.com/jr-k/d4s">d4s</a> over an SSH tunnel, and
       <a href="https://github.com/Eldara-Tech/swarmcli">swarmcli</a>'s Business Edition
-      behind an mTLS proxy. These four have not turned up in any of them, nor in Swarmpit,
-      Arcane or Dockhand.
+      behind an mTLS proxy. None of them, and neither Swarmpit, Arcane nor Dockhand,
+      has turned up with any of these:
     </p>
+    <ol class="band-four">
+      <li>a diff that compares what would change, not how it is spelled;</li>
+      <li>a security scan of a service spec, before anything is created;</li>
+      <li>a log stream that survives the container being replaced;</li>
+      <li>a warning before a new overlay collides with the network the nodes are already on.</li>
+    </ol>
   </div>
 
   <!-- 1 · stack diff -->
