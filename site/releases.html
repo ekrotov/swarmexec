@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="/fonts/fonts.css?v=__VERSION__">
   <link rel="stylesheet" href="/docs.css?v=__VERSION__">
   <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+  <link rel="preconnect" href="https://stats.cloud-surfers.net" crossorigin>
   <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>
@@ -81,6 +82,12 @@
         fallback: 'Release notes are available on GitLab.'
       };
       var REPO = 'https://gitlab.logle.io/cs-public/swarm-remote-exec';
+      // Binaries come from the GitHub release, not from GitLab job artifacts:
+      // this GitLab loses artifacts when the instance is recreated, which is why
+      // the landing page, /docs/install and install.sh all point at GitHub. This
+      // page was the one that kept the old URLs, and every download button on it
+      // answered 404 — for every release, not just the old ones.
+      var GH = 'https://github.com/ekrotov/swarmexec/releases/download';
       var DL_FILES = [
         ['swarmexec-linux-amd64', 'Linux amd64', 'download-linux-amd64'],
         ['swarmexec-linux-arm64', 'Linux arm64', 'download-linux-arm64'],
@@ -202,7 +209,7 @@
         var html = '<div class="dl-title">' + esc(STR.downloads) + '</div><div class="links">';
         for (var i = 0; i < DL_FILES.length; i++) {
           var file = DL_FILES[i][0], label = DL_FILES[i][1], ev = DL_FILES[i][2];
-          var url = REPO + '/-/jobs/artifacts/' + v + '/raw/dist/' + encodeURIComponent(file) + '?job=build-cli';
+          var url = GH + '/' + v + '/' + encodeURIComponent(file);
           html += '<a class="btn" href="' + url + '" data-umami-event="' + ev + '"><span class="t">' + esc(label) +
                   '</span><span class="s">' + esc(file) + '</span></a>';
         }

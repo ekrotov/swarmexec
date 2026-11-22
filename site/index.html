@@ -51,6 +51,7 @@
 <link rel="stylesheet" href="fonts/fonts.css?v=__VERSION__">
 <link rel="stylesheet" href="landing.css?v=__VERSION__">
 <link rel="stylesheet" href="/nav.css?v=__VERSION__">
+<link rel="preconnect" href="https://stats.cloud-surfers.net" crossorigin>
 <script defer src="https://stats.cloud-surfers.net/script.js" data-website-id="893cf50d-6dad-4d27-b4a9-dd700aade9ff"></script>
 </head>
 <body>
@@ -176,7 +177,9 @@
         </div>
       </div>
 
-      <div class="console" id="console" aria-label="Terminal output">
+      <!-- role="group" because aria-label is prohibited on a div with no role:
+           without one the label is simply dropped by screen readers. -->
+      <div class="console" id="console" role="group" aria-label="Terminal output">
         <div class="con-block">
           <p class="con-h">manager · task list for web</p>
           <pre>web.1   node-2   <span class="c-aqua">running</span>

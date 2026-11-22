@@ -13,6 +13,9 @@
   --rule:    #c4ccc7;
   --wire:    #a8b3ae;
   --aqua:    #0a7680;
+  /* --aqua as TEXT on a tinted cell is 4.08:1; this is the same hue, dark
+     enough to read. In dark mode the two are the same colour again. */
+  --aqua-ink: #076068;
   --amber:   #9c5300;
   --red:     #b3261e;
   --yellow:  #7a6100;
@@ -22,7 +25,7 @@
   --term:    #142022;
   --term-2:  #1c2b2d;
   --t-ink:   #d5e1dd;
-  --t-dim:   #7f928d;
+  --t-dim:   #8b9e99;
   --t-aqua:  #55d3db;
   --t-amber: #f2a541;
   --t-red:   #ff7b6f;
@@ -49,6 +52,7 @@
     --rule:    #29403f;
     --wire:    #37504f;
     --aqua:    #52cfd8;
+    --aqua-ink: #52cfd8;
     --amber:   #f0a13a;
     --red:     #ff6b5e;
     --yellow:  #e3c04a;
@@ -273,6 +277,10 @@ main { display: block; }
 @media (min-width: 980px) { .claim { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); } }
 .claim-text { max-width: 36em; }
 .claim-cmd { font: 500 .88rem/1.3 var(--mono); color: var(--ink-2); margin: 0 0 .7rem; overflow-wrap: anywhere; }
+/* .c-dim is a terminal colour. Inside a claim line it sits on --paper, where
+   it measured 2.8:1 — the worst contrast on the page. --muted is the token
+   for de-emphasised text on paper and reads at 4.6:1. */
+.claim-cmd .c-dim { color: var(--muted); }
 .p { color: var(--aqua); }
 .claim h3 {
   font-family: var(--display); font-variation-settings: "wdth" 78; font-weight: 700;
@@ -392,7 +400,7 @@ main { display: block; }
 .compare tbody th { font-weight: 600; color: var(--ink); max-width: 16em; }
 .compare td { color: var(--ink-2); }
 .compare .us { background: color-mix(in srgb, var(--aqua) 9%, transparent); }
-.compare thead .us { color: var(--aqua); }
+.compare thead .us { color: var(--aqua-ink); }
 .compare tr.against th::after { content: " ←"; color: var(--amber); }
 .compare b, .footnote b { font-weight: 700; margin-right: .15rem; }
 .m-y { color: var(--aqua); } .m-n { color: var(--red); } .m-p { display: inline-block; width: .78em; height: .78em; border: 2px solid var(--amber); border-radius: 50%; background: linear-gradient(90deg, var(--amber) 50%, transparent 50%); vertical-align: -.08em; } .m-u { color: var(--muted); }
