@@ -21,6 +21,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"swarmexec/client/internal/agentcall"
+	"swarmexec/client/internal/agentdeploy"
+	"swarmexec/client/internal/clockskew"
 	"swarmexec/client/internal/clusterread"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/logfmt"
@@ -1159,8 +1161,14 @@ type mcpDoctor struct {
 	Proto   string          `json:"proto"`
 	Manager string          `json:"manager"`
 	Nodes   []mcpDoctorNode `json:"nodes"`
-	Healthy bool            `json:"healthy"`
-	Problem string          `json:"problem,omitempty"`
+	// SpecDrift is how the deployed agent service differs from the one `init`
+	// writes, with the hint beside it. The CLI reports this; an assistant
+	// reading the cluster through MCP would otherwise be told "healthy" about
+	// the one fault that looks healthy from the outside.
+	SpecDrift []agentdeploy.Finding `json:"spec_drift,omitempty"`
+	DriftHint string                `json:"spec_drift_hint,omitempty"`
+	Healthy   bool                  `json:"healthy"`
+	Problem   string                `json:"problem,omitempty"`
 }
 
 type mcpDoctorNode struct {
@@ -1168,6 +1176,11 @@ type mcpDoctorNode struct {
 	Agent   string `json:"agent"`
 	Version string `json:"version,omitempty"`
 	Proto   string `json:"proto,omitempty"`
+	// Clock is this node's clock against the machine running the MCP server,
+	// signed; empty for an agent too old to report one. ClockOff marks drift
+	// past clockskew.Warn, so a reader does not re-derive the threshold.
+	Clock    string `json:"clock,omitempty"`
+	ClockOff bool   `json:"clock_off,omitempty"`
 }
 
 func (s *Server) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error) {
@@ -1189,12 +1202,24 @@ func (s *Server) toolDoctor(ctx context.Context, in mcpCtxIn) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if svc := swarmops.AgentService(ctx, c.dcli); svc != nil {
+		if out.SpecDrift = agentdeploy.Drift(*svc); len(out.SpecDrift) > 0 {
+			out.DriftHint, out.Healthy = agentdeploy.DriftHint, false
+		}
+	}
 	for _, r := range ac.Versions(ctx, nodes, s.connectTimeout) {
 		st, ver, proto, ok := clusterread.ClassifyNode(r, s.opts.ClientVersion, s.opts.ClientProto)
 		if !ok {
 			out.Healthy = false
 		}
-		out.Nodes = append(out.Nodes, mcpDoctorNode{Node: r.Node.Name, Agent: st, Version: ver, Proto: proto})
+		node := mcpDoctorNode{
+			Node: r.Node.Name, Agent: st, Version: ver, Proto: proto,
+			Clock: r.Clock.String(), ClockOff: r.Clock.Beyond(clockskew.Warn),
+		}
+		if node.ClockOff {
+			out.Healthy = false
+		}
+		out.Nodes = append(out.Nodes, node)
 	}
 	return jsonText(out)
 }

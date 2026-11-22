@@ -488,6 +488,15 @@ that send the live read buffer are non-conformant.
   action and is answered to every caller that passed transport authentication
   (mTLS or the shared secret), so `doctor` and skew detection work even for an
   identity a policy denies everything else, including a `deny: ["*"]` rule.
+- `VersionResponse.now` is the node's wall clock at the moment the handler ran,
+  RFC3339 with nanoseconds, UTC. An agent MUST read it inside the handler, not
+  at dial or in an interceptor: every millisecond between reading it and
+  sending it is indistinguishable from drift at the other end. An agent that
+  does not implement the field sends `""`, which a client MUST read as
+  *unknown* and MUST NOT render as zero drift. A client MUST measure against
+  the midpoint of its own send/receive pair and MUST NOT report drift that half
+  the round trip alone could explain; the reference client warns from two
+  seconds of unexplained difference.
 - Both binaries SHOULD expose `--version` and log the protocol/proto version on
   startup.
 - New RPCs are added within `swarmexec/v1`, so a cluster may run agents older
@@ -576,3 +585,14 @@ review, then broke `swarmexec init` against every cluster.
   same spec: it binds with `-listen` and attaches an overlay network where
   `swarmexec init` publishes `-port` in host mode. Both are valid deployments;
   only the vocabulary above is normative.
+- The deployed service is checked against that vocabulary. `doctor` reads the
+  agent service from the manager and reports, as *spec drift*, a service that
+  lacks the socket mount, the read-only `/sys` mount
+  (`deploy.HostSysfsPath` → `deploy.HostSysfsMount`), credentials of any kind,
+  global mode, `restart: any` or `update: stop-first`. Those are the facts a
+  deployment MUST carry under either model above. Everything the operator
+  chooses — image, ports, policy, service name, prune-schedule labels — is NOT
+  drift, and a client MUST NOT report it as such: a diagnosis that calls a
+  decision a defect is one people learn to skip. The check exists because
+  reachability and version agree on a stale spec: four clusters ran without the
+  `/sys` mount for a release and every other check passed.

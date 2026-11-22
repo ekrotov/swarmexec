@@ -21,7 +21,7 @@ import (
 
 func version(t *testing.T, ac *Client, n resolve.Node) {
 	t.Helper()
-	if _, _, err := ac.Version(context.Background(), n, testTimeout); err != nil {
+	if _, _, _, err := ac.Version(context.Background(), n, testTimeout); err != nil {
 		t.Fatalf("version on %s: %v", n.Name, err)
 	}
 }
@@ -185,7 +185,7 @@ func TestPoolDoesNotCacheFailures(t *testing.T) {
 	defer ac.Close()
 	fc.setDown("node-a", true)
 	start := time.Now()
-	if _, _, err := ac.Version(context.Background(), fc.nodes[0], 10*time.Second); err == nil {
+	if _, _, _, err := ac.Version(context.Background(), fc.nodes[0], 10*time.Second); err == nil {
 		t.Fatal("a refused node should fail")
 	}
 	if took := time.Since(start); took > 5*time.Second {

@@ -296,6 +296,15 @@ message VersionRequest {}
 message VersionResponse {
   string version = 1;        // agent build version
   string proto_version = 2;  // wire protocol version
+
+  // now is the node's wall clock when the agent answered (RFC3339 with
+  // nanoseconds), so a client can measure the node's clock against its own.
+  // Clock drift between nodes is what makes certificate lifetimes and
+  // correlated logs lie, and nothing else in this protocol reveals it.
+  //
+  // An agent older than this field sends "", which means "unknown" and never
+  // "no drift": a client must say so rather than report a zero offset.
+  string now = 3;
 }
 
 message StatsRequest {

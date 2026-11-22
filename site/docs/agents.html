@@ -183,6 +183,32 @@
         only, it does not change the exit code; see
         <a href="/docs/configuration#check-updates"><code>ui.check_updates</code></a>.
       </p>
+      <p>
+        It also compares the <strong>deployed agent service against the spec
+        <code>init</code> writes</strong>. A cluster whose service is missing a mount, a
+        secret or the global mode gets a <code>spec:</code> block
+        (<code>spec_drift</code> in <code>--json</code>) naming each difference, and
+        exits non-zero — a reachable agent of the right version is exactly what a spec
+        from an older swarmexec looks like from the outside, so nothing else catches it.
+        The fix is <code>swarmexec init --force</code>, which rebuilds the service from
+        flags and therefore drops anything edited into it by hand. What the operator
+        chose — image, ports, policy, prune-schedule labels — is never reported, and
+        neither are the mTLS credentials of an agent deployed from
+        <code>agent-stack.yml</code> instead of <code>init</code>.
+      </p>
+      <p>
+        Finally, each node's agent reports its own clock, and a
+        <code>CLOCK</code> column (<code>clock</code> in <code>--json</code>) shows how
+        far it is from the machine running <code>doctor</code> — signed, so
+        <code>+3s</code> is a node running ahead. Half the round trip is subtracted
+        before anything is judged, so a slow link is never reported as drift; past
+        <strong>2&nbsp;seconds</strong> of real difference the node is marked
+        <code>⚠</code> and the command exits non-zero, because from there certificate
+        lifetimes and timestamps correlated across nodes stop meaning what they say.
+        An agent released before this check (anything up to v1.31.1) reports no time:
+        the column is then left out entirely rather than filled with a zero nobody
+        measured, so the drift stays invisible until the agents are rolled forward.
+      </p>
       <div class="cmd">swarmexec doctor</div>
       <div class="tablewrap"><table>
         <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>

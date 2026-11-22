@@ -155,7 +155,7 @@ func TestNodeFailuresStayPerNode(t *testing.T) {
 
 	// An agent that goes away is reported as unreachable, not as an answer.
 	fc.stop("node-a")
-	if _, _, err := ac.Version(ctx, fc.nodes[0], testTimeout); err == nil {
+	if _, _, _, err := ac.Version(ctx, fc.nodes[0], testTimeout); err == nil {
 		t.Error("a stopped agent should not answer")
 	}
 }

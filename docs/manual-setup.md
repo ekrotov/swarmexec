@@ -36,7 +36,13 @@ just work.
 > `init` to provision it. To diagnose the whole swarm (manager reachable, agent
 > deployed, each node's agent reachability + version), run **`swarmexec doctor`**
 > — it flags nodes whose agent is unreachable or too old (run
-> `swarmexec init --force` to update those).
+> `swarmexec init --force` to update those). It also compares the deployed
+> agent service against the spec `init` writes and reports what is missing, and
+> shows each node's clock against your own — a node more than two seconds out
+> is marked, because that is where certificate lifetimes and log timestamps
+> start to mislead. A service deployed from the stack files below is not
+> reported for the ways it legitimately differs (overlay network, `-listen`,
+> mTLS secrets).
 
 The manual paths below give you full control (mTLS, custom stack) if you prefer.
 

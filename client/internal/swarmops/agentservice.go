@@ -71,23 +71,35 @@ func IsAgentImage(image string) bool {
 		strings.Contains(image, "swarm-remote-exec/agent")
 }
 
+// AgentService returns the deployed agent service, or nil when none is found.
+// It looks by role label first and falls back to the image, the same two
+// signals in the same order as AgentDeployed — a cluster deployed before the
+// label existed, or by hand from the stack file, is still recognized.
+func AgentService(ctx context.Context, dcli ServiceLister) *swarm.Service {
+	if list, err := dcli.ServiceList(ctx, client.ServiceListOptions{
+		Filters: make(client.Filters).Add("label", deploy.RoleLabel+"="+deploy.RoleAgent),
+	}); err == nil && len(list.Items) > 0 {
+		return &list.Items[0]
+	}
+	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
+	if err != nil {
+		return nil
+	}
+	list := listRes.Items
+	for i := range list {
+		if cs := list[i].Spec.TaskTemplate.ContainerSpec; cs != nil && IsAgentImage(cs.Image) {
+			return &list[i]
+		}
+	}
+	return nil
+}
+
 // AgentServiceImage returns the image (including any pinned @sha256 digest) of
 // the deployed agent service, or "" if none is found.
 func AgentServiceImage(ctx context.Context, dcli ServiceLister) string {
-	if list, err := dcli.ServiceList(ctx, client.ServiceListOptions{
-		Filters: make(client.Filters).Add("label", deploy.RoleLabel+"="+deploy.RoleAgent),
-	}); err == nil && len(list.Items) > 0 && list.Items[0].Spec.TaskTemplate.ContainerSpec != nil {
-		return list.Items[0].Spec.TaskTemplate.ContainerSpec.Image
-	}
-	listRes, err := dcli.ServiceList(ctx, client.ServiceListOptions{})
-	list := listRes.Items
-	if err != nil {
+	svc := AgentService(ctx, dcli)
+	if svc == nil || svc.Spec.TaskTemplate.ContainerSpec == nil {
 		return ""
 	}
-	for _, s := range list {
-		if cs := s.Spec.TaskTemplate.ContainerSpec; cs != nil && IsAgentImage(cs.Image) {
-			return cs.Image
-		}
-	}
-	return ""
+	return svc.Spec.TaskTemplate.ContainerSpec.Image
 }
