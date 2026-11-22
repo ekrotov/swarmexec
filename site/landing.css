@@ -386,7 +386,10 @@ main { display: block; }
 .vs-label { margin: 0 0 .35rem; font: 500 .78rem/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .vs-after .vs-label { color: var(--aqua); }
 .vs-more { display: inline-block; margin-top: .5rem; font: 500 .82rem/1.3 var(--mono); color: var(--aqua); }
-.vs-before .sh { opacity: .85; }
+/* .90, not .85: opacity fades the block into --paper, so it lifts the text
+   AND the background toward each other. At .85 the dim text landed on
+   4.48:1 — just under. This keeps the washed-out look and clears 4.9:1. */
+.vs-before .sh { opacity: .9; }
 .vs-shot { margin-top: 2rem; max-width: 860px; }
 
 /* compare */
