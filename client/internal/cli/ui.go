@@ -21,6 +21,7 @@ import (
 	"swarmexec/client/internal/config"
 	"swarmexec/client/internal/dockerctx"
 	"swarmexec/client/internal/endpoint"
+	"swarmexec/client/internal/imageref"
 	"swarmexec/client/internal/portfwd"
 	"swarmexec/client/internal/resolve"
 	"swarmexec/client/internal/secscan"
@@ -908,8 +909,22 @@ func progressCount(s resolve.Service) string {
 // frame and 10 for the next, and everything to the right of it jumps four
 // columns, twice a minute, forever. See growTo.
 type svcColumns struct {
-	name, mode, repl, image int
+	name, mode, repl, image, ports, health int
 }
+
+// svcImageMax caps the image cell. The width of every other column is set by
+// something the cluster shapes gently — a service name, a replica count — but
+// an image reference is a URL an operator can make as long as they like, and
+// ONE of them sets the column for every row. At 72 columns, which a registry
+// path with a nested namespace reaches easily, the ports and the resource
+// readings of every service were pushed off the right edge of the view,
+// underneath the context sidebar.
+//
+// 44 columns fit "registry.example.com/group/app:v1.2.3" whole; past that
+// imageref.Elide drops the namespace and marks the cut. The full reference is
+// still one keypress away in inspect, which is where a reference that long is
+// actually read.
+const svcImageMax = 44
 
 // svcColumnFloors are the minimum widths, so the first frame is not narrower
 // than the second and then visibly settles.
@@ -929,13 +944,26 @@ func (c *svcColumns) growTo(other svcColumns) {
 	c.mode = max(c.mode, max(other.mode, svcColumnFloors.mode))
 	c.repl = max(c.repl, max(other.repl, svcColumnFloors.repl))
 	c.image = max(c.image, max(other.image, svcColumnFloors.image))
+	c.ports = max(c.ports, max(other.ports, svcColumnFloors.ports))
+	c.health = max(c.health, max(other.health, svcColumnFloors.health))
 }
 
 // serviceRow renders a service group node like a docker service ls line —
-// "name  mode  running/desired  image  ports", or completed/total for a job —
-// padded to the shared column widths. Image and ports are appended only when present, and trailing padding
-// is trimmed so a selected row's highlight does not run past the text.
-func serviceRow(s resolve.Service, c svcColumns, imageSuffix, usage string) string {
+// "name  mode  running/desired  image  ports  health  cpu  mem", or
+// completed/total for a job — padded to the shared column widths.
+//
+// EVERY cell is padded, including the ones that are often empty, because the
+// readings at the end of the row are read down the screen. Ports and the
+// health marker used to be appended at whatever length they happened to have,
+// so a service without published ports carried its CPU figure thirty columns
+// left of the service above it. A column that moves per row is not a column.
+//
+// The update badge is the one thing still appended raw, at the very end: it is
+// transient by definition, and nothing is lined up behind it.
+//
+// Trailing padding is trimmed, so a row that fills none of the optional cells
+// ends at its text and a selected row's highlight does not run past it.
+func serviceRow(s resolve.Service, c svcColumns, imageSuffix, health, usage string) string {
 	var b strings.Builder
 	// The security marker leads the row, in a fixed-width slot every service
 	// occupies, so the shields form a vertical scan column and the name column
@@ -947,14 +975,32 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix, usage string) stri
 	if c.image > 0 {
 		// The resolved-version / ↑ annotation sits inside the image cell so it
 		// reads right next to the image URI, not far off in the ports column.
-		fmt.Fprintf(&b, "  %-*s", c.image, dockerfmt.OrDash(s.Image)+imageSuffix)
+		fmt.Fprintf(&b, "  %-*s", c.image, imageCell(s.Image, imageSuffix))
 	}
-	if s.Ports != "" {
-		fmt.Fprintf(&b, "  %s", s.Ports)
+	// Width 0 means the caller measured no ports; the cell is then printed
+	// unpadded rather than dropped, so a row still shows what it has while the
+	// column is settling.
+	if c.ports > 0 || s.Ports != "" {
+		fmt.Fprintf(&b, "  %-*s", c.ports, s.Ports)
 	}
-	// The update and resource badges are appended last (after the padded columns
-	// are trimmed) so their tags never disturb the column alignment.
-	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState) + usage
+	if c.health > 0 || health != "" {
+		// Health leads the readings: it is the marker that contradicts the
+		// running/desired count further left, and it should not sit behind the
+		// resource numbers. It gets a column of its own rather than being
+		// appended, so the numbers behind it do not move when a service turns
+		// unhealthy. The column is zero wide while nothing in the cluster has
+		// a health verdict to report, which is the usual case.
+		b.WriteString("  " + pad(health, c.health))
+	}
+	b.WriteString(usage)
+	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState)
+}
+
+// imageCell is the image reference as the column shows it: shortened to
+// svcImageMax, with the version annotation appended. Width calculation and
+// rendering both go through it, so they cannot disagree about what is drawn.
+func imageCell(image, suffix string) string {
+	return dockerfmt.OrDash(imageref.Elide(image, svcImageMax)) + suffix
 }
 
 // securityBadgeWidth is the fixed leading slot every service row reserves for

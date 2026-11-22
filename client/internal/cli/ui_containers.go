@@ -294,7 +294,8 @@ func (t *treeTab) markService(n *tview.TreeNode) {
 		return
 	}
 	svc := st.byName[ref.name]
-	row := serviceRow(svc, st.cols, t.versionSuffixFor(svc), t.svcUsageBadge(ref.name))
+	health, usage := t.svcBadges(ref.name)
+	row := serviceRow(svc, st.cols, t.versionSuffixFor(svc), health, usage)
 	switch {
 	case len(n.GetChildren()) == 0:
 		n.SetText("  " + row)
@@ -365,6 +366,25 @@ func (t *treeTab) measure(st *treeState) {
 		st.byName[s.Name] = s
 	}
 	st.cols.growTo(serviceWidths(st.svcs, t.versionSuffixFor))
+	t.growHealthColumn(st)
+}
+
+// growHealthColumn widens the health column to fit the markers the readings
+// currently produce.
+//
+// It is not part of serviceWidths because that measures the services alone,
+// and whether a service is unhealthy is not a property of its spec: it is a
+// reading that lands after the tree is drawn and changes between refreshes.
+// Hence also the call from remarkUsage — a service that turns unhealthy
+// between measurements still has to be able to claim its column.
+func (t *treeTab) growHealthColumn(st *treeState) {
+	w := 0
+	for _, s := range st.svcs {
+		if h, _ := t.svcBadges(s.Name); h != "" {
+			w = max(w, tview.TaggedStringWidth(h))
+		}
+	}
+	st.cols.growTo(svcColumns{health: w})
 }
 
 // serviceWidths is the widest cell of each service-row column over svcs.
@@ -380,7 +400,8 @@ func serviceWidths(svcs []resolve.Service, suffix func(resolve.Service) string) 
 		// overflow its cell and shove that row's ports sideways — and since the
 		// registry cache re-checks a failed lookup every minute, the suffix could
 		// appear and vanish on its own.
-		w.image = max(w.image, len(s.Image)+len(suffix(s)))
+		w.image = max(w.image, tview.TaggedStringWidth(imageCell(s.Image, suffix(s))))
+		w.ports = max(w.ports, len(s.Ports))
 	}
 	return w
 }
@@ -521,7 +542,8 @@ func (t *treeTab) addStackNodes(svcs []resolve.Service, pos treePos, cur *treeCu
 // so does the one holding the container the cursor stood on.
 func (t *treeTab) addService(st *treeState, parent *tview.TreeNode, row shownService, leaves leafColumns, pos treePos, cur *treeCursor) {
 	s := row.svc
-	svcNode := tview.NewTreeNode(serviceRow(s, st.cols, "", t.svcUsageBadge(s.Name))).
+	svcHealth, svcUsage := t.svcBadges(s.Name)
+	svcNode := tview.NewTreeNode(serviceRow(s, st.cols, "", svcHealth, svcUsage)).
 		SetColor(t.svcColor(s)).
 		SetReference(svcRef{name: s.Name}).
 		SetExpanded(pos.svcFolds[s.Name])
@@ -972,22 +994,22 @@ func (u *ui) confirmKillTask(c resolve.Candidate, ep resolve.Endpoint) {
 	})
 }
 
-// svcUsageBadge is the resource marker for a service row: the worst reading
-// across its containers. Empty when nothing is known yet or nothing is hot.
-func (t *treeTab) svcUsageBadge(service string) string {
+// svcBadges is a service row's health marker and its resource readings — the
+// worst across its containers — kept apart because each lands in its own
+// column and a single string could not be padded into two.
+//
+// Both are empty when nothing is known yet or nothing is hot.
+func (t *treeTab) svcBadges(service string) (health, usage string) {
 	st := t.st()
 	u := t.u
 	if len(u.usage) == 0 {
-		return ""
+		return "", ""
 	}
-	// Health leads: it is the marker that contradicts the running/desired count
-	// standing right next to it, so it should not sit behind the resource
-	// numbers when the row is long.
-	badge := healthBadge(clusterread.HealthOf(u.usage, st.cands, service))
+	health = strings.TrimSpace(healthBadge(clusterread.HealthOf(u.usage, st.cands, service)))
 	if agg, ok := serviceUsage(u.usage, st.cands, service); ok {
-		badge += usageBadge(agg)
+		usage = usageBadge(agg)
 	}
-	return badge
+	return health, usage
 }
 
 // stackHealth folds the healthcheck verdicts of every container under a stack
@@ -1085,6 +1107,7 @@ func (u *ui) loadUsage() {
 func (t *treeTab) remarkUsage() {
 	st := t.st()
 	u := t.u
+	t.growHealthColumn(st)
 	t.root.Walk(func(n, parent *tview.TreeNode) bool {
 		switch ref := n.GetReference().(type) {
 		case svcRef:
