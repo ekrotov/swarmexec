@@ -280,8 +280,15 @@ swarmexec exec -u 1000:1000 -w /srv -e DEBUG=1 web -- env
   from a remote non-zero exit. Usage/flag errors exit with **2**; a wrong number
   of arguments also prints the command's usage line.
 
-## Non-goals (v1)
+## Non-goals
 
-No mesh routing, no PKI/cert issuance (certs are provided externally), no session
-multiplexing (one invocation = one session), and only best-effort Windows TTY
-handling. See [`REQUIREMENTS-client.md`](REQUIREMENTS-client.md) §10.
+Windows TTY handling is best-effort.
+
+**No longer a non-goal: connection reuse.** SSH connections are multiplexed over
+one control socket (`SWARMEXEC_SSH_MULTIPLEX=0` turns it off), agent connections
+are pooled and outlive a single RPC, and a port forward runs one sidecar for all
+its connections over a multiplexed stdio protocol.
+[`REQUIREMENTS-client.md`](REQUIREMENTS-client.md) §10 still rules this out —
+that file is the v1 specification, kept as history.
+
+The project-wide non-goals are in the [top-level README](../README.md#non-goals).

@@ -411,31 +411,14 @@ non-interactive, lists the candidates and exits).
 
 ## 5. Configuration reference
 
-### Agent flags (env var in parentheses)
+### Agent flags
 
-| Flag | Env | Default | Description |
-|------|-----|---------|-------------|
-| `-port` | `SWARMEXEC_PORT` | `9443` | gRPC listen port |
-| `-listen` | `SWARMEXEC_LISTEN` | *(from `-port`)* | full listen address; overrides `-port` when set, e.g. `:9443` |
-| `-ca-cert` | `SWARMEXEC_CA_CERT` | *(required)* | CA to verify client certs |
-| `-server-cert` | `SWARMEXEC_SERVER_CERT` | *(required)* | server certificate |
-| `-server-key` | `SWARMEXEC_SERVER_KEY` | *(required)* | server private key |
-| `-docker-host` | `SWARMEXEC_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon endpoint |
-| `-sysfs-path` | `SWARMEXEC_SYSFS_PATH` | `/host/sys` | where the host's sysfs is bind-mounted **read-only**, for the node's link MTUs. Empty disables it |
-| `-drain-timeout` | `SWARMEXEC_DRAIN_TIMEOUT` | `5s` | graceful-shutdown drain window |
-| `-idle-timeout` | `SWARMEXEC_IDLE_TIMEOUT` | `30m` (`0` = off) | per-session idle timeout |
-| `-max-session` | `SWARMEXEC_MAX_SESSION` | `12h` (`0` = off) | per-session max duration |
-| `-max-streams` | `SWARMEXEC_MAX_STREAMS` | `256` | concurrent streams (exec, logs, port-forward, event watches); negative = unlimited |
-| `-max-forward-sidecars` | `SWARMEXEC_MAX_FORWARD_SIDECARS` | `64` | live port-forward sidecar containers; negative = unlimited |
-| `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
-| `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json`/`text` |
-| `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout`/`stderr`/file path |
-| `-metrics-addr` | `SWARMEXEC_METRICS_ADDR` | *(off)* | Prometheus addr, e.g. `:9100` |
-| `-self-signed` | `SWARMEXEC_SELF_SIGNED` | `false` | generate a self-signed server cert at startup (no `-server-cert`/`-server-key` needed) |
-| `-cert-sans` | `SWARMEXEC_CERT_SANS` | — | extra SANs for the self-signed cert, e.g. `DNS:swarmexec-agent,IP:10.0.0.5` |
-| `-agent-secret` | `SWARMEXEC_AGENT_SECRET` | — | shared secret clients must present (value) |
-| `-agent-secret-file` | `SWARMEXEC_AGENT_SECRET_FILE` | — | read the shared secret from a file (e.g. a Docker secret) |
-| `--version` | — | — | print version and exit |
+The complete table — flag, environment variable, default and meaning for all of
+them — is in [`agent/README.md`](../agent/README.md#configuration), next to the
+code that defines them. It is the one place that is kept current; this page used
+to carry a second copy and it had drifted.
+
+On the site: <https://swarmshell.dev/docs/agents#flags>.
 
 ### Client: global flags + `exec` flags
 
