@@ -87,12 +87,13 @@ use the stack files in the project repository (`agent/deploy/`) and the docs.
 
 ## Configuration (agent)
 
-| Flag | Env | Default | Purpose |
-|------|-----|---------|---------|
-| `-listen` | `SWARMEXEC_LISTEN` | `:9443` | listen address |
-| `-log-level` | `SWARMEXEC_LOG_LEVEL` | `info` | `debug\|info\|warn\|error` |
-| `-log-format` | `SWARMEXEC_LOG_FORMAT` | `json` | `json\|text` |
-| `-audit-dest` | `SWARMEXEC_AUDIT_DEST` | `stdout` | `stdout\|stderr\|<file>` |
+Every flag has an environment-variable equivalent. The full table is at
+<https://swarmshell.dev/docs/agents#flags>.
+
+The four you are most likely to set here: `SWARMEXEC_LISTEN` (listen address,
+default `:9443`), `SWARMEXEC_LOG_LEVEL` (`debug|info|warn|error`, default
+`info`), `SWARMEXEC_LOG_FORMAT` (`json|text`, default `json`) and
+`SWARMEXEC_AUDIT_DEST` (`stdout|stderr|<file>`, default `stdout`).
 
 Operational and audit logs go to the container's stdout/stderr, so they land in
 your Docker log driver (`docker service logs swarmexec_agent`).

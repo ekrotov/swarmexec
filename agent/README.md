@@ -413,7 +413,10 @@ Certs are external; rotation is a redeploy:
 To rotate the **CA**, distribute a bundle CA (old + new) first, roll all
 server/client certs onto the new CA, then drop the old CA from the bundle.
 
-## Non-goals (v1)
+## Non-goals
 
-No agent-to-agent mesh, no web UI, no PKI bootstrap, no cross-node exec. See
-[`REQUIREMENTS-agent.md`](REQUIREMENTS-agent.md) §10.
+An agent serves **its own node only**. There is no exec into a container on
+another node, because that is the client's job: it asks the manager which node
+runs the target, then connects to that node's agent directly.
+
+The project-wide non-goals are in the [top-level README](../README.md#non-goals).

@@ -78,6 +78,13 @@ Docker socket mounted. The **client** asks the manager where the target runs and
 connects straight to that node's agent — there is no mesh between agents.
 [How it works →](https://swarmshell.dev/docs#model)
 
+## Non-goals
+
+No mesh between agents, no web UI, and no PKI bootstrap: certificates come from
+your own CA, or the agent self-signs and clients authenticate with a shared
+secret instead. Each half has its own limits —
+[agent](agent/README.md#non-goals), [client](client/README.md#non-goals).
+
 ## Documentation
 
 The full documentation lives at **[swarmshell.dev/docs](https://swarmshell.dev/docs)**:
