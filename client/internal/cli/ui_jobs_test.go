@@ -60,7 +60,7 @@ func TestProgressColor(t *testing.T) {
 
 func TestServiceRowRendersAJobsCompletions(t *testing.T) {
 	cols := svcColumns{name: 6, mode: 14, repl: 3}
-	got := serviceRow(job("backup", 3, 3, 0), cols, "", "")
+	got := serviceRow(job("backup", 3, 3, 0), cols, "", "", "")
 	if !strings.Contains(got, "3/3") {
 		t.Errorf("serviceRow(job) = %q, want the completion count 3/3", got)
 	}

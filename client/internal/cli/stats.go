@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"swarmexec/client/internal/agentcall"
 	"swarmexec/client/internal/clusterread"
@@ -83,17 +84,50 @@ func usageColor(l usageLevel) string {
 // crossed the warning threshold, each with its own colour. Empty below the
 // threshold, and empty for CPU while the agent has only taken one reading —
 // "not measured yet" must not look like "fine".
+// usageSlot is the width of one reading ("cpu 100%"), and every row reserves
+// both slots whether it fills them or not.
+//
+// Only a reading past the warn threshold is shown, so a service that is busy
+// on memory and idle on CPU prints one marker. Appending the markers that
+// happen to exist put that lone "mem 87%" exactly where every other row
+// carries its CPU figure, and the column stopped meaning anything — the two
+// are read down the screen, not across one line.
+const usageSlot = len("cpu 100%")
+
+// usageBadge renders a container's CPU and memory readings into those two
+// fixed slots. Both empty is still the empty string: a quiet service gets no
+// trailing whitespace and no highlight running past its text.
 func usageBadge(u containerUsage) string {
-	var b strings.Builder
-	if u.CPUReady {
-		if c := usageColor(levelOf(u.CPURatio)); c != "" {
-			fmt.Fprintf(&b, "  [%s]%s %s[-]", c, cpuGlyph, clusterread.FormatRatio(u.CPURatio))
-		}
+	cpu := usageCell(u.CPUReady, u.CPURatio, cpuGlyph)
+	mem := usageCell(true, u.MemRatio, memGlyph)
+	if cpu == "" && mem == "" {
+		return ""
 	}
-	if c := usageColor(levelOf(u.MemRatio)); c != "" {
-		fmt.Fprintf(&b, "  [%s]%s %s[-]", c, memGlyph, clusterread.FormatRatio(u.MemRatio))
+	return strings.TrimRight("  "+pad(cpu, usageSlot)+"  "+pad(mem, usageSlot), " ")
+}
+
+// usageCell is one reading, or "" when there is nothing to report — no
+// reading yet, or one below the warn threshold.
+func usageCell(ready bool, ratio float64, glyph string) string {
+	if !ready {
+		return ""
 	}
-	return b.String()
+	c := usageColor(levelOf(ratio))
+	if c == "" {
+		return ""
+	}
+	return fmt.Sprintf("[%s]%s %s[-]", c, glyph, clusterread.FormatRatio(ratio))
+}
+
+// pad widens a cell to w columns, counting what the terminal shows rather than
+// what the string holds: these cells carry tview colour tags, and %-*s would
+// pad by the tags' bytes and leave the column ragged. tview measures it with
+// the same function it draws it with.
+func pad(cell string, w int) string {
+	if n := tview.TaggedStringWidth(cell); n < w {
+		return cell + strings.Repeat(" ", w-n)
+	}
+	return cell
 }
 
 // serviceUsage folds a service's containers into one reading for its row: the
