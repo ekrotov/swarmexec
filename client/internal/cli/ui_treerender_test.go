@@ -103,7 +103,7 @@ func TestServiceWidthsMeasureTheSuffixedImage(t *testing.T) {
 		}
 		return ""
 	}
-	w := serviceWidths(svcs, suffix)
+	w := serviceWidths(svcs, suffix, svcImageMax)
 	// COLUMNS, not bytes. The arrow is three bytes and one column, and the
 	// cell is padded with %-*s, which counts runes — so measuring with len()
 	// claimed two columns the row never used and left a two-space gap in the
@@ -126,11 +126,11 @@ func TestServiceWidthsCapTheImageColumn(t *testing.T) {
 		{Name: "web", Mode: "replicated", Image: "nginx:1.27"},
 		{Name: "api", Mode: "replicated", Image: "registry.example.com/platform/team/backend/api-server:v2.14.3-rc1"},
 	}
-	w := serviceWidths(svcs, func(resolve.Service) string { return "" })
+	w := serviceWidths(svcs, func(resolve.Service) string { return "" }, svcImageMax)
 	if w.image > svcImageMax {
 		t.Errorf("image column = %d, want at most %d", w.image, svcImageMax)
 	}
-	row := serviceRow(svcs[1], w, "", "", "")
+	row := serviceRow(svcs[1], w, svcImageMax, "", "", "")
 	if !strings.Contains(row, "api-server:v2.14.3-rc1") {
 		t.Errorf("row = %q, want the repository and tag kept", row)
 	}

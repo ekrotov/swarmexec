@@ -108,6 +108,7 @@
         <p class="th">On this page</p>
         <ol>
           <li><a href="#tui-rows">Service rows</a></li>
+          <li><a href="#tui-image">Long image references</a></li>
           <li><a href="#tui-jobs">Jobs</a></li>
           <li><a href="#tui-health">Healthcheck colours</a></li>
           <li><a href="#tui-usage">Live CPU &amp; memory</a></li>
@@ -130,6 +131,33 @@
         coloured badge on its tree row — <span class="tc-yellow">⟳&nbsp;updating</span> or
         <span class="tc-amber">↺&nbsp;rolling&nbsp;back</span> — and the same status appears
         in the service inspect overlay; it clears once the update completes.
+      </p>
+
+      <h2 id="tui-image">Long image references</h2>
+      <p>
+        An image reference is the one cell nothing in the cluster keeps short — it is a
+        URL an operator writes, and <strong>one</strong> long one sets the column for every
+        row. So the cell stops at <strong>44 columns</strong>, which fits
+        <code>registry.example.com/group/app:v1.2.3</code> whole; past that the reference is
+        shortened and the cut is marked with <code>…</code>. What goes first is the part
+        that distinguishes least: the digest's hex (down to twelve characters, the length
+        an id is shown at everywhere else), then the namespace between the registry and the
+        repository, then the registry. <strong>The tag is never cut</strong> — it says which
+        version is running, and half a tag still looks like a whole one.
+      </p>
+      <p>
+        <strong><kbd>D</kbd> shows every reference whole instead</strong> — registry,
+        namespace and the full digest — and the columns widen to fit. Press it again and
+        they narrow back. That is the switch for a <strong>digest-pinned</strong> service,
+        whose hex is the whole point of the reference and is exactly what a shortened cell
+        has to drop; before, the only place to read it was the inspect overlay's
+        <a href="/docs/tui-services-inspect#tui-inspect">raw JSON</a> (<kbd>i</kbd> then
+        <kbd>3</kbd>), which still shows it. It is a view setting, not a cluster one: it
+        applies to every context in the session and resets when you leave the UI.
+        Remappable as <code>image_full</code> in
+        <a href="/docs/tui#tui-keys">keys.yaml</a>. It is <strong>not</strong> bound to
+        lowercase <kbd>d</kbd>, which used to delete and may still be bound that way in
+        your own <code>keys.yaml</code>.
       </p>
 
       <h2 id="tui-jobs">Jobs</h2>

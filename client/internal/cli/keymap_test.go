@@ -247,10 +247,13 @@ func TestLoadKeybinds_OldDBindingStillWorks(t *testing.T) {
 }
 
 // The tree's remove key is a keymap action like the other deletes (T-15).
+//
+// W is only "some free key on the containers tab" here; it used to be D, which
+// image_full now defaults to.
 func TestLoadKeybinds_ServiceRemove(t *testing.T) {
-	km, warns := loadKeybinds(writeKeys(t, "service_remove: D\n"))
-	if len(warns) != 0 || km.ServiceRemove != 'D' {
-		t.Errorf("service_remove: D → %q, warnings %v", km.ServiceRemove, warns)
+	km, warns := loadKeybinds(writeKeys(t, "service_remove: W\n"))
+	if len(warns) != 0 || km.ServiceRemove != 'W' {
+		t.Errorf("service_remove: W → %q, warnings %v", km.ServiceRemove, warns)
 	}
 	km, warns = loadKeybinds(writeKeys(t, "service_remove: E\n"))
 	if len(warns) != 1 || km.ServiceRemove != 'X' {

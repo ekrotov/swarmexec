@@ -363,7 +363,7 @@ quit: q          refresh: r        copy: y            toggle_mouse: m
 activity: e
 search: /        fold: h           unfold: l          forward: p
 container_inspect: i   logs: L      security_risks: "!"   <span class="o"># "!" must be quoted — YAML</span>
-stack_group: s   stack_file: E     service_remove: X
+stack_group: s   stack_file: E     service_remove: X   image_full: D
 volume_select: space               volume_select_all: a
 volume_delete: X volume_prune: P   volume_used_by: i
 volume_attach: A volume_sort: s     volume_sort_reverse: S    volume_new: n
@@ -375,7 +375,7 @@ forward_stop: X  forward_copy_url: o</div>
       <p>
         The destructive keys — <code>service_remove</code> (a service or a whole stack, from the tree), <code>volume_delete</code>, <code>secret_delete</code>, <code>context_delete</code> and <code>forward_stop</code> — default to capital <kbd>X</kbd>, and the footer and the <kbd>?</kbd> overlay draw them in <span class="tc-red">red</span>, whatever key you bind them to. The fixed <kbd>d</kbd> that <em>detaches</em> a network
         or secret from a service (members view, secret detail) is red too: it reads like
-        bookkeeping and is a rolling update. The four delete keys used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work.
+        bookkeeping and is a rolling update. The four delete keys used to default to <kbd>d</kbd>; if your fingers want it back, bind it in <code>keys.yaml</code> — <code>volume_delete: d</code> and the others still work. That is also why <code>image_full</code>, the tree's <em>show the whole image reference, digest and all</em> key, defaults to capital <kbd>D</kbd> and not to <kbd>d</kbd>: no default binding takes that key any more.
       </p>
       <p>
         Loading never fails: an invalid or reserved key, an unknown action, or two

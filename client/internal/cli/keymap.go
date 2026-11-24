@@ -24,7 +24,7 @@ type keybinds struct {
 	// containers + volumes
 	Search rune
 	// containers
-	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup, StackFile, ServiceRemove rune
+	Fold, Unfold, Forward, ContainerInspect, Logs, SecurityRisks, StackGroup, StackFile, ServiceRemove, ImageFull rune
 	// volumes
 	VolSelect, VolSelectAll, VolDelete, VolPrune, VolUsedBy, VolSort, VolSortRev, VolAttach, VolNew rune
 	// networks
@@ -72,6 +72,16 @@ var keyActions = []keyAction{
 	{"logs", []string{"containers"}, 'L', func(k *keybinds) *rune { return &k.Logs }},
 	{"security_risks", []string{"containers"}, '!', func(k *keybinds) *rune { return &k.SecurityRisks }},
 	{"stack_group", []string{"containers"}, 's', func(k *keybinds) *rune { return &k.StackGroup }},
+	// Capital D = digests. The image cell stops at svcImageMax and marks the
+	// cut with an ellipsis; this shows the reference whole — registry,
+	// namespace and the full digest.
+	//
+	// NOT lowercase d, however well it would read: d was the delete key before
+	// X took over, a keys.yaml may still bind it that way, and no default
+	// binding takes it any more (TestDefaultKeybinds_DestructiveActionsUseX).
+	// An operator whose fingers still reach for d must not find a new action
+	// under it.
+	{"image_full", []string{"containers"}, 'D', func(k *keybinds) *rune { return &k.ImageFull }},
 	// Capital E: the stack-file actions are one gesture away from the tree, and
 	// a capital keeps them clear of the single-letter navigation keys.
 	{"stack_file", []string{"containers"}, 'E', func(k *keybinds) *rune { return &k.StackFile }},

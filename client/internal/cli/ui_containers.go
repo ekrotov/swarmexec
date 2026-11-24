@@ -39,6 +39,12 @@ type treeTab struct {
 	// service carries a stack label (see anyStacked).
 	groupByStack bool
 
+	// imageFull shows image references whole instead of shortened to
+	// svcImageMax — the only way to read a digest in the list. Like
+	// groupByStack it is the operator's preference, not a cluster's property,
+	// so it survives a switch.
+	imageFull bool
+
 	per perCluster[treeState]
 	seq loadSeq // orders overlapping loads and polls (see loadSeq)
 	// shownFor is the cluster whose services the tree holds, nil while it
@@ -214,6 +220,7 @@ func (t *treeTab) helpSection(h *helpWriter) {
 	h.line(kl(km.Forward), "port-forward the task under the cursor")
 	h.line(kl(km.SecurityRisks), "security-risks overlay (spec hardening checks)")
 	h.line(kl(km.StackGroup), "group services by stack / flat list")
+	h.line(kl(km.ImageFull), "full image reference: registry, namespace, whole digest")
 	h.line(kl(km.StackFile), "stack file: export the stack, or compare one against it")
 	h.danger(kl(km.ServiceRemove), "remove: service · container’s service · whole stack (confirmed)")
 	h.line(kl(km.Search), "search services / containers / nodes")
@@ -295,7 +302,7 @@ func (t *treeTab) markService(n *tview.TreeNode) {
 	}
 	svc := st.byName[ref.name]
 	health, usage := t.svcBadges(ref.name)
-	row := serviceRow(svc, st.cols, t.versionSuffixFor(svc), health, usage)
+	row := serviceRow(svc, st.cols, t.imageMax(), t.versionSuffixFor(svc), health, usage)
 	switch {
 	case len(n.GetChildren()) == 0:
 		n.SetText("  " + row)
@@ -365,7 +372,7 @@ func (t *treeTab) measure(st *treeState) {
 	for _, s := range st.svcs {
 		st.byName[s.Name] = s
 	}
-	st.cols.growTo(serviceWidths(st.svcs, t.versionSuffixFor))
+	st.cols.growTo(serviceWidths(st.svcs, t.versionSuffixFor, t.imageMax()))
 	t.growHealthColumn(st)
 }
 
@@ -388,8 +395,9 @@ func (t *treeTab) growHealthColumn(st *treeState) {
 }
 
 // serviceWidths is the widest cell of each service-row column over svcs.
-// suffix is the version annotation the image cell carries.
-func serviceWidths(svcs []resolve.Service, suffix func(resolve.Service) string) svcColumns {
+// suffix is the version annotation the image cell carries, imageMax the cap
+// the image cell is drawn at (see imageCell).
+func serviceWidths(svcs []resolve.Service, suffix func(resolve.Service) string, imageMax int) svcColumns {
 	var w svcColumns
 	for _, s := range svcs {
 		w.name = max(w.name, len(dockerfmt.OrDash(s.Name)))
@@ -400,7 +408,7 @@ func serviceWidths(svcs []resolve.Service, suffix func(resolve.Service) string) 
 		// overflow its cell and shove that row's ports sideways — and since the
 		// registry cache re-checks a failed lookup every minute, the suffix could
 		// appear and vanish on its own.
-		w.image = max(w.image, tview.TaggedStringWidth(imageCell(s.Image, suffix(s))))
+		w.image = max(w.image, tview.TaggedStringWidth(imageCell(s.Image, suffix(s), imageMax)))
 		w.ports = max(w.ports, len(s.Ports))
 	}
 	return w
@@ -543,7 +551,7 @@ func (t *treeTab) addStackNodes(svcs []resolve.Service, pos treePos, cur *treeCu
 func (t *treeTab) addService(st *treeState, parent *tview.TreeNode, row shownService, leaves leafColumns, pos treePos, cur *treeCursor) {
 	s := row.svc
 	svcHealth, svcUsage := t.svcBadges(s.Name)
-	svcNode := tview.NewTreeNode(serviceRow(s, st.cols, "", svcHealth, svcUsage)).
+	svcNode := tview.NewTreeNode(serviceRow(s, st.cols, t.imageMax(), "", svcHealth, svcUsage)).
 		SetColor(t.svcColor(s)).
 		SetReference(svcRef{name: s.Name}).
 		SetExpanded(pos.svcFolds[s.Name])
@@ -1175,6 +1183,7 @@ func (t *treeTab) runeBindings() []treeBinding {
 		{km.Unfold, t.unfold},
 		{km.StackFile, u.openStackFileMenu},
 		{km.StackGroup, t.toggleStackGroup},
+		{km.ImageFull, t.toggleImageFull},
 		{km.Forward, t.forwardUnderCursor},
 	}
 }
@@ -1244,6 +1253,43 @@ func (t *treeTab) toggleStackGroup() {
 	} else {
 		u.flash(" [green]flat service list[white]")
 	}
+}
+
+// imageMax is the cap the image cell is drawn at: svcImageMax normally, no cap
+// while image_full is on.
+func (t *treeTab) imageMax() int {
+	if t.imageFull {
+		return svcImageUncapped
+	}
+	return svcImageMax
+}
+
+// toggleImageFull switches the image cell between the capped column and the
+// whole reference — registry, namespace and the full digest.
+//
+// It resets the column widths rather than letting them grow, and for EVERY
+// cluster, not just the visible one: growTo never narrows, so without the
+// reset the column would keep the width of the longest full reference after
+// the key went off again, and a cluster switched away from would keep it too.
+// A keypress is exactly the explicit event resetCols exists for.
+func (t *treeTab) toggleImageFull() {
+	t.setImageFull(!t.imageFull)
+	if t.imageFull {
+		t.u.flash(" [green]full image references, digests included[white]")
+	} else {
+		t.u.flash(" [green]image references shortened to fit[white]")
+	}
+}
+
+// setImageFull applies the preference and redraws. It is split out of the key
+// handler so the redraw can be exercised without a running application: flash
+// writes straight into the footer widget, which a test has no reason to build.
+func (t *treeTab) setImageFull(on bool) {
+	t.imageFull = on
+	for _, st := range t.per.m {
+		st.resetCols = true
+	}
+	t.render()
 }
 
 // forwardUnderCursor opens the port-forward form. On a service node it
