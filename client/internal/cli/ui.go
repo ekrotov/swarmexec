@@ -923,8 +923,14 @@ type svcColumns struct {
 // 44 columns fit "registry.example.com/group/app:v1.2.3" whole; past that
 // imageref.Elide drops the namespace and marks the cut. The full reference is
 // still one keypress away in inspect, which is where a reference that long is
-// actually read.
+// actually read — and the image_full key (d) lifts the cap for the whole list
+// at once, for the digest a shortened cell cannot show.
 const svcImageMax = 44
+
+// svcImageUncapped is the cap while image_full is on: none. It is a named
+// constant rather than a bare 0 because 0 as a width would otherwise read as
+// "hide the column", which is what it means everywhere else in svcColumns.
+const svcImageUncapped = 0
 
 // svcColumnFloors are the minimum widths, so the first frame is not narrower
 // than the second and then visibly settles.
@@ -963,7 +969,7 @@ func (c *svcColumns) growTo(other svcColumns) {
 //
 // Trailing padding is trimmed, so a row that fills none of the optional cells
 // ends at its text and a selected row's highlight does not run past it.
-func serviceRow(s resolve.Service, c svcColumns, imageSuffix, health, usage string) string {
+func serviceRow(s resolve.Service, c svcColumns, imageMax int, imageSuffix, health, usage string) string {
 	var b strings.Builder
 	// The security marker leads the row, in a fixed-width slot every service
 	// occupies, so the shields form a vertical scan column and the name column
@@ -975,7 +981,7 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix, health, usage stri
 	if c.image > 0 {
 		// The resolved-version / ↑ annotation sits inside the image cell so it
 		// reads right next to the image URI, not far off in the ports column.
-		fmt.Fprintf(&b, "  %-*s", c.image, imageCell(s.Image, imageSuffix))
+		fmt.Fprintf(&b, "  %-*s", c.image, imageCell(s.Image, imageSuffix, imageMax))
 	}
 	// Width 0 means the caller measured no ports; the cell is then printed
 	// unpadded rather than dropped, so a row still shows what it has while the
@@ -996,11 +1002,21 @@ func serviceRow(s resolve.Service, c svcColumns, imageSuffix, health, usage stri
 	return strings.TrimRight(b.String(), " ") + updateBadge(s.UpdateState)
 }
 
-// imageCell is the image reference as the column shows it: shortened to
-// svcImageMax, with the version annotation appended. Width calculation and
-// rendering both go through it, so they cannot disagree about what is drawn.
-func imageCell(image, suffix string) string {
-	return dockerfmt.OrDash(imageref.Elide(image, svcImageMax)) + suffix
+// imageCell is the image reference as the column shows it: shortened to max,
+// with the version annotation appended. Width calculation and rendering both
+// go through it, so they cannot disagree about what is drawn.
+//
+// max is svcImageUncapped while the image_full key is on, and then nothing is
+// shortened — not the namespace, and above all not the digest, whose hex
+// Elide cuts to twelve characters. A digest one cannot read in full is not a
+// digest, and until this key there was no way to see the rest of it outside
+// the inspect overlay's raw JSON.
+func imageCell(image, suffix string, max int) string {
+	ref := image
+	if max > svcImageUncapped {
+		ref = imageref.Elide(image, max)
+	}
+	return dockerfmt.OrDash(ref) + suffix
 }
 
 // securityBadgeWidth is the fixed leading slot every service row reserves for

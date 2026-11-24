@@ -69,7 +69,11 @@ An apply that changes a running service always goes through a confirm.
   `forward_stop`), `P` prunes (volumes, nodes), `R` rotates a secret or rolls a
   service back, `M` measures reclaimable space now (an expensive scan). The
   converse does not hold: some capitals are merely a variant or a second verb
-  (`S` reverse sort / prune schedule, `L` logs, `E` stack file, `A` attach).
+  (`S` reverse sort / prune schedule, `L` logs, `E` stack file, `A` attach,
+  `D` the tree's full image reference). `d` is the exception in the other
+  direction: it was the delete key before `X`, a `keys.yaml` may still bind it
+  that way, and no default binding takes it any more
+  (`TestDefaultKeybinds_DestructiveActionsUseX`).
 - A destructive action is always behind a confirm, whatever its key.
 
 ## 5. Footers lead with Esc

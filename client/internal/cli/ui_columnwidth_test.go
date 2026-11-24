@@ -131,7 +131,7 @@ func TestColumnWidthsAccountForTheVersionSuffix(t *testing.T) {
 	// The row must fit inside the width the render computed, or the cell
 	// overflows and everything after it on that row moves.
 	web := st.svcs[0]
-	row := serviceRow(web, st.cols, tt.versionSuffixFor(web), "", "")
+	row := serviceRow(web, st.cols, svcImageMax, tt.versionSuffixFor(web), "", "")
 	if got := len(web.Image) + len(tt.versionSuffixFor(web)); got > st.cols.image {
 		t.Errorf("image cell overflows: content %d > width %d (row %q)", got, st.cols.image, row)
 	}

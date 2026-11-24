@@ -25,7 +25,7 @@ func offsetOf(row, marker string) int {
 
 func rowCols(svcs []resolve.Service) svcColumns {
 	var c svcColumns
-	c.growTo(serviceWidths(svcs, func(resolve.Service) string { return "" }))
+	c.growTo(serviceWidths(svcs, func(resolve.Service) string { return "" }, svcImageMax))
 	return c
 }
 
@@ -36,9 +36,9 @@ func TestMemoryReadingKeepsItsColumnWithoutACPUReading(t *testing.T) {
 	svcs := []resolve.Service{{Name: "web", Mode: "replicated", Image: "nginx:1.27"}}
 	cols := rowCols(svcs)
 
-	both := serviceRow(svcs[0], cols, "", "",
+	both := serviceRow(svcs[0], cols, svcImageMax, "", "",
 		usageBadge(containerUsage{CPUReady: true, CPURatio: 0.93, MemRatio: 0.91}))
-	memOnly := serviceRow(svcs[0], cols, "", "",
+	memOnly := serviceRow(svcs[0], cols, svcImageMax, "", "",
 		usageBadge(containerUsage{CPUReady: true, CPURatio: 0.05, MemRatio: 0.88}))
 
 	want, got := offsetOf(both, "mem "), offsetOf(memOnly, "mem ")
@@ -61,8 +61,8 @@ func TestReadingsAlignWhetherOrNotAServicePublishesPorts(t *testing.T) {
 	cols := rowCols(svcs)
 	badge := usageBadge(containerUsage{CPUReady: true, CPURatio: 0.93, MemRatio: 0.91})
 
-	withPorts := serviceRow(svcs[0], cols, "", "", badge)
-	without := serviceRow(svcs[1], cols, "", "", badge)
+	withPorts := serviceRow(svcs[0], cols, svcImageMax, "", "", badge)
+	without := serviceRow(svcs[1], cols, svcImageMax, "", "", badge)
 	if a, b := offsetOf(withPorts, "cpu "), offsetOf(without, "cpu "); a != b || a < 0 {
 		t.Errorf("CPU reading at column %d with ports, %d without\n with:    %q\n without: %q",
 			a, b, withPorts, without)
@@ -77,8 +77,8 @@ func TestHealthMarkerDoesNotMoveTheReadings(t *testing.T) {
 	cols.growTo(svcColumns{health: tview.TaggedStringWidth(sick)})
 	badge := usageBadge(containerUsage{CPUReady: true, CPURatio: 0.93, MemRatio: 0.91})
 
-	healthy := serviceRow(svcs[0], cols, "", "", badge)
-	unhealthy := serviceRow(svcs[0], cols, "", sick, badge)
+	healthy := serviceRow(svcs[0], cols, svcImageMax, "", "", badge)
+	unhealthy := serviceRow(svcs[0], cols, svcImageMax, "", sick, badge)
 	if a, b := offsetOf(healthy, "cpu "), offsetOf(unhealthy, "cpu "); a != b || a < 0 {
 		t.Errorf("CPU reading at column %d when healthy, %d when not\n healthy:   %q\n unhealthy: %q",
 			a, b, healthy, unhealthy)
@@ -93,7 +93,7 @@ func TestHealthMarkerDoesNotMoveTheReadings(t *testing.T) {
 func TestHealthMarkerShowsBeforeItsColumnIsMeasured(t *testing.T) {
 	svcs := []resolve.Service{{Name: "web", Mode: "replicated", Image: "nginx:1.27"}}
 	sick := strings.TrimSpace(healthBadge(clusterread.ServiceHealth{Starting: 1}))
-	row := serviceRow(svcs[0], rowCols(svcs), "", sick, "")
+	row := serviceRow(svcs[0], rowCols(svcs), svcImageMax, "", sick, "")
 	if !strings.Contains(row, "1 starting") {
 		t.Errorf("row = %q, want the health marker shown with a zero-width column", row)
 	}
@@ -107,7 +107,7 @@ func TestALongImageDoesNotWidenEveryRow(t *testing.T) {
 		{Name: "api", Mode: "replicated", Image: "registry.example.com/platform/team/backend/api-server:v2.14.3-rc1"},
 	}
 	cols := rowCols(svcs)
-	row := serviceRow(svcs[0], cols, "", "", "")
+	row := serviceRow(svcs[0], cols, svcImageMax, "", "", "")
 	if w := tview.TaggedStringWidth(row); w > 80 {
 		t.Errorf("a two-service row is %d columns wide: %q", w, row)
 	}
