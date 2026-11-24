@@ -267,6 +267,20 @@ main { display: block; }
   margin: 0 0 1rem; text-wrap: balance;
 }
 .band-lead { margin: 0; color: var(--ink-2); max-width: 40em; }
+
+/* The four, named where the heading counts them. "These four" used to point
+   back at a list the reader had not met yet: the claims themselves are long
+   blocks with a demo each, so by the fourth the thread was gone — and the
+   fourth one's own title starts with "two", which fought the count. */
+.band-four {
+  margin: .9rem 0 0; padding: 0 0 0 1.6rem; max-width: 40em;
+  color: var(--ink-2); list-style: none; counter-reset: four;
+}
+.band-four li { counter-increment: four; position: relative; margin: 0 0 .35rem; }
+.band-four li::before {
+  content: counter(four); position: absolute; left: -1.6rem;
+  font-family: var(--mono); font-size: .85em; font-weight: 600; color: var(--aqua-ink);
+}
 .footnote { color: var(--muted); font-size: .9rem; max-width: 46em; margin: 1.5rem 0 0; }
 
 /* claims */
@@ -286,6 +300,14 @@ main { display: block; }
   font-family: var(--display); font-variation-settings: "wdth" 78; font-weight: 700;
   font-size: clamp(1.45rem, 3.2vw, 2rem); line-height: 1.05; margin: 0 0 .9rem;
 }
+/* The claim numbers come from the DOM, not from the markup. The heading says
+   "Four" and the list above names four, so a hand-typed number would be a
+   third place for the count to drift — and this section has drifted once
+   already, when a claim was added to the section before this one while the
+   heading here was raised to match it. */
+#alone { counter-reset: claim; }
+#alone .claim-text { counter-increment: claim; }
+#alone .claim h3::before { content: counter(claim) " · "; color: var(--aqua-ink); }
 .claim p { margin: 0 0 .9rem; }
 .claim-why { color: var(--muted); font-size: .96rem; }
 .shield { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
